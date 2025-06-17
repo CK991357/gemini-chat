@@ -177,6 +177,7 @@ let videoManager = null;
 let isScreenSharing = false;
 let screenRecorder = null;
 let isUsingTool = false;
+let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -214,26 +215,27 @@ function logMessage(message, type = 'system') {
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messageHistory.appendChild(messageDiv);
-        // 使用requestAnimationFrame确保在渲染后滚动
-        requestAnimationFrame(() => {
-            scrollToBottom();
-        });
+        
+        // 确保在DOM更新后滚动
+        scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
     }
 }
 
 /**
  * Scrolls the message history to the bottom.
+ * @returns {void}
  */
 function scrollToBottom() {
     const messageHistory = document.getElementById('message-history');
-    // 使用更可靠的滚动方式
-    messageHistory.scrollTop = messageHistory.scrollHeight;
-    
-    // 添加边界检查
-    const isAtBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1;
-    if (!isAtBottom) {
-        messageHistory.scrollTop = messageHistory.scrollHeight;
-    }
+    if (!messageHistory) return; // 安全检查
+
+    // 使用 requestAnimationFrame 确保在浏览器下一次重绘前执行，提高平滑度
+    requestAnimationFrame(() => {
+        // 检查用户是否正在手动滚动
+        if (typeof isUserScrolling !== 'boolean' || !isUserScrolling) {
+            messageHistory.scrollTop = messageHistory.scrollHeight;
+        }
+    });
 }
 
 /**
@@ -996,6 +998,53 @@ document.addEventListener('DOMContentLoaded', () => {
         // messageInput.disabled = true;
         // sendButton.disabled = true;
         return; // 阻止后续初始化
+    }
+
+    const messageHistory = document.getElementById('message-history');
+    if (messageHistory) {
+        /**
+         * 监听鼠标滚轮事件，判断用户是否正在手动滚动。
+         * @param {WheelEvent} e - 滚轮事件对象。
+         */
+        messageHistory.addEventListener('wheel', () => {
+            isUserScrolling = true;
+        }, { passive: true }); // 使用 passive: true 提高滚动性能
+
+        /**
+         * 监听滚动事件，如果滚动条已经到底部，则重置 isUserScrolling。
+         * @param {Event} e - 滚动事件对象。
+         */
+        messageHistory.addEventListener('scroll', () => {
+            // 如果滚动条已经到底部，则重置 isUserScrolling
+            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
+                isUserScrolling = false;
+            }
+        });
+    }
+
+    // 移动端触摸事件支持
+    if ('ontouchstart' in window) {
+        if (messageHistory) {
+            /**
+             * 监听触摸开始事件，判断用户是否正在手动滚动。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            messageHistory.addEventListener('touchstart', () => {
+                isUserScrolling = true;
+            }, { passive: true });
+
+            /**
+             * 监听触摸结束事件，如果用户在触摸结束时已经滚动到底部，或者接近底部，可以考虑自动滚动。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            messageHistory.addEventListener('touchend', () => {
+                // 触摸结束时，如果不是在底部，则不强制滚动
+                if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 10) { // 10px 容错
+                    isUserScrolling = false;
+                    scrollToBottom(); // 尝试滚动到底部
+                }
+            }, { passive: true });
+        }
     }
 });
 

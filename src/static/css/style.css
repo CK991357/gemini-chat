@@ -258,6 +258,8 @@ body {
     box-sizing: border-box;
     flex-direction: column; /* 内部使用 flex 布局 */
     position: relative; /* 确保内部元素可以相对定位 */
+    min-height: 0; /* 关键修复：允许内部内容滚动 */
+    display: flex; /* 确保是 flex 容器 */
 }
 
 /* 移动端导航栏布局优化 */
@@ -355,12 +357,12 @@ body {
 
 /* 文字聊天区 */
 .text-mode .message-history {
-    flex-grow: 1;
-    overflow-y: auto;
-    /* max-height: calc(100vh - 200px); */ /* 移除固定高度，让 flex-grow 控制 */
-    padding-right: 10px; /* 留出滚动条空间 */
-    margin-bottom: 15px;
-    padding-bottom: 80px; /* 为输入框和媒体控制留空间 */
+    flex-grow: 1; /* 允许其在 flex 容器中占据可用空间 */
+    overflow-y: auto; /* 确保垂直滚动 */
+    min-height: 0; /* 关键：允许内部内容滚动 */
+    display: flex;
+    flex-direction: column; /* 确保消息从顶部到底部排列 */
+    padding-bottom: 10px; /* 底部留白，防止消息紧贴底部 */
 }
 
 /* ... (保留原有 message, avatar, content 样式) ... */
