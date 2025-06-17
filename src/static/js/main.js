@@ -1076,3 +1076,23 @@ function checkBrowserCompatibility() {
     }
     return true;
 }
+
+/**
+ * Automatically resizes a textarea to fit its content.
+ * @param {HTMLTextAreaElement} textarea - The textarea element to resize.
+ * @returns {void}
+ */
+function autoResizeTextarea(textarea) {
+    textarea.style.height = 'auto'; // 重置高度以重新计算
+    let newHeight = textarea.scrollHeight;
+
+    // 限制最大高度
+    const maxHeight = 200; // 与 CSS 中的 max-height 保持一致
+    if (newHeight > maxHeight) {
+        newHeight = maxHeight;
+        textarea.style.overflowY = 'scroll'; // 达到最大高度时显示滚动条
+    } else {
+        textarea.style.overflowY = 'hidden'; // 否则隐藏滚动条
+    }
+    textarea.style.height = newHeight + 'px';
+}

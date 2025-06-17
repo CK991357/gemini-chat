@@ -438,6 +438,22 @@ body {
     background-color: var(--bg-color);
     color: var(--text-color);
     font-size: 16px;
+    resize: none;                /* 禁用默认拖动 */
+    overflow-y: hidden;         /* 禁用滚动条，由 JS 控制 */
+    min-height: 48px;            /* 初始高度，与发送按钮对齐 */
+    max-height: 200px;           /* 最大高度 */
+    line-height: 1.5;            /* 舒适的行高 */
+    white-space: pre-wrap;       /* 保留空白符并自动换行 */
+    word-break: break-all;       /* 在单词中断点换行 */
+    box-sizing: border-box;      /* 确保 padding 不会增加总宽度 */
+}
+
+/* 移动端优化 (根据您的建议添加) */
+@media (max-width: 768px) {
+    .text-mode #message-input {
+        min-height: 60px;
+        font-size: 18px;
+    }
 }
 
 .text-mode #send-button {
