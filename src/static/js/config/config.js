@@ -10,7 +10,7 @@ export const CONFIG = {
     // Default audio settings
     AUDIO: {
         SAMPLE_RATE: 16000,
-        OUTPUT_SAMPLE_RATE: 16000,      // 修改为 16000，确保与输入采样率一致
+        OUTPUT_SAMPLE_RATE: 24000,      // 修改为 16000，确保与输入采样率一致
         BUFFER_SIZE: 2048,
         CHANNELS: 1
     },
