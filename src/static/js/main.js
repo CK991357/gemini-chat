@@ -749,9 +749,9 @@ client.on('interrupted', () => {
     }
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
-        const audioBlob = pcmToWavBlob(audioDataBuffer, audioCtx.sampleRate);
+        const audioBlob = pcmToWavBlob(audioDataBuffer); // 移除 audioCtx.sampleRate 参数
         const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (audioCtx.sampleRate * 2); // 16位PCM，2字节/采样
+        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (16000 * 2); // 16位PCM，2字节/采样，采样率固定为16000
         displayAudioMessage(audioUrl, duration, 'ai');
         audioDataBuffer = []; // 清空缓冲区
     }
@@ -771,9 +771,9 @@ client.on('turncomplete', () => {
     }
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
-        const audioBlob = pcmToWavBlob(audioDataBuffer, audioCtx.sampleRate);
+        const audioBlob = pcmToWavBlob(audioDataBuffer); // 移除 audioCtx.sampleRate 参数
         const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (audioCtx.sampleRate * 2); // 16位PCM，2字节/采样
+        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (16000 * 2); // 16位PCM，2字节/采样，采样率固定为16000
         displayAudioMessage(audioUrl, duration, 'ai');
         audioDataBuffer = []; // 清空缓冲区
     }
@@ -787,7 +787,6 @@ client.on('error', (error) => {
     }
     logMessage(`Error: ${error.message}`, 'system');
 });
-
 // 添加全局错误处理
 globalThis.addEventListener('error', (event) => {
     logMessage(`系统错误: ${event.message}`, 'system');
