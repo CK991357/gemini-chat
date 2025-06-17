@@ -187,10 +187,10 @@ const client = new MultimodalLiveClient();
 /**
  * 将PCM数据转换为WAV Blob。
  * @param {Uint8Array[]} pcmDataBuffers - 包含PCM数据的Uint8Array数组。
- * @param {number} sampleRate - 采样率 (例如 16000)。
+ * @param {number} sampleRate - 采样率 (例如 24000)。
  * @returns {Blob} WAV格式的Blob。
  */
-function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.SAMPLE_RATE) { // 确保使用配置中的采样率
+function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.OUTPUT_SAMPLE_RATE) { // 确保使用配置中的输出采样率
     let dataLength = 0;
     for (const buffer of pcmDataBuffers) {
         dataLength += buffer.length;
@@ -750,9 +750,9 @@ client.on('interrupted', () => {
     }
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
-        const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.SAMPLE_RATE);
+        const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
         const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.SAMPLE_RATE * 2); // 16位PCM，2字节/采样
+        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
         displayAudioMessage(audioUrl, duration, 'ai');
         audioDataBuffer = []; // 清空缓冲区
     }
@@ -772,9 +772,9 @@ client.on('turncomplete', () => {
     }
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
-        const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.SAMPLE_RATE);
+        const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
         const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.SAMPLE_RATE * 2); // 16位PCM，2字节/采样
+        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
         displayAudioMessage(audioUrl, duration, 'ai');
         audioDataBuffer = []; // 清空缓冲区
     }
