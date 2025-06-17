@@ -895,6 +895,99 @@ body {
     }
 }
 
+/* 语音消息内容样式 */
+.audio-content {
+    display: flex;
+    align-items: center;
+    gap: 10px; /* 元素之间的间距 */
+    padding: 12px 18px;
+    border-radius: 18px;
+    background-color: var(--bg-color); /* 与文本消息背景一致 */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); /* 与文本消息阴影一致 */
+    color: var(--text-color); /* 与文本消息颜色一致 */
+    word-break: break-word;
+}
+
+.message.user .audio-content {
+    background-color: var(--primary-color);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+.message.ai .audio-content {
+    background-color: var(--secondary-color); /* AI语音消息使用不同的背景色 */
+    color: white;
+    border-bottom-left-radius: 4px;
+}
+
+.audio-player {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-grow: 1; /* 允许播放器占据可用空间 */
+}
+
+.audio-play-button, .audio-download-button {
+    background: none;
+    border: none;
+    color: inherit; /* 继承父元素的颜色 */
+    cursor: pointer;
+    font-size: 24px; /* Material Icons 默认大小 */
+    transition: color 0.3s ease, transform 0.2s ease;
+    padding: 0; /* 移除默认内边距 */
+    display: flex; /* 确保图标居中 */
+    align-items: center;
+    justify-content: center;
+}
+
+.audio-play-button:hover, .audio-download-button:hover {
+    color: var(--primary-color); /* 悬停时变色 */
+    transform: scale(1.1);
+}
+
+.message.user .audio-play-button,
+.message.user .audio-download-button {
+    color: white; /* 用户消息中的按钮颜色 */
+}
+
+.message.user .audio-play-button:hover,
+.message.user .audio-download-button:hover {
+    color: #e0e0e0; /* 用户消息中按钮悬停颜色 */
+}
+
+
+.audio-waveform {
+    flex-grow: 1;
+    height: 6px; /* 进度条高度 */
+    background-color: rgba(0, 0, 0, 0.1); /* 进度条背景 */
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+}
+
+.audio-progress-bar {
+    height: 100%;
+    width: 0%;
+    background-color: var(--primary-color); /* 进度条颜色 */
+    transition: width 0.1s linear;
+}
+
+.message.user .audio-progress-bar {
+    background-color: white; /* 用户消息中的进度条颜色 */
+}
+
+.audio-duration {
+    font-size: 14px;
+    color: var(--text-secondary-color);
+    min-width: 40px; /* 确保时长显示区域足够 */
+    text-align: right;
+    flex-shrink: 0; /* 防止被压缩 */
+}
+
+.message.user .audio-duration {
+    color: white; /* 用户消息中的时长颜色 */
+}
+
 /* 在桌面端隐藏移动端连接按钮 */
 @media (min-width: 769px) { /* 使用 769px 以避免与 max-width: 768px 冲突 */
     #mobile-connect {

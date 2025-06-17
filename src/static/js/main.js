@@ -184,46 +184,57 @@ let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元
 // Multimodal Client
 const client = new MultimodalLiveClient();
 
+// 统一采样率
+const SAMPLE_RATE = 16000;
+
 /**
  * 将PCM数据转换为WAV Blob。
  * @param {Uint8Array[]} pcmDataBuffers - 包含PCM数据的Uint8Array数组。
  * @param {number} sampleRate - 采样率 (例如 16000)。
  * @returns {Blob} WAV格式的Blob。
  */
-function pcmToWavBlob(pcmDataBuffers, sampleRate) {
-    let dataLength = 0;
+function pcmToWavBlob(pcmDataBuffers, sampleRate = SAMPLE_RATE) {
+    // 计算总字节数 (每个采样点2字节)
+    let totalBytes = 0;
     for (const buffer of pcmDataBuffers) {
-        dataLength += buffer.length;
+        totalBytes += buffer.length;
     }
 
-    const buffer = new ArrayBuffer(44 + dataLength);
-    const view = new DataView(buffer);
+    // 创建WAV文件头 (44字节头 + PCM数据)
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+    
+    // RIFF标识符
+    writeString(view, 0, 'RIFF');
+    // 文件长度 (36 + PCM数据长度)
+    view.setUint32(4, 36 + totalBytes, true);
+    // WAVE标识符
+    writeString(view, 8, 'WAVE');
+    // fmt子块
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);         // fmt块长度
+    view.setUint16(20, 1, true);          // PCM格式
+    view.setUint16(22, 1, true);          // 单声道
+    view.setUint32(24, sampleRate, true); // 采样率
+    view.setUint32(28, sampleRate * 2, true); // 字节率 (采样率 * 字节/采样)
+    view.setUint16(32, 2, true);          // 块对齐 (通道数 * 字节/采样)
+    view.setUint16(34, 16, true);         // 位深度
+    // data子块
+    writeString(view, 36, 'data');
+    view.setUint32(40, totalBytes, true); // 数据长度
 
-    // WAV header
-    writeString(view, 0, 'RIFF'); // RIFF identifier
-    view.setUint32(4, 36 + dataLength, true); // file length
-    writeString(view, 8, 'WAVE'); // RIFF type
-    writeString(view, 12, 'fmt '); // format chunk identifier
-    view.setUint32(16, 16, true); // format chunk length
-    view.setUint16(20, 1, true); // sample format (1 = PCM)
-    view.setUint16(22, 1, true); // num channels
-    view.setUint32(24, sampleRate, true); // sample rate
-    view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * numChannels * bytesPerSample)
-    view.setUint16(32, 2, true); // block align (numChannels * bytesPerSample)
-    view.setUint16(34, 16, true); // bits per sample
-    writeString(view, 36, 'data'); // data chunk identifier
-    view.setUint32(40, dataLength, true); // data length
-
-    // Write PCM data
+    // 合并头和数据
+    const wavBuffer = new Uint8Array(44 + totalBytes);
+    wavBuffer.set(new Uint8Array(header), 0);
+    
+    // 填充PCM数据
     let offset = 44;
-    for (const pcmBuffer of pcmDataBuffers) {
-        for (let i = 0; i < pcmBuffer.length; i++) {
-            view.setUint8(offset + i, pcmBuffer[i]);
-        }
-        offset += pcmBuffer.length;
+    for (const buffer of pcmDataBuffers) {
+        wavBuffer.set(buffer, offset);
+        offset += buffer.length;
     }
 
-    return new Blob([view], { type: 'audio/wav' });
+    return new Blob([wavBuffer], { type: 'audio/wav' });
 }
 
 /**
@@ -327,44 +338,54 @@ function displayAudioMessage(audioUrl, duration, type) {
     const downloadButton = document.createElement('a');
     downloadButton.classList.add('audio-download-button', 'material-icons');
     downloadButton.textContent = 'download';
-    downloadButton.download = `gemini_audio_${Date.now()}.wav`;
+    downloadButton.download = `gemini_audio_${new Date().toISOString().replace(/[:.]/g, '-')}.wav`;
     downloadButton.href = audioUrl;
+    downloadButton.title = '下载音频';
 
+    // 创建新的Audio实例
     const audioElement = new Audio(audioUrl);
-    audioElement.preload = 'metadata'; // 预加载元数据以获取时长
+    // 确保音频可以播放
+    audioElement.preload = 'auto';
+    // 添加类型提示（确保浏览器正确识别格式）
+    audioElement.type = 'audio/wav';
 
     playButton.addEventListener('click', () => {
-        if (currentAudioElement && currentAudioElement !== audioElement) {
-            // 暂停上一个播放的音频
+        // 暂停当前正在播放的音频
+        if (currentAudioElement && !currentAudioElement.paused) {
             currentAudioElement.pause();
-            const prevPlayButton = currentAudioElement.closest('.audio-player').querySelector('.audio-play-button');
-            if (prevPlayButton) {
-                prevPlayButton.textContent = 'play_arrow';
-            }
+            const prevButton = currentAudioElement.previousButton;
+            if (prevButton) prevButton.textContent = 'play_arrow';
         }
-
+        
         if (audioElement.paused) {
-            audioElement.play();
-            playButton.textContent = 'pause';
-            currentAudioElement = audioElement;
+            audioElement.play()
+                .then(() => {
+                    playButton.textContent = 'pause';
+                    currentAudioElement = audioElement;
+                    audioElement.previousButton = playButton; // 保存引用
+                })
+                .catch(error => {
+                    console.error('播放失败:', error);
+                    logMessage(`音频播放错误: ${error.message}`, 'system');
+                });
         } else {
             audioElement.pause();
             playButton.textContent = 'play_arrow';
-            currentAudioElement = null;
         }
     });
 
+    // 修复进度条更新逻辑
     audioElement.addEventListener('timeupdate', () => {
-        const progress = (audioElement.currentTime / audioElement.duration) * 100;
+        const progress = (audioElement.currentTime / duration) * 100;
         audioProgressBar.style.width = `${progress}%`;
-        audioDurationSpan.textContent = formatTime(audioElement.currentTime); // 显示当前播放时间
+        audioDurationSpan.textContent = formatTime(audioElement.currentTime);
     });
 
     audioElement.addEventListener('ended', () => {
         playButton.textContent = 'play_arrow';
         audioProgressBar.style.width = '0%';
-        audioDurationSpan.textContent = formatTime(duration); // 播放结束后显示总时长
-        currentAudioElement = null;
+        audioDurationSpan.textContent = formatTime(duration);
+        currentAudioElement = null; // 播放结束后清除当前播放元素
     });
 
     audioPlayerDiv.appendChild(playButton);
@@ -693,15 +714,38 @@ client.on('close', (event) => {
 
 client.on('audio', async (data) => {
     try {
-        await resumeAudioContext();
-        const streamer = await ensureAudioInitialized();
-        streamer.addPCM16(new Uint8Array(data));
-        // 同时将音频数据累积到缓冲区
-        audioDataBuffer.push(new Uint8Array(data));
+        if (data && data.byteLength > 0) { // 添加数据有效性检查
+            await resumeAudioContext();
+            const streamer = await ensureAudioInitialized();
+            // 转换PCM数据
+            const uint8Data = new Uint8Array(data);
+            streamer.addPCM16(uint8Data); // 直接传递 Uint8Array
+            
+            // 累积音频数据
+            audioDataBuffer.push(uint8Data);
+        }
     } catch (error) {
-        logMessage(`处理音频时出错: ${error.message}`, 'system');
+        logMessage(`音频处理错误: ${error.message}`, 'system');
     }
 });
+
+/**
+ * 计算音频数据的时长（秒）。
+ * @param {Uint8Array[]} audioDataBuffers - 包含音频数据的Uint8Array数组。
+ * @param {number} sampleRate - 采样率。
+ * @param {number} bytesPerSample - 每个采样点的字节数（例如，16位PCM为2字节）。
+ * @returns {number} 音频时长（秒）。
+ */
+function calculateAudioDuration(audioDataBuffers, sampleRate, bytesPerSample) {
+    let totalBytes = 0;
+    for (const buffer of audioDataBuffers) {
+        totalBytes += buffer.length;
+    }
+    // 总采样点数 = 总字节数 / 每个采样点的字节数
+    const totalSamples = totalBytes / bytesPerSample;
+    // 时长（秒）= 总采样点数 / 采样率
+    return totalSamples / sampleRate;
+}
 
 // 添加消息缓冲机制
 let messageBuffer = '';
@@ -749,9 +793,9 @@ client.on('interrupted', () => {
     }
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
-        const audioBlob = pcmToWavBlob(audioDataBuffer); // 移除 audioCtx.sampleRate 参数
+        const audioBlob = pcmToWavBlob(audioDataBuffer, SAMPLE_RATE); // 使用 SAMPLE_RATE
         const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (16000 * 2); // 16位PCM，2字节/采样，采样率固定为16000
+        const duration = calculateAudioDuration(audioDataBuffer, SAMPLE_RATE, 2); // 使用 calculateAudioDuration
         displayAudioMessage(audioUrl, duration, 'ai');
         audioDataBuffer = []; // 清空缓冲区
     }

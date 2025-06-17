@@ -30,7 +30,6 @@
                 <!-- 移除翻转按钮 -->
             </div>
         </nav>
->>>>>>> REPLACE
 
         <!-- 主容器：左右分栏 -->
         <div class="main-container">
@@ -80,7 +79,6 @@
                 <!-- 模式切换选项卡 -->
                 <div class="mode-tabs">
                     <button class="tab active" data-mode="text">📝 文字聊天</button>
-                    <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
                 </div>
 
@@ -103,12 +101,15 @@
                     <!-- 聊天消息动态插入 -->
                   </div>
                   
-                  <!-- 输入区域保持不变 -->
-
-                    <div class="input-area">
-                        <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
-                        <button id="send-button" class="send-button material-symbols-outlined">send</button>
-                    </div>
+                  <div class="input-area">
+                      <div class="media-controls">
+                          <button id="mic-button" class="media-button material-symbols-outlined">mic</button>
+                          <button id="camera-button" class="media-button material-symbols-outlined">videocam</button>
+                          <button id="screen-button" class="media-button material-symbols-outlined">screen_share</button>
+                      </div>
+                      <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
+                      <button id="send-button" class="send-button material-symbols-outlined">send</button>
+                  </div>
                     
                 </section>
 
