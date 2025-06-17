@@ -576,9 +576,6 @@ async function connectToWebsocket() {
                         voiceName: voiceSelect.value
                     }
                 },
-                speakingRate: 1.0, // 新增：正常语速
-                pitch: 0.0,       // 新增：正常音高
-                volumeGainDb: 0.0 // 新增：正常音量
             }
         },
 
