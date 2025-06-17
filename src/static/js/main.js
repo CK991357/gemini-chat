@@ -624,9 +624,25 @@ client.on('message', (message) => {
 });
 
 sendButton.addEventListener('click', handleSendMessage);
-messageInput.addEventListener('keypress', (event) => {
+/**
+ * 监听消息输入框的键盘事件。
+ * 当用户在文本区域中按下 Enter 键时，如果同时按下了 Shift 键，则发送消息；
+ * 否则，允许默认的换行行为。
+ * @param {KeyboardEvent} event - 键盘事件对象。
+ * @returns {void}
+ */
+messageInput.addEventListener('keydown', (event) => {
+    // 检查是否是 Enter 键
     if (event.key === 'Enter') {
-        handleSendMessage();
+        // 如果同时按下了 Shift 键，或者在 macOS 上按下了 Command 键 (event.metaKey)，则发送消息
+        // 在 Windows/Linux 上，通常是 Shift + Enter 或 Ctrl + Enter
+        if (event.shiftKey || event.ctrlKey || event.metaKey) {
+            event.preventDefault(); // 阻止默认的换行行为
+            handleSendMessage();
+        } else {
+            // 允许默认的换行行为
+            // 对于 textarea，单独的 Enter 键默认就是换行，所以这里不需要额外处理
+        }
     }
 });
 
@@ -1075,24 +1091,4 @@ function checkBrowserCompatibility() {
         }
     }
     return true;
-}
-
-/**
- * Automatically resizes a textarea to fit its content.
- * @param {HTMLTextAreaElement} textarea - The textarea element to resize.
- * @returns {void}
- */
-function autoResizeTextarea(textarea) {
-    textarea.style.height = 'auto'; // 重置高度以重新计算
-    let newHeight = textarea.scrollHeight;
-
-    // 限制最大高度
-    const maxHeight = 200; // 与 CSS 中的 max-height 保持一致
-    if (newHeight > maxHeight) {
-        newHeight = maxHeight;
-        textarea.style.overflowY = 'scroll'; // 达到最大高度时显示滚动条
-    } else {
-        textarea.style.overflowY = 'hidden'; // 否则隐藏滚动条
-    }
-    textarea.style.height = newHeight + 'px';
 }
