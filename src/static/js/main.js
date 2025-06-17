@@ -178,16 +178,84 @@ let isScreenSharing = false;
 let screenRecorder = null;
 let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
+let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
+let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
 
 /**
+ * 将PCM数据转换为WAV Blob。
+ * @param {Uint8Array[]} pcmDataBuffers - 包含PCM数据的Uint8Array数组。
+ * @param {number} sampleRate - 采样率 (例如 16000)。
+ * @returns {Blob} WAV格式的Blob。
+ */
+function pcmToWavBlob(pcmDataBuffers, sampleRate) {
+    let dataLength = 0;
+    for (const buffer of pcmDataBuffers) {
+        dataLength += buffer.length;
+    }
+
+    const buffer = new ArrayBuffer(44 + dataLength);
+    const view = new DataView(buffer);
+
+    // WAV header
+    writeString(view, 0, 'RIFF'); // RIFF identifier
+    view.setUint32(4, 36 + dataLength, true); // file length
+    writeString(view, 8, 'WAVE'); // RIFF type
+    writeString(view, 12, 'fmt '); // format chunk identifier
+    view.setUint32(16, 16, true); // format chunk length
+    view.setUint16(20, 1, true); // sample format (1 = PCM)
+    view.setUint16(22, 1, true); // num channels
+    view.setUint32(24, sampleRate, true); // sample rate
+    view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * numChannels * bytesPerSample)
+    view.setUint16(32, 2, true); // block align (numChannels * bytesPerSample)
+    view.setUint16(34, 16, true); // bits per sample
+    writeString(view, 36, 'data'); // data chunk identifier
+    view.setUint32(40, dataLength, true); // data length
+
+    // Write PCM data
+    let offset = 44;
+    for (const pcmBuffer of pcmDataBuffers) {
+        for (let i = 0; i < pcmBuffer.length; i++) {
+            view.setUint8(offset + i, pcmBuffer[i]);
+        }
+        offset += pcmBuffer.length;
+    }
+
+    return new Blob([view], { type: 'audio/wav' });
+}
+
+/**
+ * 辅助函数：写入字符串到DataView。
+ * @param {DataView} view - DataView实例。
+ * @param {number} offset - 写入偏移量。
+ * @param {string} string - 要写入的字符串。
+ */
+function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+}
+
+/**
+ * 格式化秒数为 MM:SS 格式。
+ * @param {number} seconds - 总秒数。
+ * @returns {string} 格式化后的时间字符串。
+ */
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
+/**
  * Logs a message to the UI.
  * @param {string} message - The message to log.
  * @param {string} [type='system'] - The type of the message (system, user, ai).
+ * @param {string} [messageType='text'] - 消息在聊天历史中的类型 ('text' 或 'audio')。
  */
-function logMessage(message, type = 'system') {
+function logMessage(message, type = 'system', messageType = 'text') {
     // 原始日志始终写入 logsContainer
     const rawLogEntry = document.createElement('div');
     rawLogEntry.classList.add('log-entry', type);
@@ -199,8 +267,8 @@ function logMessage(message, type = 'system') {
     logsContainer.appendChild(rawLogEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
 
-    // 聊天消息写入 messageHistory
-    if (type === 'user' || type === 'ai') {
+    // 聊天消息写入 messageHistory (仅当 messageType 为 'text' 时)
+    if ((type === 'user' || type === 'ai') && messageType === 'text') {
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message', type);
 
@@ -219,6 +287,97 @@ function logMessage(message, type = 'system') {
         // 确保在DOM更新后滚动
         scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
     }
+}
+
+/**
+ * 在聊天历史中显示语音消息。
+ * @param {string} audioUrl - 语音文件的URL。
+ * @param {number} duration - 语音时长（秒）。
+ * @param {string} type - 消息类型 ('user' 或 'ai')。
+ */
+function displayAudioMessage(audioUrl, duration, type) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', type);
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = type === 'user' ? '👤' : '🤖';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content', 'audio-content'); // 添加 audio-content 类
+
+    const audioPlayerDiv = document.createElement('div');
+    audioPlayerDiv.classList.add('audio-player');
+
+    const playButton = document.createElement('button');
+    playButton.classList.add('audio-play-button', 'material-icons');
+    playButton.textContent = 'play_arrow'; // 默认播放图标
+
+    const audioWaveform = document.createElement('div');
+    audioWaveform.classList.add('audio-waveform');
+
+    const audioProgressBar = document.createElement('div');
+    audioProgressBar.classList.add('audio-progress-bar');
+    audioWaveform.appendChild(audioProgressBar);
+
+    const audioDurationSpan = document.createElement('span');
+    audioDurationSpan.classList.add('audio-duration');
+    audioDurationSpan.textContent = formatTime(duration);
+
+    const downloadButton = document.createElement('a');
+    downloadButton.classList.add('audio-download-button', 'material-icons');
+    downloadButton.textContent = 'download';
+    downloadButton.download = `gemini_audio_${Date.now()}.wav`;
+    downloadButton.href = audioUrl;
+
+    const audioElement = new Audio(audioUrl);
+    audioElement.preload = 'metadata'; // 预加载元数据以获取时长
+
+    playButton.addEventListener('click', () => {
+        if (currentAudioElement && currentAudioElement !== audioElement) {
+            // 暂停上一个播放的音频
+            currentAudioElement.pause();
+            const prevPlayButton = currentAudioElement.closest('.audio-player').querySelector('.audio-play-button');
+            if (prevPlayButton) {
+                prevPlayButton.textContent = 'play_arrow';
+            }
+        }
+
+        if (audioElement.paused) {
+            audioElement.play();
+            playButton.textContent = 'pause';
+            currentAudioElement = audioElement;
+        } else {
+            audioElement.pause();
+            playButton.textContent = 'play_arrow';
+            currentAudioElement = null;
+        }
+    });
+
+    audioElement.addEventListener('timeupdate', () => {
+        const progress = (audioElement.currentTime / audioElement.duration) * 100;
+        audioProgressBar.style.width = `${progress}%`;
+        audioDurationSpan.textContent = formatTime(audioElement.currentTime); // 显示当前播放时间
+    });
+
+    audioElement.addEventListener('ended', () => {
+        playButton.textContent = 'play_arrow';
+        audioProgressBar.style.width = '0%';
+        audioDurationSpan.textContent = formatTime(duration); // 播放结束后显示总时长
+        currentAudioElement = null;
+    });
+
+    audioPlayerDiv.appendChild(playButton);
+    audioPlayerDiv.appendChild(audioWaveform);
+    audioPlayerDiv.appendChild(audioDurationSpan);
+    audioPlayerDiv.appendChild(downloadButton); // 添加下载按钮
+    contentDiv.appendChild(audioPlayerDiv);
+
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    messageHistory.appendChild(messageDiv);
+
+    scrollToBottom();
 }
 
 /**
@@ -537,6 +696,8 @@ client.on('audio', async (data) => {
         await resumeAudioContext();
         const streamer = await ensureAudioInitialized();
         streamer.addPCM16(new Uint8Array(data));
+        // 同时将音频数据累积到缓冲区
+        audioDataBuffer.push(new Uint8Array(data));
     } catch (error) {
         logMessage(`处理音频时出错: ${error.message}`, 'system');
     }
@@ -568,7 +729,7 @@ client.on('content', (data) => {
             // 设置新定时器
             bufferTimer = setTimeout(() => {
                 if (messageBuffer.trim()) {
-                    logMessage(messageBuffer, 'ai');
+                    logMessage(messageBuffer, 'ai', 'text'); // 明确指定为文本消息
                     messageBuffer = '';
                 }
             }, 300); // 300ms缓冲时间
@@ -581,10 +742,18 @@ client.on('interrupted', () => {
     isUsingTool = false;
     Logger.info('Model interrupted');
     logMessage('Model interrupted', 'system');
-    // 确保在中断时也刷新缓冲区
+    // 确保在中断时也刷新文本缓冲区
     if (messageBuffer.trim()) {
-        logMessage(messageBuffer, 'ai');
+        logMessage(messageBuffer, 'ai', 'text');
         messageBuffer = '';
+    }
+    // 处理累积的音频数据
+    if (audioDataBuffer.length > 0) {
+        const audioBlob = pcmToWavBlob(audioDataBuffer, audioCtx.sampleRate);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (audioCtx.sampleRate * 2); // 16位PCM，2字节/采样
+        displayAudioMessage(audioUrl, duration, 'ai');
+        audioDataBuffer = []; // 清空缓冲区
     }
 });
 
@@ -595,10 +764,18 @@ client.on('setupcomplete', () => {
 client.on('turncomplete', () => {
     isUsingTool = false;
     logMessage('Turn complete', 'system');
-    // 在对话结束时刷新缓冲区
+    // 在对话结束时刷新文本缓冲区
     if (messageBuffer.trim()) {
-        logMessage(messageBuffer, 'ai');
+        logMessage(messageBuffer, 'ai', 'text');
         messageBuffer = '';
+    }
+    // 处理累积的音频数据
+    if (audioDataBuffer.length > 0) {
+        const audioBlob = pcmToWavBlob(audioDataBuffer, audioCtx.sampleRate);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (audioCtx.sampleRate * 2); // 16位PCM，2字节/采样
+        displayAudioMessage(audioUrl, duration, 'ai');
+        audioDataBuffer = []; // 清空缓冲区
     }
 });
 
