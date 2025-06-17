@@ -1,0 +1,807 @@
+/* style.css */
+
+/* 全局变量 */
+:root {
+  /* 亮色模式变量 */
+  --bg-color: #f5f7fa;
+  --surface-color: #ffffff;
+  --text-color: #202124;
+  --text-secondary-color: #5f6368;
+  --border-color: #dadce0;
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --primary-color: #4285f4; /* Google Blue */
+  --secondary-color: #34a853; /* Google Green */
+  --danger-color: #ea4335; /* Google Red */
+}
+
+body.dark-mode {
+  /* 暗色模式变量 */
+  --bg-color: #1a1a1a;
+  --surface-color: #2d2d2d;
+  --text-color: #f8fafc;
+  --text-secondary-color: #a0a0a0;
+  --border-color: #374151;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --primary-color: #6366f1; /* 紫色系 */
+  --secondary-color: #8b5cf6; /* 浅紫色系 */
+  --danger-color: #ef4444;
+}
+
+/* 通用样式 */
+body {
+    margin: 0;
+    font-family: 'Roboto', sans-serif; /* 建议使用更现代的字体 */
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text-color);
+    background-color: var(--bg-color);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    overflow: hidden; /* 防止滚动条 */
+}
+
+/* 添加 iOS 安全区域适配 */
+@supports (padding: max(0px)) {
+    body {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: var(--bg-color);
+}
+
+/* 顶部导航栏 */
+.app-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 25px;
+    background-color: var(--surface-color);
+    box-shadow: 0 2px 8px var(--shadow-color);
+    z-index: 100;
+}
+
+.app-title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.nav-tools {
+    display: flex;
+    align-items: center;
+    gap: 15px; /* 调整按钮间距 */
+}
+
+.nav-tools button {
+    background: none;
+    border: none;
+    color: var(--text-secondary-color);
+    font-size: 24px;
+    cursor: pointer;
+    /* margin-left: 15px; */ /* 移除，由 gap 控制 */
+    transition: color 0.3s ease, transform 0.2s ease;
+}
+
+.nav-tools button:hover {
+    color: var(--primary-color);
+    transform: scale(1.1);
+}
+
+/* 主容器：左右分栏 */
+.main-container {
+    display: grid;
+    grid-template-columns: 300px 1fr; /* 左侧固定宽度，右侧主内容区自适应 */
+    gap: 20px;
+    padding: 20px;
+    flex-grow: 1;
+    overflow: hidden; /* 防止内部元素溢出导致滚动条 */
+}
+
+/* 左侧控制面板 */
+.control-panel {
+    background-color: var(--surface-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px var(--shadow-color);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto; /* 允许内部滚动 */
+}
+
+.settings-card {
+    background-color: var(--bg-color);
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.settings-card h3 {
+    margin-top: 0;
+    color: var(--primary-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+.setting-item {
+    margin-bottom: 10px;
+}
+
+.setting-item label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: var(--text-secondary-color);
+}
+
+.setting-item input[type="password"],
+.setting-item input[type="number"],
+.setting-item select,
+.setting-item textarea {
+    width: calc(100% - 20px);
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    transition: border-color 0.3s ease;
+}
+
+.setting-item input:focus,
+.setting-item select:focus,
+.setting-item textarea:focus {
+    border-color: var(--primary-color);
+    outline: none;
+}
+
+.setting-item textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.fps-help {
+    font-size: 12px;
+    color: var(--text-secondary-color);
+    margin-top: 5px;
+    display: block;
+}
+
+.action-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.action-button:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.action-button.primary {
+    background-color: var(--primary-color);
+}
+
+.action-button.primary:hover {
+    background-color: var(--secondary-color);
+}
+
+.connection-controls {
+    margin-top: auto; /* 将连接按钮推到底部 */
+    text-align: center;
+}
+
+/* 右侧主内容区 */
+.content-area {
+    display: grid;
+    grid-template-rows: auto 1fr; /* 顶部选项卡，下方聊天区自适应 */
+    background-color: var(--surface-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px var(--shadow-color);
+    overflow: hidden;
+}
+
+/* 模式切换选项卡 */
+.mode-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 20px;
+    background-color: var(--surface-color);
+}
+
+.tab {
+    background: none;
+    border: none;
+    padding: 15px 20px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-secondary-color);
+    position: relative;
+    transition: color 0.3s ease;
+}
+
+.tab.active {
+    color: var(--primary-color);
+}
+
+.tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: var(--primary-color);
+    border-radius: 2px 2px 0 0;
+}
+
+/* 聊天容器 */
+.chat-container {
+    display: none; /* 默认隐藏 */
+    padding: 20px;
+    height: 100%;
+    box-sizing: border-box;
+    flex-direction: column; /* 内部使用 flex 布局 */
+    position: relative; /* 确保内部元素可以相对定位 */
+}
+
+/* 移动端导航栏布局优化 */
+@media (max-width: 768px) {
+  .app-nav {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .nav-tools {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-top: 10px;
+  }
+  
+  /* 媒体控制按钮单独一行 */
+  .media-controls {
+    grid-column: span 4;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-top: 5px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+  }
+  
+  /* 连接按钮全宽 */
+  #mobile-connect {
+    grid-column: span 4;
+    margin-top: 10px;
+  }
+  
+  /* 调整图标按钮大小 */
+  .nav-tools > button,
+  .media-controls > button {
+    width: 100%;
+    height: 40px;
+    font-size: 20px;
+  }
+}
+
+/* 媒体预览容器优化 */
+.media-previews {
+  position: absolute;
+  bottom: calc(80px + env(safe-area-inset-bottom)); /* 在输入框上方，并考虑安全区域 */
+  right: 10px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+/* 优化移动端输入区域和媒体预览位置 */
+@media (max-width: 768px) {
+    .input-area {
+        /* 确保输入区域在底部，并考虑安全区域 */
+        padding-bottom: calc(15px + env(safe-area-inset-bottom)); /* 15px 是原有 padding-top */
+    }
+    
+    .media-previews {
+        /* 调整媒体预览位置，使其在输入区域上方 */
+        bottom: calc(80px + env(safe-area-inset-bottom)); /* 80px 是输入区域大致高度 */
+        right: 10px; /* 调整右侧间距 */
+        left: 10px; /* 居中显示或根据需要调整 */
+        align-items: center; /* 居中预览窗口 */
+    }
+
+    .media-preview {
+        width: 120px; /* 缩小预览窗口 */
+        height: 90px;
+    }
+}
+
+.media-preview {
+  width: 150px;
+  height: 100px;
+  background: var(--surface-color);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  position: relative;
+}
+
+.media-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-container.active {
+    display: flex; /* 激活时显示为 flex 容器 */
+}
+
+/* 文字聊天区 */
+.text-mode .message-history {
+    flex-grow: 1;
+    overflow-y: auto;
+    /* max-height: calc(100vh - 200px); */ /* 移除固定高度，让 flex-grow 控制 */
+    padding-right: 10px; /* 留出滚动条空间 */
+    margin-bottom: 15px;
+    padding-bottom: 80px; /* 为输入框和媒体控制留空间 */
+}
+
+/* ... (保留原有 message, avatar, content 样式) ... */
+
+.message {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 15px;
+    max-width: 85%;
+}
+
+.message.user {
+    margin-left: auto;
+    flex-direction: row-reverse;
+}
+
+.message .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    margin: 0 10px;
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.message.ai .avatar {
+    background-color: var(--secondary-color);
+}
+
+.message .content {
+    padding: 12px 18px;
+    border-radius: 18px;
+    background-color: var(--bg-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    line-height: 1.5;
+    color: var(--text-color);
+    word-break: break-word; /* 防止长单词溢出 */
+}
+
+.message.user .content {
+    background-color: var(--primary-color);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+.message.ai .content {
+    border-bottom-left-radius: 4px;
+}
+
+.text-mode .input-area {
+    display: flex;
+    gap: 10px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    padding: 15px 20px;
+    box-sizing: border-box;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+}
+
+.text-mode #message-input {
+    flex-grow: 1;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 16px;
+}
+
+.text-mode #send-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 24px;
+    transition: background-color 0.3s ease;
+}
+
+.text-mode #send-button:hover {
+    background-color: var(--secondary-color);
+}
+
+/* 新增媒体控制区域样式 */
+.media-controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--surface-color); /* 确保背景色一致 */
+    padding-bottom: 15px; /* 底部留白 */
+}
+
+.media-button {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 20px;
+    transition: all 0.3s ease;
+    color: var(--text-secondary-color); /* 默认颜色 */
+    min-width: 44px; /* 确保按钮有足够的点击区域 */
+    min-height: 44px;
+}
+
+.media-button:hover, .media-button.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* 新增媒体预览容器样式 */
+.media-previews {
+    position: absolute; /* 相对于 .chat-container 定位 */
+    bottom: 150px; /* 调整位置，避免与输入框重叠 */
+    right: 20px;
+    display: none; /* 默认隐藏，由 JS 控制显示 */
+    z-index: 100;
+    gap: 10px;
+    flex-direction: column; /* 垂直堆叠预览窗口 */
+    align-items: flex-end; /* 靠右对齐 */
+}
+
+.media-preview {
+    width: 200px;
+    height: 150px;
+    background: var(--surface-color);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    position: relative;
+    display: none; /* 默认隐藏，由 JS 控制显示 */
+}
+
+.media-preview video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.close-button {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(0,0,0,0.5);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+.close-button:hover {
+    background: var(--danger-color);
+}
+
+/* 删除音频聊天区相关样式 */
+/* .audio-mode .audio-visualization { ... } */
+/* .audio-mode .media-display-area { ... } */
+/* .audio-mode .media-preview-box { ... } */
+/* .audio-mode .video-controls { ... } */
+/* .audio-mode .close-button { ... } */
+/* .audio-mode .audio-controls { ... } */
+/* .audio-mode #mic-button.active { ... } */
+
+/* 新增日志模式样式 */
+.log-mode {
+    display: none; /* 默认隐藏 */
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    background-color: var(--surface-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px var(--shadow-color);
+    overflow: hidden;
+}
+
+.log-mode.active {
+    display: flex; /* 激活时显示 */
+}
+
+.log-mode .log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: var(--surface-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.log-mode .log-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: var(--text-color);
+}
+
+.log-mode .log-header .action-button {
+    padding: 5px 10px;
+    font-size: 14px;
+    margin-left: 10px;
+}
+
+.log-mode .log-content {
+    flex-grow: 1;
+    padding: 15px;
+    overflow-y: auto;
+    font-family: 'SF Mono', monospace;
+    font-size: 13px;
+    color: var(--text-color);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+    /* 显示移动端连接按钮 */
+    #mobile-connect {
+        display: block; /* 移除 !important，通过媒体查询控制 */
+        /* 继承 .action-button 样式 */
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 8px 15px; /* 调整内边距 */
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px; /* 调整字体大小 */
+        font-weight: 600;
+        transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+    #mobile-connect:hover {
+        background-color: var(--secondary-color);
+        transform: translateY(-2px);
+    }
+
+    .main-container {
+        grid-template-columns: 1fr; /* 单列布局 */
+    }
+    .control-panel {
+        /* 在大屏幕下保持左侧分栏，在小屏幕下隐藏 */
+        display: none; /* 默认隐藏 */
+        position: fixed; /* 变为固定定位 */
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1000; /* 确保在最上层 */
+        background-color: rgba(0, 0, 0, 0.5); /* 半透明背景遮罩 */
+        padding: 0; /* 移除内边距，由内部容器控制 */
+        border-radius: 0; /* 移除圆角 */
+        box-shadow: none; /* 移除阴影 */
+        flex-direction: row; /* 内部内容横向排列 */
+        justify-content: flex-end; /* 内容靠右 */
+        transition: background-color 0.3s ease;
+    }
+    .control-panel.active {
+        display: flex; /* 激活时显示 */
+        justify-content: flex-end; /* 调整设置面板位置 */
+    }
+    .control-panel .settings-wrapper { /* 新增一个内部 wrapper 来承载内容 */
+        width: 85%; /* 侧滑菜单宽度 */
+        max-width: 400px;
+        height: 100%;
+        background-color: var(--surface-color);
+        box-shadow: -4px 0 16px var(--shadow-color);
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        overflow-y: auto;
+        transform: translateX(100%); /* 初始隐藏在右侧 */
+        transition: transform 0.3s ease-out;
+    }
+    .control-panel.active .settings-wrapper {
+        transform: translateX(0); /* 激活时滑入 */
+    }
+
+    .content-area {
+        order: 1; /* 内容区移到上方 */
+    }
+    /* 移除log-container在小屏幕下的固定定位，因为现在它是模式选项卡的一部分 */
+    .log-mode {
+        position: relative;
+        bottom: auto;
+        left: auto;
+        right: auto;
+        width: auto;
+        height: 100%;
+        padding-bottom: 0; /* 移除刘海屏适配，因为现在是内容区的一部分 */
+    }
+    /* 隐藏桌面端连接按钮 */
+    .connection-controls {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .app-nav {
+        padding: 10px;
+    }
+    .app-title {
+        font-size: 20px;
+    }
+    .nav-tools button {
+        font-size: 20px;
+        margin-left: 10px;
+    }
+    .main-container {
+        padding: 15px;
+        gap: 15px;
+    }
+    .control-panel {
+        padding: 15px;
+    }
+    .settings-card {
+        padding: 10px;
+    }
+    .tab {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+    .chat-container {
+        padding: 15px;
+    }
+    .message .avatar {
+        width: 30px;
+        height: 30px;
+        font-size: 16px;
+    }
+    .message .content {
+        padding: 10px 15px;
+        font-size: 14px;
+    }
+    .text-mode #message-input {
+        padding: 10px;
+        font-size: 14px;
+    }
+    .text-mode #send-button {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+    }
+    .audio-mode .media-display-area {
+        grid-template-columns: 1fr; /* 视频和屏幕共享堆叠 */
+    }
+    .audio-mode .media-preview-box {
+        min-height: 150px;
+    }
+.audio-mode .audio-controls .action-button {
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+}
+}
+.text-mode .input-area {
+    padding-left: 15px;
+    padding-right: 15px;
+}
+/* style.css */
+.video-controls {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    bottom: 5px;
+    left: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 10;
+    pointer-events: none; /* 允许点击下方视频 */
+}
+
+.video-controls button {
+    pointer-events: auto; /* 恢复按钮点击 */
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+/* 关闭按钮放在右上角 */
+#stop-video {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+}
+
+/* 翻转按钮放在右下角 */
+#flip-camera {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+}
+
+/* 针对 iOS 的优化 */
+@supports (-webkit-overflow-scrolling: touch) {
+    .message-history {
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    input, button, textarea {
+        -webkit-appearance: none;
+        appearance: none; /* 添加标准属性 */
+        border-radius: 0;
+    }
+}
+
+/* 在桌面端隐藏移动端连接按钮 */
+@media (min-width: 769px) { /* 使用 769px 以避免与 max-width: 768px 冲突 */
+    #mobile-connect {
+        display: none;
+    }
+}
