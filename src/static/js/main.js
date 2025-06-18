@@ -145,7 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始化 PDF.js Worker
     if (typeof pdfjsLib !== 'undefined') {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        // 显式设置 workerSrc 为完整的 CDN 路径
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
     } else {
         Logger.error('PDF.js 库未加载。请确保在 main.js 之前引入 pdf.js。');
     }

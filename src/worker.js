@@ -126,7 +126,8 @@ async function handleWebSocket(request, env) {
                   }
                 });
               } else if (file.type === 'text') {
-                parts.push({ text: file.textContent });
+                // 对于 TXT 文件，直接将文本内容作为 text part
+                parts.push({ text: file.content });
               }
             }
             geminiMessage = {
