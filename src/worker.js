@@ -39,9 +39,45 @@ export default {
 
 
 
+    // 新增语音转文字API路由
+    if (url.pathname === '/audio/transcribe' && request.method === 'POST') {
+      return handleAudioTranscribe(request, env);
+    }
+
     return new Response('Not found', { status: 404 });
   },
 };
+
+/**
+ * 处理语音转文字请求。
+ * @param {Request} request - 传入的请求对象，包含音频数据。
+ * @param {Object} env - 环境对象，包含 AI 绑定。
+ * @returns {Response} - 包含转文字结果的响应。
+ */
+async function handleAudioTranscribe(request, env) {
+  try {
+    // 确保 AI 绑定可用
+    if (!env.AI) {
+      return new Response("AI binding not configured.", { status: 500 });
+    }
+
+    // 获取请求体中的音频数据
+    const audioData = await request.arrayBuffer();
+
+    // 调用 Cloudflare Workers AI 的 Whisper 模型
+    const response = await env.AI.run("@cf/openai/whisper", {
+      audio: [...new Uint8Array(audioData)], // 将 ArrayBuffer 转换为 Uint8Array
+    });
+
+    // 返回转文字结果
+    return new Response(JSON.stringify(response), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error("Error transcribing audio:", error);
+    return new Response(`Error: ${error.message}`, { status: 500 });
+  }
+}
 
 function getContentType(path) {
   const ext = path.split('.').pop().toLowerCase();

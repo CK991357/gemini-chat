@@ -334,6 +334,16 @@ function displayAudioMessage(audioUrl, duration, type) {
     audioElement.preload = 'metadata'; // 预加载元数据以获取时长
     audioElement.playbackRate = 1.0; // 新增：确保播放速率为1.0
 
+    // 新增转文字按钮
+    const transcribeButton = document.createElement('button');
+    transcribeButton.classList.add('transcribe-button');
+    transcribeButton.textContent = '转文字';
+
+    // 新增转文字结果显示区域
+    const transcriptionDisplay = document.createElement('div');
+    transcriptionDisplay.classList.add('transcription-display');
+    transcriptionDisplay.style.display = 'none'; // 默认隐藏
+
     playButton.addEventListener('click', () => {
         if (currentAudioElement && currentAudioElement !== audioElement) {
             // 暂停上一个播放的音频
@@ -368,11 +378,52 @@ function displayAudioMessage(audioUrl, duration, type) {
         currentAudioElement = null;
     });
 
+    /**
+     * 处理语音转文字请求。
+     * @param {string} audioBlobUrl - 语音 Blob 的 URL。
+     */
+    transcribeButton.addEventListener('click', async () => {
+        transcribeButton.disabled = true; // 禁用按钮防止重复点击
+        transcriptionDisplay.textContent = '转文字中...';
+        transcriptionDisplay.style.display = 'block'; // 显示转文字区域
+
+        try {
+            // 获取音频 Blob
+            const audioResponse = await fetch(audioUrl);
+            const audioBlob = await audioResponse.blob();
+
+            // 发送请求到 Worker
+            const response = await fetch('/audio/transcribe', {
+                method: 'POST',
+                body: audioBlob,
+                headers: {
+                    'Content-Type': audioBlob.type // 设置正确的 Content-Type
+                }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            }
+
+            const result = await response.json();
+            transcriptionDisplay.textContent = result.text || '转文字失败。'; // 假设结果包含 text 字段
+
+        } catch (error) {
+            console.error('语音转文字失败:', error);
+            transcriptionDisplay.textContent = `转文字失败: ${error.message}`;
+        } finally {
+            transcribeButton.disabled = false; // 重新启用按钮
+        }
+    });
+
     audioPlayerDiv.appendChild(playButton);
     audioPlayerDiv.appendChild(audioWaveform);
     audioPlayerDiv.appendChild(audioDurationSpan);
     audioPlayerDiv.appendChild(downloadButton); // 添加下载按钮
+    audioPlayerDiv.appendChild(transcribeButton); // 添加转文字按钮
     contentDiv.appendChild(audioPlayerDiv);
+    contentDiv.appendChild(transcriptionDisplay); // 添加转文字结果显示区域
 
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
