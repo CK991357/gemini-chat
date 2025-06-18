@@ -109,6 +109,8 @@ async function handleWebSocket(request, env) {
      if (targetWebSocket.readyState === WebSocket.OPEN) {
         try {
           const message = JSON.parse(event.data);
+          let geminiMessage = null;
+
           if (message.type === 'text_and_files') {
             const parts = [];
             if (message.text) {
@@ -116,8 +118,7 @@ async function handleWebSocket(request, env) {
             }
             for (const file of message.files) {
               if (file.type === 'image') {
-                // 图片文件，base64 编码
-                const base64Content = file.content.split(',')[1]; // 移除 "data:image/png;base64," 前缀
+                const base64Content = file.content.split(',')[1];
                 parts.push({
                   inlineData: {
                     mimeType: file.name.endsWith('.webp') ? 'image/webp' : (file.name.endsWith('.jpeg') || file.name.endsWith('.jpg') ? 'image/jpeg' : 'image/png'),
@@ -125,24 +126,35 @@ async function handleWebSocket(request, env) {
                   }
                 });
               } else if (file.type === 'text') {
-                // TXT 文件
                 parts.push({ text: file.textContent });
               }
             }
-            // 构建新的消息对象，符合 Gemini API 格式
-            const geminiMessage = {
-              sendRealtimeInput: [{
-                // mimeType: "application/json", // 实际发送时不需要这个 mimeType
-                // data: JSON.stringify({ parts: parts }) // 实际发送时直接发送对象
-                parts: parts
-              }]
+            geminiMessage = {
+              sendRealtimeInput: [{ parts: parts }]
             };
-            targetWebSocket.send(JSON.stringify(geminiMessage));
             console.log('Successfully sent multimodal message to gemini');
+          } else if (message.type === 'text') { // 处理纯文本消息
+            geminiMessage = {
+              sendRealtimeInput: [{ parts: [{ text: message.text }] }]
+            };
+            console.log('Successfully sent text message to gemini');
+          } else if (message.type === 'interrupt') {
+            // 处理中断消息，不转发给 Gemini API
+            console.log('Received interrupt message, not forwarding to Gemini.');
+            // 这里可以添加关闭 WebSocket 连接的逻辑，如果需要的话
+            // targetWebSocket.close(1000, "Client interrupted");
+            return; // 不再执行后续的 send
           } else {
-            // 其他类型的消息，直接转发
+            // 其他类型的消息，直接转发（如果它们是 Gemini API 期望的格式）
+            // 警告：这里需要谨慎，确保转发的消息是 Gemini API 能够理解的
+            // 如果有其他非内容消息，可能需要单独处理
             targetWebSocket.send(event.data);
-            console.log('Successfully sent message to gemini');
+            console.log('Successfully forwarded unknown type message to gemini');
+            return; // 不再执行后续的 send
+          }
+
+          if (geminiMessage) {
+            targetWebSocket.send(JSON.stringify(geminiMessage));
           }
         } catch (error) {
           console.error('Error sending to gemini:', error);
