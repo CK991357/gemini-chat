@@ -108,55 +108,8 @@ async function handleWebSocket(request, env) {
      console.log("targetWebSocket.readyState"+targetWebSocket.readyState)
      if (targetWebSocket.readyState === WebSocket.OPEN) {
         try {
-          const message = JSON.parse(event.data);
-          let geminiMessage = null;
-
-          if (message.type === 'text_and_files') {
-            const parts = [];
-            if (message.text) {
-              parts.push({ text: message.text });
-            }
-            for (const file of message.files) {
-              if (file.type === 'image') {
-                const base64Content = file.content.split(',')[1];
-                parts.push({
-                  inlineData: {
-                    mimeType: file.name.endsWith('.webp') ? 'image/webp' : (file.name.endsWith('.jpeg') || file.name.endsWith('.jpg') ? 'image/jpeg' : 'image/png'),
-                    data: base64Content
-                  }
-                });
-              } else if (file.type === 'text') {
-                // 对于 TXT 文件，直接将文本内容作为 text part
-                parts.push({ text: file.content });
-              }
-            }
-            geminiMessage = {
-              sendRealtimeInput: [{ parts: parts }]
-            };
-            console.log('Successfully sent multimodal message to gemini');
-          } else if (message.type === 'text') { // 处理纯文本消息
-            geminiMessage = {
-              sendRealtimeInput: [{ parts: [{ text: message.text }] }]
-            };
-            console.log('Successfully sent text message to gemini');
-          } else if (message.type === 'interrupt') {
-            // 处理中断消息，不转发给 Gemini API
-            console.log('Received interrupt message, not forwarding to Gemini.');
-            // 这里可以添加关闭 WebSocket 连接的逻辑，如果需要的话
-            // targetWebSocket.close(1000, "Client interrupted");
-            return; // 不再执行后续的 send
-          } else {
-            // 其他类型的消息，直接转发（如果它们是 Gemini API 期望的格式）
-            // 警告：这里需要谨慎，确保转发的消息是 Gemini API 能够理解的
-            // 如果有其他非内容消息，可能需要单独处理
-            targetWebSocket.send(event.data);
-            console.log('Successfully forwarded unknown type message to gemini');
-            return; // 不再执行后续的 send
-          }
-
-          if (geminiMessage) {
-            targetWebSocket.send(JSON.stringify(geminiMessage));
-          }
+          targetWebSocket.send(event.data);
+          console.log('Successfully sent message to gemini');
         } catch (error) {
           console.error('Error sending to gemini:', error);
         }
