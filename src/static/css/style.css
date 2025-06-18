@@ -510,58 +510,6 @@ body {
     color: white; /* 用户消息中的时长颜色 */
 }
 
-/* 转文字按钮样式 */
-.transcribe-button {
-    background-color: var(--primary-color); /* 使用主题色 */
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    white-space: nowrap; /* 防止文字换行 */
-    margin-left: 10px; /* 与其他按钮的间距 */
-}
-
-.transcribe-button:hover {
-    background-color: var(--secondary-color); /* 悬停时变色 */
-    transform: translateY(-1px);
-}
-
-.transcribe-button:disabled {
-    background-color: #cccccc; /* 禁用时的颜色 */
-    cursor: not-allowed;
-    transform: none;
-}
-
-/* 转文字结果显示区域样式 */
-.transcription-display {
-    margin-top: 10px; /* 与按钮的间距 */
-    padding: 10px 15px;
-    background-color: var(--bg-color); /* 与消息内容背景色一致 */
-    border-radius: 8px;
-    font-size: 14px;
-    color: var(--text-color);
-    word-break: break-word;
-    white-space: pre-wrap; /* 保留文本中的换行符和空格 */
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
-    border: 1px solid var(--border-color);
-}
-
-.message.user .transcription-display {
-    background-color: rgba(255, 255, 255, 0.1); /* 用户消息中的转文字背景 */
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.message.ai .transcription-display {
-    background-color: rgba(0, 0, 0, 0.05); /* AI消息中的转文字背景 */
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-}
-
 .text-mode .input-area {
     display: flex;
     gap: 10px;
