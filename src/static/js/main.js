@@ -52,6 +52,15 @@ const videoPreviewContainer = document.getElementById('video-container'); // 对
 const videoPreviewElement = document.getElementById('preview'); // 对应 video-manager.js 中的 preview
 const stopScreenButton = document.getElementById('stop-screen-button');
 
+// 文件上传相关 DOM 元素
+const addFileButton = document.getElementById('add-file-button');
+const fileOptionsMenu = document.getElementById('file-options-menu');
+const uploadImageOption = document.getElementById('upload-image-option');
+const uploadLocalFileOption = document.getElementById('upload-local-file-option');
+const imageFileInput = document.getElementById('image-file-input');
+const localFileInput = document.getElementById('local-file-input');
+const filePreviewsContainer = document.getElementById('file-previews');
+
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
@@ -134,6 +143,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // 默认激活文字聊天模式
     document.querySelector('.tab[data-mode="text"]').click();
 
+    // 初始化 PDF.js Worker
+    if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    } else {
+        Logger.error('PDF.js 库未加载。请确保在 main.js 之前引入 pdf.js。');
+    }
+
+    // 初始禁用文件上传按钮
+    addFileButton.disabled = true;
+
     // 3. 日志显示控制逻辑
     toggleLogBtn.addEventListener('click', () => {
         // 切换到日志标签页
@@ -181,6 +200,10 @@ let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
+
+// 全局变量
+let selectedFiles = []; // 用于存储待上传的文件
+const MAX_FILE_SIZE_MB = 10; // 文件大小上限 10MB
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -599,6 +622,7 @@ async function connectToWebsocket() {
         micButton.disabled = false;
         cameraButton.disabled = false;
         screenButton.disabled = false;
+        addFileButton.disabled = false; // 连接成功后启用文件上传按钮
         logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
         updateConnectionStatus();
     } catch (error) {
@@ -647,6 +671,7 @@ function disconnectFromWebsocket() {
     if (micButton) micButton.disabled = true;
     if (cameraButton) cameraButton.disabled = true;
     if (screenButton) screenButton.disabled = true;
+    addFileButton.disabled = true; // 断开连接后禁用文件上传按钮
     logMessage('已从服务器断开连接', 'system');
     updateConnectionStatus();
     
@@ -660,15 +685,148 @@ function disconnectFromWebsocket() {
 }
 
 /**
- * Handles sending a text message.
+ * Handles sending a text message and files.
+ * @returns {void}
  */
-function handleSendMessage() {
-    const message = messageInput.value.trim();
-    if (message) {
-        logMessage(message, 'user');
-        client.send({ text: message });
-        messageInput.value = '';
+async function handleSendMessage() {
+    if (!isConnected) {
+        logMessage('请先连接 WebSocket。', 'system');
+        return;
     }
+
+    const messageText = messageInput.value.trim();
+
+    if (!messageText && selectedFiles.length === 0) {
+        logMessage('请输入消息或选择文件。', 'system');
+        return;
+    }
+
+    // 在 UI 上显示用户消息和文件
+    appendMessage('user', messageText, selectedFiles); 
+
+    const messagePayload = {
+        type: 'text_and_files',
+        text: messageText,
+        files: []
+    };
+
+    // 处理文件
+    for (const fileData of selectedFiles) {
+        const fileType = fileData.type;
+        const fileName = fileData.name;
+        
+        if (fileType.startsWith('image/')) {
+            messagePayload.files.push({
+                type: 'image',
+                name: fileName,
+                content: fileData.base64 // 图片文件直接使用已存储的 base64
+            });
+        } else if (fileType === 'application/pdf') {
+            // PDF 文件使用已存储的 base64 数组
+            for (const pageBase64 of fileData.base64Pages) {
+                messagePayload.files.push({
+                    type: 'image', // PDF 转换为图片发送
+                    name: `${fileName}_page_${fileData.base64Pages.indexOf(pageBase64) + 1}.png`,
+                    content: pageBase64
+                });
+            }
+        } else if (fileType === 'text/plain') {
+            messagePayload.files.push({
+                type: 'text',
+                name: fileName,
+                content: fileData.textContent // TXT 文件使用已存储的文本内容
+            });
+        }
+    }
+
+    client.send(messagePayload);
+    logMessage('发送消息和文件。', 'system');
+
+    messageInput.value = '';
+    // 自动调整 textarea 高度
+    messageInput.style.height = 'auto';
+    messageInput.style.height = messageInput.scrollHeight + 'px';
+    clearSelectedFiles(); // 清空已选择的文件
+}
+
+/**
+ * @function appendMessage
+ * @description 将消息添加到聊天历史记录中。
+ * @param {string} sender - 消息发送者 ('user' 或 'ai')。
+ * @param {string} text - 消息文本内容。
+ * @param {Array<Object>} [files=[]] - 附加的文件数组，仅用于用户消息。
+ * @returns {void}
+ */
+function appendMessage(sender, text, files = []) {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', sender);
+
+    const avatarElement = document.createElement('div');
+    avatarElement.classList.add('avatar');
+    avatarElement.textContent = sender === 'user' ? '👤' : '🤖';
+
+    const contentElement = document.createElement('div');
+    contentElement.classList.add('content');
+
+    if (text) {
+        const textParagraph = document.createElement('p');
+        textParagraph.textContent = text;
+        contentElement.appendChild(textParagraph);
+    }
+
+    // 显示文件预览（仅限用户消息）
+    if (sender === 'user' && files.length > 0) {
+        const fileDisplayContainer = document.createElement('div');
+        fileDisplayContainer.classList.add('message-files-display');
+        files.forEach(file => {
+            const fileItem = document.createElement('div');
+            fileItem.classList.add('message-file-item');
+
+            if (file.type.startsWith('image/')) {
+                const img = document.createElement('img');
+                img.src = file.base64;
+                img.alt = file.name;
+                fileItem.appendChild(img);
+            } else if (file.type === 'application/pdf') {
+                const icon = document.createElement('span');
+                icon.classList.add('material-symbols-outlined', 'file-icon');
+                icon.textContent = 'picture_as_pdf';
+                fileItem.appendChild(icon);
+                const name = document.createElement('span');
+                name.textContent = file.name;
+                name.classList.add('file-name');
+                fileItem.appendChild(name);
+            } else if (file.type === 'text/plain') {
+                const icon = document.createElement('span');
+                icon.classList.add('material-symbols-outlined', 'file-icon');
+                icon.textContent = 'description';
+                fileItem.appendChild(icon);
+                const name = document.createElement('span');
+                name.textContent = file.name;
+                name.classList.add('file-name');
+                fileItem.appendChild(name);
+            }
+            fileDisplayContainer.appendChild(fileItem);
+        });
+        contentElement.appendChild(fileDisplayContainer);
+    }
+
+    messageElement.appendChild(avatarElement);
+    messageElement.appendChild(contentElement);
+    messageHistory.appendChild(messageElement);
+    scrollToBottom(); // 滚动到底部
+}
+
+/**
+ * @function clearSelectedFiles
+ * @description 清空所有已选择的文件和预览区域。
+ * @returns {void}
+ */
+function clearSelectedFiles() {
+    selectedFiles = [];
+    filePreviewsContainer.innerHTML = '';
+    filePreviewsContainer.style.display = 'none';
+    logMessage('已清空所有已选择的文件。', 'system');
 }
 
 // Event Listeners
@@ -803,6 +961,156 @@ client.on('message', (message) => {
 });
 
 sendButton.addEventListener('click', handleSendMessage);
+
+// 文件上传事件监听器
+addFileButton.addEventListener('click', () => {
+    fileOptionsMenu.style.display = fileOptionsMenu.style.display === 'flex' ? 'none' : 'flex';
+});
+
+uploadImageOption.addEventListener('click', () => {
+    imageFileInput.click();
+    fileOptionsMenu.style.display = 'none';
+});
+
+uploadLocalFileOption.addEventListener('click', () => {
+    localFileInput.click();
+    fileOptionsMenu.style.display = 'none';
+});
+
+imageFileInput.addEventListener('change', (event) => handleFileSelection(event.target.files, 'image'));
+localFileInput.addEventListener('change', (event) => handleFileSelection(event.target.files, 'local'));
+
+/**
+ * @function handleInterruptPlayback
+ * @description 处理中断按钮点击事件，停止当前语音播放。
+ * @returns {void}
+ */
+/**
+ * @function handleFileSelection
+ * @description 处理文件选择事件，包括文件类型验证、大小限制和文件读取。
+ * @param {FileList} files - 用户选择的文件列表。
+ * @param {string} type - 文件类型 ('image' 或 'local')。
+ * @returns {void}
+ */
+async function handleFileSelection(files, type) {
+    if (files.length === 0) {
+        return;
+    }
+
+    const file = files[0]; // 目前只处理单个文件上传
+
+    // 文件类型验证
+    if (type === 'image' && !file.type.startsWith('image/')) {
+        logMessage('请选择图片文件。', 'system');
+        return;
+    }
+    if (type === 'local' && !(file.type === 'application/pdf' || file.type === 'text/plain')) {
+        logMessage('请选择 PDF 或 TXT 文件。', 'system');
+        return;
+    }
+
+    // 文件大小限制
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        logMessage(`文件大小不能超过 ${MAX_FILE_SIZE_MB}MB。`, 'system');
+        return;
+    }
+
+    // 清空之前选择的文件
+    clearSelectedFiles();
+
+    // 显示文件预览
+    filePreviewsContainer.style.display = 'flex';
+    const filePreviewItem = document.createElement('div');
+    filePreviewItem.classList.add('file-preview-item');
+    filePreviewItem.dataset.fileName = file.name; // 用于删除
+
+    const fileNameSpan = document.createElement('span');
+    fileNameSpan.classList.add('file-name');
+    fileNameSpan.textContent = file.name;
+
+    const removeFileButton = document.createElement('button');
+    removeFileButton.classList.add('remove-file-button', 'material-icons');
+    removeFileButton.textContent = 'close';
+    removeFileButton.title = '移除文件';
+    removeFileButton.addEventListener('click', () => {
+        clearSelectedFiles();
+    });
+
+    filePreviewItem.appendChild(fileNameSpan);
+    filePreviewItem.appendChild(removeFileButton);
+    filePreviewsContainer.appendChild(filePreviewItem);
+
+    // 读取文件内容
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        if (file.type.startsWith('image/')) {
+            const base64 = e.target.result;
+            selectedFiles.push({
+                name: file.name,
+                type: file.type,
+                base64: base64
+            });
+            const imgPreview = document.createElement('img');
+            imgPreview.src = base64;
+            imgPreview.classList.add('file-thumbnail');
+            filePreviewItem.prepend(imgPreview); // 将图片预览放在文件名前面
+        } else if (file.type === 'application/pdf') {
+            logMessage('正在处理 PDF 文件...', 'system');
+            try {
+                const pdfData = new Uint8Array(e.target.result);
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                const numPages = pdf.numPages;
+                const base64Pages = [];
+
+                for (let i = 1; i <= numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 }); // 可以调整缩放比例
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    base64Pages.push(canvas.toDataURL('image/png'));
+                }
+                selectedFiles.push({
+                    name: file.name,
+                    type: file.type,
+                    base64Pages: base64Pages
+                });
+                logMessage(`PDF 文件 "${file.name}" 处理完成，共 ${numPages} 页。`, 'system');
+                const pdfIcon = document.createElement('span');
+                pdfIcon.classList.add('material-symbols-outlined', 'file-thumbnail');
+                pdfIcon.textContent = 'picture_as_pdf';
+                filePreviewItem.prepend(pdfIcon);
+            } catch (error) {
+                logMessage(`处理 PDF 文件时出错: ${error.message}`, 'system');
+                console.error('PDF 处理错误:', error);
+                clearSelectedFiles();
+            }
+        } else if (file.type === 'text/plain') {
+            const textContent = e.target.result;
+            selectedFiles.push({
+                name: file.name,
+                type: file.type,
+                textContent: textContent
+            });
+            logMessage(`TXT 文件 "${file.name}" 读取完成。`, 'system');
+            const txtIcon = document.createElement('span');
+            txtIcon.classList.add('material-symbols-outlined', 'file-thumbnail');
+            txtIcon.textContent = 'description';
+            filePreviewItem.prepend(txtIcon);
+        }
+    };
+
+    if (file.type.startsWith('image/')) {
+        reader.readAsDataURL(file); // 图片读取为 Data URL
+    } else if (file.type === 'application/pdf') {
+        reader.readAsArrayBuffer(file); // PDF 读取为 ArrayBuffer
+    } else if (file.type === 'text/plain') {
+        reader.readAsText(file); // TXT 读取为文本
+    }
+}
 
 /**
  * @function handleInterruptPlayback

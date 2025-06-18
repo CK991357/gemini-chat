@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" />
     <!-- 新增：用于语音播放器图标 -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+    <!-- PDF.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -103,10 +105,28 @@
                     <!-- 聊天消息动态插入 -->
                   </div>
                   
-                  <!-- 输入区域保持不变 -->
+                  <!-- 文件预览区域 -->
+                  <div class="file-previews" id="file-previews">
+                    <!-- 文件预览项将动态插入此处 -->
+                  </div>
 
+                  <!-- 输入区域保持不变 -->
                     <div class="input-area">
                         <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
+                        <!-- + 按钮和文件选择菜单 -->
+                        <div class="file-upload-controls">
+                            <button id="add-file-button" class="send-button material-symbols-outlined">add</button>
+                            <div id="file-options-menu" class="file-options-menu">
+                                <button id="upload-image-option" class="file-option-button">
+                                    <span class="material-symbols-outlined">image</span> 图片
+                                </button>
+                                <button id="upload-local-file-option" class="file-option-button">
+                                    <span class="material-symbols-outlined">description</span> 本地文件
+                                </button>
+                            </div>
+                            <input type="file" id="image-file-input" style="display: none;" accept="image/png,image/jpeg,image/webp">
+                            <input type="file" id="local-file-input" style="display: none;" accept="application/pdf,text/plain">
+                        </div>
                         <button id="send-button" class="send-button material-symbols-outlined">send</button>
                         <button id="interrupt-button" class="action-button">||</button>
                     </div>

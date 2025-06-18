@@ -108,8 +108,42 @@ async function handleWebSocket(request, env) {
      console.log("targetWebSocket.readyState"+targetWebSocket.readyState)
      if (targetWebSocket.readyState === WebSocket.OPEN) {
         try {
-          targetWebSocket.send(event.data);
-          console.log('Successfully sent message to gemini');
+          const message = JSON.parse(event.data);
+          if (message.type === 'text_and_files') {
+            const parts = [];
+            if (message.text) {
+              parts.push({ text: message.text });
+            }
+            for (const file of message.files) {
+              if (file.type === 'image') {
+                // 图片文件，base64 编码
+                const base64Content = file.content.split(',')[1]; // 移除 "data:image/png;base64," 前缀
+                parts.push({
+                  inlineData: {
+                    mimeType: file.name.endsWith('.webp') ? 'image/webp' : (file.name.endsWith('.jpeg') || file.name.endsWith('.jpg') ? 'image/jpeg' : 'image/png'),
+                    data: base64Content
+                  }
+                });
+              } else if (file.type === 'text') {
+                // TXT 文件
+                parts.push({ text: file.textContent });
+              }
+            }
+            // 构建新的消息对象，符合 Gemini API 格式
+            const geminiMessage = {
+              sendRealtimeInput: [{
+                // mimeType: "application/json", // 实际发送时不需要这个 mimeType
+                // data: JSON.stringify({ parts: parts }) // 实际发送时直接发送对象
+                parts: parts
+              }]
+            };
+            targetWebSocket.send(JSON.stringify(geminiMessage));
+            console.log('Successfully sent multimodal message to gemini');
+          } else {
+            // 其他类型的消息，直接转发
+            targetWebSocket.send(event.data);
+            console.log('Successfully sent message to gemini');
+          }
         } catch (error) {
           console.error('Error sending to gemini:', error);
         }
