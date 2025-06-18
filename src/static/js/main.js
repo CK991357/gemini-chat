@@ -36,6 +36,7 @@ systemInstructionInput.value = CONFIG.SYSTEM_INSTRUCTION.TEXT;
 const applyConfigButton = document.getElementById('apply-config');
 const responseTypeSelect = document.getElementById('response-type-select');
 const mobileConnectButton = document.getElementById('mobile-connect');
+const interruptButton = document.getElementById('interrupt-button'); // 新增
 
 // 新增的 DOM 元素
 const themeToggleBtn = document.getElementById('theme-toggle');
@@ -802,6 +803,38 @@ client.on('message', (message) => {
 });
 
 sendButton.addEventListener('click', handleSendMessage);
+
+/**
+ * @function handleInterruptPlayback
+ * @description 处理中断按钮点击事件，停止当前语音播放。
+ * @returns {void}
+ */
+function handleInterruptPlayback() {
+    if (audioStreamer) {
+        audioStreamer.stop();
+        Logger.info('Audio playback interrupted by user.');
+        logMessage('语音播放已中断', 'system');
+        // 确保在中断时也刷新文本缓冲区
+        if (messageBuffer.trim()) {
+            logMessage(messageBuffer, 'ai', 'text');
+            messageBuffer = '';
+        }
+        // 处理累积的音频数据
+        if (audioDataBuffer.length > 0) {
+            const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
+            displayAudioMessage(audioUrl, duration, 'ai');
+            audioDataBuffer = []; // 清空缓冲区
+        }
+    } else {
+        Logger.warn('Attempted to interrupt playback, but audioStreamer is not initialized.');
+        logMessage('当前没有语音播放可中断', 'system');
+    }
+}
+
+interruptButton.addEventListener('click', handleInterruptPlayback); // 新增事件监听器
+
 /**
  * 监听消息输入框的键盘事件。
  * 当用户在文本区域中按下 Enter 键时，如果同时按下了 Shift 键，则发送消息；

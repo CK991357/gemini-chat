@@ -553,6 +553,25 @@ body {
     background-color: var(--secondary-color);
 }
 
+.text-mode #interrupt-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 24px;
+    transition: background-color 0.3s ease;
+}
+
+.text-mode #interrupt-button:hover {
+    background-color: var(--secondary-color);
+}
+
 /* 新增媒体控制区域样式 */
 .media-controls {
     display: flex;
