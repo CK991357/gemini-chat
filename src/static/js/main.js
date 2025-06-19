@@ -341,13 +341,31 @@ function displayAudioMessage(audioUrl, duration, type) {
         transcribeButton.textContent = 'hourglass_empty'; // 显示加载状态
 
         try {
-            // 发送转文字请求到 Worker
+            // 获取原始音频 Blob
+            // 由于 audioUrl 是通过 URL.createObjectURL(audioBlob) 创建的，
+            // 我们需要一种方式来获取原始的 Blob。
+            // 最直接的方式是修改 displayAudioMessage 的调用，让它直接传递 Blob。
+            // 但为了最小化改动，我们假设 audioUrl 对应的 Blob 仍然在内存中，
+            // 或者我们可以重新 fetch 一次（但这不是最佳实践）。
+            // 更好的方法是，在生成 audioUrl 的地方，同时保存 audioBlob。
+            // 考虑到当前结构，我们假设 audioUrl 对应的 Blob 仍然有效，
+            // 或者我们可以在这里重新获取一次，但更推荐的方式是传递原始 Blob。
+
+            // 临时方案：重新 fetch audioUrl 获取 Blob。
+            // 长期方案：修改 displayAudioMessage 的调用，直接传递 audioBlob。
+            const audioBlobResponse = await fetch(audioUrl);
+            if (!audioBlobResponse.ok) {
+                throw new Error(`无法获取音频 Blob: ${audioBlobResponse.statusText}`);
+            }
+            const audioBlob = await audioBlobResponse.blob();
+
+            // 发送转文字请求到 Worker，直接发送 Blob
             const response = await fetch('/api/transcribe-audio', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': audioBlob.type, // 使用 Blob 的 MIME 类型
                 },
-                body: JSON.stringify({ audioUrl: audioUrl }),
+                body: audioBlob, // 直接发送 Blob
             });
 
             if (!response.ok) {

@@ -12,18 +12,11 @@ export default {
     // 处理语音转文字请求
     if (url.pathname === '/api/transcribe-audio') {
       try {
-        const { audioUrl } = await request.json();
-        if (!audioUrl) {
-          return new Response(JSON.stringify({ error: 'Missing audioUrl' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        // 直接从请求体中读取音频数据
+        const audioArrayBuffer = await request.arrayBuffer();
+        if (!audioArrayBuffer || audioArrayBuffer.byteLength === 0) {
+          return new Response(JSON.stringify({ error: 'Missing audio data in request body' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
         }
-
-        // 从 audioUrl 获取音频数据
-        const audioResponse = await fetch(audioUrl);
-        if (!audioResponse.ok) {
-          throw new Error(`Failed to fetch audio from ${audioUrl}: ${audioResponse.statusText}`);
-        }
-        const audioBlob = await audioResponse.blob();
-        const audioArrayBuffer = await audioBlob.arrayBuffer();
 
         // 调用 Cloudflare AI 进行语音转文字
         const response = await env.AI.run(
