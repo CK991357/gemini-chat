@@ -331,6 +331,50 @@ function displayAudioMessage(audioUrl, duration, type) {
     downloadButton.download = `gemini_audio_${Date.now()}.wav`;
     downloadButton.href = audioUrl;
 
+    const transcribeButton = document.createElement('button');
+    transcribeButton.classList.add('audio-transcribe-button', 'material-icons');
+    transcribeButton.textContent = 'text_fields'; // 转文字图标
+
+    transcribeButton.addEventListener('click', async () => {
+        // 禁用按钮防止重复点击
+        transcribeButton.disabled = true;
+        transcribeButton.textContent = 'hourglass_empty'; // 显示加载状态
+
+        try {
+            // 发送转文字请求到 Worker
+            const response = await fetch('/api/transcribe-audio', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ audioUrl: audioUrl }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`转文字失败: ${errorData.error || response.statusText}`);
+            }
+
+            const result = await response.json();
+            const transcriptionText = result.text || '未获取到转录文本。';
+
+            // 显示转录文本
+            const transcriptionDisplay = document.createElement('div');
+            transcriptionDisplay.classList.add('transcription-display');
+            transcriptionDisplay.textContent = transcriptionText;
+            contentDiv.appendChild(transcriptionDisplay);
+            transcriptionDisplay.style.display = 'block'; // 确保显示
+
+            logMessage('语音转文字成功', 'system');
+        } catch (error) {
+            logMessage(`语音转文字失败: ${error.message}`, 'system');
+            console.error('语音转文字失败:', error);
+        } finally {
+            transcribeButton.disabled = false; // 重新启用按钮
+            transcribeButton.textContent = 'text_fields'; // 恢复图标
+        }
+    });
+
     const audioElement = new Audio(audioUrl);
     audioElement.preload = 'metadata'; // 预加载元数据以获取时长
     audioElement.playbackRate = 1.0; // 新增：确保播放速率为1.0
@@ -373,6 +417,7 @@ function displayAudioMessage(audioUrl, duration, type) {
     audioPlayerDiv.appendChild(audioWaveform);
     audioPlayerDiv.appendChild(audioDurationSpan);
     audioPlayerDiv.appendChild(downloadButton); // 添加下载按钮
+    audioPlayerDiv.appendChild(transcribeButton); // 添加转文字按钮
     contentDiv.appendChild(audioPlayerDiv);
 
     messageDiv.appendChild(avatarDiv);

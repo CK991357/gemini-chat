@@ -8,6 +8,42 @@ export default {
     if (request.headers.get('Upgrade') === 'websocket') {
       return handleWebSocket(request, env);
     }
+
+    // 处理语音转文字请求
+    if (url.pathname === '/api/transcribe-audio') {
+      try {
+        const { audioUrl } = await request.json();
+        if (!audioUrl) {
+          return new Response(JSON.stringify({ error: 'Missing audioUrl' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        // 从 audioUrl 获取音频数据
+        const audioResponse = await fetch(audioUrl);
+        if (!audioResponse.ok) {
+          throw new Error(`Failed to fetch audio from ${audioUrl}: ${audioResponse.statusText}`);
+        }
+        const audioBlob = await audioResponse.blob();
+        const audioArrayBuffer = await audioBlob.arrayBuffer();
+
+        // 调用 Cloudflare AI 进行语音转文字
+        const response = await env.AI.run(
+          "@cf/openai/whisper-large-v3-turbo",
+          {
+            audio: [...new Uint8Array(audioArrayBuffer)], // 将 ArrayBuffer 转换为 Uint8Array 数组
+          }
+        );
+
+        return new Response(JSON.stringify(response), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        console.error('语音转文字错误:', error);
+        return new Response(JSON.stringify({ error: error.message || '语音转文字失败' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
     
     // 添加 API 请求处理
     if (url.pathname.endsWith("/chat/completions") ||

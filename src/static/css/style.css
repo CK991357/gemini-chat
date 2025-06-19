@@ -449,7 +449,7 @@ body {
     flex-grow: 1; /* 允许播放器占据可用空间 */
 }
 
-.audio-play-button, .audio-download-button {
+.audio-play-button, .audio-download-button, .audio-transcribe-button {
     background: none;
     border: none;
     color: inherit; /* 继承父元素的颜色 */
@@ -462,18 +462,20 @@ body {
     justify-content: center;
 }
 
-.audio-play-button:hover, .audio-download-button:hover {
+.audio-play-button:hover, .audio-download-button:hover, .audio-transcribe-button:hover {
     color: var(--primary-color); /* 悬停时变色 */
     transform: scale(1.1);
 }
 
 .message.user .audio-play-button,
-.message.user .audio-download-button {
+.message.user .audio-download-button,
+.message.user .audio-transcribe-button {
     color: white; /* 用户消息中的按钮颜色 */
 }
 
 .message.user .audio-play-button:hover,
-.message.user .audio-download-button:hover {
+.message.user .audio-download-button:hover,
+.message.user .audio-transcribe-button:hover {
     color: #e0e0e0; /* 用户消息中按钮悬停颜色 */
 }
 
@@ -504,6 +506,29 @@ body {
     min-width: 40px; /* 确保时长显示区域足够 */
     text-align: right;
     flex-shrink: 0; /* 防止被压缩 */
+}
+
+.transcription-display {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: var(--bg-color);
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--text-color);
+    word-break: break-word;
+    white-space: pre-wrap; /* 保留空白符和换行符 */
+    display: none; /* 默认隐藏，由 JS 控制显示 */
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.message.user .transcription-display {
+    background-color: rgba(255, 255, 255, 0.2); /* 用户消息中的转录文本背景 */
+    color: white;
+}
+
+.message.ai .transcription-display {
+    background-color: rgba(255, 255, 255, 0.2); /* AI消息中的转录文本背景 */
+    color: white;
 }
 
 .message.user .audio-duration {
