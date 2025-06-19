@@ -22,7 +22,7 @@ export default {
         const response = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
           {
-            audio: [...new Uint8Array(audioArrayBuffer)], // 将 ArrayBuffer 转换为 Uint8Array 数组
+            audio: new Uint8Array(audioArrayBuffer), // 直接传递 Uint8Array
           }
         );
 
