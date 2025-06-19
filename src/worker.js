@@ -18,11 +18,30 @@ export default {
           return new Response(JSON.stringify({ error: 'Missing audio data in request body' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
         }
 
+        // 将 ArrayBuffer 转换为 Base64 字符串
+        /**
+         * @function arrayBufferToBase64
+         * @description 将 ArrayBuffer 转换为 Base64 编码的字符串。
+         * @param {ArrayBuffer} buffer - 要转换的 ArrayBuffer。
+         * @returns {string} Base64 编码的字符串。
+         */
+        const arrayBufferToBase64 = (buffer) => {
+          let binary = '';
+          const bytes = new Uint8Array(buffer);
+          const len = bytes.byteLength;
+          for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return btoa(binary);
+        };
+
+        const audioBase64 = arrayBufferToBase64(audioArrayBuffer);
+
         // 调用 Cloudflare AI 进行语音转文字
         const response = await env.AI.run(
           "@cf/openai/whisper-large-v3-turbo",
           {
-            audio: new Uint8Array(audioArrayBuffer), // 直接传递 Uint8Array
+            audio: audioBase64, // 传递 Base64 编码的字符串
           }
         );
 
