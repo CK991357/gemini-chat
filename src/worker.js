@@ -11,21 +11,50 @@ export default {
 
     // 处理语音转文字请求
     if (url.pathname === '/api/transcribe-audio') {
+      // 处理OPTIONS预检请求
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '86400',
+          }
+        });
+      }
+
+      // 拒绝非POST请求
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({
+          error: 'Method Not Allowed',
+          message: 'Only POST requests are accepted for this endpoint'
+        }), {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
       try {
         // 直接从请求体中读取音频数据
         const audioArrayBuffer = await request.arrayBuffer();
         if (!audioArrayBuffer || audioArrayBuffer.byteLength === 0) {
-          return new Response(JSON.stringify({ error: 'Missing audio data in request body' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+          return new Response(JSON.stringify({ error: 'Missing audio data in request body' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          });
         }
 
-        // 将 ArrayBuffer 转换为 Base64 字符串
+        // 转换为 Base64 字符串
         /**
          * @function arrayBufferToBase64
          * @description 将 ArrayBuffer 转换为 Base64 编码的字符串。
          * @param {ArrayBuffer} buffer - 要转换的 ArrayBuffer。
          * @returns {string} Base64 编码的字符串。
          */
-        const arrayBufferToBase64 = (buffer) => {
+        const arrayBufferToBase66 = (buffer) => {
           let binary = '';
           const bytes = new Uint8Array(buffer);
           const len = bytes.byteLength;
@@ -34,29 +63,51 @@ export default {
           }
           return btoa(binary);
         };
+        const audioBase64 = arrayBufferToBase66(audioArrayBuffer);
 
-        const audioBase64 = arrayBufferToBase64(audioArrayBuffer);
+        let response;
+        const modelName = "@cf/openai/whisper-large-v3-turbo"; // 使用用户确认的模型名称
 
-        // 调用 Cloudflare AI 进行语音转文字
-        const response = await env.AI.run(
-          "@cf/openai/whisper-large-v3-turbo",
-          {
-            audio: { // 修正为模型期望的对象格式
-              type: "base64",
-              data: audioBase64
-            },
-            task: "transcribe" // 明确指定转录任务
+        try {
+          // 尝试首选方案：将 Base64 字符串封装在 { data: audioBase64 } 对象中
+          response = await env.AI.run(
+            modelName,
+            {
+              audio: {
+                data: audioBase64 // 封装在 data 属性中
+              },
+              task: "transcribe" // 明确指定转录任务
+            }
+          );
+        } catch (objectDataError) {
+          console.warn('对象格式 { data: base64 } 失败，尝试直接传递 ArrayBuffer:', objectDataError.message);
+
+          // 备选方案：如果上述方案失败，尝试直接传递 ArrayBuffer 作为 audio 属性的值
+          try {
+            response = await env.AI.run(
+              modelName,
+              {
+                audio: audioArrayBuffer, // 直接传递 ArrayBuffer
+                task: "transcribe" // 明确指定转录任务
+              }
+            );
+          } catch (arrayBufferError) {
+            console.error('两种格式均失败:', arrayBufferError);
+            throw new Error(`所有请求格式均失败: ${objectDataError.message}, ${arrayBufferError.message}`);
           }
-        );
+        }
 
         return new Response(JSON.stringify(response), {
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       } catch (error) {
         console.error('语音转文字错误:', error);
-        return new Response(JSON.stringify({ error: error.message || '语音转文字失败' }), {
+        return new Response(JSON.stringify({
+          error: error.message || '语音转文字失败',
+          details: error.stack || '无堆栈信息'
+        }), {
           status: 500,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
     }
