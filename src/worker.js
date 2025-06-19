@@ -53,37 +53,36 @@ export default {
           contentType: request.headers.get('Content-Type')
         });
 
-        // 使用直接API调用替代env.AI.run()
-        const accountId = env.CF_ACCOUNT_ID; // 从环境变量获取账户ID
-        const apiToken = env.CF_API_TOKEN;   // 从环境变量获取API令牌
+        // 使用 SiliconFlow API
+        const siliconFlowApiToken = env.SF_API_TOKEN; // 从环境变量获取 SiliconFlow API 令牌
+        const siliconFlowModelName = "FunAudioLLM/SenseVoiceSmall"; // SiliconFlow 模型名称
+        const siliconFlowApiUrl = "https://api.siliconflow.cn/v1/audio/transcriptions";
 
-        const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/openai/whisper-large-v3-turbo`;
+        // 将 ArrayBuffer 转换为 Blob
+        const audioBlob = new Blob([audioArrayBuffer], { type: request.headers.get('Content-Type') || 'audio/wav' });
 
-        const response = await fetch(apiUrl, {
+        // 构建 FormData
+        const formData = new FormData();
+        formData.append("file", audioBlob, "audio.wav"); // 文件名可以自定义
+        formData.append("model", siliconFlowModelName);
+
+        const response = await fetch(siliconFlowApiUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${apiToken}`,
-            'Content-Type': 'application/json' // 注意这里是 application/json
+            'Authorization': `Bearer ${siliconFlowApiToken}`,
+            // 'Content-Type': 'multipart/form-data' // FormData 会自动设置正确的 Content-Type
           },
-          body: JSON.stringify({
-            audio: Array.from(new Uint8Array(audioArrayBuffer)), // 转换为数组格式
-            task: "transcribe"
-          })
+          body: formData,
         });
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(`API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
+          throw new Error(`SiliconFlow API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
         }
 
         const result = await response.json();
-        // Cloudflare AI API 的响应结构通常是 { result: { text: "..." }, success: true }
-        // 我们只需要 result 字段的内容
-        return new Response(JSON.stringify(result.result), {
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-
-        return new Response(JSON.stringify(response), {
+        // SiliconFlow API 的响应结构通常是 { text: "..." }
+        return new Response(JSON.stringify({ text: result.text }), {
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       } catch (error) {

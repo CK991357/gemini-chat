@@ -186,55 +186,45 @@ let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元
 const client = new MultimodalLiveClient();
 
 /**
- * @function pcmToWavBlob
- * @description 将 PCM 音频数据缓冲区转换为 WAV 格式的 Blob 对象。
- * @param {Array<Float32Array>} pcmDataBuffers - 包含 PCM 音频数据的 Float32Array 数组。
- * @param {number} [sampleRate=CONFIG.AUDIO.OUTPUT_SAMPLE_RATE] - 音频的采样率。
- * @returns {Blob} 包含 WAV 格式音频数据的 Blob 对象。
+ * 将PCM数据转换为WAV Blob。
+ * @param {Uint8Array[]} pcmDataBuffers - 包含PCM数据的Uint8Array数组。
+ * @param {number} sampleRate - 采样率 (例如 24000)。
+ * @returns {Blob} WAV格式的Blob。
  */
-function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.OUTPUT_SAMPLE_RATE) {
-  const bitsPerSample = 16; // 16位 PCM
-  const numChannels = 1;    // 单声道
-
-  // 计算总长度
-  let dataLength = 0;
-  for (const buffer of pcmDataBuffers) {
-    // 每个 Float32 样本转换为 16 位（2字节）
-    dataLength += buffer.length * (bitsPerSample / 8);
-  }
-
-  // 创建WAV头
-  const buffer = new ArrayBuffer(44 + dataLength);
-  const view = new DataView(buffer);
-
-  // RIFF标识
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + dataLength, true); // 文件长度
-  writeString(view, 8, 'WAVE'); // WAVE格式
-  writeString(view, 12, 'fmt '); // fmt区块
-  view.setUint32(16, 16, true); // fmt区块长度
-  view.setUint16(20, 1, true); // 音频格式 (PCM)
-  view.setUint16(22, numChannels, true); // 声道数
-  view.setUint32(24, sampleRate, true); // 采样率
-  view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true); // 字节率 (ByteRate)
-  view.setUint16(32, numChannels * (bitsPerSample / 8), true); // 块对齐 (BlockAlign)
-  view.setUint16(34, bitsPerSample, true); // 位深度 (BitsPerSample)
-  writeString(view, 36, 'data'); // data区块标识
-  view.setUint32(40, dataLength, true); // data区块长度
-
-  // 写入PCM数据
-  let offset = 44;
-  for (const pcmBuffer of pcmDataBuffers) {
-    // 将 Float32 样本转换为 Int16
-    for (let i = 0; i < pcmBuffer.length; i++) {
-      let s = Math.max(-1, Math.min(1, pcmBuffer[i])); // 钳制到 [-1, 1]
-      s = s < 0 ? s * 0x8000 : s * 0x7FFF; // 转换为 16 位整数范围
-      view.setInt16(offset, s, true); // 写入 16 位整数
-      offset += 2; // 每次写入 2 字节
+function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.OUTPUT_SAMPLE_RATE) { // 确保使用配置中的输出采样率
+    let dataLength = 0;
+    for (const buffer of pcmDataBuffers) {
+        dataLength += buffer.length;
     }
-  }
 
-  return new Blob([view], { type: 'audio/wav' });
+    const buffer = new ArrayBuffer(44 + dataLength);
+    const view = new DataView(buffer);
+
+    // WAV header
+    writeString(view, 0, 'RIFF'); // RIFF identifier
+    view.setUint32(4, 36 + dataLength, true); // file length
+    writeString(view, 8, 'WAVE'); // RIFF type
+    writeString(view, 12, 'fmt '); // format chunk identifier
+    view.setUint32(16, 16, true); // format chunk length
+    view.setUint16(20, 1, true); // sample format (1 = PCM)
+    view.setUint16(22, 1, true); // num channels
+    view.setUint32(24, sampleRate, true); // sample rate
+    view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * numChannels * bytesPerSample)
+    view.setUint16(32, 2, true); // block align (numChannels * bytesPerSample)
+    view.setUint16(34, 16, true); // bits per sample
+    writeString(view, 36, 'data'); // data chunk identifier
+    view.setUint32(40, dataLength, true); // data length
+
+    // Write PCM data
+    let offset = 44;
+    for (const pcmBuffer of pcmDataBuffers) {
+        for (let i = 0; i < pcmBuffer.length; i++) {
+            view.setUint8(offset + i, pcmBuffer[i]);
+        }
+        offset += pcmBuffer.length;
+    }
+
+    return new Blob([view], { type: 'audio/wav' });
 }
 
 /**
