@@ -47,55 +47,41 @@ export default {
           });
         }
 
-        // 转换为 Base64 字符串
-        /**
-         * @function arrayBufferToBase64
-         * @description 将 ArrayBuffer 转换为 Base64 编码的字符串。
-         * @param {ArrayBuffer} buffer - 要转换的 ArrayBuffer。
-         * @returns {string} Base64 编码的字符串。
-         */
-        const arrayBufferToBase66 = (buffer) => {
-          let binary = '';
-          const bytes = new Uint8Array(buffer);
-          const len = bytes.byteLength;
-          for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          return btoa(binary);
-        };
-        const audioBase64 = arrayBufferToBase66(audioArrayBuffer);
+        // 记录音频数据信息
+        console.log('音频数据信息:', {
+          byteLength: audioArrayBuffer.byteLength,
+          contentType: request.headers.get('Content-Type')
+        });
 
-        let response;
-        const modelName = "@cf/openai/whisper-large-v3-turbo"; // 使用用户确认的模型名称
+        // 使用直接API调用替代env.AI.run()
+        const accountId = env.CF_ACCOUNT_ID; // 从环境变量获取账户ID
+        const apiToken = env.CF_API_TOKEN;   // 从环境变量获取API令牌
 
-        try {
-          // 尝试首选方案：将 Base64 字符串封装在 { data: audioBase64 } 对象中
-          response = await env.AI.run(
-            modelName,
-            {
-              audio: {
-                data: audioBase64 // 封装在 data 属性中
-              },
-              task: "transcribe" // 明确指定转录任务
-            }
-          );
-        } catch (objectDataError) {
-          console.warn('对象格式 { data: base64 } 失败，尝试直接传递 ArrayBuffer:', objectDataError.message);
+        const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/openai/whisper-large-v3-turbo`;
 
-          // 备选方案：如果上述方案失败，尝试直接传递 ArrayBuffer 作为 audio 属性的值
-          try {
-            response = await env.AI.run(
-              modelName,
-              {
-                audio: audioArrayBuffer, // 直接传递 ArrayBuffer
-                task: "transcribe" // 明确指定转录任务
-              }
-            );
-          } catch (arrayBufferError) {
-            console.error('两种格式均失败:', arrayBufferError);
-            throw new Error(`所有请求格式均失败: ${objectDataError.message}, ${arrayBufferError.message}`);
-          }
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json' // 注意这里是 application/json
+          },
+          body: JSON.stringify({
+            audio: Array.from(new Uint8Array(audioArrayBuffer)), // 转换为数组格式
+            task: "transcribe"
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
         }
+
+        const result = await response.json();
+        // Cloudflare AI API 的响应结构通常是 { result: { text: "..." }, success: true }
+        // 我们只需要 result 字段的内容
+        return new Response(JSON.stringify(result.result), {
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
 
         return new Response(JSON.stringify(response), {
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
