@@ -255,9 +255,8 @@ function formatTime(seconds) {
  * @param {string} message - The message to log.
  * @param {string} [type='system'] - The type of the message (system, user, ai).
  * @param {string} [messageType='text'] - 消息在聊天历史中的类型 ('text' 或 'audio')。
- * @param {string} [extraClass=''] - 额外的 CSS 类，用于特殊渲染。
  */
-function logMessage(message, type = 'system', messageType = 'text', extraClass = '') {
+function logMessage(message, type = 'system', messageType = 'text') {
     // 原始日志始终写入 logsContainer
     const rawLogEntry = document.createElement('div');
     rawLogEntry.classList.add('log-entry', type);
@@ -280,28 +279,14 @@ function logMessage(message, type = 'system', messageType = 'text', extraClass =
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        // 添加对搜索结果的特殊渲染
-        if (type === 'ai' && message.includes('🔍 搜索验证结果: ')) {
-            const searchResultDiv = document.createElement('div');
-            searchResultDiv.classList.add('search-result');
-            searchResultDiv.innerHTML = `
-                <div class="search-header">
-                    <span class="material-icons">search</span>
-                    <strong>搜索验证</strong>
-                </div>
-                <div class="search-content">${message.replace('🔍 搜索验证结果: ', '')}</div>
-            `;
-            contentDiv.appendChild(searchResultDiv);
-        } else {
-            contentDiv.textContent = message; // 非搜索结果，直接显示文本
-        }
-
+        contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
 
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messageHistory.appendChild(messageDiv);
         
-        scrollToBottom();
+        // 确保在DOM更新后滚动
+        scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
     }
 }
 
@@ -645,9 +630,6 @@ async function connectToWebsocket() {
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
-    // 创建工具管理器实例
-    const toolManager = new ToolManager();
-
     const config = {
         model: CONFIG.API.MODEL_NAME,
         generationConfig: {
@@ -665,12 +647,11 @@ async function connectToWebsocket() {
             parts: [{
                 text: systemInstructionInput.value     // You can change system instruction in the config.js file
             }],
-        },
-        tools: toolManager.getToolDeclarations() // 添加这行
+        }
     };  
 
     try {
-        await client.connect(config, apiKeyInput.value);
+        await client.connect(config,apiKeyInput.value);
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';
@@ -747,10 +728,8 @@ function disconnectFromWebsocket() {
 function handleSendMessage() {
     const message = messageInput.value.trim();
     if (message) {
-        // 添加深度思考触发前缀
-        const processedMessage = `[深度分析] ${message}`;
-        logMessage(processedMessage, 'user');
-        client.send({ text: processedMessage });
+        logMessage(message, 'user');
+        client.send({ text: message });
         messageInput.value = '';
     }
 }
@@ -795,42 +774,30 @@ let bufferTimer = null;
 
 client.on('content', (data) => {
     if (data.modelTurn) {
-        let text = '';
-        let isToolResponse = false;
+        if (data.modelTurn.parts.some(part => part.functionCall)) {
+            isUsingTool = true;
+            Logger.info('Model is using a tool');
+        } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
+            isUsingTool = false;
+            Logger.info('Tool usage completed');
+        }
 
-        data.modelTurn.parts.forEach(part => {
-            if (part.functionCall) {
-                isUsingTool = true;
-                Logger.info('Model is using a tool');
-            } else if (part.functionResponse) {
-                isUsingTool = false;
-                Logger.info('Tool usage completed');
-                // 处理工具响应，特别是 Google Search 的结果
-                if (part.functionResponse.name === 'googleSearch') {
-                    const output = part.functionResponse.response?.output;
-                    if (output) {
-                        // 将搜索结果格式化为带有特定标识的文本
-                        text += `🔍 搜索验证结果: ${JSON.stringify(output)}\n`;
-                        isToolResponse = true;
-                    }
-                }
-            } else if (part.text) {
-                text += part.text;
-            }
-        });
+        const text = data.modelTurn.parts.map(part => part.text).join('');
         
         if (text) {
+            // 缓冲消息
             messageBuffer += text;
             
+            // 清除现有定时器
             if (bufferTimer) clearTimeout(bufferTimer);
             
+            // 设置新定时器
             bufferTimer = setTimeout(() => {
                 if (messageBuffer.trim()) {
-                    // 如果是工具响应，添加一个特殊类
-                    logMessage(messageBuffer, 'ai', 'text', isToolResponse ? 'search-result' : '');
+                    logMessage(messageBuffer, 'ai', 'text'); // 明确指定为文本消息
                     messageBuffer = '';
                 }
-            }, 300);
+            }, 300); // 300ms缓冲时间
         }
     }
 });

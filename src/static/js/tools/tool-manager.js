@@ -1,5 +1,5 @@
-import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { Logger } from '../utils/logger.js';
+import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { GoogleSearchTool } from './google-search.js';
 import { WeatherTool } from './weather-tool.js';
 
@@ -97,18 +97,6 @@ export class ToolManager {
 
         try {
             const result = await tool.execute(args);
-            // 添加文本模式的结果格式化
-            if (name === 'googleSearch') {
-                return {
-                    functionResponses: [{
-                        response: {
-                            output: `🔍 搜索验证结果: ${result}`, // 添加搜索标识
-                            format: "markdown" // 声明格式
-                        },
-                        id
-                    }]
-                };
-            }
             return {
                 functionResponses: [{
                     response: { output: result },
@@ -125,4 +113,4 @@ export class ToolManager {
             };
         }
     }
-}
+} 

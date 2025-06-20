@@ -7,25 +7,14 @@ import { Logger } from '../utils/logger.js';
 export class GoogleSearchTool {
     /**
      * Returns the tool declaration for the Gemini API.
-     * This declaration informs the API about the tool's capabilities and expected parameters.
+     * The declaration is an empty object, indicating to the API that this tool can be used.
      *
-     * @returns {Object} A tool declaration object with function details.
+     * @returns {Object} An empty object as the tool declaration.
      */
     getDeclaration() {
         return {
-            // 修正为下划线命名，并确保是扁平结构
-            name: "google_search", // 工具名称改为下划线命名
-            description: "使用Google搜索获取最新、权威的信息。适用于需要事实核查、数据验证或探索多元观点的复杂问题",
-            parameters: {
-                type: "object",
-                properties: {
-                    query: {
-                        type: "string",
-                        description: "精确的搜索关键词，包含时间范围限定符如'2023年以来'或来源限定符如'site:.edu'"
-                    }
-                },
-                required: ["query"]
-            }
+            // Return empty object as per Gemini API requirements
+            // This tells the model it can use Google Search
         };
     }
 
@@ -49,4 +38,4 @@ export class GoogleSearchTool {
             throw error;
         }
     }
-}
+} 
