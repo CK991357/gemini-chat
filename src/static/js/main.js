@@ -630,25 +630,43 @@ async function connectToWebsocket() {
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
-    const config = {
-        model: CONFIG.API.MODEL_NAME,
-        generationConfig: {
-            responseModalities: responseTypeSelect.value,
-            speechConfig: {
-                voiceConfig: {
-                    prebuiltVoiceConfig: {
-                        voiceName: voiceSelect.value
-                    }
-                },
-            }
-        },
+        /**
+         * @description 根据用户选择的响应类型构建模型生成配置。
+         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
+         * @returns {string[]} 响应模态数组。
+         */
+        function getResponseModalities(selectedResponseType) {
+            const modalities = new Set();
+            // 始终包含 tool_code 以支持工具调用
+            modalities.add('tool_code');
+            // 始终包含 text 以便在聊天历史中显示文本内容
+            modalities.add('text');
 
-        systemInstruction: {
-            parts: [{
-                text: systemInstructionInput.value     // You can change system instruction in the config.js file
-            }],
+            if (selectedResponseType === 'audio') {
+                modalities.add('audio');
+            }
+            return Array.from(modalities);
         }
-    };  
+
+        const config = {
+            model: CONFIG.API.MODEL_NAME,
+            generationConfig: {
+                responseModalities: getResponseModalities(responseTypeSelect.value),
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: {
+                            voiceName: voiceSelect.value
+                        }
+                    },
+                }
+            },
+
+            systemInstruction: {
+                parts: [{
+                    text: systemInstructionInput.value     // You can change system instruction in the config.js file
+                }],
+            }
+        };  
 
     try {
         await client.connect(config,apiKeyInput.value);
