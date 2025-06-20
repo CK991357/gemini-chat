@@ -635,17 +635,17 @@ async function connectToWebsocket() {
          * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
          * @returns {string[]} 响应模态数组。
          */
+        /**
+         * @description 根据用户选择的响应类型构建模型生成配置。
+         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
+         * @returns {string[]} 响应模态数组。
+         */
         function getResponseModalities(selectedResponseType) {
-            const modalities = new Set();
-            // 始终包含 tool_code 以支持工具调用
-            modalities.add('tool_code');
-            // 始终包含 text 以便在聊天历史中显示文本内容
-            modalities.add('text');
-
             if (selectedResponseType === 'audio') {
-                modalities.add('audio');
+                return ['audio'];
+            } else {
+                return ['text'];
             }
-            return Array.from(modalities);
         }
 
         const config = {
