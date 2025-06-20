@@ -51,9 +51,15 @@ export class ToolManager {
     getToolDeclarations() {
         const allDeclarations = [];
         
-        this.tools.forEach((tool) => {
+        this.tools.forEach((tool, name) => {
             if (tool.getDeclaration) {
-                allDeclarations.push(tool.getDeclaration());
+                if (name === 'weather') {
+                    allDeclarations.push({
+                        functionDeclarations: tool.getDeclaration()
+                    });
+                } else {
+                    allDeclarations.push({ [name]: tool.getDeclaration() });
+                }
             }
         });
 
@@ -91,6 +97,18 @@ export class ToolManager {
 
         try {
             const result = await tool.execute(args);
+            // 添加文本模式的结果格式化
+            if (name === 'googleSearch') {
+                return {
+                    functionResponses: [{
+                        response: {
+                            output: `🔍 搜索验证结果: ${result}`, // 添加搜索标识
+                            format: "markdown" // 声明格式
+                        },
+                        id
+                    }]
+                };
+            }
             return {
                 functionResponses: [{
                     response: { output: result },

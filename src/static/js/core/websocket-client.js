@@ -1,8 +1,8 @@
 import { EventEmitter } from 'https://cdn.skypack.dev/eventemitter3';
-import { blobToJSON, base64ToArrayBuffer } from '../utils/utils.js';
+import { ToolManager } from '../tools/tool-manager.js';
 import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { Logger } from '../utils/logger.js';
-import { ToolManager } from '../tools/tool-manager.js';
+import { base64ToArrayBuffer, blobToJSON } from '../utils/utils.js';
 
 /**
  * Client for interacting with the Gemini 2.0 Flash Multimodal Live API via WebSockets.
@@ -56,13 +56,29 @@ export class MultimodalLiveClient extends EventEmitter {
      * @returns {Promise<boolean>} - Resolves with true when the connection is established.
      * @throws {ApplicationError} - Throws an error if the connection fails.
      */
-    connect(config,apiKey) {
+    connect(config, apiKey) {
+        // 扁平化工具声明，以符合 Gemini API 的预期格式
+        const flattenedTools = [];
+        this.toolManager.getToolDeclarations().forEach(toolDeclarationWrapper => {
+            // 检查 toolDeclarationWrapper 是否包含 functionDeclarations 或其他工具名作为键
+            if (toolDeclarationWrapper.functionDeclarations) {
+                // 如果是 { functionDeclarations: { name: "weather", ... } } 这种形式
+                flattenedTools.push(toolDeclarationWrapper.functionDeclarations);
+            } else {
+                // 如果是 { googleSearch: { name: "googleSearch", ... } } 这种形式
+                // 遍历对象的所有键，并添加其值（即实际的工具声明）
+                for (const key in toolDeclarationWrapper) {
+                    if (Object.prototype.hasOwnProperty.call(toolDeclarationWrapper, key)) {
+                        flattenedTools.push(toolDeclarationWrapper[key]);
+                    }
+                }
+            }
+        });
+
         this.config = {
             ...config,
-            tools: [
-                ...this.toolManager.getToolDeclarations(),
-                ...(config.tools || [])
-            ]
+            // 使用扁平化后的工具声明
+            tools: flattenedTools
         };
         const ws = new WebSocket(`${this.baseUrl}?key=${apiKey}`);
 
@@ -250,6 +266,10 @@ export class MultimodalLiveClient extends EventEmitter {
             if (typeof part === 'string') {
                 return { text: part };
             } else if (typeof part === 'object' && !part.text && !part.inlineData) {
+                // 如果是工具调用，确保其格式正确
+                if (part.functionCall) {
+                    return { functionCall: part.functionCall };
+                }
                 return { text: JSON.stringify(part) };
             }
             return part;
@@ -294,4 +314,4 @@ export class MultimodalLiveClient extends EventEmitter {
             });
         }
     }
-} 
+}

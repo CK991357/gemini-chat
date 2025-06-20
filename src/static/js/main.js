@@ -280,18 +280,20 @@ function logMessage(message, type = 'system', messageType = 'text', extraClass =
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        if (extraClass) {
-            contentDiv.classList.add(extraClass); // 添加额外类
-        }
-        contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
-
-        // 如果是搜索结果，添加搜索头部
-        if (extraClass === 'search-result') {
-            const searchHeader = document.createElement('div');
-            searchHeader.classList.add('search-header');
-            searchHeader.innerHTML = `<span class="material-icons">search</span><strong>搜索验证</strong>`;
-            contentDiv.prepend(searchHeader); // 将头部添加到内容前面
-            contentDiv.textContent = message.replace('🔍 搜索验证结果: ', ''); // 移除前缀
+        // 添加对搜索结果的特殊渲染
+        if (type === 'ai' && message.includes('🔍 搜索验证结果: ')) {
+            const searchResultDiv = document.createElement('div');
+            searchResultDiv.classList.add('search-result');
+            searchResultDiv.innerHTML = `
+                <div class="search-header">
+                    <span class="material-icons">search</span>
+                    <strong>搜索验证</strong>
+                </div>
+                <div class="search-content">${message.replace('🔍 搜索验证结果: ', '')}</div>
+            `;
+            contentDiv.appendChild(searchResultDiv);
+        } else {
+            contentDiv.textContent = message; // 非搜索结果，直接显示文本
         }
 
 
@@ -643,6 +645,9 @@ async function connectToWebsocket() {
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
+    // 创建工具管理器实例
+    const toolManager = new ToolManager();
+
     const config = {
         model: CONFIG.API.MODEL_NAME,
         generationConfig: {
@@ -660,11 +665,12 @@ async function connectToWebsocket() {
             parts: [{
                 text: systemInstructionInput.value     // You can change system instruction in the config.js file
             }],
-        }
+        },
+        tools: toolManager.getToolDeclarations() // 添加这行
     };  
 
     try {
-        await client.connect(config,apiKeyInput.value);
+        await client.connect(config, apiKeyInput.value);
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';
@@ -741,8 +747,10 @@ function disconnectFromWebsocket() {
 function handleSendMessage() {
     const message = messageInput.value.trim();
     if (message) {
-        logMessage(message, 'user');
-        client.send({ text: message }); // 移除 [深度分析] 前缀
+        // 添加深度思考触发前缀
+        const processedMessage = `[深度分析] ${message}`;
+        logMessage(processedMessage, 'user');
+        client.send({ text: processedMessage });
         messageInput.value = '';
     }
 }
