@@ -1,5 +1,5 @@
-import { Logger } from '../utils/logger.js';
 import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
+import { Logger } from '../utils/logger.js';
 import { GoogleSearchTool } from './google-search.js';
 import { WeatherTool } from './weather-tool.js';
 
@@ -51,15 +51,9 @@ export class ToolManager {
     getToolDeclarations() {
         const allDeclarations = [];
         
-        this.tools.forEach((tool, name) => {
+        this.tools.forEach((tool) => {
             if (tool.getDeclaration) {
-                if (name === 'weather') {
-                    allDeclarations.push({
-                        functionDeclarations: tool.getDeclaration()
-                    });
-                } else {
-                    allDeclarations.push({ [name]: tool.getDeclaration() });
-                }
+                allDeclarations.push(tool.getDeclaration());
             }
         });
 
@@ -113,4 +107,4 @@ export class ToolManager {
             };
         }
     }
-} 
+}
