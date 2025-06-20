@@ -945,3 +945,59 @@ body {
         display: none;
     }
 }
+
+/* 搜索结果样式 */
+.search-result {
+  border-left: 3px solid var(--primary-color); /* 使用主题主色 */
+  padding-left: 12px;
+  margin-top: 10px;
+  background: rgba(66, 133, 244, 0.05); /* 浅蓝色背景 */
+  border-radius: 0 8px 8px 0;
+}
+
+.search-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary-color); /* 使用主题主色 */
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+/* 深度回复样式 (可选，如果模型能生成结构化内容) */
+.message.ai .content.deep-response {
+  border-left: 4px solid var(--secondary-color); /* 使用主题副色 */
+  padding-left: 15px;
+}
+
+.deep-response h3 {
+  color: var(--primary-color);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 5px;
+}
+
+.deep-response .solution-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.deep-response .solution-table th {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 8px;
+  text-align: left;
+}
+
+.deep-response .solution-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.deep-response .expert-tip {
+  background-color: rgba(66, 133, 244, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 15px;
+  border-left: 3px solid var(--secondary-color);
+}

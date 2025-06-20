@@ -255,8 +255,9 @@ function formatTime(seconds) {
  * @param {string} message - The message to log.
  * @param {string} [type='system'] - The type of the message (system, user, ai).
  * @param {string} [messageType='text'] - 消息在聊天历史中的类型 ('text' 或 'audio')。
+ * @param {string} [extraClass=''] - 额外的 CSS 类，用于特殊渲染。
  */
-function logMessage(message, type = 'system', messageType = 'text') {
+function logMessage(message, type = 'system', messageType = 'text', extraClass = '') {
     // 原始日志始终写入 logsContainer
     const rawLogEntry = document.createElement('div');
     rawLogEntry.classList.add('log-entry', type);
@@ -279,14 +280,26 @@ function logMessage(message, type = 'system', messageType = 'text') {
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
+        if (extraClass) {
+            contentDiv.classList.add(extraClass); // 添加额外类
+        }
         contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
+
+        // 如果是搜索结果，添加搜索头部
+        if (extraClass === 'search-result') {
+            const searchHeader = document.createElement('div');
+            searchHeader.classList.add('search-header');
+            searchHeader.innerHTML = `<span class="material-icons">search</span><strong>搜索验证</strong>`;
+            contentDiv.prepend(searchHeader); // 将头部添加到内容前面
+            contentDiv.textContent = message.replace('🔍 搜索验证结果: ', ''); // 移除前缀
+        }
+
 
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messageHistory.appendChild(messageDiv);
         
-        // 确保在DOM更新后滚动
-        scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
+        scrollToBottom();
     }
 }
 
@@ -729,7 +742,7 @@ function handleSendMessage() {
     const message = messageInput.value.trim();
     if (message) {
         logMessage(message, 'user');
-        client.send({ text: message });
+        client.send({ text: message }); // 移除 [深度分析] 前缀
         messageInput.value = '';
     }
 }
@@ -774,30 +787,42 @@ let bufferTimer = null;
 
 client.on('content', (data) => {
     if (data.modelTurn) {
-        if (data.modelTurn.parts.some(part => part.functionCall)) {
-            isUsingTool = true;
-            Logger.info('Model is using a tool');
-        } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
-            isUsingTool = false;
-            Logger.info('Tool usage completed');
-        }
+        let text = '';
+        let isToolResponse = false;
 
-        const text = data.modelTurn.parts.map(part => part.text).join('');
+        data.modelTurn.parts.forEach(part => {
+            if (part.functionCall) {
+                isUsingTool = true;
+                Logger.info('Model is using a tool');
+            } else if (part.functionResponse) {
+                isUsingTool = false;
+                Logger.info('Tool usage completed');
+                // 处理工具响应，特别是 Google Search 的结果
+                if (part.functionResponse.name === 'googleSearch') {
+                    const output = part.functionResponse.response?.output;
+                    if (output) {
+                        // 将搜索结果格式化为带有特定标识的文本
+                        text += `🔍 搜索验证结果: ${JSON.stringify(output)}\n`;
+                        isToolResponse = true;
+                    }
+                }
+            } else if (part.text) {
+                text += part.text;
+            }
+        });
         
         if (text) {
-            // 缓冲消息
             messageBuffer += text;
             
-            // 清除现有定时器
             if (bufferTimer) clearTimeout(bufferTimer);
             
-            // 设置新定时器
             bufferTimer = setTimeout(() => {
                 if (messageBuffer.trim()) {
-                    logMessage(messageBuffer, 'ai', 'text'); // 明确指定为文本消息
+                    // 如果是工具响应，添加一个特殊类
+                    logMessage(messageBuffer, 'ai', 'text', isToolResponse ? 'search-result' : '');
                     messageBuffer = '';
                 }
-            }, 300); // 300ms缓冲时间
+            }, 300);
         }
     }
 });

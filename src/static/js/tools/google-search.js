@@ -11,10 +11,28 @@ export class GoogleSearchTool {
      *
      * @returns {Object} An empty object as the tool declaration.
      */
+    /**
+     * Returns the tool declaration for the Gemini API.
+     * This declaration informs the API about the tool's capabilities and expected parameters.
+     *
+     * @returns {Object} A tool declaration object with function details.
+     */
     getDeclaration() {
         return {
-            // Return empty object as per Gemini API requirements
-            // This tells the model it can use Google Search
+            functionDeclarations: {
+                name: "googleSearch",
+                description: "使用Google搜索获取最新、权威的信息。适用于需要事实核查、数据验证或探索多元观点的复杂问题",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        query: {
+                            type: "string",
+                            description: "精确的搜索关键词，包含时间范围限定符如'2023年以来'或来源限定符如'site:.edu'"
+                        }
+                    },
+                    required: ["query"]
+                }
+            }
         };
     }
 
@@ -38,4 +56,4 @@ export class GoogleSearchTool {
             throw error;
         }
     }
-} 
+}
