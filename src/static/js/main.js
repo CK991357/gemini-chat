@@ -1339,7 +1339,15 @@ document.addEventListener('DOMContentLoaded', () => {
              */
             messageHistory.addEventListener('touchstart', () => {
                 isUserScrolling = true;
-            }, { passive: true });
+            }, { passive: false }); // 修改 passive 为 false
+
+            /**
+             * 监听触摸移动事件，阻止默认的滚动行为。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            messageHistory.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+            }, { passive: false }); // 新增 touchmove 事件监听器
 
             /**
              * 监听触摸结束事件，如果用户在触摸结束时已经滚动到底部，或者接近底部，可以考虑自动滚动。
@@ -1351,7 +1359,37 @@ document.addEventListener('DOMContentLoaded', () => {
                     isUserScrolling = false;
                     scrollToBottom(); // 尝试滚动到底部
                 }
-            }, { passive: true });
+            }, { passive: false }); // 修改 passive 为 false
+        }
+
+        const controlPanel = document.querySelector('.control-panel');
+        if (controlPanel) {
+            /**
+             * 监听触摸开始事件，判断用户是否正在手动滚动。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            controlPanel.addEventListener('touchstart', () => {
+                isUserScrolling = true;
+            }, { passive: false }); // 移除 passive: true
+
+            /**
+             * 监听触摸移动事件，阻止默认的滚动行为。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            controlPanel.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+            }, { passive: false }); // 添加 touchmove
+
+            /**
+             * 监听触摸结束事件，如果用户在触摸结束时已经滚动到底部，或者接近底部，可以考虑自动滚动。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            controlPanel.addEventListener('touchend', () => {
+                // 触摸结束时，如果不是在底部，则不强制滚动
+                if (controlPanel.scrollHeight - controlPanel.clientHeight <= controlPanel.scrollTop + 10) { // 10px 容错
+                    isUserScrolling = false;
+                }
+            }, { passive: false }); // 移除 passive: true
         }
     }
 });
