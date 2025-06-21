@@ -455,9 +455,8 @@ function scrollToBottom() {
 
     // 使用 requestAnimationFrame 确保在浏览器下一次重绘前执行，提高平滑度
     requestAnimationFrame(() => {
-        // 只有当用户没有手动滚动，并且不是移动设备时才自动滚动到底部
-        // 在移动设备上，禁用自动滚动，让用户完全控制滑动
-        if (!isUserScrolling && !isMobileDevice()) {
+        // 检查用户是否正在手动滚动
+        if (typeof isUserScrolling !== 'boolean' || !isUserScrolling) {
             messageHistory.scrollTop = messageHistory.scrollHeight;
         }
     });
@@ -1310,9 +1309,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const messageHistory = document.getElementById('message-history');
-    // 新增一个变量来跟踪触摸开始时的滚动位置
-    let startScrollTop; 
-
     if (messageHistory) {
         /**
          * 监听鼠标滚轮事件，判断用户是否正在手动滚动。
@@ -1323,71 +1319,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { passive: true }); // 使用 passive: true 提高滚动性能
 
         /**
-         * 监听滚动事件，判断用户是否正在手动滚动。
+         * 监听滚动事件，如果滚动条已经到底部，则重置 isUserScrolling。
          * @param {Event} e - 滚动事件对象。
          */
         messageHistory.addEventListener('scroll', () => {
-            // 计算滚动条是否在底部附近
-            const atBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 20; // 20px 容错
-
-            // 如果用户手动向上滚动（即不在底部且滚动位置发生变化），则认为用户正在滚动
-            // 只有当用户明确向上滚动时才设置为 true，否则保持当前状态
-            // 避免自动滚动时误判为用户滚动
-            if (!atBottom && messageHistory.scrollTop < messageHistory.scrollHeight - messageHistory.clientHeight - 20) {
-                isUserScrolling = true;
-            } else if (atBottom) {
-                // 如果滚动条已经到底部，则重置 isUserScrolling，允许自动滚动恢复
+            // 如果滚动条已经到底部，则重置 isUserScrolling
+            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
                 isUserScrolling = false;
             }
-            // 如果用户在底部附近，但没有向上滚动，isUserScrolling 保持当前状态
         });
+    }
 
-        // 添加移动端触摸事件支持
-        if ('ontouchstart' in window) {
+    // 移动端触摸事件支持
+    if ('ontouchstart' in window) {
+        if (messageHistory) {
             /**
-             * 监听触摸开始事件。
+             * 监听触摸开始事件，判断用户是否正在手动滚动。
              * @param {TouchEvent} e - 触摸事件对象。
              */
-            messageHistory.addEventListener('touchstart', (e) => {
+            messageHistory.addEventListener('touchstart', () => {
                 isUserScrolling = true;
-                startScrollTop = messageHistory.scrollTop; // 记录触摸开始时的滚动位置
             }, { passive: true });
 
             /**
-             * 监听触摸移动事件。
-             * @param {TouchEvent} e - 触摸事件对象。
-             */
-            messageHistory.addEventListener('touchmove', (e) => {
-                // 移除 e.preventDefault()，允许原生滚动行为
-                isUserScrolling = true; // 触摸移动时，用户正在滚动
-            }, { passive: true }); // 保持 passive: true 以提高性能，因为我们不再阻止默认行为
-
-            /**
-             * 监听触摸结束事件。
+             * 监听触摸结束事件，如果用户在触摸结束时已经滚动到底部，或者接近底部，可以考虑自动滚动。
              * @param {TouchEvent} e - 触摸事件对象。
              */
             messageHistory.addEventListener('touchend', () => {
-                // 延迟检查，给滚动一个完成的时间
-                setTimeout(() => {
-                    // 如果滚动条已经到底部，或者用户没有明显滚动，则重置 isUserScrolling
-                    const atBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 20; // 增加容错范围
-                    const didNotScrollSignificantly = Math.abs(messageHistory.scrollTop - startScrollTop) < 20; // 增加阈值
-
-                    // 只有当滚动条在底部时才重置 isUserScrolling 并触发自动滚动
-                    if (atBottom) {
-                        isUserScrolling = false;
-                        scrollToBottom();
-                    } else if (didNotScrollSignificantly) {
-                        // 如果用户没有明显滚动，但也不在底部，则保持 isUserScrolling 为 true
-                        // 这样可以避免轻触后立即被自动滚动拉回
-                        isUserScrolling = true;
-                    }
-                    // 如果用户进行了明显滚动且不在底部，isUserScrolling 保持为 true
-                }, 150); // 150ms 延迟
+                // 触摸结束时，如果不是在底部，则不强制滚动
+                if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 10) { // 10px 容错
+                    isUserScrolling = false;
+                    scrollToBottom(); // 尝试滚动到底部
+                }
             }, { passive: true });
         }
     }
-    // ... 原有代码 ...
 });
 
 /**
