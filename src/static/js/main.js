@@ -455,8 +455,9 @@ function scrollToBottom() {
 
     // 使用 requestAnimationFrame 确保在浏览器下一次重绘前执行，提高平滑度
     requestAnimationFrame(() => {
-        // 只有当用户没有手动滚动时才自动滚动到底部
-        if (!isUserScrolling) {
+        // 只有当用户没有手动滚动，并且不是移动设备时才自动滚动到底部
+        // 在移动设备上，禁用自动滚动，让用户完全控制滑动
+        if (!isUserScrolling && !isMobileDevice()) {
             messageHistory.scrollTop = messageHistory.scrollHeight;
         }
     });
