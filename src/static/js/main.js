@@ -1368,17 +1368,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 延迟检查，给滚动一个完成的时间
                 setTimeout(() => {
                     // 如果滚动条已经到底部，或者用户没有明显滚动，则重置 isUserScrolling
-                    const atBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 10; // 10px 容错
-                    // 如果用户没有明显滚动（例如只是轻触），也重置状态
-                    const didNotScrollSignificantly = Math.abs(messageHistory.scrollTop - startScrollTop) < 5; // 5px 阈值
-                    
-                    if (atBottom || didNotScrollSignificantly) {
+                    const atBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 20; // 增加容错范围
+                    const didNotScrollSignificantly = Math.abs(messageHistory.scrollTop - startScrollTop) < 20; // 增加阈值
+
+                    // 只有当滚动条在底部时才重置 isUserScrolling 并触发自动滚动
+                    if (atBottom) {
                         isUserScrolling = false;
-                        // 如果在底部，确保自动滚动功能恢复
-                        if (atBottom) {
-                            scrollToBottom();
-                        }
+                        scrollToBottom();
+                    } else if (didNotScrollSignificantly) {
+                        // 如果用户没有明显滚动，但也不在底部，则保持 isUserScrolling 为 true
+                        // 这样可以避免轻触后立即被自动滚动拉回
+                        isUserScrolling = true;
                     }
+                    // 如果用户进行了明显滚动且不在底部，isUserScrolling 保持为 true
                 }, 150); // 150ms 延迟
             }, { passive: true });
         }
