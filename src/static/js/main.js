@@ -1322,22 +1322,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { passive: true }); // 使用 passive: true 提高滚动性能
 
         /**
-         * 监听滚动事件，如果滚动条已经到底部，则重置 isUserScrolling。
+         * 监听滚动事件，判断用户是否正在手动滚动。
          * @param {Event} e - 滚动事件对象。
          */
         messageHistory.addEventListener('scroll', () => {
-            // 如果滚动条已经到底部，则重置 isUserScrolling
-            // 增加一个小的容错范围，避免浮点数误差
-            const atBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1;
-            if (atBottom) {
-                isUserScrolling = false;
-            }
-            // 如果用户手动向上滚动，则将 isUserScrolling 设置为 true
+            // 计算滚动条是否在底部附近
+            const atBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 20; // 20px 容错
+
+            // 如果用户手动向上滚动（即不在底部且滚动位置发生变化），则认为用户正在滚动
             // 只有当用户明确向上滚动时才设置为 true，否则保持当前状态
             // 避免自动滚动时误判为用户滚动
-            if (messageHistory.scrollTop < messageHistory.scrollHeight - messageHistory.clientHeight - 20) { // 20px 阈值
+            if (!atBottom && messageHistory.scrollTop < messageHistory.scrollHeight - messageHistory.clientHeight - 20) {
                 isUserScrolling = true;
+            } else if (atBottom) {
+                // 如果滚动条已经到底部，则重置 isUserScrolling，允许自动滚动恢复
+                isUserScrolling = false;
             }
+            // 如果用户在底部附近，但没有向上滚动，isUserScrolling 保持当前状态
         });
 
         // 添加移动端触摸事件支持
