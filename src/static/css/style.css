@@ -363,6 +363,23 @@ body {
     display: flex;
     flex-direction: column; /* 确保消息从顶部到底部排列 */
     padding-bottom: 10px; /* 底部留白，防止消息紧贴底部 */
+    
+    /* 新增移动端优化 */
+    -webkit-overflow-scrolling: touch; /* iOS弹性滚动 */
+    overscroll-behavior: contain; /* 防止滚动传播到父元素 */
+    touch-action: pan-y; /* 只允许垂直滚动 */
+}
+
+/* 隐藏移动端滚动条 */
+@media (max-width: 768px) {
+    .text-mode .message-history {
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE and Edge */
+    }
+    
+    .text-mode .message-history::-webkit-scrollbar {
+        display: none; /* Chrome, Safari, Opera */
+    }
 }
 
 /* ... (保留原有 message, avatar, content 样式) ... */
