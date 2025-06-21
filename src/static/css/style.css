@@ -303,22 +303,26 @@ body {
 }
 
 /* 媒体预览容器优化 */
+/* 调整媒体预览位置 */
 .media-previews {
-  position: absolute;
-  bottom: calc(80px + env(safe-area-inset-bottom)); /* 在输入框上方，并考虑安全区域 */
-  right: 10px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
+    position: absolute; /* 相对于 .chat-container 定位 */
+    /* 提高位置，避免与输入框重叠，并考虑安全区域 */
+    bottom: calc(100px + env(safe-area-inset-bottom)); /* 100px 是输入区域大致高度 */
+    right: 20px;
+    z-index: 90; /* 低于输入区域 */
+    display: flex;
+    flex-direction: column; /* 垂直堆叠预览窗口 */
+    align-items: flex-end; /* 靠右对齐 */
+    gap: 10px;
 }
 
 /* 优化移动端输入区域和媒体预览位置 */
+/* 移动端输入区域和媒体预览的进一步优化 */
 @media (max-width: 768px) {
-    .input-area {
-        /* 确保输入区域在底部，并考虑安全区域 */
-        padding-bottom: calc(15px + env(safe-area-inset-bottom)); /* 15px 是原有 padding-top */
+    .text-mode .input-area {
+        flex-wrap: wrap; /* 允许元素换行 */
+        padding: 10px 12px; /* 调整内边距 */
+        padding-bottom: calc(10px + env(safe-area-inset-bottom));
     }
     
     .media-previews {
@@ -343,6 +347,7 @@ body {
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   position: relative;
+  display: block; /* 确保媒体预览默认显示 */
 }
 
 .media-preview video {
@@ -358,11 +363,12 @@ body {
 /* 文字聊天区 */
 .text-mode .message-history {
     flex-grow: 1; /* 允许其在 flex 容器中占据可用空间 */
-    overflow-y: auto; /* 确保垂直滚动 */
+    overflow-y: scroll; /* 确保垂直滚动，并始终显示滚动条 */
     min-height: 0; /* 关键：允许内部内容滚动 */
     display: flex;
     flex-direction: column; /* 确保消息从顶部到底部排列 */
-    padding-bottom: 10px; /* 底部留白，防止消息紧贴底部 */
+    /* 确保底部有足够的空间，避免被输入区域遮挡 */
+    padding-bottom: calc(10px + env(safe-area-inset-bottom) + 60px); /* 10px原有padding + 安全区域 + 输入区域大致高度 */
     
     /* 新增移动端优化 */
     -webkit-overflow-scrolling: touch; /* iOS弹性滚动 */
@@ -370,15 +376,21 @@ body {
     touch-action: pan-y; /* 只允许垂直滚动 */
 }
 
-/* 隐藏移动端滚动条 */
+/* 恢复移动端滚动条可见性（如果需要） */
 @media (max-width: 768px) {
     .text-mode .message-history {
-        scrollbar-width: none; /* Firefox */
-        -ms-overflow-style: none; /* IE and Edge */
+        scrollbar-width: thin; /* Firefox */
+        -ms-overflow-style: auto; /* IE and Edge */
     }
     
     .text-mode .message-history::-webkit-scrollbar {
-        display: none; /* Chrome, Safari, Opera */
+        display: block; /* Chrome, Safari, Opera */
+        width: 6px; /* 滚动条宽度 */
+    }
+    
+    .text-mode .message-history::-webkit-scrollbar-thumb {
+        background-color: var(--text-secondary-color); /* 滚动条颜色 */
+        border-radius: 3px; /* 圆角 */
     }
 }
 
@@ -552,6 +564,7 @@ body {
     color: white; /* 用户消息中的时长颜色 */
 }
 
+/* 调整输入区域位置和布局 */
 .text-mode .input-area {
     display: flex;
     gap: 10px;
@@ -560,9 +573,12 @@ body {
     background-color: var(--surface-color);
     padding: 15px 20px;
     box-sizing: border-box;
-    position: sticky;
-    bottom: 0;
-    z-index: 10;
+    position: sticky; /* 保持 sticky 定位 */
+    bottom: 0; /* 贴合底部 */
+    /* 适配安全区域，确保底部有足够的内边距 */
+    padding-bottom: calc(15px + env(safe-area-inset-bottom)); 
+    z-index: 100; /* 确保在最上层 */
+    box-shadow: 0 -2px 8px var(--shadow-color); /* 添加阴影，使其更突出 */
 }
 
 .text-mode #message-input {

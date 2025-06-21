@@ -1356,12 +1356,9 @@ document.addEventListener('DOMContentLoaded', () => {
              * @param {TouchEvent} e - 触摸事件对象。
              */
             messageHistory.addEventListener('touchmove', (e) => {
-                // 如果内容可滚动，阻止页面整体滚动
-                if (messageHistory.scrollHeight > messageHistory.clientHeight) {
-                    e.preventDefault();
-                }
+                // 移除 e.preventDefault()，允许原生滚动行为
                 isUserScrolling = true; // 触摸移动时，用户正在滚动
-            }, { passive: false }); // passive: false 允许 preventDefault
+            }, { passive: true }); // 保持 passive: true 以提高性能，因为我们不再阻止默认行为
 
             /**
              * 监听触摸结束事件。
