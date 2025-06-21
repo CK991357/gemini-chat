@@ -966,15 +966,32 @@ mobileConnectButton?.addEventListener('click', () => {
     }
 });
 
+// 平板连接按钮逻辑
+const tabletConnectButton = document.getElementById('tablet-connect');
+tabletConnectButton?.addEventListener('click', () => {
+    if (isConnected) {
+        disconnectFromWebsocket();
+    } else {
+        connectToWebsocket();
+    }
+});
+
 /**
- * Updates the connection status display for both desktop and mobile buttons.
+ * Updates the connection status display for all connection buttons.
  */
 function updateConnectionStatus() {
-    const mobileBtn = document.getElementById('mobile-connect');
-    if (mobileBtn) {
-        mobileBtn.textContent = isConnected ? '断开连接' : '连接';
-        mobileBtn.classList.toggle('connected', isConnected);
-    }
+    const connectButtons = [
+        document.getElementById('connect-button'),
+        document.getElementById('mobile-connect'),
+        document.getElementById('tablet-connect') // 新增平板连接按钮
+    ];
+
+    connectButtons.forEach(btn => {
+        if (btn) {
+            btn.textContent = isConnected ? '断开连接' : '连接';
+            btn.classList.toggle('connected', isConnected);
+        }
+    });
 }
 
 updateConnectionStatus(); // 初始更新连接状态
@@ -1292,19 +1309,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {
-        if(e.scale !== 1) e.preventDefault();
-    }, { passive: false });
+        // 仅在非 message-history 区域阻止缩放行为
+        if (!e.target.closest('#message-history') && e.scale !== 1) {
+            e.preventDefault();
+        }
+    }, { passive: true }); // 将 passive 设置为 true，提高滚动性能
 
     // 添加浏览器兼容性检测
     if (!checkBrowserCompatibility()) {
-        // 如果浏览器不兼容，可以禁用某些功能或显示一个全屏警告
-        // 例如：
-        // connectButton.disabled = true;
-        // micButton.disabled = true;
-        // cameraButton.disabled = true;
-        // screenButton.disabled = true;
-        // messageInput.disabled = true;
-        // sendButton.disabled = true;
         return; // 阻止后续初始化
     }
 
@@ -1342,13 +1354,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }, { passive: true });
 
             /**
-             * 监听触摸结束事件，如果用户在触摸结束时已经滚动到底部，或者接近底部，可以考虑自动滚动。
+             * 监听触摸结束事件，无论是否接近底部，都重置 isUserScrolling。
              * @param {TouchEvent} e - 触摸事件对象。
              */
             messageHistory.addEventListener('touchend', () => {
-                // 触摸结束时，如果不是在底部，则不强制滚动
-                if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 10) { // 10px 容错
-                    isUserScrolling = false;
+                isUserScrolling = false; // 无论是否接近底部，都重置为 false
+                // 如果用户在触摸结束时接近底部，可以尝试自动滚动
+                const threshold = 50; // 离底部50px视为"接近底部"
+                const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <=
+                                    messageHistory.scrollTop + threshold;
+                if (isNearBottom) {
                     scrollToBottom(); // 尝试滚动到底部
                 }
             }, { passive: true });

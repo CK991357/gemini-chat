@@ -739,18 +739,22 @@ body {
 }
 
 /* 响应式设计 */
+/* 默认隐藏平板连接按钮 */
+#tablet-connect {
+    display: none;
+}
+
 @media (max-width: 1200px) {
     /* 显示移动端连接按钮 */
     #mobile-connect {
-        display: block; /* 移除 !important，通过媒体查询控制 */
-        /* 继承 .action-button 样式 */
+        display: block;
         background-color: var(--primary-color);
         color: white;
         border: none;
-        padding: 8px 15px; /* 调整内边距 */
+        padding: 8px 15px;
         border-radius: 6px;
         cursor: pointer;
-        font-size: 14px; /* 调整字体大小 */
+        font-size: 14px;
         font-weight: 600;
         transition: background-color 0.3s ease, transform 0.2s ease;
     }
@@ -763,28 +767,27 @@ body {
         grid-template-columns: 1fr; /* 单列布局 */
     }
     .control-panel {
-        /* 在大屏幕下保持左侧分栏，在小屏幕下隐藏 */
         display: none; /* 默认隐藏 */
-        position: fixed; /* 变为固定定位 */
+        position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        z-index: 1000; /* 确保在最上层 */
-        background-color: rgba(0, 0, 0, 0.5); /* 半透明背景遮罩 */
-        padding: 0; /* 移除内边距，由内部容器控制 */
-        border-radius: 0; /* 移除圆角 */
-        box-shadow: none; /* 移除阴影 */
-        flex-direction: row; /* 内部内容横向排列 */
-        justify-content: flex-end; /* 内容靠右 */
+        z-index: 1000;
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 0;
+        border-radius: 0;
+        box-shadow: none;
+        flex-direction: row;
+        justify-content: flex-end;
         transition: background-color 0.3s ease;
     }
     .control-panel.active {
-        display: flex; /* 激活时显示 */
-        justify-content: flex-end; /* 调整设置面板位置 */
+        display: flex;
+        justify-content: flex-end;
     }
-    .control-panel .settings-wrapper { /* 新增一个内部 wrapper 来承载内容 */
-        width: 85%; /* 侧滑菜单宽度 */
+    .control-panel .settings-wrapper {
+        width: 85%;
         max-width: 400px;
         height: 100%;
         background-color: var(--surface-color);
@@ -794,17 +797,16 @@ body {
         flex-direction: column;
         gap: 15px;
         overflow-y: auto;
-        transform: translateX(100%); /* 初始隐藏在右侧 */
+        transform: translateX(100%);
         transition: transform 0.3s ease-out;
     }
     .control-panel.active .settings-wrapper {
-        transform: translateX(0); /* 激活时滑入 */
+        transform: translateX(0);
     }
 
     .content-area {
-        order: 1; /* 内容区移到上方 */
+        order: 1;
     }
-    /* 移除log-container在小屏幕下的固定定位，因为现在它是模式选项卡的一部分 */
     .log-mode {
         position: relative;
         bottom: auto;
@@ -812,7 +814,7 @@ body {
         right: auto;
         width: auto;
         height: 100%;
-        padding-bottom: 0; /* 移除刘海屏适配，因为现在是内容区的一部分 */
+        padding-bottom: 0;
     }
     /* 隐藏桌面端连接按钮 */
     .connection-controls {
@@ -820,16 +822,54 @@ body {
     }
 }
 
+/* iPad 尺寸范围内的样式 */
+@media (min-width: 769px) and (max-width: 1200px) {
+    #tablet-connect {
+        display: block; /* 在 iPad 尺寸范围内显示 */
+        width: 100%;
+        margin-top: 15px;
+    }
+    #mobile-connect {
+        display: none !important; /* 在 iPad 尺寸范围内隐藏顶部移动端按钮 */
+    }
+    .connection-controls {
+        display: none !important; /* 在 iPad 尺寸范围内隐藏桌面端连接按钮 */
+    }
+}
+
 @media (max-width: 768px) {
     .app-nav {
+        flex-direction: column;
+        align-items: stretch;
         padding: 10px;
     }
     .app-title {
         font-size: 20px;
     }
-    .nav-tools button {
+    .nav-tools {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        margin-top: 10px;
+    }
+    .media-controls {
+        grid-column: span 4;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        margin-top: 5px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border-color);
+    }
+    #mobile-connect {
+        grid-column: span 4;
+        margin-top: 10px;
+    }
+    .nav-tools > button,
+    .media-controls > button {
+        width: 100%;
+        height: 40px;
         font-size: 20px;
-        margin-left: 10px;
     }
     .main-container {
         padding: 15px;
@@ -866,23 +906,29 @@ body {
         height: 40px;
         font-size: 20px;
     }
+    .text-mode #interrupt-button {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+    }
     .audio-mode .media-display-area {
-        grid-template-columns: 1fr; /* 视频和屏幕共享堆叠 */
+        grid-template-columns: 1fr;
     }
     .audio-mode .media-preview-box {
         min-height: 150px;
     }
-.audio-mode .audio-controls .action-button {
-    width: 48px;
-    height: 48px;
-    font-size: 24px;
+    .audio-mode .audio-controls .action-button {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+    }
 }
-}
+
 .text-mode .input-area {
     padding-left: 15px;
     padding-right: 15px;
 }
-/* style.css */
+
 .video-controls {
     position: absolute;
     top: 5px;
@@ -893,11 +939,11 @@ body {
     justify-content: space-between;
     align-items: flex-start;
     z-index: 10;
-    pointer-events: none; /* 允许点击下方视频 */
+    pointer-events: none;
 }
 
 .video-controls button {
-    pointer-events: auto; /* 恢复按钮点击 */
+    pointer-events: auto;
     background: rgba(0, 0, 0, 0.5);
     color: white;
     border: none;
@@ -912,21 +958,18 @@ body {
     transition: background-color 0.3s ease;
 }
 
-/* 关闭按钮放在右上角 */
 #stop-video {
     position: absolute;
     top: 5px;
     right: 5px;
 }
 
-/* 翻转按钮放在右下角 */
 #flip-camera {
     position: absolute;
     bottom: 5px;
     right: 5px;
 }
 
-/* 针对 iOS 的优化 */
 @supports (-webkit-overflow-scrolling: touch) {
     .message-history {
         -webkit-overflow-scrolling: touch;
@@ -934,13 +977,13 @@ body {
     
     input, button, textarea {
         -webkit-appearance: none;
-        appearance: none; /* 添加标准属性 */
+        appearance: none;
         border-radius: 0;
     }
 }
 
 /* 在桌面端隐藏移动端连接按钮 */
-@media (min-width: 769px) { /* 使用 769px 以避免与 max-width: 768px 冲突 */
+@media (min-width: 769px) {
     #mobile-connect {
         display: none;
     }
