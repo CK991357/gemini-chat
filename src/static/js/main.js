@@ -966,15 +966,6 @@ mobileConnectButton?.addEventListener('click', () => {
     }
 });
 
-// 平板连接按钮逻辑
-const tabletConnectButton = document.getElementById('tablet-connect');
-tabletConnectButton?.addEventListener('click', () => {
-    if (isConnected) {
-        disconnectFromWebsocket();
-    } else {
-        connectToWebsocket();
-    }
-});
 
 /**
  * Updates the connection status display for all connection buttons.
@@ -982,8 +973,7 @@ tabletConnectButton?.addEventListener('click', () => {
 function updateConnectionStatus() {
     const connectButtons = [
         document.getElementById('connect-button'),
-        document.getElementById('mobile-connect'),
-        document.getElementById('tablet-connect') // 新增平板连接按钮
+        document.getElementById('mobile-connect')
     ];
 
     connectButtons.forEach(btn => {

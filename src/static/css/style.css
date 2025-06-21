@@ -200,9 +200,11 @@ body {
     background-color: var(--secondary-color);
 }
 
-.connection-controls {
-    margin-top: auto; /* 将连接按钮推到底部 */
-    text-align: center;
+.button-group {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 15px;
 }
 
 /* 右侧主内容区 */
@@ -739,30 +741,15 @@ body {
 }
 
 /* 响应式设计 */
-/* 默认隐藏平板连接按钮 */
-#tablet-connect {
-    display: none;
+@media (min-width: 1201px) {
+    /* 桌面端显示连接按钮 */
+    #connect-button {
+        display: block;
+    }
 }
 
 @media (max-width: 1200px) {
-    /* 显示移动端连接按钮 */
-    #mobile-connect {
-        display: block;
-        background-color: var(--primary-color);
-        color: white;
-        border: none;
-        padding: 8px 15px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
-        transition: background-color 0.3s ease, transform 0.2s ease;
-    }
-    #mobile-connect:hover {
-        background-color: var(--secondary-color);
-        transform: translateY(-2px);
-    }
-
+    /* 移动端和iPad端布局调整 */
     .main-container {
         grid-template-columns: 1fr; /* 单列布局 */
     }
@@ -816,24 +803,22 @@ body {
         height: 100%;
         padding-bottom: 0;
     }
-    /* 隐藏桌面端连接按钮 */
-    .connection-controls {
-        display: none;
+    /* 确保在移动端和iPad端，设置面板内的连接按钮可见 */
+    .button-group #connect-button {
+        display: block;
     }
 }
 
-/* iPad 尺寸范围内的样式 */
+/* 针对iPad尺寸范围的特定调整 */
 @media (min-width: 769px) and (max-width: 1200px) {
-    #tablet-connect {
-        display: block; /* 在 iPad 尺寸范围内显示 */
-        width: 100%;
-        margin-top: 15px;
+    /* 确保在iPad尺寸下，设置面板内的连接按钮可见 */
+    .button-group #connect-button {
+        display: block;
+        width: auto; /* 恢复自动宽度 */
+        margin-top: 0; /* 移除顶部外边距 */
     }
     #mobile-connect {
         display: none !important; /* 在 iPad 尺寸范围内隐藏顶部移动端按钮 */
-    }
-    .connection-controls {
-        display: none !important; /* 在 iPad 尺寸范围内隐藏桌面端连接按钮 */
     }
 }
 
