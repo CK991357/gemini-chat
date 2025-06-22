@@ -18,9 +18,10 @@ export class MultimodalLiveClient extends EventEmitter {
      * @param {Object} options - Configuration options.
      * @param {string} [options.url] - The WebSocket URL for the Gemini API. Defaults to a URL constructed with the provided API key.
      */
-    constructor(options = {}) {
+    constructor() {
         super();
-        this.baseUrl = options.url || null; // 允许通过 options 传入 URL
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        this.baseUrl  = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
         this.ws = null;
         this.config = null;
         this.send = this.send.bind(this);
@@ -52,11 +53,10 @@ export class MultimodalLiveClient extends EventEmitter {
      * @param {Object[]} config.systemInstruction.parts - Parts of the system instruction.
      * @param {string} config.systemInstruction.parts[].text - Text content of the instruction part.
      * @param {Object[]} [config.tools] - Additional tools to be used by the model.
-     * @param {string} [customBaseUrl] - 自定义 WebSocket 连接 URL。
-     * @returns {Promise<boolean>} - Resolves with true when the connection是 established.
+     * @returns {Promise<boolean>} - Resolves with true when the connection is established.
      * @throws {ApplicationError} - Throws an error if the connection fails.
      */
-    connect(config, apiKey, customBaseUrl = null) {
+    connect(config,apiKey) {
         this.config = {
             ...config,
             tools: [
@@ -64,15 +64,7 @@ export class MultimodalLiveClient extends EventEmitter {
                 ...(config.tools || [])
             ]
         };
-        // 如果提供了 customBaseUrl，则使用它，否则使用构造函数中设置的 baseUrl
-        const targetUrl = customBaseUrl || this.baseUrl;
-        if (!targetUrl) {
-            throw new ApplicationError(
-                'WebSocket URL is not provided.',
-                ErrorCodes.WEBSOCKET_CONNECTION_FAILED
-            );
-        }
-        const ws = new WebSocket(`${targetUrl}?key=${apiKey}`);
+        const ws = new WebSocket(`${this.baseUrl}?key=${apiKey}`);
 
         ws.addEventListener('message', async (evt) => {
             if (evt.data instanceof Blob) {
@@ -302,4 +294,4 @@ export class MultimodalLiveClient extends EventEmitter {
             });
         }
     }
-}
+} 

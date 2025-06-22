@@ -69,44 +69,18 @@ const handleOPTIONS = async () => {
 };
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
+const API_VERSION = "v1beta";
 
 // https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
 const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
-
-/**
- * @function makeHeaders
- * @description 创建请求头，包含 API 客户端信息和 API 密钥。
- * @param {string} apiKey - API 密钥。
- * @param {Object} more - 额外的请求头。
- * @returns {Object} 包含所有请求头的对象。
- */
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
 });
 
-/**
- * @function getApiVersionForModel
- * @description 根据模型名称获取对应的 API 版本。
- * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
- * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
- */
-function getApiVersionForModel(modelName) {
-  if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
-    return 'v1beta';
-  }
-  return 'v1alpha'; // 默认使用 v1alpha
-}
-
-/**
- * @function handleModels
- * @description 处理模型列表请求。
- * @param {string} apiKey - API 密钥。
- * @returns {Promise<Response>} 包含模型列表的响应。
- */
-async function handleModels(apiKey) {
-  const response = await fetch(`${BASE_URL}/v1beta/models`, { // 模型列表始终使用 v1beta
+async function handleModels (apiKey) {
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
     headers: makeHeaders(apiKey),
   });
   let { body } = response;
@@ -126,20 +100,12 @@ async function handleModels(apiKey) {
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
-
-/**
- * @function handleEmbeddings
- * @description 处理嵌入请求。
- * @param {Object} req - 请求体。
- * @param {string} apiKey - API 密钥。
- * @returns {Promise<Response>} 包含嵌入结果的响应。
- */
-async function handleEmbeddings(req, apiKey) {
+async function handleEmbeddings (req, apiKey) {
   if (typeof req.model !== "string") {
     throw new HttpError("model is not specified", 400);
   }
   if (!Array.isArray(req.input)) {
-    req.input = [req.input];
+    req.input = [ req.input ];
   }
   let model;
   if (req.model.startsWith("models/")) {
@@ -148,8 +114,7 @@ async function handleEmbeddings(req, apiKey) {
     req.model = DEFAULT_EMBEDDINGS_MODEL;
     model = "models/" + req.model;
   }
-  const API_VERSION_EMBEDDINGS = getApiVersionForModel(model); // 根据模型获取 API 版本
-  const response = await fetch(`${BASE_URL}/${API_VERSION_EMBEDDINGS}/${model}:batchEmbedContents`, {
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
@@ -177,17 +142,9 @@ async function handleEmbeddings(req, apiKey) {
 }
 
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
-
-/**
- * @function handleCompletions
- * @description 处理聊天补全请求。
- * @param {Object} req - 请求体。
- * @param {string} apiKey - API 密钥。
- * @returns {Promise<Response>} 包含聊天补全结果的响应。
- */
-async function handleCompletions(req, apiKey) {
+async function handleCompletions (req, apiKey) {
   let model = DEFAULT_MODEL;
-  switch (true) {
+  switch(true) {
     case typeof req.model !== "string":
       break;
     case req.model.startsWith("models/"):
@@ -197,9 +154,8 @@ async function handleCompletions(req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
-  const API_VERSION_COMPLETIONS = getApiVersionForModel(`models/${model}`); // 根据模型获取 API 版本
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
-  let url = `${BASE_URL}/${API_VERSION_COMPLETIONS}/models/${model}:${TASK}`;
+  let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
   const response = await fetch(url, {
     method: "POST",
@@ -231,311 +187,6 @@ async function handleCompletions(req, apiKey) {
     }
   }
   return new Response(body, fixCors(response));
-}
-
-/**
- * @class MultimodalLiveClientWorker
- * @description 处理客户端 WebSocket 连接和与 Gemini API 的交互。
- * @extends EventEmitter
- */
-class MultimodalLiveClientWorker extends EventEmitter {
-  /**
-   * @constructor
-   * @param {WebSocket} clientWs - 客户端 WebSocket 实例。
-   * @param {string} apiKey - 用于 Gemini API 的 API 密钥。
-   */
-  constructor(clientWs, apiKey) {
-    super();
-    this.clientWs = clientWs;
-    this.apiKey = apiKey;
-    this.config = null;
-    this.toolManager = new WorkerToolManager();
-    this.conversationHistory = [];
-    this.isStreaming = false;
-
-    this.clientWs.addEventListener("message", this.handleClientMessage.bind(this));
-    this.clientWs.addEventListener("close", this.handleClientClose.bind(this));
-    this.clientWs.addEventListener("error", this.handleClientError.bind(this));
-  }
-
-  /**
-   * @function handleClientMessage
-   * @description 处理来自客户端的 WebSocket 消息。
-   * @param {MessageEvent} event - WebSocket 消息事件。
-   */
-  async handleClientMessage(event) {
-    try {
-      const message = JSON.parse(event.data);
-      if (message.setup) {
-        this.config = message.setup;
-        if (this.config.tools) {
-          this.config.tools.forEach(toolDeclaration => {
-            if (toolDeclaration.functionDeclarations) {
-              toolDeclaration.functionDeclarations.forEach(funcDecl => {
-                if (funcDecl.name === 'get_weather_on_date') {
-                  console.log("Weather tool declared by client.");
-                }
-              });
-            }
-          });
-        }
-        this.conversationHistory = [];
-        this.sendSetupComplete();
-      } else if (message.realtimeInput) {
-        const mediaChunks = message.realtimeInput.mediaChunks;
-        if (mediaChunks?.length > 0) {
-          const parts = mediaChunks.map(chunk => ({
-            inlineData: {
-              mimeType: chunk.mimeType,
-              data: chunk.data
-            }
-          }));
-          this.sendContentToGemini(parts, false);
-        }
-      } else if (message.clientContent) {
-        const turns = message.clientContent.turns;
-        if (turns?.length > 0) {
-          const parts = turns[0].parts;
-          this.sendContentToGemini(parts, message.clientContent.turnComplete);
-        }
-      } else if (message.toolResponse) {
-        this.sendToolResponseToGemini(message.toolResponse);
-      }
-    } catch (error) {
-      this.clientWs.send(JSON.stringify({ error: error.message }));
-    }
-  }
-
-  /**
-   * @function sendSetupComplete
-   * @description 向客户端发送设置完成消息。
-   */
-  sendSetupComplete() {
-    this.clientWs.send(JSON.stringify({ setupComplete: {} }));
-  }
-
-  /**
-   * @function sendContentToGemini
-   * @description 将内容发送到 Gemini API 进行生成。
-   * @param {Array<Object>} parts - 要发送到 Gemini API 的内容部分。
-   * @param {boolean} turnComplete - 指示当前回合是否完成。
-   */
-  async sendContentToGemini(parts, turnComplete) {
-    const content = { role: 'user', parts: parts };
-    this.conversationHistory.push(content);
-
-    const API_VERSION_GEMINI = getApiVersionForModel(`models/${this.config.model}`); // 根据模型获取 API 版本
-
-    const requestBody = {
-      contents: this.conversationHistory,
-      generationConfig: {
-        ...this.config.generationConfig,
-        // 根据配置可选地添加语音输出配置
-        ...(this.config.enableTTS && {
-          responseModalities: ["AUDIO"],
-          speechConfig: this.config.speechConfig || {
-            voiceConfig: {
-              name: this.config.voice || "en-US-Neural2-H" // 默认语音，或者从 config 中获取
-            }
-          }
-        })
-      },
-      safetySettings: this.config.safetySettings || safetySettings,
-      systemInstruction: this.config.systemInstruction,
-      tools: this.config.tools
-    };
-
-    const url = `${BASE_URL}/${API_VERSION_GEMINI}/models/${this.config.model}:streamGenerateContent`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          this.sendTurnComplete();
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        let boundary = buffer.indexOf('\n');
-        while (boundary !== -1) {
-          const line = buffer.substring(0, boundary).trim();
-          buffer = buffer.substring(boundary + 1);
-
-          if (line.startsWith('data:')) {
-            const jsonStr = line.substring(5).trim();
-            if (jsonStr) {
-              try {
-                const geminiResponse = JSON.parse(jsonStr);
-                this.processGeminiResponse(geminiResponse);
-              } catch (parseError) {
-                console.error("Error parsing Gemini API stream chunk:", parseError);
-              }
-            }
-          }
-          boundary = buffer.indexOf('\n');
-        }
-      }
-    } catch (error) {
-      this.clientWs.send(JSON.stringify({ error: error.message }));
-    }
-  }
-
-  /**
-   * @function sendToolResponseToGemini
-   * @description 将工具响应发送到 Gemini API。
-   * @param {Object} toolResponse - 工具响应对象。
-   */
-  async sendToolResponseToGemini(toolResponse) {
-    const content = {
-      role: 'user',
-      parts: [{
-        functionResponse: {
-          name: toolResponse.name,
-          response: toolResponse.response
-        }
-      }]
-    };
-    this.conversationHistory.push(content);
-
-    const API_VERSION_GEMINI = getApiVersionForModel(`models/${this.config.model}`); // 根据模型获取 API 版本
-
-    const requestBody = {
-      contents: this.conversationHistory,
-      generationConfig: {
-        ...this.config.generationConfig,
-        // 根据配置可选地添加语音输出配置
-        ...(this.config.enableTTS && {
-          responseModalities: ["AUDIO"],
-          speechConfig: this.config.speechConfig || {
-            voiceConfig: {
-              name: this.config.voice || "en-US-Neural2-H" // 默认语音，或者从 config 中获取
-            }
-          }
-        })
-      },
-      safetySettings: this.config.safetySettings || safetySettings,
-      systemInstruction: this.config.systemInstruction,
-      tools: this.config.tools
-    };
-
-    const url = `${BASE_URL}/${API_VERSION_GEMINI}/models/${this.config.model}:streamGenerateContent`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          this.sendTurnComplete();
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        let boundary = buffer.indexOf('\n');
-        while (boundary !== -1) {
-          const line = buffer.substring(0, boundary).trim();
-          buffer = buffer.substring(boundary + 1);
-
-          if (line.startsWith('data:')) {
-            const jsonStr = line.substring(5).trim();
-            if (jsonStr) {
-              try {
-                const geminiResponse = JSON.parse(jsonStr);
-                this.processGeminiResponse(geminiResponse);
-              } catch (parseError) {
-                console.error("Error parsing Gemini API stream chunk:", parseError);
-              }
-            }
-          }
-          boundary = buffer.indexOf('\n');
-        }
-      }
-    } catch (error) {
-      this.clientWs.send(JSON.stringify({ error: error.message }));
-    }
-  }
-
-  /**
-   * @function processGeminiResponse
-   * @description 处理来自 Gemini API 的响应。
-   * @param {Object} geminiResponse - Gemini API 响应对象。
-   */
-  processGeminiResponse(geminiResponse) {
-    if (geminiResponse.candidates && geminiResponse.candidates.length > 0) {
-      const candidate = geminiResponse.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        const textParts = candidate.content.parts.filter(part => part.text);
-        if (textParts.length > 0) {
-          const text = textParts.map(part => part.text).join('');
-          this.clientWs.send(JSON.stringify({ textOutput: { text: text } }));
-        }
-        const audioParts = candidate.content.parts.filter(part => part.inlineData && part.inlineData.mimeType.startsWith('audio/'));
-        if (audioParts.length > 0) {
-          const audioData = audioParts[0].inlineData.data;
-          this.clientWs.send(JSON.stringify({ audioOutput: { audioData: audioData } }));
-        }
-        const functionCallParts = candidate.content.parts.filter(part => part.functionCall);
-        if (functionCallParts.length > 0) {
-          const functionCall = functionCallParts[0].functionCall;
-          this.clientWs.send(JSON.stringify({ toolCall: { name: functionCall.name, args: functionCall.args } }));
-        }
-      }
-      if (candidate.finishReason) {
-        this.sendTurnComplete();
-      }
-    }
-  }
-
-  /**
-   * @function sendTurnComplete
-   * @description 向客户端发送回合完成消息。
-   */
-  sendTurnComplete() {
-    this.clientWs.send(JSON.stringify({ turnComplete: {} }));
-  }
-
-  /**
-   * @function handleClientClose
-   * @description 处理客户端 WebSocket 关闭事件。
-   */
-  handleClientClose() {
-    console.log("Client WebSocket closed.");
-  }
-
-  /**
-   * @function handleClientError
-   * @description 处理客户端 WebSocket 错误事件。
-   * @param {Event} event - WebSocket 错误事件。
-   */
-  handleClientError(event) {
-    console.error("Client WebSocket error:", event);
-  }
 }
 
 const harmCategory = [

@@ -1,12 +1,7 @@
 export const CONFIG = {
     API: {
         VERSION: 'v1alpha',
-        MODEL_NAME: 'models/gemini-2.0-flash-exp', // 默认模型
-        AVAILABLE_MODELS: [ // 可用模型列表
-            { value: 'models/gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp', proxy: true },
-            { value: 'models/gemini-2.5-flash-preview-05-20', label: 'gemini-2.5-flash-preview-05-20', proxy: true },
-            { value: 'models/gemini-2.5-flash-lite-preview-06-17', label: 'gemini-2.5-flash-lite-preview-06-17', proxy: true }
-        ]
+        MODEL_NAME: 'models/gemini-2.0-flash-exp'
     },
     // You can change the system instruction to your liking
     SYSTEM_INSTRUCTION: {
