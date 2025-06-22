@@ -4,7 +4,7 @@ export const CONFIG = {
         MODEL_NAME: 'models/gemini-2.0-flash-exp', // 默认模型
         AVAILABLE_MODELS: [ // 可用模型列表
             { value: 'models/gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' },
-            { value: 'models/gemini-2.5-flash-preview-05-20', label: 'gemini-2.5-flash-preview-05-20' }
+            { value: 'models/gemini-2.5-flash-lite-preview-06-17', label: 'gemini-2.5-flash-lite-preview-06-17' }
         ]
     },
     // You can change the system instruction to your liking
