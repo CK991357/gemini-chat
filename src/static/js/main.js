@@ -210,6 +210,7 @@ let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 
 // Multimodal Client
+// 客户端现在统一连接到 Worker 代理
 const client = new MultimodalLiveClient();
 
 /**
@@ -693,7 +694,10 @@ async function connectToWebsocket() {
         };  
 
     try {
-        await client.connect(config,apiKeyInput.value);
+        // 统一连接到 Worker 代理
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
+        await client.connect(config, apiKeyInput.value, workerProxyUrl);
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';
