@@ -52,6 +52,18 @@ const videoPreviewContainer = document.getElementById('video-container'); // 对
 const videoPreviewElement = document.getElementById('preview'); // 对应 video-manager.js 中的 preview
 const stopScreenButton = document.getElementById('stop-screen-button');
 
+// 新增附件和图片预览相关 DOM 元素
+const attachmentButton = document.getElementById('attachment-button');
+const attachmentMenu = document.getElementById('attachment-menu');
+const imageUploadInput = document.getElementById('image-upload-input');
+const fileUploadInput = document.getElementById('file-upload-input');
+const uploadedImagePreviewContainer = document.getElementById('uploaded-image-preview-container');
+const uploadedImagePreview = document.getElementById('uploaded-image-preview');
+const closeImagePreviewButton = document.getElementById('close-image-preview');
+
+// 新增状态变量
+let selectedImageFile = null; // 用于存储当前选中的图片文件的 Base64 Data URL
+
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
@@ -737,14 +749,92 @@ function disconnectFromWebsocket() {
 }
 
 /**
- * Handles sending a text message.
+ * @function handleImageUpload
+ * @description 处理图片文件上传。
+ * @param {Event} event - 文件输入框的 change 事件对象。
+ * @returns {Promise<void>}
+ */
+async function handleImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const validImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']; // 增加gif支持
+    if (!validImageTypes.includes(file.type)) {
+        logMessage('请上传图片文件（JPG, PNG, WEBP, GIF）', 'system');
+        // 清空文件输入，防止重复选择相同文件不触发 change 事件
+        imageUploadInput.value = '';
+        return;
+    }
+
+    try {
+        selectedImageFile = await fileToBase64(file);
+        uploadedImagePreview.src = selectedImageFile;
+        uploadedImagePreviewContainer.style.display = 'flex'; // 显示预览容器
+        logMessage(`图片已选择: ${file.name} (${formatFileSize(file.size)})`, 'system');
+    } catch (error) {
+        logMessage(`图片加载失败: ${error.message}`, 'system');
+        console.error('图片加载失败:', error);
+        selectedImageFile = null;
+        uploadedImagePreviewContainer.style.display = 'none';
+    } finally {
+        // 无论成功失败，都清空文件输入，以便下次选择相同文件也能触发 change 事件
+        imageUploadInput.value = '';
+        attachmentMenu.classList.remove('active'); // 隐藏菜单
+    }
+}
+
+/**
+ * @function handleFileUpload
+ * @description 处理通用文件上传（目前仅作提示，不实际处理）。
+ * @param {Event} event - 文件输入框的 change 事件对象。
+ * @returns {void}
+ */
+function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    logMessage(`文件已选择: ${file.name} (${formatFileSize(file.size)})。当前仅支持图片上传。`, 'system');
+    // 清空文件输入，防止重复选择相同文件不触发 change 事件
+    fileUploadInput.value = '';
+    attachmentMenu.classList.remove('active'); // 隐藏菜单
+}
+
+/**
+ * Handles sending a message, including text and optionally an image.
+ * @returns {void}
  */
 function handleSendMessage() {
     const message = messageInput.value.trim();
+    const parts = [];
+
     if (message) {
+        parts.push({ text: message });
         logMessage(message, 'user');
-        client.send({ text: message });
-        messageInput.value = '';
+    }
+
+    if (selectedImageFile) {
+        // 从 Data URL 中提取 mimeType 和 Base64 数据
+        const [header, base64Data] = selectedImageFile.split(',');
+        const mimeTypeMatch = header.match(/data:(.*?);base64/);
+        const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'application/octet-stream';
+
+        parts.push({
+            mimeType: mimeType,
+            data: base64Data
+        });
+        logMessage('图片已发送', 'system');
+        
+        // 发送后清除图片预览和数据
+        selectedImageFile = null;
+        uploadedImagePreview.src = '';
+        uploadedImagePreviewContainer.style.display = 'none';
+    }
+
+    if (parts.length > 0) {
+        client.sendRealtimeInput(parts);
+        messageInput.value = ''; // 清空文本输入框
+    } else {
+        logMessage('请输入消息或选择图片', 'system');
     }
 }
 
@@ -932,6 +1022,33 @@ messageInput.addEventListener('keydown', (event) => {
             // 对于 textarea，单独的 Enter 键默认就是换行，所以这里不需要额外处理
         }
     }
+});
+
+// 附件按钮事件监听
+attachmentButton.addEventListener('click', (event) => {
+    event.stopPropagation(); // 阻止事件冒泡，防止点击按钮时立即关闭菜单
+    attachmentMenu.classList.toggle('active');
+});
+
+// 点击文档其他地方关闭附件菜单
+document.addEventListener('click', (event) => {
+    if (attachmentMenu.classList.contains('active') && !attachmentMenu.contains(event.target) && event.target !== attachmentButton) {
+        attachmentMenu.classList.remove('active');
+    }
+});
+
+// 图片上传输入框事件监听
+imageUploadInput.addEventListener('change', handleImageUpload);
+
+// 文件上传输入框事件监听
+fileUploadInput.addEventListener('change', handleFileUpload);
+
+// 关闭图片预览按钮事件监听
+closeImagePreviewButton.addEventListener('click', () => {
+    selectedImageFile = null;
+    uploadedImagePreview.src = '';
+    uploadedImagePreviewContainer.style.display = 'none';
+    logMessage('图片预览已关闭', 'system');
 });
 
 micButton.addEventListener('click', () => {

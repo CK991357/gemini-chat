@@ -98,6 +98,11 @@
                     </div>
                   </div>
                   
+                  <div id="uploaded-image-preview-container" class="uploaded-image-preview-container">
+                      <img id="uploaded-image-preview" class="uploaded-image-preview" src="" alt="Uploaded Image">
+                      <button id="close-image-preview" class="close-button material-symbols-outlined">close</button>
+                  </div>
+                  
                   <div class="message-history" id="message-history">
                     <!-- 聊天消息动态插入 -->
                   </div>
@@ -106,6 +111,19 @@
 
                     <div class="input-area">
                         <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
+                        <div class="attachment-container">
+                            <button id="attachment-button" class="attachment-button material-symbols-outlined">add</button>
+                            <div id="attachment-menu" class="attachment-menu">
+                                <label for="image-upload-input" class="attachment-option" id="upload-image-option">
+                                    <span class="material-symbols-outlined">image</span> 图片
+                                    <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
+                                </label>
+                                <label for="file-upload-input" class="attachment-option" id="upload-file-option">
+                                    <span class="material-symbols-outlined">attach_file</span> 文件
+                                    <input type="file" id="file-upload-input" style="display: none;">
+                                </label>
+                            </div>
+                        </div>
                         <button id="send-button" class="send-button material-symbols-outlined">send</button>
                         <button id="interrupt-button" class="action-button">||</button>
                     </div>
