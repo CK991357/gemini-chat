@@ -377,11 +377,7 @@ function displayAudioMessage(audioUrl, duration, type) {
             const transcriptionText = result.text || '未获取到转录文本。';
 
             // 显示转录文本
-            const transcriptionDisplay = document.createElement('div');
-            transcriptionDisplay.classList.add('transcription-display');
-            transcriptionDisplay.textContent = transcriptionText;
-            contentDiv.appendChild(transcriptionDisplay);
-            transcriptionDisplay.style.display = 'block'; // 确保显示
+            logMessage(transcriptionText, 'ai', 'text'); // 调用 logMessage 函数
 
             logMessage('语音转文字成功', 'system');
         } catch (error) {
