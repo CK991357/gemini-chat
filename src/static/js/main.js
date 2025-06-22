@@ -28,6 +28,7 @@ const screenPreview = document.getElementById('screen-preview-element'); // 更�
 const _inputAudioVisualizer = document.getElementById('input-audio-visualizer'); // 保持，可能用于输入音频可视化
 const apiKeyInput = document.getElementById('api-key');
 const voiceSelect = document.getElementById('voice-select');
+const modelSelect = document.getElementById('model-select'); // 新增：模型选择下拉菜单
 const fpsInput = document.getElementById('fps-input');
 const configToggle = document.getElementById('toggle-config');
 const configContainer = document.querySelector('.control-panel');
@@ -55,6 +56,7 @@ const stopScreenButton = document.getElementById('stop-screen-button');
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
+const savedModel = localStorage.getItem('gemini_model'); // 新增：保存的模型
 const savedFPS = localStorage.getItem('video_fps');
 const savedSystemInstruction = localStorage.getItem('system_instruction');
 
@@ -64,6 +66,11 @@ if (savedApiKey) {
 }
 if (savedVoice) {
     voiceSelect.value = savedVoice;
+}
+if (savedModel) {
+    modelSelect.value = savedModel;
+} else {
+    modelSelect.value = CONFIG.API.MODEL_NAME; // 确保默认值被设置
 }
 
 if (savedFPS) {
@@ -164,6 +171,26 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.style.overflow = '';
         }
     });
+
+    // 动态生成模型选择选项
+    const modelSelect = document.getElementById('model-select');
+    if (modelSelect) {
+        modelSelect.innerHTML = ''; // 清空现有选项
+        CONFIG.API.AVAILABLE_MODELS.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.value;
+            option.textContent = model.label;
+            if (model.value === CONFIG.API.MODEL_NAME) {
+                option.selected = true; // 默认选中
+            }
+            modelSelect.appendChild(option);
+        });
+        // 加载保存的模型选择
+        const savedModel = localStorage.getItem('gemini_model');
+        if (savedModel) {
+            modelSelect.value = savedModel;
+        }
+    }
 });
 
 // State variables
@@ -624,6 +651,7 @@ async function connectToWebsocket() {
     // Save values to localStorage
     localStorage.setItem('gemini_api_key', apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
+    localStorage.setItem('gemini_model', modelSelect.value); // 新增：保存模型选择
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
         /**
@@ -645,7 +673,7 @@ async function connectToWebsocket() {
         }
 
         const config = {
-            model: CONFIG.API.MODEL_NAME,
+            model: modelSelect.value, // 从下拉菜单获取模型值
             generationConfig: {
                 responseModalities: getResponseModalities(responseTypeSelect.value),
                 speechConfig: {
