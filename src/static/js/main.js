@@ -61,8 +61,14 @@ const uploadedImagePreviewContainer = document.getElementById('uploaded-image-pr
 const uploadedImagePreview = document.getElementById('uploaded-image-preview');
 const closeImagePreviewButton = document.getElementById('close-image-preview');
 
+// 新增通用文件预览相关 DOM 元素
+const uploadedFilePreviewContainer = document.getElementById('uploaded-file-preview-container');
+const uploadedFilePreviewName = document.getElementById('uploaded-file-preview-name');
+const closeFilePreviewButton = document.getElementById('close-file-preview');
+
 // 新增状态变量
 let selectedImageFile = null; // 用于存储当前选中的图片文件的 Base64 Data URL
+let selectedFile = null; // 用于存储当前选中的通用文件对象
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
@@ -801,25 +807,50 @@ function fileToBase64(file) {
 
 /**
  * @function handleFileUpload
- * @description 处理通用文件上传（目前仅作提示，不实际处理）。
+ * @description 处理通用文件上传（目前仅支持 .txt 文件，提取文本内容）。
  * @param {Event} event - 文件输入框的 change 事件对象。
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function handleFileUpload(event) {
+async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    logMessage(`文件已选择: ${file.name} (${formatFileSize(file.size)})。当前仅支持图片上传。`, 'system');
-    // 清空文件输入，防止重复选择相同文件不触发 change 事件
+    const MAX_TXT_FILE_SIZE_MB = 1; // 限制 .txt 文件为 1MB
+    const MAX_TXT_FILE_SIZE_BYTES = MAX_TXT_FILE_SIZE_MB * 1024 * 1024;
+
+    // 清除图片预览，确保文件和图片不同时预览
+    selectedImageFile = null;
+    uploadedImagePreview.src = '';
+    uploadedImagePreviewContainer.style.display = 'none';
+
+    if (file.type === 'text/plain') {
+        if (file.size > MAX_TXT_FILE_SIZE_BYTES) {
+            logMessage(`文本文件过大: ${file.name} (${formatFileSize(file.size)})。文件大小不能超过 ${MAX_TXT_FILE_SIZE_MB}MB。`, 'system');
+            selectedFile = null;
+            uploadedFilePreviewContainer.style.display = 'none';
+            fileUploadInput.value = '';
+            attachmentMenu.classList.remove('active');
+            return;
+        }
+        selectedFile = file; // 存储文件对象
+        uploadedFilePreviewName.textContent = `${file.name} (${formatFileSize(file.size)})`;
+        uploadedFilePreviewContainer.style.display = 'flex'; // 显示预览容器
+        logMessage(`文本文件已选择: ${file.name} (${formatFileSize(file.size)})`, 'system');
+    } else {
+        logMessage(`不支持的文件类型: ${file.name} (${file.type})。当前仅支持 .txt 文件。`, 'system');
+        selectedFile = null;
+        uploadedFilePreviewContainer.style.display = 'none';
+    }
+
     fileUploadInput.value = '';
-    attachmentMenu.classList.remove('active'); // 隐藏菜单
+    attachmentMenu.classList.remove('active');
 }
 
 /**
  * Handles sending a message, including text and optionally an image.
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function handleSendMessage() {
+async function handleSendMessage() {
     const message = messageInput.value.trim();
     const parts = [];
 
@@ -845,6 +876,23 @@ function handleSendMessage() {
         selectedImageFile = null;
         uploadedImagePreview.src = '';
         uploadedImagePreviewContainer.style.display = 'none';
+    } else if (selectedFile) { // 如果有通用文件
+        try {
+            const fileContent = await readFileAsText(selectedFile); // 读取文件内容
+            parts.push({
+                text: fileContent // 直接发送文本内容
+            });
+            logMessage(`文件内容已发送: ${selectedFile.name}`, 'system');
+        } catch (error) {
+            logMessage(`读取文件内容失败: ${error.message}`, 'system');
+            console.error('读取文件内容失败:', error);
+            return; // 阻止发送消息
+        } finally {
+            // 发送后清除文件数据和预览
+            selectedFile = null;
+            uploadedFilePreviewName.textContent = '';
+            uploadedFilePreviewContainer.style.display = 'none';
+        }
     }
 
     if (parts.length > 0) {
@@ -1068,6 +1116,30 @@ closeImagePreviewButton.addEventListener('click', () => {
     uploadedImagePreviewContainer.style.display = 'none';
     logMessage('图片预览已关闭', 'system');
 });
+
+// 关闭通用文件预览按钮事件监听
+closeFilePreviewButton.addEventListener('click', () => {
+    selectedFile = null;
+    uploadedFilePreviewName.textContent = '';
+    uploadedFilePreviewContainer.style.display = 'none';
+    logMessage('文件预览已关闭', 'system');
+});
+
+/**
+ * @function readFileAsText
+ * @description 将文件对象读取为文本内容。
+ * @param {File} file - 要读取的文件对象。
+ * @returns {Promise<string>} - 返回一个Promise，解析为文件的文本内容。
+ * @throws {Error} - 如果文件读取失败，Promise将被拒绝。
+ */
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+    });
+}
 
 micButton.addEventListener('click', () => {
     if (isConnected) handleMicToggle();
