@@ -316,7 +316,7 @@ body {
     .input-area {
         /* 确保输入区域在底部，并考虑安全区域 */
         padding-bottom: calc(15px + env(safe-area-inset-bottom)); /* 15px 是原有 padding-top */
-        bottom: 30px; /* 调整为更大的值，例如30px */
+        bottom: 20px; /* 新增：向上移动10px */
     }
     
     .media-previews {
@@ -896,10 +896,6 @@ body {
         height: 48px;
         font-size: 24px;
     }
-    
-        .text-mode .message-history {
-            padding-bottom: 0; /* 减少底部留白，让消息内容充分利用空间 */
-        }
 }
 
 .text-mode .input-area {
