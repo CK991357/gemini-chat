@@ -2,7 +2,6 @@
 //Project: https://github.com/PublicAffairs/openai-gemini
 //MIT License : https://github.com/PublicAffairs/openai-gemini/blob/main/LICENSE
 
-import { EventEmitter } from 'https://cdn.skypack.dev/eventemitter3';
 import { Buffer } from "node:buffer";
 
 export default {
