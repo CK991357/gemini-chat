@@ -826,6 +826,10 @@ function handleSendMessage() {
     if (message) {
         parts.push({ text: message });
         logMessage(message, 'user');
+    } else if (selectedImageFile) { // 如果没有文本消息但有图片
+        // 添加一个默认的图片描述提示词
+        parts.push({ text: "请详细描述这张图片的内容。" });
+        logMessage('已发送图片描述请求', 'system'); // 更新日志信息
     }
 
     if (selectedImageFile) {
