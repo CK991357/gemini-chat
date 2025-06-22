@@ -829,14 +829,11 @@ function handleSendMessage() {
     }
 
     if (selectedImageFile) {
-        // 从 Data URL 中提取 mimeType 和 Base64 数据
-        const [header, base64Data] = selectedImageFile.split(',');
-        const mimeTypeMatch = header.match(/data:(.*?);base64/);
-        const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'application/octet-stream';
-
         parts.push({
-            mimeType: mimeType,
-            data: base64Data
+            type: "image_url",
+            image_url: {
+                url: selectedImageFile // 直接使用完整的 Data URL
+            }
         });
         logMessage('图片已发送', 'system');
         
@@ -847,7 +844,7 @@ function handleSendMessage() {
     }
 
     if (parts.length > 0) {
-        client.sendRealtimeInput(parts);
+        client.send(parts); // 改为使用 client.send
         messageInput.value = ''; // 清空文本输入框
     } else {
         logMessage('请输入消息或选择图片', 'system');

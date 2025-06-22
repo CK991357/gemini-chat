@@ -982,8 +982,7 @@ body {
 }
 
 .attachment-button:hover {
-    background-color: var(--primary-dark-color); /* 悬停颜色 */
-    transform: translateY(-1px);
+    background-color: var(--secondary-color); /* 悬停颜色 */
 }
 
 .attachment-button:active {
