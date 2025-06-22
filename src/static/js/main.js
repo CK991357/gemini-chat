@@ -893,6 +893,7 @@ let messageBuffer = '';
 let bufferTimer = null;
 
 client.on('content', (data) => {
+    console.log('Received content data:', data); // 添加这行用于调试
     if (data.modelTurn) {
         if (data.modelTurn.parts.some(part => part.functionCall)) {
             isUsingTool = true;
