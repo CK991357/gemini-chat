@@ -1518,3 +1518,17 @@ function checkBrowserCompatibility() {
     }
     return true;
 }
+
+/**
+ * @function formatFileSize
+ * @description 格式化文件大小为可读的字符串。
+ * @param {number} bytes - 文件大小（字节）。
+ * @returns {string} - 格式化后的文件大小字符串。
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
