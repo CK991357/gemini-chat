@@ -316,6 +316,7 @@ body {
     .input-area {
         /* 确保输入区域在底部，并考虑安全区域 */
         padding-bottom: calc(15px + env(safe-area-inset-bottom)); /* 15px 是原有 padding-top */
+        bottom: 10px; /* 新增：向上移动10px */
     }
     
     .media-previews {
