@@ -289,11 +289,6 @@ body {
     border-top: 1px solid var(--border-color);
   }
   
-  /* 连接按钮全宽 */
-  #mobile-connect {
-    grid-column: span 4;
-    margin-top: 10px;
-  }
   
   /* 调整图标按钮大小 */
   .nav-tools > button,
@@ -817,9 +812,6 @@ body {
         width: auto; /* 恢复自动宽度 */
         margin-top: 0; /* 移除顶部外边距 */
     }
-    #mobile-connect {
-        display: none !important; /* 在 iPad 尺寸范围内隐藏顶部移动端按钮 */
-    }
 }
 
 @media (max-width: 768px) {
@@ -845,10 +837,6 @@ body {
         margin-top: 5px;
         padding-top: 10px;
         border-top: 1px solid var(--border-color);
-    }
-    #mobile-connect {
-        grid-column: span 4;
-        margin-top: 10px;
     }
     .nav-tools > button,
     .media-controls > button {
@@ -967,9 +955,3 @@ body {
     }
 }
 
-/* 在桌面端隐藏移动端连接按钮 */
-@media (min-width: 769px) {
-    #mobile-connect {
-        display: none;
-    }
-}
