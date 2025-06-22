@@ -966,7 +966,7 @@ body {
 }
 
 .attachment-button {
-    background-color: var(--secondary-color); /* 可以是不同的颜色 */
+    background-color: var(--primary-color); /* 与发送按钮颜色一致 */
     color: white;
     border: none;
     border-radius: 8px; /* 与发送按钮保持一致 */

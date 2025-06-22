@@ -784,6 +784,22 @@ async function handleImageUpload(event) {
 }
 
 /**
+ * @function fileToBase64
+ * @description 将文件对象转换为Base64编码的Data URL。
+ * @param {File} file - 要转换的文件对象。
+ * @returns {Promise<string>} - 返回一个Promise，解析为Base64编码的Data URL字符串。
+ * @throws {Error} - 如果文件读取失败，Promise将被拒绝。
+ */
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+/**
  * @function handleFileUpload
  * @description 处理通用文件上传（目前仅作提示，不实际处理）。
  * @param {Event} event - 文件输入框的 change 事件对象。
