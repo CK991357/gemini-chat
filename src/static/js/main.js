@@ -700,10 +700,10 @@ async function connectToWebsocket() {
         const selectedModel = modelSelect.value;
 
         if (selectedModel.includes('gemini-2.5-flash-preview-05-20') || selectedModel.includes('gemini-2.5-flash-lite-preview-06-17')) {
-            // 对于 Gemini 2.5 系列模型，使用专门的路径
-            workerProxyUrl = `${wsProtocol}//${window.location.host}/ws-gemini25/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent`;
+            // 对于 Gemini 2.5 系列模型，直接使用已部署的独立 Worker 域名
+            workerProxyUrl = `https://geminiapim.10110531.xyz/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent`;
         } else {
-            // 对于其他模型，使用现有的逻辑
+            // 对于其他模型，使用现有的逻辑，通过主 Worker 代理
             const apiVersion = CONFIG.getApiVersionForModel(selectedModel);
             workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent`;
         }

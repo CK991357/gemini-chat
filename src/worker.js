@@ -7,10 +7,7 @@ export default {
     // 处理 WebSocket 连接
     if (request.headers.get('Upgrade') === 'websocket') {
       const pathname = url.pathname;
-      if (pathname.startsWith('/ws-gemini25/')) {
-        // 转发到处理 Gemini 2.5 系列模型的 Worker
-        return env.API_PROXY_MULTIMODAL_WORKER.fetch(request);
-      } else if (pathname.startsWith('/ws/')) {
+      if (pathname.startsWith('/ws/')) {
         // 转发到处理其他模型的 Worker
         return env.API_PROXY_WORKER.fetch(request);
       }
@@ -151,28 +148,4 @@ function getContentType(path) {
     'gif': 'image/gif'
   };
   return types[ext] || 'text/plain';
-}
-
-/**
- * @function handleAPIRequest
- * @description 处理 API 请求，将其转发到 API 代理 Worker。
- * @param {Request} request - 传入的请求对象。
- * @param {Object} env - 环境变量。
- * @returns {Response} API 响应。
- */
-async function handleAPIRequest(request, env) {
-  try {
-    // 通过服务绑定调用 API 代理 Worker
-    return await env.API_PROXY_WORKER.fetch(request);
-  } catch (error) {
-    console.error('API request error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    const errorStatus = error.status || 500;
-    return new Response(errorMessage, {
-      status: errorStatus,
-      headers: {
-        'content-type': 'text/plain;charset=UTF-8',
-      }
-    });
-  }
 }
