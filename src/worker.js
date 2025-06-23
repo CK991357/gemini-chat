@@ -6,11 +6,7 @@ export default {
 
     // 处理 WebSocket 连接
     if (request.headers.get('Upgrade') === 'websocket') {
-      const pathname = url.pathname;
-      if (pathname.startsWith('/ws/')) {
-        // 转发到处理其他模型的 Worker
-        return env.API_PROXY_WORKER.fetch(request);
-      }
+      return handleWebSocket(request, env);
     }
 
     // 处理语音转文字请求
@@ -148,4 +144,45 @@ function getContentType(path) {
     'gif': 'image/gif'
   };
   return types[ext] || 'text/plain';
+}
+
+/**
+ * @function handleWebSocket
+ * @description 处理 WebSocket 连接请求，将其转发到 api_proxy/worker.mjs。
+ * @param {Request} request - 传入的请求对象。
+ * @param {Object} env - 环境变量。
+ * @returns {Response} WebSocket 升级响应。
+ */
+async function handleWebSocket(request, env) {
+  // 从原始请求 URL 中获取所有查询参数
+  const url = new URL(request.url);
+  const queryParams = url.searchParams.toString();
+
+  // 构建转发到 api_proxy/worker.mjs 的 URL，包含所有原始查询参数
+  const proxyUrl = `${url.protocol}//${url.host}/api_proxy/worker.mjs?${queryParams}`;
+  
+  // 创建一个新的请求对象，使用新的 URL
+  const proxyRequest = new Request(proxyUrl, request);
+
+  // 将 WebSocket 请求转发到 api_proxy/worker.mjs
+  // 注意：这里假设 api_proxy/worker.mjs 能够处理 WebSocket 升级请求
+  const worker = await import('./api_proxy/worker.mjs');
+  return await worker.default.fetch(proxyRequest);
+}
+
+async function handleAPIRequest(request, env) {
+  try {
+    const worker = await import('./api_proxy/worker.mjs');
+    return await worker.default.fetch(request);
+  } catch (error) {
+    console.error('API request error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    const errorStatus = error.status || 500;
+    return new Response(errorMessage, {
+      status: errorStatus,
+      headers: {
+        'content-type': 'text/plain;charset=UTF-8',
+      }
+    });
+  }
 }
