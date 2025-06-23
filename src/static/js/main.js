@@ -696,9 +696,18 @@ async function connectToWebsocket() {
     try {
         // 统一连接到 Worker 代理
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const apiVersion = CONFIG.getApiVersionForModel(modelSelect.value); // 从 config.js 获取版本
-        const workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent`;
-        await client.connect(config, apiKeyInput.value, modelSelect.value, workerProxyUrl); // 传递 modelSelect.value 作为 modelName
+        let workerProxyUrl;
+        const selectedModel = modelSelect.value;
+
+        if (selectedModel.includes('gemini-2.5-flash-preview-05-20') || selectedModel.includes('gemini-2.5-flash-lite-preview-06-17')) {
+            // 对于 Gemini 2.5 系列模型，使用专门的路径
+            workerProxyUrl = `${wsProtocol}//${window.location.host}/ws-gemini25/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent`;
+        } else {
+            // 对于其他模型，使用现有的逻辑
+            const apiVersion = CONFIG.getApiVersionForModel(selectedModel);
+            workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent`;
+        }
+        await client.connect(config, apiKeyInput.value, selectedModel, workerProxyUrl);
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';

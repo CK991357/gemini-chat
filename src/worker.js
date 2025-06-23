@@ -6,7 +6,14 @@ export default {
 
     // 处理 WebSocket 连接
     if (request.headers.get('Upgrade') === 'websocket') {
-      return handleWebSocket(request, env);
+      const pathname = url.pathname;
+      if (pathname.startsWith('/ws-gemini25/')) {
+        // 转发到处理 Gemini 2.5 系列模型的 Worker
+        return handleWebSocket(request, env, './api_proxy/worker-multimodal.mjs');
+      } else if (pathname.startsWith('/ws/')) {
+        // 转发到处理其他模型的 Worker
+        return handleWebSocket(request, env, './api_proxy/worker.mjs');
+      }
     }
 
     // 处理语音转文字请求
@@ -148,26 +155,30 @@ function getContentType(path) {
 
 /**
  * @function handleWebSocket
- * @description 处理 WebSocket 连接请求，将其转发到 api_proxy/worker.mjs。
+ * @description 处理 WebSocket 连接请求，将其转发到指定的 Worker。
  * @param {Request} request - 传入的请求对象。
  * @param {Object} env - 环境变量。
+ * @param {string} workerPath - 要转发到的 Worker 模块路径。
  * @returns {Response} WebSocket 升级响应。
  */
-async function handleWebSocket(request, env) {
+async function handleWebSocket(request, env, workerPath) {
   // 从原始请求 URL 中获取所有查询参数
   const url = new URL(request.url);
   const queryParams = url.searchParams.toString();
 
-  // 构建转发到 api_proxy/worker.mjs 的 URL，包含所有原始查询参数
-  const proxyUrl = `${url.protocol}//${url.host}/api_proxy/worker.mjs?${queryParams}`;
+  // 构建转发到指定 Worker 的 URL，包含所有原始查询参数
+  // 注意：这里我们不再构建一个指向特定 .mjs 文件的 URL，
+  // 而是让导入的 Worker 模块直接处理原始请求。
+  // 这样做是为了避免在 Worker 内部再次解析 URL 路径，
+  // 并且更符合 Cloudflare Worker 的模块化设计。
+  const proxyUrl = `${url.protocol}//${url.host}${url.pathname}?${queryParams}`;
   
   // 创建一个新的请求对象，使用新的 URL
   const proxyRequest = new Request(proxyUrl, request);
 
-  // 将 WebSocket 请求转发到 api_proxy/worker.mjs
-  // 注意：这里假设 api_proxy/worker.mjs 能够处理 WebSocket 升级请求
-  const worker = await import('./api_proxy/worker.mjs');
-  return await worker.default.fetch(proxyRequest);
+  // 动态导入并调用指定的 Worker
+  const worker = await import(workerPath);
+  return await worker.default.fetch(proxyRequest, env);
 }
 
 async function handleAPIRequest(request, env) {
