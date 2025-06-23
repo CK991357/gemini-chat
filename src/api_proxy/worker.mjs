@@ -49,7 +49,7 @@ export default {
           const apiVersion = getApiVersionForModel(modelName);
 
           // 构建目标 Gemini WebSocket URL
-          const targetUrl = `wss://generativelanguage.googleapis.com/${apiVersion}/${modelName}:streamGenerateContent?key=${apiKeyFromUrl}`;
+          const targetUrl = `wss://generativelanguage.googleapis.com/${apiVersion}/${modelName.replace('models/', '')}:streamGenerateContent?key=${apiKeyFromUrl}`;
           console.log('Proxying WebSocket to:', targetUrl);
 
           const targetWebSocket = new WebSocket(targetUrl);
