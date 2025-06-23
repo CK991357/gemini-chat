@@ -2,6 +2,10 @@
 //Project: https://github.com/PublicAffairs/openai-gemini
 //MIT License : https://github.com/PublicAffairs/openai-gemini/blob/main/LICENSE
 
+//Author: PublicAffairs
+//Project: https://github.com/PublicAffairs/openai-gemini
+//MIT License : https://github.com/PublicAffairs/openai-gemini/blob/main/LICENSE
+
 import { Buffer } from "node:buffer";
 
 export default {
@@ -22,6 +26,68 @@ export default {
         }
       };
       const { pathname } = new URL(request.url);
+
+      // 新增：处理 WebSocket 连接
+      if (request.headers.get("Upgrade") === "websocket") {
+          const url = new URL(request.url);
+          const apiKeyFromUrl = url.searchParams.get("key"); // 从 URL 参数获取 API Key
+
+          if (!apiKeyFromUrl) {
+              return new Response("API Key is missing for WebSocket connection", { status: 400 });
+          }
+
+          const [client, proxy] = new WebSocketPair();
+          proxy.accept();
+
+          // 移除 /ws/ 前缀，直接代理到 Gemini API 的 WebSocket 端点
+          const targetUrl = `wss://generativelanguage.googleapis.com/` + url.pathname.substring(1) + url.search;
+          console.log('Proxying WebSocket to:', targetUrl);
+
+          const targetWebSocket = new WebSocket(targetUrl);
+
+          targetWebSocket.addEventListener("open", () => {
+              console.log('Connected to Gemini WebSocket API');
+          });
+
+          proxy.addEventListener("message", (event) => {
+              if (targetWebSocket.readyState === WebSocket.OPEN) {
+                  targetWebSocket.send(event.data);
+              }
+          });
+
+          targetWebSocket.addEventListener("message", (event) => {
+              if (proxy.readyState === WebSocket.OPEN) {
+                  proxy.send(event.data);
+              }
+          });
+
+          targetWebSocket.addEventListener("close", (event) => {
+              console.log('Gemini WebSocket closed:', event.code, event.reason);
+              if (proxy.readyState === WebSocket.OPEN) {
+                  proxy.close(event.code, event.reason);
+              }
+          });
+
+          proxy.addEventListener("close", (event) => {
+              console.log('Client WebSocket closed:', event.code, event.reason);
+              if (targetWebSocket.readyState === WebSocket.OPEN) {
+                  targetWebSocket.close(event.code, event.reason);
+              }
+          });
+
+          targetWebSocket.addEventListener("error", (error) => {
+              console.error('Gemini WebSocket error:', error);
+              if (proxy.readyState === WebSocket.OPEN) {
+                  proxy.close(1011, "Gemini WebSocket error");
+              }
+          });
+
+          return new Response(null, {
+              status: 101,
+              webSocket: client,
+          });
+      }
+
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
@@ -231,311 +297,6 @@ async function handleCompletions(req, apiKey) {
     }
   }
   return new Response(body, fixCors(response));
-}
-
-/**
- * @class MultimodalLiveClientWorker
- * @description 处理客户端 WebSocket 连接和与 Gemini API 的交互。
- * @extends EventEmitter
- */
-class MultimodalLiveClientWorker extends EventEmitter {
-  /**
-   * @constructor
-   * @param {WebSocket} clientWs - 客户端 WebSocket 实例。
-   * @param {string} apiKey - 用于 Gemini API 的 API 密钥。
-   */
-  constructor(clientWs, apiKey) {
-    super();
-    this.clientWs = clientWs;
-    this.apiKey = apiKey;
-    this.config = null;
-    this.toolManager = new WorkerToolManager();
-    this.conversationHistory = [];
-    this.isStreaming = false;
-
-    this.clientWs.addEventListener("message", this.handleClientMessage.bind(this));
-    this.clientWs.addEventListener("close", this.handleClientClose.bind(this));
-    this.clientWs.addEventListener("error", this.handleClientError.bind(this));
-  }
-
-  /**
-   * @function handleClientMessage
-   * @description 处理来自客户端的 WebSocket 消息。
-   * @param {MessageEvent} event - WebSocket 消息事件。
-   */
-  async handleClientMessage(event) {
-    try {
-      const message = JSON.parse(event.data);
-      if (message.setup) {
-        this.config = message.setup;
-        if (this.config.tools) {
-          this.config.tools.forEach(toolDeclaration => {
-            if (toolDeclaration.functionDeclarations) {
-              toolDeclaration.functionDeclarations.forEach(funcDecl => {
-                if (funcDecl.name === 'get_weather_on_date') {
-                  console.log("Weather tool declared by client.");
-                }
-              });
-            }
-          });
-        }
-        this.conversationHistory = [];
-        this.sendSetupComplete();
-      } else if (message.realtimeInput) {
-        const mediaChunks = message.realtimeInput.mediaChunks;
-        if (mediaChunks?.length > 0) {
-          const parts = mediaChunks.map(chunk => ({
-            inlineData: {
-              mimeType: chunk.mimeType,
-              data: chunk.data
-            }
-          }));
-          this.sendContentToGemini(parts, false);
-        }
-      } else if (message.clientContent) {
-        const turns = message.clientContent.turns;
-        if (turns?.length > 0) {
-          const parts = turns[0].parts;
-          this.sendContentToGemini(parts, message.clientContent.turnComplete);
-        }
-      } else if (message.toolResponse) {
-        this.sendToolResponseToGemini(message.toolResponse);
-      }
-    } catch (error) {
-      this.clientWs.send(JSON.stringify({ error: error.message }));
-    }
-  }
-
-  /**
-   * @function sendSetupComplete
-   * @description 向客户端发送设置完成消息。
-   */
-  sendSetupComplete() {
-    this.clientWs.send(JSON.stringify({ setupComplete: {} }));
-  }
-
-  /**
-   * @function sendContentToGemini
-   * @description 将内容发送到 Gemini API 进行生成。
-   * @param {Array<Object>} parts - 要发送到 Gemini API 的内容部分。
-   * @param {boolean} turnComplete - 指示当前回合是否完成。
-   */
-  async sendContentToGemini(parts, turnComplete) {
-    const content = { role: 'user', parts: parts };
-    this.conversationHistory.push(content);
-
-    const API_VERSION_GEMINI = getApiVersionForModel(`models/${this.config.model}`); // 根据模型获取 API 版本
-
-    const requestBody = {
-      contents: this.conversationHistory,
-      generationConfig: {
-        ...this.config.generationConfig,
-        // 根据配置可选地添加语音输出配置
-        ...(this.config.enableTTS && {
-          responseModalities: ["AUDIO"],
-          speechConfig: this.config.speechConfig || {
-            voiceConfig: {
-              name: this.config.voice || "en-US-Neural2-H" // 默认语音，或者从 config 中获取
-            }
-          }
-        })
-      },
-      safetySettings: this.config.safetySettings || safetySettings,
-      systemInstruction: this.config.systemInstruction,
-      tools: this.config.tools
-    };
-
-    const url = `${BASE_URL}/${API_VERSION_GEMINI}/models/${this.config.model}:streamGenerateContent`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          this.sendTurnComplete();
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        let boundary = buffer.indexOf('\n');
-        while (boundary !== -1) {
-          const line = buffer.substring(0, boundary).trim();
-          buffer = buffer.substring(boundary + 1);
-
-          if (line.startsWith('data:')) {
-            const jsonStr = line.substring(5).trim();
-            if (jsonStr) {
-              try {
-                const geminiResponse = JSON.parse(jsonStr);
-                this.processGeminiResponse(geminiResponse);
-              } catch (parseError) {
-                console.error("Error parsing Gemini API stream chunk:", parseError);
-              }
-            }
-          }
-          boundary = buffer.indexOf('\n');
-        }
-      }
-    } catch (error) {
-      this.clientWs.send(JSON.stringify({ error: error.message }));
-    }
-  }
-
-  /**
-   * @function sendToolResponseToGemini
-   * @description 将工具响应发送到 Gemini API。
-   * @param {Object} toolResponse - 工具响应对象。
-   */
-  async sendToolResponseToGemini(toolResponse) {
-    const content = {
-      role: 'user',
-      parts: [{
-        functionResponse: {
-          name: toolResponse.name,
-          response: toolResponse.response
-        }
-      }]
-    };
-    this.conversationHistory.push(content);
-
-    const API_VERSION_GEMINI = getApiVersionForModel(`models/${this.config.model}`); // 根据模型获取 API 版本
-
-    const requestBody = {
-      contents: this.conversationHistory,
-      generationConfig: {
-        ...this.config.generationConfig,
-        // 根据配置可选地添加语音输出配置
-        ...(this.config.enableTTS && {
-          responseModalities: ["AUDIO"],
-          speechConfig: this.config.speechConfig || {
-            voiceConfig: {
-              name: this.config.voice || "en-US-Neural2-H" // 默认语音，或者从 config 中获取
-            }
-          }
-        })
-      },
-      safetySettings: this.config.safetySettings || safetySettings,
-      systemInstruction: this.config.systemInstruction,
-      tools: this.config.tools
-    };
-
-    const url = `${BASE_URL}/${API_VERSION_GEMINI}/models/${this.config.model}:streamGenerateContent`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          this.sendTurnComplete();
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        let boundary = buffer.indexOf('\n');
-        while (boundary !== -1) {
-          const line = buffer.substring(0, boundary).trim();
-          buffer = buffer.substring(boundary + 1);
-
-          if (line.startsWith('data:')) {
-            const jsonStr = line.substring(5).trim();
-            if (jsonStr) {
-              try {
-                const geminiResponse = JSON.parse(jsonStr);
-                this.processGeminiResponse(geminiResponse);
-              } catch (parseError) {
-                console.error("Error parsing Gemini API stream chunk:", parseError);
-              }
-            }
-          }
-          boundary = buffer.indexOf('\n');
-        }
-      }
-    } catch (error) {
-      this.clientWs.send(JSON.stringify({ error: error.message }));
-    }
-  }
-
-  /**
-   * @function processGeminiResponse
-   * @description 处理来自 Gemini API 的响应。
-   * @param {Object} geminiResponse - Gemini API 响应对象。
-   */
-  processGeminiResponse(geminiResponse) {
-    if (geminiResponse.candidates && geminiResponse.candidates.length > 0) {
-      const candidate = geminiResponse.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        const textParts = candidate.content.parts.filter(part => part.text);
-        if (textParts.length > 0) {
-          const text = textParts.map(part => part.text).join('');
-          this.clientWs.send(JSON.stringify({ textOutput: { text: text } }));
-        }
-        const audioParts = candidate.content.parts.filter(part => part.inlineData && part.inlineData.mimeType.startsWith('audio/'));
-        if (audioParts.length > 0) {
-          const audioData = audioParts[0].inlineData.data;
-          this.clientWs.send(JSON.stringify({ audioOutput: { audioData: audioData } }));
-        }
-        const functionCallParts = candidate.content.parts.filter(part => part.functionCall);
-        if (functionCallParts.length > 0) {
-          const functionCall = functionCallParts[0].functionCall;
-          this.clientWs.send(JSON.stringify({ toolCall: { name: functionCall.name, args: functionCall.args } }));
-        }
-      }
-      if (candidate.finishReason) {
-        this.sendTurnComplete();
-      }
-    }
-  }
-
-  /**
-   * @function sendTurnComplete
-   * @description 向客户端发送回合完成消息。
-   */
-  sendTurnComplete() {
-    this.clientWs.send(JSON.stringify({ turnComplete: {} }));
-  }
-
-  /**
-   * @function handleClientClose
-   * @description 处理客户端 WebSocket 关闭事件。
-   */
-  handleClientClose() {
-    console.log("Client WebSocket closed.");
-  }
-
-  /**
-   * @function handleClientError
-   * @description 处理客户端 WebSocket 错误事件。
-   * @param {Event} event - WebSocket 错误事件。
-   */
-  handleClientError(event) {
-    console.error("Client WebSocket error:", event);
-  }
 }
 
 const harmCategory = [
