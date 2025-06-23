@@ -1,30 +1,5 @@
 const assetManifest = {};
 
-const GEMINI_2_5_PROXY_HOST = "geminiapim.10110531.xyz";
-
-/**
- * @function isGemini25Model
- * @description 判断模型名称是否属于 Gemini 2.5 系列。
- * @param {string} modelName - 模型名称，例如 'models/gemini-2.5-flash-preview-05-20'。
- * @returns {boolean} 如果是 Gemini 2.5 系列模型则返回 true，否则返回 false。
- */
-const isGemini25Model = (modelName) => {
-    return modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17');
-};
-
-/**
- * @function getApiVersionForModel
- * @description 根据模型名称获取对应的 API 版本。
- * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
- * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
- */
-const getApiVersionForModel = (modelName) => {
-    if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
-        return 'v1beta';
-    }
-    return 'v1alpha'; // 默认使用 v1alpha
-};
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -173,81 +148,26 @@ function getContentType(path) {
 
 /**
  * @function handleWebSocket
- * @description 处理 WebSocket 连接请求，根据模型名称将其代理到不同的后端。
+ * @description 处理 WebSocket 连接请求，将其转发到 api_proxy/worker.mjs。
  * @param {Request} request - 传入的请求对象。
+ * @param {Object} env - 环境变量。
  * @returns {Response} WebSocket 升级响应。
  */
-async function handleWebSocket(request) {
+async function handleWebSocket(request, env) {
+  // 从原始请求 URL 中获取所有查询参数
   const url = new URL(request.url);
-  const apiKeyFromUrl = url.searchParams.get("key");
-  const modelName = url.searchParams.get("model");
+  const queryParams = url.searchParams.toString();
 
-  if (!apiKeyFromUrl) {
-    return new Response("API Key is missing for WebSocket connection", { status: 400 });
-  }
-  if (!modelName) {
-    return new Response("Model name is missing for WebSocket connection", { status: 400 });
-  }
+  // 构建转发到 api_proxy/worker.mjs 的 URL，包含所有原始查询参数
+  const proxyUrl = `${url.protocol}//${url.host}/api_proxy/worker.mjs?${queryParams}`;
+  
+  // 创建一个新的请求对象，使用新的 URL
+  const proxyRequest = new Request(proxyUrl, request);
 
-  let targetUrl;
-  const apiVersion = getApiVersionForModel(modelName);
-
-  if (isGemini25Model(modelName)) {
-    // 2.5系列模型转发到自定义域名
-    targetUrl = `wss://${GEMINI_2_5_PROXY_HOST}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent?key=${apiKeyFromUrl}&model=${modelName}`;
-  } else {
-    // 2.0及以下模型保持原路径
-    targetUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent?key=${apiKeyFromUrl}&model=${modelName}`;
-  }
-
-  console.log('Proxying WebSocket to:', targetUrl);
-
-  const [client, proxy] = new WebSocketPair();
-  proxy.accept();
-
-  const targetWebSocket = new WebSocket(targetUrl);
-
-  targetWebSocket.addEventListener("open", () => {
-    console.log('Connected to Gemini WebSocket API');
-  });
-
-  proxy.addEventListener("message", (event) => {
-    if (targetWebSocket.readyState === WebSocket.OPEN) {
-      targetWebSocket.send(event.data);
-    }
-  });
-
-  targetWebSocket.addEventListener("message", (event) => {
-    if (proxy.readyState === WebSocket.OPEN) {
-      proxy.send(event.data);
-    }
-  });
-
-  targetWebSocket.addEventListener("close", (event) => {
-    console.log('Gemini WebSocket closed:', event.code, event.reason);
-    if (proxy.readyState === WebSocket.OPEN) {
-      proxy.close(event.code, event.reason);
-    }
-  });
-
-  proxy.addEventListener("close", (event) => {
-    console.log('Client WebSocket closed:', event.code, event.reason);
-    if (targetWebSocket.readyState === WebSocket.OPEN) {
-      targetWebSocket.close(event.code, event.reason);
-    }
-  });
-
-  targetWebSocket.addEventListener("error", (error) => {
-    console.error('Gemini WebSocket error:', error);
-    if (proxy.readyState === WebSocket.OPEN) {
-      proxy.close(1011, "Gemini WebSocket error");
-    }
-  });
-
-  return new Response(null, {
-    status: 101,
-    webSocket: client,
-  });
+  // 将 WebSocket 请求转发到 api_proxy/worker.mjs
+  // 注意：这里假设 api_proxy/worker.mjs 能够处理 WebSocket 升级请求
+  const worker = await import('./api_proxy/worker.mjs');
+  return await worker.default.fetch(proxyRequest);
 }
 
 async function handleAPIRequest(request, env) {
