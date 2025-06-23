@@ -4,8 +4,21 @@
 
 import { Buffer } from "node:buffer";
 
+/**
+ * @description 根据模型名称获取对应的API版本。
+ * @param {string} modelName - 模型名称。
+ * @returns {string} API版本字符串（例如 'v1alpha' 或 'v1beta'）。
+ */
+function getApiVersionForModel(modelName) {
+    if (modelName.includes('gemini-2.5-flash-preview-05-20') || 
+        modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
+        return 'v1beta';
+    }
+    return 'v1alpha';
+}
+
 export default {
-  async fetch (request) {
+  async fetch (request, env) { // 添加 env 参数
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -21,7 +34,14 @@ export default {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
         }
       };
-      const { pathname } = new URL(request.url);
+      const url = new URL(request.url); // 获取完整的 URL
+      const { pathname } = url;
+
+      // 处理 WebSocket 连接
+      if (request.headers.get('Upgrade') === 'websocket') {
+        return handleWebSocket(request, env); // 传递 env 参数
+      }
+
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
@@ -69,7 +89,7 @@ const handleOPTIONS = async () => {
 };
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
-const API_VERSION = "v1beta";
+// const API_VERSION = "v1beta"; // 移除固定 API_VERSION
 
 // https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
 const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
@@ -80,7 +100,9 @@ const makeHeaders = (apiKey, more) => ({
 });
 
 async function handleModels (apiKey) {
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
+  // 对于 /models 请求，默认使用 v1beta 或根据实际情况选择一个通用版本
+  const apiVersion = getApiVersionForModel('default'); // 可以定义一个默认模型或策略
+  const response = await fetch(`${BASE_URL}/${apiVersion}/models`, {
     headers: makeHeaders(apiKey),
   });
   let { body } = response;
@@ -114,7 +136,9 @@ async function handleEmbeddings (req, apiKey) {
     req.model = DEFAULT_EMBEDDINGS_MODEL;
     model = "models/" + req.model;
   }
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
+  // 根据模型获取API版本
+  const apiVersion = getApiVersionForModel(model);
+  const response = await fetch(`${BASE_URL}/${apiVersion}/${model}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
@@ -155,6 +179,8 @@ async function handleCompletions (req, apiKey) {
       model = req.model;
   }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
+  // 根据模型获取API版本
+  const API_VERSION = getApiVersionForModel(`models/${model}`); // 确保传递完整模型名称
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
   const response = await fetch(url, {
@@ -187,6 +213,139 @@ async function handleCompletions (req, apiKey) {
     }
   }
   return new Response(body, fixCors(response));
+}
+
+/**
+ * @description 处理WebSocket连接。
+ * @param {Request} request - 传入的请求对象。
+ * @param {Object} env - 环境变量。
+ * @returns {Response} WebSocket响应。
+ */
+async function handleWebSocket(request, env) {
+  if (request.headers.get("Upgrade") !== "websocket") {
+		return new Response("Expected WebSocket connection", { status: 400 });
+	}
+  
+	const url = new URL(request.url);
+    const apiKey = url.searchParams.get("key");
+    const model = url.searchParams.get("model"); // 从URL参数获取模型
+    
+    if (!model || !apiKey) {
+        return new Response("Missing model or API key", { status: 400 });
+    }
+    
+    // 根据模型获取API版本
+    const apiVersion = getApiVersionForModel(model);
+    const targetPath = `/${apiVersion}/models/${model}:streamGenerateContent`;
+    
+    const targetUrl = `wss://generativelanguage.googleapis.com${targetPath}?key=${apiKey}`;
+	  
+	console.log('Target URL:', targetUrl);
+  
+  const [client, proxy] = new WebSocketPair();
+  proxy.accept();
+  
+   // 用于存储在连接建立前收到的消息
+   let pendingMessages = [];
+  
+   const targetWebSocket = new WebSocket(targetUrl);
+ 
+   console.log('Initial targetWebSocket readyState:', targetWebSocket.readyState);
+ 
+   targetWebSocket.addEventListener("open", () => {
+     console.log('Connected to target server');
+     console.log('targetWebSocket readyState after open:', targetWebSocket.readyState);
+     
+     // 连接建立后，发送所有待处理的消息
+     console.log(`Processing ${pendingMessages.length} pending messages`);
+     for (const message of pendingMessages) {
+      try {
+        targetWebSocket.send(message);
+        console.log('Sent pending message:', message);
+      } catch (error) {
+        console.error('Error sending pending message:', error);
+      }
+     }
+     pendingMessages = []; // 清空待处理消息队列
+   });
+ 
+   proxy.addEventListener("message", async (event) => {
+     console.log('Received message from client:', {
+       dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
+       dataType: typeof event.data,
+       timestamp: new Date().toISOString()
+     });
+     
+     console.log("targetWebSocket.readyState"+targetWebSocket.readyState)
+     if (targetWebSocket.readyState === WebSocket.OPEN) {
+        try {
+          targetWebSocket.send(event.data);
+          console.log('Successfully sent message to gemini');
+        } catch (error) {
+          console.error('Error sending to gemini:', error);
+        }
+     } else {
+       // 如果连接还未建立，将消息加入待处理队列
+       console.log('Connection not ready, queueing message');
+       pendingMessages.push(event.data);
+     }
+   });
+ 
+   targetWebSocket.addEventListener("message", (event) => {
+     console.log('Received message from gemini:', {
+     dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
+     dataType: typeof event.data,
+     timestamp: new Date().toISOString()
+     });
+     
+     try {
+     if (proxy.readyState === WebSocket.OPEN) {
+       proxy.send(event.data);
+       console.log('Successfully forwarded message to client');
+     }
+     } catch (error) {
+     console.error('Error forwarding to client:', error);
+     }
+   });
+ 
+   targetWebSocket.addEventListener("close", (event) => {
+     console.log('Gemini connection closed:', {
+     code: event.code,
+     reason: event.reason || 'No reason provided',
+     wasClean: event.wasClean,
+     timestamp: new Date().toISOString(),
+     readyState: targetWebSocket.readyState
+     });
+     if (proxy.readyState === WebSocket.OPEN) {
+     proxy.close(event.code, event.reason);
+     }
+   });
+ 
+   proxy.addEventListener("close", (event) => {
+     console.log('Client connection closed:', {
+     code: event.code,
+     reason: event.reason || 'No reason provided',
+     wasClean: event.wasClean,
+     timestamp: new Date().toISOString()
+     });
+     if (targetWebSocket.readyState === WebSocket.OPEN) {
+     targetWebSocket.close(event.code, event.reason);
+     }
+   });
+ 
+   targetWebSocket.addEventListener("error", (error) => {
+     console.error('Gemini WebSocket error:', {
+     error: error.message || 'Unknown error',
+     timestamp: new Date().toISOString(),
+     readyState: targetWebSocket.readyState
+     });
+   });
+
+ 
+   return new Response(null, {
+   status: 101,
+   webSocket: client,
+   });
 }
 
 const harmCategory = [

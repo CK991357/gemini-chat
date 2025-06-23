@@ -1,7 +1,12 @@
 export const CONFIG = {
     API: {
-        VERSION: 'v1alpha',
-        MODEL_NAME: 'models/gemini-2.0-flash-exp'
+        VERSION: 'v1alpha', // 保持为 v1alpha，实际版本由 worker 动态判断
+        MODEL_NAME: 'models/gemini-2.0-flash-exp', // 默认模型
+        AVAILABLE_MODELS: [ // 添加可用模型列表
+            'models/gemini-2.0-flash-exp',
+            'models/gemini-2.5-flash-preview-05-20',
+            'models/gemini-2.5-flash-lite-preview-06-17'
+        ]
     },
     // You can change the system instruction to your liking
     SYSTEM_INSTRUCTION: {

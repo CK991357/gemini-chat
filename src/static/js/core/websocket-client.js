@@ -15,13 +15,14 @@ export class MultimodalLiveClient extends EventEmitter {
     /**
      * Creates a new MultimodalLiveClient.
      *
-     * @param {Object} options - Configuration options.
-     * @param {string} [options.url] - The WebSocket URL for the Gemini API. Defaults to a URL constructed with the provided API key.
+     * @param {Object} [options] - 配置选项
+     * @param {string} [options.url] - 自定义WebSocket URL
      */
-    constructor() {
+    constructor(options = {}) {
         super();
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.baseUrl  = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
+        // 使用传入的URL或默认URL
+        this.baseUrl = options.url || `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
         this.ws = null;
         this.config = null;
         this.send = this.send.bind(this);
@@ -39,24 +40,14 @@ export class MultimodalLiveClient extends EventEmitter {
     }
 
     /**
-     * Connects to the WebSocket server with the given configuration.
-     * The configuration can include model settings, generation config, system instructions, and tools.
-     *
-     * @param {Object} config - The configuration for the connection.
-     * @param {string} config.model - The model to use (e.g., 'gemini-2.0-flash-exp').
-     * @param {Object} config.generationConfig - Configuration for content generation.
-     * @param {string[]} config.generationConfig.responseModalities - The modalities for the response (e.g., "audio", "text").
-     * @param {Object} config.generationConfig.speechConfig - Configuration for speech generation.
-     * @param {Object} config.generationConfig.speechConfig.voiceConfig - Configuration for the voice.
-     * @param {string} config.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName - The name of the prebuilt voice to use.
-     * @param {Object} config.systemInstruction - Instructions for the system.
-     * @param {Object[]} config.systemInstruction.parts - Parts of the system instruction.
-     * @param {string} config.systemInstruction.parts[].text - Text content of the instruction part.
-     * @param {Object[]} [config.tools] - Additional tools to be used by the model.
-     * @returns {Promise<boolean>} - Resolves with true when the connection is established.
-     * @throws {ApplicationError} - Throws an error if the connection fails.
+     * 连接WebSocket服务器
+     * @param {Object} config - 配置对象
+     * @param {string} apiKey - API密钥
+     * @param {string} [customUrl] - 自定义URL（覆盖构造函数中的设置）
+     * @returns {Promise<boolean>} - 连接成功时解析为 true。
+     * @throws {ApplicationError} - 连接失败时抛出错误。
      */
-    connect(config,apiKey) {
+    connect(config, apiKey, customUrl = null) {
         this.config = {
             ...config,
             tools: [
@@ -64,7 +55,8 @@ export class MultimodalLiveClient extends EventEmitter {
                 ...(config.tools || [])
             ]
         };
-        const ws = new WebSocket(`${this.baseUrl}?key=${apiKey}`);
+        const targetUrl = customUrl || this.baseUrl; // 使用 customUrl 或 baseUrl
+        const ws = new WebSocket(`${targetUrl}?key=${apiKey}`);
 
         ws.addEventListener('message', async (evt) => {
             if (evt.data instanceof Blob) {
@@ -294,4 +286,4 @@ export class MultimodalLiveClient extends EventEmitter {
             });
         }
     }
-} 
+}
