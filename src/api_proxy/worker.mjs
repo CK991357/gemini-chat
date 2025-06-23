@@ -8,6 +8,18 @@
 
 import { Buffer } from "node:buffer";
 
+const GEMINI_2_5_PROXY_URL = "geminiapim.10110531.xyz";
+
+/**
+ * @function isGemini25Model
+ * @description 判断模型名称是否属于 Gemini 2.5 系列。
+ * @param {string} modelName - 模型名称，例如 'models/gemini-2.5-flash-preview-05-20'。
+ * @returns {boolean} 如果是 Gemini 2.5 系列模型则返回 true，否则返回 false。
+ */
+const isGemini25Model = (modelName) => {
+    return modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17');
+};
+
 export default {
   async fetch (request) {
     if (request.method === "OPTIONS") {
@@ -48,8 +60,14 @@ export default {
           // 根据模型名称获取对应的 API 版本
           const apiVersion = getApiVersionForModel(modelName);
 
-          // 构建目标 Gemini WebSocket URL
-          const targetUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKeyFromUrl}`;
+          let targetUrl;
+          if (isGemini25Model(modelName)) {
+              // 2.5系列模型转发到自定义域名
+              targetUrl = `wss://${GEMINI_2_5_PROXY_URL}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent?key=${apiKeyFromUrl}`;
+          } else {
+              // 2.0及以下模型保持原路径
+              targetUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent?key=${apiKeyFromUrl}`;
+          }
           console.log('Proxying WebSocket to:', targetUrl);
 
           const targetWebSocket = new WebSocket(targetUrl);
@@ -150,10 +168,8 @@ const handleOPTIONS = async () => {
  * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
  */
 const getApiVersionForModel = (modelName) => {
-    if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
-        return 'v1beta';
-    }
-    return 'v1alpha'; // 默认使用 v1alpha
+    // 简化 getApiVersionForModel，因为 2.5 模型将被重定向，2.0 模型使用 v1alpha
+    return 'v1alpha';
 };
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
@@ -223,8 +239,14 @@ async function handleEmbeddings(req, apiKey) {
     req.model = DEFAULT_EMBEDDINGS_MODEL;
     model = "models/" + req.model;
   }
-  const API_VERSION_EMBEDDINGS = getApiVersionForModel(model); // 根据模型获取 API 版本
-  const response = await fetch(`${BASE_URL}/${API_VERSION_EMBEDDINGS}/${model}:batchEmbedContents`, {
+  let targetBaseUrl = BASE_URL;
+  let targetApiVersion = getApiVersionForModel(model);
+
+  if (isGemini25Model(model)) {
+      targetBaseUrl = `https://${GEMINI_2_5_PROXY_URL}`;
+  }
+
+  const response = await fetch(`${targetBaseUrl}/${targetApiVersion}/${model}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
@@ -272,14 +294,20 @@ async function handleCompletions(req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
-  const API_VERSION_COMPLETIONS = getApiVersionForModel(`models/${model}`); // 根据模型获取 API 版本
+  let targetBaseUrl = BASE_URL;
+  let targetApiVersion = getApiVersionForModel(`models/${model}`);
+
+  if (isGemini25Model(`models/${model}`)) {
+      targetBaseUrl = `https://${GEMINI_2_5_PROXY_URL}`;
+  }
+
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
-  let url = `${BASE_URL}/${API_VERSION_COMPLETIONS}/models/${model}:${TASK}`;
+  let url = `${targetBaseUrl}/${targetApiVersion}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
   const response = await fetch(url, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify(await transformRequest(req)), // try
+    body: JSON.stringify(await transformRequest(req)),
   });
 
   let body = response.body;
