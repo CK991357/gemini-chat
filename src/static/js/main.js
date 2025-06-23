@@ -696,8 +696,9 @@ async function connectToWebsocket() {
     try {
         // 统一连接到 Worker 代理
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
-        await client.connect(config, apiKeyInput.value, workerProxyUrl);
+        const apiVersion = CONFIG.getApiVersionForModel(modelSelect.value); // 从 config.js 获取版本
+        const workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent`;
+        await client.connect(config, apiKeyInput.value, modelSelect.value, workerProxyUrl); // 传递 modelSelect.value 作为 modelName
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';
