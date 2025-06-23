@@ -4,21 +4,8 @@
 
 import { Buffer } from "node:buffer";
 
-/**
- * @description 根据模型名称获取对应的API版本。
- * @param {string} modelName - 模型名称。
- * @returns {string} API版本字符串（例如 'v1alpha' 或 'v1beta'）。
- */
-function getApiVersionForModel(modelName) {
-    if (modelName.includes('gemini-2.5-flash-preview-05-20') || 
-        modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
-        return 'v1beta';
-    }
-    return 'v1alpha';
-}
-
 export default {
-  async fetch (request, env) { // 添加 env 参数
+  async fetch (request) {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -34,14 +21,7 @@ export default {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
         }
       };
-      const url = new URL(request.url); // 获取完整的 URL
-      const { pathname } = url;
-
-      // 处理 WebSocket 连接
-      if (request.headers.get('Upgrade') === 'websocket') {
-        return handleWebSocket(request, env); // 传递 env 参数
-      }
-
+      const { pathname } = new URL(request.url);
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
@@ -89,20 +69,44 @@ const handleOPTIONS = async () => {
 };
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
-// const API_VERSION = "v1beta"; // 移除固定 API_VERSION
 
 // https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
 const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
+
+/**
+ * @function makeHeaders
+ * @description 创建请求头，包含 API 客户端信息和 API 密钥。
+ * @param {string} apiKey - API 密钥。
+ * @param {Object} more - 额外的请求头。
+ * @returns {Object} 包含所有请求头的对象。
+ */
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
 });
 
-async function handleModels (apiKey) {
-  // 对于 /models 请求，默认使用 v1beta 或根据实际情况选择一个通用版本
-  const apiVersion = getApiVersionForModel('default'); // 可以定义一个默认模型或策略
-  const response = await fetch(`${BASE_URL}/${apiVersion}/models`, {
+/**
+ * @function getApiVersionForModel
+ * @description 根据模型名称获取对应的 API 版本。
+ * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
+ * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
+ */
+function getApiVersionForModel(modelName) {
+  if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
+    return 'v1beta';
+  }
+  return 'v1alpha'; // 默认使用 v1alpha
+}
+
+/**
+ * @function handleModels
+ * @description 处理模型列表请求。
+ * @param {string} apiKey - API 密钥。
+ * @returns {Promise<Response>} 包含模型列表的响应。
+ */
+async function handleModels(apiKey) {
+  const response = await fetch(`${BASE_URL}/v1beta/models`, { // 模型列表始终使用 v1beta
     headers: makeHeaders(apiKey),
   });
   let { body } = response;
@@ -122,12 +126,20 @@ async function handleModels (apiKey) {
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
-async function handleEmbeddings (req, apiKey) {
+
+/**
+ * @function handleEmbeddings
+ * @description 处理嵌入请求。
+ * @param {Object} req - 请求体。
+ * @param {string} apiKey - API 密钥。
+ * @returns {Promise<Response>} 包含嵌入结果的响应。
+ */
+async function handleEmbeddings(req, apiKey) {
   if (typeof req.model !== "string") {
     throw new HttpError("model is not specified", 400);
   }
   if (!Array.isArray(req.input)) {
-    req.input = [ req.input ];
+    req.input = [req.input];
   }
   let model;
   if (req.model.startsWith("models/")) {
@@ -136,9 +148,8 @@ async function handleEmbeddings (req, apiKey) {
     req.model = DEFAULT_EMBEDDINGS_MODEL;
     model = "models/" + req.model;
   }
-  // 根据模型获取API版本
-  const apiVersion = getApiVersionForModel(model);
-  const response = await fetch(`${BASE_URL}/${apiVersion}/${model}:batchEmbedContents`, {
+  const API_VERSION_EMBEDDINGS = getApiVersionForModel(model); // 根据模型获取 API 版本
+  const response = await fetch(`${BASE_URL}/${API_VERSION_EMBEDDINGS}/${model}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
@@ -166,9 +177,17 @@ async function handleEmbeddings (req, apiKey) {
 }
 
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
-async function handleCompletions (req, apiKey) {
+
+/**
+ * @function handleCompletions
+ * @description 处理聊天补全请求。
+ * @param {Object} req - 请求体。
+ * @param {string} apiKey - API 密钥。
+ * @returns {Promise<Response>} 包含聊天补全结果的响应。
+ */
+async function handleCompletions(req, apiKey) {
   let model = DEFAULT_MODEL;
-  switch(true) {
+  switch (true) {
     case typeof req.model !== "string":
       break;
     case req.model.startsWith("models/"):
@@ -178,10 +197,9 @@ async function handleCompletions (req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
+  const API_VERSION_COMPLETIONS = getApiVersionForModel(`models/${model}`); // 根据模型获取 API 版本
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
-  // 根据模型获取API版本
-  const API_VERSION = getApiVersionForModel(`models/${model}`); // 确保传递完整模型名称
-  let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
+  let url = `${BASE_URL}/${API_VERSION_COMPLETIONS}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
   const response = await fetch(url, {
     method: "POST",
@@ -216,136 +234,308 @@ async function handleCompletions (req, apiKey) {
 }
 
 /**
- * @description 处理WebSocket连接。
- * @param {Request} request - 传入的请求对象。
- * @param {Object} env - 环境变量。
- * @returns {Response} WebSocket响应。
+ * @class MultimodalLiveClientWorker
+ * @description 处理客户端 WebSocket 连接和与 Gemini API 的交互。
+ * @extends EventEmitter
  */
-async function handleWebSocket(request, env) {
-  if (request.headers.get("Upgrade") !== "websocket") {
-		return new Response("Expected WebSocket connection", { status: 400 });
-	}
-  
-	const url = new URL(request.url);
-    const apiKey = url.searchParams.get("key");
-    const model = url.searchParams.get("model"); // 从URL参数获取模型
-    
-    if (!model || !apiKey) {
-        return new Response("Missing model or API key", { status: 400 });
-    }
-    
-    // 根据模型获取API版本
-    const apiVersion = getApiVersionForModel(model);
-    const targetPath = `/${apiVersion}/models/${model}:streamGenerateContent`;
-    
-    const targetUrl = `wss://generativelanguage.googleapis.com${targetPath}?key=${apiKey}`;
-	  
-	console.log('Target URL:', targetUrl);
-  
-  const [client, proxy] = new WebSocketPair();
-  proxy.accept();
-  
-   // 用于存储在连接建立前收到的消息
-   let pendingMessages = [];
-  
-   const targetWebSocket = new WebSocket(targetUrl);
- 
-   console.log('Initial targetWebSocket readyState:', targetWebSocket.readyState);
- 
-   targetWebSocket.addEventListener("open", () => {
-     console.log('Connected to target server');
-     console.log('targetWebSocket readyState after open:', targetWebSocket.readyState);
-     
-     // 连接建立后，发送所有待处理的消息
-     console.log(`Processing ${pendingMessages.length} pending messages`);
-     for (const message of pendingMessages) {
-      try {
-        targetWebSocket.send(message);
-        console.log('Sent pending message:', message);
-      } catch (error) {
-        console.error('Error sending pending message:', error);
-      }
-     }
-     pendingMessages = []; // 清空待处理消息队列
-   });
- 
-   proxy.addEventListener("message", async (event) => {
-     console.log('Received message from client:', {
-       dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
-       dataType: typeof event.data,
-       timestamp: new Date().toISOString()
-     });
-     
-     console.log("targetWebSocket.readyState"+targetWebSocket.readyState)
-     if (targetWebSocket.readyState === WebSocket.OPEN) {
-        try {
-          targetWebSocket.send(event.data);
-          console.log('Successfully sent message to gemini');
-        } catch (error) {
-          console.error('Error sending to gemini:', error);
-        }
-     } else {
-       // 如果连接还未建立，将消息加入待处理队列
-       console.log('Connection not ready, queueing message');
-       pendingMessages.push(event.data);
-     }
-   });
- 
-   targetWebSocket.addEventListener("message", (event) => {
-     console.log('Received message from gemini:', {
-     dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
-     dataType: typeof event.data,
-     timestamp: new Date().toISOString()
-     });
-     
-     try {
-     if (proxy.readyState === WebSocket.OPEN) {
-       proxy.send(event.data);
-       console.log('Successfully forwarded message to client');
-     }
-     } catch (error) {
-     console.error('Error forwarding to client:', error);
-     }
-   });
- 
-   targetWebSocket.addEventListener("close", (event) => {
-     console.log('Gemini connection closed:', {
-     code: event.code,
-     reason: event.reason || 'No reason provided',
-     wasClean: event.wasClean,
-     timestamp: new Date().toISOString(),
-     readyState: targetWebSocket.readyState
-     });
-     if (proxy.readyState === WebSocket.OPEN) {
-     proxy.close(event.code, event.reason);
-     }
-   });
- 
-   proxy.addEventListener("close", (event) => {
-     console.log('Client connection closed:', {
-     code: event.code,
-     reason: event.reason || 'No reason provided',
-     wasClean: event.wasClean,
-     timestamp: new Date().toISOString()
-     });
-     if (targetWebSocket.readyState === WebSocket.OPEN) {
-     targetWebSocket.close(event.code, event.reason);
-     }
-   });
- 
-   targetWebSocket.addEventListener("error", (error) => {
-     console.error('Gemini WebSocket error:', {
-     error: error.message || 'Unknown error',
-     timestamp: new Date().toISOString(),
-     readyState: targetWebSocket.readyState
-     });
-   });
+class MultimodalLiveClientWorker extends EventEmitter {
+  /**
+   * @constructor
+   * @param {WebSocket} clientWs - 客户端 WebSocket 实例。
+   * @param {string} apiKey - 用于 Gemini API 的 API 密钥。
+   */
+  constructor(clientWs, apiKey) {
+    super();
+    this.clientWs = clientWs;
+    this.apiKey = apiKey;
+    this.config = null;
+    this.toolManager = new WorkerToolManager();
+    this.conversationHistory = [];
+    this.isStreaming = false;
 
- 
-   return new Response(null, {
-   status: 101,
-   webSocket: client,
-   });
+    this.clientWs.addEventListener("message", this.handleClientMessage.bind(this));
+    this.clientWs.addEventListener("close", this.handleClientClose.bind(this));
+    this.clientWs.addEventListener("error", this.handleClientError.bind(this));
+  }
+
+  /**
+   * @function handleClientMessage
+   * @description 处理来自客户端的 WebSocket 消息。
+   * @param {MessageEvent} event - WebSocket 消息事件。
+   */
+  async handleClientMessage(event) {
+    try {
+      const message = JSON.parse(event.data);
+      if (message.setup) {
+        this.config = message.setup;
+        if (this.config.tools) {
+          this.config.tools.forEach(toolDeclaration => {
+            if (toolDeclaration.functionDeclarations) {
+              toolDeclaration.functionDeclarations.forEach(funcDecl => {
+                if (funcDecl.name === 'get_weather_on_date') {
+                  console.log("Weather tool declared by client.");
+                }
+              });
+            }
+          });
+        }
+        this.conversationHistory = [];
+        this.sendSetupComplete();
+      } else if (message.realtimeInput) {
+        const mediaChunks = message.realtimeInput.mediaChunks;
+        if (mediaChunks?.length > 0) {
+          const parts = mediaChunks.map(chunk => ({
+            inlineData: {
+              mimeType: chunk.mimeType,
+              data: chunk.data
+            }
+          }));
+          this.sendContentToGemini(parts, false);
+        }
+      } else if (message.clientContent) {
+        const turns = message.clientContent.turns;
+        if (turns?.length > 0) {
+          const parts = turns[0].parts;
+          this.sendContentToGemini(parts, message.clientContent.turnComplete);
+        }
+      } else if (message.toolResponse) {
+        this.sendToolResponseToGemini(message.toolResponse);
+      }
+    } catch (error) {
+      this.clientWs.send(JSON.stringify({ error: error.message }));
+    }
+  }
+
+  /**
+   * @function sendSetupComplete
+   * @description 向客户端发送设置完成消息。
+   */
+  sendSetupComplete() {
+    this.clientWs.send(JSON.stringify({ setupComplete: {} }));
+  }
+
+  /**
+   * @function sendContentToGemini
+   * @description 将内容发送到 Gemini API 进行生成。
+   * @param {Array<Object>} parts - 要发送到 Gemini API 的内容部分。
+   * @param {boolean} turnComplete - 指示当前回合是否完成。
+   */
+  async sendContentToGemini(parts, turnComplete) {
+    const content = { role: 'user', parts: parts };
+    this.conversationHistory.push(content);
+
+    const API_VERSION_GEMINI = getApiVersionForModel(`models/${this.config.model}`); // 根据模型获取 API 版本
+
+    const requestBody = {
+      contents: this.conversationHistory,
+      generationConfig: {
+        ...this.config.generationConfig,
+        // 根据配置可选地添加语音输出配置
+        ...(this.config.enableTTS && {
+          responseModalities: ["AUDIO"],
+          speechConfig: this.config.speechConfig || {
+            voiceConfig: {
+              name: this.config.voice || "en-US-Neural2-H" // 默认语音，或者从 config 中获取
+            }
+          }
+        })
+      },
+      safetySettings: this.config.safetySettings || safetySettings,
+      systemInstruction: this.config.systemInstruction,
+      tools: this.config.tools
+    };
+
+    const url = `${BASE_URL}/${API_VERSION_GEMINI}/models/${this.config.model}:streamGenerateContent`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          this.sendTurnComplete();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf('\n');
+        while (boundary !== -1) {
+          const line = buffer.substring(0, boundary).trim();
+          buffer = buffer.substring(boundary + 1);
+
+          if (line.startsWith('data:')) {
+            const jsonStr = line.substring(5).trim();
+            if (jsonStr) {
+              try {
+                const geminiResponse = JSON.parse(jsonStr);
+                this.processGeminiResponse(geminiResponse);
+              } catch (parseError) {
+                console.error("Error parsing Gemini API stream chunk:", parseError);
+              }
+            }
+          }
+          boundary = buffer.indexOf('\n');
+        }
+      }
+    } catch (error) {
+      this.clientWs.send(JSON.stringify({ error: error.message }));
+    }
+  }
+
+  /**
+   * @function sendToolResponseToGemini
+   * @description 将工具响应发送到 Gemini API。
+   * @param {Object} toolResponse - 工具响应对象。
+   */
+  async sendToolResponseToGemini(toolResponse) {
+    const content = {
+      role: 'user',
+      parts: [{
+        functionResponse: {
+          name: toolResponse.name,
+          response: toolResponse.response
+        }
+      }]
+    };
+    this.conversationHistory.push(content);
+
+    const API_VERSION_GEMINI = getApiVersionForModel(`models/${this.config.model}`); // 根据模型获取 API 版本
+
+    const requestBody = {
+      contents: this.conversationHistory,
+      generationConfig: {
+        ...this.config.generationConfig,
+        // 根据配置可选地添加语音输出配置
+        ...(this.config.enableTTS && {
+          responseModalities: ["AUDIO"],
+          speechConfig: this.config.speechConfig || {
+            voiceConfig: {
+              name: this.config.voice || "en-US-Neural2-H" // 默认语音，或者从 config 中获取
+            }
+          }
+        })
+      },
+      safetySettings: this.config.safetySettings || safetySettings,
+      systemInstruction: this.config.systemInstruction,
+      tools: this.config.tools
+    };
+
+    const url = `${BASE_URL}/${API_VERSION_GEMINI}/models/${this.config.model}:streamGenerateContent`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          this.sendTurnComplete();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf('\n');
+        while (boundary !== -1) {
+          const line = buffer.substring(0, boundary).trim();
+          buffer = buffer.substring(boundary + 1);
+
+          if (line.startsWith('data:')) {
+            const jsonStr = line.substring(5).trim();
+            if (jsonStr) {
+              try {
+                const geminiResponse = JSON.parse(jsonStr);
+                this.processGeminiResponse(geminiResponse);
+              } catch (parseError) {
+                console.error("Error parsing Gemini API stream chunk:", parseError);
+              }
+            }
+          }
+          boundary = buffer.indexOf('\n');
+        }
+      }
+    } catch (error) {
+      this.clientWs.send(JSON.stringify({ error: error.message }));
+    }
+  }
+
+  /**
+   * @function processGeminiResponse
+   * @description 处理来自 Gemini API 的响应。
+   * @param {Object} geminiResponse - Gemini API 响应对象。
+   */
+  processGeminiResponse(geminiResponse) {
+    if (geminiResponse.candidates && geminiResponse.candidates.length > 0) {
+      const candidate = geminiResponse.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        const textParts = candidate.content.parts.filter(part => part.text);
+        if (textParts.length > 0) {
+          const text = textParts.map(part => part.text).join('');
+          this.clientWs.send(JSON.stringify({ textOutput: { text: text } }));
+        }
+        const audioParts = candidate.content.parts.filter(part => part.inlineData && part.inlineData.mimeType.startsWith('audio/'));
+        if (audioParts.length > 0) {
+          const audioData = audioParts[0].inlineData.data;
+          this.clientWs.send(JSON.stringify({ audioOutput: { audioData: audioData } }));
+        }
+        const functionCallParts = candidate.content.parts.filter(part => part.functionCall);
+        if (functionCallParts.length > 0) {
+          const functionCall = functionCallParts[0].functionCall;
+          this.clientWs.send(JSON.stringify({ toolCall: { name: functionCall.name, args: functionCall.args } }));
+        }
+      }
+      if (candidate.finishReason) {
+        this.sendTurnComplete();
+      }
+    }
+  }
+
+  /**
+   * @function sendTurnComplete
+   * @description 向客户端发送回合完成消息。
+   */
+  sendTurnComplete() {
+    this.clientWs.send(JSON.stringify({ turnComplete: {} }));
+  }
+
+  /**
+   * @function handleClientClose
+   * @description 处理客户端 WebSocket 关闭事件。
+   */
+  handleClientClose() {
+    console.log("Client WebSocket closed.");
+  }
+
+  /**
+   * @function handleClientError
+   * @description 处理客户端 WebSocket 错误事件。
+   * @param {Event} event - WebSocket 错误事件。
+   */
+  handleClientError(event) {
+    console.error("Client WebSocket error:", event);
+  }
 }
 
 const harmCategory = [

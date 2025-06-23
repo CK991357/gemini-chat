@@ -28,8 +28,8 @@ const screenPreview = document.getElementById('screen-preview-element'); // 更�
 const _inputAudioVisualizer = document.getElementById('input-audio-visualizer'); // 保持，可能用于输入音频可视化
 const apiKeyInput = document.getElementById('api-key');
 const voiceSelect = document.getElementById('voice-select');
+const modelSelect = document.getElementById('model-select'); // 新增：模型选择下拉菜单
 const fpsInput = document.getElementById('fps-input');
-const modelSelect = document.getElementById('model-select'); // 新增模型选择元素
 const configToggle = document.getElementById('toggle-config');
 const configContainer = document.querySelector('.control-panel');
 const systemInstructionInput = document.getElementById('system-instruction');
@@ -43,7 +43,7 @@ const interruptButton = document.getElementById('interrupt-button'); // 新增
 const themeToggleBtn = document.getElementById('theme-toggle');
 const toggleLogBtn = document.getElementById('toggle-log');
 const _logPanel = document.querySelector('.chat-container.log-mode');
-const clearLogsBtn = document = document.getElementById('clear-logs');
+const clearLogsBtn = document.getElementById('clear-logs');
 const modeTabs = document.querySelectorAll('.mode-tabs .tab');
 const chatContainers = document.querySelectorAll('.chat-container');
 
@@ -56,9 +56,9 @@ const stopScreenButton = document.getElementById('stop-screen-button');
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
+const savedModel = localStorage.getItem('gemini_model'); // 新增：保存的模型
 const savedFPS = localStorage.getItem('video_fps');
 const savedSystemInstruction = localStorage.getItem('system_instruction');
-const savedModel = localStorage.getItem('gemini_model'); // 新增：加载保存的模型选择
 
 
 if (savedApiKey) {
@@ -67,6 +67,11 @@ if (savedApiKey) {
 if (savedVoice) {
     voiceSelect.value = savedVoice;
 }
+if (savedModel) {
+    modelSelect.value = savedModel;
+} else {
+    modelSelect.value = CONFIG.API.MODEL_NAME; // 确保默认值被设置
+}
 
 if (savedFPS) {
     fpsInput.value = savedFPS;
@@ -74,11 +79,6 @@ if (savedFPS) {
 if (savedSystemInstruction) {
     systemInstructionInput.value = savedSystemInstruction;
     CONFIG.SYSTEM_INSTRUCTION.TEXT = savedSystemInstruction;
-}
-if (savedModel) { // 新增：设置模型选择器的值
-    modelSelect.value = savedModel;
-} else {
-    modelSelect.value = CONFIG.API.MODEL_NAME; // 默认值
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -171,6 +171,26 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.style.overflow = '';
         }
     });
+
+    // 动态生成模型选择选项
+    const modelSelect = document.getElementById('model-select');
+    if (modelSelect) {
+        modelSelect.innerHTML = ''; // 清空现有选项
+        CONFIG.API.AVAILABLE_MODELS.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.value;
+            option.textContent = model.label;
+            if (model.value === CONFIG.API.MODEL_NAME) {
+                option.selected = true; // 默认选中
+            }
+            modelSelect.appendChild(option);
+        });
+        // 加载保存的模型选择
+        const savedModel = localStorage.getItem('gemini_model');
+        if (savedModel) {
+            modelSelect.value = savedModel;
+        }
+    }
 });
 
 // State variables
@@ -190,6 +210,7 @@ let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 
 // Multimodal Client
+// 客户端现在统一连接到 Worker 代理
 const client = new MultimodalLiveClient();
 
 /**
@@ -631,48 +652,52 @@ async function connectToWebsocket() {
     // Save values to localStorage
     localStorage.setItem('gemini_api_key', apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
-    localStorage.setItem('system_instruction', systemInstructionInput.value);
     localStorage.setItem('gemini_model', modelSelect.value); // 新增：保存模型选择
+    localStorage.setItem('system_instruction', systemInstructionInput.value);
 
-    /**
-     * @description 根据用户选择的响应类型构建模型生成配置。
-     * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
-     * @returns {string[]} 响应模态数组。
-     */
-    function getResponseModalities(selectedResponseType) {
-        if (selectedResponseType === 'audio') {
-            return ['audio'];
-        } else {
-            return ['text'];
-        }
-    }
-
-    const config = {
-        model: modelSelect.value, // 使用选定的模型
-        generationConfig: {
-            responseModalities: getResponseModalities(responseTypeSelect.value),
-            speechConfig: {
-                voiceConfig: {
-                    prebuiltVoiceConfig: {
-                        voiceName: voiceSelect.value
-                    }
-                },
+        /**
+         * @description 根据用户选择的响应类型构建模型生成配置。
+         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
+         * @returns {string[]} 响应模态数组。
+         */
+        /**
+         * @description 根据用户选择的响应类型构建模型生成配置。
+         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
+         * @returns {string[]} 响应模态数组。
+         */
+        function getResponseModalities(selectedResponseType) {
+            if (selectedResponseType === 'audio') {
+                return ['audio'];
+            } else {
+                return ['text'];
             }
-        },
-        systemInstruction: {
-            parts: [{
-                text: systemInstructionInput.value
-            }],
         }
-    };
+
+        const config = {
+            model: modelSelect.value, // 从下拉菜单获取模型值
+            generationConfig: {
+                responseModalities: getResponseModalities(responseTypeSelect.value),
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: {
+                            voiceName: voiceSelect.value
+                        }
+                    },
+                }
+            },
+
+            systemInstruction: {
+                parts: [{
+                    text: systemInstructionInput.value     // You can change system instruction in the config.js file
+                }],
+            }
+        };  
 
     try {
-        // 使用代理Worker的URL，并传递自定义URL
+        // 统一连接到 Worker 代理
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // 注意：这里将模型名称作为URL参数传递给Worker
-        const workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?model=${encodeURIComponent(modelSelect.value)}`;
-        
-        await client.connect(config, apiKeyInput.value, workerProxyUrl); // 传递自定义URL
+        const workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
+        await client.connect(config, apiKeyInput.value, workerProxyUrl);
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';
@@ -683,7 +708,7 @@ async function connectToWebsocket() {
         micButton.disabled = false;
         cameraButton.disabled = false;
         screenButton.disabled = false;
-        logMessage(`已连接到 Gemini 多模态实时 API (模型: ${modelSelect.value})`, 'system');
+        logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
         updateConnectionStatus();
     } catch (error) {
         const errorMessage = error.message || '未知错误';
