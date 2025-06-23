@@ -39,8 +39,17 @@ export default {
           const [client, proxy] = new WebSocketPair();
           proxy.accept();
 
-          // 移除 /ws/ 前缀，直接代理到 Gemini API 的 WebSocket 端点
-          const targetUrl = `wss://generativelanguage.googleapis.com/` + url.pathname.substring(1) + url.search;
+          // 从 URL 参数获取模型名称
+          const modelName = url.searchParams.get("model");
+          if (!modelName) {
+              return new Response("Model name is missing for WebSocket connection", { status: 400 });
+          }
+
+          // 根据模型名称获取对应的 API 版本
+          const apiVersion = getApiVersionForModel(modelName);
+
+          // 构建目标 Gemini WebSocket URL
+          const targetUrl = `wss://generativelanguage.googleapis.com/${apiVersion}/${modelName}:streamGenerateContent?key=${apiKeyFromUrl}`;
           console.log('Proxying WebSocket to:', targetUrl);
 
           const targetWebSocket = new WebSocket(targetUrl);
@@ -151,19 +160,6 @@ const makeHeaders = (apiKey, more) => ({
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
 });
-
-/**
- * @function getApiVersionForModel
- * @description 根据模型名称获取对应的 API 版本。
- * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
- * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
- */
-function getApiVersionForModel(modelName) {
-  if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
-    return 'v1beta';
-  }
-  return 'v1alpha'; // 默认使用 v1alpha
-}
 
 /**
  * @function handleModels

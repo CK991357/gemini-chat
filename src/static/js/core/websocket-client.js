@@ -52,11 +52,12 @@ export class MultimodalLiveClient extends EventEmitter {
      * @param {Object[]} config.systemInstruction.parts - Parts of the system instruction.
      * @param {string} config.systemInstruction.parts[].text - Text content of the instruction part.
      * @param {Object[]} [config.tools] - Additional tools to be used by the model.
+     * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
      * @param {string} [customBaseUrl] - 自定义 WebSocket 连接 URL。
      * @returns {Promise<boolean>} - Resolves with true when the connection是 established.
      * @throws {ApplicationError} - Throws an error if the connection fails.
      */
-    connect(config, apiKey, customBaseUrl = null) {
+    connect(config, apiKey, modelName, customBaseUrl = null) {
         this.config = {
             ...config,
             tools: [
@@ -72,7 +73,8 @@ export class MultimodalLiveClient extends EventEmitter {
                 ErrorCodes.WEBSOCKET_CONNECTION_FAILED
             );
         }
-        const ws = new WebSocket(`${targetUrl}?key=${apiKey}`);
+        // 将模型名称添加到 WebSocket URL 的查询参数中
+        const ws = new WebSocket(`${targetUrl}?key=${apiKey}&model=${encodeURIComponent(modelName)}`);
 
         ws.addEventListener('message', async (evt) => {
             if (evt.data instanceof Blob) {

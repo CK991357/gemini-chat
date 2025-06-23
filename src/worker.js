@@ -154,9 +154,18 @@ function getContentType(path) {
  * @returns {Response} WebSocket 升级响应。
  */
 async function handleWebSocket(request, env) {
-  // 直接将 WebSocket 请求转发到 api_proxy/worker.mjs
+  // 从原始请求 URL 中获取所有查询参数
+  const url = new URL(request.url);
+  const queryParams = url.searchParams.toString();
+
+  // 构建转发到 api_proxy/worker.mjs 的 URL，包含所有原始查询参数
+  const proxyUrl = `${url.protocol}//${url.host}/api_proxy/worker.mjs?${queryParams}`;
+  
+  // 创建一个新的请求对象，使用新的 URL
+  const proxyRequest = new Request(proxyUrl, request);
+
+  // 将 WebSocket 请求转发到 api_proxy/worker.mjs
   // 注意：这里假设 api_proxy/worker.mjs 能够处理 WebSocket 升级请求
-  const proxyRequest = new Request(request);
   const worker = await import('./api_proxy/worker.mjs');
   return await worker.default.fetch(proxyRequest);
 }
