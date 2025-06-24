@@ -9,11 +9,12 @@ export default {
     const { pathname, searchParams } = new URL(request.url);
     const apiKey = searchParams.get("key") || request.headers.get("Authorization")?.split(" ")[1];
 
-    if (pathname.startsWith("/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent")) {
-      if (request.headers.get("Upgrade") === "websocket") {
+    if (request.headers.get("Upgrade") === "websocket") {
+      const model = searchParams.get("model");
+      if (model === "gemini-2.0-exp") {
         return handleWebSocket(request, apiKey).catch(errHandler);
       }
-      throw new HttpError("Expected WebSocket upgrade", 426);
+      throw new HttpError("Unsupported WebSocket model or type", 426);
     }
 
     try {
@@ -82,7 +83,7 @@ const API_CLIENT = "genai-js/0.21.0";
  * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
  */
 const getApiVersionForModel = (modelName) => {
-    if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
+    if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17') || modelName.includes('gemini-2.0-exp')) {
         return 'v1beta';
     }
     return 'v1alpha'; // 默认使用 v1alpha
