@@ -14,7 +14,8 @@ export default {
       return new Response(err.message, fixCors({ status: err.status ?? 500 }));
     };
     try {
-      const auth = request.headers.get("Authorization");
+      // 确保 request.headers 存在，并安全地获取 Authorization 头
+      const auth = request.headers && request.headers.get("Authorization");
       const apiKey = auth?.split(" ")[1];
       const assert = (success) => {
         if (!success) {
@@ -341,19 +342,16 @@ const transformMsg = async ({ role, content }) => {
           });
           break;
         default:
-          // 如果类型未知但有文本内容，则作为文本处理
-          if (item.text) {
-            console.warn(`Unknown content item type: "${item.type}", treating as text.`);
-            parts.push({ text: item.text });
-          } else {
-            throw new TypeError(`Unknown "content" item type: "${item.type}"`);
-          }
+          // 如果类型未知且没有文本内容，则记录警告并跳过该项
+          console.warn(`Unknown or undefined content item type: "${item.type}", skipping this item.`);
+          break; // 跳过当前项
       }
     }
   } else {
-    // 如果 content 既不是字符串也不是数组，尝试作为文本处理
-    console.warn(`Unexpected content type: "${typeof content}", attempting to treat as text.`);
-    parts.push({ text: String(content) });
+    // 如果 content 既不是字符串也不是数组，或者为 undefined/null，则记录警告并跳过
+    console.warn(`Unexpected or undefined content type: "${typeof content}", skipping this item.`);
+    // 可以选择添加一个空文本部分，或者完全跳过，取决于具体需求
+    // parts.push({ text: "" }); 
   }
 
   // 如果所有内容都是图片 URL，添加一个空文本部分以避免 API 错误
@@ -443,14 +441,15 @@ async function parseStream (chunk, controller) {
   do {
     const match = this.buffer.match(responseLineRE);
     if (!match) { break; }
-    controller.enqueue(match[1]);
+    // 确保在 enqueue 之前对匹配到的 JSON 字符串进行 trim()
+    controller.enqueue(match[1].trim());
     this.buffer = this.buffer.substring(match[0].length);
   } while (true); // eslint-disable-line no-constant-condition
 }
 async function parseStreamFlush (controller) {
   if (this.buffer) {
     console.error("Invalid data:", this.buffer);
-    controller.enqueue(this.buffer);
+    controller.enqueue(this.buffer.trim()); // 确保 flush 时也 trim()
   }
 }
 
@@ -478,14 +477,15 @@ async function toOpenAiStream (chunk, controller) {
   if (!line) { return; }
   let data;
   try {
-    data = JSON.parse(line);
+    // 确保在 JSON.parse 之前对行进行 trim()
+    data = JSON.parse(line.trim());
   } catch (err) {
-    console.error(line);
-    console.error(err);
+    console.error("Error parsing JSON from stream:", err);
+    console.error("Problematic line content:", line); // 记录原始行内容
     const length = this.last.length || 1; // at least 1 error msg
     const candidates = Array.from({ length }, (_, index) => ({
       finishReason: "error",
-      content: { parts: [{ text: err }] },
+      content: { parts: [{ text: `JSON parse error: ${err.message}` }] }, // 更具体的错误信息
       index,
     }));
     data = { candidates };
@@ -509,4 +509,3 @@ async function toOpenAiStreamFlush (controller) {
     controller.enqueue("data: [DONE]" + delimiter);
   }
 }
-
