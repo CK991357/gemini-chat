@@ -75,6 +75,19 @@ const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 const API_CLIENT = "genai-js/0.21.0";
 
+/**
+ * @function getApiVersionForModel
+ * @description 根据模型名称获取对应的 API 版本。
+ * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
+ * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
+ */
+const getApiVersionForModel = (modelName) => {
+    if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
+        return 'v1beta';
+    }
+    return 'v1alpha'; // 默认使用 v1alpha
+};
+
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
@@ -769,11 +782,11 @@ class WorkerWeatherTool {
 }
 
 class MultimodalLiveClientWorker extends EventEmitter {
-  constructor(clientWs, apiKey) {
+  constructor(clientWs, apiKey, initialModel) {
     super();
     this.clientWs = clientWs;
     this.apiKey = apiKey;
-    this.config = null;
+    this.config = { model: initialModel }; // 初始化 config.model
     this.toolManager = new WorkerToolManager();
     this.conversationHistory = [];
     this.isStreaming = false;
@@ -853,7 +866,8 @@ class MultimodalLiveClientWorker extends EventEmitter {
         tools: this.config.tools
       };
 
-    const url = `${BASE_URL}/ws/google.ai.generativelanguage.${API_VERSION}.GenerativeService.BidiGenerateContent?key=${this.apiKey}&model=${encodeURIComponent(this.config.model)}`;
+    const apiVersion = getApiVersionForModel(this.config.model);
+    const url = `${BASE_URL}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent?key=${this.apiKey}&model=${encodeURIComponent(this.config.model)}`;
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -922,7 +936,8 @@ class MultimodalLiveClientWorker extends EventEmitter {
       tools: this.config.tools
     };
 
-    const url = `${BASE_URL}/ws/google.ai.generativelanguage.${API_VERSION}.GenerativeService.BidiGenerateContent?key=${this.apiKey}&model=${encodeURIComponent(this.config.model)}`;
+    const apiVersion = getApiVersionForModel(this.config.model);
+    const url = `${BASE_URL}/ws/google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContent?key=${this.apiKey}&model=${encodeURIComponent(this.config.model)}`;
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -1066,7 +1081,13 @@ class MultimodalLiveClientWorker extends EventEmitter {
 async function handleWebSocket(request, apiKey) {
   const { 0: clientWs, 1: serverWs } = new WebSocketPair();
   clientWs.accept();
-  new MultimodalLiveClientWorker(clientWs, apiKey);
+
+  // 从请求URL中解析model参数
+  const url = new URL(request.url);
+  const model = url.searchParams.get("model");
+
+  // 将model参数传递给MultimodalLiveClientWorker
+  new MultimodalLiveClientWorker(clientWs, apiKey, model);
   return new Response(null, {
     status: 101,
     webSocket: serverWs,
