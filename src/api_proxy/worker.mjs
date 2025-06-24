@@ -169,19 +169,26 @@ async function handleCompletions (req, apiKey) {
 
   // 动态选择基础 URL
   let targetBaseUrl = BASE_URL;
+  let isGemini25ProxyModel = false;
   if (model.startsWith("gemini-2.5")) { // 匹配所有 gemini-2.5 开头的模型
       targetBaseUrl = GEMINI_2_5_PROXY_URL;
+      isGemini25ProxyModel = true;
   }
 
-  let url = `${targetBaseUrl}/${API_VERSION}/models/${model}:${TASK}`;
-  if (req.stream) { url += "?alt=sse"; }
-
+  let url;
   let requestBody;
-  try {
-    requestBody = JSON.stringify(await transformRequest(req));
-  } catch (err) {
-    console.error("Error transforming request body:", err);
-    throw new HttpError(`Invalid request format: ${err.message}`, 400);
+  if (isGemini25ProxyModel) {
+      url = `${targetBaseUrl}/v1/chat/completions`; // OpenAI 兼容代理的路径
+      requestBody = JSON.stringify(req); // 直接使用原始请求体
+  } else {
+      url = `${targetBaseUrl}/${API_VERSION}/models/${model}:${TASK}`;
+      if (req.stream) { url += "?alt=sse"; }
+      try {
+        requestBody = JSON.stringify(await transformRequest(req));
+      } catch (err) {
+        console.error("Error transforming request body:", err);
+        throw new HttpError(`Invalid request format: ${err.message}`, 400);
+      }
   }
 
   const response = await fetch(url, {
@@ -193,7 +200,7 @@ async function handleCompletions (req, apiKey) {
   let body = response.body;
   if (response.ok) {
     let id = generateChatcmplId();
-    if (req.stream) {
+    if (req.stream && !isGemini25ProxyModel) { // 仅当不是 gemini-2.5 模型时才进行转换
       body = response.body
         .pipeThrough(new TextDecoderStream())
         .pipeThrough(new TransformStream({
@@ -209,12 +216,16 @@ async function handleCompletions (req, apiKey) {
         }))
         .pipeThrough(new TextEncoderStream());
     } else {
-      body = await response.text();
-      try {
-        body = processCompletionsResponse(JSON.parse(body), model, id);
-      } catch (err) {
-        console.error("Error parsing Gemini API response:", err);
-        throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
+      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应体
+          body = response.body;
+      } else {
+          body = await response.text();
+          try {
+            body = processCompletionsResponse(JSON.parse(body), model, id);
+          } catch (err) {
+            console.error("Error parsing Gemini API response:", err);
+            throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
+          }
       }
     }
   }
