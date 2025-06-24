@@ -146,83 +146,123 @@ function getContentType(path) {
   return types[ext] || 'text/plain';
 }
 
-/**
- * @function handleWebSocket
- * @description 处理 WebSocket 连接请求，将其转发到 api_proxy/worker.mjs。
- * @param {Request} request - 传入的请求对象。
- * @param {Object} env - 环境变量。
- * @returns {Response} WebSocket 升级响应。
- */
-/**
- * @function handleWebSocket
- * @description 处理 WebSocket 连接请求，直接代理到 Google Gemini Live API。
- * @param {Request} request - 传入的请求对象。
- * @param {Object} env - 环境变量。
- * @returns {Response} WebSocket 升级响应。
- */
-/**
- * @function handleWebSocket
- * @description 处理 WebSocket 连接请求，直接代理到 Google Gemini Live API。
- * @param {Request} request - 传入的请求对象。
- * @param {Object} env - 环境变量。
- * @returns {Response} WebSocket 升级响应。
- */
 async function handleWebSocket(request, env) {
-  const url = new URL(request.url);
-  const apiKey = url.searchParams.get('key');
-  const modelName = url.searchParams.get('model');
 
-  if (!apiKey || !modelName) {
-    return new Response('Missing API key or model name in WebSocket URL', { status: 400 });
-  }
 
-  // 根据模型名称确定 API 版本
-  function getApiVersionForModel(name) {
-    if (name.includes('gemini-2.5-flash-preview-05-20') || name.includes('gemini-2.5-flash-lite-preview-06-17')) {
-      return 'v1beta';
-    }
-    return 'v1alpha'; // 默认使用 v1alpha，适用于 gemini-2.0-flash-exp
-  }
+  if (request.headers.get("Upgrade") !== "websocket") {
+		return new Response("Expected WebSocket connection", { status: 400 });
+	}
+  
+	const url = new URL(request.url);
+	const pathAndQuery = url.pathname + url.search;
+	const targetUrl = `wss://generativelanguage.googleapis.com${pathAndQuery}`;
+	  
+	console.log('Target URL:', targetUrl);
+  
+  const [client, proxy] = new WebSocketPair();
+  proxy.accept();
+  
+   // 用于存储在连接建立前收到的消息
+   let pendingMessages = [];
+  
+   const targetWebSocket = new WebSocket(targetUrl);
+ 
+   console.log('Initial targetWebSocket readyState:', targetWebSocket.readyState);
+ 
+   targetWebSocket.addEventListener("open", () => {
+     console.log('Connected to target server');
+     console.log('targetWebSocket readyState after open:', targetWebSocket.readyState);
+     
+     // 连接建立后，发送所有待处理的消息
+     console.log(`Processing ${pendingMessages.length} pending messages`);
+     for (const message of pendingMessages) {
+      try {
+        targetWebSocket.send(message);
+        console.log('Sent pending message:', message);
+      } catch (error) {
+        console.error('Error sending pending message:', error);
+      }
+     }
+     pendingMessages = []; // 清空待处理消息队列
+   });
+ 
+   proxy.addEventListener("message", async (event) => {
+     console.log('Received message from client:', {
+       dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
+       dataType: typeof event.data,
+       timestamp: new Date().toISOString()
+     });
+     
+     console.log("targetWebSocket.readyState"+targetWebSocket.readyState)
+     if (targetWebSocket.readyState === WebSocket.OPEN) {
+        try {
+          targetWebSocket.send(event.data);
+          console.log('Successfully sent message to gemini');
+        } catch (error) {
+          console.error('Error sending to gemini:', error);
+        }
+     } else {
+       // 如果连接还未建立，将消息加入待处理队列
+       console.log('Connection not ready, queueing message');
+       pendingMessages.push(event.data);
+     }
+   });
+ 
+   targetWebSocket.addEventListener("message", (event) => {
+     console.log('Received message from gemini:', {
+     dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
+     dataType: typeof event.data,
+     timestamp: new Date().toISOString()
+     });
+     
+     try {
+     if (proxy.readyState === WebSocket.OPEN) {
+       proxy.send(event.data);
+       console.log('Successfully forwarded message to client');
+     }
+     } catch (error) {
+     console.error('Error forwarding to client:', error);
+     }
+   });
+ 
+   targetWebSocket.addEventListener("close", (event) => {
+     console.log('Gemini connection closed:', {
+     code: event.code,
+     reason: event.reason || 'No reason provided',
+     wasClean: event.wasClean,
+     timestamp: new Date().toISOString(),
+     readyState: targetWebSocket.readyState
+     });
+     if (proxy.readyState === WebSocket.OPEN) {
+     proxy.close(event.code, event.reason);
+     }
+   });
+ 
+   proxy.addEventListener("close", (event) => {
+     console.log('Client connection closed:', {
+     code: event.code,
+     reason: event.reason || 'No reason provided',
+     wasClean: event.wasClean,
+     timestamp: new Date().toISOString()
+     });
+     if (targetWebSocket.readyState === WebSocket.OPEN) {
+     targetWebSocket.close(event.code, event.reason);
+     }
+   });
+ 
+   targetWebSocket.addEventListener("error", (error) => {
+     console.error('Gemini WebSocket error:', {
+     error: error.message || 'Unknown error',
+     timestamp: new Date().toISOString(),
+     readyState: targetWebSocket.readyState
+     });
+   });
 
-  const apiVersion = getApiVersionForModel(modelName);
-  const geminiWsUrl = `wss://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:streamGenerateContent?key=${apiKey}&alt=websocket`;
-
-  // 创建 WebSocket 对
-  const { 0: clientWs, 1: serverWs } = new WebSocketPair();
-
-  // 接受传入的 WebSocket 连接
-  const response = new Response(null, { status: 101, webSocket: clientWs });
-
-  // 使用 fetch API 将 serverWs 连接到 Gemini Live API
-  try {
-    const proxyRequest = new Request(geminiWsUrl, {
-      headers: {
-        'Upgrade': 'websocket',
-        'Connection': 'Upgrade',
-        'Sec-WebSocket-Key': request.headers.get('Sec-WebSocket-Key'),
-        'Sec-WebSocket-Version': request.headers.get('Sec-WebSocket-Version'),
-      },
-      // @ts-ignore
-      webSocket: serverWs, // 将 serverWs 传递给 fetch
-    });
-
-    // 发起 WebSocket 代理请求
-    const proxyResponse = await fetch(proxyRequest);
-
-    // 如果代理响应不是 101 Switching Protocols，则表示代理失败
-    if (proxyResponse.status !== 101) {
-      console.error('Failed to proxy WebSocket connection:', proxyResponse.status, proxyResponse.statusText);
-      clientWs.close(1011, `Failed to proxy: ${proxyResponse.statusText}`);
-      return proxyResponse; // 返回代理响应的错误
-    }
-
-    // 代理成功，无需额外处理，WebSocketPair 会自动转发消息
-  } catch (error) {
-    console.error('WebSocket proxy error:', error);
-    clientWs.close(1011, `Proxy Error: ${error.message}`);
-  }
-
-  return response;
+ 
+   return new Response(null, {
+   status: 101,
+   webSocket: client,
+   });
 }
 
 async function handleAPIRequest(request, env) {
