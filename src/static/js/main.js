@@ -855,36 +855,59 @@ client.on('audio', async (data) => {
     }
 });
 
-// 添加消息缓冲机制
-let messageBuffer = '';
-let bufferTimer = null;
+// 声明一个全局变量来跟踪当前 AI 消息的内容 div
+let currentAIMessageContentDiv = null;
+
+/**
+ * 创建并添加一个新的 AI 消息元素到聊天历史。
+ * @returns {HTMLElement} 新创建的 AI 消息的内容 div 元素。
+ */
+function createAIMessageElement() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai');
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '🤖';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+    // contentDiv.textContent = ''; // 初始为空
+
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+    return contentDiv;
+}
 
 client.on('content', (data) => {
     if (data.modelTurn) {
         if (data.modelTurn.parts.some(part => part.functionCall)) {
             isUsingTool = true;
             Logger.info('Model is using a tool');
+            // 在工具调用前，确保当前 AI 消息完成
+            if (currentAIMessageContentDiv) {
+                currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
+            }
         } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
             isUsingTool = false;
             Logger.info('Tool usage completed');
+            // 工具响应后，如果需要，可以立即创建一个新的 AI 消息块来显示后续文本
+            if (!currentAIMessageContentDiv) {
+                currentAIMessageContentDiv = createAIMessageElement();
+            }
         }
 
         const text = data.modelTurn.parts.map(part => part.text).join('');
         
         if (text) {
-            // 缓冲消息
-            messageBuffer += text;
-            
-            // 清除现有定时器
-            if (bufferTimer) clearTimeout(bufferTimer);
-            
-            // 设置新定时器
-            bufferTimer = setTimeout(() => {
-                if (messageBuffer.trim()) {
-                    updateLastAIMessage(messageBuffer, true); // 追加文本
-                    messageBuffer = '';
-                }
-            }, 300); // 300ms缓冲时间
+            // WebSocket 模式下，直接追加文本
+            if (!currentAIMessageContentDiv) {
+                currentAIMessageContentDiv = createAIMessageElement();
+            }
+            currentAIMessageContentDiv.textContent += text;
+            scrollToBottom();
         }
     }
 });
@@ -894,18 +917,17 @@ client.on('interrupted', () => {
     isUsingTool = false;
     Logger.info('Model interrupted');
     logMessage('Model interrupted', 'system');
-    // 确保在中断时也刷新文本缓冲区
-    if (messageBuffer.trim()) {
-        logMessage(messageBuffer, 'ai', 'text');
-        messageBuffer = '';
+    // 确保在中断时完成当前文本消息
+    if (currentAIMessageContentDiv) {
+        currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
     }
-    // 处理累积的音频数据
+    // 处理累积的音频数据 (保持不变)
     if (audioDataBuffer.length > 0) {
         const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
         const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
+        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2);
         displayAudioMessage(audioUrl, duration, 'ai');
-        audioDataBuffer = []; // 清空缓冲区
+        audioDataBuffer = [];
     }
 });
 
@@ -949,8 +971,8 @@ client.on('error', (error) => {
  * @returns {Promise<void>}
  */
 async function processHttpStream(requestBody, apiKey) {
-    let accumulatedText = '';
-    let currentMessages = requestBody.messages; // 维护消息历史
+    // let accumulatedText = ''; // 不再需要累积文本，直接追加
+    let currentMessages = requestBody.messages;
 
     try {
         const response = await fetch('/api/chat/completions', {
@@ -971,6 +993,14 @@ async function processHttpStream(requestBody, apiKey) {
         const decoder = new TextDecoder('utf-8');
         let functionCallDetected = false;
         let currentFunctionCall = null;
+
+        // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
+        // 只有当不是工具响应的后续文本时才创建新消息块
+        const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
+        if (!isToolResponseFollowUp) {
+            currentAIMessageContentDiv = createAIMessageElement();
+        }
+
 
         while (true) {
             const { done, value } = await reader.read();
@@ -998,24 +1028,18 @@ async function processHttpStream(requestBody, apiKey) {
                                     currentFunctionCall = functionCallPart.functionCall;
                                     Logger.info('Function call detected:', currentFunctionCall);
                                     logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    // 停止文本累积，因为模型现在在调用工具
-                                    if (accumulatedText.trim()) {
-                                        updateLastAIMessage(accumulatedText);
-                                        accumulatedText = ''; // 清空已显示的文本
+                                    // 在工具调用前，确保当前 AI 消息完成
+                                    if (currentAIMessageContentDiv) {
+                                        currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
                                     }
                                 } else if (choice.delta.content) {
                                     // 只有在没有 functionCall 时才累积文本
                                     if (!functionCallDetected) {
-                                        messageBuffer += choice.delta.content || ''; // 累积到 messageBuffer
-                                        // 清除现有定时器
-                                        if (bufferTimer) clearTimeout(bufferTimer);
-                                        // 设置新定时器
-                                        bufferTimer = setTimeout(() => {
-                                            if (messageBuffer.trim()) {
-                                                updateLastAIMessage(messageBuffer); // 使用 updateLastAIMessage
-                                                messageBuffer = ''; // 清空缓冲区
-                                            }
-                                        }, 300); // 300ms缓冲时间
+                                        if (!currentAIMessageContentDiv) {
+                                            currentAIMessageContentDiv = createAIMessageElement();
+                                        }
+                                        currentAIMessageContentDiv.textContent += choice.delta.content || '';
+                                        scrollToBottom();
                                     }
                                 }
                             }
@@ -1032,39 +1056,27 @@ async function processHttpStream(requestBody, apiKey) {
 
         // 处理工具调用
         if (functionCallDetected && currentFunctionCall) {
-            // 确保在处理工具调用前刷新文本缓冲区
-            if (messageBuffer.trim()) {
-                updateLastAIMessage(messageBuffer);
-                messageBuffer = '';
+            // 确保在处理工具调用前，当前 AI 消息已完成
+            if (currentAIMessageContentDiv) {
+                currentAIMessageContentDiv = null;
             }
 
             try {
-                isUsingTool = true; // 设置工具使用状态
+                isUsingTool = true;
                 logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
-                const toolResult = await toolManager.handleToolCall(currentFunctionCall); // 使用 handleToolCall
+                const toolResult = await toolManager.handleToolCall(currentFunctionCall);
 
-                // 将工具结果作为新的消息发送回模型
-                // 注意：Gemini API 的 functionResponse 结构可能与 OpenAI 不同
-                // toolManager.handleToolCall 已经返回了 { functionResponses: [{ response: { output: result }, id }] }
-                // 我们需要将其转换为 Gemini API 期望的 content 结构
-                const toolResponsePart = toolResult.functionResponses[0].response.output; // 假设 output 是实际结果
+                const toolResponsePart = toolResult.functionResponses[0].response.output;
 
                 const newMessages = [
-                    ...currentMessages, // 包含之前的消息历史
+                    ...currentMessages,
                     {
-                        role: 'model', // 模型调用工具
+                        role: 'model',
                         parts: [{ functionCall: currentFunctionCall }]
                     },
                     {
-                        role: 'tool', // 工具返回结果
-                        /**
-                         * @description 工具响应内容。
-                         * @type {Array<Object>}
-                         * @property {Object} functionResponse - 函数响应对象。
-                         * @property {string} functionResponse.name - 函数名称。
-                         * @property {string} functionResponse.content - 工具的实际响应内容，已字符串化。
-                         */
-                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }] // 确保 content 字段是字符串化的 JSON
+                        role: 'tool',
+                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }]
                     }
                 ];
 
@@ -1072,13 +1084,12 @@ async function processHttpStream(requestBody, apiKey) {
                 await processHttpStream({
                     ...requestBody,
                     messages: newMessages,
-                    tools: toolManager.getToolDeclarations(), // 再次发送工具定义
+                    tools: toolManager.getToolDeclarations(),
                 }, apiKey);
 
             } catch (toolError) {
                 Logger.error('工具执行失败:', toolError);
                 logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                // 如果工具执行失败，将错误信息作为工具响应发送回模型
                 const newMessages = [
                     ...currentMessages,
                     {
@@ -1096,13 +1107,12 @@ async function processHttpStream(requestBody, apiKey) {
                     tools: toolManager.getToolDeclarations(),
                 }, apiKey);
             } finally {
-                isUsingTool = false; // 重置工具使用状态
+                isUsingTool = false;
             }
         } else {
-            // 如果没有工具调用，则处理累积的文本
-            if (messageBuffer.trim()) { // 使用 messageBuffer
-                updateLastAIMessage(messageBuffer);
-                messageBuffer = '';
+            // 如果没有工具调用，且流已完成，重置 currentAIMessageContentDiv
+            if (currentAIMessageContentDiv) {
+                currentAIMessageContentDiv = null;
             }
             logMessage('Turn complete (HTTP)', 'system');
         }
@@ -1110,37 +1120,13 @@ async function processHttpStream(requestBody, apiKey) {
     } catch (error) {
         Logger.error('处理 HTTP 流失败:', error);
         logMessage(`处理流失败: ${error.message}`, 'system');
+        // 错误发生时也重置 currentAIMessageContentDiv
+        if (currentAIMessageContentDiv) {
+            currentAIMessageContentDiv = null;
+        }
     }
 }
 
-/**
- * 更新聊天历史中最后一个 AI 消息的内容。
- * 如果没有 AI 消息，则创建一个新的。
- * @param {string} text - 要更新的文本内容。
- */
-function updateLastAIMessage(text) {
-    let lastAIMessage = messageHistory.querySelector('.message.ai:last-child .content');
-    if (!lastAIMessage) {
-        // 如果没有 AI 消息，创建一个新的
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', 'ai');
-
-        const avatarDiv = document.createElement('div');
-        avatarDiv.classList.add('avatar');
-        avatarDiv.textContent = '🤖';
-
-        const contentDiv = document.createElement('div');
-        contentDiv.classList.add('content');
-        contentDiv.textContent = text;
-
-        messageDiv.appendChild(avatarDiv);
-        messageDiv.appendChild(contentDiv);
-        messageHistory.appendChild(messageDiv);
-    } else {
-        lastAIMessage.textContent = text;
-    }
-    scrollToBottom();
-}
 
 // 添加全局错误处理
 globalThis.addEventListener('error', (event) => {
