@@ -967,129 +967,227 @@ async function processHttpStream(requestBody, apiKey) {
             throw new Error(`HTTP API 请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
         }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let functionCallDetected = false;
-        let currentFunctionCall = null;
+        // 根据模型类型处理响应
+        if (!selectedModelConfig.isWebSocket) { // 如果是 HTTP 模式 (gemini-2.5)
+            const data = await response.json(); // 直接解析完整的 JSON 响应
+            
+            if (data.choices && data.choices.length > 0) {
+                const choice = data.choices[0];
+                if (choice.message) { // OpenAI 兼容的响应结构
+                    // 检查是否有 tool_calls
+                    if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+                        isUsingTool = true;
+                        Logger.info('Model is using a tool (HTTP)');
+                        logMessage(`模型请求工具 (HTTP): ${choice.message.tool_calls[0].function.name}`, 'system');
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                Logger.info('HTTP Stream finished.');
-                break;
-            }
+                        const functionCall = {
+                            id: choice.message.tool_calls[0].id,
+                            name: choice.message.tool_calls[0].function.name,
+                            args: choice.message.tool_calls[0].function.arguments
+                        };
 
-            const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') {
-                        return;
+                        try {
+                            const toolResult = await toolManager.handleToolCall(functionCall);
+                            logMessage(`执行工具 (HTTP): ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
+
+                            // 将工具结果作为新的消息发送回模型
+                            const newMessages = [
+                                ...currentMessages,
+                                {
+                                    role: 'assistant', // 模型调用工具
+                                    content: [{ type: "text", text: "" }], // 占位符
+                                    tool_calls: [{
+                                        id: functionCall.id,
+                                        type: "function",
+                                        function: {
+                                            name: functionCall.name,
+                                            arguments: JSON.stringify(functionCall.args)
+                                        }
+                                    }]
+                                },
+                                {
+                                    role: 'tool', // 工具返回结果
+                                    tool_call_id: functionCall.id,
+                                    content: JSON.stringify(toolResult.functionResponses[0].response.output)
+                                }
+                            ];
+
+                            await processHttpStream({
+                                ...requestBody,
+                                messages: newMessages,
+                                tools: toolManager.getToolDeclarations(),
+                            }, apiKey);
+
+                        } catch (toolError) {
+                            Logger.error('工具执行失败 (HTTP):', toolError);
+                            logMessage(`工具执行失败 (HTTP): ${toolError.message}`, 'system');
+                            const newMessages = [
+                                ...currentMessages,
+                                {
+                                    role: 'assistant',
+                                    content: [{ type: "text", text: "" }],
+                                    tool_calls: [{
+                                        id: functionCall.id,
+                                        type: "function",
+                                        function: {
+                                            name: functionCall.name,
+                                            arguments: JSON.stringify(functionCall.args)
+                                        }
+                                    }]
+                                },
+                                {
+                                    role: 'tool',
+                                    tool_call_id: functionCall.id,
+                                    content: JSON.stringify({ error: toolError.message })
+                                }
+                            ];
+                            await processHttpStream({
+                                ...requestBody,
+                                messages: newMessages,
+                                tools: toolManager.getToolDeclarations(),
+                            }, apiKey);
+                        } finally {
+                            isUsingTool = false;
+                        }
+                    } else if (choice.message.content) {
+                        // 如果没有工具调用，则显示文本内容
+                        logMessage(choice.message.content, 'ai', 'text');
                     }
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        if (data.choices && data.choices.length > 0) {
-                            const choice = data.choices[0];
-                            if (choice.delta) {
-                                // 检查是否有 functionCall
-                                const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
-                                if (functionCallPart) {
-                                    functionCallDetected = true;
-                                    currentFunctionCall = functionCallPart.functionCall;
-                                    Logger.info('Function call detected:', currentFunctionCall);
-                                    logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    // 停止文本累积，因为模型现在在调用工具
-                                    if (accumulatedText.trim()) {
-                                        updateLastAIMessage(accumulatedText);
-                                        accumulatedText = ''; // 清空已显示的文本
-                                    }
-                                } else if (choice.delta.content) {
-                                    // 只有在没有 functionCall 时才累积文本
-                                    if (!functionCallDetected) {
-                                        accumulatedText += choice.delta.content;
-                                        updateLastAIMessage(accumulatedText);
+                } else {
+                    Logger.warn('Unexpected response structure for HTTP model:', data);
+                    logMessage('收到意外的响应结构', 'system');
+                }
+            } else {
+                Logger.warn('No choices found in HTTP response:', data);
+                logMessage('HTTP 响应中没有找到内容', 'system');
+            }
+            logMessage('Turn complete (HTTP)', 'system');
+
+        } else { // 如果是 WebSocket 模式 (gemini-2.0) - 保持原有 SSE 处理逻辑
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let functionCallDetected = false;
+            let currentFunctionCall = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    Logger.info('HTTP Stream finished.');
+                    break;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                chunk.split('\n\n').forEach(part => {
+                    if (part.startsWith('data: ')) {
+                        const jsonStr = part.substring(6);
+                        if (jsonStr === '[DONE]') {
+                            return;
+                        }
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            if (data.choices && data.choices.length > 0) {
+                                const choice = data.choices[0];
+                                if (choice.delta) {
+                                    // 检查是否有 functionCall
+                                    const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
+                                    if (functionCallPart) {
+                                        functionCallDetected = true;
+                                        currentFunctionCall = functionCallPart.functionCall;
+                                        Logger.info('Function call detected:', currentFunctionCall);
+                                        logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
+                                        // 停止文本累积，因为模型现在在调用工具
+                                        if (accumulatedText.trim()) {
+                                            updateLastAIMessage(accumulatedText);
+                                            accumulatedText = ''; // 清空已显示的文本
+                                        }
+                                    } else if (choice.delta.content) {
+                                        // 只有在没有 functionCall 时才累积文本
+                                        if (!functionCallDetected) {
+                                            accumulatedText += choice.delta.content;
+                                            updateLastAIMessage(accumulatedText);
+                                        }
                                     }
                                 }
                             }
+                            if (data.usage) {
+                                Logger.info('Usage:', data.usage);
+                            }
+                        } catch (e) {
+                            Logger.error('Error parsing SSE chunk:', e, jsonStr);
                         }
-                        if (data.usage) {
-                            Logger.info('Usage:', data.usage);
-                        }
-                    } catch (e) {
-                        Logger.error('Error parsing SSE chunk:', e, jsonStr);
                     }
+                });
+            }
+
+            // 处理工具调用
+            if (functionCallDetected && currentFunctionCall) {
+                try {
+                    isUsingTool = true; // 设置工具使用状态
+                    logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
+                    const toolResult = await toolManager.handleToolCall(currentFunctionCall); // 使用 handleToolCall
+
+                    // 将工具结果作为新的消息发送回模型
+                    // 注意：Gemini API 的 functionResponse 结构可能与 OpenAI 不同
+                    // toolManager.handleToolCall 已经返回了 { functionResponses: [{ response: { output: result }, id }] }
+                    // 我们需要将其转换为 Gemini API 期望的 content 结构
+                    const toolResponsePart = toolResult.functionResponses[0].response.output; // 假设 output 是实际结果
+
+                    const newMessages = [
+                        ...currentMessages, // 包含之前的消息历史
+                        {
+                            role: 'model', // 模型调用工具
+                            parts: [{ functionCall: currentFunctionCall }]
+                        },
+                        {
+                            role: 'tool', // 工具返回结果
+                            /**
+                             * @description 工具响应内容。
+                             * @type {Array<Object>}
+                             * @property {Object} functionResponse - 函数响应对象。
+                             * @property {string} functionResponse.name - 函数名称。
+                             * @property {string} functionResponse.content - 工具的实际响应内容，已字符串化。
+                             */
+                            parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }] // 确保 content 字段是字符串化的 JSON
+                        }
+                    ];
+
+                    // 递归调用，将工具结果发送回模型
+                    await processHttpStream({
+                        ...requestBody,
+                        messages: newMessages,
+                        tools: toolManager.getToolDeclarations(), // 再次发送工具定义
+                    }, apiKey);
+
+                } catch (toolError) {
+                    Logger.error('工具执行失败:', toolError);
+                    logMessage(`工具执行失败: ${toolError.message}`, 'system');
+                    // 如果工具执行失败，将错误信息作为工具响应发送回模型
+                    const newMessages = [
+                        ...currentMessages,
+                        {
+                            role: 'model',
+                            parts: [{ functionCall: currentFunctionCall }]
+                        },
+                        {
+                            role: 'tool',
+                            parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
+                        }
+                    ];
+                    await processHttpStream({
+                        ...requestBody,
+                        messages: newMessages,
+                        tools: toolManager.getToolDeclarations(),
+                    }, apiKey);
+                } finally {
+                    isUsingTool = false; // 重置工具使用状态
                 }
-            });
-        }
-
-        // 处理工具调用
-        if (functionCallDetected && currentFunctionCall) {
-            try {
-                isUsingTool = true; // 设置工具使用状态
-                logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
-                const toolResult = await toolManager.handleToolCall(currentFunctionCall); // 使用 handleToolCall
-
-                // 将工具结果作为新的消息发送回模型
-                // 注意：Gemini API 的 functionResponse 结构可能与 OpenAI 不同
-                // toolManager.handleToolCall 已经返回了 { functionResponses: [{ response: { output: result }, id }] }
-                // 我们需要将其转换为 Gemini API 期望的 content 结构
-                const toolResponsePart = toolResult.functionResponses[0].response.output; // 假设 output 是实际结果
-
-                const newMessages = [
-                    ...currentMessages, // 包含之前的消息历史
-                    {
-                        role: 'model', // 模型调用工具
-                        parts: [{ functionCall: currentFunctionCall }]
-                    },
-                    {
-                        role: 'tool', // 工具返回结果
-                        /**
-                         * @description 工具响应内容。
-                         * @type {Array<Object>}
-                         * @property {Object} functionResponse - 函数响应对象。
-                         * @property {string} functionResponse.name - 函数名称。
-                         * @property {string} functionResponse.content - 工具的实际响应内容，已字符串化。
-                         */
-                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }] // 确保 content 字段是字符串化的 JSON
-                    }
-                ];
-
-                // 递归调用，将工具结果发送回模型
-                await processHttpStream({
-                    ...requestBody,
-                    messages: newMessages,
-                    tools: toolManager.getToolDeclarations(), // 再次发送工具定义
-                }, apiKey);
-
-            } catch (toolError) {
-                Logger.error('工具执行失败:', toolError);
-                logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                // 如果工具执行失败，将错误信息作为工具响应发送回模型
-                const newMessages = [
-                    ...currentMessages,
-                    {
-                        role: 'model',
-                        parts: [{ functionCall: currentFunctionCall }]
-                    },
-                    {
-                        role: 'tool',
-                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
-                    }
-                ];
-                await processHttpStream({
-                    ...requestBody,
-                    messages: newMessages,
-                    tools: toolManager.getToolDeclarations(),
-                }, apiKey);
-            } finally {
-                isUsingTool = false; // 重置工具使用状态
+            } else {
+                // 如果没有工具调用，则处理累积的文本
+                if (accumulatedText.trim()) {
+                    logMessage(accumulatedText, 'ai', 'text');
+                }
+                logMessage('Turn complete (HTTP)', 'system');
             }
-        } else {
-            // 如果没有工具调用，则处理累积的文本
-            if (accumulatedText.trim()) {
-                logMessage(accumulatedText, 'ai', 'text');
-            }
-            logMessage('Turn complete (HTTP)', 'system');
         }
 
     } catch (error) {
