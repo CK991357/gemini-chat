@@ -685,7 +685,6 @@ async function connectToModel() {
         }
 
         const config = {
-            model: selectedModelValue,
             generationConfig: {
                 responseModalities: getResponseModalities(responseTypeSelect.value),
                 speechConfig: {
