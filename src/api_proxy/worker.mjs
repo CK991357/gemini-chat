@@ -191,9 +191,13 @@ async function handleCompletions (req, apiKey) {
       }
   }
 
+  const headers = isGemini25ProxyModel
+    ? { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }
+    : makeHeaders(apiKey, { "Content-Type": "application/json" });
+
   const response = await fetch(url, {
     method: "POST",
-    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+    headers: headers,
     body: requestBody,
   });
 
