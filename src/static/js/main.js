@@ -1006,8 +1006,16 @@ async function processHttpStream(requestBody, apiKey) {
                                 } else if (choice.delta.content) {
                                     // 只有在没有 functionCall 时才累积文本
                                     if (!functionCallDetected) {
-                                        accumulatedText += choice.delta.content;
-                                        updateLastAIMessage(accumulatedText);
+                                        messageBuffer += choice.delta.content || ''; // 累积到 messageBuffer
+                                        // 清除现有定时器
+                                        if (bufferTimer) clearTimeout(bufferTimer);
+                                        // 设置新定时器
+                                        bufferTimer = setTimeout(() => {
+                                            if (messageBuffer.trim()) {
+                                                updateLastAIMessage(messageBuffer); // 使用 updateLastAIMessage
+                                                messageBuffer = ''; // 清空缓冲区
+                                            }
+                                        }, 300); // 300ms缓冲时间
                                     }
                                 }
                             }
@@ -1024,6 +1032,12 @@ async function processHttpStream(requestBody, apiKey) {
 
         // 处理工具调用
         if (functionCallDetected && currentFunctionCall) {
+            // 确保在处理工具调用前刷新文本缓冲区
+            if (messageBuffer.trim()) {
+                updateLastAIMessage(messageBuffer);
+                messageBuffer = '';
+            }
+
             try {
                 isUsingTool = true; // 设置工具使用状态
                 logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
@@ -1086,8 +1100,9 @@ async function processHttpStream(requestBody, apiKey) {
             }
         } else {
             // 如果没有工具调用，则处理累积的文本
-            if (accumulatedText.trim()) {
-                logMessage(accumulatedText, 'ai', 'text');
+            if (messageBuffer.trim()) { // 使用 messageBuffer
+                updateLastAIMessage(messageBuffer);
+                messageBuffer = '';
             }
             logMessage('Turn complete (HTTP)', 'system');
         }
