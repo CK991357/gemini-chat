@@ -68,6 +68,8 @@ const handleOPTIONS = async () => {
   });
 };
 
+const GEMINI_2_5_PROXY_URL = "https://geminiapim.10110531.xyz";
+
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
@@ -142,6 +144,14 @@ async function handleEmbeddings (req, apiKey) {
 }
 
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
+/**
+ * @function handleCompletions
+ * @description 处理聊天补全请求，将请求转发到 Gemini API 或中转 Worker。
+ * @param {object} req - 原始请求体。
+ * @param {string} apiKey - API 密钥。
+ * @returns {Promise<Response>} - 返回一个 Promise，解析为处理后的响应。
+ * @throws {HttpError} - 如果请求格式无效。
+ */
 async function handleCompletions (req, apiKey) {
   let model = DEFAULT_MODEL;
   switch(true) {
@@ -155,17 +165,33 @@ async function handleCompletions (req, apiKey) {
       model = req.model;
   }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
-  let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
+
+  // 动态选择基础 URL
+  let targetBaseUrl = BASE_URL;
+  if (model.startsWith("gemini-2.5")) { // 匹配所有 gemini-2.5 开头的模型
+      targetBaseUrl = GEMINI_2_5_PROXY_URL;
+  }
+
+  let url = `${targetBaseUrl}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
+
+  let requestBody;
+  try {
+    requestBody = JSON.stringify(await transformRequest(req));
+  } catch (err) {
+    console.error("Error transforming request body:", err);
+    throw new HttpError(`Invalid request format: ${err.message}`, 400);
+  }
+
   const response = await fetch(url, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify(await transformRequest(req)), // try
+    body: requestBody,
   });
 
   let body = response.body;
   if (response.ok) {
-    let id = generateChatcmplId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
+    let id = generateChatcmplId();
     if (req.stream) {
       body = response.body
         .pipeThrough(new TextDecoderStream())
@@ -183,7 +209,12 @@ async function handleCompletions (req, apiKey) {
         .pipeThrough(new TextEncoderStream());
     } else {
       body = await response.text();
-      body = processCompletionsResponse(JSON.parse(body), model, id);
+      try {
+        body = processCompletionsResponse(JSON.parse(body), model, id);
+      } catch (err) {
+        console.error("Error parsing Gemini API response:", err);
+        throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
+      }
     }
   }
   return new Response(body, fixCors(response));
@@ -270,40 +301,64 @@ const parseImg = async (url) => {
   };
 };
 
+/**
+ * @function transformMsg
+ * @description 转换消息内容为 Gemini API 所需的格式。
+ * @param {object} message - 原始消息对象，包含 role 和 content。
+ * @param {string} message.role - 消息角色（如 "user", "assistant", "system"）。
+ * @param {string|Array<object>} message.content - 消息内容，可以是字符串或包含不同类型内容的数组。
+ * @returns {Promise<object>} - 返回一个 Promise，解析为转换后的消息对象，包含 role 和 parts。
+ * @throws {TypeError} - 如果遇到无法识别的内容项类型。
+ */
 const transformMsg = async ({ role, content }) => {
   const parts = [];
-  if (!Array.isArray(content)) {
-    // system, user: string
-    // assistant: string or null (Required unless tool_calls is specified.)
+
+  // 处理纯字符串内容
+  if (typeof content === "string") {
     parts.push({ text: content });
     return { role, parts };
   }
-  // user:
-  // An array of content parts with a defined type.
-  // Supported options differ based on the model being used to generate the response.
-  // Can contain text, image, or audio inputs.
-  for (const item of content) {
-    switch (item.type) {
-      case "text":
-        parts.push({ text: item.text });
-        break;
-      case "image_url":
-        parts.push(await parseImg(item.image_url.url));
-        break;
-      case "input_audio":
-        parts.push({
-          inlineData: {
-            mimeType: "audio/" + item.input_audio.format,
-            data: item.input_audio.data,
+
+  // 处理数组内容
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      // 默认为文本类型，以增强容错性
+      const itemType = item.type || "text";
+
+      switch (itemType) {
+        case "text":
+          parts.push({ text: item.text });
+          break;
+        case "image_url":
+          parts.push(await parseImg(item.image_url.url));
+          break;
+        case "input_audio":
+          parts.push({
+            inlineData: {
+              mimeType: "audio/" + item.input_audio.format,
+              data: item.input_audio.data,
+            }
+          });
+          break;
+        default:
+          // 如果类型未知但有文本内容，则作为文本处理
+          if (item.text) {
+            console.warn(`Unknown content item type: "${item.type}", treating as text.`);
+            parts.push({ text: item.text });
+          } else {
+            throw new TypeError(`Unknown "content" item type: "${item.type}"`);
           }
-        });
-        break;
-      default:
-        throw new TypeError(`Unknown "content" item type: "${item.type}"`);
+      }
     }
+  } else {
+    // 如果 content 既不是字符串也不是数组，尝试作为文本处理
+    console.warn(`Unexpected content type: "${typeof content}", attempting to treat as text.`);
+    parts.push({ text: String(content) });
   }
-  if (content.every(item => item.type === "image_url")) {
-    parts.push({ text: "" }); // to avoid "Unable to submit request because it must have a text parameter"
+
+  // 如果所有内容都是图片 URL，添加一个空文本部分以避免 API 错误
+  if (Array.isArray(content) && content.every(item => item.type === "image_url")) {
+    parts.push({ text: "" });
   }
   return { role, parts };
 };
@@ -447,7 +502,6 @@ async function toOpenAiStream (chunk, controller) {
   }
 }
 async function toOpenAiStreamFlush (controller) {
-  const transform = transformResponseStream.bind(this);
   if (this.last.length > 0) {
     for (const data of this.last) {
       controller.enqueue(transform(data, "stop"));
@@ -455,3 +509,4 @@ async function toOpenAiStreamFlush (controller) {
     controller.enqueue("data: [DONE]" + delimiter);
   }
 }
+

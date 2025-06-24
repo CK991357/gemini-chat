@@ -783,7 +783,13 @@ async function handleSendMessage() {
                 messages: [
                     {
                         role: 'user',
-                        content: [{ text: message }]
+                        /**
+                         * @description 用户消息内容。
+                         * @type {Array<Object>}
+                         * @property {string} type - 内容类型，例如 "text"。
+                         * @property {string} text - 文本内容。
+                         */
+                        content: [{ type: "text", text: message }] // 确保 content 包含 type 字段
                     }
                 ],
                 generationConfig: {
@@ -1037,7 +1043,14 @@ async function processHttpStream(requestBody, apiKey) {
                     },
                     {
                         role: 'tool', // 工具返回结果
-                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }] // 将 toolResponsePart 转换为 JSON 字符串
+                        /**
+                         * @description 工具响应内容。
+                         * @type {Array<Object>}
+                         * @property {Object} functionResponse - 函数响应对象。
+                         * @property {string} functionResponse.name - 函数名称。
+                         * @property {string} functionResponse.content - 工具的实际响应内容，已字符串化。
+                         */
+                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }] // 确保 content 字段是字符串化的 JSON
                     }
                 ];
 
