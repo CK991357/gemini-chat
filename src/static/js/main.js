@@ -1037,7 +1037,7 @@ async function processHttpStream(requestBody, apiKey) {
                     },
                     {
                         role: 'tool', // 工具返回结果
-                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: toolResponsePart } }] // 注意这里的 content 字段
+                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }] // 将 toolResponsePart 转换为 JSON 字符串
                     }
                 ];
 
