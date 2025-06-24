@@ -942,10 +942,6 @@ client.on('turncomplete', () => {
     isUsingTool = false;
     logMessage('Turn complete', 'system');
     // 在对话结束时刷新文本缓冲区
-    if (messageBuffer.trim()) {
-        logMessage(messageBuffer, 'ai', 'text');
-        messageBuffer = '';
-    }
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
         const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
@@ -1156,10 +1152,6 @@ function handleInterruptPlayback() {
         Logger.info('Audio playback interrupted by user.');
         logMessage('语音播放已中断', 'system');
         // 确保在中断时也刷新文本缓冲区
-        if (messageBuffer.trim()) {
-            logMessage(messageBuffer, 'ai', 'text');
-            messageBuffer = '';
-        }
         // 处理累积的音频数据
         if (audioDataBuffer.length > 0) {
             const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
