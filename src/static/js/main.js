@@ -881,7 +881,7 @@ client.on('content', (data) => {
             // 设置新定时器
             bufferTimer = setTimeout(() => {
                 if (messageBuffer.trim()) {
-                    logMessage(messageBuffer, 'ai', 'text'); // 明确指定为文本消息
+                    updateLastAIMessage(messageBuffer, true); // 追加文本
                     messageBuffer = '';
                 }
             }, 300); // 300ms缓冲时间
