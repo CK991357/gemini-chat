@@ -2,22 +2,9 @@ export const CONFIG = {
     API: {
         DEFAULT_MODEL: 'models/gemini-2.0-flash-exp', // 默认模型
         AVAILABLE_MODELS: [ // 可用模型列表
-            { value: 'models/gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp', proxy: true },
-            { value: 'models/gemini-2.5-flash-preview-05-20', label: 'gemini-2.5-flash-preview-05-20', proxy: true },
-            { value: 'models/gemini-2.5-flash-lite-preview-06-17', label: 'gemini-2.5-flash-lite-preview-06-17', proxy: true }
+            { value: 'models/gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp', proxy: true, isWebSocket: true },
+            { value: 'models/gemini-2.5-flash-preview-05-20', label: 'gemini-2.5-flash-preview-05-20', proxy: true, isWebSocket: false }
         ]
-    },
-    /**
-     * @function getApiVersionForModel
-     * @description 根据模型名称获取对应的 API 版本。
-     * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
-     * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
-     */
-    getApiVersionForModel: (modelName) => {
-        if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
-            return 'v1beta';
-        }
-        return 'v1alpha'; // 默认使用 v1alpha
     },
     // You can change the system instruction to your liking
     SYSTEM_INSTRUCTION: {

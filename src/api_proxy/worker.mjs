@@ -1,115 +1,38 @@
-//Author: PublicAffairs
-//Project: https://github.com/PublicAffairs/openai-gemini
-//MIT License : https://github.com/PublicAffairs/openai-gemini/blob/main/LICENSE
-
-//Author: PublicAffairs
-//Project: https://github.com/PublicAffairs/openai-gemini
-//MIT License : https://github.com/PublicAffairs/openai-gemini/blob/main/LICENSE
-
 import { Buffer } from "node:buffer";
 
 export default {
-  async fetch (request) {
+  async fetch(request) {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
-    const errHandler = (err) => {
-      console.error(err);
-      return new Response(err.message, fixCors({ status: err.status ?? 500 }));
-    };
+
+    const { pathname, searchParams } = new URL(request.url);
+    const apiKey = searchParams.get("key") || request.headers.get("Authorization")?.split(" ")[1];
+
+    if (pathname.startsWith("/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent")) {
+      if (request.headers.get("Upgrade") === "websocket") {
+        return handleWebSocket(request, apiKey).catch(errHandler);
+      }
+      throw new HttpError("Expected WebSocket upgrade", 426);
+    }
+
     try {
-      const auth = request.headers.get("Authorization");
-      const apiKey = auth?.split(" ")[1];
       const assert = (success) => {
         if (!success) {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
         }
       };
-      const { pathname } = new URL(request.url);
-
-      // 新增：处理 WebSocket 连接
-      if (request.headers.get("Upgrade") === "websocket") {
-          const url = new URL(request.url);
-          const apiKeyFromUrl = url.searchParams.get("key"); // 从 URL 参数获取 API Key
-
-          if (!apiKeyFromUrl) {
-              return new Response("API Key is missing for WebSocket connection", { status: 400 });
-          }
-
-          const [client, proxy] = new WebSocketPair();
-          proxy.accept();
-
-          // 从 URL 参数获取模型名称
-          const modelName = url.searchParams.get("model");
-          if (!modelName) {
-              return new Response("Model name is missing for WebSocket connection", { status: 400 });
-          }
-
-          // 根据模型名称获取对应的 API 版本
-          const apiVersion = getApiVersionForModel(modelName);
-
-          // 构建目标 Gemini WebSocket URL
-          const targetUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKeyFromUrl}`;
-          console.log('Proxying WebSocket to:', targetUrl);
-
-          const targetWebSocket = new WebSocket(targetUrl);
-
-          targetWebSocket.addEventListener("open", () => {
-              console.log('Connected to Gemini WebSocket API');
-          });
-
-          proxy.addEventListener("message", (event) => {
-              if (targetWebSocket.readyState === WebSocket.OPEN) {
-                  targetWebSocket.send(event.data);
-              }
-          });
-
-          targetWebSocket.addEventListener("message", (event) => {
-              if (proxy.readyState === WebSocket.OPEN) {
-                  proxy.send(event.data);
-              }
-          });
-
-          targetWebSocket.addEventListener("close", (event) => {
-              console.log('Gemini WebSocket closed:', event.code, event.reason);
-              if (proxy.readyState === WebSocket.OPEN) {
-                  proxy.close(event.code, event.reason);
-              }
-          });
-
-          proxy.addEventListener("close", (event) => {
-              console.log('Client WebSocket closed:', event.code, event.reason);
-              if (targetWebSocket.readyState === WebSocket.OPEN) {
-                  targetWebSocket.close(event.code, event.reason);
-              }
-          });
-
-          targetWebSocket.addEventListener("error", (error) => {
-              console.error('Gemini WebSocket error:', error);
-              if (proxy.readyState === WebSocket.OPEN) {
-                  proxy.close(1011, "Gemini WebSocket error");
-              }
-          });
-
-          return new Response(null, {
-              status: 101,
-              webSocket: client,
-          });
-      }
 
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
-          return handleCompletions(await request.json(), apiKey)
-            .catch(errHandler);
+          return handleCompletions(await request.json(), apiKey).catch(errHandler);
         case pathname.endsWith("/embeddings"):
           assert(request.method === "POST");
-          return handleEmbeddings(await request.json(), apiKey)
-            .catch(errHandler);
+          return handleEmbeddings(await request.json(), apiKey).catch(errHandler);
         case pathname.endsWith("/models"):
           assert(request.method === "GET");
-          return handleModels(apiKey)
-            .catch(errHandler);
+          return handleModels(apiKey).catch(errHandler);
         default:
           throw new HttpError("404 Not Found", 404);
       }
@@ -117,6 +40,11 @@ export default {
       return errHandler(err);
     }
   }
+};
+
+const errHandler = (err) => {
+  console.error(err);
+  return new Response(err.message, fixCors({ status: err.status ?? 500 }));
 };
 
 class HttpError extends Error {
@@ -143,45 +71,18 @@ const handleOPTIONS = async () => {
   });
 };
 
-/**
- * @function getApiVersionForModel
- * @description 根据模型名称获取对应的 API 版本。
- * @param {string} modelName - 模型名称，例如 'models/gemini-2.0-flash-exp'。
- * @returns {string} 对应的 API 版本，例如 'v1alpha' 或 'v1beta'。
- */
-const getApiVersionForModel = (modelName) => {
-    if (modelName.includes('gemini-2.5-flash-preview-05-20') || modelName.includes('gemini-2.5-flash-lite-preview-06-17')) {
-        return 'v1beta';
-    }
-    return 'v1alpha'; // 默认使用 v1alpha
-};
-
 const BASE_URL = "https://generativelanguage.googleapis.com";
+const API_VERSION = "v1beta";
+const API_CLIENT = "genai-js/0.21.0";
 
-// https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
-const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
-
-/**
- * @function makeHeaders
- * @description 创建请求头，包含 API 客户端信息和 API 密钥。
- * @param {string} apiKey - API 密钥。
- * @param {Object} more - 额外的请求头。
- * @returns {Object} 包含所有请求头的对象。
- */
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
 });
 
-/**
- * @function handleModels
- * @description 处理模型列表请求。
- * @param {string} apiKey - API 密钥。
- * @returns {Promise<Response>} 包含模型列表的响应。
- */
 async function handleModels(apiKey) {
-  const response = await fetch(`${BASE_URL}/v1beta/models`, { // 模型列表始终使用 v1beta
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
     headers: makeHeaders(apiKey),
   });
   let { body } = response;
@@ -202,29 +103,23 @@ async function handleModels(apiKey) {
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
 
-/**
- * @function handleEmbeddings
- * @description 处理嵌入请求。
- * @param {Object} req - 请求体。
- * @param {string} apiKey - API 密钥。
- * @returns {Promise<Response>} 包含嵌入结果的响应。
- */
 async function handleEmbeddings(req, apiKey) {
   if (typeof req.model !== "string") {
     throw new HttpError("model is not specified", 400);
-  }
-  if (!Array.isArray(req.input)) {
-    req.input = [req.input];
   }
   let model;
   if (req.model.startsWith("models/")) {
     model = req.model;
   } else {
-    req.model = DEFAULT_EMBEDDINGS_MODEL;
+    if (!req.model.startsWith("gemini-")) {
+      req.model = DEFAULT_EMBEDDINGS_MODEL;
+    }
     model = "models/" + req.model;
   }
-  const API_VERSION_EMBEDDINGS = getApiVersionForModel(model); // 根据模型获取 API 版本
-  const response = await fetch(`${BASE_URL}/${API_VERSION_EMBEDDINGS}/${model}:batchEmbedContents`, {
+  if (!Array.isArray(req.input)) {
+    req.input = [req.input];
+  }
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
@@ -251,15 +146,8 @@ async function handleEmbeddings(req, apiKey) {
   return new Response(body, fixCors(response));
 }
 
-const DEFAULT_MODEL = "gemini-1.5-pro-latest";
+const DEFAULT_MODEL = "gemini-2.0-flash";
 
-/**
- * @function handleCompletions
- * @description 处理聊天补全请求。
- * @param {Object} req - 请求体。
- * @param {string} apiKey - API 密钥。
- * @returns {Promise<Response>} 包含聊天补全结果的响应。
- */
 async function handleCompletions(req, apiKey) {
   let model = DEFAULT_MODEL;
   switch (true) {
@@ -269,22 +157,31 @@ async function handleCompletions(req, apiKey) {
       model = req.model.substring(7);
       break;
     case req.model.startsWith("gemini-"):
+    case req.model.startsWith("gemma-"):
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
-  const API_VERSION_COMPLETIONS = getApiVersionForModel(`models/${model}`); // 根据模型获取 API 版本
+  let body = await transformRequest(req);
+  switch (true) {
+    case model.endsWith(":search"):
+      model = model.substring(0, model.length - 7);
+    case req.model.endsWith("-search-preview"):
+      body.tools = body.tools || [];
+      body.tools.push({ googleSearch: {} });
+  }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
-  let url = `${BASE_URL}/${API_VERSION_COMPLETIONS}/models/${model}:${TASK}`;
+  let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
   const response = await fetch(url, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify(await transformRequest(req)), // try
+    body: JSON.stringify(body),
   });
 
-  let body = response.body;
+  body = response.body;
   if (response.ok) {
-    let id = generateChatcmplId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
+    let id = "chatcmpl-" + generateId();
+    const shared = {};
     if (req.stream) {
       body = response.body
         .pipeThrough(new TextDecoderStream())
@@ -292,21 +189,50 @@ async function handleCompletions(req, apiKey) {
           transform: parseStream,
           flush: parseStreamFlush,
           buffer: "",
+          shared,
         }))
         .pipeThrough(new TransformStream({
           transform: toOpenAiStream,
           flush: toOpenAiStreamFlush,
           streamIncludeUsage: req.stream_options?.include_usage,
           model, id, last: [],
+          shared,
         }))
         .pipeThrough(new TextEncoderStream());
     } else {
       body = await response.text();
-      body = processCompletionsResponse(JSON.parse(body), model, id);
+      try {
+        body = JSON.parse(body);
+        if (!body.candidates) {
+          throw new Error("Invalid completion object");
+        }
+      } catch (err) {
+        console.error("Error parsing response:", err);
+        return new Response(body, fixCors(response));
+      }
+      body = processCompletionsResponse(body, model, id);
     }
   }
   return new Response(body, fixCors(response));
 }
+
+const adjustProps = (schemaPart) => {
+  if (typeof schemaPart !== "object" || schemaPart === null) return;
+  if (Array.isArray(schemaPart)) {
+    schemaPart.forEach(adjustProps);
+  } else {
+    if (schemaPart.type === "object" && schemaPart.properties && schemaPart.additionalProperties === false) {
+      delete schemaPart.additionalProperties;
+    }
+    Object.values(schemaPart).forEach(adjustProps);
+  }
+};
+
+const adjustSchema = (schema) => {
+  const obj = schema[schema.type];
+  delete obj.strict;
+  return adjustProps(schema);
+};
 
 const harmCategory = [
   "HARM_CATEGORY_HATE_SPEECH",
@@ -315,24 +241,27 @@ const harmCategory = [
   "HARM_CATEGORY_HARASSMENT",
   "HARM_CATEGORY_CIVIC_INTEGRITY",
 ];
+
 const safetySettings = harmCategory.map(category => ({
   category,
   threshold: "BLOCK_NONE",
 }));
+
 const fieldsMap = {
-  stop: "stopSequences",
-  n: "candidateCount", // not for streaming
-  max_tokens: "maxOutputTokens",
-  max_completion_tokens: "maxOutputTokens",
-  temperature: "temperature",
-  top_p: "topP",
-  top_k: "topK", // non-standard
   frequency_penalty: "frequencyPenalty",
+  max_completion_tokens: "maxOutputTokens",
+  max_tokens: "maxOutputTokens",
+  n: "candidateCount",
   presence_penalty: "presencePenalty",
+  seed: "seed",
+  stop: "stopSequences",
+  temperature: "temperature",
+  top_k: "topK",
+  top_p: "topP",
 };
+
 const transformConfig = (req) => {
   let cfg = {};
-  //if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
   for (let key in req) {
     const matchedKey = fieldsMap[key];
     if (matchedKey) {
@@ -340,14 +269,14 @@ const transformConfig = (req) => {
     }
   }
   if (req.response_format) {
-    switch(req.response_format.type) {
+    switch (req.response_format.type) {
       case "json_schema":
+        adjustSchema(req.response_format);
         cfg.responseSchema = req.response_format.json_schema?.schema;
         if (cfg.responseSchema && "enum" in cfg.responseSchema) {
           cfg.responseMimeType = "text/x.enum";
           break;
         }
-        // eslint-disable-next-line no-fallthrough
       case "json_object":
         cfg.responseMimeType = "application/json";
         break;
@@ -377,7 +306,7 @@ const parseImg = async (url) => {
   } else {
     const match = url.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
     if (!match) {
-      throw new Error("Invalid image data: " + url);
+      throw new HttpError("Invalid image data: " + url, 400);
     }
     ({ mimeType, data } = match.groups);
   }
@@ -389,18 +318,71 @@ const parseImg = async (url) => {
   };
 };
 
-const transformMsg = async ({ role, content }) => {
+const transformFnResponse = ({ content, tool_call_id }, parts) => {
+  if (!parts.calls) {
+    throw new HttpError("No function calls found in the previous message", 400);
+  }
+  let response;
+  try {
+    response = JSON.parse(content);
+  } catch (err) {
+    console.error("Error parsing function response content:", err);
+    throw new HttpError("Invalid function response: " + content, 400);
+  }
+  if (typeof response !== "object" || response === null || Array.isArray(response)) {
+    response = { result: response };
+  }
+  if (!tool_call_id) {
+    throw new HttpError("tool_call_id not specified", 400);
+  }
+  const { i, name } = parts.calls[tool_call_id] ?? {};
+  if (!name) {
+    throw new HttpError("Unknown tool_call_id: " + tool_call_id, 400);
+  }
+  if (parts[i]) {
+    throw new HttpError("Duplicated tool_call_id: " + tool_call_id, 400);
+  }
+  parts[i] = {
+    functionResponse: {
+      id: tool_call_id.startsWith("call_") ? null : tool_call_id,
+      name,
+      response,
+    }
+  };
+};
+
+const transformFnCalls = ({ tool_calls }) => {
+  const calls = {};
+  const parts = tool_calls.map(({ function: { arguments: argstr, name }, id, type }, i) => {
+    if (type !== "function") {
+      throw new HttpError(`Unsupported tool_call type: "${type}"`, 400);
+    }
+    let args;
+    try {
+      args = JSON.parse(argstr);
+    } catch (err) {
+      console.error("Error parsing function arguments:", err);
+      throw new HttpError("Invalid function arguments: " + argstr, 400);
+    }
+    calls[id] = { i, name };
+    return {
+      functionCall: {
+        id: id.startsWith("call_") ? null : id,
+        name,
+        args,
+      }
+    };
+  });
+  parts.calls = calls;
+  return parts;
+};
+
+const transformMsg = async ({ content }) => {
   const parts = [];
   if (!Array.isArray(content)) {
-    // system, user: string
-    // assistant: string or null (Required unless tool_calls is specified.)
     parts.push({ text: content });
-    return { role, parts };
+    return parts;
   }
-  // user:
-  // An array of content parts with a defined type.
-  // Supported options differ based on the model being used to generate the response.
-  // Can contain text, image, or audio inputs.
   for (const item of content) {
     switch (item.type) {
       case "text":
@@ -418,65 +400,125 @@ const transformMsg = async ({ role, content }) => {
         });
         break;
       default:
-        throw new TypeError(`Unknown "content" item type: "${item.type}"`);
+        throw new HttpError(`Unknown "content" item type: "${item.type}"`, 400);
     }
   }
   if (content.every(item => item.type === "image_url")) {
-    parts.push({ text: "" }); // to avoid "Unable to submit request because it must have a text parameter"
+    parts.push({ text: "" });
   }
-  return { role, parts };
+  return parts;
 };
 
 const transformMessages = async (messages) => {
-  if (!messages) { return; }
+  if (!messages) return;
   const contents = [];
   let system_instruction;
   for (const item of messages) {
-    if (item.role === "system") {
-      delete item.role;
-      system_instruction = await transformMsg(item);
-    } else {
-      item.role = item.role === "assistant" ? "model" : "user";
-      contents.push(await transformMsg(item));
+    switch (item.role) {
+      case "system":
+        system_instruction = { parts: await transformMsg(item) };
+        continue;
+      case "tool":
+        let { role, parts } = contents[contents.length - 1] ?? {};
+        if (role !== "function") {
+          const calls = parts?.calls;
+          parts = []; parts.calls = calls;
+          contents.push({
+            role: "function",
+            parts
+          });
+        }
+        transformFnResponse(item, parts);
+        continue;
+      case "assistant":
+        item.role = "model";
+        break;
+      case "user":
+        break;
+      default:
+        throw new HttpError(`Unknown message role: "${item.role}"`, 400);
+    }
+    contents.push({
+      role: item.role,
+      parts: item.tool_calls ? transformFnCalls(item) : await transformMsg(item)
+    });
+  }
+  if (system_instruction) {
+    if (!contents[0]?.parts.some(part => part.text)) {
+      contents.unshift({ role: "user", parts: { text: " " } });
     }
   }
-  if (system_instruction && contents.length === 0) {
-    contents.push({ role: "model", parts: { text: " " } });
-  }
-  //console.info(JSON.stringify(contents, 2));
   return { system_instruction, contents };
+};
+
+const transformTools = (req) => {
+  let tools, tool_config;
+  if (req.tools) {
+    const funcs = req.tools.filter(tool => tool.type === "function");
+    funcs.forEach(adjustSchema);
+    tools = [{ function_declarations: funcs.map(schema => schema.function) }];
+  }
+  if (req.tool_choice) {
+    const allowed_function_names = req.tool_choice?.type === "function" ? [req.tool_choice?.function?.name] : undefined;
+    if (allowed_function_names || typeof req.tool_choice === "string") {
+      tool_config = {
+        function_calling_config: {
+          mode: allowed_function_names ? "ANY" : req.tool_choice.toUpperCase(),
+          allowed_function_names
+        }
+      };
+    }
+  }
+  return { tools, tool_config };
 };
 
 const transformRequest = async (req) => ({
   ...await transformMessages(req.messages),
   safetySettings,
   generationConfig: transformConfig(req),
+  ...transformTools(req),
 });
 
-const generateChatcmplId = () => {
+const generateId = () => {
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const randomChar = () => characters[Math.floor(Math.random() * characters.length)];
-  return "chatcmpl-" + Array.from({ length: 29 }, randomChar).join("");
+  return Array.from({ length: 29 }, randomChar).join("");
 };
 
-const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse#finishreason
-  //"FINISH_REASON_UNSPECIFIED": // Default value. This value is unused.
+const reasonsMap = {
   "STOP": "stop",
   "MAX_TOKENS": "length",
   "SAFETY": "content_filter",
   "RECITATION": "content_filter",
-  //"OTHER": "OTHER",
-  // :"function_call",
 };
 const SEP = "\n\n|>";
-const transformCandidates = (key, cand) => ({
-  index: cand.index || 0, // 0-index is absent in new -002 models response
-  [key]: {
-    role: "assistant",
-    content: cand.content?.parts.map(p => p.text).join(SEP) },
-  logprobs: null,
-  finish_reason: reasonsMap[cand.finishReason] || cand.finishReason,
-});
+
+const transformCandidates = (key, cand) => {
+  const message = { role: "assistant", content: [] };
+  for (const part of cand.content?.parts ?? []) {
+    if (part.functionCall) {
+      const fc = part.functionCall;
+      message.tool_calls = message.tool_calls ?? [];
+      message.tool_calls.push({
+        id: fc.id ?? "call_" + generateId(),
+        type: "function",
+        function: {
+          name: fc.name,
+          arguments: JSON.stringify(fc.args),
+        }
+      });
+    } else {
+      message.content.push(part.text);
+    }
+  }
+  message.content = message.content.join(SEP) || null;
+  return {
+    index: cand.index || 0,
+    [key]: message,
+    logprobs: null,
+    finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] || cand.finishReason,
+  };
+};
 const transformCandidatesMessage = transformCandidates.bind(null, "message");
 const transformCandidatesDelta = transformCandidates.bind(null, "delta");
 
@@ -486,90 +528,547 @@ const transformUsage = (data) => ({
   total_tokens: data.totalTokenCount
 });
 
+const checkPromptBlock = (choices, promptFeedback, key) => {
+  if (choices.length) return;
+  if (promptFeedback?.blockReason) {
+    if (promptFeedback.blockReason === "SAFETY") {
+      promptFeedback.safetyRatings
+        .filter(r => r.blocked)
+        .forEach(r => console.log(r));
+    }
+    choices.push({
+      index: 0,
+      [key]: null,
+      finish_reason: "content_filter",
+    });
+  }
+  return true;
+};
+
 const processCompletionsResponse = (data, model, id) => {
-  return JSON.stringify({
+  const obj = {
     id,
     choices: data.candidates.map(transformCandidatesMessage),
-    created: Math.floor(Date.now()/1000),
-    model,
-    //system_fingerprint: "fp_69829325d0",
+    created: Math.floor(Date.now() / 1000),
+    model: data.modelVersion ?? model,
     object: "chat.completion",
-    usage: transformUsage(data.usageMetadata),
-  });
+    usage: data.usageMetadata && transformUsage(data.usageMetadata),
+  };
+  if (obj.choices.length === 0) {
+    checkPromptBlock(obj.choices, data.promptFeedback, "message");
+  }
+  return JSON.stringify(obj);
 };
 
 const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
-async function parseStream (chunk, controller) {
-  chunk = await chunk;
-  if (!chunk) { return; }
+
+function parseStream(chunk, controller) {
   this.buffer += chunk;
   do {
     const match = this.buffer.match(responseLineRE);
-    if (!match) { break; }
+    if (!match) break;
     controller.enqueue(match[1]);
     this.buffer = this.buffer.substring(match[0].length);
-  } while (true); // eslint-disable-line no-constant-condition
+  } while (true);
 }
-async function parseStreamFlush (controller) {
+
+function parseStreamFlush(controller) {
   if (this.buffer) {
-    console.error("Invalid data:", this.buffer);
     controller.enqueue(this.buffer);
+    this.shared.is_buffers_rest = true;
   }
 }
 
-function transformResponseStream (data, stop, first) {
-  const item = transformCandidatesDelta(data.candidates[0]);
-  if (stop) { item.delta = {}; } else { item.finish_reason = null; }
-  if (first) { item.delta.content = ""; } else { delete item.delta.role; }
-  const output = {
-    id: this.id,
-    choices: [item],
-    created: Math.floor(Date.now()/1000),
-    model: this.model,
-    //system_fingerprint: "fp_69829325d0",
-    object: "chat.completion.chunk",
-  };
-  if (data.usageMetadata && this.streamIncludeUsage) {
-    output.usage = stop ? transformUsage(data.usageMetadata) : null;
-  }
-  return "data: " + JSON.stringify(output) + delimiter;
-}
 const delimiter = "\n\n";
-async function toOpenAiStream (chunk, controller) {
-  const transform = transformResponseStream.bind(this);
-  const line = await chunk;
-  if (!line) { return; }
+
+const sseline = (obj) => {
+  obj.created = Math.floor(Date.now() / 1000);
+  return "data: " + JSON.stringify(obj) + delimiter;
+};
+
+function toOpenAiStream(line, controller) {
   let data;
   try {
     data = JSON.parse(line);
+    if (!data.candidates) {
+      throw new Error("Invalid completion chunk object");
+    }
   } catch (err) {
-    console.error(line);
-    console.error(err);
-    const length = this.last.length || 1; // at least 1 error msg
-    const candidates = Array.from({ length }, (_, index) => ({
-      finishReason: "error",
-      content: { parts: [{ text: err }] },
-      index,
-    }));
-    data = { candidates };
+    if (!this.shared.is_buffers_rest) line = +delimiter;
+    controller.enqueue(line);
+    return;
   }
-  const cand = data.candidates[0];
-  console.assert(data.candidates.length === 1, "Unexpected candidates count: %d", data.candidates.length);
-  cand.index = cand.index || 0; // absent in new -002 models response
+  const obj = {
+    id: this.id,
+    choices: data.candidates.map(transformCandidatesDelta),
+    model: data.modelVersion ?? this.model,
+    object: "chat.completion.chunk",
+    usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
+  };
+  if (checkPromptBlock(obj.choices, data.promptFeedback, "delta")) {
+    controller.enqueue(sseline(obj));
+    return;
+  }
+  const cand = obj.choices[0];
+  cand.index = cand.index || 0;
+  const finish_reason = cand.finish_reason;
+  cand.finish_reason = null;
   if (!this.last[cand.index]) {
-    controller.enqueue(transform(data, false, "first"));
+    controller.enqueue(sseline({
+      ...obj,
+      choices: [{ ...cand, tool_calls: undefined, delta: { role: "assistant", content: "" } }],
+    }));
   }
-  this.last[cand.index] = data;
-  if (cand.content) { // prevent empty data (e.g. when MAX_TOKENS)
-    controller.enqueue(transform(data));
+  delete cand.delta.role;
+  if ("content" in cand.delta) {
+    controller.enqueue(sseline(obj));
   }
+  cand.finish_reason = finish_reason;
+  if (data.usageMetadata && this.streamIncludeUsage) {
+    obj.usage = transformUsage(data.usageMetadata);
+  }
+  cand.delta = {};
+  this.last[cand.index] = obj;
 }
-async function toOpenAiStreamFlush (controller) {
-  const transform = transformResponseStream.bind(this);
+
+function toOpenAiStreamFlush(controller) {
   if (this.last.length > 0) {
-    for (const data of this.last) {
-      controller.enqueue(transform(data, "stop"));
+    for (const obj of this.last) {
+      controller.enqueue(sseline(obj));
     }
     controller.enqueue("data: [DONE]" + delimiter);
   }
+}
+
+function base64ToArrayBuffer(base64) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+class EventEmitter {
+  constructor() {
+    this.events = {};
+  }
+
+  on(event, listener) {
+    if (typeof this.events[event] !== 'object') {
+      this.events[event] = [];
+    }
+    this.events[event].push(listener);
+  }
+
+  emit(event, ...args) {
+    if (typeof this.events[event] === 'object') {
+      this.events[event].forEach(listener => listener.apply(this, args));
+    }
+  }
+}
+
+class WorkerToolManager extends EventEmitter {
+  constructor() {
+    super();
+    this.tools = new Map();
+    this.registerDefaultTools();
+  }
+
+  registerDefaultTools() {
+    this.registerTool('weather', new WorkerWeatherTool());
+  }
+
+  registerTool(name, toolInstance) {
+    this.tools.set(name, toolInstance);
+    console.log(`Tool ${name} registered in Worker`);
+  }
+
+  async handleToolCall(functionCall) {
+    const { name, args, id } = functionCall;
+    let tool;
+    if (name === 'get_weather_on_date') {
+      tool = this.tools.get('weather');
+    } else {
+      tool = this.tools.get(name);
+    }
+
+    if (!tool) {
+      return {
+        functionResponses: [{
+          response: { error: `Unknown tool: ${name}` },
+          id
+        }]
+      };
+    }
+
+    try {
+      const result = await tool.execute(args);
+      return {
+        functionResponses: [{
+          response: { output: result },
+          id
+        }]
+      };
+    } catch (error) {
+      return {
+        functionResponses: [{
+          response: { error: error.message },
+          id
+        }]
+      };
+    }
+  }
+}
+
+class WorkerWeatherTool {
+  getDeclaration() {
+    return [{
+      name: 'get_weather_on_date',
+      description: 'Get the weather for a specific date and location.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: {
+            type: 'string',
+            description: 'The date for the weather forecast (e.g., "2023-10-26").'
+          },
+          location: {
+            type: 'string',
+            description: 'The location for the weather forecast (e.g., "San Francisco, CA").'
+          }
+        },
+        required: ['date', 'location']
+      }
+    }];
+  }
+
+  async execute(args) {
+    const { date, location } = args;
+    const mockWeatherData = {
+      '2023-10-26': { 'San Francisco, CA': 'Sunny, 70F' },
+      '2023-10-27': { 'San Francisco, CA': 'Partly Cloudy, 65F' },
+      '2023-10-28': { 'San Francisco, CA': 'Rainy, 55F' },
+    };
+
+    const weather = mockWeatherData[date]?.[location];
+    return weather ? `The weather on ${date} in ${location} is: ${weather}` : 
+      `Could not retrieve weather for ${location} on ${date}.`;
+  }
+}
+
+class MultimodalLiveClientWorker extends EventEmitter {
+  constructor(clientWs, apiKey) {
+    super();
+    this.clientWs = clientWs;
+    this.apiKey = apiKey;
+    this.config = null;
+    this.toolManager = new WorkerToolManager();
+    this.conversationHistory = [];
+    this.isStreaming = false;
+
+    this.clientWs.addEventListener("message", this.handleClientMessage.bind(this));
+    this.clientWs.addEventListener("close", this.handleClientClose.bind(this));
+    this.clientWs.addEventListener("error", this.handleClientError.bind(this));
+  }
+
+  async handleClientMessage(event) {
+    try {
+      const message = JSON.parse(event.data);
+      if (message.setup) {
+        this.config = message.setup;
+        if (this.config.tools) {
+          this.config.tools.forEach(toolDeclaration => {
+            if (toolDeclaration.functionDeclarations) {
+              toolDeclaration.functionDeclarations.forEach(funcDecl => {
+                if (funcDecl.name === 'get_weather_on_date') {
+                  console.log("Weather tool declared by client.");
+                }
+              });
+            }
+          });
+        }
+        this.conversationHistory = [];
+        this.sendSetupComplete();
+      } else if (message.realtimeInput) {
+        const mediaChunks = message.realtimeInput.mediaChunks;
+        if (mediaChunks?.length > 0) {
+          const parts = mediaChunks.map(chunk => ({
+            inlineData: {
+              mimeType: chunk.mimeType,
+              data: chunk.data
+            }
+          }));
+          this.sendContentToGemini(parts, false);
+        }
+      } else if (message.clientContent) {
+        const turns = message.clientContent.turns;
+        if (turns?.length > 0) {
+          const parts = turns[0].parts;
+          this.sendContentToGemini(parts, message.clientContent.turnComplete);
+        }
+      } else if (message.toolResponse) {
+        this.sendToolResponseToGemini(message.toolResponse);
+      }
+    } catch (error) {
+      this.clientWs.send(JSON.stringify({ error: error.message }));
+    }
+  }
+
+  sendSetupComplete() {
+    this.clientWs.send(JSON.stringify({ setupComplete: {} }));
+  }
+
+  async sendContentToGemini(parts, turnComplete) {
+    const content = { role: 'user', parts: parts };
+    this.conversationHistory.push(content);
+
+      const requestBody = {
+        contents: this.conversationHistory,
+        generationConfig: {
+          ...this.config.generationConfig,
+          // 根据配置可选地添加语音输出配置
+          ...(this.config.enableTTS && {
+            responseModalities: ["AUDIO"],
+            speechConfig: this.config.speechConfig || {
+              voiceConfig: {
+                name: this.config.voice || "en-US-Neural2-H" // 默认语音，或者从 config 中获取
+              }
+            }
+          })
+        },
+        safetySettings: this.config.safetySettings || safetySettings,
+        systemInstruction: this.config.systemInstruction,
+        tools: this.config.tools
+      };
+
+    const url = `${BASE_URL}/ws/google.ai.generativelanguage.${API_VERSION}.GenerativeService.BidiGenerateContent?key=${this.apiKey}&model=${encodeURIComponent(this.config.model)}`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          this.sendTurnComplete();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf('\n');
+        while (boundary !== -1) {
+          const line = buffer.substring(0, boundary).trim();
+          buffer = buffer.substring(boundary + 1);
+
+          if (line.startsWith('data:')) {
+            const jsonStr = line.substring(5).trim();
+            if (jsonStr) {
+              try {
+                const geminiResponse = JSON.parse(jsonStr);
+                this.processGeminiResponse(geminiResponse);
+              } catch (parseError) {
+                console.error("Error parsing Gemini API stream chunk:", parseError);
+              }
+            }
+          }
+          boundary = buffer.indexOf('\n');
+        }
+      }
+    } catch (error) {
+      this.clientWs.send(JSON.stringify({ error: error.message }));
+    }
+  }
+
+  async sendToolResponseToGemini(toolResponse) {
+    const content = {
+      role: 'function', parts: toolResponse.functionResponses.map(fr => ({
+        functionResponse: {
+          name: fr.response.name,
+          response: fr.response.output,
+          id: fr.id
+        }
+      }))
+    };
+    this.conversationHistory.push(content);
+
+    const requestBody = {
+      contents: this.conversationHistory,
+      generationConfig: this.config.generationConfig,
+      safetySettings: this.config.safetySettings || safetySettings,
+      systemInstruction: this.config.systemInstruction,
+      tools: this.config.tools
+    };
+
+    const url = `${BASE_URL}/ws/google.ai.generativelanguage.${API_VERSION}.GenerativeService.BidiGenerateContent?key=${this.apiKey}&model=${encodeURIComponent(this.config.model)}`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: makeHeaders(this.apiKey, { "Content-Type": "application/json" }),
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          this.sendTurnComplete();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf('\n');
+        while (boundary !== -1) {
+          const line = buffer.substring(0, boundary).trim();
+          buffer = buffer.substring(boundary + 1);
+
+          if (line.startsWith('data:')) {
+            const jsonStr = line.substring(5).trim();
+            if (jsonStr) {
+              try {
+                const geminiResponse = JSON.parse(jsonStr);
+                this.processGeminiResponse(geminiResponse);
+              } catch (parseError) {
+                console.error("Error parsing Gemini API stream chunk:", parseError);
+              }
+            }
+          }
+          boundary = buffer.indexOf('\n');
+        }
+      }
+    } catch (error) {
+      this.clientWs.send(JSON.stringify({ error: error.message }));
+    }
+  }
+
+  async processGeminiResponse(geminiResponse) {
+    if (geminiResponse.candidates?.length > 0) {
+      const candidate = geminiResponse.candidates[0];
+      const modelTurnParts = [];
+      let hasFunctionCall = false;
+      const audioChunks = []; // 修改：用于存储所有音频数据块
+
+      if (candidate.content?.parts) {
+        for (const part of candidate.content.parts) {
+          // 处理文本响应
+          if (part.text) {
+            modelTurnParts.push({ text: part.text });
+            if (this.conversationHistory.length > 0 &&
+                this.conversationHistory[this.conversationHistory.length - 1].role === 'model') {
+              this.conversationHistory[this.conversationHistory.length - 1].parts.push({ text: part.text });
+            } else {
+              this.conversationHistory.push({ role: 'model', parts: [{ text: part.text }] });
+            }
+          }
+          // 处理函数调用
+          else if (part.functionCall) {
+            hasFunctionCall = true;
+            this.clientWs.send(JSON.stringify({
+              toolCall: {
+                functionCalls: [{
+                  id: part.functionCall.id || 'call_' + generateId(),
+                  name: part.functionCall.name,
+                  args: part.functionCall.args
+                }]
+              }
+            }));
+
+            const toolResponse = await this.toolManager.handleToolCall(part.functionCall);
+            this.sendToolResponseToGemini(toolResponse);
+          }
+          // 处理音频输出
+          else if (part.inlineData?.mimeType.startsWith('audio/')) {
+            audioChunks.push(part.inlineData); // 收集所有音频数据块
+          }
+        }
+      }
+
+      // 发送音频数据到客户端
+      for (const audioData of audioChunks) {
+        try {
+          this.clientWs.send(JSON.stringify({
+            serverAudio: { // 使用新的 serverAudio 消息类型
+              mimeType: audioData.mimeType,
+              data: audioData.data,
+              metadata: audioData.metadata // 添加元数据
+            }
+          }));
+        } catch (sendError) {
+          console.error("音频发送失败", sendError);
+          this.clientWs.send(JSON.stringify({
+            error: "音频传输失败"
+          }));
+        }
+      }
+
+      // 发送文本内容到客户端 (如果存在文本且没有函数调用)
+      if (modelTurnParts.length > 0 && !hasFunctionCall) {
+        this.clientWs.send(JSON.stringify({
+          serverContent: {
+            modelTurn: {
+              parts: modelTurnParts
+            }
+          }
+        }));
+      }
+    }
+
+    if (geminiResponse.promptFeedback?.blockReason) {
+      this.clientWs.send(JSON.stringify({
+        error: `Prompt blocked: ${geminiResponse.promptFeedback.blockReason}`
+      }));
+    }
+  }
+
+  sendTurnComplete() {
+    this.clientWs.send(JSON.stringify({ serverContent: { turnComplete: {} } }));
+  }
+
+  handleClientClose(event) {
+    console.log("Client WebSocket closed:", event.code, event.reason);
+  }
+
+  handleClientError(error) {
+    console.error("Client WebSocket error:", error);
+  }
+}
+
+async function handleWebSocket(request, apiKey) {
+  const { 0: clientWs, 1: serverWs } = new WebSocketPair();
+  clientWs.accept();
+  new MultimodalLiveClientWorker(clientWs, apiKey);
+  return new Response(null, {
+    status: 101,
+    webSocket: serverWs,
+  });
 }
