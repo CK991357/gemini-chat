@@ -204,24 +204,28 @@ async function handleCompletions (req, apiKey) {
   let body = response.body;
   if (response.ok) {
     let id = generateChatcmplId();
-    if (req.stream && !isGemini25ProxyModel) { // 仅当不是 gemini-2.5 模型时才进行转换
-      body = response.body
-        .pipeThrough(new TextDecoderStream())
-        .pipeThrough(new TransformStream({
-          transform: parseStream,
-          flush: parseStreamFlush,
-          buffer: "",
-        }))
-        .pipeThrough(new TransformStream({
-          transform: toOpenAiStream,
-          flush: toOpenAiStreamFlush,
-          streamIncludeUsage: req.stream_options?.include_usage,
-          model, id, last: [],
-        }))
-        .pipeThrough(new TextEncoderStream());
-    } else {
-      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应体
+    if (req.stream) { // 无论是否是 gemini-2.5 模型，都尝试作为流处理
+      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应流
           body = response.body;
+      } else { // 否则，进行 Gemini API 到 OpenAI 格式的转换
+          body = response.body
+            .pipeThrough(new TextDecoderStream())
+            .pipeThrough(new TransformStream({
+              transform: parseStream,
+              flush: parseStreamFlush,
+              buffer: "",
+            }))
+            .pipeThrough(new TransformStream({
+              transform: toOpenAiStream,
+              flush: toOpenAiStreamFlush,
+              streamIncludeUsage: req.stream_options?.include_usage,
+              model, id, last: [],
+            }))
+            .pipeThrough(new TextEncoderStream());
+      }
+    } else { // 非流式响应
+      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应体
+          body = response.body; // 理论上 OpenAI 兼容代理的非流式响应也是 JSON
       } else {
           body = await response.text();
           try {
