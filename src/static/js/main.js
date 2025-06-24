@@ -28,7 +28,6 @@ const screenPreview = document.getElementById('screen-preview-element'); // 更�
 const _inputAudioVisualizer = document.getElementById('input-audio-visualizer'); // 保持，可能用于输入音频可视化
 const apiKeyInput = document.getElementById('api-key');
 const voiceSelect = document.getElementById('voice-select');
-const modelSelect = document.getElementById('model-select'); // 新增：模型选择下拉菜单
 const fpsInput = document.getElementById('fps-input');
 const configToggle = document.getElementById('toggle-config');
 const configContainer = document.querySelector('.control-panel');
@@ -56,7 +55,6 @@ const stopScreenButton = document.getElementById('stop-screen-button');
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
-const savedModel = localStorage.getItem('gemini_model'); // 新增：保存的模型
 const savedFPS = localStorage.getItem('video_fps');
 const savedSystemInstruction = localStorage.getItem('system_instruction');
 
@@ -66,11 +64,6 @@ if (savedApiKey) {
 }
 if (savedVoice) {
     voiceSelect.value = savedVoice;
-}
-if (savedModel) {
-    modelSelect.value = savedModel;
-} else {
-    modelSelect.value = CONFIG.API.MODEL_NAME; // 确保默认值被设置
 }
 
 if (savedFPS) {
@@ -171,26 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.style.overflow = '';
         }
     });
-
-    // 动态生成模型选择选项
-    const modelSelect = document.getElementById('model-select');
-    if (modelSelect) {
-        modelSelect.innerHTML = ''; // 清空现有选项
-        CONFIG.API.AVAILABLE_MODELS.forEach(model => {
-            const option = document.createElement('option');
-            option.value = model.value;
-            option.textContent = model.label;
-            if (model.value === CONFIG.API.MODEL_NAME) {
-                option.selected = true; // 默认选中
-            }
-            modelSelect.appendChild(option);
-        });
-        // 加载保存的模型选择
-        const savedModel = localStorage.getItem('gemini_model');
-        if (savedModel) {
-            modelSelect.value = savedModel;
-        }
-    }
 });
 
 // State variables
@@ -210,7 +183,6 @@ let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 
 // Multimodal Client
-// 客户端现在统一连接到 Worker 代理
 const client = new MultimodalLiveClient();
 
 /**
@@ -643,12 +615,7 @@ async function resumeAudioContext() {
  * Connects to the WebSocket server.
  * @returns {Promise<void>}
  */
-/**
- * @function connectToModel
- * @description 根据所选模型类型连接到模型（WebSocket 或 HTTP）。
- * @returns {Promise<void>}
- */
-async function connectToModel() {
+async function connectToWebsocket() {
     if (!apiKeyInput.value) {
         logMessage('Please input API Key', 'system');
         return;
@@ -657,20 +624,13 @@ async function connectToModel() {
     // Save values to localStorage
     localStorage.setItem('gemini_api_key', apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
-    localStorage.setItem('gemini_model', modelSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
-    const selectedModelValue = modelSelect.value;
-    const selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(model => model.value === selectedModelValue);
-
-    if (!selectedModelConfig) {
-        logMessage('Selected model configuration not found.', 'system');
-        return;
-    }
-
-    // 根据模型类型决定连接方式
-    if (selectedModelConfig.isWebSocket) {
-        // WebSocket 连接逻辑 (用于 2.0 模型)
+        /**
+         * @description 根据用户选择的响应类型构建模型生成配置。
+         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
+         * @returns {string[]} 响应模态数组。
+         */
         /**
          * @description 根据用户选择的响应类型构建模型生成配置。
          * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
@@ -685,6 +645,7 @@ async function connectToModel() {
         }
 
         const config = {
+            model: CONFIG.API.MODEL_NAME,
             generationConfig: {
                 responseModalities: getResponseModalities(responseTypeSelect.value),
                 speechConfig: {
@@ -695,101 +656,81 @@ async function connectToModel() {
                     },
                 }
             },
+
             systemInstruction: {
                 parts: [{
-                    text: systemInstructionInput.value
+                    text: systemInstructionInput.value     // You can change system instruction in the config.js file
                 }],
             }
-        };
+        };  
 
-        try {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            // Live API 的 WebSocket 端点固定为 v1beta
-            const workerProxyUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent`;
-            await client.connect(config, apiKeyInput.value, selectedModelValue, workerProxyUrl);
-            isConnected = true;
-            await resumeAudioContext();
-            logMessage(`已连接到 ${selectedModelConfig.label} (WebSocket)`, 'system');
-        } catch (error) {
-            const errorMessage = error.message || '未知错误';
-            Logger.error('WebSocket 连接错误:', error);
-            logMessage(`WebSocket 连接错误: ${errorMessage}`, 'system');
-            isConnected = false;
-        }
-    } else {
-        // HTTP 模式 (用于 2.5 文本模型)
-        isConnected = true; // 逻辑上视为已连接，因为不需要持久连接
-        logMessage(`已切换到 ${selectedModelConfig.label} (HTTP 模式)`, 'system');
-        // 禁用麦克风、摄像头、屏幕共享按钮，因为 HTTP 模式不支持实时流
+    try {
+        await client.connect(config,apiKeyInput.value);
+        isConnected = true;
+        await resumeAudioContext();
+        connectButton.textContent = '断开连接';
+        connectButton.classList.add('connected');
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+        // 启用媒体按钮
+        micButton.disabled = false;
+        cameraButton.disabled = false;
+        screenButton.disabled = false;
+        logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
+        updateConnectionStatus();
+    } catch (error) {
+        const errorMessage = error.message || '未知错误';
+        Logger.error('连接错误:', error);
+        logMessage(`连接错误: ${errorMessage}`, 'system');
+        isConnected = false;
+        connectButton.textContent = '连接';
+        connectButton.classList.remove('connected');
+        messageInput.disabled = true;
+        sendButton.disabled = true;
         micButton.disabled = true;
         cameraButton.disabled = true;
         screenButton.disabled = true;
-        // 隐藏媒体预览容器
-        mediaPreviewsContainer.style.display = 'none';
-        videoPreviewContainer.style.display = 'none';
-        screenContainer.style.display = 'none';
-        // 停止所有正在进行的媒体流
-        if (videoManager) stopVideo();
-        if (screenRecorder) stopScreenSharing();
+        updateConnectionStatus();
+        
+        if (videoManager) {
+            stopVideo();
+        }
+        
+        if (screenRecorder) {
+            stopScreenSharing();
+        }
     }
-
-    // 更新 UI 状态
-    connectButton.textContent = isConnected ? '断开连接' : '连接';
-    connectButton.classList.toggle('connected', isConnected);
-    messageInput.disabled = !isConnected;
-    sendButton.disabled = !isConnected;
-    // 媒体按钮状态根据 isConnected 和 isWebSocket 动态更新
-    if (selectedModelConfig.isWebSocket) {
-        micButton.disabled = !isConnected;
-        cameraButton.disabled = !isConnected;
-        screenButton.disabled = !isConnected;
-    }
-    updateConnectionStatus();
 }
 
 /**
  * Disconnects from the WebSocket server.
  */
-/**
- * @function disconnectFromModel
- * @description 根据所选模型类型断开连接或重置状态。
- * @returns {void}
- */
-function disconnectFromModel() {
-    const selectedModelValue = modelSelect.value;
-    const selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(model => model.value === selectedModelValue);
-
-    if (selectedModelConfig && selectedModelConfig.isWebSocket) {
-        // WebSocket 断开连接逻辑
-        client.disconnect();
-        if (audioStreamer) {
-            audioStreamer.stop();
-            if (audioRecorder) {
-                audioRecorder.stop();
-                audioRecorder = null;
-            }
-            isRecording = false;
-            updateMicIcon();
-        }
-        logMessage('已从 WebSocket 服务器断开连接', 'system');
-    } else {
-        // HTTP 模式下，只需重置状态
-        logMessage('HTTP 模式已重置', 'system');
-    }
-
+function disconnectFromWebsocket() {
+    client.disconnect();
     isConnected = false;
+    if (audioStreamer) {
+        audioStreamer.stop();
+        if (audioRecorder) {
+            audioRecorder.stop();
+            audioRecorder = null;
+        }
+        isRecording = false;
+        updateMicIcon();
+    }
     connectButton.textContent = '连接';
     connectButton.classList.remove('connected');
     messageInput.disabled = true;
     sendButton.disabled = true;
-    micButton.disabled = true;
-    cameraButton.disabled = true;
-    screenButton.disabled = true;
+    if (micButton) micButton.disabled = true;
+    if (cameraButton) cameraButton.disabled = true;
+    if (screenButton) screenButton.disabled = true;
+    logMessage('已从服务器断开连接', 'system');
     updateConnectionStatus();
-
+    
     if (videoManager) {
         stopVideo();
     }
+    
     if (screenRecorder) {
         stopScreenSharing();
     }
@@ -798,120 +739,12 @@ function disconnectFromModel() {
 /**
  * Handles sending a text message.
  */
-/**
- * @function handleSendMessage
- * @description 处理发送文本消息。根据当前模型类型使用 WebSocket 或 HTTP 请求。
- * @returns {Promise<void>}
- */
-async function handleSendMessage() {
+function handleSendMessage() {
     const message = messageInput.value.trim();
-    if (!message) return;
-
-    logMessage(message, 'user');
-    messageInput.value = ''; // 清空输入框
-
-    const selectedModelValue = modelSelect.value;
-    const selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(model => model.value === selectedModelValue);
-
-    if (!selectedModelConfig) {
-        logMessage('Selected model configuration not found.', 'system');
-        return;
-    }
-
-    if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式发送
+    if (message) {
+        logMessage(message, 'user');
         client.send({ text: message });
-    } else {
-        // HTTP 模式发送
-        try {
-            const apiKey = apiKeyInput.value;
-            if (!apiKey) {
-                logMessage('API Key is missing for HTTP request.', 'system');
-                return;
-            }
-
-            const requestBody = {
-                model: selectedModelValue,
-                messages: [{ role: 'user', content: message }],
-                stream: true // 假设 HTTP 模式也支持流式响应
-            };
-
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}` // 传递 API Key
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP API error: ${response.status} ${response.statusText} - ${errorText}`);
-            }
-
-            // 处理流式响应 (SSE)
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) {
-                    logMessage('HTTP 响应流结束', 'system');
-                    // 确保在流结束时刷新文本缓冲区
-                    if (messageBuffer.trim()) {
-                        logMessage(messageBuffer, 'ai', 'text');
-                        messageBuffer = '';
-                    }
-                    break;
-                }
-
-                buffer += decoder.decode(value, { stream: true });
-                let boundary = buffer.indexOf('\n');
-                while (boundary !== -1) {
-                    const line = buffer.substring(0, boundary).trim();
-                    buffer = buffer.substring(boundary + 1);
-
-                    if (line.startsWith('data:')) {
-                        const jsonStr = line.substring(5).trim();
-                        if (jsonStr === '[DONE]') {
-                            // 流结束标记
-                            break;
-                        }
-                        if (jsonStr) {
-                            try {
-                                const geminiResponse = JSON.parse(jsonStr);
-                                // 处理 HTTP 响应的 chunk
-                                if (geminiResponse.choices && geminiResponse.choices.length > 0) {
-                                    const delta = geminiResponse.choices[0].delta;
-                                    if (delta && delta.content) {
-                                        messageBuffer += delta.content;
-                                        // 清除现有定时器
-                                        if (bufferTimer) clearTimeout(bufferTimer);
-                                        // 设置新定时器
-                                        bufferTimer = setTimeout(() => {
-                                            if (messageBuffer.trim()) {
-                                                logMessage(messageBuffer, 'ai', 'text');
-                                                messageBuffer = '';
-                                            }
-                                        }, 300); // 300ms缓冲时间
-                                    }
-                                }
-                            } catch (parseError) {
-                                console.error("Error parsing HTTP API stream chunk:", parseError);
-                                logMessage(`HTTP 响应解析错误: ${parseError.message}`, 'system');
-                            }
-                        }
-                    }
-                    boundary = buffer.indexOf('\n');
-                }
-            }
-
-        } catch (error) {
-            Logger.error('HTTP 请求错误:', error);
-            logMessage(`HTTP 请求错误: ${error.message}`, 'system');
-        }
+        messageInput.value = '';
     }
 }
 
@@ -1107,15 +940,14 @@ micButton.addEventListener('click', () => {
 
 connectButton.addEventListener('click', () => {
     if (isConnected) {
-        disconnectFromModel();
+        disconnectFromWebsocket();
     } else {
-        connectToModel();
+        connectToWebsocket();
     }
 });
 
 messageInput.disabled = true;
 sendButton.disabled = true;
-// 媒体按钮的初始状态将由 connectToModel 动态设置
 micButton.disabled = true;
 cameraButton.disabled = true;
 screenButton.disabled = true;
@@ -1124,9 +956,9 @@ connectButton.textContent = '连接';
 // 移动端连接按钮逻辑
 mobileConnectButton?.addEventListener('click', () => {
     if (isConnected) {
-        disconnectFromModel();
+        disconnectFromWebsocket();
     } else {
-        connectToModel();
+        connectToWebsocket();
     }
 });
 
