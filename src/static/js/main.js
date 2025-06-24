@@ -760,29 +760,19 @@ function disconnectFromWebsocket() {
 /**
  * Handles sending a text message.
  */
-/**
- * 处理发送文本消息的逻辑。
- * @returns {Promise<void>}
- */
 async function handleSendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
 
-    logMessage(message, 'user'); // 这会将用户消息添加到 chatHistory
+    logMessage(message, 'user');
     messageInput.value = ''; // 清空输入框
 
-    // 每次用户发送新消息后，强制重置 currentAIMessageContentDiv
-    // 这将确保 AI 的回复总是从一个新的消息气泡开始
+    // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
     currentAIMessageContentDiv = null;
 
     if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式下发送完整的 chatHistory
-        client.send({
-            messages: chatHistory, // 发送完整的聊天历史
-            generationConfig: {
-                responseModalities: ['text'] // 确保 WebSocket 文本模式下只请求文本响应
-            }
-        });
+        // WebSocket 模式下的逻辑保持不变
+        client.send({ text: message });
     } else {
         // HTTP 模式下发送消息 (针对纯文本模型，但支持工具调用)
         try {
@@ -790,10 +780,21 @@ async function handleSendMessage() {
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
 
-            // 初始请求体，将 messages 设置为 chatHistory
+            // 初始请求体
             let initialRequestBody = {
                 model: modelName,
-                messages: chatHistory, // 发送完整的聊天历史
+                messages: [
+                    {
+                        role: 'user',
+                        /**
+                         * @description 用户消息内容。
+                         * @type {Array<Object>}
+                         * @property {string} type - 内容类型，例如 "text"。
+                         * @property {string} text - 文本内容。
+                         */
+                        content: [{ type: "text", text: message }] // 确保 content 包含 type 字段
+                    }
+                ],
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -919,9 +920,8 @@ client.on('interrupted', () => {
     isUsingTool = false;
     Logger.info('Model interrupted');
     logMessage('Model interrupted', 'system');
-    // 确保在中断时完成当前文本消息并添加到 chatHistory
+    // 确保在中断时完成当前文本消息
     if (currentAIMessageContentDiv) {
-        chatHistory.push({ role: 'model', parts: [{ text: currentAIMessageContentDiv.textContent }] });
         currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
     }
     // 处理累积的音频数据 (保持不变)
@@ -930,9 +930,6 @@ client.on('interrupted', () => {
         const audioUrl = URL.createObjectURL(audioBlob);
         const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2);
         displayAudioMessage(audioUrl, duration, 'ai');
-        // 将 AI 的音频回复添加到 chatHistory (这里需要一个文本表示，或者标记为音频)
-        // 暂时以文本形式记录，实际应用中可能需要更复杂的处理
-        chatHistory.push({ role: 'model', parts: [{ text: '[AI Audio Response]' }] });
         audioDataBuffer = [];
     }
 });
@@ -947,8 +944,6 @@ client.on('turncomplete', () => {
     // 在对话结束时刷新文本缓冲区
     if (messageBuffer.trim()) {
         logMessage(messageBuffer, 'ai', 'text');
-        // 将 AI 的最终文本回复添加到 chatHistory
-        chatHistory.push({ role: 'model', parts: [{ text: messageBuffer }] });
         messageBuffer = '';
     }
     // 处理累积的音频数据
@@ -957,16 +952,7 @@ client.on('turncomplete', () => {
         const audioUrl = URL.createObjectURL(audioBlob);
         const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
         displayAudioMessage(audioUrl, duration, 'ai');
-        // 将 AI 的音频回复添加到 chatHistory (这里需要一个文本表示，或者标记为音频)
-        // 暂时以文本形式记录，实际应用中可能需要更复杂的处理
-        chatHistory.push({ role: 'model', parts: [{ text: '[AI Audio Response]' }] });
         audioDataBuffer = []; // 清空缓冲区
-    }
-    // 在 turncomplete 时重置 currentAIMessageContentDiv
-    if (currentAIMessageContentDiv) {
-        // 将 currentAIMessageContentDiv 的内容添加到 chatHistory
-        chatHistory.push({ role: 'model', parts: [{ text: currentAIMessageContentDiv.textContent }] });
-        currentAIMessageContentDiv = null;
     }
 });
 
@@ -1011,18 +997,18 @@ async function processHttpStream(requestBody, apiKey) {
         let functionCallDetected = false;
         let currentFunctionCall = null;
 
+        // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
+        // 只有当不是工具响应的后续文本时才创建新消息块
+        const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
+        if (!isToolResponseFollowUp) {
+            currentAIMessageContentDiv = createAIMessageElement();
+        }
+
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
                 Logger.info('HTTP Stream finished.');
-                // 在 HTTP 流结束时，将最终的文本添加到 chatHistory
-                if (currentAIMessageContentDiv) {
-                    const finalText = currentAIMessageContentDiv.textContent;
-                    if (finalText.trim()) {
-                        chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
-                    }
-                    currentAIMessageContentDiv = null;
-                }
                 break;
             }
 
@@ -1127,9 +1113,8 @@ async function processHttpStream(requestBody, apiKey) {
                 isUsingTool = false;
             }
         } else {
-            // 如果没有工具调用，且流已完成，将 currentAIMessageContentDiv 的内容添加到 chatHistory 并重置
+            // 如果没有工具调用，且流已完成，重置 currentAIMessageContentDiv
             if (currentAIMessageContentDiv) {
-                chatHistory.push({ role: 'model', parts: [{ text: currentAIMessageContentDiv.textContent }] });
                 currentAIMessageContentDiv = null;
             }
             logMessage('Turn complete (HTTP)', 'system');
@@ -1138,9 +1123,8 @@ async function processHttpStream(requestBody, apiKey) {
     } catch (error) {
         Logger.error('处理 HTTP 流失败:', error);
         logMessage(`处理流失败: ${error.message}`, 'system');
-        // 错误发生时也重置 currentAIMessageContentDiv 并尝试将现有内容添加到 chatHistory
+        // 错误发生时也重置 currentAIMessageContentDiv
         if (currentAIMessageContentDiv) {
-            chatHistory.push({ role: 'model', parts: [{ text: currentAIMessageContentDiv.textContent }] });
             currentAIMessageContentDiv = null;
         }
     }
