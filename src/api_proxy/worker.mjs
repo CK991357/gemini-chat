@@ -332,6 +332,7 @@ const transformRequest = async (req) => ({
   ...await transformMessages(req.messages),
   safetySettings,
   generationConfig: transformConfig(req),
+  tools: req.tools, // 新增：将 tools 字段直接传递
 });
 
 const generateChatcmplId = () => {

@@ -2,6 +2,7 @@ import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
+import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
@@ -13,6 +14,7 @@ import { VideoManager } from './video/video-manager.js';
 
 // DOM Elements
 const logsContainer = document.getElementById('logs-container'); // 用于原始日志输出
+const toolManager = new ToolManager(); // 初始化 ToolManager
 const messageHistory = document.getElementById('message-history'); // 用于聊天消息显示
 const messageInput = document.getElementById('message-input');
 const sendButton = document.getElementById('send-button');
@@ -75,6 +77,19 @@ if (savedSystemInstruction) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 动态生成模型选择下拉菜单选项
+    const modelSelect = document.getElementById('model-select');
+    modelSelect.innerHTML = ''; // 清空现有选项
+    CONFIG.API.AVAILABLE_MODELS.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.name;
+        option.textContent = model.displayName;
+        if (model.name === CONFIG.API.MODEL_NAME) { // 默认选中 config 中定义的模型
+            option.selected = true;
+        }
+        modelSelect.appendChild(option);
+    });
+
     // 1. 光暗模式切换逻辑
     const body = document.body;
     const savedTheme = localStorage.getItem('theme');
@@ -184,6 +199,9 @@ let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
+
+// State variables
+let selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === CONFIG.API.MODEL_NAME); // 初始选中默认模型
 
 /**
  * 将PCM数据转换为WAV Blob。
@@ -739,12 +757,61 @@ function disconnectFromWebsocket() {
 /**
  * Handles sending a text message.
  */
-function handleSendMessage() {
+/**
+ * Handles sending a text message.
+ */
+async function handleSendMessage() {
     const message = messageInput.value.trim();
-    if (message) {
-        logMessage(message, 'user');
+    if (!message) return;
+
+    logMessage(message, 'user');
+    messageInput.value = ''; // 清空输入框
+
+    if (selectedModelConfig.isWebSocket) {
+        // WebSocket 模式下的逻辑保持不变
         client.send({ text: message });
-        messageInput.value = '';
+    } else {
+        // HTTP 模式下发送消息 (针对纯文本模型，但支持工具调用)
+        try {
+            const apiKey = apiKeyInput.value;
+            const modelName = selectedModelConfig.name;
+            const systemInstruction = systemInstructionInput.value;
+
+            // 初始请求体
+            let initialRequestBody = {
+                model: modelName,
+                messages: [
+                    {
+                        role: 'user',
+                        content: [{ text: message }]
+                    }
+                ],
+                generationConfig: {
+                    responseModalities: ['text']
+                },
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
+                ],
+                tools: toolManager.getToolDeclarations(), // 使用 getToolDeclarations
+                stream: true
+            };
+
+            if (systemInstruction) {
+                initialRequestBody.systemInstruction = {
+                    parts: [{ text: systemInstruction }]
+                };
+            }
+
+            // 调用辅助函数处理 HTTP 流和工具调用
+            await processHttpStream(initialRequestBody, apiKey);
+
+        } catch (error) {
+            Logger.error('发送 HTTP 消息失败:', error);
+            logMessage(`发送消息失败: ${error.message}`, 'system');
+        }
     }
 }
 
@@ -867,6 +934,186 @@ client.on('error', (error) => {
     logMessage(`Error: ${error.message}`, 'system');
 });
 
+// ... (新增 processHttpStream 辅助函数)
+
+/**
+ * 处理 HTTP SSE 流，包括文本累积和工具调用。
+ * @param {Object} requestBody - 发送给模型的请求体。
+ * @param {string} apiKey - API Key。
+ * @returns {Promise<void>}
+ */
+async function processHttpStream(requestBody, apiKey) {
+    let accumulatedText = '';
+    let currentMessages = requestBody.messages; // 维护消息历史
+
+    try {
+        const response = await fetch('/api/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`HTTP API 请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let functionCallDetected = false;
+        let currentFunctionCall = null;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                Logger.info('HTTP Stream finished.');
+                break;
+            }
+
+            const chunk = decoder.decode(value, { stream: true });
+            chunk.split('\n\n').forEach(part => {
+                if (part.startsWith('data: ')) {
+                    const jsonStr = part.substring(6);
+                    if (jsonStr === '[DONE]') {
+                        return;
+                    }
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        if (data.choices && data.choices.length > 0) {
+                            const choice = data.choices[0];
+                            if (choice.delta) {
+                                // 检查是否有 functionCall
+                                const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
+                                if (functionCallPart) {
+                                    functionCallDetected = true;
+                                    currentFunctionCall = functionCallPart.functionCall;
+                                    Logger.info('Function call detected:', currentFunctionCall);
+                                    logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
+                                    // 停止文本累积，因为模型现在在调用工具
+                                    if (accumulatedText.trim()) {
+                                        updateLastAIMessage(accumulatedText);
+                                        accumulatedText = ''; // 清空已显示的文本
+                                    }
+                                } else if (choice.delta.content) {
+                                    // 只有在没有 functionCall 时才累积文本
+                                    if (!functionCallDetected) {
+                                        accumulatedText += choice.delta.content;
+                                        updateLastAIMessage(accumulatedText);
+                                    }
+                                }
+                            }
+                        }
+                        if (data.usage) {
+                            Logger.info('Usage:', data.usage);
+                        }
+                    } catch (e) {
+                        Logger.error('Error parsing SSE chunk:', e, jsonStr);
+                    }
+                }
+            });
+        }
+
+        // 处理工具调用
+        if (functionCallDetected && currentFunctionCall) {
+            try {
+                isUsingTool = true; // 设置工具使用状态
+                logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
+                const toolResult = await toolManager.handleToolCall(currentFunctionCall); // 使用 handleToolCall
+
+                // 将工具结果作为新的消息发送回模型
+                // 注意：Gemini API 的 functionResponse 结构可能与 OpenAI 不同
+                // toolManager.handleToolCall 已经返回了 { functionResponses: [{ response: { output: result }, id }] }
+                // 我们需要将其转换为 Gemini API 期望的 content 结构
+                const toolResponsePart = toolResult.functionResponses[0].response.output; // 假设 output 是实际结果
+
+                const newMessages = [
+                    ...currentMessages, // 包含之前的消息历史
+                    {
+                        role: 'model', // 模型调用工具
+                        parts: [{ functionCall: currentFunctionCall }]
+                    },
+                    {
+                        role: 'tool', // 工具返回结果
+                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: toolResponsePart } }] // 注意这里的 content 字段
+                    }
+                ];
+
+                // 递归调用，将工具结果发送回模型
+                await processHttpStream({
+                    ...requestBody,
+                    messages: newMessages,
+                    tools: toolManager.getToolDeclarations(), // 再次发送工具定义
+                }, apiKey);
+
+            } catch (toolError) {
+                Logger.error('工具执行失败:', toolError);
+                logMessage(`工具执行失败: ${toolError.message}`, 'system');
+                // 如果工具执行失败，将错误信息作为工具响应发送回模型
+                const newMessages = [
+                    ...currentMessages,
+                    {
+                        role: 'model',
+                        parts: [{ functionCall: currentFunctionCall }]
+                    },
+                    {
+                        role: 'tool',
+                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
+                    }
+                ];
+                await processHttpStream({
+                    ...requestBody,
+                    messages: newMessages,
+                    tools: toolManager.getToolDeclarations(),
+                }, apiKey);
+            } finally {
+                isUsingTool = false; // 重置工具使用状态
+            }
+        } else {
+            // 如果没有工具调用，则处理累积的文本
+            if (accumulatedText.trim()) {
+                logMessage(accumulatedText, 'ai', 'text');
+            }
+            logMessage('Turn complete (HTTP)', 'system');
+        }
+
+    } catch (error) {
+        Logger.error('处理 HTTP 流失败:', error);
+        logMessage(`处理流失败: ${error.message}`, 'system');
+    }
+}
+
+/**
+ * 更新聊天历史中最后一个 AI 消息的内容。
+ * 如果没有 AI 消息，则创建一个新的。
+ * @param {string} text - 要更新的文本内容。
+ */
+function updateLastAIMessage(text) {
+    let lastAIMessage = messageHistory.querySelector('.message.ai:last-child .content');
+    if (!lastAIMessage) {
+        // 如果没有 AI 消息，创建一个新的
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', 'ai');
+
+        const avatarDiv = document.createElement('div');
+        avatarDiv.classList.add('avatar');
+        avatarDiv.textContent = '🤖';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.classList.add('content');
+        contentDiv.textContent = text;
+
+        messageDiv.appendChild(avatarDiv);
+        messageDiv.appendChild(contentDiv);
+        messageHistory.appendChild(messageDiv);
+    } else {
+        lastAIMessage.textContent = text;
+    }
+    scrollToBottom();
+}
+
 // 添加全局错误处理
 globalThis.addEventListener('error', (event) => {
     logMessage(`系统错误: ${event.message}`, 'system');
@@ -940,9 +1187,9 @@ micButton.addEventListener('click', () => {
 
 connectButton.addEventListener('click', () => {
     if (isConnected) {
-        disconnectFromWebsocket();
+        disconnect(); // 调用统一的断开连接函数
     } else {
-        connectToWebsocket();
+        connect(); // 调用统一的连接函数
     }
 });
 
@@ -956,12 +1203,124 @@ connectButton.textContent = '连接';
 // 移动端连接按钮逻辑
 mobileConnectButton?.addEventListener('click', () => {
     if (isConnected) {
-        disconnectFromWebsocket();
+        disconnect();
     } else {
-        connectToWebsocket();
+        connect();
     }
 });
 
+
+// 监听模型选择变化
+const modelSelect = document.getElementById('model-select'); // 确保这里获取到 modelSelect
+modelSelect.addEventListener('change', () => {
+    const selectedModelName = modelSelect.value;
+    selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
+    if (!selectedModelConfig) {
+        logMessage(`未找到模型配置: ${selectedModelName}`, 'system');
+        // 恢复到默认模型配置
+        selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === CONFIG.API.MODEL_NAME);
+        modelSelect.value = CONFIG.API.MODEL_NAME;
+    }
+    Logger.info(`模型选择已更改为: ${selectedModelConfig.displayName}`);
+    logMessage(`模型选择已更改为: ${selectedModelConfig.displayName}`, 'system');
+    // 如果已连接，断开连接以应用新模型
+    if (isConnected) {
+        disconnect(); // 调用统一的断开连接函数
+    }
+});
+
+/**
+ * 统一的连接函数，根据模型类型选择 WebSocket 或 HTTP。
+ */
+async function connect() {
+    if (!apiKeyInput.value) {
+        logMessage('请输入 API Key', 'system');
+        return;
+    }
+
+    // 保存值到 localStorage
+    localStorage.setItem('gemini_api_key', apiKeyInput.value);
+    localStorage.setItem('gemini_voice', voiceSelect.value);
+    localStorage.setItem('system_instruction', systemInstructionInput.value);
+    localStorage.setItem('video_fps', fpsInput.value); // 保存 FPS
+
+    // 根据选定的模型配置决定连接方式
+    if (selectedModelConfig.isWebSocket) {
+        await connectToWebsocket();
+    } else {
+        await connectToHttp();
+    }
+}
+
+/**
+ * 统一的断开连接函数。
+ */
+function disconnect() {
+    if (selectedModelConfig.isWebSocket) {
+        disconnectFromWebsocket();
+    } else {
+        // 对于 HTTP 模式，没有“断开连接”的概念，但需要重置 UI 状态
+        resetUIForDisconnectedState();
+        logMessage('已断开连接 (HTTP 模式)', 'system');
+    }
+}
+
+/**
+ * 连接到 HTTP API。
+ * @returns {Promise<void>}
+ */
+async function connectToHttp() {
+    try {
+        // 模拟连接成功状态
+        isConnected = true;
+        connectButton.textContent = '断开连接';
+        connectButton.classList.add('connected');
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+        // 在 HTTP 模式下禁用麦克风、摄像头和屏幕共享按钮
+        micButton.disabled = true;
+        cameraButton.disabled = true;
+        screenButton.disabled = true;
+        logMessage(`已连接到 Gemini HTTP API (${selectedModelConfig.displayName})`, 'system');
+        updateConnectionStatus();
+    } catch (error) {
+        const errorMessage = error.message || '未知错误';
+        Logger.error('HTTP 连接错误:', error);
+        logMessage(`HTTP 连接错误: ${errorMessage}`, 'system');
+        resetUIForDisconnectedState();
+    }
+}
+
+/**
+ * 重置 UI 到未连接状态。
+ */
+function resetUIForDisconnectedState() {
+    isConnected = false;
+    connectButton.textContent = '连接';
+    connectButton.classList.remove('connected');
+    messageInput.disabled = true;
+    sendButton.disabled = true;
+    micButton.disabled = true;
+    cameraButton.disabled = true;
+    screenButton.disabled = true;
+    updateConnectionStatus();
+
+    if (audioStreamer) {
+        audioStreamer.stop();
+        if (audioRecorder) {
+            audioRecorder.stop();
+            audioRecorder = null;
+        }
+        isRecording = false;
+        updateMicIcon();
+    }
+    if (videoManager) {
+        stopVideo();
+    }
+    if (screenRecorder) {
+        stopScreenSharing();
+    }
+}
 
 /**
  * Updates the connection status display for all connection buttons.
@@ -976,6 +1335,14 @@ function updateConnectionStatus() {
         if (btn) {
             btn.textContent = isConnected ? '断开连接' : '连接';
             btn.classList.toggle('connected', isConnected);
+        }
+    });
+
+    // 根据连接状态和模型类型禁用/启用媒体按钮
+    const mediaButtons = [micButton, cameraButton, screenButton];
+    mediaButtons.forEach(btn => {
+        if (btn) {
+            btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
         }
     });
 }
