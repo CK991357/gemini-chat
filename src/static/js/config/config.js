@@ -1,14 +1,11 @@
 export const CONFIG = {
     API: {
-        DEFAULT_MODEL: 'models/gemini-2.0-flash-exp', // 默认模型
-        AVAILABLE_MODELS: [ // 可用模型列表
-            { value: 'models/gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp', proxy: true, isWebSocket: true },
-            { value: 'models/gemini-2.5-flash-preview-05-20', label: 'gemini-2.5-flash-preview-05-20', proxy: true, isWebSocket: false }
-        ]
+        VERSION: 'v1alpha',
+        MODEL_NAME: 'models/gemini-2.0-flash-exp'
     },
     // You can change the system instruction to your liking
     SYSTEM_INSTRUCTION: {
-        TEXT: `You are my professional and experienced helper. You can see and hear me, and respond with voice and text. If I ask about things you do not know, you can use the google search tool to find the answer. 
+        TEXT: `You are my professional and experienced helper. You can see and hear me, and respond with voice and text. If I ask about things you do not know, you can use the google search tool to find the answer.
 
 When you are in audio response type, no matter which language I use for input, you must respond in English, all outputs must be in English!
 
