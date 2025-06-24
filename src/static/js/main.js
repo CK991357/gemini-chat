@@ -1011,18 +1011,18 @@ async function processHttpStream(requestBody, apiKey) {
         let functionCallDetected = false;
         let currentFunctionCall = null;
 
-        // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
-        // 只有当不是工具响应的后续文本时才创建新消息块
-        const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-        if (!isToolResponseFollowUp) {
-            currentAIMessageContentDiv = createAIMessageElement();
-        }
-
-
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
                 Logger.info('HTTP Stream finished.');
+                // 在 HTTP 流结束时，将最终的文本添加到 chatHistory
+                if (currentAIMessageContentDiv) {
+                    const finalText = currentAIMessageContentDiv.textContent;
+                    if (finalText.trim()) {
+                        chatHistory.push({ role: 'model', parts: [{ text: finalText }] });
+                    }
+                    currentAIMessageContentDiv = null;
+                }
                 break;
             }
 
