@@ -446,6 +446,7 @@ body {
 
 .message.ai .content {
     background-color: var(--bg-color); /* 新增：恢复灰色底色 */
+    border-radius: 18px; /* 新增：确保圆形 */
     /* border-bottom-left-radius: 4px; */ /* 删除：恢复圆形 */
     margin-top: 5px; /* 新增：使消息顶部与头像中线对齐 */
 }
@@ -472,7 +473,6 @@ body {
 .message.ai .audio-content {
     background-color: var(--secondary-color); /* AI语音消息使用不同的背景色 */
     color: white;
-    border-bottom-left-radius: 4px;
 }
 
 .audio-player {
