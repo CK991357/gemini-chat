@@ -446,7 +446,7 @@ body {
 
 .message.ai .content {
     border-bottom-left-radius: 4px;
-    margin-top: 12px; /* 新增：使消息顶部与头像中线对齐 */
+    margin-top: 5px; /* 新增：使消息顶部与头像中线对齐 */
 }
 
 /* 语音消息内容样式 */
