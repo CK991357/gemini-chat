@@ -876,12 +876,15 @@ function createAIMessageElement() {
 
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('content');
-    // contentDiv.textContent = ''; // 初始为空
-
+    
+    // 创建文本容器 - 这是关键修改
+    const textContainer = document.createElement('div');
+    textContainer.classList.add('text-container');
+    
     // 创建复制按钮
     const copyButton = document.createElement('button');
     copyButton.classList.add('copy-button', 'material-symbols-outlined');
-    copyButton.textContent = 'content_copy'; // 复制图标
+    copyButton.textContent = 'content_copy';
 
     /**
      * @function
@@ -890,12 +893,12 @@ function createAIMessageElement() {
      * @returns {void}
      */
     copyButton.addEventListener('click', async () => {
-        const textToCopy = contentDiv.textContent;
+        const textToCopy = textContainer.textContent; // 从 textContainer 获取文本
         try {
             await navigator.clipboard.writeText(textToCopy);
-            copyButton.textContent = 'check'; // 复制成功后显示打勾图标
+            copyButton.textContent = 'check';
             setTimeout(() => {
-                copyButton.textContent = 'content_copy'; // 几秒后恢复复制图标
+                copyButton.textContent = 'content_copy';
             }, 2000);
             logMessage('文本已复制到剪贴板', 'system');
         } catch (err) {
@@ -904,12 +907,15 @@ function createAIMessageElement() {
         }
     });
 
+    // 正确的DOM结构：文本容器在内容div内，复制按钮在内容div内
+    contentDiv.appendChild(textContainer);
+    contentDiv.appendChild(copyButton); // 复制按钮放在文本容器后面
+    
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
-    contentDiv.appendChild(copyButton); // 将复制按钮添加到内容 div
     messageHistory.appendChild(messageDiv);
     scrollToBottom();
-    return contentDiv;
+    return textContainer; // 返回文本容器而不是内容div
 }
 
 client.on('content', (data) => {
@@ -933,11 +939,10 @@ client.on('content', (data) => {
         const text = data.modelTurn.parts.map(part => part.text).join('');
         
         if (text) {
-            // WebSocket 模式下，直接追加文本
             if (!currentAIMessageContentDiv) {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
-            currentAIMessageContentDiv.textContent += text;
+            currentAIMessageContentDiv.textContent += text; // 现在currentAIMessageContentDiv是文本容器
             scrollToBottom();
         }
     }
@@ -1065,7 +1070,7 @@ async function processHttpStream(requestBody, apiKey) {
                                         if (!currentAIMessageContentDiv) {
                                             currentAIMessageContentDiv = createAIMessageElement();
                                         }
-                                        currentAIMessageContentDiv.textContent += choice.delta.content || '';
+                                        currentAIMessageContentDiv.textContent += choice.delta.content || ''; // 追加到 textContentSpan
                                         scrollToBottom();
                                     }
                                 }
