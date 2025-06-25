@@ -441,12 +441,12 @@ body {
     background-color: var(--primary-color);
     color: white;
     border-radius: 18px;
-    padding: 12px 12px 12px 25px; /* 调整右侧内边距，使其向左移动 */
+    padding: 12px 12px 12px 20px; /* 调整右侧内边距，使其向左移动 */
 }
 
 .message.ai .content {
     border-bottom-left-radius: 4px;
-    margin-top: 18px; /* 新增：使消息顶部与头像中线对齐 */
+    margin-top: 12px; /* 新增：使消息顶部与头像中线对齐 */
 }
 
 /* 语音消息内容样式 */
