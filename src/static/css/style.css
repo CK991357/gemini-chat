@@ -445,7 +445,8 @@ body {
 }
 
 .message.ai .content {
-    border-bottom-left-radius: 4px;
+    background-color: var(--bg-color); /* 新增：恢复灰色底色 */
+    /* border-bottom-left-radius: 4px; */ /* 删除：恢复圆形 */
     margin-top: 5px; /* 新增：使消息顶部与头像中线对齐 */
 }
 
