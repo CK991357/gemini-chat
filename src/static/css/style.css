@@ -440,6 +440,7 @@ body {
 .message.user .content {
     background-color: var(--primary-color);
     color: white;
+    border-radius: 18px;
 }
 
 .message.ai .content {
