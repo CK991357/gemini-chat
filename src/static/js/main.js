@@ -1140,7 +1140,7 @@ async function processHttpStream(requestBody, apiKey) {
                 await processHttpStream({
                     ...requestBody,
                     messages: newMessages,
-                    tools: toolManager.getToolDeclarations(),
+                    tools: requestBody.tools, // 传递原始请求体中的 tools
                 }, apiKey);
             } finally {
                 isUsingTool = false;
