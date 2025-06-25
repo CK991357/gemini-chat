@@ -53,14 +53,12 @@ export class ToolManager {
         
         this.tools.forEach((tool, name) => {
             if (tool.getDeclaration) {
-                const declaration = tool.getDeclaration();
-                // 根据工具的类型，将其声明添加到 allDeclarations 数组中
-                // Gemini API 期望的工具声明是包含 functionDeclarations 或 retrieval 的对象
-                if (declaration.functionDeclarations || declaration.retrieval) {
-                    allDeclarations.push(declaration);
+                if (name === 'weather') {
+                    allDeclarations.push({
+                        functionDeclarations: tool.getDeclaration()
+                    });
                 } else {
-                    // 如果工具声明不符合预期格式，可以记录警告
-                    Logger.warn(`Tool ${name} returned an unexpected declaration format:`, declaration);
+                    allDeclarations.push({ [name]: tool.getDeclaration() });
                 }
             }
         });
@@ -84,13 +82,8 @@ export class ToolManager {
         Logger.info(`Handling tool call: ${name}`, { args });
 
         let tool;
-        // 根据 functionCall.name 查找对应的工具实例
-        // 对于 Google Search，模型会调用 'googleSearch'
-        // 对于 Weather Tool，模型会调用 'get_weather_on_date'
         if (name === 'get_weather_on_date') {
             tool = this.tools.get('weather');
-        } else if (name === 'googleSearch') { // 明确处理 googleSearch
-            tool = this.tools.get('googleSearch');
         } else {
             tool = this.tools.get(name);
         }
