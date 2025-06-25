@@ -39,6 +39,7 @@ const applyConfigButton = document.getElementById('apply-config');
 const responseTypeSelect = document.getElementById('response-type-select');
 const mobileConnectButton = document.getElementById('mobile-connect');
 const interruptButton = document.getElementById('interrupt-button'); // 新增
+const newChatButton = document.getElementById('new-chat-button'); // 新增
 
 // 新增的 DOM 元素
 const themeToggleBtn = document.getElementById('theme-toggle');
@@ -877,8 +878,35 @@ function createAIMessageElement() {
     contentDiv.classList.add('content');
     // contentDiv.textContent = ''; // 初始为空
 
+    // 创建复制按钮
+    const copyButton = document.createElement('button');
+    copyButton.classList.add('copy-button', 'material-symbols-outlined');
+    copyButton.textContent = 'content_copy'; // 复制图标
+
+    /**
+     * @function
+     * @description 处理复制按钮点击事件，将消息内容复制到剪贴板。
+     * @param {Event} event - 点击事件对象。
+     * @returns {void}
+     */
+    copyButton.addEventListener('click', async () => {
+        const textToCopy = contentDiv.textContent;
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+            copyButton.textContent = 'check'; // 复制成功后显示打勾图标
+            setTimeout(() => {
+                copyButton.textContent = 'content_copy'; // 几秒后恢复复制图标
+            }, 2000);
+            logMessage('文本已复制到剪贴板', 'system');
+        } catch (err) {
+            logMessage('复制失败: ' + err, 'system');
+            console.error('复制文本失败:', err);
+        }
+    });
+
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
+    contentDiv.appendChild(copyButton); // 将复制按钮添加到内容 div
     messageHistory.appendChild(messageDiv);
     scrollToBottom();
     return contentDiv;
@@ -1668,6 +1696,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if ('ontouchstart' in window) {
         initMobileHandlers();
     }
+
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+     * @returns {void}
+     */
+    newChatButton.addEventListener('click', () => {
+        location.reload(); // 刷新页面
+    });
+
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+     * @returns {void}
+     */
+    newChatButton.addEventListener('click', () => {
+        location.reload(); // 刷新页面
+    });
 
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {

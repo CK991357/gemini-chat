@@ -403,6 +403,41 @@ body {
     line-height: 1.5;
     color: var(--text-color);
     word-break: break-word; /* 防止长单词溢出 */
+    position: relative; /* 确保复制按钮可以相对定位 */
+    padding-right: 40px; /* 为复制按钮留出空间 */
+}
+
+.copy-button {
+    position: absolute;
+    bottom: 5px; /* 调整位置 */
+    right: 5px; /* 调整位置 */
+    background: none;
+    border: none;
+    color: var(--text-secondary-color); /* 默认颜色 */
+    font-size: 18px; /* 图标大小 */
+    cursor: pointer;
+    opacity: 0; /* 默认隐藏 */
+    transition: opacity 0.3s ease, color 0.3s ease;
+    padding: 5px; /* 增加点击区域 */
+    border-radius: 4px;
+}
+
+.message .content:hover .copy-button {
+    opacity: 1; /* 鼠标悬停时显示 */
+}
+
+.copy-button:hover {
+    color: var(--primary-color); /* 悬停时变色 */
+    background-color: rgba(0, 0, 0, 0.1); /* 悬停背景 */
+}
+
+/* 用户消息气泡中的复制按钮颜色 */
+.message.user .copy-button {
+    color: rgba(255, 255, 255, 0.7);
+}
+.message.user .copy-button:hover {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.2);
 }
 
 .message.user .content {
