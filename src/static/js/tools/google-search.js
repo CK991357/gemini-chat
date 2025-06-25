@@ -12,9 +12,14 @@ export class GoogleSearchTool {
      * @returns {Object} An empty object as the tool declaration.
      */
     getDeclaration() {
+        /**
+         * @description 返回 Google Search 工具的声明。
+         * @returns {Object} 包含 retrieval 属性的对象，用于启用 Gemini API 的 Google 搜索功能。
+         */
         return {
-            // Return empty object as per Gemini API requirements
-            // This tells the model it can use Google Search
+            retrieval: {
+                enable: true
+            }
         };
     }
 
