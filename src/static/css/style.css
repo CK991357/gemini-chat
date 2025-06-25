@@ -393,6 +393,7 @@ body {
 
 .message.ai .avatar {
     background-color: var(--secondary-color);
+    margin-top: 10px; /* 新增：向下调整间距 */
 }
 
 /* 新增复制按钮样式 */
@@ -441,6 +442,7 @@ body {
     background-color: var(--primary-color);
     color: white;
     border-radius: 18px;
+    padding: 12px 18px 12px 25px; /* 调整左侧内边距 */
 }
 
 .message.ai .content {
