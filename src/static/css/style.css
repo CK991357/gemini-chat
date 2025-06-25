@@ -398,13 +398,13 @@ body {
 /* 新增复制按钮样式 */
 .message .content {
     position: relative; /* 确保复制按钮可以相对定位 */
-    padding-right: 40px; /* 为复制按钮留出空间 */
+    padding-right: 18px; /* 恢复默认内边距，因为复制按钮移到外部 */
 }
 
 .copy-button {
     position: absolute;
-    bottom: 5px;
-    right: 5px;
+    bottom: -5px; /* 调整到底部外侧 */
+    right: -30px; /* 调整到右侧外侧 */
     background: none;
     border: none;
     color: var(--text-secondary-color);
