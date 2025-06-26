@@ -878,45 +878,52 @@ function createAIMessageElement() {
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('content');
     
-    // 创建文本容器 - 这是关键修改
-    const textContainer = document.createElement('div');
-    textContainer.classList.add('text-container');
-    
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+    return contentDiv; // 返回 contentDiv，它将用于设置 innerHTML
+}
+
+/**
+ * @function
+ * @description 为代码块添加语言标签和复制按钮。
+ * @param {HTMLElement} preElement - 包含代码的 <pre> 元素。
+ * @returns {void}
+ */
+function addCodeBlockFeatures(preElement) {
+    const codeElement = preElement.querySelector('code');
+    if (!codeElement) return;
+
+    // 获取语言（如果 highlight.js 已经识别）
+    const lang = Array.from(codeElement.classList).find(cls => cls.startsWith('language-'))?.substring(9) || 'text';
+
+    // 创建语言标签
+    const langLabel = document.createElement('span');
+    langLabel.classList.add('code-lang-label');
+    langLabel.textContent = lang.toUpperCase();
+    preElement.prepend(langLabel); // 将语言标签添加到 pre 元素内部的开头
+
     // 创建复制按钮
     const copyButton = document.createElement('button');
     copyButton.classList.add('copy-button', 'material-symbols-outlined');
     copyButton.textContent = 'content_copy';
 
-    /**
-     * @function
-     * @description 处理复制按钮点击事件，将消息内容复制到剪贴板。
-     * @param {Event} event - 点击事件对象。
-     * @returns {void}
-     */
     copyButton.addEventListener('click', async () => {
-        const textToCopy = textContainer.textContent; // 从 textContainer 获取文本
+        const textToCopy = codeElement.textContent; // 复制纯文本代码
         try {
             await navigator.clipboard.writeText(textToCopy);
             copyButton.textContent = 'check';
             setTimeout(() => {
                 copyButton.textContent = 'content_copy';
             }, 2000);
-            logMessage('文本已复制到剪贴板', 'system');
+            logMessage('代码已复制到剪贴板', 'system');
         } catch (err) {
             logMessage('复制失败: ' + err, 'system');
-            console.error('复制文本失败:', err);
+            console.error('复制代码失败:', err);
         }
     });
-
-    // 正确的DOM结构：文本容器在内容div内，复制按钮在内容div内
-    contentDiv.appendChild(textContainer);
-    contentDiv.appendChild(copyButton); // 复制按钮放在文本容器后面
-    
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    messageHistory.appendChild(messageDiv);
-    scrollToBottom();
-    return textContainer; // 返回文本容器而不是内容div
+    preElement.appendChild(copyButton); // 将复制按钮添加到 pre 元素内部的末尾
 }
 
 client.on('content', (data) => {
@@ -937,13 +944,24 @@ client.on('content', (data) => {
             }
         }
 
-        const text = data.modelTurn.parts.map(part => part.text).join('');
+        const markdownText = data.modelTurn.parts.map(part => part.text).join('');
         
-        if (text) {
+        if (markdownText) {
             if (!currentAIMessageContentDiv) {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
-            currentAIMessageContentDiv.textContent += text; // 现在currentAIMessageContentDiv是文本容器
+            // 使用 marked.js 将 Markdown 转换为 HTML
+            const htmlContent = marked.parse(markdownText);
+            currentAIMessageContentDiv.innerHTML += htmlContent; // 使用 innerHTML
+            
+            // 对新添加的代码块进行高亮和添加功能
+            currentAIMessageContentDiv.querySelectorAll('pre code').forEach(codeBlock => {
+                if (!codeBlock.dataset.highlighted) { // 避免重复高亮
+                    hljs.highlightElement(codeBlock);
+                    addCodeBlockFeatures(codeBlock.closest('pre')); // 传递 pre 元素
+                    codeBlock.dataset.highlighted = 'true'; // 标记为已高亮
+                }
+            });
             scrollToBottom();
         }
     }
@@ -1071,7 +1089,19 @@ async function processHttpStream(requestBody, apiKey) {
                                         if (!currentAIMessageContentDiv) {
                                             currentAIMessageContentDiv = createAIMessageElement();
                                         }
-                                        currentAIMessageContentDiv.textContent += choice.delta.content || ''; // 追加到 textContentSpan
+                                        // 使用 marked.js 将 Markdown 转换为 HTML
+                                        const markdownChunk = choice.delta.content || '';
+                                        const htmlChunk = marked.parse(markdownChunk);
+                                        currentAIMessageContentDiv.innerHTML += htmlChunk; // 使用 innerHTML
+                                        
+                                        // 对新添加的代码块进行高亮和添加功能
+                                        currentAIMessageContentDiv.querySelectorAll('pre code').forEach(codeBlock => {
+                                            if (!codeBlock.dataset.highlighted) { // 避免重复高亮
+                                                hljs.highlightElement(codeBlock);
+                                                addCodeBlockFeatures(codeBlock.closest('pre')); // 传递 pre 元素
+                                                codeBlock.dataset.highlighted = 'true'; // 标记为已高亮
+                                            }
+                                        });
                                         scrollToBottom();
                                     }
                                 }
