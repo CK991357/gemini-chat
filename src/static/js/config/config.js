@@ -12,6 +12,11 @@ export const CONFIG = {
                 name: 'models/gemini-2.5-flash-preview-05-20',
                 displayName: 'gemini-2.5-flash-preview-05-20 (HTTP)',
                 isWebSocket: false
+            },
+            { // 新增模型
+                name: 'models/gemini-2.5-flash-lite-preview-06-17',
+                displayName: 'gemini-2.5-flash-lite-preview-06-17 (WebSocket)',
+                isWebSocket: true
             }
         ]
     },
