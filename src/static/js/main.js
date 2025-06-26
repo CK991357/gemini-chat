@@ -773,8 +773,6 @@ async function handleSendMessage() {
 
     if (selectedModelConfig.isWebSocket) {
         // WebSocket 模式下的逻辑保持不变
-        // 工具声明通过 WebSocketClient.connect 的 setup 消息发送
-        // 此时 ToolManager.getToolDeclarations() 会返回 { googleSearch: {} }
         client.send({ text: message });
     } else {
         // HTTP 模式下发送消息 (针对纯文本模型，但支持工具调用)
@@ -783,21 +781,19 @@ async function handleSendMessage() {
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
 
-            // 仅对 gemini-2.5 模型添加 retrieval 工具
-            let toolsForRequest = [];
-            if (modelName.startsWith('models/gemini-2.5')) {
-                toolsForRequest.push({ retrieval: { enable: true } });
-            }
-            // 如果有其他 function 类型的工具，也可以在这里添加
-            // 例如：toolsForRequest.push(...toolManager.getToolDeclarations().filter(d => d.functionDeclarations));
-
             // 初始请求体
             let initialRequestBody = {
                 model: modelName,
                 messages: [
                     {
                         role: 'user',
-                        content: [{ type: "text", text: message }]
+                        /**
+                         * @description 用户消息内容。
+                         * @type {Array<Object>}
+                         * @property {string} type - 内容类型，例如 "text"。
+                         * @property {string} text - 文本内容。
+                         */
+                        content: [{ type: "text", text: message }] // 确保 content 包含 type 字段
                     }
                 ],
                 generationConfig: {
@@ -809,7 +805,7 @@ async function handleSendMessage() {
                     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
                 ],
-                tools: toolsForRequest, // 使用动态构建的 tools 数组
+                tools: toolManager.getToolDeclarations(), // 使用 getToolDeclarations
                 stream: true
             };
 
@@ -1120,7 +1116,7 @@ async function processHttpStream(requestBody, apiKey) {
                 await processHttpStream({
                     ...requestBody,
                     messages: newMessages,
-                    tools: requestBody.tools, // 传递原始请求体中的 tools
+                    tools: toolManager.getToolDeclarations(),
                 }, apiKey);
 
             } catch (toolError) {
@@ -1140,7 +1136,7 @@ async function processHttpStream(requestBody, apiKey) {
                 await processHttpStream({
                     ...requestBody,
                     messages: newMessages,
-                    tools: requestBody.tools, // 传递原始请求体中的 tools
+                    tools: toolManager.getToolDeclarations(),
                 }, apiKey);
             } finally {
                 isUsingTool = false;
