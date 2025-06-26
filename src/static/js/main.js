@@ -962,7 +962,15 @@ client.on('content', (data) => {
                     codeBlock.dataset.highlighted = 'true'; // 标记为已高亮
                 }
             });
-            scrollToBottom();
+            
+            // 调用 MathJax 渲染公式
+            if (window.MathJax) {
+                window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
+                    scrollToBottom(); // 公式渲染完成后，确保滚动到底部
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            } else {
+                scrollToBottom();
+            }
         }
     }
 });
@@ -1102,7 +1110,15 @@ async function processHttpStream(requestBody, apiKey) {
                                                 codeBlock.dataset.highlighted = 'true'; // 标记为已高亮
                                             }
                                         });
-                                        scrollToBottom();
+                                        
+                                        // 调用 MathJax 渲染公式
+                                        if (window.MathJax) {
+                                            window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
+                                                scrollToBottom(); // 公式渲染完成后，确保滚动到底部
+                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
+                                        } else {
+                                            scrollToBottom();
+                                        }
                                     }
                                 }
                             }
