@@ -805,7 +805,8 @@ async function handleSendMessage() {
                     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
                 ],
-                tools: toolManager.getToolDeclarations(), // 使用 getToolDeclarations
+                // tools: toolManager.getToolDeclarations(), // 移除或注释掉这行，因为 enableGoogleSearch 会处理
+                enableGoogleSearch: true, // 添加此行以启用Google搜索
                 stream: true
             };
 
