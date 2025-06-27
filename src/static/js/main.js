@@ -309,10 +309,10 @@ function logMessage(message, type = 'system', messageType = 'text') {
         scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
 
         // 将文本消息添加到 chatHistory
-        chatHistory.push({
-            role: type === 'user' ? 'user' : 'model',
-            parts: [{ text: message }]
-        });
+            chatHistory.push({
+                role: type === 'user' ? 'user' : 'assistant', // 统一使用 'assistant' 角色
+                content: [{ type: 'text', text: message }] // 统一使用 content 字段
+            });
     }
 }
 
@@ -925,8 +925,8 @@ function createAIMessageElement() {
     // 在创建新的 AI 消息元素时，将其添加到 chatHistory
     // 注意：这里只添加一个占位符，实际内容会在流式传输中更新
     chatHistory.push({
-        role: 'model',
-        parts: [{ text: '' }] // 初始为空字符串
+        role: 'assistant', // 统一使用 'assistant' 角色
+        content: [{ type: 'text', text: '' }] // 统一使用 content 字段
     });
 
     return textContainer; // 返回文本容器而不是内容div
@@ -941,17 +941,17 @@ client.on('content', (data) => {
             if (currentAIMessageContentDiv) {
                 // 如果当前 AI 消息有内容，将其添加到 chatHistory
                 if (currentAIMessageContentDiv.textContent.trim() !== '') {
-                    // 更新 chatHistory 中最后一个 AI 消息的内容
-                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
-                        chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
-                    }
-                } else {
-                    // 如果没有内容，移除这个空的 AI 消息占位符
-                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
-                        chatHistory.pop();
-                    }
-                }
-                currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
+            // 更新 chatHistory 中最后一个 AI 消息的内容
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant') {
+                chatHistory[chatHistory.length - 1].content[0].text = currentAIMessageContentDiv.textContent;
+            }
+        } else {
+            // 如果没有内容，移除这个空的 AI 消息占位符
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
+                chatHistory.pop();
+            }
+        }
+        currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
             }
         } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
             isUsingTool = false;
@@ -992,12 +992,12 @@ client.on('interrupted', () => {
         // 如果当前 AI 消息有内容，将其添加到 chatHistory
         if (currentAIMessageContentDiv.textContent.trim() !== '') {
             // 更新 chatHistory 中最后一个 AI 消息的内容
-            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
-                chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant') {
+                chatHistory[chatHistory.length - 1].content[0].text = currentAIMessageContentDiv.textContent;
             }
         } else {
             // 如果没有内容，移除这个空的 AI 消息占位符
-            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
                 chatHistory.pop();
             }
         }
@@ -1107,13 +1107,13 @@ async function processHttpStream(requestBody, apiKey) {
                 // 流结束时，将累积的文本添加到 chatHistory
                 if (accumulatedText) {
                     // 检查 chatHistory 中最后一个 AI 消息是否是当前正在累积的
-                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
-                        chatHistory[chatHistory.length - 1].parts[0].text = accumulatedText;
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
+                        chatHistory[chatHistory.length - 1].content[0].text = accumulatedText;
                     } else {
                         // 如果不是，则添加新的模型消息
                         chatHistory.push({
-                            role: 'model',
-                            parts: [{ text: accumulatedText }]
+                            role: 'assistant', // 统一使用 'assistant' 角色
+                            content: [{ type: 'text', text: accumulatedText }] // 统一使用 content 字段
                         });
                     }
                 }
@@ -1144,12 +1144,12 @@ async function processHttpStream(requestBody, apiKey) {
                                         // 如果当前 AI 消息有内容，将其添加到 chatHistory
                                         if (currentAIMessageContentDiv.textContent.trim() !== '') {
                                             // 更新 chatHistory 中最后一个 AI 消息的内容
-                                            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
-                                                chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+                                            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant') {
+                                                chatHistory[chatHistory.length - 1].content[0].text = currentAIMessageContentDiv.textContent;
                                             }
                                         } else {
                                             // 如果没有内容，移除这个空的 AI 消息占位符
-                                            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                                            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
                                                 chatHistory.pop();
                                             }
                                         }
@@ -1158,21 +1158,21 @@ async function processHttpStream(requestBody, apiKey) {
                                     // 将累积的文本添加到 chatHistory (如果存在)
                                     if (accumulatedText) {
                                         // 检查 chatHistory 中最后一个 AI 消息是否是当前正在累积的
-                                        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
-                                            chatHistory[chatHistory.length - 1].parts[0].text = accumulatedText;
+                                        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
+                                            chatHistory[chatHistory.length - 1].content[0].text = accumulatedText;
                                         } else {
                                             // 如果不是，则添加新的模型消息
                                             chatHistory.push({
-                                                role: 'model',
-                                                parts: [{ text: accumulatedText }]
+                                                role: 'assistant', // 统一使用 'assistant' 角色
+                                                content: [{ type: 'text', text: accumulatedText }] // 统一使用 content 字段
                                             });
                                         }
                                         accumulatedText = ''; // 清空累积文本
                                     }
                                     // 将 functionCall 添加到 chatHistory
                                     chatHistory.push({
-                                        role: 'model',
-                                        parts: [{ functionCall: currentFunctionCall }]
+                                        role: 'assistant', // 统一使用 'assistant' 角色
+                                        content: [{ functionCall: currentFunctionCall }] // 统一使用 content 字段
                                     });
 
                                 } else if (choice.delta.content) {
@@ -1212,17 +1212,17 @@ async function processHttpStream(requestBody, apiKey) {
             if (currentAIMessageContentDiv) {
                 // 如果当前 AI 消息有内容，将其添加到 chatHistory
                 if (currentAIMessageContentDiv.textContent.trim() !== '') {
-                    // 更新 chatHistory 中最后一个 AI 消息的内容
-                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
-                        chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
-                    }
-                } else {
-                    // 如果没有内容，移除这个空的 AI 消息占位符
-                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
-                        chatHistory.pop();
-                    }
-                }
-                currentAIMessageContentDiv = null;
+            // 更新 chatHistory 中最后一个 AI 消息的内容
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant') {
+                chatHistory[chatHistory.length - 1].content[0].text = currentAIMessageContentDiv.textContent;
+            }
+        } else {
+            // 如果没有内容，移除这个空的 AI 消息占位符
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
+                chatHistory.pop();
+            }
+        }
+        currentAIMessageContentDiv = null;
             }
 
             try {
@@ -1235,7 +1235,7 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将 toolResponse 添加到 chatHistory
                 chatHistory.push({
                     role: 'tool',
-                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }]
+                    content: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }] // 统一使用 content 字段
                 });
 
                 // 递归调用，将工具结果发送回模型
@@ -1251,7 +1251,7 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将工具错误响应添加到 chatHistory
                 chatHistory.push({
                     role: 'tool',
-                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
+                    content: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }] // 统一使用 content 字段
                 });
                 await processHttpStream({
                     ...requestBody,
@@ -1265,14 +1265,11 @@ async function processHttpStream(requestBody, apiKey) {
             // 如果没有工具调用，且流已完成，重置 currentAIMessageContentDiv
             if (currentAIMessageContentDiv) {
                 // 如果当前 AI 消息有内容，将其添加到 chatHistory
-                if (currentAIMessageContentDiv.textContent.trim() !== '') {
-                    // 更新 chatHistory 中最后一个 AI 消息的内容
-                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
-                        chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
-                    }
+                if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant') {
+                    chatHistory[chatHistory.length - 1].content[0].text = currentAIMessageContentDiv.textContent;
                 } else {
                     // 如果没有内容，移除这个空的 AI 消息占位符
-                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
                         chatHistory.pop();
                     }
                 }
@@ -1287,21 +1284,18 @@ async function processHttpStream(requestBody, apiKey) {
         // 错误发生时也重置 currentAIMessageContentDiv
         if (currentAIMessageContentDiv) {
             // 如果当前 AI 消息有内容，将其添加到 chatHistory
-            if (currentAIMessageContentDiv.textContent.trim() !== '') {
-                // 更新 chatHistory 中最后一个 AI 消息的内容
-                if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
-                    chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
-                }
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant') {
+                chatHistory[chatHistory.length - 1].content[0].text = currentAIMessageContentDiv.textContent;
             } else {
                 // 如果没有内容，移除这个空的 AI 消息占位符
-                if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && chatHistory[chatHistory.length - 1].content[0].text === '') {
                     chatHistory.pop();
                 }
             }
             currentAIMessageContentDiv = null;
         }
         // 如果发生错误，将最后一条模型消息从 chatHistory 中移除 (如果它是未完成的)
-        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && !chatHistory[chatHistory.length - 1].parts[0].text) {
+        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant' && !chatHistory[chatHistory.length - 1].content[0].text) {
             chatHistory.pop();
         }
     }
