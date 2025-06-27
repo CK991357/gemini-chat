@@ -1113,12 +1113,11 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将模型调用工具添加到 chatHistory
                 chatHistory.push({
                     role: 'assistant', // 模型角色
-                    tool_calls: [{ // 模拟 tool_calls 结构
-                        id: currentFunctionCall.id || 'call_' + generateUniqueSessionId(), // 使用生成ID
-                        type: 'function',
-                        function: {
+                    // 注意：这里直接使用 parts 数组，因为 transformMessages 会处理 tool_calls
+                    parts: [{
+                        functionCall: {
                             name: currentFunctionCall.name,
-                            arguments: JSON.stringify(currentFunctionCall.args)
+                            args: currentFunctionCall.args
                         }
                     }]
                 });
@@ -1126,8 +1125,13 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将工具响应添加到 chatHistory
                 chatHistory.push({
                     role: 'tool', // 工具角色
-                    tool_call_id: currentFunctionCall.id || 'call_' + generateUniqueSessionId(), // 对应工具调用的ID
-                    content: JSON.stringify(toolResponsePart) // 工具响应内容
+                    // 注意：这里直接使用 parts 数组，因为 transformMessages 会处理 functionResponse
+                    parts: [{
+                        functionResponse: {
+                            name: currentFunctionCall.name,
+                            response: toolResponsePart // 直接传递对象，而不是 JSON 字符串
+                        }
+                    }]
                 });
 
                 // 递归调用，将工具结果发送回模型
@@ -1145,12 +1149,10 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将模型调用工具添加到 chatHistory (即使失败也要记录)
                 chatHistory.push({
                     role: 'assistant',
-                    tool_calls: [{
-                        id: currentFunctionCall.id || 'call_' + generateUniqueSessionId(),
-                        type: 'function',
-                        function: {
+                    parts: [{
+                        functionCall: {
                             name: currentFunctionCall.name,
-                            arguments: JSON.stringify(currentFunctionCall.args)
+                            args: currentFunctionCall.args
                         }
                     }]
                 });
@@ -1158,8 +1160,12 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将工具错误响应添加到 chatHistory
                 chatHistory.push({
                     role: 'tool',
-                    tool_call_id: currentFunctionCall.id || 'call_' + generateUniqueSessionId(),
-                    content: JSON.stringify({ error: toolError.message })
+                    parts: [{
+                        functionResponse: {
+                            name: currentFunctionCall.name,
+                            response: { error: toolError.message } // 直接传递对象
+                        }
+                    }]
                 });
 
                 await processHttpStream({
