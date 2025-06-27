@@ -300,7 +300,8 @@ function logMessage(message, type = 'system', messageType = 'text') {
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
+        // 使用 marked.js 渲染 Markdown
+        contentDiv.innerHTML = marked.parse(message);
 
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
@@ -308,6 +309,24 @@ function logMessage(message, type = 'system', messageType = 'text') {
         
         // 确保在DOM更新后滚动
         scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
+
+        // 在消息添加到DOM后调用 Highlight.js 和 MathJax 渲染
+        // 使用 requestAnimationFrame 确保 DOM 更新完成
+        requestAnimationFrame(() => {
+            // Highlight.js 渲染代码块
+            if (typeof hljs !== 'undefined') {
+                contentDiv.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+
+            // MathJax 渲染数学公式
+            if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
+                MathJax.typesetPromise([contentDiv]).catch(err => {
+                    console.log('MathJax typeset error:', err);
+                });
+            }
+        });
     }
 }
 
