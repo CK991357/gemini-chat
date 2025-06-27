@@ -785,7 +785,7 @@ async function handleSendMessage() {
             // 将用户消息添加到 chatHistory
             chatHistory.push({
                 role: 'user',
-                parts: [{ text: message }]
+                parts: [{ inlineData: { mimeType: 'text/plain', data: btoa(message) } }]
             });
 
             // 构建包含历史记录的请求体
@@ -1050,7 +1050,7 @@ async function processHttpStream(requestBody, apiKey) {
                 if (accumulatedText) {
                     chatHistory.push({
                         role: 'model',
-                        parts: [{ text: accumulatedText }]
+                        parts: [{ inlineData: { mimeType: 'text/plain', data: btoa(accumulatedText) } }]
                     });
                 }
                 break;
