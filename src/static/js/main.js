@@ -6,6 +6,7 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
+// marked 库现在通过 <script> 标签全局引入，无需在此处导入
 
 /**
  * @fileoverview Main entry point for the application.
@@ -197,7 +198,6 @@ let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
-let chatHistory = []; // 新增：用于存储聊天历史记录
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -299,7 +299,8 @@ function logMessage(message, type = 'system', messageType = 'text') {
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
+        // 使用 marked 渲染 Markdown 文本
+        contentDiv.innerHTML = marked.parse(message);
 
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
@@ -776,22 +777,27 @@ async function handleSendMessage() {
         // WebSocket 模式下的逻辑保持不变
         client.send({ text: message });
     } else {
-        // HTTP 模式下发送消息 (针对 2.5 模型，支持工具调用和历史记录)
+        // HTTP 模式下发送消息 (针对纯文本模型，但支持工具调用)
         try {
             const apiKey = apiKeyInput.value;
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
 
-            // 将用户消息添加到 chatHistory
-            chatHistory.push({
-                role: 'user',
-                parts: [{ inlineData: { mimeType: 'text/plain', data: btoa(message) } }]
-            });
-
-            // 构建包含历史记录的请求体
+            // 初始请求体
             let initialRequestBody = {
                 model: modelName,
-                messages: chatHistory, // 使用 chatHistory 作为消息历史
+                messages: [
+                    {
+                        role: 'user',
+                        /**
+                         * @description 用户消息内容。
+                         * @type {Array<Object>}
+                         * @property {string} type - 内容类型，例如 "text"。
+                         * @property {string} text - 文本内容。
+                         */
+                        content: [{ inlineData: { mimeType: "text/plain", data: btoa(unescape(encodeURIComponent(message))) } }] // 修改为 inlineData 格式
+                    }
+                ],
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -801,7 +807,8 @@ async function handleSendMessage() {
                     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
                 ],
-                enableGoogleSearch: true,
+                // tools: toolManager.getToolDeclarations(), // 移除或注释掉这行，因为 enableGoogleSearch 会处理
+                enableGoogleSearch: true, // 添加此行以启用Google搜索
                 stream: true
             };
 
@@ -817,10 +824,6 @@ async function handleSendMessage() {
         } catch (error) {
             Logger.error('发送 HTTP 消息失败:', error);
             logMessage(`发送消息失败: ${error.message}`, 'system');
-            // 如果发送失败，将最后一条用户消息从 chatHistory 中移除
-            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
-                chatHistory.pop();
-            }
         }
     }
 }
@@ -943,15 +946,7 @@ client.on('content', (data) => {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
             currentAIMessageContentDiv.textContent += text; // 现在currentAIMessageContentDiv是文本容器
-            // 在设置 innerHTML 并处理代码高亮之后
-            if (window.MathJax) {
-                window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
-                    // 公式渲染完成后，确保滚动到底部
-                    scrollToBottom();
-                }).catch((err) => console.error('MathJax typesetting failed:', err));
-            } else {
-                scrollToBottom();
-            }
+            scrollToBottom();
         }
     }
 });
@@ -1011,8 +1006,8 @@ client.on('error', (error) => {
  * @returns {Promise<void>}
  */
 async function processHttpStream(requestBody, apiKey) {
-    let accumulatedText = ''; // 用于累积模型返回的文本
-    let currentMessages = requestBody.messages; // 这里的 currentMessages 已经是 chatHistory 的引用
+    // let accumulatedText = ''; // 不再需要累积文本，直接追加
+    let currentMessages = requestBody.messages;
 
     try {
         const response = await fetch('/api/chat/completions', {
@@ -1046,13 +1041,6 @@ async function processHttpStream(requestBody, apiKey) {
             const { done, value } = await reader.read();
             if (done) {
                 Logger.info('HTTP Stream finished.');
-                // 流结束时，将累积的文本添加到 chatHistory
-                if (accumulatedText) {
-                    chatHistory.push({
-                        role: 'model',
-                        parts: [{ inlineData: { mimeType: 'text/plain', data: btoa(accumulatedText) } }]
-                    });
-                }
                 break;
             }
 
@@ -1079,37 +1067,15 @@ async function processHttpStream(requestBody, apiKey) {
                                     if (currentAIMessageContentDiv) {
                                         currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
                                     }
-                                    // 将累积的文本添加到 chatHistory (如果存在)
-                                    if (accumulatedText) {
-                                        chatHistory.push({
-                                            role: 'model',
-                                            parts: [{ text: accumulatedText }]
-                                        });
-                                        accumulatedText = ''; // 清空累积文本
-                                    }
-                                    // 将 functionCall 添加到 chatHistory
-                                    chatHistory.push({
-                                        role: 'model',
-                                        parts: [{ functionCall: currentFunctionCall }]
-                                    });
-
                                 } else if (choice.delta.content) {
                                     // 只有在没有 functionCall 时才累积文本
                                     if (!functionCallDetected) {
-                                        accumulatedText += choice.delta.content || '';
                                         if (!currentAIMessageContentDiv) {
                                             currentAIMessageContentDiv = createAIMessageElement();
                                         }
-                                        currentAIMessageContentDiv.textContent = accumulatedText; // 更新 textContentSpan
-                                        // 在设置 innerHTML 并处理代码高亮之后
-                                        if (window.MathJax) {
-                                            window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
-                                                // 公式渲染完成后，确保滚动到底部
-                                                scrollToBottom();
-                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                        } else {
-                                            scrollToBottom();
-                                        }
+                                        // 使用 marked 渲染 Markdown 文本
+                                        currentAIMessageContentDiv.innerHTML += marked.parse(choice.delta.content || '');
+                                        scrollToBottom();
                                     }
                                 }
                             }
@@ -1138,30 +1104,42 @@ async function processHttpStream(requestBody, apiKey) {
 
                 const toolResponsePart = toolResult.functionResponses[0].response.output;
 
-                // 将 toolResponse 添加到 chatHistory
-                chatHistory.push({
-                    role: 'tool',
-                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }]
-                });
+                const newMessages = [
+                    ...currentMessages,
+                    {
+                        role: 'model',
+                        parts: [{ functionCall: currentFunctionCall }]
+                    },
+                    {
+                        role: 'tool',
+                        parts: [{ inlineData: { mimeType: "application/json", data: btoa(unescape(encodeURIComponent(JSON.stringify(toolResponsePart)))) } }] // 修改为 inlineData 格式
+                    }
+                ];
 
                 // 递归调用，将工具结果发送回模型
                 await processHttpStream({
                     ...requestBody,
-                    messages: chatHistory, // 使用更新后的 chatHistory
+                    messages: newMessages,
                     tools: toolManager.getToolDeclarations(),
                 }, apiKey);
 
             } catch (toolError) {
                 Logger.error('工具执行失败:', toolError);
                 logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                // 将工具错误响应添加到 chatHistory
-                chatHistory.push({
-                    role: 'tool',
-                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
-                });
+                const newMessages = [
+                    ...currentMessages,
+                    {
+                        role: 'model',
+                        parts: [{ functionCall: currentFunctionCall }]
+                    },
+                    {
+                        role: 'tool',
+                        parts: [{ inlineData: { mimeType: "application/json", data: btoa(unescape(encodeURIComponent(JSON.stringify({ error: toolError.message })))) } }] // 修改为 inlineData 格式
+                    }
+                ];
                 await processHttpStream({
                     ...requestBody,
-                    messages: chatHistory, // 使用更新后的 chatHistory
+                    messages: newMessages,
                     tools: toolManager.getToolDeclarations(),
                 }, apiKey);
             } finally {
@@ -1181,10 +1159,6 @@ async function processHttpStream(requestBody, apiKey) {
         // 错误发生时也重置 currentAIMessageContentDiv
         if (currentAIMessageContentDiv) {
             currentAIMessageContentDiv = null;
-        }
-        // 如果发生错误，将最后一条模型消息从 chatHistory 中移除 (如果它是未完成的)
-        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && !chatHistory[chatHistory.length - 1].parts[0].text) {
-            chatHistory.pop();
         }
     }
 }
@@ -1738,24 +1712,17 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {void}
      */
     newChatButton.addEventListener('click', () => {
-        // 只有在 HTTP 模式下（即非 WebSocket 模式）才清空 chatHistory
-        // WebSocket 模型有其自身的上下文管理，不依赖前端的 chatHistory
-        if (!selectedModelConfig.isWebSocket) {
-            chatHistory = []; // 清空聊天历史
-            logMessage('聊天历史已清空 (HTTP 模式)', 'system');
-        }
-        location.reload(); // 刷新页面，确保所有状态重置
+        location.reload(); // 刷新页面
     });
 
-    // 移除重复的事件监听器，因为上面已经处理了
-    // /**
-    //  * @function
-    //  * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
-    //  * @returns {void}
-    //  */
-    // newChatButton.addEventListener('click', () => {
-    //     location.reload(); // 刷新页面
-    // });
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+     * @returns {void}
+     */
+    newChatButton.addEventListener('click', () => {
+        location.reload(); // 刷新页面
+    });
 
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {
