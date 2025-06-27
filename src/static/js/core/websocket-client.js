@@ -1,8 +1,8 @@
 import { EventEmitter } from 'https://cdn.skypack.dev/eventemitter3';
-import { blobToJSON, base64ToArrayBuffer } from '../utils/utils.js';
+import { ToolManager } from '../tools/tool-manager.js';
 import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { Logger } from '../utils/logger.js';
-import { ToolManager } from '../tools/tool-manager.js';
+import { base64ToArrayBuffer, blobToJSON } from '../utils/utils.js';
 
 /**
  * Client for interacting with the Gemini 2.0 Flash Multimodal Live API via WebSockets.
@@ -21,7 +21,7 @@ export class MultimodalLiveClient extends EventEmitter {
     constructor() {
         super();
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.baseUrl  = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
+        this.baseUrl  = `${wsProtocol}//generativelanguage.googleapis.com/v1beta/GenerativeService.BidiGenerateContent`;
         this.ws = null;
         this.config = null;
         this.send = this.send.bind(this);
