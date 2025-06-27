@@ -6,7 +6,6 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
-// marked 库现在通过 <script> 标签全局引入，无需在此处导入
 
 /**
  * @fileoverview Main entry point for the application.
@@ -198,6 +197,7 @@ let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
+let chatHistory = []; // 新增：用于存储聊天历史记录
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -299,8 +299,7 @@ function logMessage(message, type = 'system', messageType = 'text') {
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        // 使用 marked 渲染 Markdown 文本
-        contentDiv.innerHTML = marked.parse(message);
+        contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
 
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
@@ -308,6 +307,12 @@ function logMessage(message, type = 'system', messageType = 'text') {
         
         // 确保在DOM更新后滚动
         scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
+
+        // 将文本消息添加到 chatHistory
+        chatHistory.push({
+            role: type === 'user' ? 'user' : 'model',
+            parts: [{ text: message }]
+        });
     }
 }
 
@@ -777,27 +782,22 @@ async function handleSendMessage() {
         // WebSocket 模式下的逻辑保持不变
         client.send({ text: message });
     } else {
-        // HTTP 模式下发送消息 (针对纯文本模型，但支持工具调用)
+        // HTTP 模式下发送消息 (针对 2.5 模型，支持工具调用和历史记录)
         try {
             const apiKey = apiKeyInput.value;
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
 
-            // 初始请求体
+            // 将用户消息添加到 chatHistory
+            chatHistory.push({
+                role: 'user',
+                parts: [{ inlineData: { mimeType: 'text/plain', data: btoa(message) } }]
+            });
+
+            // 构建包含历史记录的请求体
             let initialRequestBody = {
                 model: modelName,
-                messages: [
-                    {
-                        role: 'user',
-                        /**
-                         * @description 用户消息内容。
-                         * @type {Array<Object>}
-                         * @property {string} type - 内容类型，例如 "text"。
-                         * @property {string} text - 文本内容。
-                         */
-                        content: [{ inlineData: { mimeType: "text/plain", data: btoa(unescape(encodeURIComponent(message))) } }] // 修改为 inlineData 格式
-                    }
-                ],
+                messages: chatHistory, // 使用 chatHistory 作为消息历史
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -807,8 +807,7 @@ async function handleSendMessage() {
                     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
                 ],
-                // tools: toolManager.getToolDeclarations(), // 移除或注释掉这行，因为 enableGoogleSearch 会处理
-                enableGoogleSearch: true, // 添加此行以启用Google搜索
+                enableGoogleSearch: true,
                 stream: true
             };
 
@@ -824,6 +823,10 @@ async function handleSendMessage() {
         } catch (error) {
             Logger.error('发送 HTTP 消息失败:', error);
             logMessage(`发送消息失败: ${error.message}`, 'system');
+            // 如果发送失败，将最后一条用户消息从 chatHistory 中移除
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
+                chatHistory.pop();
+            }
         }
     }
 }
@@ -918,6 +921,14 @@ function createAIMessageElement() {
     messageDiv.appendChild(contentDiv);
     messageHistory.appendChild(messageDiv);
     scrollToBottom();
+
+    // 在创建新的 AI 消息元素时，将其添加到 chatHistory
+    // 注意：这里只添加一个占位符，实际内容会在流式传输中更新
+    chatHistory.push({
+        role: 'model',
+        parts: [{ text: '' }] // 初始为空字符串
+    });
+
     return textContainer; // 返回文本容器而不是内容div
 }
 
@@ -928,6 +939,18 @@ client.on('content', (data) => {
             Logger.info('Model is using a tool');
             // 在工具调用前，确保当前 AI 消息完成
             if (currentAIMessageContentDiv) {
+                // 如果当前 AI 消息有内容，将其添加到 chatHistory
+                if (currentAIMessageContentDiv.textContent.trim() !== '') {
+                    // 更新 chatHistory 中最后一个 AI 消息的内容
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                        chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+                    }
+                } else {
+                    // 如果没有内容，移除这个空的 AI 消息占位符
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                        chatHistory.pop();
+                    }
+                }
                 currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
             }
         } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
@@ -946,7 +969,15 @@ client.on('content', (data) => {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
             currentAIMessageContentDiv.textContent += text; // 现在currentAIMessageContentDiv是文本容器
-            scrollToBottom();
+            // 在设置 innerHTML 并处理代码高亮之后
+            if (window.MathJax) {
+                window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
+                    // 公式渲染完成后，确保滚动到底部
+                    scrollToBottom();
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            } else {
+                scrollToBottom();
+            }
         }
     }
 });
@@ -958,6 +989,18 @@ client.on('interrupted', () => {
     logMessage('Model interrupted', 'system');
     // 确保在中断时完成当前文本消息
     if (currentAIMessageContentDiv) {
+        // 如果当前 AI 消息有内容，将其添加到 chatHistory
+        if (currentAIMessageContentDiv.textContent.trim() !== '') {
+            // 更新 chatHistory 中最后一个 AI 消息的内容
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+            }
+        } else {
+            // 如果没有内容，移除这个空的 AI 消息占位符
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                chatHistory.pop();
+            }
+        }
         currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
     }
     // 处理累积的音频数据 (保持不变)
@@ -986,6 +1029,22 @@ client.on('turncomplete', () => {
         displayAudioMessage(audioUrl, duration, 'ai');
         audioDataBuffer = []; // 清空缓冲区
     }
+    // 确保在 turncomplete 时完成当前文本消息
+    if (currentAIMessageContentDiv) {
+        // 如果当前 AI 消息有内容，将其添加到 chatHistory
+        if (currentAIMessageContentDiv.textContent.trim() !== '') {
+            // 更新 chatHistory 中最后一个 AI 消息的内容
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+            }
+        } else {
+            // 如果没有内容，移除这个空的 AI 消息占位符
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                chatHistory.pop();
+            }
+        }
+        currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
+    }
 });
 
 client.on('error', (error) => {
@@ -1006,8 +1065,8 @@ client.on('error', (error) => {
  * @returns {Promise<void>}
  */
 async function processHttpStream(requestBody, apiKey) {
-    // let accumulatedText = ''; // 不再需要累积文本，直接追加
-    let currentMessages = requestBody.messages;
+    let accumulatedText = ''; // 用于累积模型返回的文本
+    // let currentMessages = requestBody.messages; // 这里的 currentMessages 已经是 chatHistory 的引用
 
     try {
         const response = await fetch('/api/chat/completions', {
@@ -1031,8 +1090,12 @@ async function processHttpStream(requestBody, apiKey) {
 
         // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
         // 只有当不是工具响应的后续文本时才创建新消息块
-        const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-        if (!isToolResponseFollowUp) {
+        // const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
+        // if (!isToolResponseFollowUp) {
+        //     currentAIMessageContentDiv = createAIMessageElement();
+        // }
+        // 简化逻辑：每次新的 HTTP 流开始时，如果 currentAIMessageContentDiv 为空，就创建一个新的
+        if (!currentAIMessageContentDiv) {
             currentAIMessageContentDiv = createAIMessageElement();
         }
 
@@ -1041,6 +1104,19 @@ async function processHttpStream(requestBody, apiKey) {
             const { done, value } = await reader.read();
             if (done) {
                 Logger.info('HTTP Stream finished.');
+                // 流结束时，将累积的文本添加到 chatHistory
+                if (accumulatedText) {
+                    // 检查 chatHistory 中最后一个 AI 消息是否是当前正在累积的
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                        chatHistory[chatHistory.length - 1].parts[0].text = accumulatedText;
+                    } else {
+                        // 如果不是，则添加新的模型消息
+                        chatHistory.push({
+                            role: 'model',
+                            parts: [{ text: accumulatedText }]
+                        });
+                    }
+                }
                 break;
             }
 
@@ -1065,17 +1141,57 @@ async function processHttpStream(requestBody, apiKey) {
                                     logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
                                     // 在工具调用前，确保当前 AI 消息完成
                                     if (currentAIMessageContentDiv) {
+                                        // 如果当前 AI 消息有内容，将其添加到 chatHistory
+                                        if (currentAIMessageContentDiv.textContent.trim() !== '') {
+                                            // 更新 chatHistory 中最后一个 AI 消息的内容
+                                            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                                                chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+                                            }
+                                        } else {
+                                            // 如果没有内容，移除这个空的 AI 消息占位符
+                                            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                                                chatHistory.pop();
+                                            }
+                                        }
                                         currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
                                     }
+                                    // 将累积的文本添加到 chatHistory (如果存在)
+                                    if (accumulatedText) {
+                                        // 检查 chatHistory 中最后一个 AI 消息是否是当前正在累积的
+                                        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                                            chatHistory[chatHistory.length - 1].parts[0].text = accumulatedText;
+                                        } else {
+                                            // 如果不是，则添加新的模型消息
+                                            chatHistory.push({
+                                                role: 'model',
+                                                parts: [{ text: accumulatedText }]
+                                            });
+                                        }
+                                        accumulatedText = ''; // 清空累积文本
+                                    }
+                                    // 将 functionCall 添加到 chatHistory
+                                    chatHistory.push({
+                                        role: 'model',
+                                        parts: [{ functionCall: currentFunctionCall }]
+                                    });
+
                                 } else if (choice.delta.content) {
                                     // 只有在没有 functionCall 时才累积文本
                                     if (!functionCallDetected) {
+                                        accumulatedText += choice.delta.content || '';
                                         if (!currentAIMessageContentDiv) {
                                             currentAIMessageContentDiv = createAIMessageElement();
                                         }
-                                        // 使用 marked 渲染 Markdown 文本
-                                        currentAIMessageContentDiv.innerHTML += marked.parse(choice.delta.content || '');
-                                        scrollToBottom();
+                                        currentAIMessageContentDiv.textContent = accumulatedText; // 更新 textContentSpan
+                                        // 在设置 innerHTML 并处理代码高亮之后
+                                        if (window.MathJax) {
+                                            window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
+                                                // 公式渲染完成后，确保滚动到底部
+                                                scrollToBottom();
+                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
+                                        } else {
+                                            scrollToBottom();
+                                        }
                                     }
                                 }
                             }
@@ -1094,6 +1210,18 @@ async function processHttpStream(requestBody, apiKey) {
         if (functionCallDetected && currentFunctionCall) {
             // 确保在处理工具调用前，当前 AI 消息已完成
             if (currentAIMessageContentDiv) {
+                // 如果当前 AI 消息有内容，将其添加到 chatHistory
+                if (currentAIMessageContentDiv.textContent.trim() !== '') {
+                    // 更新 chatHistory 中最后一个 AI 消息的内容
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                        chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+                    }
+                } else {
+                    // 如果没有内容，移除这个空的 AI 消息占位符
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                        chatHistory.pop();
+                    }
+                }
                 currentAIMessageContentDiv = null;
             }
 
@@ -1104,42 +1232,30 @@ async function processHttpStream(requestBody, apiKey) {
 
                 const toolResponsePart = toolResult.functionResponses[0].response.output;
 
-                const newMessages = [
-                    ...currentMessages,
-                    {
-                        role: 'model',
-                        parts: [{ functionCall: currentFunctionCall }]
-                    },
-                    {
-                        role: 'tool',
-                        parts: [{ inlineData: { mimeType: "application/json", data: btoa(unescape(encodeURIComponent(JSON.stringify(toolResponsePart)))) } }] // 修改为 inlineData 格式
-                    }
-                ];
+                // 将 toolResponse 添加到 chatHistory
+                chatHistory.push({
+                    role: 'tool',
+                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }]
+                });
 
                 // 递归调用，将工具结果发送回模型
                 await processHttpStream({
                     ...requestBody,
-                    messages: newMessages,
+                    messages: chatHistory, // 使用更新后的 chatHistory
                     tools: toolManager.getToolDeclarations(),
                 }, apiKey);
 
             } catch (toolError) {
                 Logger.error('工具执行失败:', toolError);
                 logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                const newMessages = [
-                    ...currentMessages,
-                    {
-                        role: 'model',
-                        parts: [{ functionCall: currentFunctionCall }]
-                    },
-                    {
-                        role: 'tool',
-                        parts: [{ inlineData: { mimeType: "application/json", data: btoa(unescape(encodeURIComponent(JSON.stringify({ error: toolError.message })))) } }] // 修改为 inlineData 格式
-                    }
-                ];
+                // 将工具错误响应添加到 chatHistory
+                chatHistory.push({
+                    role: 'tool',
+                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
+                });
                 await processHttpStream({
                     ...requestBody,
-                    messages: newMessages,
+                    messages: chatHistory, // 使用更新后的 chatHistory
                     tools: toolManager.getToolDeclarations(),
                 }, apiKey);
             } finally {
@@ -1148,6 +1264,18 @@ async function processHttpStream(requestBody, apiKey) {
         } else {
             // 如果没有工具调用，且流已完成，重置 currentAIMessageContentDiv
             if (currentAIMessageContentDiv) {
+                // 如果当前 AI 消息有内容，将其添加到 chatHistory
+                if (currentAIMessageContentDiv.textContent.trim() !== '') {
+                    // 更新 chatHistory 中最后一个 AI 消息的内容
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                        chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+                    }
+                } else {
+                    // 如果没有内容，移除这个空的 AI 消息占位符
+                    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                        chatHistory.pop();
+                    }
+                }
                 currentAIMessageContentDiv = null;
             }
             logMessage('Turn complete (HTTP)', 'system');
@@ -1158,7 +1286,23 @@ async function processHttpStream(requestBody, apiKey) {
         logMessage(`处理流失败: ${error.message}`, 'system');
         // 错误发生时也重置 currentAIMessageContentDiv
         if (currentAIMessageContentDiv) {
+            // 如果当前 AI 消息有内容，将其添加到 chatHistory
+            if (currentAIMessageContentDiv.textContent.trim() !== '') {
+                // 更新 chatHistory 中最后一个 AI 消息的内容
+                if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model') {
+                    chatHistory[chatHistory.length - 1].parts[0].text = currentAIMessageContentDiv.textContent;
+                }
+            } else {
+                // 如果没有内容，移除这个空的 AI 消息占位符
+                if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && chatHistory[chatHistory.length - 1].parts[0].text === '') {
+                    chatHistory.pop();
+                }
+            }
             currentAIMessageContentDiv = null;
+        }
+        // 如果发生错误，将最后一条模型消息从 chatHistory 中移除 (如果它是未完成的)
+        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'model' && !chatHistory[chatHistory.length - 1].parts[0].text) {
+            chatHistory.pop();
         }
     }
 }
@@ -1712,17 +1856,24 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {void}
      */
     newChatButton.addEventListener('click', () => {
-        location.reload(); // 刷新页面
+        // 只有在 HTTP 模式下（即非 WebSocket 模式）才清空 chatHistory
+        // WebSocket 模型有其自身的上下文管理，不依赖前端的 chatHistory
+        if (!selectedModelConfig.isWebSocket) {
+            chatHistory = []; // 清空聊天历史
+            logMessage('聊天历史已清空 (HTTP 模式)', 'system');
+        }
+        location.reload(); // 刷新页面，确保所有状态重置
     });
 
-    /**
-     * @function
-     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
-     * @returns {void}
-     */
-    newChatButton.addEventListener('click', () => {
-        location.reload(); // 刷新页面
-    });
+    // 移除重复的事件监听器，因为上面已经处理了
+    // /**
+    //  * @function
+    //  * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+    //  * @returns {void}
+    //  */
+    // newChatButton.addEventListener('click', () => {
+    //     location.reload(); // 刷新页面
+    // });
 
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {
