@@ -197,6 +197,8 @@ let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
+let projectId = localStorage.getItem('gemini_project_id') || generateUUID(); // 项目ID，用于KV存储
+let conversationHistory = []; // 客户端维护的会话历史
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -784,18 +786,6 @@ async function handleSendMessage() {
             // 初始请求体
             let initialRequestBody = {
                 model: modelName,
-                messages: [
-                    {
-                        role: 'user',
-                        /**
-                         * @description 用户消息内容。
-                         * @type {Array<Object>}
-                         * @property {string} type - 内容类型，例如 "text"。
-                         * @property {string} text - 文本内容。
-                         */
-                        content: [{ type: "text", text: message }] // 确保 content 包含 type 字段
-                    }
-                ],
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -805,10 +795,16 @@ async function handleSendMessage() {
                     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
                 ],
-                // tools: toolManager.getToolDeclarations(), // 移除或注释掉这行，因为 enableGoogleSearch 会处理
                 enableGoogleSearch: true, // 添加此行以启用Google搜索
                 stream: true
             };
+
+            // 将当前用户消息添加到客户端的会话历史中
+            conversationHistory.push({
+                role: 'user',
+                content: [{ type: "text", text: message }]
+            });
+            initialRequestBody.messages = conversationHistory; // 将完整的会话历史发送给 Worker
 
             if (systemInstruction) {
                 initialRequestBody.systemInstruction = {
@@ -1016,12 +1012,19 @@ async function processHttpStream(requestBody, apiKey) {
     let currentMessages = requestBody.messages;
 
     try {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        };
+
+        // 只有当模型是 gemini-2.5-flash-preview-05-20 时才添加 X-Project-Id
+        if (modelName === 'gemini-2.5-flash-preview-05-20') {
+            headers['X-Project-Id'] = projectId;
+        }
+
         const response = await fetch('/api/chat/completions', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
+            headers: headers,
             body: JSON.stringify(requestBody)
         });
 
@@ -1073,25 +1076,39 @@ async function processHttpStream(requestBody, apiKey) {
                                     if (currentAIMessageContentDiv) {
                                         currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
                                     }
+                                    // 将 functionCall 添加到客户端的会话历史中
+                                    conversationHistory.push({
+                                        role: 'model',
+                                        parts: [{ functionCall: currentFunctionCall }]
+                                    });
                                 } else if (choice.delta.content) {
                                     // 只有在没有 functionCall 时才累积文本
                                     if (!functionCallDetected) {
                                         if (!currentAIMessageContentDiv) {
-                                        currentAIMessageContentDiv = createAIMessageElement();
-                                    }
-                                    currentAIMessageContentDiv.textContent += choice.delta.content || ''; // 追加到 textContentSpan
-                                    // 在设置 innerHTML 并处理代码高亮之后
-                                    if (window.MathJax) {
-                                        window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
-                                            // 公式渲染完成后，确保滚动到底部
+                                            currentAIMessageContentDiv = createAIMessageElement();
+                                        }
+                                        const newText = choice.delta.content || '';
+                                        currentAIMessageContentDiv.textContent += newText; // 追加到 textContentSpan
+                                        // 将文本添加到客户端的会话历史中
+                                        const lastMessage = conversationHistory[conversationHistory.length - 1];
+                                        if (lastMessage && lastMessage.role === 'model' && lastMessage.parts[0]?.text !== undefined) {
+                                            lastMessage.parts[0].text += newText;
+                                        } else {
+                                            conversationHistory.push({ role: 'model', parts: [{ text: newText }] });
+                                        }
+
+                                        // 在设置 innerHTML 并处理代码高亮之后
+                                        if (window.MathJax) {
+                                            window.MathJax.typesetPromise([currentAIMessageContentDiv]).then(() => {
+                                                // 公式渲染完成后，确保滚动到底部
+                                                scrollToBottom();
+                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
+                                        } else {
                                             scrollToBottom();
-                                        }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                    } else {
-                                        scrollToBottom();
+                                        }
                                     }
                                 }
                             }
-                        }
                         }
                         if (data.usage) {
                             Logger.info('Usage:', data.usage);
@@ -1117,17 +1134,17 @@ async function processHttpStream(requestBody, apiKey) {
 
                 const toolResponsePart = toolResult.functionResponses[0].response.output;
 
-                const newMessages = [
-                    ...currentMessages,
-                    {
-                        role: 'model',
-                        parts: [{ functionCall: currentFunctionCall }]
-                    },
-                    {
-                        role: 'tool',
-                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }]
-                    }
-                ];
+                // 将 functionCall 和 toolResponse 添加到客户端的会话历史中
+                conversationHistory.push({
+                    role: 'model',
+                    parts: [{ functionCall: currentFunctionCall }]
+                });
+                conversationHistory.push({
+                    role: 'tool',
+                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: JSON.stringify(toolResponsePart) } }]
+                });
+
+                const newMessages = conversationHistory; // 使用更新后的完整会话历史
 
                 // 递归调用，将工具结果发送回模型
                 await processHttpStream({
@@ -1139,20 +1156,19 @@ async function processHttpStream(requestBody, apiKey) {
             } catch (toolError) {
                 Logger.error('工具执行失败:', toolError);
                 logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                const newMessages = [
-                    ...currentMessages,
-                    {
-                        role: 'model',
-                        parts: [{ functionCall: currentFunctionCall }]
-                    },
-                    {
-                        role: 'tool',
-                        parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
-                    }
-                ];
+                // 将 functionCall 和 toolResponse (错误) 添加到客户端的会话历史中
+                conversationHistory.push({
+                    role: 'model',
+                    parts: [{ functionCall: currentFunctionCall }]
+                });
+                conversationHistory.push({
+                    role: 'tool',
+                    parts: [{ functionResponse: { name: currentFunctionCall.name, content: { error: toolError.message } } }]
+                });
+
                 await processHttpStream({
                     ...requestBody,
-                    messages: newMessages,
+                    messages: conversationHistory, // 使用更新后的完整会话历史
                     tools: toolManager.getToolDeclarations(),
                 }, apiKey);
             } finally {
@@ -1725,6 +1741,10 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {void}
      */
     newChatButton.addEventListener('click', () => {
+        // 生成新的 projectId 并保存到 localStorage
+        projectId = generateUUID();
+        localStorage.setItem('gemini_project_id', projectId);
+        conversationHistory = []; // 清空客户端的会话历史
         location.reload(); // 刷新页面
     });
 
@@ -1795,6 +1815,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                     messageHistory.scrollTop + threshold;
                 if (isNearBottom) {
                     scrollToBottom(); // 尝试滚动到底部
+                }
+                
+                /**
+                 * @function generateUUID
+                 * @description 生成一个符合 RFC4122 标准的 UUID v4。
+                 * @returns {string} 生成的 UUID 字符串。
+                 */
+                function generateUUID() {
+                    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        const r = Math.random() * 16 | 0;
+                        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                    });
                 }
             }, { passive: true });
         }
