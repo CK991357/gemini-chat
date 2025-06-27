@@ -664,7 +664,7 @@ async function connectToWebsocket() {
         }
 
         const config = {
-            model: CONFIG.API.MODEL_NAME,
+            model: selectedModelConfig.name, // 使用用户选择的模型名称
             generationConfig: {
                 responseModalities: getResponseModalities(responseTypeSelect.value),
                 speechConfig: {
