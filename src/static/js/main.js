@@ -1841,7 +1841,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {void}
      */
     newChatButton.addEventListener('click', () => {
-        location.reload(); // 刷新页面
+        // location.reload(); // 刷新页面
     });
 
     // 添加视图缩放阻止
