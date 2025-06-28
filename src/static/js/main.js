@@ -961,7 +961,8 @@ function createAIMessageElement() {
     return {
         container: messageDiv,
         markdownContainer, // 返回Markdown容器引用
-        contentDiv
+        contentDiv,
+        rawMarkdownBuffer: '' // 新增：用于累积原始Markdown文本
     };
 }
 
@@ -990,20 +991,18 @@ client.on('content', (data) => {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
             
-            // 追加文本到Markdown容器
-            currentAIMessageContentDiv.markdownContainer.textContent += text;
+            // 追加文本到原始Markdown缓冲区
+            currentAIMessageContentDiv.rawMarkdownBuffer += text;
             
             // 渲染Markdown并高亮代码
             // 注意：marked.js 已经集成了 highlight.js，所以不需要单独调用 hljs.highlightElement
-            setTimeout(() => {
-                const rawText = currentAIMessageContentDiv.markdownContainer.textContent;
-                currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText);
-                
-                // 触发 MathJax 渲染
-                if (typeof MathJax !== 'undefined') {
-                    MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
-                }
-            }, 100);
+            // 立即更新 innerHTML，确保实时渲染
+            currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
+            
+            // 触发 MathJax 渲染
+            if (typeof MathJax !== 'undefined') {
+                MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
             scrollToBottom();
         }
     }
@@ -1014,10 +1013,14 @@ client.on('interrupted', () => {
     isUsingTool = false;
     Logger.info('Model interrupted');
     logMessage('Model interrupted', 'system');
-    // 确保在中断时完成当前文本消息
-    if (currentAIMessageContentDiv) {
-        currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
+    // 确保在中断时完成当前文本消息并添加到聊天历史
+    if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
+        chatHistory.push({
+            role: 'assistant',
+            content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+        });
     }
+    currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
     // 处理累积的音频数据 (保持不变)
     if (audioDataBuffer.length > 0) {
         const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
@@ -1035,7 +1038,14 @@ client.on('setupcomplete', () => {
 client.on('turncomplete', () => {
     isUsingTool = false;
     logMessage('Turn complete', 'system');
-    // 在对话结束时刷新文本缓冲区
+    // 在对话结束时刷新文本缓冲区并添加到聊天历史
+    if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
+        chatHistory.push({
+            role: 'assistant',
+            content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+        });
+    }
+    currentAIMessageContentDiv = null; // 重置
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
         const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
@@ -1131,7 +1141,14 @@ async function processHttpStream(requestBody, apiKey) {
                                         if (!currentAIMessageContentDiv) {
                                             currentAIMessageContentDiv = createAIMessageElement();
                                         }
-                                        currentAIMessageContentDiv.textContent += choice.delta.content || ''; // 追加到 textContentSpan
+                                        // 追加到原始Markdown缓冲区
+                                        currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
+                                        // 立即渲染Markdown
+                                        currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
+                                        // 触发 MathJax 渲染
+                                        if (typeof MathJax !== 'undefined') {
+                                            MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
+                                        }
                                         scrollToBottom();
                                     }
                                 }
@@ -1149,17 +1166,14 @@ async function processHttpStream(requestBody, apiKey) {
 
         // 处理工具调用
         if (functionCallDetected && currentFunctionCall) {
-            // 确保在处理工具调用前，当前 AI 消息已完成
-            if (currentAIMessageContentDiv) {
-                // 将当前累积的 AI 文本添加到 chatHistory
-                if (currentAIMessageContentDiv.markdownContainer.textContent) {
-                    chatHistory.push({
-                        role: 'assistant',
-                        content: [{ type: 'text', text: currentAIMessageContentDiv.markdownContainer.textContent }]
-                    });
-                }
-                currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
+            // 确保在处理工具调用前，当前 AI 消息已完成并添加到聊天历史
+            if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
+                chatHistory.push({
+                    role: 'assistant',
+                    content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+                });
             }
+            currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
 
             try {
                 isUsingTool = true;
@@ -1237,10 +1251,10 @@ async function processHttpStream(requestBody, apiKey) {
             }
         } else {
             // 如果没有工具调用，且流已完成，将完整的 AI 响应添加到 chatHistory
-            if (currentAIMessageContentDiv && currentAIMessageContentDiv.markdownContainer.textContent) {
+            if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
                 chatHistory.push({
                     role: 'assistant',
-                    content: [{ type: 'text', text: currentAIMessageContentDiv.markdownContainer.textContent }]
+                    content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
                 });
             }
             currentAIMessageContentDiv = null; // 重置
@@ -1282,7 +1296,14 @@ function handleInterruptPlayback() {
         audioStreamer.stop();
         Logger.info('Audio playback interrupted by user.');
         logMessage('语音播放已中断', 'system');
-        // 确保在中断时也刷新文本缓冲区
+        // 确保在中断时也刷新文本缓冲区并添加到聊天历史
+        if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
+            chatHistory.push({
+                role: 'assistant',
+                content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+            });
+        }
+        currentAIMessageContentDiv = null; // 重置
         // 处理累积的音频数据
         if (audioDataBuffer.length > 0) {
             const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
