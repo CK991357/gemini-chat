@@ -990,3 +990,154 @@ body {
         border-radius: 0;
     }
 }
+
+/* Markdown 渲染内容通用样式 */
+.message .content p {
+    margin-bottom: 1em;
+    line-height: 1.6;
+}
+
+.message .content h1,
+.message .content h2,
+.message .content h3,
+.message .content h4,
+.message .content h5,
+.message .content h6 {
+    margin-top: 1.5em;
+    margin-bottom: 0.8em;
+    font-weight: bold;
+    line-height: 1.2;
+    color: var(--text-color);
+}
+
+.message .content h1 { font-size: 1.8em; }
+.message .content h2 { font-size: 1.6em; }
+.message .content h3 { font-size: 1.4em; }
+.message .content h4 { font-size: 1.2em; }
+.message .content h5 { font-size: 1.1em; }
+.message .content h6 { font-size: 1em; }
+
+.message .content ul,
+.message .content ol {
+    margin-left: 20px;
+    padding-left: 0;
+    margin-bottom: 1em;
+}
+
+.message .content li {
+    margin-bottom: 0.5em;
+}
+
+.message .content ul li {
+    list-style-type: disc;
+}
+
+.message .content ol li {
+    list-style-type: decimal;
+}
+
+/* 代码块样式 */
+.message .content pre {
+    background-color: var(--bg-color);
+    padding: 1em;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin-bottom: 1em;
+    border: 1px solid var(--border-color);
+}
+
+.message .content pre code {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+/* 行内代码样式 */
+.message .content code {
+    background-color: rgba(128, 128, 128, 0.1);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-family: 'SF Mono', monospace;
+    font-size: 0.9em;
+    color: var(--text-color);
+}
+
+/* 引用块样式 */
+.message .content blockquote {
+    border-left: 4px solid var(--primary-color);
+    padding-left: 1em;
+    margin: 1em 0;
+    color: var(--text-secondary-color);
+    background-color: rgba(var(--primary-color-rgb, 66, 133, 244), 0.05);
+    border-radius: 4px;
+}
+
+/* 表格样式 */
+.message .content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+    overflow-x: auto;
+    display: block;
+}
+
+.message .content th,
+.message .content td {
+    border: 1px solid var(--border-color);
+    padding: 8px;
+    text-align: left;
+}
+
+.message .content th {
+    background-color: var(--bg-color);
+    font-weight: bold;
+}
+
+.message .content tr:nth-child(even) {
+    background-color: var(--bg-color);
+}
+
+/* 链接样式 */
+.message .content a {
+    color: var(--primary-color);
+    text-decoration: underline;
+}
+
+.message .content a:hover {
+    text-decoration: none;
+}
+
+/* 图片样式 */
+.message .content img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1em 0;
+    border-radius: 8px;
+}
+
+/* 暗色模式下代码块和行内代码的背景调整 */
+body.dark-mode .message .content pre {
+    background-color: #333;
+    border-color: #444;
+}
+
+body.dark-mode .message .content code {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .message .content blockquote {
+    background-color: rgba(var(--primary-color-rgb, 99, 102, 241), 0.1);
+}
+
+/* 辅助变量，用于 rgba() */
+:root {
+    --primary-color-rgb: 66, 133, 244; /* Google Blue 的 RGB 值 */
+}
+
+body.dark-mode {
+    --primary-color-rgb: 99, 102, 241; /* 暗色模式下 primary-color 的 RGB 值 */
+}
