@@ -1,5 +1,3 @@
-import hljs from 'npm:highlight.js'; // 导入 highlight.js
-import { marked } from 'npm:marked'; // 导入 marked 库
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
@@ -925,28 +923,29 @@ function createAIMessageElement() {
 
 client.on('content', (data) => {
     if (data.modelTurn) {
-        const text = data.modelTurn.parts.map(part => part.text).join('');
-        const functionCallDetected = data.modelTurn.parts.some(part => part.functionCall);
-        const functionResponseDetected = data.modelTurn.parts.some(part => part.functionResponse);
-
-        if (functionCallDetected || functionResponseDetected) {
-            isUsingTool = functionCallDetected; // 如果是 functionCall 则为 true，否则为 false
-            Logger.info(`Model is using a tool: ${functionCallDetected ? 'true' : 'false'}`);
-            // 在工具调用或响应时，如果当前 AI 消息存在，则进行渲染并重置
+        if (data.modelTurn.parts.some(part => part.functionCall)) {
+            isUsingTool = true;
+            Logger.info('Model is using a tool');
+            // 在工具调用前，确保当前 AI 消息完成
             if (currentAIMessageContentDiv) {
-                if (currentAIMessageContentDiv.textContent) {
-                    currentAIMessageContentDiv.innerHTML = marked.parse(currentAIMessageContentDiv.textContent);
-                    hljs.highlightAll(); // 对新渲染的内容进行高亮
-                }
                 currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
+            }
+        } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
+            isUsingTool = false;
+            Logger.info('Tool usage completed');
+            // 工具响应后，如果需要，可以立即创建一个新的 AI 消息块来显示后续文本
+            if (!currentAIMessageContentDiv) {
+                currentAIMessageContentDiv = createAIMessageElement();
             }
         }
 
+        const text = data.modelTurn.parts.map(part => part.text).join('');
+        
         if (text) {
             if (!currentAIMessageContentDiv) {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
-            currentAIMessageContentDiv.textContent += text;
+            currentAIMessageContentDiv.textContent += text; // 现在currentAIMessageContentDiv是文本容器
             scrollToBottom();
         }
     }
@@ -957,12 +956,8 @@ client.on('interrupted', () => {
     isUsingTool = false;
     Logger.info('Model interrupted');
     logMessage('Model interrupted', 'system');
-    // 在中断时，如果 currentAIMessageContentDiv 存在，则进行渲染并重置
+    // 确保在中断时完成当前文本消息
     if (currentAIMessageContentDiv) {
-        if (currentAIMessageContentDiv.textContent) {
-            currentAIMessageContentDiv.innerHTML = marked.parse(currentAIMessageContentDiv.textContent);
-            hljs.highlightAll(); // 对新渲染的内容进行高亮
-        }
         currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
     }
     // 处理累积的音频数据 (保持不变)
@@ -982,14 +977,7 @@ client.on('setupcomplete', () => {
 client.on('turncomplete', () => {
     isUsingTool = false;
     logMessage('Turn complete', 'system');
-    // 在对话结束时，如果 currentAIMessageContentDiv 存在，则进行渲染并重置
-    if (currentAIMessageContentDiv) {
-        if (currentAIMessageContentDiv.textContent) {
-            currentAIMessageContentDiv.innerHTML = marked.parse(currentAIMessageContentDiv.textContent);
-            hljs.highlightAll(); // 对新渲染的内容进行高亮
-        }
-        currentAIMessageContentDiv = null; // 重置
-    }
+    // 在对话结束时刷新文本缓冲区
     // 处理累积的音频数据
     if (audioDataBuffer.length > 0) {
         const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
@@ -1018,6 +1006,7 @@ client.on('error', (error) => {
  * @returns {Promise<void>}
  */
 async function processHttpStream(requestBody, apiKey) {
+    // let accumulatedText = ''; // 不再需要累积文本，直接追加
     let currentMessages = requestBody.messages;
 
     try {
@@ -1047,6 +1036,7 @@ async function processHttpStream(requestBody, apiKey) {
             currentAIMessageContentDiv = createAIMessageElement();
         }
 
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
@@ -1073,23 +1063,19 @@ async function processHttpStream(requestBody, apiKey) {
                                     currentFunctionCall = functionCallPart.functionCall;
                                     Logger.info('Function call detected:', currentFunctionCall);
                                     logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    // 在工具调用前，如果 currentAIMessageContentDiv 存在且有内容，则进行渲染并添加到 chatHistory
-                                    if (currentAIMessageContentDiv && currentAIMessageContentDiv.textContent) {
-                                        currentAIMessageContentDiv.innerHTML = marked.parse(currentAIMessageContentDiv.textContent);
-                                        hljs.highlightAll();
-                                        chatHistory.push({
-                                            role: 'assistant',
-                                            content: [{ type: 'text', text: currentAIMessageContentDiv.textContent }]
-                                        });
-                                        currentAIMessageContentDiv = null; // 重置
+                                    // 在工具调用前，确保当前 AI 消息完成
+                                    if (currentAIMessageContentDiv) {
+                                        currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
                                     }
                                 } else if (choice.delta.content) {
-                                    // 累积文本，不进行即时渲染
-                                    if (!currentAIMessageContentDiv) {
-                                        currentAIMessageContentDiv = createAIMessageElement();
+                                    // 只有在没有 functionCall 时才累积文本
+                                    if (!functionCallDetected) {
+                                        if (!currentAIMessageContentDiv) {
+                                            currentAIMessageContentDiv = createAIMessageElement();
+                                        }
+                                        currentAIMessageContentDiv.textContent += choice.delta.content || ''; // 追加到 textContentSpan
+                                        scrollToBottom();
                                     }
-                                    currentAIMessageContentDiv.textContent += choice.delta.content || '';
-                                    scrollToBottom();
                                 }
                             }
                         }
@@ -1105,6 +1091,18 @@ async function processHttpStream(requestBody, apiKey) {
 
         // 处理工具调用
         if (functionCallDetected && currentFunctionCall) {
+            // 确保在处理工具调用前，当前 AI 消息已完成
+            if (currentAIMessageContentDiv) {
+                // 将当前累积的 AI 文本添加到 chatHistory
+                if (currentAIMessageContentDiv.textContent) {
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: [{ type: 'text', text: currentAIMessageContentDiv.textContent }]
+                    });
+                }
+                currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
+            }
+
             try {
                 isUsingTool = true;
                 logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
@@ -1115,6 +1113,7 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将模型调用工具添加到 chatHistory
                 chatHistory.push({
                     role: 'assistant', // 模型角色
+                    // 注意：这里直接使用 parts 数组，因为 transformMessages 会处理 tool_calls
                     parts: [{
                         functionCall: {
                             name: currentFunctionCall.name,
@@ -1126,10 +1125,11 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将工具响应添加到 chatHistory
                 chatHistory.push({
                     role: 'tool', // 工具角色
+                    // 注意：这里直接使用 parts 数组，因为 transformMessages 会处理 functionResponse
                     parts: [{
                         functionResponse: {
                             name: currentFunctionCall.name,
-                            response: toolResponsePart
+                            response: toolResponsePart // 直接传递对象，而不是 JSON 字符串
                         }
                     }]
                 });
@@ -1137,9 +1137,9 @@ async function processHttpStream(requestBody, apiKey) {
                 // 递归调用，将工具结果发送回模型
                 await processHttpStream({
                     ...requestBody,
-                    messages: chatHistory,
+                    messages: chatHistory, // 直接使用更新后的 chatHistory
                     tools: toolManager.getToolDeclarations(),
-                    sessionId: currentSessionId
+                    sessionId: currentSessionId // 确保传递会话ID
                 }, apiKey);
 
             } catch (toolError) {
@@ -1163,16 +1163,16 @@ async function processHttpStream(requestBody, apiKey) {
                     parts: [{
                         functionResponse: {
                             name: currentFunctionCall.name,
-                            response: { error: toolError.message }
+                            response: { error: toolError.message } // 直接传递对象
                         }
                     }]
                 });
 
                 await processHttpStream({
                     ...requestBody,
-                    messages: chatHistory,
+                    messages: chatHistory, // 直接使用更新后的 chatHistory
                     tools: toolManager.getToolDeclarations(),
-                    sessionId: currentSessionId
+                    sessionId: currentSessionId // 确保传递会话ID
                 }, apiKey);
             } finally {
                 isUsingTool = false;
@@ -1180,8 +1180,6 @@ async function processHttpStream(requestBody, apiKey) {
         } else {
             // 如果没有工具调用，且流已完成，将完整的 AI 响应添加到 chatHistory
             if (currentAIMessageContentDiv && currentAIMessageContentDiv.textContent) {
-                currentAIMessageContentDiv.innerHTML = marked.parse(currentAIMessageContentDiv.textContent);
-                hljs.highlightAll();
                 chatHistory.push({
                     role: 'assistant',
                     content: [{ type: 'text', text: currentAIMessageContentDiv.textContent }]
