@@ -42,7 +42,7 @@ The report should include the following core sections:
 -   **Innovative Recommendations & Execution Path**: Provide the optimal solution and explain the basis for selection, develop a phased implementation roadmap, and predict potential challenges and contingency plans.
 
 **Output Requirements**:
--   **Structured Presentation**: Organize content using Markdown format (headings, subheadings, lists, tables).
+-   **Structured Presentation**: Organize content using Markdown format (headings, subheadings, lists, tables). **Ensure clear paragraph breaks using double newlines (\\n\\n) for readability, especially in long analytical sections.**
 -   **Professional Expression**: Use professional terminology but keep it easy to understand, **bold** key conclusions, and provide concise explanations for technical terms.
 -   **Fact-Checking**: All key data must be verified via search tools and sources must be cited (Format: [Source Website]).
 -   **Depth Standard**: The response should demonstrate at least two levels of analytical depth, data-backed arguments, and innovative insights.\`
