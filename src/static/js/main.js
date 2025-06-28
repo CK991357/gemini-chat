@@ -7,33 +7,6 @@ import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
 
-// 配置Marked
-marked.setOptions({
-  highlight: function(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(lang, code).value;
-    } else {
-      return hljs.highlightAuto(code).value;
-    }
-  }
-});
-
-// 添加Markdown渲染器扩展
-const renderer = new marked.Renderer();
-
-// 处理段落换行（保留单换行）
-renderer.paragraph = (text) => {
-  // 确保在段落末尾添加换行，并处理内部的单换行
-  return text.split('\n').map(line => `<p>${line}</p>`).join('');
-};
-
-// 处理代码块
-renderer.code = (code, lang, escaped) => {
-  // hljs.highlightAuto(code) 会自动检测语言并高亮
-  const highlightedCode = hljs.highlightAuto(code).value;
-  return `<pre><code class="hljs ${lang || ''}">${highlightedCode}</code></pre>`;
-};
-
 /**
  * @fileoverview Main entry point for the application.
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
@@ -105,13 +78,6 @@ if (savedSystemInstruction) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 初始化highlight.js
-    hljs.configure({
-        ignoreUnescapedHTML: true,
-        throwUnescapedHTML: false
-    });
-    hljs.highlightAll();
-
     // 动态生成模型选择下拉菜单选项
     const modelSelect = document.getElementById('model-select');
     modelSelect.innerHTML = ''; // 清空现有选项
@@ -311,12 +277,6 @@ function formatTime(seconds) {
  * @param {string} [type='system'] - The type of the message (system, user, ai).
  * @param {string} [messageType='text'] - 消息在聊天历史中的类型 ('text' 或 'audio')。
  */
-/**
- * Logs a message to the UI.
- * @param {string} message - The message to log.
- * @param {string} [type='system'] - The type of the message (system, user, ai).
- * @param {string} [messageType='text'] - 消息在聊天历史中的类型 ('text' 或 'audio')。
- */
 function logMessage(message, type = 'system', messageType = 'text') {
     // 原始日志始终写入 logsContainer
     const rawLogEntry = document.createElement('div');
@@ -340,32 +300,14 @@ function logMessage(message, type = 'system', messageType = 'text') {
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        
-        // 使用marked解析Markdown
-        contentDiv.innerHTML = marked.parse(message, { renderer });
-        
-        // 添加复制按钮
-        const copyButton = document.createElement('button');
-        copyButton.classList.add('copy-button', 'material-symbols-outlined');
-        copyButton.textContent = 'content_copy';
-        copyButton.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(message);
-                copyButton.textContent = 'check';
-                setTimeout(() => {
-                    copyButton.textContent = 'content_copy';
-                }, 2000);
-            } catch (err) {
-                console.error('复制失败:', err);
-            }
-        });
-        
-        contentDiv.appendChild(copyButton);
+        contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
+
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messageHistory.appendChild(messageDiv);
         
-        scrollToBottom();
+        // 确保在DOM更新后滚动
+        scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
     }
 }
 
@@ -925,7 +867,7 @@ let currentAIMessageContentDiv = null;
 
 /**
  * 创建并添加一个新的 AI 消息元素到聊天历史。
- * @returns {Object} 包含新创建的 AI 消息容器、Markdown 容器和内容 div 元素的引用。
+ * @returns {HTMLElement} 新创建的 AI 消息的内容 div 元素。
  */
 function createAIMessageElement() {
     const messageDiv = document.createElement('div');
@@ -938,10 +880,9 @@ function createAIMessageElement() {
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('content');
     
-    // 创建Markdown容器
-    const markdownContainer = document.createElement('div');
-    markdownContainer.classList.add('markdown-container');
-    contentDiv.appendChild(markdownContainer);
+    // 创建文本容器 - 这是关键修改
+    const textContainer = document.createElement('div');
+    textContainer.classList.add('text-container');
     
     // 创建复制按钮
     const copyButton = document.createElement('button');
@@ -955,7 +896,7 @@ function createAIMessageElement() {
      * @returns {void}
      */
     copyButton.addEventListener('click', async () => {
-        const textToCopy = markdownContainer.textContent; // 从 markdownContainer 获取文本
+        const textToCopy = textContainer.textContent; // 从 textContainer 获取文本
         try {
             await navigator.clipboard.writeText(textToCopy);
             copyButton.textContent = 'check';
@@ -969,17 +910,15 @@ function createAIMessageElement() {
         }
     });
 
-    contentDiv.appendChild(copyButton); // 复制按钮放在 Markdown 容器后面
+    // 正确的DOM结构：文本容器在内容div内，复制按钮在内容div内
+    contentDiv.appendChild(textContainer);
+    contentDiv.appendChild(copyButton); // 复制按钮放在文本容器后面
     
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
     messageHistory.appendChild(messageDiv);
     scrollToBottom();
-    return {
-        container: messageDiv,
-        markdownContainer, // 返回Markdown容器引用
-        contentDiv
-    };
+    return textContainer; // 返回文本容器而不是内容div
 }
 
 client.on('content', (data) => {
@@ -1006,14 +945,7 @@ client.on('content', (data) => {
             if (!currentAIMessageContentDiv) {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
-            // 追加文本到Markdown容器
-            currentAIMessageContentDiv.markdownContainer.textContent += text;
-            
-            // 渲染Markdown
-            setTimeout(() => {
-                const rawText = currentAIMessageContentDiv.markdownContainer.textContent;
-                currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText, { renderer });
-            }, 100);
+            currentAIMessageContentDiv.textContent += text; // 现在currentAIMessageContentDiv是文本容器
             scrollToBottom();
         }
     }
@@ -1141,12 +1073,7 @@ async function processHttpStream(requestBody, apiKey) {
                                         if (!currentAIMessageContentDiv) {
                                             currentAIMessageContentDiv = createAIMessageElement();
                                         }
-                                        currentAIMessageContentDiv.markdownContainer.textContent += choice.delta.content || ''; // 追加到 markdownContainer
-                                        // 渲染Markdown
-                                        setTimeout(() => {
-                                            const rawText = currentAIMessageContentDiv.markdownContainer.textContent;
-                                            currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText, { renderer });
-                                        }, 100);
+                                        currentAIMessageContentDiv.textContent += choice.delta.content || ''; // 追加到 textContentSpan
                                         scrollToBottom();
                                     }
                                 }
