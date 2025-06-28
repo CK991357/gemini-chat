@@ -7,6 +7,33 @@ import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
 
+// 配置Marked
+marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(lang, code).value;
+    } else {
+      return hljs.highlightAuto(code).value;
+    }
+  }
+});
+
+// 添加Markdown渲染器扩展
+const renderer = new marked.Renderer();
+
+// 处理段落换行（保留单换行）
+renderer.paragraph = (text) => {
+  // 确保在段落末尾添加换行，并处理内部的单换行
+  return text.split('\n').map(line => `<p>${line}</p>`).join('');
+};
+
+// 处理代码块
+renderer.code = (code, lang, escaped) => {
+  // hljs.highlightAuto(code) 会自动检测语言并高亮
+  const highlightedCode = hljs.highlightAuto(code).value;
+  return `<pre><code class="hljs ${lang || ''}">${highlightedCode}</code></pre>`;
+};
+
 /**
  * @fileoverview Main entry point for the application.
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
@@ -315,7 +342,7 @@ function logMessage(message, type = 'system', messageType = 'text') {
         contentDiv.classList.add('content');
         
         // 使用marked解析Markdown
-        contentDiv.innerHTML = marked.parse(message);
+        contentDiv.innerHTML = marked.parse(message, { renderer });
         
         // 添加复制按钮
         const copyButton = document.createElement('button');
@@ -337,13 +364,6 @@ function logMessage(message, type = 'system', messageType = 'text') {
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messageHistory.appendChild(messageDiv);
-        
-        // 高亮代码块
-        setTimeout(() => {
-            contentDiv.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
-        }, 0);
         
         scrollToBottom();
     }
@@ -989,14 +1009,10 @@ client.on('content', (data) => {
             // 追加文本到Markdown容器
             currentAIMessageContentDiv.markdownContainer.textContent += text;
             
-            // 渲染Markdown并高亮代码
+            // 渲染Markdown
             setTimeout(() => {
                 const rawText = currentAIMessageContentDiv.markdownContainer.textContent;
-                currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText);
-                
-                currentAIMessageContentDiv.markdownContainer.querySelectorAll('pre code').forEach((block) => {
-                    hljs.highlightElement(block);
-                });
+                currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText, { renderer });
             }, 100);
             scrollToBottom();
         }
@@ -1126,14 +1142,10 @@ async function processHttpStream(requestBody, apiKey) {
                                             currentAIMessageContentDiv = createAIMessageElement();
                                         }
                                         currentAIMessageContentDiv.markdownContainer.textContent += choice.delta.content || ''; // 追加到 markdownContainer
-                                        // 渲染Markdown并高亮代码
+                                        // 渲染Markdown
                                         setTimeout(() => {
                                             const rawText = currentAIMessageContentDiv.markdownContainer.textContent;
-                                            currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText);
-                                            
-                                            currentAIMessageContentDiv.markdownContainer.querySelectorAll('pre code').forEach((block) => {
-                                                hljs.highlightElement(block);
-                                            });
+                                            currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText, { renderer });
                                         }, 100);
                                         scrollToBottom();
                                     }
