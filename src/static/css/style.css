@@ -1020,7 +1020,7 @@ body {
 .message .content ul,
 .message .content ol {
     margin-left: 20px;
-    padding-left: 0;
+    padding-left: 1.5em; /* 调整 */
     margin-bottom: 1em;
 }
 
@@ -1039,11 +1039,13 @@ body {
 /* 代码块样式 */
 .message .content pre {
     background-color: var(--bg-color);
-    padding: 1em;
+    padding: 12px; /* 调整 */
     border-radius: 8px;
     overflow-x: auto;
-    margin-bottom: 1em;
+    margin-bottom: 10px; /* 调整 */
     border: 1px solid var(--border-color);
+    max-height: 300px; /* 新增 */
+    overflow-y: auto; /* 新增 */
 }
 
 .message .content pre code {
@@ -1140,4 +1142,9 @@ body.dark-mode .message .content blockquote {
 
 body.dark-mode {
     --primary-color-rgb: 99, 102, 241; /* 暗色模式下 primary-color 的 RGB 值 */
+/* 确保Markdown容器正确显示 */
+.markdown-container {
+  overflow-x: auto;
+  word-wrap: break-word;
+}
 }

@@ -78,6 +78,13 @@ if (savedSystemInstruction) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 初始化highlight.js
+    hljs.configure({
+      ignoreUnescapedHTML: true,
+      throwUnescapedHTML: false
+    });
+    hljs.highlightAll();
+
     // 动态生成模型选择下拉菜单选项
     const modelSelect = document.getElementById('model-select');
     modelSelect.innerHTML = ''; // 清空现有选项
@@ -300,14 +307,43 @@ function logMessage(message, type = 'system', messageType = 'text') {
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
-        contentDiv.textContent = message; // 暂时只支持纯文本，后续可考虑 Markdown 渲染
-
+        
+        // 使用marked解析Markdown
+        contentDiv.innerHTML = marked.parse(message);
+        
+        // 添加复制按钮
+        const copyButton = document.createElement('button');
+        copyButton.classList.add('copy-button', 'material-symbols-outlined');
+        copyButton.textContent = 'content_copy';
+        copyButton.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(message);
+            copyButton.textContent = 'check';
+            setTimeout(() => {
+              copyButton.textContent = 'content_copy';
+            }, 2000);
+          } catch (err) {
+            console.error('复制失败:', err);
+          }
+        });
+        
+        contentDiv.appendChild(copyButton);
         messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messageHistory.appendChild(messageDiv);
         
-        // 确保在DOM更新后滚动
-        scrollToBottom(); // 直接调用，内部有 requestAnimationFrame
+        // 高亮代码块
+        setTimeout(() => {
+          contentDiv.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightElement(block);
+          });
+          // 触发 MathJax 渲染
+          if (typeof MathJax !== 'undefined') {
+            MathJax.typesetPromise([contentDiv]).catch((err) => console.error('MathJax typesetting failed:', err));
+          }
+        }, 0);
+        
+        scrollToBottom();
     }
 }
 
@@ -880,11 +916,12 @@ function createAIMessageElement() {
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('content');
     
-    // 创建文本容器 - 这是关键修改
-    const textContainer = document.createElement('div');
-    textContainer.classList.add('text-container');
+    // 创建Markdown容器
+    const markdownContainer = document.createElement('div');
+    markdownContainer.classList.add('markdown-container');
+    contentDiv.appendChild(markdownContainer);
     
-    // 创建复制按钮
+    // 复制按钮（保持不变）
     const copyButton = document.createElement('button');
     copyButton.classList.add('copy-button', 'material-symbols-outlined');
     copyButton.textContent = 'content_copy';
@@ -896,7 +933,7 @@ function createAIMessageElement() {
      * @returns {void}
      */
     copyButton.addEventListener('click', async () => {
-        const textToCopy = textContainer.textContent; // 从 textContainer 获取文本
+        const textToCopy = markdownContainer.textContent; // 从 markdownContainer 获取文本
         try {
             await navigator.clipboard.writeText(textToCopy);
             copyButton.textContent = 'check';
@@ -910,15 +947,17 @@ function createAIMessageElement() {
         }
     });
 
-    // 正确的DOM结构：文本容器在内容div内，复制按钮在内容div内
-    contentDiv.appendChild(textContainer);
-    contentDiv.appendChild(copyButton); // 复制按钮放在文本容器后面
+    contentDiv.appendChild(copyButton); // 复制按钮放在内容div内
     
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
     messageHistory.appendChild(messageDiv);
     scrollToBottom();
-    return textContainer; // 返回文本容器而不是内容div
+    return {
+        container: messageDiv,
+        markdownContainer, // 返回Markdown容器引用
+        contentDiv
+    };
 }
 
 client.on('content', (data) => {
@@ -945,7 +984,23 @@ client.on('content', (data) => {
             if (!currentAIMessageContentDiv) {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
-            currentAIMessageContentDiv.textContent += text; // 现在currentAIMessageContentDiv是文本容器
+            
+            // 追加文本到Markdown容器
+            currentAIMessageContentDiv.markdownContainer.textContent += text;
+            
+            // 渲染Markdown并高亮代码
+            setTimeout(() => {
+                const rawText = currentAIMessageContentDiv.markdownContainer.textContent;
+                currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText);
+                
+                currentAIMessageContentDiv.markdownContainer.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+                // 触发 MathJax 渲染
+                if (typeof MathJax !== 'undefined') {
+                    MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
+                }
+            }, 100);
             scrollToBottom();
         }
     }
@@ -1094,10 +1149,10 @@ async function processHttpStream(requestBody, apiKey) {
             // 确保在处理工具调用前，当前 AI 消息已完成
             if (currentAIMessageContentDiv) {
                 // 将当前累积的 AI 文本添加到 chatHistory
-                if (currentAIMessageContentDiv.textContent) {
+                if (currentAIMessageContentDiv.markdownContainer.textContent) {
                     chatHistory.push({
                         role: 'assistant',
-                        content: [{ type: 'text', text: currentAIMessageContentDiv.textContent }]
+                        content: [{ type: 'text', text: currentAIMessageContentDiv.markdownContainer.textContent }]
                     });
                 }
                 currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
@@ -1179,10 +1234,10 @@ async function processHttpStream(requestBody, apiKey) {
             }
         } else {
             // 如果没有工具调用，且流已完成，将完整的 AI 响应添加到 chatHistory
-            if (currentAIMessageContentDiv && currentAIMessageContentDiv.textContent) {
+            if (currentAIMessageContentDiv && currentAIMessageContentDiv.markdownContainer.textContent) {
                 chatHistory.push({
                     role: 'assistant',
-                    content: [{ type: 'text', text: currentAIMessageContentDiv.textContent }]
+                    content: [{ type: 'text', text: currentAIMessageContentDiv.markdownContainer.textContent }]
                 });
             }
             currentAIMessageContentDiv = null; // 重置
