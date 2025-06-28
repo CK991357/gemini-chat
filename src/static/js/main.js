@@ -78,12 +78,22 @@ if (savedSystemInstruction) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 配置 marked.js
+    marked.setOptions({
+      breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
+      highlight: function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        return hljs.highlight(code, { language }).value;
+      },
+      langPrefix: 'hljs language-' // highlight.js css expects a language prefix
+    });
+
     // 初始化highlight.js
     hljs.configure({
       ignoreUnescapedHTML: true,
       throwUnescapedHTML: false
     });
-    hljs.highlightAll();
+    // hljs.highlightAll(); // 不再需要在这里调用，因为 marked.js 会处理
 
     // 动态生成模型选择下拉菜单选项
     const modelSelect = document.getElementById('model-select');
@@ -332,16 +342,11 @@ function logMessage(message, type = 'system', messageType = 'text') {
         messageDiv.appendChild(contentDiv);
         messageHistory.appendChild(messageDiv);
         
-        // 高亮代码块
-        setTimeout(() => {
-          contentDiv.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightElement(block);
-          });
-          // 触发 MathJax 渲染
-          if (typeof MathJax !== 'undefined') {
+        // 触发 MathJax 渲染
+        // MathJax 应该在 marked.parse 之后立即触发，因为它处理的是 HTML 内容
+        if (typeof MathJax !== 'undefined') {
             MathJax.typesetPromise([contentDiv]).catch((err) => console.error('MathJax typesetting failed:', err));
-          }
-        }, 0);
+        }
         
         scrollToBottom();
     }
@@ -989,13 +994,11 @@ client.on('content', (data) => {
             currentAIMessageContentDiv.markdownContainer.textContent += text;
             
             // 渲染Markdown并高亮代码
+            // 注意：marked.js 已经集成了 highlight.js，所以不需要单独调用 hljs.highlightElement
             setTimeout(() => {
                 const rawText = currentAIMessageContentDiv.markdownContainer.textContent;
                 currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(rawText);
                 
-                currentAIMessageContentDiv.markdownContainer.querySelectorAll('pre code').forEach((block) => {
-                    hljs.highlightElement(block);
-                });
                 // 触发 MathJax 渲染
                 if (typeof MathJax !== 'undefined') {
                     MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
