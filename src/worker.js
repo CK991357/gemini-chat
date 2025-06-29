@@ -312,20 +312,29 @@ async function handleAPIRequest(request, env) {
 async function handleTranslationRequest(request, env) {
     try {
         const body = await request.json();
-        const siliconFlowApiToken = env.SF_API_TOKEN; // 从环境变量获取 SiliconFlow API 令牌
-        if (!siliconFlowApiToken) {
-            throw new Error('SiliconFlow API Token is not configured in environment variables.');
-        }
         
-        let targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
+        let targetUrl;
+        let apiKey;
+
         if (body.model === 'gemini-2.5-flash-lite-preview-06-17') {
             targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
+            apiKey = env.GEMINI_TRANSLATION_API_KEY;
+            if (!apiKey) {
+                throw new Error('GEMINI_TRANSLATION_API_KEY is not configured in environment variables for gemini-2.5-flash-lite-preview-06-17.');
+            }
+        } else {
+            targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
+            apiKey = env.SF_API_TOKEN;
+            if (!apiKey) {
+                throw new Error('SF_API_TOKEN is not configured in environment variables for SiliconFlow models.');
+            }
         }
+
         const response = await fetch(targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${siliconFlowApiToken}`
+                'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify(body)
         });

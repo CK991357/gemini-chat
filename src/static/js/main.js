@@ -2092,7 +2092,7 @@ async function handleTranslation() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // 'Authorization' 头部将由后端 worker.js 添加
+        // Authorization 头部现在由后端 worker.js 根据模型动态添加
       },
       body: JSON.stringify({
         model: model,
