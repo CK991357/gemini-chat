@@ -312,16 +312,16 @@ async function handleAPIRequest(request, env) {
 async function handleTranslationRequest(request, env) {
     try {
         const body = await request.json();
-        const apiKey = request.headers.get('Authorization')?.split(' ')[1]; // 从请求头获取API Key
-        if (!apiKey) {
-            throw new Error('Authorization header with API Key is missing.');
+        const siliconFlowApiToken = env.SF_API_TOKEN; // 从环境变量获取 SiliconFlow API 令牌
+        if (!siliconFlowApiToken) {
+            throw new Error('SiliconFlow API Token is not configured in environment variables.');
         }
         
         const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+                'Authorization': `Bearer ${siliconFlowApiToken}`
             },
             body: JSON.stringify(body)
         });

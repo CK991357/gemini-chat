@@ -2083,15 +2083,8 @@ async function handleTranslation() {
   outputElement.textContent = '翻译中...';
   
   try {
-    const apiKey = document.getElementById('api-key').value;
-    if (!apiKey) {
-        logMessage('请输入API Key', 'system');
-        outputElement.textContent = '翻译失败，请提供API Key';
-        return;
-    }
-
     // 构建提示词
-    const prompt = inputLang === 'auto' ? 
+    const prompt = inputLang === 'auto' ?
       `你是一个专业的翻译助手，请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
       `你是一个专业的翻译助手，请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
     
@@ -2099,7 +2092,7 @@ async function handleTranslation() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}` // 确保API Key被传递
+        // 'Authorization' 头部将由后端 worker.js 添加
       },
       body: JSON.stringify({
         model: model,
