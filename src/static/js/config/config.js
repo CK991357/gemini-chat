@@ -58,12 +58,12 @@ The report should include the following core sections:
     TRANSLATION: {
         MODELS: [
             {
-                name: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
-                displayName: 'DeepSeek-R1-0528-Qwen3-8B'
+                name: 'THUDM/GLM-4-9B-0414',
+                displayName: 'GLM-4-9B-0414'
             },
             {
-                name: 'THUDM/GLM-Z1-9B-0414',
-                displayName: 'GLM-Z1-9B-0414'
+                name: 'Qwen/Qwen3-8B',
+                displayName: 'Qwen3-8B'
             }
         ],
         LANGUAGES: [
@@ -83,7 +83,7 @@ The report should include the following core sections:
         ],
         DEFAULT_INPUT_LANG: 'auto',
         DEFAULT_OUTPUT_LANG: 'en',
-        DEFAULT_MODEL: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'
+        DEFAULT_MODEL: 'THUDM/GLM-4-9B-0414'
     },
     // If you are working in the RoArm branch
     // ROARM: {
