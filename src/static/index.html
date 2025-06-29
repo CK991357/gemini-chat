@@ -110,8 +110,6 @@
                     <button class="tab active" data-mode="text">📝 文字聊天</button>
                     <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
-                    <!-- 新增翻译工具选项卡 -->
-                    <button class="tab" data-mode="translate">🌐🌐 翻译工具</button>
                 </div>
 
                 <section class="chat-container text-mode active">
@@ -151,67 +149,6 @@
                     </div>
                     <div class="log-content" id="logs-container">
                         <!-- 原始日志内容将动态插入此处 -->
-                    </div>
-                </section>
-                
-                <!-- 新增翻译功能区 -->
-                <section class="chat-container translate-mode">
-                    <div class="translation-controls">
-                        <div class="translation-input">
-                            <div class="language-selectors">
-                                <div class="language-selector">
-                                    <label for="source-language">源语言:</label>
-                                    <select id="source-language">
-                                        <option value="auto">自动检测</option>
-                                        <option value="zh">中文</option>
-                                        <option value="en">英语</option>
-                                        <option value="es">西班牙语</option>
-                                        <option value="fr">法语</option>
-                                        <option value="de">德语</option>
-                                        <option value="ja">日语</option>
-                                        <option value="ko">韩语</option>
-                                        <option value="ru">俄语</option>
-                                        <option value="ar">阿拉伯语</option>
-                                    </select>
-                                </div>
-                                <div class="language-selector">
-                                    <label for="target-language">目标语言:</label>
-                                    <select id="target-language">
-                                        <option value="en">英语</option>
-                                        <option value="zh" selected>中文</option>
-                                        <option value="es">西班牙语</option>
-                                        <option value="fr">法语</option>
-                                        <option value="de">德语</option>
-                                        <option value="ja">日语</option>
-                                        <option value="ko">韩语</option>
-                                        <option value="ru">俄语</option>
-                                        <option value="ar">阿拉伯语</option>
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <div class="model-selector">
-                                <label for="translate-model">翻译模型:</label>
-                                <select id="translate-model">
-                                    <option value="glm-4-flash-250414" selected>glm-4-flash-250414</option>
-                                </select>
-                            </div>
-                            
-                            <textarea id="translate-input" placeholder="输入要翻译的内容..."></textarea>
-                            
-                            <div class="translation-actions">
-                                <button id="translate-button" class="action-button">翻译</button>
-                                <button id="clear-translation" class="action-button secondary">清空</button>
-                            </div>
-                        </div>
-                        
-                        <div class="translation-output">
-                            <div class="output-header">
-                                <span>翻译结果</span>
-                                <button id="copy-translation" class="copy-button material-symbols-outlined">content_copy</button>
-                            </div>
-                            <div id="translation-result" class="translation-result"></div>
-                        </div>
                     </div>
                 </section>
 
