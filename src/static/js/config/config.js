@@ -58,16 +58,16 @@ The report should include the following core sections:
     TRANSLATION: {
         MODELS: [
             {
+                name: 'gemini-2.5-flash-lite-preview-06-17',
+                displayName: 'gemini-2.5-flash-lite-preview-06-17'
+            },
+            {
                 name: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
                 displayName: 'DeepSeek-R1-0528-Qwen3-8B'
             },
             {
                 name: 'THUDM/GLM-4-9B-0414',
                 displayName: 'GLM-4-9B-0414'
-            },
-            {
-                name: 'gemini-2.5-flash-lite-preview-06-17',
-                displayName: 'gemini-2.5-flash-lite-preview-06-17'
             }
         ],
         LANGUAGES: [
