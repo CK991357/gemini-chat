@@ -280,7 +280,7 @@ async function handleAPIRequest(request, env) {
                 body: JSON.stringify(body)
             });
 
-            if (body.model && (body.model.includes('deepseek') || body.model.includes('GLM') || body.model.includes('Qwen'))) {
+            if (body.model && (body.model.includes('deepseek') || body.model.includes('GLM') || body.model.includes('Qwen') || body.model.includes('gemini-2.5-flash-lite'))) {
                 return handleTranslationRequest(newRequest, env);
             }
         }
@@ -317,7 +317,11 @@ async function handleTranslationRequest(request, env) {
             throw new Error('SiliconFlow API Token is not configured in environment variables.');
         }
         
-        const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+        let targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
+        if (body.model === 'gemini-2.5-flash-lite-preview-06-17') {
+            targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
+        }
+        const response = await fetch(targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

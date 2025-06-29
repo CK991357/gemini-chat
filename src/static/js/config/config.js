@@ -64,6 +64,10 @@ The report should include the following core sections:
             {
                 name: 'THUDM/GLM-4-9B-0414',
                 displayName: 'GLM-4-9B-0414'
+            },
+            {
+                name: 'gemini-2.5-flash-lite-preview-06-17',
+                displayName: 'gemini-2.5-flash-lite-preview-06-17'
             }
         ],
         LANGUAGES: [
@@ -83,7 +87,7 @@ The report should include the following core sections:
         ],
         DEFAULT_INPUT_LANG: 'auto',
         DEFAULT_OUTPUT_LANG: 'en',
-        DEFAULT_MODEL: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'
+        DEFAULT_MODEL: 'gemini-2.5-flash-lite-preview-06-17'
     },
     // If you are working in the RoArm branch
     // ROARM: {
