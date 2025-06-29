@@ -36,7 +36,7 @@ body {
     color: var(--text-color);
     background-color: var(--bg-color);
     transition: background-color 0.3s ease, color 0.3s ease;
-    overflow: hidden; /* 防止滚动条 */
+    overflow: auto; /* 允许页面滚动 */
 }
 
 /* 添加 iOS 安全区域适配 */
@@ -306,7 +306,7 @@ body {
     background-color: var(--surface-color);
     border-radius: 12px;
     box-shadow: 0 4px 16px var(--shadow-color);
-    overflow: hidden;
+    overflow: auto; /* 允许翻译容器内部滚动 */
 }
 
 .translation-container.active {
@@ -409,7 +409,7 @@ body {
     .translation-input-area textarea,
     .translation-output-display {
         min-height: 100px;
-        max-height: 200px;
+        /* 移除 max-height，允许内容自适应高度 */
         font-size: 14px;
     }
 
