@@ -280,7 +280,7 @@ async function handleAPIRequest(request, env) {
                 body: JSON.stringify(body)
             });
 
-            if (body.model && (body.model.includes('deepseek') || body.model.includes('GLM'))) {
+            if (body.model && (body.model.includes('deepseek') || body.model.includes('GLM') || body.model.includes('Qwen'))) {
                 return handleTranslationRequest(newRequest, env);
             }
         }
