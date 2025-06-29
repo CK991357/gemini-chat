@@ -35,7 +35,11 @@
     <div class="app-container">
         <!-- 顶部导航栏 -->
         <nav class="app-nav">
-            <h1 class="app-title">Gemini Chat</h1>
+            <div class="mode-switcher">
+                <h1 class="app-title">Gemini Chat</h1>
+                <button id="translation-mode-button" class="mode-button material-symbols-outlined">translate</button>
+                <button id="chat-mode-button" class="mode-button material-symbols-outlined active">chat</button>
+            </div>
             <div class="nav-tools">
                 <button id="new-chat-button" class="material-symbols-outlined">add_box</button>
                 <button id="toggle-config" class="material-symbols-outlined">settings</button>
@@ -110,7 +114,6 @@
                     <button class="tab active" data-mode="text">📝 文字聊天</button>
                     <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
-                    <button class="tab" data-mode="translation">🌐 翻译工具</button>
                 </div>
 
                 <section class="chat-container text-mode active">
@@ -153,24 +156,24 @@
                     </div>
                 </section>
 
-                <!-- 翻译工具区 -->
-                <section class="chat-container translation-mode">
+                <!-- 翻译功能区 -->
+                <section class="translation-container">
                     <div class="translation-input-area">
                         <div class="translation-controls">
-                            <select id="input-language-select" class="language-select"></select>
-                            <select id="translation-model-select" class="model-select">
+                            <select id="translation-input-language-select" title="选择输入语言"></select>
+                            <select id="translation-model-select" title="选择翻译模型">
                                 <option value="glm-4-flash-250414" selected>glm-4-flash-250414</option>
                             </select>
                         </div>
-                        <textarea id="translation-input" placeholder="输入要翻译的文本..." rows="8"></textarea>
+                        <textarea id="translation-input-text" placeholder="输入要翻译的内容..." rows="10"></textarea>
                         <button id="translate-button" class="action-button">翻译</button>
                     </div>
                     <div class="translation-output-area">
                         <div class="translation-controls">
-                            <select id="output-language-select" class="language-select"></select>
+                            <select id="translation-output-language-select" title="选择输出语言"></select>
                         </div>
-                        <div id="translation-output" class="output-display"></div>
-                        <button id="copy-translation-button" class="action-button">复制</button>
+                        <div id="translation-output-text" class="translation-output-display"></div>
+                        <button id="translation-copy-button" class="copy-button material-symbols-outlined">content_copy</button>
                     </div>
                 </section>
 
