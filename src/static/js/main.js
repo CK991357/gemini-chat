@@ -3,7 +3,6 @@ import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
-import { TranslationTool } from './tools/translation-tool.js'; // 导入 TranslationTool
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
@@ -47,38 +46,14 @@ const themeToggleBtn = document.getElementById('theme-toggle');
 const toggleLogBtn = document.getElementById('toggle-log');
 const _logPanel = document.querySelector('.chat-container.log-mode');
 const clearLogsBtn = document.getElementById('clear-logs');
-// const modeTabs = document.querySelectorAll('.mode-tabs .tab'); // 移除，模式切换现在由导航栏按钮控制
-const chatContainers = document.querySelectorAll('.chat-container, .translation-container'); // 包含新的翻译容器
+const modeTabs = document.querySelectorAll('.mode-tabs .tab');
+const chatContainers = document.querySelectorAll('.chat-container');
 
 // 新增媒体预览相关 DOM 元素
 const mediaPreviewsContainer = document.getElementById('media-previews');
 const videoPreviewContainer = document.getElementById('video-container'); // 对应 video-manager.js 中的 video-container
 const videoPreviewElement = document.getElementById('preview'); // 对应 video-manager.js 中的 preview
 const stopScreenButton = document.getElementById('stop-screen-button');
-
-// 新增翻译功能相关 DOM 元素
-const translationModeButton = document.getElementById('translation-mode-button');
-const chatModeButton = document.getElementById('chat-mode-button');
-const translationContainer = document.querySelector('.translation-container');
-const translationInputText = document.getElementById('translation-input-text');
-const translationInputLanguageSelect = document.getElementById('translation-input-language-select');
-const translationModelSelect = document.getElementById('translation-model-select');
-const translateButton = document.getElementById('translate-button');
-const translationOutputText = document.getElementById('translation-output-text');
-const translationOutputLanguageSelect = document.getElementById('translation-output-language-select');
-const translationCopyButton = document.getElementById('translation-copy-button');
-
-// 实例化 TranslationTool
-const translationTool = new TranslationTool(
-    translationInputText,
-    translationInputLanguageSelect,
-    translationModelSelect,
-    translateButton,
-    translationOutputText,
-    translationOutputLanguageSelect,
-    translationCopyButton,
-    Logger
-);
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
@@ -164,78 +139,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 2. 模式切换逻辑 (聊天/翻译/系统日志)
-    function switchMode(mode) {
-        // 移除所有模式按钮的 active 类
-        translationModeButton.classList.remove('active');
-        chatModeButton.classList.remove('active');
-        toggleLogBtn.classList.remove('active'); // 日志按钮也需要管理 active 状态
+    // 2. 模式切换逻辑 (文字聊天/系统日志)
+    modeTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.dataset.mode;
 
-        // 移除所有 chat-container 和 translation-container 的 active 类
-        chatContainers.forEach(c => c.classList.remove('active'));
+            // 移除所有 tab 和 chat-container 的 active 类
+            modeTabs.forEach(t => t.classList.remove('active'));
+            chatContainers.forEach(c => c.classList.remove('active'));
 
-        // 根据模式添加 active 类
-        if (mode === 'translation') {
-            translationModeButton.classList.add('active');
-            translationContainer.classList.add('active');
-            // 翻译模式下禁用聊天相关UI
-            messageInput.disabled = true;
-            sendButton.disabled = true;
-            micButton.disabled = true;
-            cameraButton.disabled = true;
-            screenButton.disabled = true;
-            connectButton.disabled = true; // 禁用连接按钮
-            // 隐藏聊天模式下的模式切换选项卡
-            document.querySelector('.mode-tabs').style.display = 'none';
-        } else if (mode === 'chat') {
-            chatModeButton.classList.add('active');
-            document.querySelector('.chat-container.text-mode').classList.add('active');
-            // 聊天模式下启用聊天相关UI (如果已连接)
-            messageInput.disabled = !isConnected;
-            sendButton.disabled = !isConnected;
-            micButton.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            cameraButton.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            screenButton.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            connectButton.disabled = false; // 启用连接按钮
-            // 显示聊天模式下的模式切换选项卡
-            document.querySelector('.mode-tabs').style.display = 'flex';
-        } else if (mode === 'log') {
-            toggleLogBtn.classList.add('active');
-            document.querySelector('.chat-container.log-mode').classList.add('active');
-            // 日志模式下禁用聊天相关UI
-            messageInput.disabled = true;
-            sendButton.disabled = true;
-            micButton.disabled = true;
-            cameraButton.disabled = true;
-            screenButton.disabled = true;
-            connectButton.disabled = true; // 禁用连接按钮
-            // 隐藏聊天模式下的模式切换选项卡
-            document.querySelector('.mode-tabs').style.display = 'none';
-        }
+            // 添加当前点击 tab 和对应 chat-container 的 active 类
+            tab.classList.add('active');
+            document.querySelector(`.chat-container.${mode}-mode`).classList.add('active');
 
-        // 确保在切换模式时停止所有媒体流
-        if (videoManager) {
-            stopVideo();
-        }
-        if (screenRecorder) {
-            stopScreenSharing();
-        }
-        // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
-        updateMediaPreviewsDisplay();
-    }
+            // 确保在切换模式时停止所有媒体流
+            if (videoManager) {
+                stopVideo();
+            }
+            if (screenRecorder) {
+                stopScreenSharing();
+            }
+            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
+            updateMediaPreviewsDisplay();
+        });
+    });
 
-    // 绑定新的模式切换按钮事件
-    translationModeButton.addEventListener('click', () => switchMode('translation'));
-    chatModeButton.addEventListener('click', () => switchMode('chat'));
-    toggleLogBtn.addEventListener('click', () => switchMode('log')); // 日志按钮现在也使用 switchMode
+    // 默认激活文字聊天模式
+    document.querySelector('.tab[data-mode="text"]').click();
 
-    // 默认激活聊天模式
-    switchMode('chat');
-
-    // 3. 日志显示控制逻辑 (现在通过 switchMode 函数处理)
-    clearLogsBtn.addEventListener('click', () => {
-        logsContainer.innerHTML = ''; // 清空日志内容
-        logMessage('日志已清空', 'system');
+    // 3. 日志显示控制逻辑
+    toggleLogBtn.addEventListener('click', () => {
+        // 切换到日志标签页
+        document.querySelector('.tab[data-mode="log"]').click();
     });
 
     clearLogsBtn.addEventListener('click', () => {
@@ -1419,14 +1354,12 @@ connectButton.addEventListener('click', () => {
     }
 });
 
-// 初始状态：默认激活聊天模式，并根据连接状态设置按钮禁用状态
-// 这一部分逻辑现在由 switchMode('chat') 和 updateConnectionStatus() 处理
-// messageInput.disabled = true;
-// sendButton.disabled = true;
-// micButton.disabled = true;
-// cameraButton.disabled = true;
-// screenButton.disabled = true;
-// connectButton.textContent = '连接';
+messageInput.disabled = true;
+sendButton.disabled = true;
+micButton.disabled = true;
+cameraButton.disabled = true;
+screenButton.disabled = true;
+connectButton.textContent = '连接';
 
 // 移动端连接按钮逻辑
 mobileConnectButton?.addEventListener('click', () => {
@@ -1526,14 +1459,11 @@ function resetUIForDisconnectedState() {
     isConnected = false;
     connectButton.textContent = '连接';
     connectButton.classList.remove('connected');
-    // 只有在当前模式是聊天模式时才禁用这些按钮
-    if (chatModeButton.classList.contains('active')) {
-        messageInput.disabled = true;
-        sendButton.disabled = true;
-        micButton.disabled = true;
-        cameraButton.disabled = true;
-        screenButton.disabled = true;
-    }
+    messageInput.disabled = true;
+    sendButton.disabled = true;
+    micButton.disabled = true;
+    cameraButton.disabled = true;
+    screenButton.disabled = true;
     updateConnectionStatus();
 
     if (audioStreamer) {
@@ -1573,8 +1503,7 @@ function updateConnectionStatus() {
     const mediaButtons = [micButton, cameraButton, screenButton];
     mediaButtons.forEach(btn => {
         if (btn) {
-            // 只有在聊天模式下才根据连接状态和模型类型禁用/启用媒体按钮
-            btn.disabled = !chatModeButton.classList.contains('active') || !isConnected || !selectedModelConfig.isWebSocket;
+            btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
         }
     });
 }
@@ -1884,7 +1813,7 @@ function initMobileHandlers() {
 }
 
 // 在 DOMContentLoaded 中调用
-document.addEventListener('DOMContentLoaded', async () => { // 将 DOMContentLoaded 回调改为 async
+document.addEventListener('DOMContentLoaded', () => {
     // ... 原有代码 ...
     
     // 添加移动端事件处理
@@ -1906,8 +1835,14 @@ document.addEventListener('DOMContentLoaded', async () => { // 将 DOMContentLoa
         // location.reload();
     });
 
-    // 实例化并初始化 TranslationTool
-    translationTool.init();
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+     * @returns {void}
+     */
+    newChatButton.addEventListener('click', () => {
+        // location.reload(); // 刷新页面
+    });
 
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {
