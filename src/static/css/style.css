@@ -105,6 +105,120 @@ body {
     overflow: hidden; /* 防止内部元素溢出导致滚动条 */
 }
 
+/* 翻译工具区 */
+.translation-mode {
+    display: none; /* 默认隐藏 */
+    flex-direction: column; /* 上下布局 */
+    gap: 20px;
+    padding: 20px;
+    height: 100%;
+    box-sizing: border-box;
+    background-color: var(--surface-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px var(--shadow-color);
+    overflow: hidden; /* 确保内部滚动 */
+}
+
+.translation-mode.active {
+    display: flex; /* 激活时显示 */
+}
+
+.translation-input-area,
+.translation-output-area {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background-color: var(--bg-color);
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+    flex-grow: 1; /* 允许输入输出区各自占据可用空间 */
+    min-height: 0; /* 允许内部滚动 */
+}
+
+.translation-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.language-select,
+.model-select {
+    flex-grow: 1;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+}
+
+#translation-input {
+    flex-grow: 1;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 16px;
+    resize: vertical;
+    min-height: 100px; /* 初始高度 */
+    max-height: 50%; /* 限制最大高度，以便输出区也能显示 */
+    overflow-y: auto; /* 允许滚动 */
+}
+
+.output-display {
+    flex-grow: 1;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 16px;
+    white-space: pre-wrap; /* 保留空白符和换行符 */
+    word-break: break-word;
+    overflow-y: auto; /* 允许滚动 */
+    min-height: 100px; /* 初始高度 */
+}
+
+.translation-input-area .action-button,
+.translation-output-area .action-button {
+    align-self: flex-end; /* 按钮靠右对齐 */
+    margin-top: 10px;
+}
+
+/* 调整主内容区布局以适应新的翻译工具区 */
+/* 当日志模式或翻译模式激活时，调整 content-area 的第二行布局 */
+.content-area.log-and-translation-active {
+    grid-template-columns: 1fr 1fr; /* 日志和翻译工具并排 */
+    grid-template-rows: auto; /* 移除第二行，让日志和翻译工具占据整个高度 */
+}
+
+/* 确保 chat-container 在 log-and-translation-active 模式下占据 grid 单元格 */
+.content-area.log-and-translation-active .chat-container.log-mode,
+.content-area.log-and-translation-active .chat-container.translation-mode {
+    grid-row: 2 / 3; /* 占据第二行 */
+    height: 100%; /* 填充可用高度 */
+}
+
+/* 确保其他模式在 log-and-translation-active 模式下隐藏 */
+.content-area.log-and-translation-active .chat-container:not(.log-mode):not(.translation-mode) {
+    display: none;
+}
+
+/* 媒体查询调整 */
+@media (max-width: 1200px) {
+    .content-area.log-and-translation-active {
+        grid-template-columns: 1fr; /* 在小屏幕上恢复单列布局 */
+        grid-template-rows: auto 1fr 1fr; /* 顶部选项卡，日志，翻译工具 */
+    }
+    .content-area.log-and-translation-active .chat-container.log-mode {
+        grid-row: 2 / 3;
+    }
+    .content-area.log-and-translation-active .chat-container.translation-mode {
+        grid-row: 3 / 4;
+    }
+}
+
 /* 左侧控制面板 */
 .control-panel {
     background-color: var(--surface-color);

@@ -110,6 +110,7 @@
                     <button class="tab active" data-mode="text">📝 文字聊天</button>
                     <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
+                    <button class="tab" data-mode="translation">🌐 翻译工具</button>
                 </div>
 
                 <section class="chat-container text-mode active">
@@ -149,6 +150,27 @@
                     </div>
                     <div class="log-content" id="logs-container">
                         <!-- 原始日志内容将动态插入此处 -->
+                    </div>
+                </section>
+
+                <!-- 翻译工具区 -->
+                <section class="chat-container translation-mode">
+                    <div class="translation-input-area">
+                        <div class="translation-controls">
+                            <select id="input-language-select" class="language-select"></select>
+                            <select id="translation-model-select" class="model-select">
+                                <option value="glm-4-flash-250414" selected>glm-4-flash-250414</option>
+                            </select>
+                        </div>
+                        <textarea id="translation-input" placeholder="输入要翻译的文本..." rows="8"></textarea>
+                        <button id="translate-button" class="action-button">翻译</button>
+                    </div>
+                    <div class="translation-output-area">
+                        <div class="translation-controls">
+                            <select id="output-language-select" class="language-select"></select>
+                        </div>
+                        <div id="translation-output" class="output-display"></div>
+                        <button id="copy-translation-button" class="action-button">复制</button>
                     </div>
                 </section>
 

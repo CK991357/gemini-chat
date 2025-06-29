@@ -42,6 +42,59 @@ export default {
     } catch (err) {
       return errHandler(err);
     }
+
+    // 新增：翻译工具代理路由
+    if (url.pathname === '/api/translate' && request.method === 'POST') {
+        const ZHIPUAI_API_KEY = env.ZHIPUAI_API_KEY; // 从环境变量获取智谱AI API Key
+        if (!ZHIPUAI_API_KEY) {
+            return new Response('智谱AI API Key is missing', { status: 400 });
+        }
+
+        try {
+            const requestBody = await request.json();
+            const model = requestBody.model;
+            const messages = requestBody.messages;
+
+            const zhipuApiUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+
+            const zhipuRequestBody = {
+                model: model,
+                messages: messages,
+                // stream: false, // 同步调用，默认就是false
+            };
+
+            const zhipuResponse = await fetch(zhipuApiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${ZHIPUAI_API_KEY}`,
+                },
+                body: JSON.stringify(zhipuRequestBody),
+            });
+
+            if (!zhipuResponse.ok) {
+                const errorText = await zhipuResponse.text();
+                console.error('智谱AI API 错误响应:', errorText);
+                return new Response(JSON.stringify({ error: `智谱AI API 错误: ${zhipuResponse.status} - ${errorText}` }), {
+                    status: zhipuResponse.status,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            const zhipuData = await zhipuResponse.json();
+            return new Response(JSON.stringify(zhipuData), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+        } catch (error) {
+            console.error('处理翻译请求时出错:', error);
+            return new Response(JSON.stringify({ error: `服务器内部错误: ${error.message}` }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    }
   }
 };
 

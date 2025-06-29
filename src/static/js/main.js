@@ -3,6 +3,7 @@ import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
+import { TranslationTool } from './tools/translation-tool.js'; // 新增：导入 TranslationTool
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
@@ -48,6 +49,15 @@ const _logPanel = document.querySelector('.chat-container.log-mode');
 const clearLogsBtn = document.getElementById('clear-logs');
 const modeTabs = document.querySelectorAll('.mode-tabs .tab');
 const chatContainers = document.querySelectorAll('.chat-container');
+
+// 新增翻译工具相关 DOM 元素
+const translationInput = document.getElementById('translation-input');
+const inputLanguageSelect = document.getElementById('input-language-select');
+const translationModelSelect = document.getElementById('translation-model-select');
+const translateButton = document.getElementById('translate-button');
+const translationOutput = document.getElementById('translation-output');
+const outputLanguageSelect = document.getElementById('output-language-select');
+const copyTranslationButton = document.getElementById('copy-translation-button');
 
 // 新增媒体预览相关 DOM 元素
 const mediaPreviewsContainer = document.getElementById('media-previews');
@@ -139,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 2. 模式切换逻辑 (文字聊天/系统日志)
+    // 2. 模式切换逻辑 (文字聊天/系统日志/翻译工具)
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
@@ -166,6 +176,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 默认激活文字聊天模式
     document.querySelector('.tab[data-mode="text"]').click();
+
+    // 初始化 TranslationTool (如果元素存在)
+    if (translationInput && inputLanguageSelect && translationModelSelect && translateButton &&
+        translationOutput && outputLanguageSelect && copyTranslationButton) {
+        const translationTool = new TranslationTool(
+            translationInput,
+            inputLanguageSelect,
+            translationModelSelect,
+            translateButton,
+            translationOutput,
+            outputLanguageSelect,
+            copyTranslationButton,
+            Logger // 传递 Logger 实例
+        );
+        translationTool.init(); // 初始化翻译工具
+    } else {
+        Logger.warn('翻译工具的某些DOM元素未找到，可能无法正常初始化。', 'system');
+    }
 
     // 3. 日志显示控制逻辑
     toggleLogBtn.addEventListener('click', () => {
