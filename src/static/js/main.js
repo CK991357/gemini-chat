@@ -12,6 +12,23 @@ import { VideoManager } from './video/video-manager.js';
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
  */
 
+const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `你是一位专业的翻译助手，擅长根据上下文理解原文的用语风格（情感、语气），并且准确地在 {{to}} 中再现这种风格。
+
+## 翻译要求
+
+1. 语言风格：根据**原文内容和上下文**，灵活采用不同风格。如文档采用严谨风格、论坛采用口语化风格、嘲讽采用阴阳怪气风格等。
+2. 用词选择：不要生硬地逐词直译，而是采用 {{to}} 的地道用词（如成语、网络用语）。
+3. 句法选择：不要追求逐句翻译，应该调整语句大小和语序，使之更符合 {{to}} 表达习惯。
+4. 标点用法：根据表达习惯的不同，准确地使用（包括添加、修改）标点符号。
+5. 格式保留：只翻译原文中的文本内容，无法翻译的内容需要保持**原样**，对于翻译内容也不要额外添加格式。
+
+## 上下文信息
+
+{{title_prompt}}
+{{summary_prompt}}
+{{terms_prompt}}
+`;
+
 // DOM Elements
 const logsContainer = document.getElementById('logs-container'); // 用于原始日志输出
 const toolManager = new ToolManager(); // 初始化 ToolManager
@@ -75,6 +92,10 @@ if (savedFPS) {
 if (savedSystemInstruction) {
     systemInstructionInput.value = savedSystemInstruction;
     CONFIG.SYSTEM_INSTRUCTION.TEXT = savedSystemInstruction;
+} else {
+    // 如果没有保存的系统指令，使用新的通用翻译系统指令作为默认值
+    systemInstructionInput.value = UNIVERSAL_TRANSLATION_SYSTEM_PROMPT;
+    CONFIG.SYSTEM_INSTRUCTION.TEXT = UNIVERSAL_TRANSLATION_SYSTEM_PROMPT;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2097,7 +2118,14 @@ async function handleTranslation() {
       body: JSON.stringify({
         model: model,
         messages: [
-            { role: 'system', content: "你是一个专业的翻译助手，请准确翻译用户提供的内容。" },
+            {
+                role: 'system',
+                content: systemInstructionInput.value
+                    .replace(/\{\{to\}\}/g, getLanguageName(outputLang))
+                    .replace(/\{\{title_prompt\}\}/g, '') // 暂时替换为空字符串
+                    .replace(/\{\{summary_prompt\}\}/g, '') // 暂时替换为空字符串
+                    .replace(/\{\{terms_prompt\}\}/g, '') // 暂时替换为空字符串
+            },
             { role: 'user', content: prompt }
         ],
         stream: false // 翻译通常不需要流式响应
