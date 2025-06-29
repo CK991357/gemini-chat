@@ -5,7 +5,7 @@
 import { Buffer } from "node:buffer";
 
 export default {
-  async fetch (request, env) { // 添加 env 参数
+  async fetch (request) {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -16,7 +16,7 @@ export default {
     try {
       // 确保 request.headers 存在，并安全地获取 Authorization 头
       const auth = request.headers && request.headers.get("Authorization");
-      const apiKey = auth?.split(" ")[1]; // Gemini API Key 仍然从 Authorization 头获取
+      const apiKey = auth?.split(" ")[1];
       const assert = (success) => {
         if (!success) {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
@@ -26,19 +26,15 @@ export default {
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
-          return handleCompletions(await request.json(), apiKey, env) // 传递 env
+          return handleCompletions(await request.json(), apiKey)
             .catch(errHandler);
         case pathname.endsWith("/embeddings"):
           assert(request.method === "POST");
-          return handleEmbeddings(await request.json(), apiKey, env) // 传递 env
+          return handleEmbeddings(await request.json(), apiKey)
             .catch(errHandler);
         case pathname.endsWith("/models"):
           assert(request.method === "GET");
-          return handleModels(apiKey, env) // 传递 env
-            .catch(errHandler);
-        case pathname.endsWith("/api/translate"): // 新增翻译API端点
-          assert(request.method === "POST");
-          return handleTranslate(await request.json(), env) // 智谱AI API Key 从 env 获取，不从前端传递
+          return handleModels(apiKey)
             .catch(errHandler);
         default:
           throw new HttpError("404 Not Found", 404);
@@ -75,8 +71,6 @@ const handleOPTIONS = async () => {
 
 const GEMINI_2_5_PROXY_URL = "https://geminiapim.10110531.xyz";
 
-const ZHIPU_AI_API_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"; // 智谱AI API基础URL
-
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
@@ -88,7 +82,7 @@ const makeHeaders = (apiKey, more) => ({
   ...more
 });
 
-async function handleModels (apiKey, env) { // 添加 env 参数
+async function handleModels (apiKey) {
   const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
     headers: makeHeaders(apiKey),
   });
@@ -109,7 +103,7 @@ async function handleModels (apiKey, env) { // 添加 env 参数
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
-async function handleEmbeddings (req, apiKey, env) { // 添加 env 参数
+async function handleEmbeddings (req, apiKey) {
   if (typeof req.model !== "string") {
     throw new HttpError("model is not specified", 400);
   }
@@ -156,11 +150,10 @@ const DEFAULT_MODEL = "gemini-1.5-pro-latest";
  * @description 处理聊天补全请求，将请求转发到 Gemini API 或中转 Worker。
  * @param {object} req - 原始请求体。
  * @param {string} apiKey - API 密钥。
- * @param {object} env - Cloudflare Worker 环境变量。
  * @returns {Promise<Response>} - 返回一个 Promise，解析为处理后的响应。
  * @throws {HttpError} - 如果请求格式无效。
  */
-async function handleCompletions (req, apiKey, env) { // 添加 env 参数
+async function handleCompletions (req, apiKey) {
   let model = DEFAULT_MODEL;
   switch(true) {
     case typeof req.model !== "string":
@@ -527,56 +520,11 @@ async function toOpenAiStream (chunk, controller) {
     controller.enqueue(transform(data));
   }
 }
-  async function toOpenAiStreamFlush (controller) {
+async function toOpenAiStreamFlush (controller) {
   if (this.last.length > 0) {
     for (const data of this.last) {
       controller.enqueue(transform(data, "stop"));
     }
     controller.enqueue("data: [DONE]" + delimiter);
   }
-}
-
-/**
- * @function handleTranslate
- * @description 处理翻译请求，将请求转发到智谱AI API。
- * @param {object} req - 原始请求体，包含 model 和 messages。
- * @param {object} env - Cloudflare Worker 环境变量。
- * @returns {Promise<Response>} - 返回一个 Promise，解析为处理后的响应。
- * @throws {HttpError} - 如果请求格式无效或API请求失败。
- */
-async function handleTranslate(req, env) { // 接收 env 参数
-  if (!req.model || !req.messages) {
-    throw new HttpError("Invalid request: model and messages are required.", 400);
-  }
-
-  const zhipuApiKey = env.ZHIPUAI_API_KEY; // 从环境变量获取智谱AI API Key
-  if (!zhipuApiKey) {
-    throw new HttpError("ZHIPUAI_API_KEY is not set in environment variables.", 500);
-  }
-
-  const url = `${ZHIPU_AI_API_BASE_URL}/chat/completions`;
-  const headers = {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${zhipuApiKey}`, // 使用从 env 获取的 API Key
-  };
-
-  const requestBody = JSON.stringify({
-    model: req.model,
-    messages: req.messages,
-    stream: false, // 翻译功能使用同步调用
-  });
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: headers,
-    body: requestBody,
-  });
-
-  let body = await response.text();
-  if (!response.ok) {
-    console.error("智谱AI翻译API请求失败:", response.status, body);
-    throw new HttpError(`智谱AI翻译API请求失败: ${response.status} - ${body}`, response.status);
-  }
-
-  return new Response(body, fixCors(response));
 }
