@@ -3,6 +3,7 @@ import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
+import { initTranslationTool } from './tools/translation-tool.js'; // 导入翻译工具初始化函数
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
 import { VideoManager } from './video/video-manager.js';
@@ -197,6 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.style.overflow = '';
         }
     });
+
+    // 初始化翻译工具
+    initTranslationTool();
 });
 
 // State variables

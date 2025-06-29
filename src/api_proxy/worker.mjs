@@ -5,7 +5,7 @@
 import { Buffer } from "node:buffer";
 
 export default {
-  async fetch (request) {
+  async fetch (request, env) { // 添加 env 参数
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -35,6 +35,16 @@ export default {
         case pathname.endsWith("/models"):
           assert(request.method === "GET");
           return handleModels(apiKey)
+            .catch(errHandler);
+        case pathname.endsWith("/api/translate"): // 新增翻译工具代理路径
+          assert(request.method === "POST");
+          // 从 Cloudflare Worker 环境变量中获取 API Key
+          // 假设环境变量名称为 ZHIPUAI_API_KEY
+          const translateApiKey = env.ZHIPUAI_API_KEY;
+          if (!translateApiKey) {
+            throw new HttpError("智谱AI API Key 未配置在 Cloudflare Worker 环境变量中。", 500);
+          }
+          return handleTranslate(await request.json(), translateApiKey)
             .catch(errHandler);
         default:
           throw new HttpError("404 Not Found", 404);
@@ -526,5 +536,61 @@ async function toOpenAiStreamFlush (controller) {
       controller.enqueue(transform(data, "stop"));
     }
     controller.enqueue("data: [DONE]" + delimiter);
+  }
+}
+
+/**
+ * @function handleTranslate
+ * @description 处理翻译请求，将请求转发到智谱AI API。
+ * @param {object} req - 原始请求体，包含 text, source_lang, target_lang, model。
+ * @param {string} apiKey - 智谱AI API 密钥。
+ * @returns {Promise<Response>} - 返回一个 Promise，解析为处理后的响应。
+ * @throws {HttpError} - 如果请求格式无效或API调用失败。
+ */
+async function handleTranslate(req, apiKey) {
+  const { text, source_lang, target_lang, model } = req;
+
+  if (!text || !target_lang || !model) {
+    throw new HttpError("Missing required translation parameters: text, target_lang, or model", 400);
+  }
+
+  const messages = [
+    {
+      role: "user",
+      content: `将以下内容${source_lang === 'auto' ? '' : `从${source_lang}`}翻译成${target_lang}：\n\n${text}`
+    }
+  ];
+
+  const requestBody = {
+    model: model,
+    messages: messages,
+    temperature: 0.2,
+    top_p: 0.7,
+    max_tokens: 2000
+  };
+
+  try {
+    const response = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new HttpError(`智谱AI翻译API请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`, response.status);
+    }
+
+    const data = await response.json();
+    const translatedText = data.choices[0]?.message?.content || '';
+
+    return new Response(JSON.stringify({ translatedText }), fixCors({ status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+  } catch (error) {
+    console.error("Error in handleTranslate:", error);
+    throw new HttpError(`翻译服务内部错误: ${error.message}`, error.status || 500);
   }
 }
