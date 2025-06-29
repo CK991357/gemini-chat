@@ -298,7 +298,7 @@ body {
 
 /* 翻译功能区样式 */
 .translation-container {
-    display: none; /* 默认隐藏 */
+    display: none;
     flex-direction: column;
     height: 100%;
     box-sizing: border-box;
@@ -306,11 +306,11 @@ body {
     background-color: var(--surface-color);
     border-radius: 12px;
     box-shadow: 0 4px 16px var(--shadow-color);
-    overflow: hidden; /* 确保内部滚动 */
+    overflow: hidden;
 }
 
 .translation-container.active {
-    display: flex; /* 激活时显示 */
+    display: flex;
 }
 
 .translation-input-area,
@@ -322,13 +322,13 @@ body {
     border-radius: 8px;
     background-color: var(--bg-color);
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
-    margin-bottom: 20px; /* 输入区和输出区之间的间距 */
-    position: relative; /* 用于复制按钮定位 */
+    margin-bottom: 20px;
+    position: relative;
 }
 
 .translation-output-area {
-    flex-grow: 1; /* 输出区占据剩余空间 */
-    margin-bottom: 0; /* 最后一个区域不需要底部外边距 */
+    flex-grow: 1;
+    margin-bottom: 0;
 }
 
 .translation-controls {
@@ -345,12 +345,6 @@ body {
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 15px;
-    transition: border-color 0.3s ease;
-}
-
-.translation-controls select:focus {
-    border-color: var(--primary-color);
-    outline: none;
 }
 
 .translation-input-area textarea {
@@ -361,16 +355,10 @@ body {
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 16px;
-    resize: vertical; /* 允许垂直方向调整大小 */
-    min-height: 150px; /* 最小高度 */
-    max-height: 300px; /* 最大高度 */
-    overflow-y: auto; /* 确保滚动 */
-}
-
-.translation-input-area .action-button {
-    align-self: flex-end; /* 按钮靠右对齐 */
-    padding: 10px 25px;
-    font-size: 16px;
+    resize: vertical;
+    min-height: 150px;
+    max-height: 300px;
+    overflow-y: auto;
 }
 
 .translation-output-display {
@@ -381,11 +369,11 @@ body {
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 16px;
-    min-height: 150px; /* 最小高度 */
-    max-height: 300px; /* 最大高度 */
-    overflow-y: auto; /* 确保滚动 */
-    white-space: pre-wrap; /* 保留换行和空格 */
-    word-break: break-word; /* 自动换行 */
+    min-height: 150px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .translation-output-area .copy-button {
@@ -399,36 +387,10 @@ body {
     padding: 8px 15px;
     cursor: pointer;
     font-size: 14px;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    font-family: 'Roboto', sans-serif; /* 确保字体一致 */
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.translation-output-area .copy-button:hover {
-    background-color: var(--secondary-color);
-    transform: translateY(-1px);
 }
 
 /* 移动端适配 */
 @media (max-width: 768px) {
-    .mode-switcher {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 5px;
-    }
-
-    .app-title {
-        margin-left: 0;
-        margin-top: 5px;
-    }
-
-    .mode-button {
-        font-size: 20px;
-        padding: 5px 8px;
-    }
-
     .translation-container {
         padding: 15px;
     }

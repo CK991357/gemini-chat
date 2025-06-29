@@ -1908,6 +1908,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+    // 初始化翻译功能
+    initTranslation();
+
 /**
  * 检测当前设备是否为移动设备。
  * @returns {boolean} 如果是移动设备则返回 true，否则返回 false。
@@ -1944,4 +1947,178 @@ function checkBrowserCompatibility() {
         }
     }
     return true;
+}
+
+/**
+ * @function initTranslation
+ * @description 初始化翻译功能，包括UI元素的获取、语言下拉菜单的填充、事件监听器的绑定以及模式切换逻辑。
+ * @returns {void}
+ */
+function initTranslation() {
+  const translationModeBtn = document.getElementById('translation-mode-button');
+  const chatModeBtn = document.getElementById('chat-mode-button');
+  const translationContainer = document.querySelector('.translation-container');
+  const chatContainer = document.querySelector('.chat-container.text-mode'); // 确保是文字聊天容器
+  const logContainer = document.querySelector('.chat-container.log-mode'); // 获取日志容器
+  
+  // 语言列表从 CONFIG 中获取
+  const languages = CONFIG.TRANSLATION.LANGUAGES;
+  
+  // 初始化语言下拉菜单
+  const inputLangSelect = document.getElementById('translation-input-language-select');
+  const outputLangSelect = document.getElementById('translation-output-language-select');
+  
+  languages.forEach(lang => {
+    const inputOption = document.createElement('option');
+    inputOption.value = lang.code;
+    inputOption.textContent = lang.name;
+    inputLangSelect.appendChild(inputOption);
+    
+    // 输出语言不包括"自动检测"
+    if (lang.code !== 'auto') {
+      const outputOption = document.createElement('option');
+      outputOption.value = lang.code;
+      outputOption.textContent = lang.name;
+      outputLangSelect.appendChild(outputOption);
+    }
+  });
+  
+  // 设置默认语言从 CONFIG 中获取
+  inputLangSelect.value = CONFIG.TRANSLATION.DEFAULT_INPUT_LANG;
+  outputLangSelect.value = CONFIG.TRANSLATION.DEFAULT_OUTPUT_LANG;
+
+  // 填充翻译模型选择下拉菜单
+  const translationModelSelect = document.getElementById('translation-model-select');
+  translationModelSelect.innerHTML = ''; // 清空现有选项
+  CONFIG.TRANSLATION.MODELS.forEach(model => {
+    const option = document.createElement('option');
+    option.value = model.name;
+    option.textContent = model.displayName;
+    if (model.name === CONFIG.TRANSLATION.DEFAULT_MODEL) {
+      option.selected = true;
+    }
+    translationModelSelect.appendChild(option);
+  });
+  
+  // 翻译按钮事件
+  document.getElementById('translate-button').addEventListener('click', handleTranslation);
+  
+  // 复制按钮事件
+  document.getElementById('translation-copy-button').addEventListener('click', () => {
+    const outputText = document.getElementById('translation-output-text').textContent;
+    navigator.clipboard.writeText(outputText).then(() => {
+      logMessage('翻译结果已复制', 'system');
+    }).catch(err => {
+      logMessage('复制失败: ' + err, 'system');
+    });
+  });
+  
+  // 模式切换事件
+  translationModeBtn.addEventListener('click', () => {
+    translationContainer.classList.add('active');
+    chatContainer.classList.remove('active');
+    logContainer.classList.remove('active'); // 隐藏日志容器
+    translationModeBtn.classList.add('active');
+    chatModeBtn.classList.remove('active');
+    
+    // 确保停止所有媒体流
+    if (videoManager) stopVideo();
+    if (screenRecorder) stopScreenSharing();
+  });
+  
+  chatModeBtn.addEventListener('click', () => {
+    translationContainer.classList.remove('active');
+    chatContainer.classList.add('active');
+    logContainer.classList.remove('active'); // 确保日志容器在聊天模式下也隐藏
+    translationModeBtn.classList.remove('active');
+    chatModeBtn.classList.add('active');
+  });
+
+  // 确保日志按钮也能正确切换模式
+  document.getElementById('toggle-log').addEventListener('click', () => {
+    translationContainer.classList.remove('active');
+    chatContainer.classList.remove('active');
+    logContainer.classList.add('active');
+    translationModeBtn.classList.remove('active');
+    chatModeBtn.classList.remove('active'); // 确保聊天按钮也取消激活
+    // 媒体流停止
+    if (videoManager) stopVideo();
+    if (screenRecorder) stopScreenSharing();
+  });
+}
+
+/**
+ * @function handleTranslation
+ * @description 处理翻译请求，获取输入内容、语言和模型，向后端发送翻译请求，并显示翻译结果。
+ * @returns {Promise<void>}
+ */
+async function handleTranslation() {
+  const inputText = document.getElementById('translation-input-text').value.trim();
+  if (!inputText) {
+    logMessage('请输入要翻译的内容', 'system');
+    return;
+  }
+  
+  const inputLang = document.getElementById('translation-input-language-select').value;
+  const outputLang = document.getElementById('translation-output-language-select').value;
+  const model = document.getElementById('translation-model-select').value;
+  
+  const outputElement = document.getElementById('translation-output-text');
+  outputElement.textContent = '翻译中...';
+  
+  try {
+    const apiKey = document.getElementById('api-key').value;
+    if (!apiKey) {
+        logMessage('请输入API Key', 'system');
+        outputElement.textContent = '翻译失败，请提供API Key';
+        return;
+    }
+
+    // 构建提示词
+    const prompt = inputLang === 'auto' ? 
+      `你是一个专业的翻译助手，请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
+      `你是一个专业的翻译助手，请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
+    
+    const response = await fetch('/api/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}` // 确保API Key被传递
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+            { role: 'system', content: "你是一个专业的翻译助手，请准确翻译用户提供的内容。" },
+            { role: 'user', content: prompt }
+        ],
+        stream: false // 翻译通常不需要流式响应
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`翻译请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
+    }
+    
+    const data = await response.json();
+    const translatedText = data.choices[0].message.content;
+    
+    outputElement.textContent = translatedText;
+    logMessage('翻译完成', 'system');
+  } catch (error) {
+    logMessage(`翻译失败: ${error.message}`, 'system');
+    outputElement.textContent = '翻译失败，请重试';
+    console.error('翻译错误:', error);
+  }
+}
+
+/**
+ * @function getLanguageName
+ * @description 根据语言代码获取语言的中文名称。
+ * @param {string} code - 语言代码（如 'en', 'zh', 'auto'）。
+ * @returns {string} 语言的中文名称或原始代码（如果未找到）。
+ */
+function getLanguageName(code) {
+  const language = CONFIG.TRANSLATION.LANGUAGES.find(lang => lang.code === code);
+  return language ? language.name : code;
 }

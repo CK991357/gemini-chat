@@ -55,7 +55,37 @@ The report should include the following core sections:
         BUFFER_SIZE: 2048,
         CHANNELS: 1
     },
-    // If you are working in the RoArm branch 
+    TRANSLATION: {
+        MODELS: [
+            {
+                name: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
+                displayName: 'DeepSeek-R1-0528-Qwen3-8B'
+            },
+            {
+                name: 'THUDM/GLM-Z1-9B-0414',
+                displayName: 'GLM-Z1-9B-0414'
+            }
+        ],
+        LANGUAGES: [
+            { code: 'auto', name: '自动检测' },
+            { code: 'zh', name: '中文' },
+            { code: 'en', name: '英语' },
+            { code: 'ja', name: '日语' },
+            { code: 'ko', name: '韩语' },
+            { code: 'fr', name: '法语' },
+            { code: 'de', name: '德语' },
+            { code: 'es', name: '西班牙语' },
+            { code: 'ru', name: '俄语' },
+            { code: 'ar', name: '阿拉伯语' },
+            { code: 'pt', name: '葡萄牙语' },
+            { code: 'it', name: '意大利语' },
+            { code: 'hi', name: '印地语' }
+        ],
+        DEFAULT_INPUT_LANG: 'auto',
+        DEFAULT_OUTPUT_LANG: 'en',
+        DEFAULT_MODEL: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'
+    },
+    // If you are working in the RoArm branch
     // ROARM: {
     //     IP_ADDRESS: '192.168.1.4'
     // }

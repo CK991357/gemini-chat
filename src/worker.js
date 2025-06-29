@@ -266,18 +266,89 @@ async function handleWebSocket(request, env) {
 }
 
 async function handleAPIRequest(request, env) {
-  try {
-    const worker = await import('./api_proxy/worker.mjs');
-    return await worker.default.fetch(request, env); // 传递 env 参数
-  } catch (error) {
-    console.error('API request error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    const errorStatus = error.status || 500;
-    return new Response(errorMessage, {
-      status: errorStatus,
-      headers: {
-        'content-type': 'text/plain;charset=UTF-8',
-      }
-    });
-  }
+    try {
+        // 如果是翻译请求，直接处理
+        if (request.url.includes('/api/chat/completions') &&
+            request.method === 'POST' &&
+            request.headers.get('content-type') === 'application/json') {
+            
+            const body = await request.json();
+            // 重新读取请求体，因为 request.json() 会消耗掉它
+            const newRequest = new Request(request.url, {
+                method: request.method,
+                headers: request.headers,
+                body: JSON.stringify(body)
+            });
+
+            if (body.model && (body.model.includes('deepseek') || body.model.includes('GLM'))) {
+                return handleTranslationRequest(newRequest, env);
+            }
+        }
+        
+        // 其他请求按原方式处理
+        const worker = await import('./api_proxy/worker.mjs');
+        return await worker.default.fetch(request, env);
+    } catch (error) {
+        console.error('API request error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        const errorStatus = error.status || 500;
+        return new Response(errorMessage, {
+            status: errorStatus,
+            headers: {
+                'content-type': 'text/plain;charset=UTF-8',
+            }
+        });
+    }
+}
+
+/**
+ * @function handleTranslationRequest
+ * @description 处理翻译请求，将请求转发到 SiliconFlow 的聊天补全API。
+ * @param {Request} request - 传入的请求对象。
+ * @param {Object} env - 环境变量对象，包含API令牌等。
+ * @returns {Promise<Response>} - 返回一个 Promise，解析为处理后的响应。
+ * @throws {Error} - 如果API Key缺失或SiliconFlow API请求失败。
+ */
+async function handleTranslationRequest(request, env) {
+    try {
+        const body = await request.json();
+        const apiKey = request.headers.get('Authorization')?.split(' ')[1]; // 从请求头获取API Key
+        if (!apiKey) {
+            throw new Error('Authorization header with API Key is missing.');
+        }
+        
+        const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(body)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`SiliconFlow API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
+        }
+        
+        const result = await response.json();
+        return new Response(JSON.stringify(result), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        });
+    } catch (error) {
+        console.error('翻译API错误:', error);
+        return new Response(JSON.stringify({
+            error: error.message || '翻译处理失败',
+            details: error.stack || '无堆栈信息'
+        }), {
+            status: 500,
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Access-Control-Allow-Origin': '*' 
+            },
+        });
+    }
 }
