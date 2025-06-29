@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
             micButton.disabled = true;
             cameraButton.disabled = true;
             screenButton.disabled = true;
-            connectButton.disabled = true; // 禁用连接按钮
+            connectButton.disabled = true; // 翻译模式下禁用连接按钮
             // 隐藏聊天模式下的模式切换选项卡
             document.querySelector('.mode-tabs').style.display = 'none';
         } else if (mode === 'chat') {
@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
             micButton.disabled = !isConnected || !selectedModelConfig.isWebSocket;
             cameraButton.disabled = !isConnected || !selectedModelConfig.isWebSocket;
             screenButton.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            connectButton.disabled = false; // 启用连接按钮
+            connectButton.disabled = !isConnected; // 根据连接状态启用或禁用连接按钮
             // 显示聊天模式下的模式切换选项卡
             document.querySelector('.mode-tabs').style.display = 'flex';
         } else if (mode === 'log') {
@@ -231,6 +231,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 默认激活聊天模式
     switchMode('chat');
+    // 确保在模式切换后调用 updateConnectionStatus
+    updateConnectionStatus();
 
     // 3. 日志显示控制逻辑 (现在通过 switchMode 函数处理)
     clearLogsBtn.addEventListener('click', () => {

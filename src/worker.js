@@ -268,7 +268,7 @@ async function handleWebSocket(request, env) {
 async function handleAPIRequest(request, env) {
   try {
     const worker = await import('./api_proxy/worker.mjs');
-    return await worker.default.fetch(request);
+    return await worker.default.fetch(request, env); // 传递 env 参数
   } catch (error) {
     console.error('API request error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
