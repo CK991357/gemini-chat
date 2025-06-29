@@ -1960,6 +1960,7 @@ function initTranslation() {
   const translationContainer = document.querySelector('.translation-container');
   const chatContainer = document.querySelector('.chat-container.text-mode'); // 确保是文字聊天容器
   const logContainer = document.querySelector('.chat-container.log-mode'); // 获取日志容器
+  const inputArea = document.querySelector('.input-area'); // 获取输入区域
   
   // 语言列表从 CONFIG 中获取
   const languages = CONFIG.TRANSLATION.LANGUAGES;
@@ -2018,6 +2019,11 @@ function initTranslation() {
     translationContainer.classList.add('active');
     chatContainer.classList.remove('active');
     logContainer.classList.remove('active'); // 隐藏日志容器
+    
+    // 隐藏聊天模式特有的元素
+    if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
+    if (inputArea) inputArea.style.display = 'none';
+
     translationModeBtn.classList.add('active');
     chatModeBtn.classList.remove('active');
     
@@ -2030,6 +2036,11 @@ function initTranslation() {
     translationContainer.classList.remove('active');
     chatContainer.classList.add('active');
     logContainer.classList.remove('active'); // 确保日志容器在聊天模式下也隐藏
+    
+    // 恢复聊天模式特有的元素显示
+    updateMediaPreviewsDisplay(); // 根据视频/屏幕共享状态更新媒体预览显示
+    if (inputArea) inputArea.style.display = 'flex'; // 恢复输入区域显示
+
     translationModeBtn.classList.remove('active');
     chatModeBtn.classList.add('active');
   });
@@ -2039,6 +2050,11 @@ function initTranslation() {
     translationContainer.classList.remove('active');
     chatContainer.classList.remove('active');
     logContainer.classList.add('active');
+    
+    // 隐藏聊天模式特有的元素
+    if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
+    if (inputArea) inputArea.style.display = 'none';
+
     translationModeBtn.classList.remove('active');
     chatModeBtn.classList.remove('active'); // 确保聊天按钮也取消激活
     // 媒体流停止
