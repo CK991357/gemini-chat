@@ -184,9 +184,11 @@ document.addEventListener('DOMContentLoaded', () => {
             micButton.disabled = true;
             cameraButton.disabled = true;
             screenButton.disabled = true;
-            connectButton.disabled = true; // 翻译模式下禁用连接按钮
+            // 翻译模式下不禁用连接按钮，其状态由 updateConnectionStatus 统一管理
             // 隐藏聊天模式下的模式切换选项卡
             document.querySelector('.mode-tabs').style.display = 'none';
+            // 确保在模式切换后调用 updateConnectionStatus
+            updateConnectionStatus();
         } else if (mode === 'chat') {
             chatModeButton.classList.add('active');
             document.querySelector('.chat-container.text-mode').classList.add('active');
@@ -199,6 +201,8 @@ document.addEventListener('DOMContentLoaded', () => {
             connectButton.disabled = !isConnected; // 根据连接状态启用或禁用连接按钮
             // 显示聊天模式下的模式切换选项卡
             document.querySelector('.mode-tabs').style.display = 'flex';
+            // 确保在模式切换后调用 updateConnectionStatus
+            updateConnectionStatus();
         } else if (mode === 'log') {
             toggleLogBtn.classList.add('active');
             document.querySelector('.chat-container.log-mode').classList.add('active');
