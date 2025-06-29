@@ -12,7 +12,7 @@ import { VideoManager } from './video/video-manager.js';
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
  */
 
-const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `你是一位专业的翻译助手，擅长根据上下文理解原文的用语风格（情感、语气），并且准确地在 {{to}} 中再现这种风格。严格遵守：只输出翻译后的文本，不要包含任何额外的前缀、说明或引导性文字，例如“好的，这是翻译结果：”或“以下是您请求的翻译：”。
+const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `你是一位专业的翻译助手，擅长根据上下文理解原文的用语风格（情感、语气），并且准确地在 {{to}} 中再现这种风格。!!! 严格遵守：只输出翻译后的文本，不要包含任何额外的前缀、说明或引导性文字，例如“好的，这是翻译结果：”或“Sure, I can help with that.”。
 
 ## 翻译要求
 
@@ -22,12 +22,6 @@ const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `你是一位专业的翻译助手�
 4. 标点用法：根据表达习惯的不同，准确地使用（包括添加、修改）标点符号。
 5. 格式保留：只翻译原文中的文本内容，无法翻译的内容需要保持**原样**，对于翻译内容也不要额外添加格式。
 6. 严格遵守：只输出翻译后的文本，不要包含任何额外的前缀、说明或引导性文字，例如“好的，这是翻译结果：”或“以下是您请求的翻译：”。
-
-## 上下文信息
-
-{{title_prompt}}
-{{summary_prompt}}
-{{terms_prompt}}
 `;
 
 // DOM Elements
@@ -2139,28 +2133,7 @@ async function handleTranslation() {
     }
     
     const data = await response.json();
-    let translatedText = data.choices[0].message.content; // 获取原始翻译结果
-
-    // --- 新增的后处理逻辑开始 ---
-    // 移除常见的客气话和引导性文字
-    // 注意：这里使用正则表达式，可以根据实际遇到的情况进行调整和扩展
-    const patternsToRemove = [
-        /^好的，这是翻译结果：\s*/,
-        /^以下是您请求的翻译：\s*/,
-        /^这是翻译：\s*/,
-        /^翻译结果：\s*/,
-        /^Here is the translation:\s*/,
-        /^Okay, here's the translation:\s*/,
-        // 可以根据实际情况添加更多模式
-    ];
-
-    for (const pattern of patternsToRemove) {
-        translatedText = translatedText.replace(pattern, '');
-    }
-
-    // 移除可能存在的首尾空白字符
-    translatedText = translatedText.trim();
-    // --- 新增的后处理逻辑结束 ---
+    const translatedText = data.choices[0].message.content;
     
     outputElement.textContent = translatedText;
     logMessage('翻译完成', 'system');
