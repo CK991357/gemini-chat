@@ -375,6 +375,7 @@ body {
 .translation-output-display {
     flex-grow: 1;
     padding: 12px;
+    padding-bottom: 40px; /* 增加底部内边距，为复制按钮留出空间 */
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--surface-color);
@@ -389,19 +390,24 @@ body {
 
 .translation-output-area .copy-button {
     position: absolute;
-    bottom: 10px;
-    right: 10px;
-    background-color: var(--primary-color);
-    color: white;
+    bottom: 8px;
+    right: 8px;
+    background-color: transparent; /* 默认透明背景 */
+    color: var(--text-secondary-color); /* 默认颜色 */
     border: none;
-    border-radius: 6px;
-    padding: 8px 15px;
+    border-radius: 4px; /* 调整圆角 */
+    padding: 5px; /* 调整内边距 */
     cursor: pointer;
-    font-size: 14px;
+    font-size: 20px; /* 调整图标大小 */
+    opacity: 0; /* 桌面端默认隐藏 */
+    transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease; /* 添加过渡效果 */
+    z-index: 1; /* 确保按钮在文本内容之上 */
 }
 
 .translation-output-area:hover .copy-button {
-    opacity: 1;
+    opacity: 1; /* 悬停显示 */
+    background-color: rgba(var(--primary-color-rgb), 0.1); /* 悬停背景色 */
+    color: var(--primary-color); /* 悬停颜色 */
 }
 
 /* 移动端适配 */
@@ -438,11 +444,16 @@ body {
     }
 
     .translation-output-area .copy-button {
-        position: static; /* 在移动端取消绝对定位 */
-        margin-top: 10px;
-        width: 100%;
-        text-align: center;
-        justify-content: center;
+        opacity: 1; /* 移动端始终显示 */
+        background-color: rgba(var(--primary-color-rgb), 0.1); /* 移动端默认背景色 */
+        color: var(--primary-color); /* 移动端默认颜色 */
+        position: absolute; /* 保持绝对定位 */
+        bottom: 8px;
+        right: 8px;
+        width: auto; /* 取消 100% 宽度 */
+        margin-top: 0; /* 移除顶部外边距 */
+        text-align: center; /* 保持居中 */
+        justify-content: center; /* 保持居中 */
     }
 }
 
