@@ -69,6 +69,8 @@ const stopScreenButton = document.getElementById('stop-screen-button');
 // 翻译模式相关 DOM 元素
 const translationVoiceInputButton = document.getElementById('translation-voice-input-button'); // 新增
 const translationInputTextarea = document.getElementById('translation-input-text'); // 新增
+// 新增：聊天模式语音输入相关 DOM 元素
+const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
@@ -241,6 +243,13 @@ let translationAudioRecorder = null; // 新增：翻译模式下的 AudioRecorde
 let translationAudioChunks = []; // 新增：翻译模式下录制的音频数据块
 let recordingTimeout = null; // 新增：用于处理长按录音的定时器
 let initialTouchY = 0; // 新增：用于判断手指上滑取消
+// 新增：聊天模式语音输入相关状态变量
+let isChatRecording = false; // 聊天模式下是否正在录音
+let hasRequestedChatMicPermission = false; // 标记是否已请求过聊天麦克风权限
+let chatAudioRecorder = null; // 聊天模式下的 AudioRecorder 实例
+let chatAudioChunks = []; // 聊天模式下录制的音频数据块
+let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
+let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -1525,7 +1534,7 @@ function updateConnectionStatus() {
     });
 
     // 根据连接状态和模型类型禁用/启用媒体按钮
-    const mediaButtons = [micButton, cameraButton, screenButton];
+    const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
     mediaButtons.forEach(btn => {
         if (btn) {
             btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
@@ -2057,6 +2066,8 @@ function initTranslation() {
     if (screenRecorder) stopScreenSharing();
     // 翻译模式下显示语音输入按钮
     if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'inline-flex'; // 使用 inline-flex 保持 Material Symbols 的对齐
+    // 翻译模式下隐藏聊天语音输入按钮
+    if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
   });
   
   chatModeBtn.addEventListener('click', () => {
@@ -2070,8 +2081,10 @@ function initTranslation() {
 
     translationModeBtn.classList.remove('active');
     chatModeBtn.classList.add('active');
-    // 聊天模式下隐藏语音输入按钮
+    // 聊天模式下隐藏翻译语音输入按钮
     if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
+    // 聊天模式下显示聊天语音输入按钮
+    if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'inline-flex';
   });
 
   // 确保日志按钮也能正确切换模式
@@ -2092,6 +2105,8 @@ function initTranslation() {
 
     // 日志模式下隐藏语音输入按钮
     if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
+    // 日志模式下隐藏聊天语音输入按钮
+    if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
   });
 
   // 翻译模式语音输入按钮事件监听
@@ -2127,13 +2142,60 @@ function initTranslation() {
     });
   }
 
+  // 聊天模式语音输入按钮事件监听
+  if (chatVoiceInputButton) {
+    // 鼠标事件
+    chatVoiceInputButton.addEventListener('mousedown', startChatRecording);
+    chatVoiceInputButton.addEventListener('mouseup', stopChatRecording);
+    chatVoiceInputButton.addEventListener('mouseleave', (e) => {
+      // 如果鼠标在按住时移出按钮区域，也视为取消
+      if (isChatRecording) {
+        cancelChatRecording();
+      }
+    });
+
+    // 触摸事件
+    chatVoiceInputButton.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // 阻止默认的触摸行为，如滚动
+      chatInitialTouchY = e.touches[0].clientY; // 记录初始Y坐标
+      startChatRecording();
+    });
+    chatVoiceInputButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      stopChatRecording();
+    });
+    chatVoiceInputButton.addEventListener('touchmove', (e) => {
+      if (isChatRecording) {
+        const currentTouchY = e.touches[0].clientY;
+        // 如果手指上滑超过一定距离，视为取消
+        if (chatInitialTouchY - currentTouchY > 50) { // 50px 阈值
+          cancelChatRecording();
+        }
+      }
+    });
+  }
+
   // 监听 Esc 键取消录音
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isTranslationRecording) {
       cancelTranslationRecording();
+    } else if (e.key === 'Escape' && isChatRecording) { // 新增：聊天模式下按 Esc 取消录音
+      cancelChatRecording();
     }
   });
-}
+
+  // 初始设置聊天模式下语音输入按钮的显示状态
+  // 默认激活文字聊天模式，所以这里应该显示
+  if (chatVoiceInputButton) {
+    // 检查当前激活的模式，如果不是聊天模式，则隐藏
+    const currentActiveModeTab = document.querySelector('.mode-tabs .tab.active');
+    if (currentActiveModeTab && currentActiveModeTab.dataset.mode === 'text') {
+      chatVoiceInputButton.style.display = 'inline-flex';
+    } else {
+      chatVoiceInputButton.style.display = 'none';
+    }
+  }
+} // 闭合 initTranslation 函数
 
 /**
  * @function startTranslationRecording
@@ -2286,6 +2348,170 @@ function cancelTranslationRecording() {
   resetTranslationRecordingState();
   translationInputTextarea.placeholder = '输入要翻译的内容...';
   hasRequestedTranslationMicPermission = false; // 录音取消后，重置权限请求状态
+}
+
+/**
+ * @function startChatRecording
+ * @description 开始聊天模式下的语音录音。
+ * @returns {Promise<void>}
+ */
+async function startChatRecording() {
+  if (isChatRecording) return;
+
+  // 首次点击，只请求权限
+  if (!hasRequestedChatMicPermission) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 成功获取权限后，立即停止流，因为我们只是为了请求权限
+      stream.getTracks().forEach(track => track.stop());
+      hasRequestedChatMicPermission = true;
+      logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
+      chatVoiceInputButton.textContent = '点击开始录音'; // 提示用户再次点击
+      // 不开始录音，直接返回
+      return;
+    } catch (error) {
+      logMessage(`获取麦克风权限失败: ${error.message}`, 'system');
+      console.error('获取麦克风权限失败:', error);
+      alert('无法访问麦克风。请确保已授予麦克风权限。');
+      resetChatRecordingState(); // 权限失败时重置所有状态
+      hasRequestedChatMicPermission = false; // 确保权限请求状态也重置
+      return;
+    }
+  }
+
+  // 权限已请求过，现在开始录音
+  try {
+    logMessage('开始录音...', 'system');
+    chatVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
+    messageInput.placeholder = '正在录音，请说话...';
+    messageInput.value = ''; // 清空输入区
+
+    chatAudioChunks = []; // 清空之前的音频数据
+    chatAudioRecorder = new AudioRecorder(); // 创建新的 AudioRecorder 实例
+
+    await chatAudioRecorder.start((chunk) => {
+      // AudioRecorder 现在应该返回 ArrayBuffer 或 Uint8Array
+      chatAudioChunks.push(chunk);
+    }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
+
+    isChatRecording = true;
+    chatVoiceInputButton.textContent = '录音中...'; // 更新按钮文本
+
+    // 设置一个超时，防止用户忘记松开按钮
+    chatRecordingTimeout = setTimeout(() => {
+      if (isChatRecording) {
+        logMessage('录音超时，自动停止并发送', 'system');
+        stopChatRecording();
+      }
+    }, 60 * 1000); // 最长录音 60 秒
+
+  } catch (error) {
+    logMessage(`启动录音失败: ${error.message}`, 'system');
+    console.error('启动录音失败:', error);
+    alert('无法访问麦克风。请确保已授予麦克风权限。');
+    resetChatRecordingState(); // 录音失败时重置所有状态
+    hasRequestedChatMicPermission = false; // 确保权限请求状态也重置
+  }
+}
+
+/**
+ * @function stopChatRecording
+ * @description 停止聊天模式下的语音录音并发送进行转文字。
+ * @returns {Promise<void>}
+ */
+async function stopChatRecording() {
+  if (!isChatRecording) return;
+
+  clearTimeout(chatRecordingTimeout); // 清除超时定时器
+  logMessage('停止录音，正在转文字...', 'system');
+  chatVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
+  messageInput.placeholder = '正在处理语音...';
+
+  try {
+    if (chatAudioRecorder) {
+      chatAudioRecorder.stop(); // 停止录音
+      chatAudioRecorder = null;
+    }
+
+    if (chatAudioChunks.length === 0) {
+      logMessage('没有录到音频，请重试', 'system');
+      resetChatRecordingState();
+      return;
+    }
+
+    // 将所有音频块合并成一个 Uint8Array
+    const totalLength = chatAudioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+    const mergedAudioData = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chatAudioChunks) {
+      mergedAudioData.set(new Uint8Array(chunk), offset);
+      offset += chunk.byteLength;
+    }
+    chatAudioChunks = []; // 清空缓冲区
+
+    // 将合并后的原始音频数据转换为 WAV Blob
+    const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE); // 使用 pcmToWavBlob 函数
+
+    // 发送转文字请求到 Worker
+    const response = await fetch('/api/transcribe-audio', {
+      method: 'POST',
+      headers: {
+        'Content-Type': audioBlob.type, // 使用 Blob 的 MIME 类型
+      },
+      body: audioBlob,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`转文字失败: ${errorData.error || response.statusText}`);
+    }
+
+    const result = await response.json();
+    const transcriptionText = result.text || '未获取到转录文本。';
+
+    messageInput.value = transcriptionText; // 打印到聊天输入区
+    logMessage('语音转文字成功', 'system');
+
+  } catch (error) {
+    logMessage(`语音转文字失败: ${error.message}`, 'system');
+    console.error('语音转文字失败:', error);
+    messageInput.placeholder = '语音转文字失败，请重试。';
+  } finally {
+    resetChatRecordingState();
+    hasRequestedChatMicPermission = false; // 录音停止后，重置权限请求状态
+  }
+}
+
+/**
+ * @function cancelChatRecording
+ * @description 取消聊天模式下的语音录音。
+ * @returns {void}
+ */
+function cancelChatRecording() {
+  if (!isChatRecording) return;
+
+  clearTimeout(chatRecordingTimeout); // 清除超时定时器
+  logMessage('录音已取消', 'system');
+  
+  if (chatAudioRecorder) {
+    chatAudioRecorder.stop(); // 停止录音
+    chatAudioRecorder = null;
+  }
+  chatAudioChunks = []; // 清空音频数据
+  resetChatRecordingState();
+  messageInput.placeholder = '输入消息...';
+  hasRequestedChatMicPermission = false; // 录音取消后，重置权限请求状态
+}
+
+/**
+ * @function resetChatRecordingState
+ * @description 重置聊天模式录音相关的状态。
+ * @returns {void}
+ */
+function resetChatRecordingState() {
+  isChatRecording = false;
+  chatVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
+  chatVoiceInputButton.textContent = 'mic'; // 恢复按钮文本为图标
 }
 
 /**
