@@ -66,6 +66,10 @@ const videoPreviewContainer = document.getElementById('video-container'); // 对
 const videoPreviewElement = document.getElementById('preview'); // 对应 video-manager.js 中的 preview
 const stopScreenButton = document.getElementById('stop-screen-button');
 
+// 翻译模式相关 DOM 元素
+const translationVoiceInputButton = document.getElementById('translation-voice-input-button'); // 新增
+const translationInputTextarea = document.getElementById('translation-input-text'); // 新增
+
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
@@ -231,6 +235,11 @@ let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
+let isTranslationRecording = false; // 新增：翻译模式下是否正在录音
+let translationAudioRecorder = null; // 新增：翻译模式下的 AudioRecorder 实例
+let translationAudioChunks = []; // 新增：翻译模式下录制的音频数据块
+let recordingTimeout = null; // 新增：用于处理长按录音的定时器
+let initialTouchY = 0; // 新增：用于判断手指上滑取消
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -2045,6 +2054,8 @@ function initTranslation() {
     // 确保停止所有媒体流
     if (videoManager) stopVideo();
     if (screenRecorder) stopScreenSharing();
+    // 翻译模式下显示语音输入按钮
+    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'inline-flex'; // 使用 inline-flex 保持 Material Symbols 的对齐
   });
   
   chatModeBtn.addEventListener('click', () => {
@@ -2058,6 +2069,8 @@ function initTranslation() {
 
     translationModeBtn.classList.remove('active');
     chatModeBtn.classList.add('active');
+    // 聊天模式下隐藏语音输入按钮
+    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
   });
 
   // 确保日志按钮也能正确切换模式
@@ -2075,7 +2088,196 @@ function initTranslation() {
     // 媒体流停止
     if (videoManager) stopVideo();
     if (screenRecorder) stopScreenSharing();
+
+    // 日志模式下隐藏语音输入按钮
+    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
   });
+
+  // 翻译模式语音输入按钮事件监听
+  if (translationVoiceInputButton) {
+    // 鼠标事件
+    translationVoiceInputButton.addEventListener('mousedown', startTranslationRecording);
+    translationVoiceInputButton.addEventListener('mouseup', stopTranslationRecording);
+    translationVoiceInputButton.addEventListener('mouseleave', (e) => {
+      // 如果鼠标在按住时移出按钮区域，也视为取消
+      if (isTranslationRecording) {
+        cancelTranslationRecording();
+      }
+    });
+
+    // 触摸事件
+    translationVoiceInputButton.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // 阻止默认的触摸行为，如滚动
+      initialTouchY = e.touches[0].clientY; // 记录初始Y坐标
+      startTranslationRecording();
+    });
+    translationVoiceInputButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      stopTranslationRecording();
+    });
+    translationVoiceInputButton.addEventListener('touchmove', (e) => {
+      if (isTranslationRecording) {
+        const currentTouchY = e.touches[0].clientY;
+        // 如果手指上滑超过一定距离，视为取消
+        if (initialTouchY - currentTouchY > 50) { // 50px 阈值
+          cancelTranslationRecording();
+        }
+      }
+    });
+  }
+
+  // 监听 Esc 键取消录音
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isTranslationRecording) {
+      cancelTranslationRecording();
+    }
+  });
+}
+
+/**
+ * @function startTranslationRecording
+ * @description 开始翻译模式下的语音录音。
+ * @returns {Promise<void>}
+ */
+async function startTranslationRecording() {
+  if (isTranslationRecording) return;
+
+  try {
+    // 检查麦克风权限
+    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+    if (permissionStatus.state === 'denied') {
+      logMessage('麦克风权限被拒绝，请在浏览器设置中启用', 'system');
+      return;
+    }
+
+    logMessage('开始录音...', 'system');
+    translationVoiceInputButton.classList.add('recording');
+    translationVoiceInputButton.textContent = 'stop'; // 更改图标为停止
+    translationInputTextarea.placeholder = '正在录音，请说话...';
+    translationInputTextarea.value = ''; // 清空输入区
+
+    translationAudioChunks = []; // 清空之前的音频数据
+    translationAudioRecorder = new AudioRecorder(); // 创建新的 AudioRecorder 实例
+
+    await translationAudioRecorder.start((chunk) => {
+      // AudioRecorder 现在应该返回 ArrayBuffer 或 Uint8Array
+      translationAudioChunks.push(chunk);
+    }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
+
+    isTranslationRecording = true;
+
+    // 设置一个超时，防止用户忘记松开按钮
+    recordingTimeout = setTimeout(() => {
+      if (isTranslationRecording) {
+        logMessage('录音超时，自动停止并发送', 'system');
+        stopTranslationRecording();
+      }
+    }, 60 * 1000); // 最长录音 60 秒
+
+  } catch (error) {
+    logMessage(`启动录音失败: ${error.message}`, 'system');
+    console.error('启动录音失败:', error);
+    resetTranslationRecordingState();
+  }
+}
+
+/**
+ * @function stopTranslationRecording
+ * @description 停止翻译模式下的语音录音并发送进行转文字。
+ * @returns {Promise<void>}
+ */
+async function stopTranslationRecording() {
+  if (!isTranslationRecording) return;
+
+  clearTimeout(recordingTimeout); // 清除超时定时器
+  logMessage('停止录音，正在转文字...', 'system');
+  translationVoiceInputButton.classList.remove('recording');
+  translationVoiceInputButton.textContent = 'mic'; // 恢复图标
+  translationInputTextarea.placeholder = '正在处理语音...';
+
+  try {
+    if (translationAudioRecorder) {
+      translationAudioRecorder.stop(); // 停止录音
+      translationAudioRecorder = null;
+    }
+
+    if (translationAudioChunks.length === 0) {
+      logMessage('没有录到音频，请重试', 'system');
+      resetTranslationRecordingState();
+      return;
+    }
+
+    // 将所有音频块合并成一个 Uint8Array
+    const totalLength = translationAudioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+    const mergedAudioData = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of translationAudioChunks) {
+      mergedAudioData.set(new Uint8Array(chunk), offset);
+      offset += chunk.byteLength;
+    }
+    translationAudioChunks = []; // 清空缓冲区
+
+    // 将 Uint8Array 转换为 Blob
+    const audioBlob = new Blob([mergedAudioData], { type: 'audio/wav' }); // 假设是 WAV 格式
+
+    // 发送转文字请求到 Worker
+    const response = await fetch('/api/transcribe-audio', {
+      method: 'POST',
+      headers: {
+        'Content-Type': audioBlob.type,
+      },
+      body: audioBlob,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`转文字失败: ${errorData.error || response.statusText}`);
+    }
+
+    const result = await response.json();
+    const transcriptionText = result.text || '未获取到转录文本。';
+
+    translationInputTextarea.value = transcriptionText; // 打印到输入区
+    logMessage('语音转文字成功', 'system');
+
+  } catch (error) {
+    logMessage(`语音转文字失败: ${error.message}`, 'system');
+    console.error('语音转文字失败:', error);
+    translationInputTextarea.placeholder = '语音转文字失败，请重试。';
+  } finally {
+    resetTranslationRecordingState();
+  }
+}
+
+/**
+ * @function cancelTranslationRecording
+ * @description 取消翻译模式下的语音录音。
+ * @returns {void}
+ */
+function cancelTranslationRecording() {
+  if (!isTranslationRecording) return;
+
+  clearTimeout(recordingTimeout); // 清除超时定时器
+  logMessage('录音已取消', 'system');
+  
+  if (translationAudioRecorder) {
+    translationAudioRecorder.stop(); // 停止录音
+    translationAudioRecorder = null;
+  }
+  translationAudioChunks = []; // 清空音频数据
+  resetTranslationRecordingState();
+  translationInputTextarea.placeholder = '输入要翻译的内容...';
+}
+
+/**
+ * @function resetTranslationRecordingState
+ * @description 重置翻译模式录音相关的状态。
+ * @returns {void}
+ */
+function resetTranslationRecordingState() {
+  isTranslationRecording = false;
+  translationVoiceInputButton.classList.remove('recording');
+  translationVoiceInputButton.textContent = 'mic'; // 恢复图标
 }
 
 /**

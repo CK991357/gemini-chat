@@ -1,6 +1,6 @@
-import { Logger } from '../utils/logger.js';
-import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { CONFIG } from '../config/config.js';
+import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
+import { Logger } from '../utils/logger.js';
 
 /**
  * @class AudioRecorder
@@ -33,18 +33,22 @@ export class AudioRecorder {
      * @method start
      * @description Starts audio recording with the specified callback for audio data.
      * @param {Function} onAudioData - Callback function for processed audio data.
+     * @param {Object} [options={}] - Optional configuration for recording.
+     * @param {boolean} [options.returnRaw=false] - If true, onAudioData receives raw ArrayBuffer; otherwise, Base64 string.
      * @throws {Error} If unable to access microphone or set up audio processing.
      * @async
      */
-    async start(onAudioData) {
+    async start(onAudioData, options = {}) {
         this.onAudioData = onAudioData;
+        const { returnRaw = false } = options; // 解构 options，默认 returnRaw 为 false
+
         try {
             // Request microphone access
-            this.stream = await navigator.mediaDevices.getUserMedia({ 
+            this.stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     channelCount: 1,
                     sampleRate: this.sampleRate
-                } 
+                }
             });
             
             this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
@@ -57,8 +61,12 @@ export class AudioRecorder {
             // Handle processed audio data
             this.processor.port.onmessage = (event) => {
                 if (event.data.event === 'chunk' && this.onAudioData && this.isRecording) {
-                    const base64Data = this.arrayBufferToBase64(event.data.data.int16arrayBuffer);
-                    this.onAudioData(base64Data);
+                    if (returnRaw) {
+                        this.onAudioData(event.data.data.int16arrayBuffer); // 返回原始 ArrayBuffer
+                    } else {
+                        const base64Data = this.arrayBufferToBase64(event.data.data.int16arrayBuffer);
+                        this.onAudioData(base64Data); // 返回 Base64 字符串
+                    }
                 }
             };
 
@@ -88,6 +96,20 @@ export class AudioRecorder {
             if (this.stream) {
                 this.stream.getTracks().forEach(track => track.stop());
                 this.stream = null;
+            }
+
+            // Disconnect nodes and close AudioContext
+            if (this.source) {
+                this.source.disconnect();
+                this.source = null;
+            }
+            if (this.processor) {
+                this.processor.disconnect();
+                this.processor = null;
+            }
+            if (this.audioContext) {
+                this.audioContext.close(); // 显式关闭 AudioContext
+                this.audioContext = null;
             }
 
             this.isRecording = false;
