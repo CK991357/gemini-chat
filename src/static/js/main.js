@@ -16,10 +16,11 @@ const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `You are a professional translation 
 
 ## Translation Requirements
 
-1. Word Choice: Do not translate word-for-word rigidly. Instead, use idiomatic expressions and common phrases in {{to}} (e.g., idioms, internet slang).
-2. Sentence Structure: Do not aim for sentence-by-sentence translation. Adjust sentence length and word order to better suit the expression habits of {{to}}.
-3. Punctuation Usage: Use punctuation marks accurately (including adding and modifying) according to different expression habits.
-4. Format Preservation: Only translate the text content from the original. Content that cannot be translated should remain **as is**. Do not add extra formatting to the translated content.
+1. !!!Important!Strictly adhere to the following: only output the translated text. Do not include any other words which are no related to the translation,such as polite expressions, additional prefixes, explanations, or introductory phrases.
+2. Word Choice: Do not translate word-for-word rigidly. Instead, use idiomatic expressions and common phrases in {{to}} (e.g., idioms, internet slang).
+3. Sentence Structure: Do not aim for sentence-by-sentence translation. Adjust sentence length and word order to better suit the expression habits of {{to}}.
+4. Punctuation Usage: Use punctuation marks accurately (including adding and modifying) according to different expression habits.
+5. Format Preservation: Only translate the text content from the original. Content that cannot be translated should remain **as is**. Do not add extra formatting to the translated content.
 `;
 
 // DOM Elements
