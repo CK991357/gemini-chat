@@ -69,6 +69,8 @@ const handleOPTIONS = async () => {
   });
 };
 
+const GEMINI_2_5_PROXY_URL = "https://geminiapim.10110531.xyz";
+
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
@@ -165,76 +167,100 @@ async function handleCompletions (req, apiKey) {
   }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
 
-let targetBaseUrl = BASE_URL; // 始终使用 Google API 的基础 URL
-
-let url = `${targetBaseUrl}/${API_VERSION}/models/${model}:${TASK}`;
-if (req.stream) { url += "?alt=sse"; }
-let requestBody;
-try {
-  requestBody = JSON.stringify(await transformRequest(req)); // 始终进行转换
-} catch (err) {
-  console.error("Error transforming request body:", err);
-  throw new HttpError(`Invalid request format: ${err.message}`, 400);
-}
-
-const headers = makeHeaders(apiKey, { "Content-Type": "application/json" }); // 始终使用 makeHeaders
-
-const response = await fetch(url, {
-  method: "POST",
-  headers: headers,
-  body: requestBody,
-});
-
-let body; // 声明 body 在这里，以便在 if/else 块中赋值
-
-if (response.ok) {
-  let id = generateChatcmplId();
-  if (req.stream) {
-    body = response.body
-      .pipeThrough(new TextDecoderStream())
-      .pipeThrough(new TransformStream({
-        transform: parseStream,
-        flush: parseStreamFlush,
-        buffer: "",
-      }))
-      .pipeThrough(new TransformStream({
-        transform: toOpenAiStream,
-        flush: toOpenAiStreamFlush,
-        streamIncludeUsage: req.stream_options?.include_usage,
-        model, id, last: [],
-      }))
-      .pipeThrough(new TextEncoderStream());
-  } else { // 非流式响应
-    body = await response.text();
-    try {
-      body = processCompletionsResponse(JSON.parse(body), model, id);
-    } catch (err) {
-      console.error("Error parsing Gemini API response:", err);
-      throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
-    }
+  // 动态选择基础 URL
+  let targetBaseUrl = BASE_URL;
+  let isGemini25ProxyModel = false;
+  if (model.startsWith("gemini-2.5")) { // 匹配所有 gemini-2.5 开头的模型
+      targetBaseUrl = GEMINI_2_5_PROXY_URL;
+      isGemini25ProxyModel = true;
   }
-} else { // response.ok 为 false 的情况，添加健壮的错误处理
-  console.error(`Google API request failed: ${response.status} - ${response.statusText}`);
-  let errorData;
-  const clonedResponse = response.clone(); // 克隆响应体
-  try {
-    errorData = await clonedResponse.json();
-  } catch (e) {
-    const rawErrorText = await clonedResponse.text(); // 使用克隆的响应体
-    console.error("Google API returned non-JSON error response:", rawErrorText);
-    errorData = {
-      error: "Google API returned non-JSON error response",
-      details: rawErrorText,
-      originalStatus: response.status,
-      originalStatusText: response.statusText
-    };
+
+  let url;
+  let requestBody;
+  if (isGemini25ProxyModel) {
+      url = `${targetBaseUrl}/v1/chat/completions`; // OpenAI 兼容代理的路径
+      requestBody = JSON.stringify(req); // 直接使用原始请求体
+  } else {
+      url = `${targetBaseUrl}/${API_VERSION}/models/${model}:${TASK}`;
+      if (req.stream) { url += "?alt=sse"; }
+      try {
+        requestBody = JSON.stringify(await transformRequest(req));
+      } catch (err) {
+        console.error("Error transforming request body:", err);
+        throw new HttpError(`Invalid request format: ${err.message}`, 400);
+      }
   }
-  return new Response(JSON.stringify(errorData), {
-    status: response.status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+
+  const headers = isGemini25ProxyModel
+    ? { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }
+    : makeHeaders(apiKey, { "Content-Type": "application/json" });
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: headers,
+    body: requestBody,
   });
-}
-return new Response(body, fixCors(response));
+
+  let body;
+
+  if (response.ok) {
+    if (isGemini25ProxyModel) {
+        // 对于代理请求，直接透传响应体
+        body = response.body;
+    } else {
+        // 对于直接请求 Google 的，进行格式转换
+        let id = generateChatcmplId();
+        if (req.stream) {
+            body = response.body
+              .pipeThrough(new TextDecoderStream())
+              .pipeThrough(new TransformStream({
+                transform: parseStream,
+                flush: parseStreamFlush,
+                buffer: "",
+              }))
+              .pipeThrough(new TransformStream({
+                transform: toOpenAiStream,
+                flush: toOpenAiStreamFlush,
+                streamIncludeUsage: req.stream_options?.include_usage,
+                model, id, last: [],
+              }))
+              .pipeThrough(new TextEncoderStream());
+        } else {
+            const responseText = await response.text();
+            try {
+              body = processCompletionsResponse(JSON.parse(responseText), model, id);
+            } catch (err) {
+              console.error("Error parsing Gemini API response:", err);
+              throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
+            }
+        }
+    }
+  } else { // 统一处理所有失败的响应
+      const clonedResponse = response.clone();
+      let errorData;
+      try {
+          errorData = await clonedResponse.json();
+      } catch (e) {
+          const rawErrorText = await clonedResponse.text();
+          console.error("API returned non-JSON error response:", rawErrorText);
+          errorData = {
+              error: {
+                  message: "API returned non-JSON error response",
+                  type: "api_error",
+                  param: null,
+                  code: null,
+                  details: rawErrorText,
+              }
+          };
+      }
+      // 确保返回一个 OpenAI 格式的错误对象
+      return new Response(JSON.stringify(errorData), {
+          status: response.status,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+  }
+
+  return new Response(body, fixCors(response));
 }
 
 const harmCategory = [
