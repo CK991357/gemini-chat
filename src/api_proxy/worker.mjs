@@ -237,8 +237,20 @@ const [body1, body2] = response.body.tee(); // 使用 tee() 分割流
           }
       }
     }
+  } else { // response.ok 为 false 的情况，添加健壮的错误处理
+    console.error(`Google API request failed: ${response.status} - ${response.statusText}`);
+    let errorData;
+    const clonedResponse = response.clone(); // 克隆响应体
+    try {
+      errorData = await clonedResponse.json();
+    } catch (e) {
+      const rawErrorText = await clonedResponse.text(); // 使用克隆的响应体
+      console.error("Raw error response:", rawErrorText);
+    }
+    // 可以根据 errorData 或 rawErrorText 进行更详细的错误处理或返回
+    // 这里我们直接返回原始的 response，但可以根据需要进行修改
+    return new Response(finalBody, fixCors(response));
   }
-  return new Response(finalBody, fixCors(response));
 }
 
 const harmCategory = [
