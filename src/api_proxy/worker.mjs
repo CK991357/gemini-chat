@@ -496,7 +496,8 @@ async function toOpenAiStream (chunk, controller) {
     data = JSON.parse(line.trim());
   } catch (err) {
     console.error("Error parsing JSON from stream:", err);
-    console.error("Problematic line content:", line); // 记录原始行内容
+    console.error("Problematic line content (raw):", line); // 记录原始行内容
+    console.log("DEBUG: Raw problematic SSE line content:", line); // 新增：更明确的调试日志
     const length = this.last.length || 1; // at least 1 error msg
     const candidates = Array.from({ length }, (_, index) => ({
       finishReason: "error",
