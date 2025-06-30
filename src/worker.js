@@ -266,31 +266,37 @@ async function handleWebSocket(request, env) {
 }
 
 async function handleAPIRequest(request, env) {
-    const clonedRequest = request.clone(); // 在这里克隆原始请求
+    console.log('DEBUG: Entering handleAPIRequest'); // 新增日志
+    const clonedRequest = request.clone();
+    console.log('DEBUG: Request cloned. URL:', clonedRequest.url, 'Method:', clonedRequest.method, 'Content-Type:', clonedRequest.headers.get('content-type')); // 新增日志
     try {
         // 如果是翻译请求，直接处理
-        if (clonedRequest.url.includes('/api/chat/completions') && // 使用 clonedRequest
-            clonedRequest.method === 'POST' && // 使用 clonedRequest
-            clonedRequest.headers.get('content-type') === 'application/json') { // 使用 clonedRequest
+        if (clonedRequest.url.includes('/api/chat/completions') &&
+            clonedRequest.method === 'POST' &&
+            clonedRequest.headers.get('content-type') === 'application/json') {
             
-            const body = await clonedRequest.json(); // 使用克隆的请求体读取
+            console.log('DEBUG: Attempting to parse JSON body for translation/proxy routing.'); // 新增日志
+            const body = await clonedRequest.json();
+            console.log('DEBUG: JSON body parsed. Model:', body.model); // 新增日志
             // 重新读取请求体，因为 request.json() 会消耗掉它
-            const newRequest = new Request(clonedRequest.url, { // 使用 clonedRequest.url
-                method: clonedRequest.method, // 使用 clonedRequest.method
-                headers: clonedRequest.headers, // 使用 clonedRequest.headers
+            const newRequest = new Request(clonedRequest.url, {
+                method: clonedRequest.method,
+                headers: clonedRequest.headers,
                 body: JSON.stringify(body)
             });
 
             if (body.model && (body.model.includes('deepseek') || body.model.includes('GLM') || body.model.includes('Qwen') || body.model.includes('gemini-2.5-flash-lite'))) {
+                console.log('DEBUG: Routing to handleTranslationRequest.'); // 新增日志
                 return handleTranslationRequest(newRequest, env);
             }
         }
         
+        console.log('DEBUG: Routing to api_proxy/worker.mjs.'); // 新增日志
         // 其他请求按原方式处理，这里传递原始的 request
         const worker = await import('./api_proxy/worker.mjs');
         return await worker.default.fetch(request, env);
     } catch (error) {
-        console.error('API request error:', error);
+        console.error('API request error caught in handleAPIRequest:', error); // 改进错误日志
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         const errorStatus = error.status || 500;
         return new Response(errorMessage, {
