@@ -266,17 +266,18 @@ async function handleWebSocket(request, env) {
 }
 
 async function handleAPIRequest(request, env) {
+    const clonedRequest = request.clone(); // 在这里克隆原始请求
     try {
         // 如果是翻译请求，直接处理
-        if (request.url.includes('/api/chat/completions') &&
-            request.method === 'POST' &&
-            request.headers.get('content-type') === 'application/json') {
+        if (clonedRequest.url.includes('/api/chat/completions') && // 使用 clonedRequest
+            clonedRequest.method === 'POST' && // 使用 clonedRequest
+            clonedRequest.headers.get('content-type') === 'application/json') { // 使用 clonedRequest
             
-            const body = await request.json();
+            const body = await clonedRequest.json(); // 使用克隆的请求体读取
             // 重新读取请求体，因为 request.json() 会消耗掉它
-            const newRequest = new Request(request.url, {
-                method: request.method,
-                headers: request.headers,
+            const newRequest = new Request(clonedRequest.url, { // 使用 clonedRequest.url
+                method: clonedRequest.method, // 使用 clonedRequest.method
+                headers: clonedRequest.headers, // 使用 clonedRequest.headers
                 body: JSON.stringify(body)
             });
 
@@ -285,7 +286,7 @@ async function handleAPIRequest(request, env) {
             }
         }
         
-        // 其他请求按原方式处理
+        // 其他请求按原方式处理，这里传递原始的 request
         const worker = await import('./api_proxy/worker.mjs');
         return await worker.default.fetch(request, env);
     } catch (error) {
