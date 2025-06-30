@@ -452,10 +452,14 @@ const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
 async function parseStream (chunk, controller) {
   chunk = await chunk;
   if (!chunk) { return; }
+  console.log("DEBUG: Raw chunk received by parseStream:", chunk); // 新增：打印原始 chunk
   this.buffer += chunk;
   do {
     const match = this.buffer.match(responseLineRE);
-    if (!match) { break; }
+    if (!match) {
+      console.log("DEBUG: No SSE match, current buffer:", this.buffer); // 新增：打印未匹配时的缓冲区内容
+      break;
+    }
     // 确保在 enqueue 之前对匹配到的 JSON 字符串进行 trim()
     controller.enqueue(match[1].trim());
     this.buffer = this.buffer.substring(match[0].length);
