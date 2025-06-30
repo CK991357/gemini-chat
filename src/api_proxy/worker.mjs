@@ -201,66 +201,44 @@ async function handleCompletions (req, apiKey) {
     body: requestBody,
   });
 
-  let body;
-
+const [body1, body2] = response.body.tee(); // 使用 tee() 分割流
+  let finalBody = body1; // 默认使用第一个流
   if (response.ok) {
-    if (isGemini25ProxyModel) {
-        // 对于代理请求，直接透传响应体
-        body = response.body;
-    } else {
-        // 对于直接请求 Google 的，进行格式转换
-        let id = generateChatcmplId();
-        if (req.stream) {
-            body = response.body
-              .pipeThrough(new TextDecoderStream())
-              .pipeThrough(new TransformStream({
-                transform: parseStream,
-                flush: parseStreamFlush,
-                buffer: "",
-              }))
-              .pipeThrough(new TransformStream({
-                transform: toOpenAiStream,
-                flush: toOpenAiStreamFlush,
-                streamIncludeUsage: req.stream_options?.include_usage,
-                model, id, last: [],
-              }))
-              .pipeThrough(new TextEncoderStream());
-        } else {
-            const responseText = await response.text();
-            try {
-              body = processCompletionsResponse(JSON.parse(responseText), model, id);
-            } catch (err) {
-              console.error("Error parsing Gemini API response:", err);
-              throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
-            }
-        }
-    }
-  } else { // 统一处理所有失败的响应
-      const clonedResponse = response.clone();
-      let errorData;
-      try {
-          errorData = await clonedResponse.json();
-      } catch (e) {
-          const rawErrorText = await clonedResponse.text();
-          console.error("API returned non-JSON error response:", rawErrorText);
-          errorData = {
-              error: {
-                  message: "API returned non-JSON error response",
-                  type: "api_error",
-                  param: null,
-                  code: null,
-                  details: rawErrorText,
-              }
-          };
+    let id = generateChatcmplId();
+    if (req.stream) { // 无论是否是 gemini-2.5 模型，都尝试作为流处理
+      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应流
+          finalBody = body2; // gemini-2.5 流式直接返回第二个流
+      } else { // 否则，进行 Gemini API 到 OpenAI 格式的转换
+          finalBody = body2
+            .pipeThrough(new TextDecoderStream())
+            .pipeThrough(new TransformStream({
+              transform: parseStream,
+              flush: parseStreamFlush,
+              buffer: "",
+            }))
+            .pipeThrough(new TransformStream({
+              transform: toOpenAiStream,
+              flush: toOpenAiStreamFlush,
+              streamIncludeUsage: req.stream_options?.include_usage,
+              model, id, last: [],
+            }))
+            .pipeThrough(new TextEncoderStream());
       }
-      // 确保返回一个 OpenAI 格式的错误对象
-      return new Response(JSON.stringify(errorData), {
-          status: response.status,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
+    } else { // 非流式响应
+      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应体
+          finalBody = body2; // 理论上 OpenAI 兼容代理的非流式响应也是 JSON
+      } else {
+          const textBody = await new Response(body2).text(); // 从第二个流读取文本
+          try {
+            finalBody = processCompletionsResponse(JSON.parse(textBody), model, id);
+          } catch (err) {
+            console.error("Error parsing Gemini API response:", err);
+            throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
+          }
+      }
+    }
   }
-
-  return new Response(body, fixCors(response));
+  return new Response(finalBody, fixCors(response));
 }
 
 const harmCategory = [
@@ -479,14 +457,10 @@ const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
 async function parseStream (chunk, controller) {
   chunk = await chunk;
   if (!chunk) { return; }
-  console.log("DEBUG: Raw chunk received by parseStream:", chunk); // 新增：打印原始 chunk
   this.buffer += chunk;
   do {
     const match = this.buffer.match(responseLineRE);
-    if (!match) {
-      console.log("DEBUG: No SSE match, current buffer:", this.buffer); // 新增：打印未匹配时的缓冲区内容
-      break;
-    }
+    if (!match) { break; }
     // 确保在 enqueue 之前对匹配到的 JSON 字符串进行 trim()
     controller.enqueue(match[1].trim());
     this.buffer = this.buffer.substring(match[0].length);
@@ -527,8 +501,7 @@ async function toOpenAiStream (chunk, controller) {
     data = JSON.parse(line.trim());
   } catch (err) {
     console.error("Error parsing JSON from stream:", err);
-    console.error("Problematic line content (raw):", line); // 记录原始行内容
-    console.log("DEBUG: Raw problematic SSE line content:", line); // 新增：更明确的调试日志
+    console.error("Problematic line content:", line); // 记录原始行内容
     const length = this.last.length || 1; // at least 1 error msg
     const candidates = Array.from({ length }, (_, index) => ({
       finishReason: "error",
