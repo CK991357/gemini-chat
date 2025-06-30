@@ -237,7 +237,6 @@ const [body1, body2] = response.body.tee(); // 使用 tee() 分割流
           }
       }
     }
-    return new Response(finalBody, fixCors(response));
   } else { // response.ok 为 false 的情况，添加健壮的错误处理
     console.error(`Google API request failed: ${response.status} - ${response.statusText}`);
     let errorData;
