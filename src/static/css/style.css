@@ -389,6 +389,10 @@ body {
     font-size: 14px;
 }
 
+.translation-output-area:hover .copy-button {
+    opacity: 1;
+}
+
 /* 移动端适配 */
 @media (max-width: 768px) {
     .translation-container {
