@@ -69,8 +69,6 @@ const handleOPTIONS = async () => {
   });
 };
 
-const GEMINI_2_5_PROXY_URL = "https://geminiapim.10110531.xyz";
-
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
@@ -167,90 +165,76 @@ async function handleCompletions (req, apiKey) {
   }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
 
-  // 动态选择基础 URL
-  let targetBaseUrl = BASE_URL;
-  let isGemini25ProxyModel = false;
-  if (model.startsWith("gemini-2.5")) { // 匹配所有 gemini-2.5 开头的模型
-      targetBaseUrl = GEMINI_2_5_PROXY_URL;
-      isGemini25ProxyModel = true;
-  }
+let targetBaseUrl = BASE_URL; // 始终使用 Google API 的基础 URL
 
-  let url;
-  let requestBody;
-  if (isGemini25ProxyModel) {
-      url = `${targetBaseUrl}/v1/chat/completions`; // OpenAI 兼容代理的路径
-      requestBody = JSON.stringify(req); // 直接使用原始请求体
-  } else {
-      url = `${targetBaseUrl}/${API_VERSION}/models/${model}:${TASK}`;
-      if (req.stream) { url += "?alt=sse"; }
-      try {
-        requestBody = JSON.stringify(await transformRequest(req));
-      } catch (err) {
-        console.error("Error transforming request body:", err);
-        throw new HttpError(`Invalid request format: ${err.message}`, 400);
-      }
-  }
+let url = `${targetBaseUrl}/${API_VERSION}/models/${model}:${TASK}`;
+if (req.stream) { url += "?alt=sse"; }
+let requestBody;
+try {
+  requestBody = JSON.stringify(await transformRequest(req)); // 始终进行转换
+} catch (err) {
+  console.error("Error transforming request body:", err);
+  throw new HttpError(`Invalid request format: ${err.message}`, 400);
+}
 
-  const headers = isGemini25ProxyModel
-    ? { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }
-    : makeHeaders(apiKey, { "Content-Type": "application/json" });
+const headers = makeHeaders(apiKey, { "Content-Type": "application/json" }); // 始终使用 makeHeaders
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: headers,
-    body: requestBody,
-  });
+const response = await fetch(url, {
+  method: "POST",
+  headers: headers,
+  body: requestBody,
+});
 
-const [body1, body2] = response.body.tee(); // 使用 tee() 分割流
-  let finalBody = body1; // 默认使用第一个流
-  if (response.ok) {
-    let id = generateChatcmplId();
-    if (req.stream) { // 无论是否是 gemini-2.5 模型，都尝试作为流处理
-      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应流
-          finalBody = body2; // gemini-2.5 流式直接返回第二个流
-      } else { // 否则，进行 Gemini API 到 OpenAI 格式的转换
-          finalBody = body2
-            .pipeThrough(new TextDecoderStream())
-            .pipeThrough(new TransformStream({
-              transform: parseStream,
-              flush: parseStreamFlush,
-              buffer: "",
-            }))
-            .pipeThrough(new TransformStream({
-              transform: toOpenAiStream,
-              flush: toOpenAiStreamFlush,
-              streamIncludeUsage: req.stream_options?.include_usage,
-              model, id, last: [],
-            }))
-            .pipeThrough(new TextEncoderStream());
-      }
-    } else { // 非流式响应
-      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应体
-          finalBody = body2; // 理论上 OpenAI 兼容代理的非流式响应也是 JSON
-      } else {
-          const textBody = await new Response(body2).text(); // 从第二个流读取文本
-          try {
-            finalBody = processCompletionsResponse(JSON.parse(textBody), model, id);
-          } catch (err) {
-            console.error("Error parsing Gemini API response:", err);
-            throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
-          }
-      }
-    }
-  } else { // response.ok 为 false 的情况，添加健壮的错误处理
-    console.error(`Google API request failed: ${response.status} - ${response.statusText}`);
-    let errorData;
-    const clonedResponse = response.clone(); // 克隆响应体
+let body; // 声明 body 在这里，以便在 if/else 块中赋值
+
+if (response.ok) {
+  let id = generateChatcmplId();
+  if (req.stream) {
+    body = response.body
+      .pipeThrough(new TextDecoderStream())
+      .pipeThrough(new TransformStream({
+        transform: parseStream,
+        flush: parseStreamFlush,
+        buffer: "",
+      }))
+      .pipeThrough(new TransformStream({
+        transform: toOpenAiStream,
+        flush: toOpenAiStreamFlush,
+        streamIncludeUsage: req.stream_options?.include_usage,
+        model, id, last: [],
+      }))
+      .pipeThrough(new TextEncoderStream());
+  } else { // 非流式响应
+    body = await response.text();
     try {
-      errorData = await clonedResponse.json();
-    } catch (e) {
-      const rawErrorText = await clonedResponse.text(); // 使用克隆的响应体
-      console.error("Raw error response:", rawErrorText);
+      body = processCompletionsResponse(JSON.parse(body), model, id);
+    } catch (err) {
+      console.error("Error parsing Gemini API response:", err);
+      throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
     }
-    // 可以根据 errorData 或 rawErrorText 进行更详细的错误处理或返回
-    // 这里我们直接返回原始的 response，但可以根据需要进行修改
-    return new Response(finalBody, fixCors(response));
   }
+} else { // response.ok 为 false 的情况，添加健壮的错误处理
+  console.error(`Google API request failed: ${response.status} - ${response.statusText}`);
+  let errorData;
+  const clonedResponse = response.clone(); // 克隆响应体
+  try {
+    errorData = await clonedResponse.json();
+  } catch (e) {
+    const rawErrorText = await clonedResponse.text(); // 使用克隆的响应体
+    console.error("Google API returned non-JSON error response:", rawErrorText);
+    errorData = {
+      error: "Google API returned non-JSON error response",
+      details: rawErrorText,
+      originalStatus: response.status,
+      originalStatusText: response.statusText
+    };
+  }
+  return new Response(JSON.stringify(errorData), {
+    status: response.status,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+  });
+}
+return new Response(body, fixCors(response));
 }
 
 const harmCategory = [
@@ -469,10 +453,14 @@ const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
 async function parseStream (chunk, controller) {
   chunk = await chunk;
   if (!chunk) { return; }
+  console.log("DEBUG: Raw chunk received by parseStream:", chunk); // 新增：打印原始 chunk
   this.buffer += chunk;
   do {
     const match = this.buffer.match(responseLineRE);
-    if (!match) { break; }
+    if (!match) {
+      console.log("DEBUG: No SSE match, current buffer:", this.buffer); // 新增：打印未匹配时的缓冲区内容
+      break;
+    }
     // 确保在 enqueue 之前对匹配到的 JSON 字符串进行 trim()
     controller.enqueue(match[1].trim());
     this.buffer = this.buffer.substring(match[0].length);
@@ -513,7 +501,8 @@ async function toOpenAiStream (chunk, controller) {
     data = JSON.parse(line.trim());
   } catch (err) {
     console.error("Error parsing JSON from stream:", err);
-    console.error("Problematic line content:", line); // 记录原始行内容
+    console.error("Problematic line content (raw):", line); // 记录原始行内容
+    console.log("DEBUG: Raw problematic SSE line content:", line); // 新增：更明确的调试日志
     const length = this.last.length || 1; // at least 1 error msg
     const candidates = Array.from({ length }, (_, index) => ({
       finishReason: "error",
