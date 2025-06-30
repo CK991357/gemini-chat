@@ -236,6 +236,7 @@ let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元
 let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
 let isTranslationRecording = false; // 新增：翻译模式下是否正在录音
+let hasRequestedTranslationMicPermission = false; // 新增：标记是否已请求过翻译麦克风权限
 let translationAudioRecorder = null; // 新增：翻译模式下的 AudioRecorder 实例
 let translationAudioChunks = []; // 新增：翻译模式下录制的音频数据块
 let recordingTimeout = null; // 新增：用于处理长按录音的定时器
@@ -2142,14 +2143,29 @@ function initTranslation() {
 async function startTranslationRecording() {
   if (isTranslationRecording) return;
 
-  try {
-    // 检查麦克风权限
-    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-    if (permissionStatus.state === 'denied') {
-      logMessage('麦克风权限被拒绝，请在浏览器设置中启用', 'system');
+  // 首次点击，只请求权限
+  if (!hasRequestedTranslationMicPermission) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 成功获取权限后，立即停止流，因为我们只是为了请求权限
+      stream.getTracks().forEach(track => track.stop());
+      hasRequestedTranslationMicPermission = true;
+      logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
+      translationVoiceInputButton.textContent = '点击开始录音'; // 提示用户再次点击
+      // 不开始录音，直接返回
+      return;
+    } catch (error) {
+      logMessage(`获取麦克风权限失败: ${error.message}`, 'system');
+      console.error('获取麦克风权限失败:', error);
+      alert('无法访问麦克风。请确保已授予麦克风权限。');
+      resetTranslationRecordingState(); // 权限失败时重置所有状态
+      hasRequestedTranslationMicPermission = false; // 确保权限请求状态也重置
       return;
     }
+  }
 
+  // 权限已请求过，现在开始录音
+  try {
     logMessage('开始录音...', 'system');
     translationVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
     translationInputTextarea.placeholder = '正在录音，请说话...';
@@ -2164,6 +2180,7 @@ async function startTranslationRecording() {
     }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
 
     isTranslationRecording = true;
+    translationVoiceInputButton.textContent = '录音中...'; // 更新按钮文本
 
     // 设置一个超时，防止用户忘记松开按钮
     recordingTimeout = setTimeout(() => {
@@ -2176,7 +2193,9 @@ async function startTranslationRecording() {
   } catch (error) {
     logMessage(`启动录音失败: ${error.message}`, 'system');
     console.error('启动录音失败:', error);
-    resetTranslationRecordingState();
+    alert('无法访问麦克风。请确保已授予麦克风权限。');
+    resetTranslationRecordingState(); // 录音失败时重置所有状态
+    hasRequestedTranslationMicPermission = false; // 确保权限请求状态也重置
   }
 }
 
@@ -2244,6 +2263,7 @@ async function stopTranslationRecording() {
     translationInputTextarea.placeholder = '语音转文字失败，请重试。';
   } finally {
     resetTranslationRecordingState();
+    hasRequestedTranslationMicPermission = false; // 录音停止后，重置权限请求状态
   }
 }
 
@@ -2265,6 +2285,7 @@ function cancelTranslationRecording() {
   translationAudioChunks = []; // 清空音频数据
   resetTranslationRecordingState();
   translationInputTextarea.placeholder = '输入要翻译的内容...';
+  hasRequestedTranslationMicPermission = false; // 录音取消后，重置权限请求状态
 }
 
 /**
@@ -2275,6 +2296,7 @@ function cancelTranslationRecording() {
 function resetTranslationRecordingState() {
   isTranslationRecording = false;
   translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
+  translationVoiceInputButton.textContent = '语音输入'; // 恢复按钮文本
 }
 
 /**

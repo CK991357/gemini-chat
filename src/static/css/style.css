@@ -361,6 +361,14 @@ body {
     overflow-y: auto;
 }
 
+.translation-action-buttons {
+    display: flex;
+    justify-content: center; /* 水平居中 */
+    gap: 10px; /* 按钮之间的间距 */
+    width: 100%; /* 确保宽度与父容器一致 */
+    margin-top: 10px; /* 与上方输入框的间距 */
+}
+
 .translation-output-display {
     flex-grow: 1;
     padding: 12px;
