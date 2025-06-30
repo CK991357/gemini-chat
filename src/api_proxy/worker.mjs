@@ -201,14 +201,16 @@ async function handleCompletions (req, apiKey) {
     body: requestBody,
   });
 
-  let body = response.body;
+  const [body1, body2] = response.body.tee(); // 使用 tee() 分割流
+  let finalBody = body1; // 默认使用第一个流
+
   if (response.ok) {
     let id = generateChatcmplId();
-    if (req.stream) { // 无论是否是 gemini-2.5 模型，都尝试作为流处理
-      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应流
-          body = response.body;
-      } else { // 否则，进行 Gemini API 到 OpenAI 格式的转换
-          body = response.body
+    if (req.stream) {
+      if (isGemini25ProxyModel) {
+          finalBody = body2; // gemini-2.5 流式直接返回第二个流
+      } else {
+          finalBody = body2
             .pipeThrough(new TextDecoderStream())
             .pipeThrough(new TransformStream({
               transform: parseStream,
@@ -223,13 +225,13 @@ async function handleCompletions (req, apiKey) {
             }))
             .pipeThrough(new TextEncoderStream());
       }
-    } else { // 非流式响应
-      if (isGemini25ProxyModel) { // 如果是 gemini-2.5 模型，直接返回原始响应体
-          body = response.body; // 理论上 OpenAI 兼容代理的非流式响应也是 JSON
+    } else {
+      if (isGemini25ProxyModel) {
+          finalBody = body2; // gemini-2.5 非流式直接返回第二个流
       } else {
-          body = await response.text();
+          const textBody = await new Response(body2).text(); // 从第二个流读取文本
           try {
-            body = processCompletionsResponse(JSON.parse(body), model, id);
+            finalBody = processCompletionsResponse(JSON.parse(textBody), model, id);
           } catch (err) {
             console.error("Error parsing Gemini API response:", err);
             throw new HttpError(`Invalid Gemini API response: ${err.message}`, 500);
@@ -237,7 +239,7 @@ async function handleCompletions (req, apiKey) {
       }
     }
   }
-  return new Response(body, fixCors(response));
+  return new Response(finalBody, fixCors(response));
 }
 
 const harmCategory = [
