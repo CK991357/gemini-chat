@@ -378,11 +378,15 @@ body {
 
 .translation-output-area .copy-button {
     position: absolute;
-    bottom: -5px; /* 与聊天消息复制按钮位置一致 */
-    right: -30px; /* 与聊天消息复制按钮位置一致 */
-    /* 继承通用 .copy-button 的样式，只覆盖位置 */
-    opacity: 0; /* 明确设置为默认隐藏 */
-    transition: opacity 0.3s ease, color 0.3s ease; /* 保持过渡效果 */
+    bottom: 10px;
+    right: 10px;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 15px;
+    cursor: pointer;
+    font-size: 14px;
 }
 
 .translation-output-area:hover .copy-button {
@@ -1310,4 +1314,32 @@ body.dark-mode {
   overflow-x: auto;
   word-wrap: break-word;
 }
+}
+
+/* 翻译模式语音输入按钮的录音状态样式 */
+#translation-voice-input-button.recording-active {
+    background-color: var(--danger-color); /* 录音时变为红色 */
+    color: white;
+    animation: pulse 1.5s infinite; /* 添加脉冲动画 */
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--danger-color-rgb), 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(var(--danger-color-rgb), 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(var(--danger-color-rgb), 0);
+    }
+}
+
+/* 定义 --danger-color-rgb 变量 */
+:root {
+    --danger-color-rgb: 234, 67, 53; /* 亮色模式下的 Google Red RGB 值 */
+}
+
+body.dark-mode {
+    --danger-color-rgb: 239, 68, 68; /* 暗色模式下的 danger-color RGB 值 */
 }

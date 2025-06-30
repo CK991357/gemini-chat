@@ -2151,8 +2151,7 @@ async function startTranslationRecording() {
     }
 
     logMessage('开始录音...', 'system');
-    translationVoiceInputButton.classList.add('recording');
-    translationVoiceInputButton.textContent = 'stop'; // 更改图标为停止
+    translationVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
     translationInputTextarea.placeholder = '正在录音，请说话...';
     translationInputTextarea.value = ''; // 清空输入区
 
@@ -2191,8 +2190,7 @@ async function stopTranslationRecording() {
 
   clearTimeout(recordingTimeout); // 清除超时定时器
   logMessage('停止录音，正在转文字...', 'system');
-  translationVoiceInputButton.classList.remove('recording');
-  translationVoiceInputButton.textContent = 'mic'; // 恢复图标
+  translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
   translationInputTextarea.placeholder = '正在处理语音...';
 
   try {
@@ -2217,14 +2215,14 @@ async function stopTranslationRecording() {
     }
     translationAudioChunks = []; // 清空缓冲区
 
-    // 将 Uint8Array 转换为 Blob
-    const audioBlob = new Blob([mergedAudioData], { type: 'audio/wav' }); // 假设是 WAV 格式
+    // 将合并后的原始音频数据转换为 WAV Blob
+    const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE); // 使用 pcmToWavBlob 函数
 
     // 发送转文字请求到 Worker
     const response = await fetch('/api/transcribe-audio', {
       method: 'POST',
       headers: {
-        'Content-Type': audioBlob.type,
+        'Content-Type': audioBlob.type, // 使用 Blob 的 MIME 类型
       },
       body: audioBlob,
     });
@@ -2276,8 +2274,7 @@ function cancelTranslationRecording() {
  */
 function resetTranslationRecordingState() {
   isTranslationRecording = false;
-  translationVoiceInputButton.classList.remove('recording');
-  translationVoiceInputButton.textContent = 'mic'; // 恢复图标
+  translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
 }
 
 /**
