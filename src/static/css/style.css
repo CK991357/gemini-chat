@@ -378,15 +378,11 @@ body {
 
 .translation-output-area .copy-button {
     position: absolute;
-    bottom: 10px;
-    right: 10px;
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 15px;
-    cursor: pointer;
-    font-size: 14px;
+    bottom: -5px; /* 与聊天消息复制按钮位置一致 */
+    right: -30px; /* 与聊天消息复制按钮位置一致 */
+    /* 继承通用 .copy-button 的样式，只覆盖位置 */
+    opacity: 0; /* 明确设置为默认隐藏 */
+    transition: opacity 0.3s ease, color 0.3s ease; /* 保持过渡效果 */
 }
 
 .translation-output-area:hover .copy-button {
