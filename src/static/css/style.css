@@ -217,6 +217,9 @@ body {
     font-size: 16px;
     font-weight: 600;
     transition: background-color 0.3s ease, transform 0.2s ease;
+    display: flex; /* 使按钮成为 flex 容器 */
+    align-items: center; /* 垂直居中内容 */
+    justify-content: center; /* 水平居中内容 */
 }
 
 .action-button:hover {
@@ -363,7 +366,7 @@ body {
 
 .translation-action-buttons {
     display: flex;
-    justify-content: center; /* 水平居中 */
+    justify-content: flex-end; /* 桌面端右对齐 */
     gap: 10px; /* 按钮之间的间距 */
     width: 100%; /* 确保宽度与父容器一致 */
     margin-top: 10px; /* 与上方输入框的间距 */
@@ -423,6 +426,10 @@ body {
         min-height: 100px;
         /* 移除 max-height，允许内容自适应高度 */
         font-size: 14px;
+    }
+
+    .translation-action-buttons {
+        justify-content: center; /* 移动端居中 */
     }
 
     .translation-input-area .action-button {
