@@ -216,10 +216,11 @@ if (response.ok) {
 } else { // response.ok 为 false 的情况，添加健壮的错误处理
   console.error(`Google API request failed: ${response.status} - ${response.statusText}`);
   let errorData;
+  const clonedResponse = response.clone(); // 克隆响应体
   try {
-    errorData = await response.json();
+    errorData = await clonedResponse.json();
   } catch (e) {
-    const rawErrorText = await response.text();
+    const rawErrorText = await clonedResponse.text(); // 使用克隆的响应体
     console.error("Google API returned non-JSON error response:", rawErrorText);
     errorData = {
       error: "Google API returned non-JSON error response",
