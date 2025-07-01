@@ -1,21 +1,16 @@
 export const CONFIG = {
     API: {
         VERSION: 'v1alpha',
-        MODEL_NAME: 'models/gemini-2.5-flash-preview-05-20', // 保持默认模型，但实际选择将由 UI 控制
+        MODEL_NAME: 'models/gemini-2.5-flash-lite-preview-06-17', // 默认模型
         AVAILABLE_MODELS: [
-            {
-                name: 'models/gemini-2.5-flash-preview-05-20',
-                displayName: 'gemini-2.5-flash-preview-05-20 (HTTP)',
-                isWebSocket: false
-            },
             {
                 name: 'models/gemini-2.5-flash-lite-preview-06-17',
                 displayName: 'gemini-2.5-flash-lite-preview-06-17 (HTTP)',
                 isWebSocket: false
             },
             {
-                name: 'models/gemini-2.5-pro',
-                displayName: 'gemini-2.5-pro (HTTP)',
+                name: 'models/gemini-2.5-flash-preview-05-20',
+                displayName: 'gemini-2.5-flash-preview-05-20 (HTTP)',
                 isWebSocket: false
             },
             {
@@ -75,6 +70,10 @@ The report should include the following core sections:
             {
                 name: 'gemini-2.5-flash-lite-preview-06-17',
                 displayName: 'gemini-2.5-flash-lite-preview-06-17'
+            },
+            {
+                name: 'gemini-2.0-flash',
+                displayName: 'gemini-2.0-flash'
             },
             {
                 name: 'THUDM/GLM-4-9B-0414',

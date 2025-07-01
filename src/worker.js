@@ -282,7 +282,6 @@ async function handleAPIRequest(request, env) {
             if (
                 model === 'models/gemini-2.5-flash-preview-05-20' ||
                 model === 'models/gemini-2.5-flash-lite-preview-06-17' ||
-                model === 'models/gemini-2.5-pro' ||
                 model === 'models/gemini-2.0-flash'
             ) {
                 console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
@@ -351,11 +350,11 @@ async function handleTranslationRequest(request, env) {
         let targetUrl;
         let apiKey;
 
-        if (body.model === 'gemini-2.5-flash-lite-preview-06-17') {
+        if (body.model === 'gemini-2.5-flash-lite-preview-06-17' || body.model === 'gemini-2.0-flash') {
             targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
             apiKey = env.GEMINI_TRANSLATION_API_KEY;
             if (!apiKey) {
-                throw new Error('GEMINI_TRANSLATION_API_KEY is not configured in environment variables for gemini-2.5-flash-lite-preview-06-17.');
+                throw new Error('GEMINI_TRANSLATION_API_KEY is not configured in environment variables for Gemini models.');
             }
         } else {
             targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
