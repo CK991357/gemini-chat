@@ -789,6 +789,9 @@ body {
     color: var(--text-color);
     font-size: 16px;
     resize: vertical; /* 允许垂直方向调整大小 */
+    max-height: 180px; /* 新增：限制最大高度 */
+    overflow-y: auto; /* 新增：内容溢出时显示滚动条 */
+    -webkit-overflow-scrolling: touch; /* 新增：提升在iOS上的滚动体验 */
 }
 
 .text-mode #send-button {
