@@ -1131,9 +1131,9 @@ body {
     }
 
     .text-mode .input-area {
-        padding-left: 5px;
-        padding-right: 5px;
-        gap: 5px;
+        padding-left: 2px;
+        padding-right: 2px;
+        gap: 2px;
     }
     .audio-mode .media-display-area {
         grid-template-columns: 1fr;
