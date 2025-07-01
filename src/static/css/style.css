@@ -1369,3 +1369,10 @@ body.dark-mode {
 body.dark-mode {
     --danger-color-rgb: 239, 68, 68; /* 暗色模式下的 danger-color RGB 值 */
 }
+
+/* 聊天模式语音输入按钮的录音状态样式 */
+#chat-voice-input-button.recording-active {
+    background-color: var(--danger-color); /* 录音时变为红色 */
+    color: white;
+    animation: pulse 1.5s infinite; /* 添加脉冲动画 */
+}

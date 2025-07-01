@@ -2213,7 +2213,6 @@ async function startTranslationRecording() {
       stream.getTracks().forEach(track => track.stop());
       hasRequestedTranslationMicPermission = true;
       logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
-      translationVoiceInputButton.textContent = '点击开始录音'; // 提示用户再次点击
       // 不开始录音，直接返回
       return;
     } catch (error) {
@@ -2230,7 +2229,7 @@ async function startTranslationRecording() {
   try {
     logMessage('开始录音...', 'system');
     translationVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
-    translationInputTextarea.placeholder = '正在录音，请说话...';
+    logMessage('正在录音，请说话...', 'system');
     translationInputTextarea.value = ''; // 清空输入区
 
     translationAudioChunks = []; // 清空之前的音频数据
@@ -2242,7 +2241,6 @@ async function startTranslationRecording() {
     }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
 
     isTranslationRecording = true;
-    translationVoiceInputButton.textContent = '录音中...'; // 更新按钮文本
 
     // 设置一个超时，防止用户忘记松开按钮
     recordingTimeout = setTimeout(() => {
@@ -2272,7 +2270,7 @@ async function stopTranslationRecording() {
   clearTimeout(recordingTimeout); // 清除超时定时器
   logMessage('停止录音，正在转文字...', 'system');
   translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  translationInputTextarea.placeholder = '正在处理语音...';
+  logMessage('正在处理语音...', 'system');
 
   try {
     if (translationAudioRecorder) {
@@ -2316,13 +2314,13 @@ async function stopTranslationRecording() {
     const result = await response.json();
     const transcriptionText = result.text || '未获取到转录文本。';
 
-    translationInputTextarea.value = transcriptionText; // 打印到输入区
+    translationInputTextarea.value = transcriptionText; // 翻译结果仍需显示在翻译输入框
     logMessage('语音转文字成功', 'system');
 
   } catch (error) {
     logMessage(`语音转文字失败: ${error.message}`, 'system');
     console.error('语音转文字失败:', error);
-    translationInputTextarea.placeholder = '语音转文字失败，请重试。';
+    logMessage('语音转文字失败，请重试。', 'system');
   } finally {
     resetTranslationRecordingState();
     hasRequestedTranslationMicPermission = false; // 录音停止后，重置权限请求状态
@@ -2346,7 +2344,7 @@ function cancelTranslationRecording() {
   }
   translationAudioChunks = []; // 清空音频数据
   resetTranslationRecordingState();
-  translationInputTextarea.placeholder = '输入要翻译的内容...';
+  logMessage('录音已取消，请重新输入。', 'system');
   hasRequestedTranslationMicPermission = false; // 录音取消后，重置权限请求状态
 }
 
@@ -2366,7 +2364,6 @@ async function startChatRecording() {
       stream.getTracks().forEach(track => track.stop());
       hasRequestedChatMicPermission = true;
       logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
-      chatVoiceInputButton.textContent = '点击开始录音'; // 提示用户再次点击
       // 不开始录音，直接返回
       return;
     } catch (error) {
@@ -2383,7 +2380,7 @@ async function startChatRecording() {
   try {
     logMessage('开始录音...', 'system');
     chatVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
-    messageInput.placeholder = '正在录音，请说话...';
+    logMessage('正在录音，请说话...', 'system');
     messageInput.value = ''; // 清空输入区
 
     chatAudioChunks = []; // 清空之前的音频数据
@@ -2395,7 +2392,6 @@ async function startChatRecording() {
     }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
 
     isChatRecording = true;
-    chatVoiceInputButton.textContent = '录音中...'; // 更新按钮文本
 
     // 设置一个超时，防止用户忘记松开按钮
     chatRecordingTimeout = setTimeout(() => {
@@ -2425,7 +2421,7 @@ async function stopChatRecording() {
   clearTimeout(chatRecordingTimeout); // 清除超时定时器
   logMessage('停止录音，正在转文字...', 'system');
   chatVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  messageInput.placeholder = '正在处理语音...';
+  logMessage('正在处理语音...', 'system');
 
   try {
     if (chatAudioRecorder) {
@@ -2469,13 +2465,14 @@ async function stopChatRecording() {
     const result = await response.json();
     const transcriptionText = result.text || '未获取到转录文本。';
 
-    messageInput.value = transcriptionText; // 打印到聊天输入区
+    messageInput.value = ''; // 清空输入区
+    logMessage(transcriptionText, 'user', 'text'); // 将转录文本作为用户消息发送
     logMessage('语音转文字成功', 'system');
 
   } catch (error) {
     logMessage(`语音转文字失败: ${error.message}`, 'system');
     console.error('语音转文字失败:', error);
-    messageInput.placeholder = '语音转文字失败，请重试。';
+    logMessage('语音转文字失败，请重试。', 'system');
   } finally {
     resetChatRecordingState();
     hasRequestedChatMicPermission = false; // 录音停止后，重置权限请求状态
@@ -2499,7 +2496,7 @@ function cancelChatRecording() {
   }
   chatAudioChunks = []; // 清空音频数据
   resetChatRecordingState();
-  messageInput.placeholder = '输入消息...';
+  logMessage('录音已取消，请重新输入。', 'system');
   hasRequestedChatMicPermission = false; // 录音取消后，重置权限请求状态
 }
 
@@ -2511,7 +2508,6 @@ function cancelChatRecording() {
 function resetChatRecordingState() {
   isChatRecording = false;
   chatVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  chatVoiceInputButton.textContent = 'mic'; // 恢复按钮文本为图标
 }
 
 /**
@@ -2522,7 +2518,6 @@ function resetChatRecordingState() {
 function resetTranslationRecordingState() {
   isTranslationRecording = false;
   translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  translationVoiceInputButton.textContent = '语音输入'; // 恢复按钮文本
 }
 
 /**
