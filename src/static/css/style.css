@@ -975,8 +975,7 @@ body {
 @media (max-width: 1200px) {
     /* 移动端和iPad端布局调整 */
     .main-container {
-        display: block; /* 改为 block 布局，让 content-area 占据全部宽度 */
-        padding: 15px; /* 调整内边距 */
+           grid-template-columns: 1fr; /* 单列布局 */
     }
     .control-panel {
         display: none; /* 默认隐藏 */
