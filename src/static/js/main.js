@@ -1939,6 +1939,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }, { passive: true });
         }
+
+        // 为 messageInput 添加触摸事件监听，以确保其内部滚动优先
+        if (messageInput) {
+            let startY;
+            let startScrollTop;
+
+            messageInput.addEventListener('touchstart', (e) => {
+                startY = e.touches[0].clientY;
+                startScrollTop = messageInput.scrollTop;
+                // 阻止默认行为，防止页面滚动，但允许 textarea 内部滚动
+                // e.stopPropagation(); // 阻止事件冒泡，但可能导致其他问题，先不加
+            }, { passive: false }); // passive: false 允许 preventDefault
+
+            messageInput.addEventListener('touchmove', (e) => {
+                const currentY = e.touches[0].clientY;
+                const deltaY = currentY - startY;
+                const scrollHeight = messageInput.scrollHeight;
+                const clientHeight = messageInput.clientHeight;
+
+                // 判断是否可以垂直滚动
+                const canScrollUp = startScrollTop > 0 && deltaY > 0; // 向上滑动且顶部未到
+                const canScrollDown = startScrollTop < (scrollHeight - clientHeight) && deltaY < 0; // 向下滑动且底部未到
+
+                if (scrollHeight > clientHeight && (canScrollUp || canScrollDown)) {
+                    // 如果 textarea 内部有内容可滚动，并且是垂直滑动，则阻止默认的页面滚动
+                    e.preventDefault();
+                }
+            }, { passive: false }); // passive: false 允许 preventDefault
+
+            messageInput.addEventListener('touchend', () => {
+                // 重置状态
+                startY = undefined;
+                startScrollTop = undefined;
+            });
+        }
     }
 });
 
