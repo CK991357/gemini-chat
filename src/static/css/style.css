@@ -135,6 +135,7 @@ body {
     padding: 20px;
     flex-grow: 1;
     overflow: hidden; /* 防止内部元素溢出导致滚动条 */
+    box-sizing: border-box; /* 新增：确保 padding 不会撑大容器 */
 }
 
 /* 左侧控制面板 */
@@ -1098,6 +1099,11 @@ body {
     .message .content {
         padding: 10px 15px;
         font-size: 14px;
+    }
+
+    .message {
+        padding: 0 10px; /* 为消息本身添加水平内边距 */
+        max-width: 90%;   /* 调整最大宽度 */
     }
     .text-mode #message-input {
         padding: 10px;
