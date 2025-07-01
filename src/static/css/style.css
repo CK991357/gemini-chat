@@ -562,12 +562,17 @@ body {
 .message {
     display: flex;
     align-items: flex-start;
-    margin: 0 auto 15px auto; /* 居中对齐，并保持底部间距 */
-    max-width: 75%; /* 调整最大宽度，留出更多空白 */
+    margin-bottom: 15px; /* 保持底部间距 */
+    max-width: 85%; /* 调整最大宽度，留出更多空白 */
 }
 
 .message.user {
     flex-direction: row-reverse;
+    margin-left: auto; /* 靠右对齐 */
+}
+
+.message.ai {
+    margin-right: auto; /* 靠左对齐 */
 }
 
 .message .avatar {
@@ -1101,8 +1106,8 @@ body {
     }
 
     .message {
-        padding: 0 10px; /* 为消息本身添加水平内边距 */
-        max-width: 90%;   /* 调整最大宽度 */
+        padding: 0 15px; /* 为消息本身添加水平内边距，增加左右间距 */
+        max-width: 85%;   /* 调整最大宽度 */
     }
     .text-mode #message-input {
         padding: 10px;
