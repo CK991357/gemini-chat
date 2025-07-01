@@ -792,6 +792,7 @@ body {
     max-height: 180px; /* 新增：限制最大高度 */
     overflow-y: auto; /* 新增：内容溢出时显示滚动条 */
     -webkit-overflow-scrolling: touch; /* 新增：提升在iOS上的滚动体验 */
+    touch-action: pan-y; /* 新增：允许在聚焦时垂直滚动 */
 }
 
 .text-mode #send-button {
