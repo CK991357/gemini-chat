@@ -768,6 +768,7 @@ body {
 
 .text-mode .input-area {
     display: flex;
+    align-items: center; /* 垂直居中对齐 */
     gap: 10px;
     padding-top: 15px;
     border-top: 1px solid var(--border-color);
@@ -826,6 +827,11 @@ body {
 
 .text-mode #interrupt-button:hover {
     background-color: var(--secondary-color);
+}
+
+/* 确保输入区域内的按钮不会被压缩 */
+.text-mode .input-area > button {
+    flex-shrink: 0;
 }
 
 /* 新增媒体控制区域样式 */
