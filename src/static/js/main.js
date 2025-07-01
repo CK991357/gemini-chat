@@ -2213,6 +2213,7 @@ async function startTranslationRecording() {
       stream.getTracks().forEach(track => track.stop());
       hasRequestedTranslationMicPermission = true;
       logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
+      translationVoiceInputButton.textContent = '点击开始录音'; // 提示用户再次点击
       // 不开始录音，直接返回
       return;
     } catch (error) {
@@ -2229,7 +2230,7 @@ async function startTranslationRecording() {
   try {
     logMessage('开始录音...', 'system');
     translationVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
-    logMessage('正在录音，请说话...', 'system');
+    translationInputTextarea.placeholder = '正在录音，请说话...';
     translationInputTextarea.value = ''; // 清空输入区
 
     translationAudioChunks = []; // 清空之前的音频数据
@@ -2241,6 +2242,7 @@ async function startTranslationRecording() {
     }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
 
     isTranslationRecording = true;
+    translationVoiceInputButton.textContent = '录音中...'; // 更新按钮文本
 
     // 设置一个超时，防止用户忘记松开按钮
     recordingTimeout = setTimeout(() => {
@@ -2270,7 +2272,7 @@ async function stopTranslationRecording() {
   clearTimeout(recordingTimeout); // 清除超时定时器
   logMessage('停止录音，正在转文字...', 'system');
   translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  logMessage('正在处理语音...', 'system');
+  translationInputTextarea.placeholder = '正在处理语音...';
 
   try {
     if (translationAudioRecorder) {
@@ -2314,13 +2316,13 @@ async function stopTranslationRecording() {
     const result = await response.json();
     const transcriptionText = result.text || '未获取到转录文本。';
 
-    translationInputTextarea.value = transcriptionText; // 翻译结果仍需显示在翻译输入框
+    translationInputTextarea.value = transcriptionText; // 打印到输入区
     logMessage('语音转文字成功', 'system');
 
   } catch (error) {
     logMessage(`语音转文字失败: ${error.message}`, 'system');
     console.error('语音转文字失败:', error);
-    logMessage('语音转文字失败，请重试。', 'system');
+    translationInputTextarea.placeholder = '语音转文字失败，请重试。';
   } finally {
     resetTranslationRecordingState();
     hasRequestedTranslationMicPermission = false; // 录音停止后，重置权限请求状态
@@ -2344,7 +2346,7 @@ function cancelTranslationRecording() {
   }
   translationAudioChunks = []; // 清空音频数据
   resetTranslationRecordingState();
-  logMessage('录音已取消，请重新输入。', 'system');
+  translationInputTextarea.placeholder = '输入要翻译的内容...';
   hasRequestedTranslationMicPermission = false; // 录音取消后，重置权限请求状态
 }
 
@@ -2360,53 +2362,47 @@ async function startChatRecording() {
   if (!hasRequestedChatMicPermission) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // 成功获取权限后，立即停止流，因为我们只是为了请求权限
       stream.getTracks().forEach(track => track.stop());
       hasRequestedChatMicPermission = true;
-      logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
-      // 不开始录音，直接返回
+      showToast('已获取麦克风权限，请再次点击开始录音');
       return;
     } catch (error) {
-      logMessage(`获取麦克风权限失败: ${error.message}`, 'system');
+      showSystemMessage(`获取麦克风权限失败: ${error.message}`);
       console.error('获取麦克风权限失败:', error);
-      alert('无法访问麦克风。请确保已授予麦克风权限。');
-      resetChatRecordingState(); // 权限失败时重置所有状态
-      hasRequestedChatMicPermission = false; // 确保权限请求状态也重置
+      resetChatRecordingState();
+      hasRequestedChatMicPermission = false;
       return;
     }
   }
 
   // 权限已请求过，现在开始录音
   try {
-    logMessage('开始录音...', 'system');
-    chatVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
-    logMessage('正在录音，请说话...', 'system');
-    messageInput.value = ''; // 清空输入区
+    showToast('录音已开始...');
+    chatVoiceInputButton.classList.add('recording'); // 使用新的 CSS 类
+    messageInput.placeholder = '正在录音，请说话...';
+    messageInput.value = '';
 
-    chatAudioChunks = []; // 清空之前的音频数据
-    chatAudioRecorder = new AudioRecorder(); // 创建新的 AudioRecorder 实例
+    chatAudioChunks = [];
+    chatAudioRecorder = new AudioRecorder();
 
     await chatAudioRecorder.start((chunk) => {
-      // AudioRecorder 现在应该返回 ArrayBuffer 或 Uint8Array
       chatAudioChunks.push(chunk);
-    }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
+    }, { returnRaw: true });
 
     isChatRecording = true;
 
-    // 设置一个超时，防止用户忘记松开按钮
     chatRecordingTimeout = setTimeout(() => {
       if (isChatRecording) {
-        logMessage('录音超时，自动停止并发送', 'system');
+        showToast('录音超时，自动停止');
         stopChatRecording();
       }
-    }, 60 * 1000); // 最长录音 60 秒
+    }, 60 * 1000);
 
   } catch (error) {
-    logMessage(`启动录音失败: ${error.message}`, 'system');
+    showSystemMessage(`启动录音失败: ${error.message}`);
     console.error('启动录音失败:', error);
-    alert('无法访问麦克风。请确保已授予麦克风权限。');
-    resetChatRecordingState(); // 录音失败时重置所有状态
-    hasRequestedChatMicPermission = false; // 确保权限请求状态也重置
+    resetChatRecordingState();
+    hasRequestedChatMicPermission = false;
   }
 }
 
@@ -2418,24 +2414,21 @@ async function startChatRecording() {
 async function stopChatRecording() {
   if (!isChatRecording) return;
 
-  clearTimeout(chatRecordingTimeout); // 清除超时定时器
-  logMessage('停止录音，正在转文字...', 'system');
-  chatVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  logMessage('正在处理语音...', 'system');
-
+  clearTimeout(chatRecordingTimeout);
+  showToast('正在处理语音...');
+  
   try {
     if (chatAudioRecorder) {
-      chatAudioRecorder.stop(); // 停止录音
+      chatAudioRecorder.stop();
       chatAudioRecorder = null;
     }
 
     if (chatAudioChunks.length === 0) {
-      logMessage('没有录到音频，请重试', 'system');
+      showSystemMessage('没有录到音频，请重试');
       resetChatRecordingState();
       return;
     }
 
-    // 将所有音频块合并成一个 Uint8Array
     const totalLength = chatAudioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
     const mergedAudioData = new Uint8Array(totalLength);
     let offset = 0;
@@ -2443,17 +2436,13 @@ async function stopChatRecording() {
       mergedAudioData.set(new Uint8Array(chunk), offset);
       offset += chunk.byteLength;
     }
-    chatAudioChunks = []; // 清空缓冲区
+    chatAudioChunks = [];
 
-    // 将合并后的原始音频数据转换为 WAV Blob
-    const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE); // 使用 pcmToWavBlob 函数
+    const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE);
 
-    // 发送转文字请求到 Worker
     const response = await fetch('/api/transcribe-audio', {
       method: 'POST',
-      headers: {
-        'Content-Type': audioBlob.type, // 使用 Blob 的 MIME 类型
-      },
+      headers: { 'Content-Type': audioBlob.type },
       body: audioBlob,
     });
 
@@ -2463,19 +2452,22 @@ async function stopChatRecording() {
     }
 
     const result = await response.json();
-    const transcriptionText = result.text || '未获取到转录文本。';
+    const transcriptionText = result.text;
 
-    messageInput.value = ''; // 清空输入区
-    logMessage(transcriptionText, 'user', 'text'); // 将转录文本作为用户消息发送
-    logMessage('语音转文字成功', 'system');
+    if (transcriptionText) {
+        messageInput.value = transcriptionText;
+        showToast('语音转文字成功');
+    } else {
+        showSystemMessage('未获取到转录文本。');
+    }
 
   } catch (error) {
-    logMessage(`语音转文字失败: ${error.message}`, 'system');
+    showSystemMessage(`语音转文字失败: ${error.message}`);
     console.error('语音转文字失败:', error);
-    logMessage('语音转文字失败，请重试。', 'system');
   } finally {
     resetChatRecordingState();
-    hasRequestedChatMicPermission = false; // 录音停止后，重置权限请求状态
+    // 不重置权限状态，以便用户可以连续录音
+    // hasRequestedChatMicPermission = false;
   }
 }
 
@@ -2487,17 +2479,15 @@ async function stopChatRecording() {
 function cancelChatRecording() {
   if (!isChatRecording) return;
 
-  clearTimeout(chatRecordingTimeout); // 清除超时定时器
-  logMessage('录音已取消', 'system');
+  clearTimeout(chatRecordingTimeout);
+  showToast('录音已取消');
   
   if (chatAudioRecorder) {
-    chatAudioRecorder.stop(); // 停止录音
+    chatAudioRecorder.stop();
     chatAudioRecorder = null;
   }
-  chatAudioChunks = []; // 清空音频数据
+  chatAudioChunks = [];
   resetChatRecordingState();
-  logMessage('录音已取消，请重新输入。', 'system');
-  hasRequestedChatMicPermission = false; // 录音取消后，重置权限请求状态
 }
 
 /**
@@ -2507,7 +2497,8 @@ function cancelChatRecording() {
  */
 function resetChatRecordingState() {
   isChatRecording = false;
-  chatVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
+  chatVoiceInputButton.classList.remove('recording');
+  messageInput.placeholder = '输入消息...';
 }
 
 /**
@@ -2518,6 +2509,7 @@ function resetChatRecordingState() {
 function resetTranslationRecordingState() {
   isTranslationRecording = false;
   translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
+  translationVoiceInputButton.textContent = '语音输入'; // 恢复按钮文本
 }
 
 /**
@@ -2594,4 +2586,51 @@ async function handleTranslation() {
 function getLanguageName(code) {
   const language = CONFIG.TRANSLATION.LANGUAGES.find(lang => lang.code === code);
   return language ? language.name : code;
+}
+
+/**
+ * 显示一个 Toast 轻提示。
+ * @param {string} message - 要显示的消息。
+ * @param {number} [duration=3000] - 显示时长（毫秒）。
+ */
+export function showToast(message, duration = 3000) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    // 触发显示动画
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+
+    // 在指定时长后移除
+    setTimeout(() => {
+        toast.classList.remove('show');
+        // 在动画结束后从 DOM 中移除
+        toast.addEventListener('transitionend', () => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        });
+    }, duration);
+}
+
+/**
+ * 在聊天记录区显示一条系统消息。
+ * @param {string} message - 要显示的消息。
+ */
+export function showSystemMessage(message) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'system-info'); // 使用一个特殊的类
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+    contentDiv.textContent = message;
+
+    messageDiv.appendChild(contentDiv);
+    messageHistory.appendChild(messageDiv);
+    scrollToBottom();
 }
