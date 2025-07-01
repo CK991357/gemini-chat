@@ -1,8 +1,13 @@
 export const CONFIG = {
     API: {
         VERSION: 'v1alpha',
-        MODEL_NAME: 'models/gemini-2.5-flash-lite-preview-06-17', // 默认模型
+        MODEL_NAME: 'models/gemini-2.0-flash-exp', // 默认模型
         AVAILABLE_MODELS: [
+            {
+                name: 'models/gemini-2.0-flash-exp',
+                displayName: 'gemini-2.0-flash-exp (WebSocket)',
+                isWebSocket: true
+            },
             {
                 name: 'models/gemini-2.5-flash-lite-preview-06-17',
                 displayName: 'gemini-2.5-flash-lite-preview-06-17 (HTTP)',
@@ -17,11 +22,6 @@ export const CONFIG = {
                 name: 'models/gemini-2.0-flash',
                 displayName: 'gemini-2.0-flash (HTTP)',
                 isWebSocket: false
-            },
-            {
-                name: 'models/gemini-2.0-flash-exp',
-                displayName: 'gemini-2.0-flash-exp (WebSocket)',
-                isWebSocket: true
             },
         ]
     },
