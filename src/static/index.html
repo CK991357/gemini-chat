@@ -49,9 +49,9 @@
 
             <!-- 移动媒体控制按钮到这里 -->
             <div class="media-controls">
-                <button id="mic-button" class="media-button material-symbols-outlined">mic</button>
+                <!-- <button id="mic-button" class="media-button material-symbols-outlined">mic</button>
                 <button id="camera-button" class="media-button material-symbols-outlined">videocam</button>
-                <button id="screen-button" class="media-button material-symbols-outlined">screen_share</button>
+                <button id="screen-button" class="media-button material-symbols-outlined">screen_share</button> -->
                 <!-- 移除翻转按钮 -->
                  </div>
             </div>
@@ -77,13 +77,13 @@
                             <option value="Aoede" selected>Aoede (Female)</option>
                         </select>
                     </div>
-                    <div class="setting-item">
+                    <!-- <div class="setting-item">
                         <label for="response-type-select">响应类型:</label>
                         <select id="response-type-select">
                             <option value="text">Text</option>
                             <option value="audio" selected>Audio</option>
                         </select>
-                    </div>
+                    </div> -->
                     <!-- 新增模型选择下拉菜单 -->
                     <div class="setting-item">
                         <label for="model-select">模型选择:</label>
@@ -118,7 +118,7 @@
                 </div>
 
                 <section class="chat-container text-mode active">
-                  <div class="media-previews" id="media-previews">
+                  <!-- <div class="media-previews" id="media-previews">
                     <div id="video-container" class="media-preview">
                       <video id="preview" playsinline webkit-playsinline autoplay muted></video>
                       <div class="video-controls">
@@ -130,7 +130,7 @@
                       <video id="screen-preview-element" playsinline webkit-playsinline autoplay muted></video>
                       <button id="stop-screen-button" class="close-button material-symbols-outlined">close</button>
                     </div>
-                  </div>
+                  </div> -->
                   
                   <div class="message-history" id="message-history">
                     <!-- 聊天消息动态插入 -->
@@ -143,7 +143,7 @@
                         <button id="send-button" class="send-button material-symbols-outlined">send</button>
                         <!-- 新增：聊天模式下的语音输入按钮 -->
                         <button id="chat-voice-input-button" class="action-button material-symbols-outlined">mic</button>
-                        <button id="interrupt-button" class="action-button">||</button>
+                        <button id="interrupt-button" class="action-button" style="display: none;">||</button>
                     </div>
                     
                 </section>
