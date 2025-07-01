@@ -1,7 +1,7 @@
 export const CONFIG = {
     API: {
         VERSION: 'v1alpha',
-        MODEL_NAME: 'models/gemini-2.0-flash-exp', // 保持默认模型，但实际选择将由 UI 控制
+        MODEL_NAME: 'models/gemini-2.5-flash-preview-05-20', // 保持默认模型，但实际选择将由 UI 控制
         AVAILABLE_MODELS: [
             {
                 name: 'models/gemini-2.0-flash-exp',
