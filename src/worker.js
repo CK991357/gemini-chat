@@ -98,9 +98,14 @@ export default {
     }
     
     // 添加 API 请求处理
+    if (url.pathname === '/api/translate') {
+      return handleTranslationRequest(request, env);
+    }
+
     if (url.pathname.endsWith("/chat/completions") ||
         url.pathname.endsWith("/embeddings") ||
-        url.pathname.endsWith("/models")) {
+        url.pathname.endsWith("/models") ||
+        url.pathname === '/api/request') {
       return handleAPIRequest(request, env);
     }
 
@@ -273,19 +278,13 @@ async function handleAPIRequest(request, env) {
             const body = await clonedRequest.json();
             const model = body.model || '';
 
-            // 路由到翻译请求处理器
-            if (model.includes('deepseek') || model.includes('GLM') || model.includes('Qwen') || model.includes('gemini-2.5-flash-lite')) {
-                console.log(`DEBUG: Routing to translation handler for model: ${model}`);
-                // 注意：因为 body 已经被读取，我们需要用原始请求的克隆版本重新创建一个请求
-                const newRequest = new Request(request.url, {
-                    method: request.method,
-                    headers: request.headers,
-                    body: JSON.stringify(body)
-                });
-                return handleTranslationRequest(newRequest, env);
-            }
             // 路由到新的聊天/搜索请求处理器
-            else if (model === 'models/gemini-2.5-flash-preview-05-20') {
+            if (
+                model === 'models/gemini-2.5-flash-preview-05-20' ||
+                model === 'models/gemini-2.5-flash-lite-preview-06-17' ||
+                model === 'models/gemini-2.5-pro' ||
+                model === 'models/gemini-2.0-flash'
+            ) {
                 console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
                 const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
                 const apiKey = env.GEMINI_CHAT_API_KEY;

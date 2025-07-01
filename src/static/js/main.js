@@ -2537,11 +2537,11 @@ async function handleTranslation() {
       `你是一个专业的翻译助手，请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
       `你是一个专业的翻译助手，请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
     
-    const response = await fetch('/api/chat/completions', {
+    const response = await fetch('/api/translate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Authorization 头部现在由后端 worker.js 根据模型动态添加
+        // Authorization 头部由后端 worker.js 在 handleTranslationRequest 中处理
       },
       body: JSON.stringify({
         model: model,

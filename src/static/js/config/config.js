@@ -4,14 +4,29 @@ export const CONFIG = {
         MODEL_NAME: 'models/gemini-2.5-flash-preview-05-20', // 保持默认模型，但实际选择将由 UI 控制
         AVAILABLE_MODELS: [
             {
-                name: 'models/gemini-2.0-flash-exp',
-                displayName: 'gemini-2.0-flash-exp (WebSocket)',
-                isWebSocket: true
-            },
-            {
                 name: 'models/gemini-2.5-flash-preview-05-20',
                 displayName: 'gemini-2.5-flash-preview-05-20 (HTTP)',
                 isWebSocket: false
+            },
+            {
+                name: 'models/gemini-2.5-flash-lite-preview-06-17',
+                displayName: 'gemini-2.5-flash-lite-preview-06-17 (HTTP)',
+                isWebSocket: false
+            },
+            {
+                name: 'models/gemini-2.5-pro',
+                displayName: 'gemini-2.5-pro (HTTP)',
+                isWebSocket: false
+            },
+            {
+                name: 'models/gemini-2.0-flash',
+                displayName: 'gemini-2.0-flash (HTTP)',
+                isWebSocket: false
+            },
+            {
+                name: 'models/gemini-2.0-flash-exp',
+                displayName: 'gemini-2.0-flash-exp (WebSocket)',
+                isWebSocket: true
             },
         ]
     },
