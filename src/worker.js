@@ -266,43 +266,72 @@ async function handleWebSocket(request, env) {
 }
 
 async function handleAPIRequest(request, env) {
-    console.log('DEBUG: Entering handleAPIRequest'); // 新增日志
     const clonedRequest = request.clone();
-    console.log('DEBUG: Request cloned. URL:', clonedRequest.url, 'Method:', clonedRequest.method, 'Content-Type:', clonedRequest.headers.get('content-type')); // 新增日志
     try {
-        // 如果是翻译请求，直接处理
-        if (clonedRequest.url.includes('/api/chat/completions') &&
-            clonedRequest.method === 'POST' &&
-            clonedRequest.headers.get('content-type') === 'application/json') {
-            
-            console.log('DEBUG: Attempting to parse JSON body for translation/proxy routing.'); // 新增日志
+        // 仅当请求是 POST 且包含 JSON 体时才尝试解析
+        if (clonedRequest.method === 'POST' && clonedRequest.headers.get('content-type')?.includes('application/json')) {
             const body = await clonedRequest.json();
-            console.log('DEBUG: JSON body parsed. Model:', body.model); // 新增日志
-            // 重新读取请求体，因为 request.json() 会消耗掉它
-            const newRequest = new Request(clonedRequest.url, {
-                method: clonedRequest.method,
-                headers: clonedRequest.headers,
-                body: JSON.stringify(body)
-            });
+            const model = body.model || '';
 
-            if (body.model && (body.model.includes('deepseek') || body.model.includes('GLM') || body.model.includes('Qwen') || body.model.includes('gemini-2.5-flash-lite'))) {
-                console.log('DEBUG: Routing to handleTranslationRequest.'); // 新增日志
+            // 路由到翻译请求处理器
+            if (model.includes('deepseek') || model.includes('GLM') || model.includes('Qwen') || model.includes('gemini-2.5-flash-lite')) {
+                console.log(`DEBUG: Routing to translation handler for model: ${model}`);
+                // 注意：因为 body 已经被读取，我们需要用原始请求的克隆版本重新创建一个请求
+                const newRequest = new Request(request.url, {
+                    method: request.method,
+                    headers: request.headers,
+                    body: JSON.stringify(body)
+                });
                 return handleTranslationRequest(newRequest, env);
             }
+            // 路由到新的聊天/搜索请求处理器
+            else if (model === 'models/gemini-2.5-flash-preview-05-20') {
+                console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
+                const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
+                const apiKey = env.GEMINI_CHAT_API_KEY;
+
+                if (!apiKey) {
+                    throw new Error('GEMINI_CHAT_API_KEY is not configured in environment variables.');
+                }
+
+                // 直接将请求体转发到中转端点
+                const proxyResponse = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                // 将中转端点的响应（包括流）直接返回给客户端
+                return new Response(proxyResponse.body, {
+                    status: proxyResponse.status,
+                    statusText: proxyResponse.statusText,
+                    headers: {
+                        'Content-Type': proxyResponse.headers.get('Content-Type'),
+                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                    }
+                });
+            }
         }
-        
-        console.log('DEBUG: Routing to api_proxy/worker.mjs.'); // 新增日志
-        // 其他请求按原方式处理，这里传递原始的 request
-        const worker = await import('./api_proxy/worker.mjs');
-        return await worker.default.fetch(request, env);
+
+        // 如果没有匹配的路由，返回错误或默认行为
+        // 由于 api_proxy/worker.mjs 将被移除，这里不再需要调用它
+        return new Response('API route not found or invalid request.', {
+            status: 404,
+            headers: { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }
+        });
+
     } catch (error) {
-        console.error('API request error caught in handleAPIRequest:', error); // 改进错误日志
+        console.error('API request error in handleAPIRequest:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         const errorStatus = error.status || 500;
-        return new Response(errorMessage, {
+        return new Response(JSON.stringify({ error: errorMessage }), {
             status: errorStatus,
             headers: {
-                'content-type': 'text/plain;charset=UTF-8',
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
             }
         });
     }
