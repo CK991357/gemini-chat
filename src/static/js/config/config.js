@@ -68,12 +68,12 @@ The report should include the following core sections:
     TRANSLATION: {
         MODELS: [
             {
-                name: 'gemini-2.5-flash-lite-preview-06-17',
-                displayName: 'gemini-2.5-flash-lite-preview-06-17'
-            },
-            {
                 name: 'gemini-2.0-flash',
                 displayName: 'gemini-2.0-flash'
+            },
+            {
+                name: 'gemini-2.5-flash-lite-preview-06-17',
+                displayName: 'gemini-2.5-flash-lite-preview-06-17'
             },
             {
                 name: 'THUDM/GLM-4-9B-0414',
@@ -97,7 +97,7 @@ The report should include the following core sections:
         ],
         DEFAULT_INPUT_LANG: 'auto',
         DEFAULT_OUTPUT_LANG: 'en',
-        DEFAULT_MODEL: 'gemini-2.5-flash-lite-preview-06-17'
+        DEFAULT_MODEL: 'gemini-2.0-flash'
     },
     // If you are working in the RoArm branch
     // ROARM: {
