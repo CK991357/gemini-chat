@@ -297,7 +297,7 @@ body {
     flex-direction: column; /* 内部使用 flex 布局 */
     position: relative; /* 确保内部元素可以相对定位 */
     min-height: 0; /* 关键修复：允许内部内容滚动 */
-    display: flex; /* 确保是 flex 容器 */
+    /* display: flex;  移除重复且错误的样式 */
 }
 
 /* 翻译功能区样式 */
@@ -1192,7 +1192,7 @@ body {
     }
 
     .message {
-        padding: 0 15px; /* 为消息本身添加水平内边距，增加左右间距 */
+        /* padding: 0 15px; */ /* 移除此内边距，它导致消息在移动端显示不正确 */
         max-width: 85%;   /* 调整最大宽度 */
     }
     .text-mode #message-input {
