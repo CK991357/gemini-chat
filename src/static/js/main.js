@@ -66,16 +66,20 @@ const videoPreviewContainer = document.getElementById('video-container'); // 对
 const videoPreviewElement = document.getElementById('preview'); // 对应 video-manager.js 中的 preview
 const stopScreenButton = document.getElementById('stop-screen-button');
 
+// 附件相关 DOM 元素
+const attachmentButton = document.getElementById('attachment-button');
+const fileInput = document.getElementById('file-input');
+
+
+// 附件预览 DOM 元素
+const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
+
 // 翻译模式相关 DOM 元素
 const translationVoiceInputButton = document.getElementById('translation-voice-input-button'); // 新增
 const translationInputTextarea = document.getElementById('translation-input-text'); // 新增
 // 新增：聊天模式语音输入相关 DOM 元素
 const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 
-// 新增：附件相关 DOM 元素
-const attachmentButton = document.getElementById('attachment-button');
-const fileInput = document.getElementById('file-input');
-const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
@@ -223,6 +227,13 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.style.overflow = '';
         }
     });
+
+   // 附件按钮事件监听 (只绑定一次)
+   attachmentButton.addEventListener('click', () => fileInput.click());
+   fileInput.addEventListener('change', handleFileAttachment);
+
+   // 初始化翻译功能
+   initTranslation();
 });
 
 // State variables
@@ -346,49 +357,6 @@ function logMessage(message, type = 'system', messageType = 'text') {
     logsContainer.appendChild(rawLogEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
 
-    // AI 文本消息写入 messageHistory
-    if (type === 'ai' && messageType === 'text') {
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', type);
-
-        const avatarDiv = document.createElement('div');
-        avatarDiv.classList.add('avatar');
-        avatarDiv.textContent = '🤖';
-
-        const contentDiv = document.createElement('div');
-        contentDiv.classList.add('content');
-        
-        // 使用marked解析Markdown
-        contentDiv.innerHTML = marked.parse(message);
-        
-        // 添加复制按钮
-        const copyButton = document.createElement('button');
-        copyButton.classList.add('copy-button', 'material-symbols-outlined');
-        copyButton.textContent = 'content_copy';
-        copyButton.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(message);
-            copyButton.textContent = 'check';
-            setTimeout(() => {
-              copyButton.textContent = 'content_copy';
-            }, 2000);
-          } catch (err) {
-            console.error('复制失败:', err);
-          }
-        });
-        
-        contentDiv.appendChild(copyButton);
-        messageDiv.appendChild(avatarDiv);
-        messageDiv.appendChild(contentDiv);
-        messageHistory.appendChild(messageDiv);
-        
-        // 触发 MathJax 渲染
-        if (typeof MathJax !== 'undefined') {
-            MathJax.typesetPromise([contentDiv]).catch((err) => console.error('MathJax typesetting failed:', err));
-        }
-        
-        scrollToBottom();
-    }
 }
 
 /**
@@ -883,9 +851,6 @@ function disconnectFromWebsocket() {
 /**
  * Handles sending a text message.
  */
-/**
- * Handles sending a text message.
- */
 async function handleSendMessage() {
     const message = messageInput.value.trim();
     // 如果没有文本消息，但有附件，也允许发送
@@ -918,26 +883,24 @@ async function handleSendMessage() {
                 logMessage(`新会话开始，ID: ${currentSessionId}`, 'system');
             }
 
-            // 构建消息内容，支持多模态
-            const userParts = [];
+            // 构建消息内容，参考 OCR 项目的成功实践
+            const userContent = [];
             if (message) {
-                userParts.push({ type: 'text', text: message });
+                userContent.push({ type: 'text', text: message });
             }
             if (attachedFile) {
-                // Gemini API v1beta 需要 inline_data 格式
-                // 从 data URL 中提取 Base64 数据
-                const base64Data = attachedFile.base64.split(',')[1];
-                userParts.push({
-                    inline_data: {
-                        mime_type: attachedFile.mimeType,
-                        data: base64Data
+                // 参考项目使用 image_url 并传递完整的 Data URL
+                userContent.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: attachedFile.base64
                     }
                 });
             }
 
             chatHistory.push({
                 role: 'user',
-                parts: userParts
+                content: userContent // 保持为数组，因为可能包含文本和图片
             });
 
             // 清除附件（发送后）
@@ -1123,7 +1086,7 @@ client.on('interrupted', () => {
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
         chatHistory.push({
             role: 'assistant',
-            content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
         });
     }
     currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
@@ -1148,7 +1111,7 @@ client.on('turncomplete', () => {
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
         chatHistory.push({
             role: 'assistant',
-            content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
         });
     }
     currentAIMessageContentDiv = null; // 重置
@@ -1276,7 +1239,7 @@ async function processHttpStream(requestBody, apiKey) {
             if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
                 chatHistory.push({
                     role: 'assistant',
-                    content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
                 });
             }
             currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
@@ -1291,7 +1254,7 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将模型调用工具添加到 chatHistory
                 chatHistory.push({
                     role: 'assistant', // 模型角色
-                    // 注意：这里直接使用 parts 数组，因为 transformMessages 会处理 tool_calls
+                    // 恢复使用 parts 数组以匹配参考代码
                     parts: [{
                         functionCall: {
                             name: currentFunctionCall.name,
@@ -1303,11 +1266,11 @@ async function processHttpStream(requestBody, apiKey) {
                 // 将工具响应添加到 chatHistory
                 chatHistory.push({
                     role: 'tool', // 工具角色
-                    // 注意：这里直接使用 parts 数组，因为 transformMessages 会处理 functionResponse
+                    // 恢复使用 parts 数组
                     parts: [{
                         functionResponse: {
                             name: currentFunctionCall.name,
-                            response: toolResponsePart // 直接传递对象，而不是 JSON 字符串
+                            response: toolResponsePart
                         }
                     }]
                 });
@@ -1341,7 +1304,7 @@ async function processHttpStream(requestBody, apiKey) {
                     parts: [{
                         functionResponse: {
                             name: currentFunctionCall.name,
-                            response: { error: toolError.message } // 直接传递对象
+                            response: { error: toolError.message }
                         }
                     }]
                 });
@@ -1360,7 +1323,7 @@ async function processHttpStream(requestBody, apiKey) {
             if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
                 chatHistory.push({
                     role: 'assistant',
-                    content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
                 });
             }
             currentAIMessageContentDiv = null; // 重置
@@ -1406,7 +1369,7 @@ function handleInterruptPlayback() {
         if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
             chatHistory.push({
                 role: 'assistant',
-                content: [{ type: 'text', text: currentAIMessageContentDiv.rawMarkdownBuffer }]
+                content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
             });
         }
         currentAIMessageContentDiv = null; // 重置
@@ -1951,10 +1914,6 @@ document.addEventListener('DOMContentLoaded', () => {
      * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
      * @returns {void}
      */
-    newChatButton.addEventListener('click', () => {
-        // location.reload(); // 刷新页面
-    });
-
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {
         // 仅在非 message-history 区域阻止缩放行为
@@ -2018,9 +1977,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
-
-    // 初始化翻译功能
-    initTranslation();
 
 /**
  * 检测当前设备是否为移动设备。
@@ -2720,68 +2676,75 @@ export function showSystemMessage(message) {
 
 /**
  * @function handleFileAttachment
- * @description 处理文件选择事件，读取文件、验证并显示预览。
- * @param {Event} event - 文件输入框的 change 事件对象。
+ * @description 处理文件选择事件，读取文件并根据类型进行处理。
+ * @param {Event} event - 文件输入变化事件。
+ * @returns {Promise<void>}
  */
 async function handleFileAttachment(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    // 验证文件类型
+    // 检查文件类型和大小
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
     if (!allowedTypes.includes(file.type)) {
-        showSystemMessage(`不支持的文件类型: ${file.type}。请选择 JPG, PNG, WEBP 或 PDF。`);
+        showSystemMessage(`不支持的文件类型: ${file.type}。请选择图片或PDF。`);
+        return;
+    }
+    if (file.size > 4 * 1024 * 1024) { // 4MB 大小限制
+        showSystemMessage('文件大小不能超过 4MB。');
         return;
     }
 
-    // 清除之前的附件
-    clearAttachedFile();
+    try {
+        let base64String;
+        let mimeType;
 
-    if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            attachedFile = {
-                base64: e.target.result,
-                mimeType: file.type,
-                name: file.name
-            };
-            displayFilePreview({ type: 'image', src: e.target.result, name: file.name });
-        };
-        reader.readAsDataURL(file);
-    } else if (file.type === 'application/pdf') {
-        try {
-            const fileReader = new FileReader();
-            fileReader.onload = async (e) => {
-                const typedarray = new Uint8Array(e.target.result);
-                const pdf = await pdfjsLib.getDocument(typedarray).promise;
-                const page = await pdf.getPage(1); // 获取第一页
-                const viewport = page.getViewport({ scale: 1.5 });
+        if (file.type === 'application/pdf') {
+            // 使用 pdf.js 处理 PDF
+            const pdfjsLib = window['pdfjs-dist/build/pdf'];
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
 
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const page = await pdf.getPage(1); // 只处理第一页
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
 
-                await page.render({ canvasContext: context, viewport: viewport }).promise;
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-                const imageBase64 = canvas.toDataURL('image/jpeg'); // 将PDF页面转换为图片
-                attachedFile = {
-                    base64: imageBase64,
-                    mimeType: 'image/jpeg', // 发送给API的类型是图片
-                    name: file.name
-                };
-                displayFilePreview({ type: 'canvas', canvas: canvas, name: file.name });
-            };
-            fileReader.readAsArrayBuffer(file);
-        } catch (error) {
-            console.error('PDF 渲染失败:', error);
-            showSystemMessage(`处理 PDF 文件失败: ${error.message}`);
-            clearAttachedFile();
+            base64String = canvas.toDataURL('image/jpeg');
+            mimeType = 'image/jpeg';
+        } else {
+            // 处理图片文件
+            const reader = new FileReader();
+            base64String = await new Promise((resolve, reject) => {
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+            mimeType = file.type;
         }
-    }
 
-    // 清空 file input 的值，以便用户可以再次选择同一个文件
-    fileInput.value = '';
+        attachedFile = {
+            name: file.name,
+            type: mimeType,
+            base64: base64String
+        };
+
+        displayFilePreview({ type: 'image', src: base64String, name: file.name }); // 统一使用 image 类型和 base64
+        showToast(`文件已附加: ${file.name}`);
+
+    } catch (error) {
+        console.error('处理文件时出错:', error);
+        showSystemMessage(`处理文件失败: ${error.message}`);
+        removeAttachedFile();
+    } finally {
+        // 重置 file input 以便可以再次选择同一个文件
+        event.target.value = '';
+    }
 }
 
 /**
@@ -2829,6 +2792,3 @@ function clearAttachedFile() {
 }
 
 
-// 附件按钮事件监听
-attachmentButton.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', handleFileAttachment);
