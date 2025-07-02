@@ -291,13 +291,13 @@ body {
 /* 聊天容器 */
 .chat-container {
     display: none; /* 默认隐藏 */
-    padding: 20px 30px; /* 增加左右内边距 */
+    padding: 20px;
     height: 100%;
     box-sizing: border-box;
-    flex-direction: column;
-    position: relative;
-    min-height: 0;
-    /* 移除冲突的 display: flex; */
+    flex-direction: column; /* 内部使用 flex 布局 */
+    position: relative; /* 确保内部元素可以相对定位 */
+    min-height: 0; /* 关键修复：允许内部内容滚动 */
+    /* display: flex;  移除重复且错误的样式 */
 }
 
 /* 翻译功能区样式 */
@@ -315,15 +315,6 @@ body {
 
 .translation-container.active {
     display: flex;
-}
-
-/* 当翻译模式激活时隐藏聊天区 */
-.translation-container.active ~ .chat-container {
-    display: none !important; /* 使用 !important 确保覆盖其他样式 */
-}
-/* 当聊天模式激活时隐藏翻译区 */
-.chat-container.active ~ .translation-container {
-    display: none !important;
 }
 
 .translation-input-area,
@@ -572,18 +563,16 @@ body {
     display: flex;
     align-items: flex-start;
     margin-bottom: 15px; /* 保持底部间距 */
-    max-width: 90%; /* 适当减小最大宽度，留出更多空白 */
+    max-width: 85%; /* 调整最大宽度，留出更多空白 */
 }
 
 .message.user {
     flex-direction: row-reverse;
     margin-left: auto; /* 靠右对齐 */
-    padding-right: 10px; /* 增加用户消息右侧内边距，使其整体左移 */
 }
 
 .message.ai {
     margin-right: auto; /* 靠左对齐 */
-    padding-left: 10px; /* 增加AI消息左侧内边距，使其整体左移 */
 }
 
 .message .avatar {
@@ -595,7 +584,7 @@ body {
     justify-content: center;
     font-size: 18px;
     flex-shrink: 0;
-    margin: 0 15px; /* 增加头像左右外边距 */
+    margin: 0 10px;
     background-color: var(--primary-color);
     color: white;
 }
@@ -650,7 +639,7 @@ body {
     background-color: var(--primary-color);
     color: white;
     border-radius: 18px;
-    padding: 10px 15px 10px 20px; /* 调整用户消息内容内边距 */
+    padding: 12px 12px 12px 20px; /* 调整右侧内边距，使其向左移动 */
 }
 
 .message.ai .content {
@@ -658,7 +647,6 @@ body {
     border-radius: 18px; /* 新增：确保圆形 */
     /* border-bottom-left-radius: 4px; */ /* 删除：恢复圆形 */
     margin-top: 5px; /* 新增：使消息顶部与头像中线对齐 */
-    padding: 10px 20px 10px 15px; /* 调整AI消息内容内边距 */
 }
 
 /* 语音消息内容样式 */
@@ -1194,10 +1182,9 @@ body {
         padding: 15px;
     }
     .message .avatar {
-        width: 30px; /* 减小头像大小 */
+        width: 30px;
         height: 30px;
         font-size: 16px;
-        margin: 0 10px; /* 移动端头像间距 */
     }
     .message .content {
         padding: 10px 15px;
@@ -1205,8 +1192,8 @@ body {
     }
 
     .message {
-        max-width: 95%; /* 移动端更宽 */
-        padding: 0; /* 移除消息本身的padding，由chat-container控制 */
+        padding: 0 5px; /* 为消息本身添加水平内边距，增加左右间距 */
+        max-width: 85%;   /* 调整最大宽度 */
     }
     .text-mode #message-input {
         padding: 10px;
