@@ -311,6 +311,34 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
+            } else if (model === 'glm-4v-plus') {
+                console.log(`DEBUG: Routing to Zhipu chat proxy for model: ${model}`);
+                const targetUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+                const apiKey = env.ZHIPUAI_API_KEY;
+
+                if (!apiKey) {
+                    throw new Error('ZHIPUAI_API_KEY is not configured in environment variables.');
+                }
+
+                // 直接将请求体转发到中转端点
+                const proxyResponse = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                // 将中转端点的响应（包括流）直接返回给客户端
+                return new Response(proxyResponse.body, {
+                    status: proxyResponse.status,
+                    statusText: proxyResponse.statusText,
+                    headers: {
+                        'Content-Type': proxyResponse.headers.get('Content-Type'),
+                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                    }
+                });
             }
         }
 

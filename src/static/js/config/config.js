@@ -23,6 +23,12 @@ export const CONFIG = {
                 displayName: 'gemini-2.0-flash (HTTP)',
                 isWebSocket: false
             },
+            {
+                name: 'glm-4v-plus',
+                displayName: 'GLM-4.1V-Thinking-Flash (Zhipu Vision)',
+                isWebSocket: false,
+                isZhipu: true
+            },
         ]
     },
     // You can change the system instruction to your liking

@@ -46,6 +46,7 @@
                 <h1 class="app-title">Gemini Chat</h1>
                 <button id="translation-mode-button" class="mode-button material-symbols-outlined">translate</button>
                 <button id="chat-mode-button" class="mode-button material-symbols-outlined active">chat</button>
+                <button id="vision-mode-button" class="mode-button material-symbols-outlined">camera_enhance</button>
             </div>
             <div class="nav-tools">
                 <button id="new-chat-button" class="material-symbols-outlined">add_box</button>
@@ -196,6 +197,31 @@
                         </div>
                         <div id="translation-output-text" class="translation-output-display"></div>
                         <button id="translation-copy-button" class="copy-button material-symbols-outlined">content_copy</button>
+                    </div>
+                </section>
+
+                <!-- 视觉模型功能区 -->
+                <section class="vision-container">
+                    <div class="vision-output-area">
+                        <div class="vision-reasoning-box">
+                            <h4>思考过程</h4>
+                            <div id="vision-reasoning-content" class="markdown-body"></div>
+                        </div>
+                        <div class="vision-final-answer-box">
+                            <h4>最终答案</h4>
+                            <div id="vision-final-answer" class="markdown-body"></div>
+                        </div>
+                    </div>
+                    <div class="vision-input-area">
+                        <div class="file-attachment-previews" id="vision-attachment-previews">
+                            <!-- 视觉模型附件预览 -->
+                        </div>
+                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="2"></textarea>
+                        <div class="vision-action-buttons">
+                            <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                            <input type="file" id="vision-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
+                            <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
+                        </div>
                     </div>
                 </section>
 

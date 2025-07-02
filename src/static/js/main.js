@@ -80,6 +80,17 @@ const translationInputTextarea = document.getElementById('translation-input-text
 // 新增：聊天模式语音输入相关 DOM 元素
 const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 
+// 视觉模型相关 DOM 元素
+const visionModeBtn = document.getElementById('vision-mode-button');
+const visionContainer = document.querySelector('.vision-container');
+const visionReasoningContent = document.getElementById('vision-reasoning-content');
+const visionFinalAnswer = document.getElementById('vision-final-answer');
+const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
+const visionInputText = document.getElementById('vision-input-text');
+const visionAttachmentButton = document.getElementById('vision-attachment-button');
+const visionFileInput = document.getElementById('vision-file-input');
+const visionSendButton = document.getElementById('vision-send-button');
+
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
@@ -232,9 +243,14 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.addEventListener('change', handleFileAttachment);
 
+   // 视觉模型附件按钮事件监听
+   visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
+   visionFileInput.addEventListener('change', handleVisionFileAttachment);
+   visionSendButton.addEventListener('click', handleSendVisionMessage);
+ 
    // 初始化翻译功能
    initTranslation();
-});
+ });
 
 // State variables
 let isRecording = false;
@@ -267,6 +283,7 @@ let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let attachedFile = null; // 新增：用于存储待发送的附件信息
+let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -2085,6 +2102,7 @@ function initTranslation() {
   translationModeBtn.addEventListener('click', () => {
     translationContainer.classList.add('active');
     chatContainer.classList.remove('active');
+    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
     logContainer.classList.remove('active'); // 隐藏日志容器
     
     // 隐藏聊天模式特有的元素
@@ -2093,6 +2111,7 @@ function initTranslation() {
 
     translationModeBtn.classList.add('active');
     chatModeBtn.classList.remove('active');
+    if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
     
     // 确保停止所有媒体流
     if (videoManager) stopVideo();
@@ -2106,6 +2125,7 @@ function initTranslation() {
   chatModeBtn.addEventListener('click', () => {
     translationContainer.classList.remove('active');
     chatContainer.classList.add('active');
+    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
     logContainer.classList.remove('active'); // 确保日志容器在聊天模式下也隐藏
     
     // 恢复聊天模式特有的元素显示
@@ -2114,6 +2134,7 @@ function initTranslation() {
 
     translationModeBtn.classList.remove('active');
     chatModeBtn.classList.add('active');
+    if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
     // 聊天模式下隐藏翻译语音输入按钮
     if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
     // 聊天模式下显示聊天语音输入按钮
@@ -2124,6 +2145,7 @@ function initTranslation() {
   document.getElementById('toggle-log').addEventListener('click', () => {
     translationContainer.classList.remove('active');
     chatContainer.classList.remove('active');
+    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
     logContainer.classList.add('active');
     
     // 隐藏聊天模式特有的元素
@@ -2132,6 +2154,7 @@ function initTranslation() {
 
     translationModeBtn.classList.remove('active');
     chatModeBtn.classList.remove('active'); // 确保聊天按钮也取消激活
+    if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
     // 媒体流停止
     if (videoManager) stopVideo();
     if (screenRecorder) stopScreenSharing();
@@ -2141,6 +2164,30 @@ function initTranslation() {
     // 日志模式下隐藏聊天语音输入按钮
     if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
   });
+
+  // 新增：视觉模式切换事件
+  if (visionModeBtn) {
+    visionModeBtn.addEventListener('click', () => {
+      if (visionContainer) visionContainer.classList.add('active');
+      translationContainer.classList.remove('active');
+      chatContainer.classList.remove('active');
+      logContainer.classList.remove('active');
+
+      // 隐藏其他模式的特定UI
+      if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
+      if (inputArea) inputArea.style.display = 'none';
+      if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
+      if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
+
+      visionModeBtn.classList.add('active');
+      translationModeBtn.classList.remove('active');
+      chatModeBtn.classList.remove('active');
+
+      // 确保停止所有媒体流
+      if (videoManager) stopVideo();
+      if (screenRecorder) stopScreenSharing();
+    });
+  }
 
   // 翻译模式语音输入按钮事件监听
   if (translationVoiceInputButton) {
@@ -2792,3 +2839,195 @@ function clearAttachedFile() {
 }
 
 
+
+/**
+ * @function handleVisionFileAttachment
+ * @description 处理视觉模型的文件附件选择事件。
+ * 读取用户选择的文件，生成预览，并将其存储在 visionAttachedFiles 数组中。
+ *
+ * @param {Event} event - 文件输入元素触发的 change 事件对象。
+ */
+function handleVisionFileAttachment(event) {
+  const files = event.target.files;
+  if (!files) return;
+
+  for (const file of files) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64String = e.target.result;
+      const fileData = {
+        name: file.name,
+        type: file.type,
+        data: base64String,
+      };
+      visionAttachedFiles.push(fileData);
+      const previewElement = createVisionAttachmentPreview(fileData, visionAttachedFiles.length - 1);
+      visionAttachmentPreviews.appendChild(previewElement);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // 清空 file input 的值，以便用户可以重复上传同一个文件
+  event.target.value = '';
+}
+
+/**
+ * @function createVisionAttachmentPreview
+ * @description 为给定的附件文件创建一个预览 DOM 元素。
+ * 预览元素包含文件名和一个移除按钮。
+ *
+ * @param {object} fileData - 包含文件信息（名称、类型、数据）的对象。
+ * @param {number} index - 文件在 visionAttachedFiles 数组中的索引。
+ * @returns {HTMLElement} - 创建的预览 div 元素。
+ */
+function createVisionAttachmentPreview(fileData, index) {
+  const preview = document.createElement('div');
+  preview.classList.add('attachment-preview');
+  preview.dataset.index = index;
+
+  const fileName = document.createElement('span');
+  fileName.textContent = fileData.name;
+  preview.appendChild(fileName);
+
+  const removeButton = document.createElement('button');
+  removeButton.textContent = '×';
+  removeButton.onclick = () => removeVisionAttachment(index);
+  preview.appendChild(removeButton);
+
+  return preview;
+}
+
+/**
+ * @function removeVisionAttachment
+ * @description 从附件列表和预览中移除一个文件。
+ *
+ * @param {number} indexToRemove - 要移除的文件在 visionAttachedFiles 数组中的索引。
+ */
+function removeVisionAttachment(indexToRemove) {
+  // 从数组中移除
+  visionAttachedFiles.splice(indexToRemove, 1);
+  
+  // 从 DOM 中移除预览
+  const previewToRemove = visionAttachmentPreviews.querySelector(`.attachment-preview[data-index='${indexToRemove}']`);
+  if (previewToRemove) {
+    visionAttachmentPreviews.removeChild(previewToRemove);
+  }
+
+  // 更新剩余预览元素的索引
+  const remainingPreviews = visionAttachmentPreviews.querySelectorAll('.attachment-preview');
+  remainingPreviews.forEach((preview, newIndex) => {
+    const oldIndex = parseInt(preview.dataset.index);
+    if (oldIndex > indexToRemove) {
+      preview.dataset.index = newIndex;
+      // 更新移除按钮的 onclick 事件
+      const removeButton = preview.querySelector('button');
+      removeButton.onclick = () => removeVisionAttachment(newIndex);
+    }
+  });
+}
+
+
+/**
+ * @function handleSendVisionMessage
+ * @description 发送消息到视觉模型。
+ * 构建请求体，调用 API，并处理和显示返回的结果。
+ */
+async function handleSendVisionMessage() {
+  const text = visionInputText.value.trim();
+  if (!text && visionAttachedFiles.length === 0) {
+    showToast('请输入文本或添加附件。');
+    return;
+  }
+
+  const selectedModel = document.getElementById('model-select').value;
+  if (selectedModel !== 'glm-4v-plus') {
+      showToast('请在左侧设置中选择 GLM-4.1V-Thinking-Flash 模型。');
+      return;
+  }
+
+  // 清空之前的输出
+  visionReasoningContent.innerHTML = '';
+  visionFinalAnswer.innerHTML = '';
+
+  // 显示加载状态
+  visionSendButton.disabled = true;
+  visionSendButton.textContent = '思考中...';
+  
+  const thinkingHeader = document.createElement('h3');
+  thinkingHeader.textContent = '🤔 思考过程';
+  visionReasoningContent.appendChild(thinkingHeader);
+  const thinkingPre = document.createElement('pre');
+  thinkingPre.textContent = '正在请求模型...';
+  visionReasoningContent.appendChild(thinkingPre);
+
+  const answerHeader = document.createElement('h3');
+  answerHeader.textContent = '✅ 最终答案';
+  visionFinalAnswer.appendChild(answerHeader);
+  const answerPre = document.createElement('pre');
+  visionFinalAnswer.appendChild(answerPre);
+
+
+  try {
+    const content = [];
+    if (text) {
+      content.push({ type: 'text', text: text });
+    }
+    visionAttachedFiles.forEach(file => {
+      // Zhipu API 需要 `image_url` 字段，其值为一个包含 url 的对象
+      content.push({ type: 'image_url', image_url: { url: file.data } });
+    });
+
+    const messages = [{ role: 'user', content: content }];
+
+    const response = await fetch('/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: messages,
+        // Zhipu API 可能需要 stream: false，或者在 worker 中处理
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'API 请求失败');
+    }
+
+    const result = await response.json();
+    
+    // 假设返回的数据结构为 { reasoning_content: "...", content: "..." }
+    // 根据 worker.js 的实现，它直接代理了智谱的返回
+    // 智谱的返回在 choices[0].message.tool_calls[0].thought.outputs[0].content 中
+    // 和 choices[0].message.content 中
+    const thought = result.choices?.[0]?.message?.tool_calls?.[0]?.thought?.outputs?.[0]?.content;
+    const finalContent = result.choices?.[0]?.message?.content;
+
+    if (thought) {
+        thinkingPre.textContent = thought;
+    } else {
+        thinkingPre.textContent = '模型未提供思考过程。';
+    }
+
+    if (finalContent) {
+        answerPre.textContent = finalContent;
+    } else {
+        answerPre.textContent = '模型未提供最终答案。';
+    }
+
+  } catch (error) {
+    console.error('Error sending vision message:', error);
+    showToast(`发生错误: ${error.message}`);
+    thinkingPre.textContent = '请求失败。';
+    answerPre.textContent = `错误详情: ${error.message}`;
+  } finally {
+    // 清理输入
+    visionInputText.value = '';
+    visionAttachedFiles = [];
+    visionAttachmentPreviews.innerHTML = '';
+
+    // 恢复按钮状态
+    visionSendButton.disabled = false;
+    visionSendButton.textContent = '发送';
+  }
+}
