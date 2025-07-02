@@ -1212,7 +1212,7 @@ body {
     }
     .text-mode #interrupt-button, /* 暂停按钮 */
     .text-mode #attachment-button, /* 附件按钮 */
-    #chat-voice-input-button { /* 聊天语音输入按钮 */
+    .chat-voice-input-button { /* 聊天语音输入按钮 */
         width: 30px; /* 调整为与发送按钮一致 */
         height: 30px; /* 调整为与发送按钮一致 */
         font-size: 14px; /* 稍微调小字体大小 */
