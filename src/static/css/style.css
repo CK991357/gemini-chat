@@ -574,7 +574,7 @@ body {
 
 .message.ai {
     margin-right: auto; /* 靠左对齐 */
-    margin-left: 2px;  /* 新增：为AI消息提供左边距 */
+    margin-left: 5px;  /* 新增：为AI消息提供左边距 */
 }
 
 .message .avatar {
@@ -1204,24 +1204,31 @@ body {
         padding: 10px;
         font-size: 14px;
     }
-    .text-mode #send-button,
-    .text-mode #attachment-button,
-    #chat-voice-input-button {
-        width: 40px;
-        height: 40px;
-        font-size: 20px;
-    }
-    .text-mode #interrupt-button {
-        width: 40px;
-        height: 40px;
-        font-size: 20px;
+    /* 移动端输入区按钮统一大小 */
+    .text-mode .input-area .action-button,
+    .text-mode .input-area .send-button {
+        width: 40px; /* 统一宽度 */
+        height: 40px; /* 统一高度 */
+        font-size: 20px; /* 统一图标大小 */
+        padding: 0;
+        margin: 0;
+        border-radius: 8px; /* 轻微调整圆角 */
     }
 
     .text-mode .input-area {
-        padding-left: -15px;
-        padding-right: -15px;
-        gap: 5px; /* 调整按钮间距以适应新按钮 */
-        flex-wrap: nowrap; /* 防止换行 */
+        align-items: flex-end; /* 垂直底部对齐 */
+        gap: 8px; /* 调整输入框和按钮组的间距 */
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+
+    /* 新增：输入区按钮网格布局 */
+    .input-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr; /* 两列 */
+        grid-template-rows: 1fr 1fr; /* 两行 */
+        gap: 5px; /* 按钮之间的间距 */
+        flex-shrink: 0;
     }
     .audio-mode .media-display-area {
         grid-template-columns: 1fr;
