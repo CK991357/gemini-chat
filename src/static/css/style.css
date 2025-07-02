@@ -574,7 +574,7 @@ body {
 
 .message.ai {
     margin-right: auto; /* 靠左对齐 */
-    margin-left: 10px;  /* 新增：为AI消息提供左边距 */
+    margin-left: 5px;  /* 新增：为AI消息提供左边距 */
 }
 
 .message .avatar {
@@ -775,7 +775,7 @@ body {
     padding-top: 15px;
     border-top: 1px solid var(--border-color);
     background-color: var(--surface-color);
-    padding: 15px 20px;
+    padding: 15px 40px;
     box-sizing: border-box;
     position: sticky;
     bottom: 0;
