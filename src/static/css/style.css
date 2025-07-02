@@ -1204,24 +1204,24 @@ body {
         padding: 10px;
         font-size: 14px;
     }
-    .text-mode #send-button,
-    .text-mode #interrupt-button { /* 将发送和暂停按钮合并 */
+    .text-mode #send-button { /* 发送按钮单独设置 */
         width: 32px;
         height: 32px;
         font-size: 16px;
         border-radius: 8px; /* 确保是圆角矩形 */
     }
-    .text-mode #attachment-button,
-    #chat-voice-input-button { /* 将附件和语音输入按钮合并 */
-        width: 28px;
-        height: 28px;
-        font-size: 14px;
-        border-radius: 50%; /* 确保是圆形 */
+    .text-mode #interrupt-button, /* 暂停按钮 */
+    .text-mode #attachment-button, /* 附件按钮 */
+    #chat-voice-input-button { /* 聊天语音输入按钮 */
+        width: 30px; /* 调整为与发送按钮一致 */
+        height: 30px; /* 调整为与发送按钮一致 */
+        font-size: 14px; /* 稍微调小字体大小 */
+        border-radius: 8px; /* 确保是圆角矩形 */
     }
 
     .text-mode .input-area {
-        padding-left: -15px;
-        padding-right: -15px;
+        padding-left: 10px; /* 调整左侧内边距，使其整体向左移动 */
+        padding-right: 10px; /* 调整右侧内边距 */
         gap: 5px; /* 调整按钮间距以适应新按钮 */
         flex-wrap: nowrap; /* 防止换行 */
     }
