@@ -72,6 +72,11 @@ const translationInputTextarea = document.getElementById('translation-input-text
 // 新增：聊天模式语音输入相关 DOM 元素
 const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 
+// 新增：附件相关 DOM 元素
+const attachmentButton = document.getElementById('attachment-button');
+const fileInput = document.getElementById('file-input');
+const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
+
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
@@ -250,6 +255,7 @@ let chatAudioRecorder = null; // 聊天模式下的 AudioRecorder 实例
 let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
+let attachedFile = null; // 新增：用于存储待发送的附件信息
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -340,14 +346,14 @@ function logMessage(message, type = 'system', messageType = 'text') {
     logsContainer.appendChild(rawLogEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
 
-    // 聊天消息写入 messageHistory (仅当 messageType 为 'text' 时)
-    if ((type === 'user' || type === 'ai') && messageType === 'text') {
+    // AI 文本消息写入 messageHistory
+    if (type === 'ai' && messageType === 'text') {
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message', type);
 
         const avatarDiv = document.createElement('div');
         avatarDiv.classList.add('avatar');
-        avatarDiv.textContent = type === 'user' ? '👤' : '🤖';
+        avatarDiv.textContent = '🤖';
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
@@ -377,13 +383,55 @@ function logMessage(message, type = 'system', messageType = 'text') {
         messageHistory.appendChild(messageDiv);
         
         // 触发 MathJax 渲染
-        // MathJax 应该在 marked.parse 之后立即触发，因为它处理的是 HTML 内容
         if (typeof MathJax !== 'undefined') {
             MathJax.typesetPromise([contentDiv]).catch((err) => console.error('MathJax typesetting failed:', err));
         }
         
         scrollToBottom();
     }
+}
+
+/**
+ * 在聊天历史中显示用户的多模态消息。
+ * @param {string} text - 文本消息内容。
+ * @param {object|null} file - 附加的文件对象，包含 base64 等信息。
+ */
+function displayUserMessage(text, file) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'user');
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '👤';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+
+    // 如果有文本，则添加文本内容
+    if (text) {
+        const textNode = document.createElement('p');
+        // 为了安全，纯文本使用 textContent
+        textNode.textContent = text;
+        contentDiv.appendChild(textNode);
+    }
+
+    // 如果有文件，则添加图片预览
+    if (file && file.base64) {
+        const img = document.createElement('img');
+        img.src = file.base64;
+        img.alt = file.name || 'Attached Image';
+        img.style.maxWidth = '200px';
+        img.style.maxHeight = '200px';
+        img.style.borderRadius = '8px';
+        img.style.marginTop = text ? '10px' : '0';
+        contentDiv.appendChild(img);
+    }
+
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    messageHistory.appendChild(messageDiv);
+
+    scrollToBottom();
 }
 
 /**
@@ -840,39 +888,62 @@ function disconnectFromWebsocket() {
  */
 async function handleSendMessage() {
     const message = messageInput.value.trim();
-    if (!message) return;
+    // 如果没有文本消息，但有附件，也允许发送
+    if (!message && !attachedFile) return;
 
-    logMessage(message, 'user');
+    // 使用新的函数显示用户消息
+    displayUserMessage(message, attachedFile);
     messageInput.value = ''; // 清空输入框
 
     // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
     currentAIMessageContentDiv = null;
 
     if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式下的逻辑保持不变
+        // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
+        if (attachedFile) {
+            showSystemMessage('实时模式尚不支持文件上传。');
+            clearAttachedFile(); // 清除附件
+            return;
+        }
         client.send({ text: message });
     } else {
-        // HTTP 模式下发送消息 (针对纯文本模型，但支持工具调用)
+        // HTTP 模式下发送消息
         try {
             const apiKey = apiKeyInput.value;
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
 
-            // 为 HTTP 模式维护聊天历史
             if (!currentSessionId) {
-                currentSessionId = generateUniqueSessionId(); // 生成新的会话ID
+                currentSessionId = generateUniqueSessionId();
                 logMessage(`新会话开始，ID: ${currentSessionId}`, 'system');
             }
-            // 将用户消息添加到聊天历史
+
+            // 构建消息内容，支持多模态
+            const userParts = [];
+            if (message) {
+                userParts.push({ type: 'text', text: message });
+            }
+            if (attachedFile) {
+                // Gemini API 需要 data URL 格式
+                userParts.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: attachedFile.base64, // 直接使用存储的 base64 data url
+                    },
+                });
+            }
+
             chatHistory.push({
                 role: 'user',
-                content: [{ type: 'text', text: message }] // 使用 content 数组格式
+                parts: userParts // *** 修正：使用 parts 字段 ***
             });
 
-            // 初始请求体
-            let initialRequestBody = {
+            // 清除附件（发送后）
+            clearAttachedFile();
+
+            let requestBody = {
                 model: modelName,
-                messages: chatHistory, // 使用完整的聊天历史
+                messages: chatHistory,
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -882,19 +953,18 @@ async function handleSendMessage() {
                     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
                 ],
-                enableGoogleSearch: true, // 添加此行以启用Google搜索
+                enableGoogleSearch: true,
                 stream: true,
-                sessionId: currentSessionId // 添加会话ID
+                sessionId: currentSessionId
             };
 
             if (systemInstruction) {
-                initialRequestBody.systemInstruction = {
+                requestBody.systemInstruction = {
                     parts: [{ text: systemInstruction }]
                 };
             }
 
-            // 调用辅助函数处理 HTTP 流和工具调用
-            await processHttpStream(initialRequestBody, apiKey);
+            await processHttpStream(requestBody, apiKey);
 
         } catch (error) {
             Logger.error('发送 HTTP 消息失败:', error);
@@ -1540,6 +1610,11 @@ function updateConnectionStatus() {
             btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
         }
     });
+    
+    // 附件按钮仅在 HTTP 模式下可用
+    if (attachmentButton) {
+        attachmentButton.disabled = !isConnected || selectedModelConfig.isWebSocket;
+    }
 }
 
 updateConnectionStatus(); // 初始更新连接状态
@@ -2634,3 +2709,124 @@ export function showSystemMessage(message) {
     messageHistory.appendChild(messageDiv);
     scrollToBottom();
 }
+
+/**
+ * ----------------------------------------------------------------
+ * 附件处理相关函数
+ * ----------------------------------------------------------------
+ */
+
+/**
+ * @function handleFileAttachment
+ * @description 处理文件选择事件，读取文件、验证并显示预览。
+ * @param {Event} event - 文件输入框的 change 事件对象。
+ */
+async function handleFileAttachment(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // 验证文件类型
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+        showSystemMessage(`不支持的文件类型: ${file.type}。请选择 JPG, PNG, WEBP 或 PDF。`);
+        return;
+    }
+
+    // 清除之前的附件
+    clearAttachedFile();
+
+    if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            attachedFile = {
+                base64: e.target.result,
+                mimeType: file.type,
+                name: file.name
+            };
+            displayFilePreview({ type: 'image', src: e.target.result, name: file.name });
+        };
+        reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+        try {
+            const fileReader = new FileReader();
+            fileReader.onload = async (e) => {
+                const typedarray = new Uint8Array(e.target.result);
+                const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                const page = await pdf.getPage(1); // 获取第一页
+                const viewport = page.getViewport({ scale: 1.5 });
+
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+                const imageBase64 = canvas.toDataURL('image/jpeg'); // 将PDF页面转换为图片
+                attachedFile = {
+                    base64: imageBase64,
+                    mimeType: 'image/jpeg', // 发送给API的类型是图片
+                    name: file.name
+                };
+                displayFilePreview({ type: 'canvas', canvas: canvas, name: file.name });
+            };
+            fileReader.readAsArrayBuffer(file);
+        } catch (error) {
+            console.error('PDF 渲染失败:', error);
+            showSystemMessage(`处理 PDF 文件失败: ${error.message}`);
+            clearAttachedFile();
+        }
+    }
+
+    // 清空 file input 的值，以便用户可以再次选择同一个文件
+    fileInput.value = '';
+}
+
+/**
+ * @function displayFilePreview
+ * @description 在预览区域显示选定文件的预览。
+ * @param {object} options - 预览选项。
+ * @param {string} options.type - 预览类型 ('image' 或 'canvas')。
+ * @param {string} [options.src] - 图像的 Base64 数据 URL (如果 type 是 'image')。
+ * @param {HTMLCanvasElement} [options.canvas] - Canvas 元素 (如果 type 是 'canvas')。
+ * @param {string} options.name - 文件名。
+ */
+function displayFilePreview({ type, src, canvas, name }) {
+    const previewCard = document.createElement('div');
+    previewCard.className = 'file-preview-card';
+    previewCard.title = name;
+
+    let previewElement;
+    if (type === 'image') {
+        previewElement = document.createElement('img');
+        previewElement.src = src;
+        previewElement.alt = name;
+    } else if (type === 'canvas') {
+        previewElement = canvas;
+    }
+
+    const closeButton = document.createElement('button');
+    closeButton.className = 'close-button material-symbols-outlined';
+    closeButton.textContent = 'close';
+    closeButton.onclick = () => {
+        clearAttachedFile();
+    };
+
+    previewCard.appendChild(previewElement);
+    previewCard.appendChild(closeButton);
+    fileAttachmentPreviews.appendChild(previewCard);
+}
+
+/**
+ * @function clearAttachedFile
+ * @description 清除已附加的文件状态和预览。
+ */
+function clearAttachedFile() {
+    attachedFile = null;
+    fileAttachmentPreviews.innerHTML = '';
+}
+
+
+// 附件按钮事件监听
+attachmentButton.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', handleFileAttachment);

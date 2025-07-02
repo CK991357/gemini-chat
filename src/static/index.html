@@ -30,6 +30,12 @@
     <!-- 引入 highlight.js 用于代码高亮 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark-dimmed.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <!-- 新增：引入 pdf.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script>
+        // 设置 pdf.js worker 的路径
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
+    </script>
 </head>
 <body>
     <div id="toast-container"></div>
@@ -135,15 +141,23 @@
                   <div class="message-history" id="message-history">
                     <!-- 聊天消息动态插入 -->
                   </div>
+
+                  <!-- 新增：文件附件预览容器 -->
+                  <div class="file-attachment-previews" id="file-attachment-previews">
+                      <!-- 附件预览将动态插入此处 -->
+                  </div>
                   
                   <!-- 输入区域保持不变 -->
 
                     <div class="input-area">
                         <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
+                        <!-- 新增：附件按钮 -->
+                        <button id="attachment-button" class="action-button material-symbols-outlined">attach_file</button>
                         <button id="send-button" class="send-button material-symbols-outlined">send</button>
                         <!-- 新增：聊天模式下的语音输入按钮 -->
                         <button id="chat-voice-input-button" class="action-button material-symbols-outlined">mic</button>
                         <button id="interrupt-button" class="action-button">||</button>
+                        <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,application/pdf" style="display: none;">
                     </div>
                     
                 </section>
