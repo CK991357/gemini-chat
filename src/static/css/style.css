@@ -839,22 +839,24 @@ body {
 
 /* 新增：附件按钮样式 */
 #attachment-button {
-    background-color: transparent;
+    background-color: var(--primary-color);
+    color: white;
     border: none;
-    color: var(--text-secondary-color);
-    font-size: 24px;
-    cursor: pointer;
-    transition: color 0.3s ease, transform 0.2s ease;
-    padding: 12px; /* 增加点击区域 */
-    border-radius: 50%;
+    border-radius: 50%; /* 改为圆形 */
+    width: 48px; /* 确保是圆形 */
+    height: 48px; /* 确保是圆形 */
     display: flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    font-size: 24px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    flex-shrink: 0; /* 防止被压缩 */
 }
 
 #attachment-button:hover {
-    color: var(--primary-color);
-    background-color: rgba(var(--primary-color-rgb), 0.1);
+    background-color: var(--secondary-color);
+    transform: scale(1.05);
 }
 
 /* 新增：文件附件预览容器样式 */
@@ -1197,7 +1199,9 @@ body {
         padding: 10px;
         font-size: 14px;
     }
-    .text-mode #send-button {
+    .text-mode #send-button,
+    .text-mode #attachment-button,
+    #chat-voice-input-button {
         width: 40px;
         height: 40px;
         font-size: 20px;
@@ -1209,9 +1213,10 @@ body {
     }
 
     .text-mode .input-area {
-        padding-left: 2px;
-        padding-right: 2px;
-        gap: 2px;
+        padding-left: 5px;
+        padding-right: 5px;
+        gap: 5px; /* 调整按钮间距以适应新按钮 */
+        flex-wrap: nowrap; /* 防止换行 */
     }
     .audio-mode .media-display-area {
         grid-template-columns: 1fr;

@@ -924,18 +924,20 @@ async function handleSendMessage() {
                 userParts.push({ type: 'text', text: message });
             }
             if (attachedFile) {
-                // Gemini API 需要 data URL 格式
+                // Gemini API v1beta 需要 inline_data 格式
+                // 从 data URL 中提取 Base64 数据
+                const base64Data = attachedFile.base64.split(',')[1];
                 userParts.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: attachedFile.base64, // 直接使用存储的 base64 data url
-                    },
+                    inline_data: {
+                        mime_type: attachedFile.mimeType,
+                        data: base64Data
+                    }
                 });
             }
 
             chatHistory.push({
                 role: 'user',
-                parts: userParts // *** 修正：使用 parts 字段 ***
+                parts: userParts
             });
 
             // 清除附件（发送后）
