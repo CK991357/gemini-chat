@@ -1052,19 +1052,35 @@ function createAIMessageElement() {
     };
 }
 
+/**
+ * @function renderContent
+ * @description 渲染包含 Markdown、代码和数学公式的内容到指定的 DOM 元素。
+ * @param {string} content - 要渲染的原始 Markdown 字符串。
+ * @param {HTMLElement} targetElement - 用于显示渲染后 HTML 的目标 DOM 元素。
+ */
+function renderContent(content, targetElement) {
+    if (!targetElement) return;
+    
+    // 使用 marked.js 解析 Markdown
+    targetElement.innerHTML = marked.parse(content);
+    
+    // 触发 MathJax (KaTeX) 渲染数学公式
+    if (typeof MathJax !== 'undefined') {
+        MathJax.typesetPromise([targetElement]).catch((err) => console.error('MathJax typesetting failed:', err));
+    }
+}
+
 client.on('content', (data) => {
     if (data.modelTurn) {
         if (data.modelTurn.parts.some(part => part.functionCall)) {
             isUsingTool = true;
             Logger.info('Model is using a tool');
-            // 在工具调用前，确保当前 AI 消息完成
             if (currentAIMessageContentDiv) {
-                currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
+                currentAIMessageContentDiv = null;
             }
         } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
             isUsingTool = false;
             Logger.info('Tool usage completed');
-            // 工具响应后，如果需要，可以立即创建一个新的 AI 消息块来显示后续文本
             if (!currentAIMessageContentDiv) {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
@@ -1077,18 +1093,11 @@ client.on('content', (data) => {
                 currentAIMessageContentDiv = createAIMessageElement();
             }
             
-            // 追加文本到原始Markdown缓冲区
             currentAIMessageContentDiv.rawMarkdownBuffer += text;
             
-            // 渲染Markdown并高亮代码
-            // 注意：marked.js 已经集成了 highlight.js，所以不需要单独调用 hljs.highlightElement
-            // 立即更新 innerHTML，确保实时渲染
-            currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
+            // 调用新的渲染函数
+            renderContent(currentAIMessageContentDiv.rawMarkdownBuffer, currentAIMessageContentDiv.markdownContainer);
             
-            // 触发 MathJax 渲染
-            if (typeof MathJax !== 'undefined') {
-                MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
             scrollToBottom();
         }
     }
@@ -1229,12 +1238,8 @@ async function processHttpStream(requestBody, apiKey) {
                                         }
                                         // 追加到原始Markdown缓冲区
                                         currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                        // 立即渲染Markdown
-                                        currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
-                                        // 触发 MathJax 渲染
-                                        if (typeof MathJax !== 'undefined') {
-                                            MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
-                                        }
+                                        // 调用新的渲染函数
+                                        renderContent(currentAIMessageContentDiv.rawMarkdownBuffer, currentAIMessageContentDiv.markdownContainer);
                                         scrollToBottom();
                                     }
                                 }
