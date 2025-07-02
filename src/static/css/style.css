@@ -1676,10 +1676,3 @@ body.dark-mode {
         font-size: 20px;
     }
 }
-
-/* 视觉模式输出区域自动换行 */
-.vision-container .output-area pre {
-  white-space: pre-wrap;       /* 标准 CSS */
-  word-wrap: break-word;       /* 兼容旧版浏览器 */
-  word-break: break-all;       /* 强制在任意字符间换行，处理长字符串 */
-}
