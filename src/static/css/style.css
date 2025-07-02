@@ -569,7 +569,7 @@ body {
 .message.user {
     flex-direction: row-reverse;
     margin-left: auto; /* 靠右对齐 */
-    margin-right: 20px; /* 新增：为用户消息提供右边距，防止头像被遮挡 */
+    margin-right: 30px; /* 新增：为用户消息提供右边距，防止头像被遮挡 */
 }
 
 .message.ai {
