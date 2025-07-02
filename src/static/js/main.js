@@ -2996,21 +2996,24 @@ async function handleSendVisionMessage() {
 
     const result = await response.json();
     
-    // 假设返回的数据结构为 { reasoning_content: "...", content: "..." }
-    // 根据 worker.js 的实现，它直接代理了智谱的返回
-    // 智谱的返回在 choices[0].message.tool_calls[0].thought.outputs[0].content 中
-    // 和 choices[0].message.content 中
-    const thought = result.choices?.[0]?.message?.tool_calls?.[0]?.thought?.outputs?.[0]?.content;
+    // 根据官方文档，从正确的位置解析思考过程和最终答案
+    const reasoningContent = result.choices?.[0]?.message?.reasoning_content;
     const finalContent = result.choices?.[0]?.message?.content;
 
-    if (thought) {
-        thinkingPre.textContent = thought;
+    // 清空 pre 标签的默认文本
+    thinkingPre.textContent = '';
+    answerPre.textContent = '';
+
+    if (reasoningContent) {
+        // 复用现有的 renderContent 函数进行渲染
+        renderContent(reasoningContent, thinkingPre);
     } else {
         thinkingPre.textContent = '模型未提供思考过程。';
     }
 
     if (finalContent) {
-        answerPre.textContent = finalContent;
+        // 复用现有的 renderContent 函数进行渲染
+        renderContent(finalContent, answerPre);
     } else {
         answerPre.textContent = '模型未提供最终答案。';
     }

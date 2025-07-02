@@ -1681,4 +1681,5 @@ body.dark-mode {
 .vision-container .output-area pre {
   white-space: pre-wrap;       /* 标准 CSS */
   word-wrap: break-word;       /* 兼容旧版浏览器 */
+  word-break: break-all;       /* 强制在任意字符间换行，处理长字符串 */
 }
