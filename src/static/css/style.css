@@ -1224,6 +1224,17 @@ body {
         height: 48px;
         font-size: 24px;
     }
+
+    /* 新增：移动端文件附件预览样式 */
+    .file-attachment-previews {
+        padding: 0 15px 10px; /* 调整内边距 */
+        max-height: 90px; /* 减小最大高度 */
+    }
+
+    .file-preview-card {
+        width: 80px; /* 减小卡片尺寸 */
+        height: 80px;
+    }
 }
 
 .text-mode .input-area {
