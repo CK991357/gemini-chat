@@ -568,11 +568,13 @@ body {
 
 .message.user {
     flex-direction: row-reverse;
-    margin-left: auto; /* 靠右对齐 */
+    align-self: flex-end; /* 使用 align-self 实现更可靠的右对齐 */
+    /* margin-left: auto; */ /* 移除，改用 align-self */
 }
 
 .message.ai {
-    margin-right: auto; /* 靠左对齐 */
+    align-self: flex-start; /* 使用 align-self 实现左对齐 */
+    /* margin-right: auto; */ /* 移除，改用 align-self */
 }
 
 .message .avatar {
