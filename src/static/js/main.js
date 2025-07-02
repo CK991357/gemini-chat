@@ -2951,7 +2951,7 @@ async function handleSendVisionMessage() {
 
   // 显示加载状态
   visionSendButton.disabled = true;
-  visionSendButton.textContent = '思考中...';
+  visionSendButton.textContent = 'progress_activity'; // 使用加载图标
   
   const thinkingHeader = document.createElement('h3');
   thinkingHeader.textContent = '🤔 思考过程';
@@ -3028,6 +3028,6 @@ async function handleSendVisionMessage() {
 
     // 恢复按钮状态
     visionSendButton.disabled = false;
-    visionSendButton.textContent = '发送';
+    visionSendButton.textContent = 'send'; // 恢复发送图标
   }
 }
