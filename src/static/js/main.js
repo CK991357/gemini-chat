@@ -2968,12 +2968,8 @@ async function handleSendVisionMessage() {
                             fullResponse += data.choices[0].delta.content;
                             markdownContainer.innerHTML = marked.parse(fullResponse);
                             // Typeset MathJax on each update
-                            if (typeof MathJax !== 'undefined') {
-                                if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                   MathJax.startup.promise.then(() => {
-                                       MathJax.typeset([markdownContainer]);
-                                   }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                }
+                            if (typeof MathJax !== 'undefined' && MathJax.typeset) {
+                                MathJax.typeset([markdownContainer]);
                             }
                         }
                     } catch (e) {
