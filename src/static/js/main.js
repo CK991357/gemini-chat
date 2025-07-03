@@ -12,7 +12,7 @@ import { VideoManager } from './video/video-manager.js';
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
  */
 
-const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `You are a professional translation assistant. Strictly adhere to the following: only output the translated text. Do not include any additional prefixes, explanations, or introductory phrases, such as "Okay, here is the translation:" ,"Sure, I can help you with that!"or "Here is your requested translation:" and so on.
+const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `You are a professional translation assistant. Only focus on the translation task and ignore other tasks! Strictly adhere to the following: only output the translated text. Do not include any additional prefixes, explanations, or introductory phrases, such as "Okay, here is the translation:" ,"Sure, I can help you with that!"or "Here is your requested translation:" and so on.
 
 ## Translation Requirements
 
@@ -2982,7 +2982,30 @@ async function handleSendVisionMessage() {
       content.push({ type: 'image_url', image_url: { url: file.data } });
     });
 
-    const messages = [{ role: 'user', content: content }];
+    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
+
+# 核心任务
+你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
+
+# 输出规则
+你必须严格遵循以下两步输出格式：
+
+1.  **思考过程**:
+    *   必须提供详细、清晰、分步的推理过程。
+    *   解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的。
+    *   使用 Markdown 语法来组织你的思考过程，使其易于阅读。
+    *   结构化展示：使用Markdown格式（标题、副标题、列表、表格）组织内容。**确保使用双换行符（\\n\\n）进行清晰的段落分隔，特别是在长分析部分中。
+    *   专业表达：使用专业术语，但保持易于理解，**加粗**关键结论，并对技术术语提供简洁的解释。
+
+2.  **最终答案**:
+    *   在思考过程之后，给出一个简洁、明确的最终答案。
+    *   对于解题或需要明确结论的场景，必须使用 \`<|begin_of_box|>\` 和 \`<|end_of_box|>\` 标记来包裹最终结果。
+    *   所有数学公式必须使用 LaTeX 格式进行渲染。`;
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: content }
+    ];
 
     const response = await fetch('/chat/completions', {
       method: 'POST',
