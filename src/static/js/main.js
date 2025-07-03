@@ -2967,13 +2967,7 @@ async function handleSendVisionMessage() {
                         if (data.choices && data.choices[0]?.delta?.content) {
                             fullResponse += data.choices[0].delta.content;
                             markdownContainer.innerHTML = marked.parse(fullResponse);
-                            // Typeset MathJax on each update
-                            // Typeset MathJax on each update, ensuring the library is ready
-                            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                MathJax.startup.promise.then(() => {
-                                    MathJax.typeset([markdownContainer]);
-                                }).catch((err) => console.error('MathJax typesetting failed:', err));
-                            }
+                            // MathJax will be typeset once after the stream is complete.
                         }
                     } catch (e) {
                         console.error('Error parsing SSE chunk:', e, jsonStr);
@@ -2981,6 +2975,13 @@ async function handleSendVisionMessage() {
                 }
             });
              visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+        }
+
+        // After the stream is complete, typeset the final content once.
+        if (typeof MathJax !== 'undefined' && MathJax.startup) {
+            MathJax.startup.promise.then(() => {
+                MathJax.typeset([markdownContainer]);
+            }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
         
         // Add final AI response to history
