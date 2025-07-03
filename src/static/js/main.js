@@ -3084,3 +3084,24 @@ async function handleSendVisionMessage() {
     visionSendButton.textContent = 'send'; // 恢复发送图标
   }
 }
+
+/**
+ * @function initVision
+ * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
+ * @returns {void}
+ */
+function initVision() {
+    const visionModelSelect = document.getElementById('vision-model-select');
+    if (!visionModelSelect) return;
+
+    visionModelSelect.innerHTML = ''; // 清空现有选项
+    CONFIG.VISION.MODELS.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.name;
+        option.textContent = model.displayName;
+        if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
+            option.selected = true;
+        }
+        visionModelSelect.appendChild(option);
+    });
+}
