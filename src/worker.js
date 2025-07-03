@@ -311,7 +311,7 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-            } else if (model === 'glm-4.1v-thinking-flash' || model === 'glm-4.1v-thinking-flashx') { // 匹配智谱模型
+            } else if (model === 'glm-4v-plus') {
                 console.log(`DEBUG: Routing to Zhipu chat proxy for model: ${model}`);
                 const targetUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
                 const apiKey = env.ZHIPUAI_API_KEY;
@@ -327,10 +327,7 @@ async function handleAPIRequest(request, env) {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify({
-                        ...body,
-                        request_id: body.request_id || `req_${Date.now()}` // 添加请求ID
-                    })
+                    body: JSON.stringify(body)
                 });
 
                 // 将中转端点的响应（包括流）直接返回给客户端
