@@ -311,7 +311,7 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-            } else if (model === 'glm-4v-plus') {
+            } else if (model === 'glm-4.1v-thinking-flash' || model === 'glm-4v-flash') {
                 console.log(`DEBUG: Routing to Zhipu chat proxy for model: ${model}`);
                 const targetUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
                 const apiKey = env.ZHIPUAI_API_KEY;
@@ -335,7 +335,7 @@ async function handleAPIRequest(request, env) {
                     status: proxyResponse.status,
                     statusText: proxyResponse.statusText,
                     headers: {
-                        'Content-Type': proxyResponse.headers.get('Content-Type'),
+                        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });

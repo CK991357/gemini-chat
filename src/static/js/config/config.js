@@ -102,13 +102,17 @@ The report should include the following core sections:
     VISION: {
         MODELS: [
             {
-                name: 'glm-4v-plus',
-                displayName: 'GLM-4.1V-Thinking-Flash (Zhipu Vision)',
+                name: 'glm-4.1v-thinking-flash',
+                displayName: 'GLM-4.1V-Thinking-Flash',
+                isZhipu: true // 标记为智谱模型
+            },
+            {
+                name: 'glm-4v-flash',
+                displayName: 'GLM-4V-Flash',
                 isZhipu: true // 标记为智谱模型
             }
-            // 以后可以添加更多视觉模型
         ],
-        DEFAULT_MODEL: 'glm-4v-plus'
+        DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
     },
     // If you are working in the RoArm branch
     // ROARM: {
