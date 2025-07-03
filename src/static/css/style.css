@@ -1602,6 +1602,13 @@ body.dark-mode {
     white-space: pre-wrap;
 }
 
+/* 确保视觉区域内的 pre 标签也能正确换行 */
+#vision-reasoning-content pre,
+#vision-final-answer pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
 .vision-input-area {
     flex-shrink: 0;
     display: flex;

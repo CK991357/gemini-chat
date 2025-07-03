@@ -1089,7 +1089,7 @@ client.on('content', (data) => {
             
             // 触发 MathJax 渲染
             if (typeof MathJax !== 'undefined') {
-                MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
+                MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
             }
             scrollToBottom();
         }
@@ -1235,7 +1235,7 @@ async function processHttpStream(requestBody, apiKey) {
                                         currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
                                         // 触发 MathJax 渲染
                                         if (typeof MathJax !== 'undefined') {
-                                            MathJax.typesetPromise([currentAIMessageContentDiv.markdownContainer]).catch((err) => console.error('MathJax typesetting failed:', err));
+                                            MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
                                         }
                                         scrollToBottom();
                                     }
@@ -3051,7 +3051,7 @@ async function handleSendVisionMessage() {
 
         // 3. 触发 MathJax 渲染数学公式
         if (typeof MathJax !== 'undefined') {
-            MathJax.typesetPromise([answerPre]).catch((err) => console.error('MathJax typesetting failed for final answer:', err));
+            MathJax.typeset([answerPre]);
         }
     } else {
         answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>';
