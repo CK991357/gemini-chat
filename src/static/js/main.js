@@ -3027,22 +3027,46 @@ async function handleSendVisionMessage() {
     const result = await response.json();
     
     const message = result.choices?.[0]?.message;
-    // 提供默认值，确保即使API未返回对应字段，页面也能显示提示信息
-    const reasoningContent = message?.reasoning_content || '🤔 模型未提供思考过程。';
-    let finalContent = message?.content || '✅ 模型未提供最终答案。';
+    const rawContent = message?.content || '模型未返回有效内容。';
 
-    // 1. 预处理最终答案，将特殊的答案标记替换为可供CSS渲染的HTML标签
-    finalContent = finalContent
-        .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
-        .replace(/<\|end_of_box\|>/g, '</div>');
+    const boxStartTag = '<|begin_of_box|>';
+    const boxEndTag = '<|end_of_box|>';
 
-    // 2. 拼接思考过程和最终答案为一个完整的 Markdown 字符串
-    const fullOutput = `### 🤔 思考过程\n\n${reasoningContent}\n\n<hr>\n\n### ✅ 最终答案\n\n${finalContent}`;
+    const boxStartIndex = rawContent.indexOf(boxStartTag);
+    const boxEndIndex = rawContent.indexOf(boxEndTag);
 
-    // 3. 使用 marked.js 一次性渲染整个 Markdown 字符串
-    visionOutputContent.innerHTML = marked.parse(fullOutput);
+    let reasoningMarkdown = '';
+    let finalAnswerMarkdown = '';
 
-    // 4. 触发 MathJax 对新渲染的内容进行排版
+    // 根据标记分割推理过程和最终答案
+    if (boxStartIndex !== -1 && boxEndIndex !== -1 && boxStartIndex < boxEndIndex) {
+        reasoningMarkdown = rawContent.substring(0, boxStartIndex).trim();
+        finalAnswerMarkdown = rawContent.substring(boxStartIndex + boxStartTag.length, boxEndIndex).trim();
+    } else {
+        // 如果没有找到标记，则将全部内容视为推理过程
+        reasoningMarkdown = rawContent;
+        finalAnswerMarkdown = '模型未按预定格式提供可区分的最终答案。';
+    }
+
+    // 分别渲染推理过程和最终答案的 Markdown
+    const reasoningHtml = marked.parse(reasoningMarkdown);
+    const finalAnswerHtml = marked.parse(finalAnswerMarkdown);
+
+    // 组合最终的 HTML 输出
+    const fullOutputHtml = `
+        <h3>🤔 思考过程</h3>
+        ${reasoningHtml}
+        <hr>
+        <h3>✅ 最终答案</h3>
+        <div class="final-answer-box">
+            ${finalAnswerHtml}
+        </div>
+    `;
+
+    // 将渲染好的 HTML 设置到输出容器中
+    visionOutputContent.innerHTML = fullOutputHtml;
+
+    // 触发 MathJax 对新渲染的内容进行排版
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
         MathJax.startup.promise.then(() => {
             MathJax.typeset([visionOutputContent]);
