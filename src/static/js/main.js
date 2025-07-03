@@ -2980,19 +2980,20 @@ async function handleSendVisionMessage() {
 你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
 
 # 输出规则
-你必须严格遵循以下两步输出格式：
+你必须严格遵循以下两步输出格式，并且所有内容都必须使用 Markdown 语法进行格式化：
 
 1.  **思考过程**:
     *   必须提供详细、清晰、分步的推理过程。
     *   解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的。
-    *   使用 Markdown 语法来组织你的思考过程，使其易于阅读。
-    *   结构化展示：使用Markdown格式（标题、副标题、列表、表格）组织内容。**确保使用双换行符（\\n\\n）进行清晰的段落分隔，特别是在长分析部分中。
-    *   专业表达：使用专业术语，但保持易于理解，**加粗**关键结论，并对技术术语提供简洁的解释。
+    *   **必须**使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的思考过程，使其结构清晰、易于阅读。
+    *   对于复杂的分析，使用标题和子标题来划分不同的部分。
+    *   确保使用双换行符（\\n\\n）来创建段落，保证格式正确。
 
 2.  **最终答案**:
-    *   在思考过程之后，给出一个简洁、明确的最终答案。
-    *   对于解题或需要明确结论的场景，必须使用 \`<|begin_of_box|>\` 和 \`<|end_of_box|>\` 标记来包裹最终结果。
-    *   所有数学公式必须使用 LaTeX 格式进行渲染。`;
+    *   在思考过程之后，给出一个简洁、明确的最终答案。如果是数学，物理，化学等理科的习题请将题目用到的定义，定理，公式等知识点进行汇总。
+    *   **必须**使用 Markdown 语法来格式化最终答案。
+    *   对于需要明确标识的最终结果（如解题答案），请使用 \`<|begin_of_box|>\` 和 \`<|end_of_box|>\` 标记将其包裹。
+    *   所有数学公式**必须**使用 LaTeX 格式（例如，行内公式用 \`$...$\`，块级公式用 \`$$...$$\`）。`;
 
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -3016,21 +3017,22 @@ async function handleSendVisionMessage() {
     const result = await response.json();
     
     const message = result.choices?.[0]?.message;
+    // 提供默认值，确保即使API未返回对应字段，页面也能显示提示信息
     const reasoningContent = message?.reasoning_content || '🤔 模型未提供思考过程。';
     let finalContent = message?.content || '✅ 模型未提供最终答案。';
 
-    // 预处理最终答案
+    // 1. 预处理最终答案，将特殊的答案标记替换为可供CSS渲染的HTML标签
     finalContent = finalContent
         .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
         .replace(/<\|end_of_box\|>/g, '</div>');
 
-    // 拼接思考过程和最终答案
+    // 2. 拼接思考过程和最终答案为一个完整的 Markdown 字符串
     const fullOutput = `### 🤔 思考过程\n\n${reasoningContent}\n\n<hr>\n\n### ✅ 最终答案\n\n${finalContent}`;
 
-    // 渲染到统一的容器
+    // 3. 使用 marked.js 一次性渲染整个 Markdown 字符串
     visionOutputContent.innerHTML = marked.parse(fullOutput);
 
-    // 触发 MathJax 渲染
+    // 4. 触发 MathJax 对新渲染的内容进行排版
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
         MathJax.startup.promise.then(() => {
             MathJax.typeset([visionOutputContent]);
