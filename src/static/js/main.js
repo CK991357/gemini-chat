@@ -2954,31 +2954,20 @@ async function handleSendVisionMessage() {
   const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
 
   if (!selectedModelConfig || !selectedModelConfig.isZhipu) {
-      showToast('请选择一个有效的智谱视觉模型。');
-      return;
+    showToast('请选择一个有效的智谱视觉模型。');
+    return;
   }
 
-  // 清空之前的输出
-  visionReasoningContent.innerHTML = '';
-  visionFinalAnswer.innerHTML = '';
+  // 清空之前的输出并设置初始结构
+  visionReasoningContent.innerHTML = '<h3>🤔 思考过程</h3><pre>正在请求模型...</pre>';
+  visionFinalAnswer.innerHTML = '<h3>✅ 最终答案</h3><pre></pre>';
 
-  // 显示加载状态
+  const thinkingPre = visionReasoningContent.querySelector('pre');
+  const answerPre = visionFinalAnswer.querySelector('pre');
+
+  // 禁用按钮并显示加载状态
   visionSendButton.disabled = true;
-  visionSendButton.textContent = 'progress_activity'; // 使用加载图标
-  
-  const thinkingHeader = document.createElement('h3');
-  thinkingHeader.textContent = '🤔 思考过程';
-  visionReasoningContent.appendChild(thinkingHeader);
-  const thinkingPre = document.createElement('pre');
-  thinkingPre.textContent = '正在请求模型...';
-  visionReasoningContent.appendChild(thinkingPre);
-
-  const answerHeader = document.createElement('h3');
-  answerHeader.textContent = '✅ 最终答案';
-  visionFinalAnswer.appendChild(answerHeader);
-  const answerPre = document.createElement('pre');
-  visionFinalAnswer.appendChild(answerPre);
-
+  visionSendButton.textContent = 'progress_activity';
 
   try {
     const content = [];
@@ -2986,7 +2975,6 @@ async function handleSendVisionMessage() {
       content.push({ type: 'text', text: text });
     }
     visionAttachedFiles.forEach(file => {
-      // Zhipu API 需要 `image_url` 字段，其值为一个包含 url 的对象
       content.push({ type: 'image_url', image_url: { url: file.data } });
     });
 
@@ -3011,8 +2999,8 @@ async function handleSendVisionMessage() {
     *   所有数学公式必须使用 LaTeX 格式进行渲染。`;
 
     const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: content }
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: content }
     ];
 
     const response = await fetch('/chat/completions', {
@@ -3021,7 +3009,7 @@ async function handleSendVisionMessage() {
       body: JSON.stringify({
         model: selectedModel,
         messages: messages,
-        // Zhipu API 可能需要 stream: false，或者在 worker 中处理
+        stream: true, // 请求流式输出
       }),
     });
 
@@ -3030,43 +3018,66 @@ async function handleSendVisionMessage() {
       throw new Error(errorData.error?.message || 'API 请求失败');
     }
 
-    const result = await response.json();
-    
-    // 假设返回的数据结构为 { reasoning_content: "...", content: "..." }
-    // 根据 worker.js 的实现，它直接代理了智谱的返回
-    // 智谱的返回在 choices[0].message.tool_calls[0].thought.outputs[0].content 中
-    // 和 choices[0].message.content 中
-    // 从智谱 API 响应中提取思考过程和最终答案
-    const message = result.choices?.[0]?.message;
-    const reasoningContent = message?.reasoning_content;
-    const finalContent = message?.content;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let accumulatedContent = '';
+    thinkingPre.textContent = ''; // 清空“正在请求”的提示
 
-    if (reasoningContent) {
-        // 使用 marked.js 来渲染可能包含 Markdown 的思考过程
-        thinkingPre.innerHTML = marked.parse(reasoningContent);
-    } else {
-        thinkingPre.innerHTML = '<p>🤔 模型未提供思考过程。</p>'; // 使用 p 标签保持一致性
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      // 处理 SSE 数据块
+      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6);
+          if (jsonStr === '[DONE]') {
+            continue;
+          }
+          try {
+            const data = JSON.parse(jsonStr);
+            const delta = data.choices?.[0]?.delta?.content;
+            if (delta) {
+              accumulatedContent += delta;
+              
+              // 实时更新UI
+              const separator = '## 最终答案';
+              const separatorIndex = accumulatedContent.indexOf(separator);
+
+              let reasoningText = accumulatedContent;
+              let finalText = '';
+
+              if (separatorIndex !== -1) {
+                reasoningText = accumulatedContent.substring(0, separatorIndex).trim();
+                finalText = accumulatedContent.substring(separatorIndex + separator.length).trim();
+              }
+              
+              // 渲染思考过程
+              thinkingPre.innerHTML = marked.parse(reasoningText);
+
+              // 预处理并渲染最终答案
+              if (finalText) {
+                  let processedContent = finalText
+                      .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
+                      .replace(/<\|end_of_box\|>/g, '</div>');
+                  answerPre.innerHTML = marked.parse(processedContent);
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing SSE chunk:', e, jsonStr);
+          }
+        }
+      }
     }
 
-    if (finalContent) {
-        // 1. 预处理，将特殊的答案标记替换为可供CSS渲染的HTML标签
-        let processedContent = finalContent
-            .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
-            .replace(/<\|end_of_box\|>/g, '</div>');
-
-        // 2. 使用 marked.js 渲染Markdown
-        answerPre.innerHTML = marked.parse(processedContent);
-
-        // 3. 触发 MathJax 渲染数学公式
-        if (typeof MathJax !== 'undefined') {
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                MathJax.startup.promise.then(() => {
-                    MathJax.typeset([answerPre]);
-                }).catch((err) => console.error('MathJax typesetting failed for final answer:', err));
-            }
-        }
-    } else {
-        answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>';
+    // 流结束后，对两个容器统一进行 MathJax 渲染
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            // 同时渲染两个区域
+            MathJax.typeset([thinkingPre, answerPre]);
+        }).catch((err) => console.error('MathJax typesetting failed after stream:', err));
     }
 
   } catch (error) {
@@ -3082,7 +3093,7 @@ async function handleSendVisionMessage() {
 
     // 恢复按钮状态
     visionSendButton.disabled = false;
-    visionSendButton.textContent = 'send'; // 恢复发送图标
+    visionSendButton.textContent = 'send';
   }
 }
 
