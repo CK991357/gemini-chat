@@ -3005,19 +3005,23 @@ async function handleSendVisionMessage() {
     // 根据 worker.js 的实现，它直接代理了智谱的返回
     // 智谱的返回在 choices[0].message.tool_calls[0].thought.outputs[0].content 中
     // 和 choices[0].message.content 中
-    const thought = result.choices?.[0]?.message?.tool_calls?.[0]?.thought?.outputs?.[0]?.content;
-    const finalContent = result.choices?.[0]?.message?.content;
+    // 从智谱 API 响应中提取思考过程和最终答案
+    const message = result.choices?.[0]?.message;
+    const reasoningContent = message?.reasoning_content;
+    const finalContent = message?.content;
 
-    if (thought) {
-        thinkingPre.textContent = thought;
+    if (reasoningContent) {
+        // 使用 marked.js 来渲染可能包含 Markdown 的思考过程
+        thinkingPre.innerHTML = marked.parse(reasoningContent);
     } else {
-        thinkingPre.textContent = '模型未提供思考过程。';
+        thinkingPre.innerHTML = '<p>🤔 模型未提供思考过程。</p>'; // 使用 p 标签保持一致性
     }
 
     if (finalContent) {
-        answerPre.textContent = finalContent;
+        // 使用 marked.js 来渲染最终答案，以支持格式化
+        answerPre.innerHTML = marked.parse(finalContent);
     } else {
-        answerPre.textContent = '模型未提供最终答案。';
+        answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>'; // 使用 p 标签保持一致性
     }
 
   } catch (error) {
