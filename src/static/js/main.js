@@ -1089,7 +1089,11 @@ client.on('content', (data) => {
             
             // 触发 MathJax 渲染
             if (typeof MathJax !== 'undefined') {
-                MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
+                if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                    MathJax.startup.promise.then(() => {
+                        MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
+                    }).catch((err) => console.error('MathJax typesetting failed:', err));
+                }
             }
             scrollToBottom();
         }
@@ -1235,7 +1239,11 @@ async function processHttpStream(requestBody, apiKey) {
                                         currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
                                         // 触发 MathJax 渲染
                                         if (typeof MathJax !== 'undefined') {
-                                            MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
+                                            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                                               MathJax.startup.promise.then(() => {
+                                                   MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
+                                               }).catch((err) => console.error('MathJax typesetting failed:', err));
+                                            }
                                         }
                                         scrollToBottom();
                                     }
@@ -3051,7 +3059,11 @@ async function handleSendVisionMessage() {
 
         // 3. 触发 MathJax 渲染数学公式
         if (typeof MathJax !== 'undefined') {
-            MathJax.typeset([answerPre]);
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([answerPre]);
+                }).catch((err) => console.error('MathJax typesetting failed for final answer:', err));
+            }
         }
     } else {
         answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>';
