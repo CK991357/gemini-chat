@@ -250,7 +250,10 @@ document.addEventListener('DOMContentLoaded', () => {
  
    // 初始化翻译功能
    initTranslation();
- });
+   
+   // 初始化视觉模型选择下拉菜单
+   initVisionModelSelect();
+   });
 
 // State variables
 let isRecording = false;
@@ -2673,30 +2676,57 @@ function getLanguageName(code) {
  * @param {string} message - 要显示的消息。
  * @param {number} [duration=3000] - 显示时长（毫秒）。
  */
-export function showToast(message, duration = 3000) {
-    const container = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.className = 'toast-message';
-    toast.textContent = message;
-
-    container.appendChild(toast);
-
-    // 触发显示动画
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 10);
-
-    // 在指定时长后移除
-    setTimeout(() => {
-        toast.classList.remove('show');
-        // 在动画结束后从 DOM 中移除
-        toast.addEventListener('transitionend', () => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
+ export function showToast(message, duration = 3000) {
+     const container = document.getElementById('toast-container');
+     const toast = document.createElement('div');
+     toast.className = 'toast-message';
+     toast.textContent = message;
+ 
+     container.appendChild(toast);
+ 
+     // 触发显示动画
+     setTimeout(() => {
+         toast.classList.add('show');
+     }, 10);
+ 
+     // 在指定时长后移除
+     setTimeout(() => {
+         toast.classList.remove('show');
+         // 在动画结束后从 DOM 中移除
+         toast.addEventListener('transitionend', () => {
+             if (toast.parentNode) {
+                 toast.parentNode.removeChild(toast);
+             }
+         });
+     }, duration);
+ }
+ 
+ /**
+  * @function initCollapsibleReasoning
+  * @description 初始化思考过程区域的折叠功能。
+  * @returns {void}
+  */
+ function initCollapsibleReasoning() {
+    const toggleButton = document.getElementById('toggle-reasoning-button');
+    const reasoningContent = document.getElementById('vision-reasoning-content');
+ 
+    if (toggleButton && reasoningContent) {
+        toggleButton.addEventListener('click', () => {
+            reasoningContent.classList.toggle('expanded');
+            if (reasoningContent.classList.contains('expanded')) {
+                toggleButton.textContent = 'expand_less'; // 折叠图标
+            } else {
+                toggleButton.textContent = 'expand_more'; // 展开图标
             }
         });
-    }, duration);
-}
+    }
+ }
+ 
+ // 在 DOMContentLoaded 中调用
+ document.addEventListener('DOMContentLoaded', () => {
+    // ... 其他初始化代码 ...
+    initCollapsibleReasoning(); // 调用初始化函数
+ });
 
 /**
  * 在聊天记录区显示一条系统消息。
@@ -2939,12 +2969,8 @@ async function handleSendVisionMessage() {
     return;
   }
 
-  const selectedModel = document.getElementById('model-select').value;
-  if (selectedModel !== 'glm-4v-plus') {
-      showToast('请在左侧设置中选择 GLM-4.1V-Thinking-Flash 模型。');
-      return;
-  }
-
+  const selectedModel = selectedVisionModelConfig.name; // 从视觉功能区自己的下拉菜单获取模型
+  
   // 清空之前的输出
   visionReasoningContent.innerHTML = '';
   visionFinalAnswer.innerHTML = '';
@@ -2953,19 +2979,13 @@ async function handleSendVisionMessage() {
   visionSendButton.disabled = true;
   visionSendButton.textContent = 'progress_activity'; // 使用加载图标
   
-  const thinkingHeader = document.createElement('h3');
-  thinkingHeader.textContent = '🤔 思考过程';
-  visionReasoningContent.appendChild(thinkingHeader);
-  const thinkingPre = document.createElement('pre');
-  thinkingPre.textContent = '正在请求模型...';
-  visionReasoningContent.appendChild(thinkingPre);
+  // 获取思考过程和最终答案的显示元素
+  const thinkingContentDiv = document.getElementById('vision-reasoning-content');
+  const finalAnswerDiv = document.getElementById('vision-final-answer');
 
-  const answerHeader = document.createElement('h3');
-  answerHeader.textContent = '✅ 最终答案';
-  visionFinalAnswer.appendChild(answerHeader);
-  const answerPre = document.createElement('pre');
-  visionFinalAnswer.appendChild(answerPre);
-
+  // 初始显示加载信息
+  thinkingContentDiv.innerHTML = '<p>正在请求模型...</p>';
+  finalAnswerDiv.innerHTML = '<p>正在等待答案...</p>';
 
   try {
     const content = [];
@@ -2979,47 +2999,54 @@ async function handleSendVisionMessage() {
 
     const messages = [{ role: 'user', content: content }];
 
-    const response = await fetch('/chat/completions', {
+    const response = await fetch('/api/chat/completions', { // 使用 /api/chat/completions 代理
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKeyInput.value}` // 确保发送 API Key
+      },
       body: JSON.stringify({
         model: selectedModel,
         messages: messages,
-        // Zhipu API 可能需要 stream: false，或者在 worker 中处理
+        stream: false, // 智谱同步调用，不需要流式
+        request_id: `vision_req_${Date.now()}` // 添加唯一请求ID
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'API 请求失败');
+      throw new Error(errorData.error?.message || `API 请求失败: ${response.status}`);
     }
 
     const result = await response.json();
     
-    // 假设返回的数据结构为 { reasoning_content: "...", content: "..." }
-    // 根据 worker.js 的实现，它直接代理了智谱的返回
-    // 智谱的返回在 choices[0].message.tool_calls[0].thought.outputs[0].content 中
-    // 和 choices[0].message.content 中
-    const thought = result.choices?.[0]?.message?.tool_calls?.[0]?.thought?.outputs?.[0]?.content;
+    // 根据智谱文档，直接从 message 对象中获取 reasoning_content 和 content
+    const thought = result.choices?.[0]?.message?.reasoning_content;
     const finalContent = result.choices?.[0]?.message?.content;
 
+    // 使用 marked.parse 渲染 Markdown 内容
     if (thought) {
-        thinkingPre.textContent = thought;
+        thinkingContentDiv.innerHTML = marked.parse(thought);
     } else {
-        thinkingPre.textContent = '模型未提供思考过程。';
+        thinkingContentDiv.innerHTML = '<p>模型未提供思考过程。</p>';
     }
 
     if (finalContent) {
-        answerPre.textContent = finalContent;
+        finalAnswerDiv.innerHTML = marked.parse(finalContent);
     } else {
-        answerPre.textContent = '模型未提供最终答案。';
+        finalAnswerDiv.innerHTML = '<p>模型未提供最终答案。</p>';
+    }
+
+    // 触发 MathJax 渲染
+    if (typeof MathJax !== 'undefined') {
+        MathJax.typesetPromise([thinkingContentDiv, finalAnswerDiv]).catch((err) => console.error('MathJax typesetting failed:', err));
     }
 
   } catch (error) {
     console.error('Error sending vision message:', error);
     showToast(`发生错误: ${error.message}`);
-    thinkingPre.textContent = '请求失败。';
-    answerPre.textContent = `错误详情: ${error.message}`;
+    thinkingContentDiv.innerHTML = `<p>请求失败。</p>`;
+    finalAnswerDiv.innerHTML = `<p>错误详情: ${error.message}</p>`;
   } finally {
     // 清理输入
     visionInputText.value = '';

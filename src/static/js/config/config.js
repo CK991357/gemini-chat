@@ -105,6 +105,16 @@ The report should include the following core sections:
         DEFAULT_OUTPUT_LANG: 'en',
         DEFAULT_MODEL: 'gemini-2.0-flash'
     },
+    VISION: {
+        MODELS: [
+            {
+                name: 'glm-4.1v-thinking-flash',
+                displayName: 'GLM-4.1V-Thinking-Flash (Zhipu Vision)',
+                isZhipu: true
+            },
+        ],
+        DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
+    },
     // If you are working in the RoArm branch
     // ROARM: {
     //     IP_ADDRESS: '192.168.1.4'
