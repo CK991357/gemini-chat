@@ -83,7 +83,8 @@ const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 // 视觉模型相关 DOM 元素
 const visionModeBtn = document.getElementById('vision-mode-button');
 const visionContainer = document.querySelector('.vision-container');
-const visionMessageHistory = document.getElementById('vision-message-history');
+const visionReasoningContent = document.getElementById('vision-reasoning-content');
+const visionFinalAnswer = document.getElementById('vision-final-answer');
 const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
 const visionInputText = document.getElementById('vision-input-text');
 const visionAttachmentButton = document.getElementById('vision-attachment-button');
@@ -244,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
    // 视觉模型附件按钮事件监听
    visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
-   visionFileInput.addEventListener('change', (event) => handleFileAttachment(event, 'vision'));
+   visionFileInput.addEventListener('change', handleVisionFileAttachment);
    visionSendButton.addEventListener('click', handleSendVisionMessage);
  
    // 初始化翻译功能
@@ -285,7 +286,6 @@ let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的�
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let attachedFile = null; // 新增：用于存储待发送的附件信息
 let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
-let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -2731,69 +2731,77 @@ export function showSystemMessage(message) {
  * ----------------------------------------------------------------
  */
 
-async function handleFileAttachment(event, mode = 'chat') {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
+/**
+ * @function handleFileAttachment
+ * @description 处理文件选择事件，读取文件并根据类型进行处理。
+ * @param {Event} event - 文件输入变化事件。
+ * @returns {Promise<void>}
+ */
+async function handleFileAttachment(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-    const previewsContainer = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
-    const fileList = mode === 'vision' ? visionAttachedFiles : [attachedFile]; // a bit of a hack for single vs multi file
+    // 检查文件类型和大小
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+        showSystemMessage(`不支持的文件类型: ${file.type}。请选择图片或PDF。`);
+        return;
+    }
+    if (file.size > 4 * 1024 * 1024) { // 4MB 大小限制
+        showSystemMessage('文件大小不能超过 4MB。');
+        return;
+    }
 
-    for (const file of files) {
-        // 检查文件类型和大小
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
-        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-            showSystemMessage(`不支持的文件类型: ${file.type}。`);
-            continue;
-        }
-        if (file.size > 20 * 1024 * 1024) { // 20MB 大小限制
-            showSystemMessage('文件大小不能超过 20MB。');
-            continue;
-        }
+    try {
+        let base64String;
+        let mimeType;
 
-        try {
-            const base64String = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
+        if (file.type === 'application/pdf') {
+            // 使用 pdf.js 处理 PDF
+            const pdfjsLib = window['pdfjs-dist/build/pdf'];
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
+
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const page = await pdf.getPage(1); // 只处理第一页
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+            base64String = canvas.toDataURL('image/jpeg');
+            mimeType = 'image/jpeg';
+        } else {
+            // 处理图片文件
+            const reader = new FileReader();
+            base64String = await new Promise((resolve, reject) => {
                 reader.onload = () => resolve(reader.result);
                 reader.onerror = error => reject(error);
                 reader.readAsDataURL(file);
             });
-
-            const fileData = {
-                name: file.name,
-                type: file.type,
-                base64: base64String
-            };
-
-            if (mode === 'vision') {
-                visionAttachedFiles.push(fileData);
-                displayFilePreview({
-                    type: file.type.startsWith('image/') ? 'image' : 'video',
-                    src: base64String,
-                    name: file.name,
-                    mode: 'vision',
-                    index: visionAttachedFiles.length - 1
-                });
-            } else {
-                // Chat mode currently only supports one attachment
-                clearAttachedFile(); // Clear previous before adding new one
-                attachedFile = fileData;
-                displayFilePreview({
-                    type: file.type.startsWith('image/') ? 'image' : 'pdf',
-                    src: base64String,
-                    name: file.name,
-                    mode: 'chat'
-                });
-            }
-            showToast(`文件已附加: ${file.name}`);
-
-        } catch (error) {
-            console.error('处理文件时出错:', error);
-            showSystemMessage(`处理文件失败: ${error.message}`);
+            mimeType = file.type;
         }
-    }
 
-    // 重置 file input 以便可以再次选择同一个文件
-    event.target.value = '';
+        attachedFile = {
+            name: file.name,
+            type: mimeType,
+            base64: base64String
+        };
+
+        displayFilePreview({ type: 'image', src: base64String, name: file.name }); // 统一使用 image 类型和 base64
+        showToast(`文件已附加: ${file.name}`);
+
+    } catch (error) {
+        console.error('处理文件时出错:', error);
+        showSystemMessage(`处理文件失败: ${error.message}`);
+        removeAttachedFile();
+    } finally {
+        // 重置 file input 以便可以再次选择同一个文件
+        event.target.value = '';
+    }
 }
 
 /**
@@ -2805,334 +2813,273 @@ async function handleFileAttachment(event, mode = 'chat') {
  * @param {HTMLCanvasElement} [options.canvas] - Canvas 元素 (如果 type 是 'canvas')。
  * @param {string} options.name - 文件名。
  */
-function displayFilePreview({ type, src, name, mode, index }) {
-    const container = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
-    
-    // Clear previous preview in chat mode
-    if (mode === 'chat') {
-        container.innerHTML = '';
-    }
-
+function displayFilePreview({ type, src, canvas, name }) {
     const previewCard = document.createElement('div');
     previewCard.className = 'file-preview-card';
     previewCard.title = name;
-    if (mode === 'vision') {
-        previewCard.dataset.index = index;
-    }
 
     let previewElement;
-    if (type.startsWith('image')) {
+    if (type === 'image') {
         previewElement = document.createElement('img');
         previewElement.src = src;
         previewElement.alt = name;
-    } else if (type.startsWith('video')) {
-        previewElement = document.createElement('video');
-        previewElement.src = src;
-        previewElement.alt = name;
-        previewElement.muted = true;
-        previewElement.autoplay = true;
-        previewElement.loop = true;
-        previewElement.playsInline = true;
-    } else { // PDF or other
-        previewElement = document.createElement('div');
-        previewElement.className = 'file-placeholder';
-        const icon = document.createElement('span');
-        icon.className = 'material-symbols-outlined';
-        icon.textContent = 'description'; // PDF icon
-        const text = document.createElement('p');
-        text.textContent = name;
-        previewElement.appendChild(icon);
-        previewElement.appendChild(text);
+    } else if (type === 'canvas') {
+        previewElement = canvas;
     }
-
 
     const closeButton = document.createElement('button');
     closeButton.className = 'close-button material-symbols-outlined';
     closeButton.textContent = 'close';
-    closeButton.onclick = (e) => {
-        e.stopPropagation();
-        if (mode === 'vision') {
-            removeVisionAttachment(index);
-        } else {
-            clearAttachedFile();
-        }
+    closeButton.onclick = () => {
+        clearAttachedFile();
     };
 
     previewCard.appendChild(previewElement);
     previewCard.appendChild(closeButton);
-    container.appendChild(previewCard);
+    fileAttachmentPreviews.appendChild(previewCard);
 }
 
 /**
  * @function clearAttachedFile
  * @description 清除已附加的文件状态和预览。
  */
-function clearAttachedFile(mode = 'chat') {
-    if (mode === 'vision') {
-        visionAttachedFiles = [];
-        visionAttachmentPreviews.innerHTML = '';
-    } else {
-        attachedFile = null;
-        fileAttachmentPreviews.innerHTML = '';
-    }
+function clearAttachedFile() {
+    attachedFile = null;
+    fileAttachmentPreviews.innerHTML = '';
 }
 
 
 
+/**
+ * @function handleVisionFileAttachment
+ * @description 处理视觉模型的文件附件选择事件。
+ * 读取用户选择的文件，生成预览，并将其存储在 visionAttachedFiles 数组中。
+ *
+ * @param {Event} event - 文件输入元素触发的 change 事件对象。
+ */
+function handleVisionFileAttachment(event) {
+  const files = event.target.files;
+  if (!files) return;
 
-function removeVisionAttachment(indexToRemove) {
-    visionAttachedFiles.splice(indexToRemove, 1);
-    // Re-render all previews to correctly update indices
-    visionAttachmentPreviews.innerHTML = '';
-    visionAttachedFiles.forEach((file, index) => {
-        displayFilePreview({
-            type: file.type,
-            src: file.base64,
-            name: file.name,
-            mode: 'vision',
-            index: index
-        });
-    });
-}
-
-
-async function handleSendVisionMessage() {
-    const text = visionInputText.value.trim();
-    if (!text && visionAttachedFiles.length === 0) {
-        showToast('请输入文本或添加附件。');
-        return;
-    }
-
-    const visionModelSelect = document.getElementById('vision-model-select');
-    const selectedModel = visionModelSelect.value;
-    // 查找模型配置以确定是否为 Zhipu 模型
-    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
-
-    // 显示用户消息
-    displayVisionUserMessage(text, visionAttachedFiles);
-
-    // 将用户消息添加到历史记录
-    const userContent = [];
-    if (text) {
-        userContent.push({ type: 'text', text });
-    }
-    visionAttachedFiles.forEach(file => {
-        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-    });
-    visionChatHistory.push({ role: 'user', content: userContent });
-
-    // 清理输入
-    visionInputText.value = '';
-    clearAttachedFile('vision');
-
-    // 显示加载状态
-    visionSendButton.disabled = true;
-    visionSendButton.textContent = 'progress_activity';
-    const aiMessage = createVisionAIMessageElement();
-    const { markdownContainer } = aiMessage;
-    markdownContainer.innerHTML = '<p>正在请求模型...</p>';
-
-    try {
-        // 根据模型类型决定处理逻辑
-        if (selectedModelConfig && selectedModelConfig.isZhipu) {
-            // --- 处理非流式 Zhipu/GLM 模型 ---
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: selectedModel,
-                    messages: visionChatHistory,
-                    stream: false, // 关键：对 Zhipu 模型使用非流式请求
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error?.message || 'API 请求失败');
-            }
-
-            const result = await response.json();
-            const fullResponse = result.choices?.[0]?.message?.content || '';
-
-            // 渲染最终响应
-            markdownContainer.innerHTML = marked.parse(fullResponse);
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                MathJax.startup.promise.then(() => {
-                    MathJax.typeset([markdownContainer]);
-                }).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
-            
-            // 将最终 AI 响应添加到历史记录
-            visionChatHistory.push({ role: 'assistant', content: fullResponse });
-
-        } else {
-            // --- 处理流式模型 (例如 Gemini) ---
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: selectedModel,
-                    messages: visionChatHistory,
-                    stream: true, // 保持流式
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error?.message || 'API 请求失败');
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let fullResponse = '';
-            markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                chunk.split('\n\n').forEach(part => {
-                    if (part.startsWith('data: ')) {
-                        const jsonStr = part.substring(6);
-                        if (jsonStr === '[DONE]') return;
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            if (data.choices && data.choices[0]?.delta?.content) {
-                                fullResponse += data.choices[0].delta.content;
-                                markdownContainer.innerHTML = marked.parse(fullResponse);
-                            }
-                        } catch (e) {
-                            console.error('Error parsing SSE chunk:', e, jsonStr);
-                        }
-                    }
-                });
-                 visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-            }
-
-            // 流结束后，对最终内容进行一次 MathJax 排版
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                MathJax.startup.promise.then(() => {
-                    MathJax.typeset([markdownContainer]);
-                }).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
-            
-            // 将最终 AI 响应添加到历史记录
-            visionChatHistory.push({ role: 'assistant', content: fullResponse });
-        }
-
-    } catch (error) {
-        console.error('Error sending vision message:', error);
-        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
-    } finally {
-        visionSendButton.disabled = false;
-        visionSendButton.textContent = 'send';
-    }
-}
-
-function displayVisionUserMessage(text, files) {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'user');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '👤';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-
-    if (text) {
-        const textNode = document.createElement('p');
-        textNode.textContent = text;
-        contentDiv.appendChild(textNode);
-    }
-
-    if (files && files.length > 0) {
-        const attachmentsContainer = document.createElement('div');
-        attachmentsContainer.className = 'attachments-grid';
-        files.forEach(file => {
-            let attachmentElement;
-            if (file.type.startsWith('image/')) {
-                attachmentElement = document.createElement('img');
-                attachmentElement.src = file.base64;
-            } else if (file.type.startsWith('video/')) {
-                attachmentElement = document.createElement('video');
-                attachmentElement.src = file.base64;
-                attachmentElement.controls = true;
-            }
-            if (attachmentElement) {
-                attachmentElement.className = 'chat-attachment';
-                attachmentsContainer.appendChild(attachmentElement);
-            }
-        });
-        contentDiv.appendChild(attachmentsContainer);
-    }
-
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    visionMessageHistory.appendChild(messageDiv);
-    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-}
-
-function createVisionAIMessageElement() {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'ai');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '🤖';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-    
-    const markdownContainer = document.createElement('div');
-    markdownContainer.classList.add('markdown-container');
-    contentDiv.appendChild(markdownContainer);
-    
-    const copyButton = document.createElement('button');
-    copyButton.classList.add('copy-button', 'material-symbols-outlined');
-    copyButton.textContent = 'content_copy';
-    copyButton.addEventListener('click', async () => {
-        try {
-            await navigator.clipboard.writeText(markdownContainer.textContent);
-            copyButton.textContent = 'check';
-            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
-        } catch (err) {
-            console.error('Failed to copy text: ', err);
-        }
-    });
-
-    contentDiv.appendChild(copyButton);
-    
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    visionMessageHistory.appendChild(messageDiv);
-    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-    
-    return {
-        container: messageDiv,
-        markdownContainer,
-        contentDiv,
+  for (const file of files) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64String = e.target.result;
+      const fileData = {
+        name: file.name,
+        type: file.type,
+        data: base64String,
+      };
+      visionAttachedFiles.push(fileData);
+      const previewElement = createVisionAttachmentPreview(fileData, visionAttachedFiles.length - 1);
+      visionAttachmentPreviews.appendChild(previewElement);
     };
+    reader.readAsDataURL(file);
+  }
+
+  // 清空 file input 的值，以便用户可以重复上传同一个文件
+  event.target.value = '';
 }
 
 /**
- * @function initVision
- * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
- * @returns {void}
+ * @function createVisionAttachmentPreview
+ * @description 为给定的附件文件创建一个预览 DOM 元素。
+ * 预览元素包含文件名和一个移除按钮。
+ *
+ * @param {object} fileData - 包含文件信息（名称、类型、数据）的对象。
+ * @param {number} index - 文件在 visionAttachedFiles 数组中的索引。
+ * @returns {HTMLElement} - 创建的预览 div 元素。
  */
-function initVision() {
-    const visionModelSelect = document.getElementById('vision-model-select');
-    if (!visionModelSelect) return;
+function createVisionAttachmentPreview(fileData, index) {
+  const preview = document.createElement('div');
+  preview.classList.add('attachment-preview');
+  preview.dataset.index = index;
 
-    visionModelSelect.innerHTML = ''; // 清空现有选项
-    CONFIG.VISION.MODELS.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.displayName;
-        if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
-            option.selected = true;
-        }
-        visionModelSelect.appendChild(option);
-    });
+  const fileName = document.createElement('span');
+  fileName.textContent = fileData.name;
+  preview.appendChild(fileName);
+
+  const removeButton = document.createElement('button');
+  removeButton.textContent = '×';
+  removeButton.onclick = () => removeVisionAttachment(index);
+  preview.appendChild(removeButton);
+
+  return preview;
 }
+
+/**
+ * @function removeVisionAttachment
+ * @description 从附件列表和预览中移除一个文件。
+ *
+ * @param {number} indexToRemove - 要移除的文件在 visionAttachedFiles 数组中的索引。
+ */
+function removeVisionAttachment(indexToRemove) {
+  // 从数组中移除
+  visionAttachedFiles.splice(indexToRemove, 1);
+  
+  // 从 DOM 中移除预览
+  const previewToRemove = visionAttachmentPreviews.querySelector(`.attachment-preview[data-index='${indexToRemove}']`);
+  if (previewToRemove) {
+    visionAttachmentPreviews.removeChild(previewToRemove);
+  }
+
+  // 更新剩余预览元素的索引
+  const remainingPreviews = visionAttachmentPreviews.querySelectorAll('.attachment-preview');
+  remainingPreviews.forEach((preview, newIndex) => {
+    const oldIndex = parseInt(preview.dataset.index);
+    if (oldIndex > indexToRemove) {
+      preview.dataset.index = newIndex;
+      // 更新移除按钮的 onclick 事件
+      const removeButton = preview.querySelector('button');
+      removeButton.onclick = () => removeVisionAttachment(newIndex);
+    }
+  });
+}
+
+
+/**
+ * @function handleSendVisionMessage
+ * @description 发送消息到视觉模型。
+ * 构建请求体，调用 API，并处理和显示返回的结果。
+ */
+async function handleSendVisionMessage() {
+  const text = visionInputText.value.trim();
+  if (!text && visionAttachedFiles.length === 0) {
+    showToast('请输入文本或添加附件。');
+    return;
+  }
+
+  const visionModelSelect = document.getElementById('vision-model-select');
+  const selectedModel = visionModelSelect.value;
+  const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
+
+  if (!selectedModelConfig || !selectedModelConfig.isZhipu) {
+      showToast('请选择一个有效的智谱视觉模型。');
+      return;
+  }
+
+  // 清空之前的输出
+  visionReasoningContent.innerHTML = '';
+  visionFinalAnswer.innerHTML = '';
+
+  // 显示加载状态
+  visionSendButton.disabled = true;
+  visionSendButton.textContent = 'progress_activity'; // 使用加载图标
+  
+  const thinkingHeader = document.createElement('h3');
+  thinkingHeader.textContent = '🤔 思考过程';
+  visionReasoningContent.appendChild(thinkingHeader);
+  const thinkingPre = document.createElement('pre');
+  thinkingPre.textContent = '正在请求模型...';
+  visionReasoningContent.appendChild(thinkingPre);
+
+  const answerHeader = document.createElement('h3');
+  answerHeader.textContent = '✅ 最终答案';
+  visionFinalAnswer.appendChild(answerHeader);
+  const answerPre = document.createElement('pre');
+  visionFinalAnswer.appendChild(answerPre);
+
+
+  try {
+    const content = [];
+    if (text) {
+      content.push({ type: 'text', text: text });
+    }
+    visionAttachedFiles.forEach(file => {
+      // Zhipu API 需要 `image_url` 字段，其值为一个包含 url 的对象
+      content.push({ type: 'image_url', image_url: { url: file.data } });
+    });
+
+    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
+
+# 核心任务
+你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
+
+# 输出规则
+你必须严格遵循以下两步输出格式：
+
+1.  **思考过程**:
+    *   必须提供详细、清晰、分步的推理过程。
+    *   解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的。
+    *   使用 Markdown 语法来组织你的思考过程，使其易于阅读。
+    *   结构化展示：使用Markdown格式（标题、副标题、列表、表格）组织内容。**确保使用双换行符（\\n\\n）进行清晰的段落分隔，特别是在长分析部分中。
+    *   专业表达：使用专业术语，但保持易于理解，**加粗**关键结论，并对技术术语提供简洁的解释。
+
+2.  **最终答案**:
+    *   在思考过程之后，给出一个简洁、明确的最终答案。
+    *   对于解题或需要明确结论的场景，必须使用 \`<|begin_of_box|>\` 和 \`<|end_of_box|>\` 标记来包裹最终结果。
+    *   所有数学公式必须使用 LaTeX 格式进行渲染。`;
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: content }
+    ];
+
+    const response = await fetch('/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: messages,
+        // Zhipu API 可能需要 stream: false，或者在 worker 中处理
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'API 请求失败');
+    }
+
+    const result = await response.json();
+    
+    // 假设返回的数据结构为 { reasoning_content: "...", content: "..." }
+    // 根据 worker.js 的实现，它直接代理了智谱的返回
+    // 智谱的返回在 choices[0].message.tool_calls[0].thought.outputs[0].content 中
+    // 和 choices[0].message.content 中
+    // 从智谱 API 响应中提取思考过程和最终答案
+    const message = result.choices?.[0]?.message;
+    const reasoningContent = message?.reasoning_content;
+    const finalContent = message?.content;
+
+    if (reasoningContent) {
+        // 使用 marked.js 来渲染可能包含 Markdown 的思考过程
+        thinkingPre.innerHTML = marked.parse(reasoningContent);
+    } else {
+        thinkingPre.innerHTML = '<p>🤔 模型未提供思考过程。</p>'; // 使用 p 标签保持一致性
+    }
+
+    if (finalContent) {
+        // 1. 预处理，将特殊的答案标记替换为可供CSS渲染的HTML标签
+        let processedContent = finalContent
+            .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
+            .replace(/<\|end_of_box\|>/g, '</div>');
+
+        // 2. 使用 marked.js 渲染Markdown
+        answerPre.innerHTML = marked.parse(processedContent);
+    } else {
+        answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>';
+    }
+
+    // 统一对“思考过程”和“最终答案”进行 MathJax 渲染
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            // 同时渲染两个容器
+            MathJax.typeset([thinkingPre, answerPre]);
+        }).catch((err) => console.error('MathJax typesetting failed for both containers:', err));
+    }
+
+  } catch (error) {
+    console.error('Error sending vision message:', error);
+    showToast(`发生错误: ${error.message}`);
+    thinkingPre.textContent = '请求失败。';
+    answerPre.textContent = `错误详情: ${error.message}`;
+  } finally {
+    // 清理输入
+    visionInputText.value = '';
+    visionAttachedFiles = [];
+    visionAttachmentPreviews.innerHTML = '';
+
+    // 恢复按钮状态
+    visionSendButton.disabled = false;
+    visionSendButton.textContent = 'send'; // 恢复发送图标
+  }

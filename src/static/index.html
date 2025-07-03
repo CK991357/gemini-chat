@@ -202,24 +202,30 @@
 
                 <!-- 视觉模型功能区 -->
                 <section class="vision-container">
-                    <!-- Replicate the structure of the main chat container -->
-                    <div class="message-history" id="vision-message-history">
-                        <!-- Vision chat messages will be dynamically inserted here -->
+                    <div class="vision-output-area">
+                        <div class="vision-reasoning-box">
+                            <h4>思考过程</h4>
+                            <div id="vision-reasoning-content" class="markdown-body"></div>
+                        </div>
+                        <div class="vision-final-answer-box">
+                            <h4>最终答案</h4>
+                            <div id="vision-final-answer" class="markdown-body"></div>
+                        </div>
                     </div>
-
-                    <div class="file-attachment-previews" id="vision-attachment-previews">
-                        <!-- Attachment previews for vision mode will be dynamically inserted here -->
-                    </div>
-
-                    <div class="input-area" id="vision-input-area">
+                    <div class="vision-input-area">
                         <div class="vision-controls">
-                            <label for="vision-model-select">模型:</label>
+                            <label for="vision-model-select">模型选择:</label>
                             <select id="vision-model-select"></select>
                         </div>
-                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
-                        <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
-                        <input type="file" id="vision-file-input" accept="image/*,video/*,application/pdf" style="display: none;" multiple>
-                        <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
+                        <div class="file-attachment-previews" id="vision-attachment-previews">
+                            <!-- 视觉模型附件预览 -->
+                        </div>
+                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="2"></textarea>
+                        <div class="vision-action-buttons">
+                            <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                            <input type="file" id="vision-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
+                            <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
+                        </div>
                     </div>
                 </section>
 
