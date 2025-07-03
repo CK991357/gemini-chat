@@ -3018,10 +3018,20 @@ async function handleSendVisionMessage() {
     }
 
     if (finalContent) {
-        // 使用 marked.js 来渲染最终答案，以支持格式化
-        answerPre.innerHTML = marked.parse(finalContent);
+        // 1. 预处理，将特殊的答案标记替换为可供CSS渲染的HTML标签
+        let processedContent = finalContent
+            .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
+            .replace(/<\|end_of_box\|>/g, '</div>');
+
+        // 2. 使用 marked.js 渲染Markdown
+        answerPre.innerHTML = marked.parse(processedContent);
+
+        // 3. 触发 MathJax 渲染数学公式
+        if (typeof MathJax !== 'undefined') {
+            MathJax.typesetPromise([answerPre]).catch((err) => console.error('MathJax typesetting failed for final answer:', err));
+        }
     } else {
-        answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>'; // 使用 p 标签保持一致性
+        answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>';
     }
 
   } catch (error) {
