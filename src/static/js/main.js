@@ -3083,3 +3083,4 @@ async function handleSendVisionMessage() {
     visionSendButton.disabled = false;
     visionSendButton.textContent = 'send'; // 恢复发送图标
   }
+}
