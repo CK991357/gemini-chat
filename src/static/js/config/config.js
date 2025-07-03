@@ -23,12 +23,6 @@ export const CONFIG = {
                 displayName: 'gemini-2.0-flash (HTTP)',
                 isWebSocket: false
             },
-            {
-                name: 'glm-4v-plus',
-                displayName: 'GLM-4.1V-Thinking-Flash (Zhipu Vision)',
-                isWebSocket: false,
-                isZhipu: true
-            },
         ]
     },
     // You can change the system instruction to your liking
@@ -104,6 +98,17 @@ The report should include the following core sections:
         DEFAULT_INPUT_LANG: 'auto',
         DEFAULT_OUTPUT_LANG: 'en',
         DEFAULT_MODEL: 'gemini-2.0-flash'
+    },
+    VISION: {
+        MODELS: [
+            {
+                name: 'glm-4v-plus',
+                displayName: 'GLM-4.1V-Thinking-Flash (Zhipu Vision)',
+                isZhipu: true // 标记为智谱模型
+            }
+            // 以后可以添加更多视觉模型
+        ],
+        DEFAULT_MODEL: 'glm-4v-plus'
     },
     // If you are working in the RoArm branch
     // ROARM: {
