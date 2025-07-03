@@ -1553,99 +1553,84 @@ body.dark-mode {
     background-color: var(--bg-color);
 }
 
-/* 视觉模型功能区样式 */
+/* 视觉模型功能区样式 (重构为聊天样式) */
 .vision-container {
     display: none; /* 默认隐藏 */
     flex-direction: column;
     height: 100%;
     box-sizing: border-box;
     padding: 20px;
-    gap: 20px; /* 输出和输入区域的间距 */
-    overflow-y: auto;
+    overflow: hidden; /* 父容器隐藏溢出 */
 }
 
 .vision-container.active {
     display: flex;
 }
 
-.vision-output-area {
+/* 视觉模式下的消息历史记录 */
+.vision-container .message-history {
     flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
     overflow-y: auto;
-    min-height: 0;
-}
-
-.vision-reasoning-box,
-.vision-final-answer-box {
-    background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 15px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.vision-reasoning-box h4,
-.vision-final-answer-box h4 {
-    margin-top: 0;
-    margin-bottom: 10px;
-    color: var(--primary-color);
-    border-bottom: 1px solid var(--border-color);
     padding-bottom: 10px;
-}
-
-#vision-reasoning-content,
-#vision-final-answer {
-    min-height: 100px; /* 最小高度，避免内容过少时塌陷 */
-    word-break: break-word;
-    white-space: pre-wrap;
-}
-
-/* 确保视觉区域内的 pre 标签也能正确换行 */
-#vision-reasoning-content pre,
-#vision-final-answer pre {
-    white-space: pre-wrap;
-    word-wrap: break-word;
-}
-
-.vision-input-area {
-    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
 }
 
-.vision-input-area #vision-attachment-previews {
+/* 视觉模式下的附件预览 */
+.vision-container .file-attachment-previews {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    padding-bottom: 10px;
+    padding: 0 20px 10px;
     max-height: 120px;
     overflow-y: auto;
 }
 
-.vision-input-area #vision-input-text {
-    width: 100%;
+/* 视觉模式下的输入区域 */
+.vision-container .input-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 15px 20px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    flex-shrink: 0;
+}
+
+.vision-container .vision-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vision-container .vision-controls label {
+    font-weight: 500;
+    color: var(--text-secondary-color);
+}
+
+.vision-container .vision-controls select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+}
+
+.vision-container .input-area textarea {
+    flex-grow: 1;
     padding: 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background-color: var(--surface-color);
+    background-color: var(--bg-color);
     color: var(--text-color);
     font-size: 16px;
     resize: vertical;
-    min-height: 60px;
-    box-sizing: border-box;
+    max-height: 150px;
+    overflow-y: auto;
 }
 
-.vision-action-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-}
-
-#vision-attachment-button,
-#vision-send-button {
+.vision-container .input-area .action-button,
+.vision-container .input-area .send-button {
     background-color: var(--primary-color);
     color: white;
     border: none;
@@ -1658,10 +1643,11 @@ body.dark-mode {
     cursor: pointer;
     font-size: 24px;
     transition: background-color 0.3s ease;
+    flex-shrink: 0;
 }
 
-#vision-attachment-button:hover,
-#vision-send-button:hover {
+.vision-container .input-area .action-button:hover,
+.vision-container .input-area .send-button:hover {
     background-color: var(--secondary-color);
 }
 
@@ -1671,13 +1657,17 @@ body.dark-mode {
         padding: 15px;
     }
 
-    .vision-input-area #vision-input-text {
-        font-size: 14px;
-        min-height: 50px;
+    .vision-container .input-area {
+        padding: 10px;
+        gap: 8px;
     }
 
-    #vision-attachment-button,
-    #vision-send-button {
+    .vision-container .input-area textarea {
+        font-size: 14px;
+    }
+
+    .vision-container .input-area .action-button,
+    .vision-container .input-area .send-button {
         width: 40px;
         height: 40px;
         font-size: 20px;
