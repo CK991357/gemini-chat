@@ -83,8 +83,7 @@ const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 // 视觉模型相关 DOM 元素
 const visionModeBtn = document.getElementById('vision-mode-button');
 const visionContainer = document.querySelector('.vision-container');
-const visionReasoningContent = document.getElementById('vision-reasoning-content');
-const visionFinalAnswer = document.getElementById('vision-final-answer');
+const visionOutputContent = document.getElementById('vision-output-content');
 const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
 const visionInputText = document.getElementById('vision-input-text');
 const visionAttachmentButton = document.getElementById('vision-attachment-button');
@@ -2958,27 +2957,13 @@ async function handleSendVisionMessage() {
       return;
   }
 
-  // 清空之前的输出
-  visionReasoningContent.innerHTML = '';
-  visionFinalAnswer.innerHTML = '';
+  // 获取并清空之前的输出
+  const visionOutputContent = document.getElementById('vision-output-content');
+  visionOutputContent.innerHTML = '正在请求模型...';
 
   // 显示加载状态
   visionSendButton.disabled = true;
   visionSendButton.textContent = 'progress_activity'; // 使用加载图标
-  
-  const thinkingHeader = document.createElement('h3');
-  thinkingHeader.textContent = '🤔 思考过程';
-  visionReasoningContent.appendChild(thinkingHeader);
-  const thinkingPre = document.createElement('pre');
-  thinkingPre.textContent = '正在请求模型...';
-  visionReasoningContent.appendChild(thinkingPre);
-
-  const answerHeader = document.createElement('h3');
-  answerHeader.textContent = '✅ 最终答案';
-  visionFinalAnswer.appendChild(answerHeader);
-  const answerPre = document.createElement('pre');
-  visionFinalAnswer.appendChild(answerPre);
-
 
   try {
     const content = [];
@@ -2986,7 +2971,6 @@ async function handleSendVisionMessage() {
       content.push({ type: 'text', text: text });
     }
     visionAttachedFiles.forEach(file => {
-      // Zhipu API 需要 `image_url` 字段，其值为一个包含 url 的对象
       content.push({ type: 'image_url', image_url: { url: file.data } });
     });
 
@@ -3021,7 +3005,6 @@ async function handleSendVisionMessage() {
       body: JSON.stringify({
         model: selectedModel,
         messages: messages,
-        // Zhipu API 可能需要 stream: false，或者在 worker 中处理
       }),
     });
 
@@ -3032,47 +3015,32 @@ async function handleSendVisionMessage() {
 
     const result = await response.json();
     
-    // 假设返回的数据结构为 { reasoning_content: "...", content: "..." }
-    // 根据 worker.js 的实现，它直接代理了智谱的返回
-    // 智谱的返回在 choices[0].message.tool_calls[0].thought.outputs[0].content 中
-    // 和 choices[0].message.content 中
-    // 从智谱 API 响应中提取思考过程和最终答案
     const message = result.choices?.[0]?.message;
-    const reasoningContent = message?.reasoning_content;
-    const finalContent = message?.content;
+    const reasoningContent = message?.reasoning_content || '🤔 模型未提供思考过程。';
+    let finalContent = message?.content || '✅ 模型未提供最终答案。';
 
-    if (reasoningContent) {
-        // 使用 marked.js 来渲染可能包含 Markdown 的思考过程
-        thinkingPre.innerHTML = marked.parse(reasoningContent);
-    } else {
-        thinkingPre.innerHTML = '<p>🤔 模型未提供思考过程。</p>'; // 使用 p 标签保持一致性
-    }
+    // 预处理最终答案
+    finalContent = finalContent
+        .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
+        .replace(/<\|end_of_box\|>/g, '</div>');
 
-    if (finalContent) {
-        // 1. 预处理，将特殊的答案标记替换为可供CSS渲染的HTML标签
-        let processedContent = finalContent
-            .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
-            .replace(/<\|end_of_box\|>/g, '</div>');
+    // 拼接思考过程和最终答案
+    const fullOutput = `### 🤔 思考过程\n\n${reasoningContent}\n\n<hr>\n\n### ✅ 最终答案\n\n${finalContent}`;
 
-        // 2. 使用 marked.js 渲染Markdown
-        answerPre.innerHTML = marked.parse(processedContent);
-    } else {
-        answerPre.innerHTML = '<p>✅ 模型未提供最终答案。</p>';
-    }
+    // 渲染到统一的容器
+    visionOutputContent.innerHTML = marked.parse(fullOutput);
 
-    // 统一对“思考过程”和“最终答案”进行 MathJax 渲染
+    // 触发 MathJax 渲染
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
         MathJax.startup.promise.then(() => {
-            // 同时渲染两个容器
-            MathJax.typeset([thinkingPre, answerPre]);
-        }).catch((err) => console.error('MathJax typesetting failed for both containers:', err));
+            MathJax.typeset([visionOutputContent]);
+        }).catch((err) => console.error('MathJax typesetting failed:', err));
     }
 
   } catch (error) {
     console.error('Error sending vision message:', error);
     showToast(`发生错误: ${error.message}`);
-    thinkingPre.textContent = '请求失败。';
-    answerPre.textContent = `错误详情: ${error.message}`;
+    visionOutputContent.innerHTML = `请求失败: ${error.message}`;
   } finally {
     // 清理输入
     visionInputText.value = '';

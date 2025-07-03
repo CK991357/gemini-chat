@@ -1577,8 +1577,7 @@ body.dark-mode {
     min-height: 0;
 }
 
-.vision-reasoning-box,
-.vision-final-answer-box {
+.vision-output-box {
     background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -1586,8 +1585,7 @@ body.dark-mode {
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.vision-reasoning-box h4,
-.vision-final-answer-box h4 {
+.vision-output-box h4 {
     margin-top: 0;
     margin-bottom: 10px;
     color: var(--primary-color);
@@ -1595,8 +1593,7 @@ body.dark-mode {
     padding-bottom: 10px;
 }
 
-#vision-reasoning-content,
-#vision-final-answer {
+#vision-output-content {
     min-height: 100px; /* 最小高度，避免内容过少时塌陷 */
     word-break: break-word;
     white-space: pre-wrap;
