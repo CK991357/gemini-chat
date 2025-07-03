@@ -2915,7 +2915,8 @@ async function handleSendVisionMessage() {
         userContent.push({ type: 'text', text });
     }
     visionAttachedFiles.forEach(file => {
-        userContent.push({ type: 'image_url', image_url: { url: file.data } });
+        // Zhipu API and others expect the base64 string directly as the URL for the image_url type.
+        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
     });
     visionChatHistory.push({ role: 'user', content: userContent });
 
