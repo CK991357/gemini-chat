@@ -2905,87 +2905,121 @@ async function handleSendVisionMessage() {
 
     const visionModelSelect = document.getElementById('vision-model-select');
     const selectedModel = visionModelSelect.value;
+    // 查找模型配置以确定是否为 Zhipu 模型
+    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
 
-    // Display user message in the vision chat history
+    // 显示用户消息
     displayVisionUserMessage(text, visionAttachedFiles);
 
-    // Add user message to vision chat history
+    // 将用户消息添加到历史记录
     const userContent = [];
     if (text) {
         userContent.push({ type: 'text', text });
     }
     visionAttachedFiles.forEach(file => {
-        // Zhipu API and others expect the base64 string directly as the URL for the image_url type.
         userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
     });
     visionChatHistory.push({ role: 'user', content: userContent });
 
-    // Clear inputs
+    // 清理输入
     visionInputText.value = '';
     clearAttachedFile('vision');
 
-    // Show loading state
+    // 显示加载状态
     visionSendButton.disabled = true;
     visionSendButton.textContent = 'progress_activity';
-
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
 
     try {
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: selectedModel,
-                messages: visionChatHistory,
-                stream: true, // Enable streaming
-            }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'API 请求失败');
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let fullResponse = '';
-        markdownContainer.innerHTML = ''; // Clear "loading" message
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') return;
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        if (data.choices && data.choices[0]?.delta?.content) {
-                            fullResponse += data.choices[0].delta.content;
-                            markdownContainer.innerHTML = marked.parse(fullResponse);
-                            // MathJax will be typeset once after the stream is complete.
-                        }
-                    } catch (e) {
-                        console.error('Error parsing SSE chunk:', e, jsonStr);
-                    }
-                }
+        // 根据模型类型决定处理逻辑
+        if (selectedModelConfig && selectedModelConfig.isZhipu) {
+            // --- 处理非流式 Zhipu/GLM 模型 ---
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: selectedModel,
+                    messages: visionChatHistory,
+                    stream: false, // 关键：对 Zhipu 模型使用非流式请求
+                }),
             });
-             visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-        }
 
-        // After the stream is complete, typeset the final content once.
-        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-            MathJax.startup.promise.then(() => {
-                MathJax.typeset([markdownContainer]);
-            }).catch((err) => console.error('MathJax typesetting failed:', err));
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || 'API 请求失败');
+            }
+
+            const result = await response.json();
+            const fullResponse = result.choices?.[0]?.message?.content || '';
+
+            // 渲染最终响应
+            markdownContainer.innerHTML = marked.parse(fullResponse);
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([markdownContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+            
+            // 将最终 AI 响应添加到历史记录
+            visionChatHistory.push({ role: 'assistant', content: fullResponse });
+
+        } else {
+            // --- 处理流式模型 (例如 Gemini) ---
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: selectedModel,
+                    messages: visionChatHistory,
+                    stream: true, // 保持流式
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || 'API 请求失败');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let fullResponse = '';
+            markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                chunk.split('\n\n').forEach(part => {
+                    if (part.startsWith('data: ')) {
+                        const jsonStr = part.substring(6);
+                        if (jsonStr === '[DONE]') return;
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            if (data.choices && data.choices[0]?.delta?.content) {
+                                fullResponse += data.choices[0].delta.content;
+                                markdownContainer.innerHTML = marked.parse(fullResponse);
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE chunk:', e, jsonStr);
+                        }
+                    }
+                });
+                 visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+            }
+
+            // 流结束后，对最终内容进行一次 MathJax 排版
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([markdownContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+            
+            // 将最终 AI 响应添加到历史记录
+            visionChatHistory.push({ role: 'assistant', content: fullResponse });
         }
-        
-        // Add final AI response to history
-        visionChatHistory.push({ role: 'assistant', content: fullResponse });
 
     } catch (error) {
         console.error('Error sending vision message:', error);
