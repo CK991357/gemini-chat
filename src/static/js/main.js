@@ -3025,48 +3025,34 @@ async function handleSendVisionMessage() {
     }
 
     const result = await response.json();
-    
     const message = result.choices?.[0]?.message;
-    const rawContent = message?.content || '模型未返回有效内容。';
 
-    const boxStartTag = '<|begin_of_box|>';
-    const boxEndTag = '<|end_of_box|>';
-
-    const boxStartIndex = rawContent.indexOf(boxStartTag);
-    const boxEndIndex = rawContent.indexOf(boxEndTag);
-
-    let reasoningMarkdown = '';
-    let finalAnswerMarkdown = '';
-
-    // 根据标记分割推理过程和最终答案
-    if (boxStartIndex !== -1 && boxEndIndex !== -1 && boxStartIndex < boxEndIndex) {
-        reasoningMarkdown = rawContent.substring(0, boxStartIndex).trim();
-        finalAnswerMarkdown = rawContent.substring(boxStartIndex + boxStartTag.length, boxEndIndex).trim();
-    } else {
-        // 如果没有找到标记，则将全部内容视为推理过程
-        reasoningMarkdown = rawContent;
-        finalAnswerMarkdown = '模型未按预定格式提供可区分的最终答案。';
+    // 1. 灵活地组合内容
+    let fullContent = '';
+    if (message?.reasoning_content) {
+        fullContent += message.reasoning_content;
+    }
+    if (message?.content) {
+        // 如果两部分内容都存在，用分隔线隔开，增加可读性
+        if (fullContent) {
+            fullContent += '\n\n---\n\n';
+        }
+        fullContent += message.content;
     }
 
-    // 分别渲染推理过程和最终答案的 Markdown
-    const reasoningHtml = marked.parse(reasoningMarkdown);
-    const finalAnswerHtml = marked.parse(finalAnswerMarkdown);
+    if (!fullContent) {
+        fullContent = '模型未返回有效内容。';
+    }
 
-    // 组合最终的 HTML 输出
-    const fullOutputHtml = `
-        <h3>🤔 思考过程</h3>
-        ${reasoningHtml}
-        <hr>
-        <h3>✅ 最终答案</h3>
-        <div class="final-answer-box">
-            ${finalAnswerHtml}
-        </div>
-    `;
+    // 2. 预处理特殊标记，替换为带样式的 HTML div
+    fullContent = fullContent
+        .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
+        .replace(/<\|end_of_box\|>/g, '</div>');
 
-    // 将渲染好的 HTML 设置到输出容器中
-    visionOutputContent.innerHTML = fullOutputHtml;
+    // 3. 使用 marked.js 一次性渲染所有内容
+    visionOutputContent.innerHTML = marked.parse(fullContent);
 
-    // 触发 MathJax 对新渲染的内容进行排版
+    // 4. 触发 MathJax 对新渲染的内容进行排版
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
         MathJax.startup.promise.then(() => {
             MathJax.typeset([visionOutputContent]);
