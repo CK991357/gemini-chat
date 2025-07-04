@@ -89,6 +89,7 @@ const visionInputText = document.getElementById('vision-input-text');
 const visionAttachmentButton = document.getElementById('vision-attachment-button');
 const visionFileInput = document.getElementById('vision-file-input');
 const visionSendButton = document.getElementById('vision-send-button');
+const visionVideoUrlInput = document.getElementById('vision-video-url-input'); // 新增：获取视频URL输入框
 
 
 // Load saved values from localStorage
@@ -3029,23 +3030,34 @@ async function handleSendVisionMessage() {
   visionSendButton.textContent = 'progress_activity';
 
   try {
+    const videoUrl = visionVideoUrlInput.value.trim();
     const content = [];
+
     if (text) {
       content.push({ type: 'text', text: text });
     }
-    visionAttachedFiles.forEach(file => {
-      content.push({ type: 'image_url', image_url: { url: file.data } });
-    });
+
+    // 优先处理视频URL
+    if (videoUrl) {
+      content.push({ type: 'video_url', video_url: { url: videoUrl } });
+      // 根据API文档，视频和图片不能同时输入，因此清空图片附件
+      if (visionAttachedFiles.length > 0) {
+        visionAttachedFiles = [];
+        visionAttachmentPreviews.innerHTML = '';
+        showToast('已输入视频URL，图片附件将被忽略。', 3000);
+      }
+    } else {
+      // 如果没有视频URL，则处理图片附件
+      visionAttachedFiles.forEach(file => {
+        content.push({ type: 'image_url', image_url: { url: file.data } });
+      });
+    }
 
     const systemPrompt = `你是一个顶级的多模态视觉分析专家。
+    
+                          你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频、url等），并根据视觉内容回答问题。
 
-# 核心任务
-你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
-
-# 输出规则
-    *   **必须**使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的所有回复信息！使其结构清晰、易于阅读。
-    *   解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的,在解释和推导过程中，应使用清晰、准确、无歧义的语言。
-    *   确保使用双换行符（\\n\\n）来创建段落，保证格式正确。 `;
+                          你需要解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的,在解释和推导过程中，应使用清晰、准确、无歧义的语言。`;
 
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -3153,6 +3165,7 @@ async function handleSendVisionMessage() {
     visionOutputContent.innerHTML = `请求失败: ${error.message}`;
   } finally {
     visionInputText.value = '';
+    visionVideoUrlInput.value = ''; // 新增：清空视频URL输入框
     visionAttachedFiles = [];
     visionAttachmentPreviews.innerHTML = '';
     visionSendButton.disabled = false;
