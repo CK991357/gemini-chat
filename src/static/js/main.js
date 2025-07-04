@@ -2067,7 +2067,7 @@ function addCopyButtonsToCodeBlocks(container) {
         const button = document.createElement('button');
         button.className = 'copy-code-button';
         // 使用 innerHTML 设置按钮内容，包含一个图标和文本
-        button.innerHTML = '&lt;span class="material-symbols-outlined"&gt;content_copy&lt;/span&gt;&lt;span&gt;Copy&lt;/span&gt;';
+        button.title = '复制代码';
         
         /**
          * 为按钮添加点击事件监听器。
@@ -2086,10 +2086,11 @@ function addCopyButtonsToCodeBlocks(container) {
                 // 使用 Clipboard API 异步复制文本
                 navigator.clipboard.writeText(codeToCopy).then(() => {
                     // 复制成功后，临时改变按钮内容提示用户
-                    button.innerHTML = '&lt;span class="material-symbols-outlined"&gt;check&lt;/span&gt;&lt;span&gt;Copied!&lt;/span&gt;';
+                    button.classList.add('copied'); // 添加 copied 类
+                    showToast('代码已复制到剪贴板'); // 使用 showToast 提示
                     // 2秒后恢复按钮的原始状态
                     setTimeout(() => {
-                        button.innerHTML = '&lt;span class="material-symbols-outlined"&gt;content_copy&lt;/span&gt;&lt;span&gt;Copy&lt;/span&gt;';
+                        button.classList.remove('copied'); // 移除 copied 类
                     }, 2000);
                 }).catch(err => {
                     // 如果复制失败，在控制台打印错误并更新按钮提示

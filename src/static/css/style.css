@@ -1354,23 +1354,31 @@ body {
     position: absolute;
     top: 8px;
     right: 8px;
-    background: none; /* 移除背景色 */
-    border: none; /* 移除边框 */
+    background-color: var(--surface-color);
     color: var(--text-secondary-color);
-    border-radius: 4px; /* 调整圆角 */
-    padding: 5px; /* 调整内边距 */
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 20px; /* 调整图标大小 */
-    opacity: 1; /* 暂时设置为1，方便调试 */
-    transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease; /* 添加过渡效果 */
+    opacity: 0;
+    transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease;
+    
+    /* 新增/修改为图标按钮样式 */
+    width: 30px;
+    height: 30px;
+    padding: 0; /* 移除内边距 */
     display: flex;
     align-items: center;
-    justify-content: center; /* 居中图标 */
-    overflow: hidden; /* 隐藏文本 */
-    text-indent: -9999px; /* 隐藏文本 */
-    font-family: 'Material Symbols Outlined'; /* 确保图标字体 */
-    font-weight: normal;
+    justify-content: center;
+    overflow: hidden; /* 确保内容不会溢出 */
+}
+
+/* 使用伪元素添加图标 */
+.message .content pre .copy-code-button::before { /* 使用 ::before 避免与可能的文本内容冲突 */
+    content: "content_copy"; /* Material Icons 复制图标 */
+    font-family: 'Material Symbols Outlined';
+    font-size: 18px; /* 图标大小 */
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    line-height: 1; /* 确保图标垂直居中 */
 }
 
 .message .content pre:hover .copy-code-button {
@@ -1378,21 +1386,25 @@ body {
 }
 
 .copy-code-button:hover {
-    background-color: rgba(var(--primary-color-rgb), 0.1); /* 悬停背景色 */
-    color: var(--primary-color); /* 悬停颜色 */
+    background-color: var(--bg-color); /* 悬停背景色 */
+    color: var(--primary-color); /* 悬停图标颜色 */
 }
 
-/* 隐藏按钮内的 "Copy" 文字，只显示图标 */
-.copy-code-button span:not(.material-symbols-outlined) {
-    display: none;
+/* 用户消息中的代码块复制按钮 */
+.message.user .content pre .copy-code-button {
+    color: rgba(255, 255, 255, 0.7); /* 用户消息中的默认图标颜色 */
+    background-color: rgba(255, 255, 255, 0.1); /* 用户消息中的默认背景色 */
+    border-color: rgba(255, 255, 255, 0.2); /* 用户消息中的默认边框颜色 */
 }
 
-.copy-code-button .material-symbols-outlined {
-    font-size: 20px; /* 确保图标大小与按钮大小一致 */
-    text-indent: 0; /* 恢复图标的文本缩进 */
-    font-family: 'Material Symbols Outlined'; /* 明确指定图标字体 */
-    font-weight: normal;
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+.message.user .content pre .copy-code-button:hover {
+    color: white; /* 用户消息中的悬停图标颜色 */
+    background-color: rgba(255, 255, 255, 0.2); /* 用户消息中的悬停背景色 */
+}
+
+/* 复制成功后的图标变化 */
+.copy-code-button.copied::before {
+    content: "check"; /* 复制成功后显示打勾图标 */
 }
 
 .message .content pre code {
