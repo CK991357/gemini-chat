@@ -3017,8 +3017,8 @@ async function handleSendVisionMessage() {
   const selectedModel = visionModelSelect.value;
   const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
 
-  if (!selectedModelConfig || !selectedModelConfig.isZhipu) {
-      showToast('请选择一个有效的智谱视觉模型。');
+  if (!selectedModelConfig || (!selectedModelConfig.isZhipu && !selectedModelConfig.isSiliconFlow)) {
+      showToast('请选择一个有效的视觉模型。');
       return;
   }
 
