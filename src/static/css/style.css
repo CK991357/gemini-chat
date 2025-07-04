@@ -1600,47 +1600,10 @@ body.dark-mode {
 }
 
 /* 确保视觉区域内的 pre 标签也能正确换行 */
-/* 视觉区域内的代码块样式，确保正确处理和滚动 */
 #vision-reasoning-content pre,
 #vision-final-answer pre {
-    background-color: var(--bg-color);
-    padding: 12px;
-    border-radius: 8px;
-    overflow-x: auto; /* 允许水平滚动 */
-    margin-bottom: 1em;
-    border: 1px solid var(--border-color);
-    max-height: 400px;
-    overflow-y: auto;
-    white-space: pre; /* 保留格式，不自动换行 */
-    word-wrap: normal; /* 禁用自动换行 */
-}
-
-#vision-reasoning-content pre code,
-#vision-final-answer pre code {
-    padding: 0; /* pre 标签已有内边距 */
-    background: none; /* pre 标签已有背景 */
-    border-radius: 0;
-    white-space: inherit; /* 从 pre 继承 white-space 设置 */
-    font-family: 'SF Mono', monospace;
-    font-size: 0.9em;
-    line-height: 1.5;
-}
-
-/* 视觉区域内的行内代码样式 */
-#vision-reasoning-content code,
-#vision-final-answer code {
-    background-color: rgba(128, 128, 128, 0.1);
-    padding: 0.2em 0.4em;
-    border-radius: 4px;
-    font-family: 'SF Mono', monospace;
-    font-size: 0.9em;
-}
-
-/* 确保 pre > code 不会继承行内代码的背景和内边距 */
-#vision-reasoning-content pre > code,
-#vision-final-answer pre > code {
-    background-color: transparent;
-    padding: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
 }
 
 .vision-input-area {

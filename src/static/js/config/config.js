@@ -23,6 +23,11 @@ export const CONFIG = {
                 displayName: 'gemini-2.0-flash (HTTP)',
                 isWebSocket: false
             },
+                        {
+                name: 'glm-4.1v-thinking-flash',
+                displayName: 'GLM-4.1V-Thinking-Flash',
+                isWebSocket: false
+            },
         ]
     },
     // You can change the system instruction to your liking
