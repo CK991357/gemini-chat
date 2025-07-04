@@ -339,6 +339,34 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
+            } else if (model === 'THUDM/GLM-4.1V-9B-Thinking') {
+                console.log(`DEBUG: Routing to SiliconFlow chat proxy for model: ${model}`);
+                const targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
+                const apiKey = env.SF_API_TOKEN;
+
+                if (!apiKey) {
+                    throw new Error('SF_API_TOKEN is not configured in environment variables.');
+                }
+
+                // 直接将请求体转发到中转端点
+                const proxyResponse = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                // 将中转端点的响应（包括流）直接返回给客户端
+                return new Response(proxyResponse.body, {
+                    status: proxyResponse.status,
+                    statusText: proxyResponse.statusText,
+                    headers: {
+                        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                    }
+                });
             }
         }
 

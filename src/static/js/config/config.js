@@ -135,6 +135,11 @@ The report should include the following core sections:
                 name: 'glm-4v-flash',
                 displayName: 'GLM-4V-Flash',
                 isZhipu: true // 标记为智谱模型
+            },
+            {
+                name: 'THUDM/GLM-4.1V-9B-Thinking',
+                displayName: 'GLM-4.1V-9B-Thinking',
+                isSiliconFlow: true // 标记为SiliconFlow模型
             }
         ],
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
