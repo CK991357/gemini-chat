@@ -3051,7 +3051,7 @@ async function handleSendVisionMessage() {
     *   **必须**使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的思考过程，使其结构清晰、易于阅读。
     *   对于复杂的分析，使用标题和子标题来划分不同的部分。
     *   确保使用双换行符（\\n\\n）来创建段落，保证格式正确。
-    *   在思考过程之后，给出一个简洁、明确的最终答案。对于需要明确标识的最终结果（如解题答案），请使用 \`<|begin_of_box|>\` 和 \`<|end_of_box|>\` 标记将其包裹。
+    *   在思考过程之后，给出一个简洁、明确的最终答案。
     *   给出最终答案后，对于涉及到的数学，物理，化学等理科的习题请将题目用到的定义，定理，公式等知识点进行汇总。
     *   在解释和推导过程中，应使用清晰、准确、无歧义的语言。
 
@@ -3138,11 +3138,7 @@ async function handleSendVisionMessage() {
             }
 
             // 预处理并渲染
-            let processedContent = fullContent
-              .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
-              .replace(/<\|end_of_box\|>/g, '</div>');
-            
-            visionOutputContent.innerHTML = marked.parse(processedContent);
+            visionOutputContent.innerHTML = marked.parse(fullContent);
             // 为新渲染的代码块添加复制按钮
             addCopyButtonsToCodeBlocks(visionOutputContent);
 
