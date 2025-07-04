@@ -2980,17 +2980,30 @@ async function handleSendVisionMessage() {
 你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
 
 # 输出规则
-你必须严格遵循以下输出格式，并且所有内容都必须使用 Markdown 语法进行格式化：
+当你处理学科习题和代码输出任务时必须严格遵循以下模型输出格式，并且所有内容都必须使用 Markdown 语法进行格式化：
 
-    **模型输出**:
+1.  **学科习题**:
     *   必须提供详细、清晰、分步的推理过程。
     *   解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的。
     *   **必须**使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的思考过程，使其结构清晰、易于阅读。
     *   对于复杂的分析，使用标题和子标题来划分不同的部分。
     *   确保使用双换行符（\\n\\n）来创建段落，保证格式正确。
-    *   在思考过程之后，给出一个简洁、明确的最终答案。如果是数学，物理，化学等理科的习题请将题目用到的定义，定理，公式等知识点进行汇总。
-    *   **必须**使用 Markdown 语法来格式化所有输出内容。
-    *   对于需要明确标识的最终结果（如解题答案），请使用 \`<|begin_of_box|>\` 和 \`<|end_of_box|>\` 标记将其包裹。`;
+    *   在思考过程之后，给出一个简洁、明确的最终答案。对于需要明确标识的最终结果（如解题答案），请使用 \`<|begin_of_box|>\` 和 \`<|end_of_box|>\` 标记将其包裹。
+    *   给出最终答案后，对于涉及到的数学，物理，化学等理科的习题请将题目用到的定义，定理，公式等知识点进行汇总。
+    *   在解释和推导过程中，应使用清晰、准确、无歧义的语言。
+
+2.  **代码输出**:
+    *   **必须**使用 Markdown 语法来格式化
+    *   所有代码都将放置在 Markdown 代码块中，并指定语言类型以启用语法高亮。
+    *   对于文本中提及的变量名、函数名、关键字或简短的代码片段，将使用行内代码格式，例如：请确保调用 myFunction() 并检查 result 变量。
+    *   引用文件时，将使用可点击的链接格式，包含相对路径和可选的行号，例如：请查看 src/static/js/main.js 文件。
+    *   在代码中添加必要的注释，解释复杂逻辑、重要变量或函数的作用。
+    *   在每个代码块之前，提供简要的说明，解释这段代码的功能、目的或它解决了什么问题。
+    *   如果涉及多个文件，每个文件的代码将独立放置在各自的代码块中，并清晰地标明文件名。
+    *   如果是小范围的修改，可能会使用 diff 格式的代码块来展示修改内容，清晰地显示添加、删除和修改的行。
+    *   如果代码依赖于特定的库、框架或配置，会明确指出这些依赖，并提供安装或配置的说明。
+    *   提供清晰的命令行指令，指导用户如何运行或测试提供的代码。
+    *   描述运行代码后预期的结果或行为。`;
 
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -3012,22 +3025,32 @@ async function handleSendVisionMessage() {
     }
 
     const result = await response.json();
-    
     const message = result.choices?.[0]?.message;
-    // 提供默认值，确保即使API未返回对应字段，页面也能显示提示信息
-    const reasoningContent = message?.reasoning_content || '🤔 模型未提供思考过程。';
-    let finalContent = message?.content || '✅ 模型未提供最终答案。';
 
-    // 1. 预处理最终答案，将特殊的答案标记替换为可供CSS渲染的HTML标签
-    finalContent = finalContent
+    // 1. 灵活地组合内容
+    let fullContent = '';
+    if (message?.reasoning_content) {
+        fullContent += message.reasoning_content;
+    }
+    if (message?.content) {
+        // 如果两部分内容都存在，用分隔线隔开，增加可读性
+        if (fullContent) {
+            fullContent += '\n\n---\n\n';
+        }
+        fullContent += message.content;
+    }
+
+    if (!fullContent) {
+        fullContent = '模型未返回有效内容。';
+    }
+
+    // 2. 预处理特殊标记，替换为带样式的 HTML div
+    fullContent = fullContent
         .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
         .replace(/<\|end_of_box\|>/g, '</div>');
 
-    // 2. 拼接思考过程和最终答案为一个完整的 Markdown 字符串
-    const fullOutput = `### 🤔 思考过程\n\n${reasoningContent}\n\n<hr>\n\n### ✅ 最终答案\n\n${finalContent}`;
-
-    // 3. 使用 marked.js 一次性渲染整个 Markdown 字符串
-    visionOutputContent.innerHTML = marked.parse(fullOutput);
+    // 3. 使用 marked.js 一次性渲染所有内容
+    visionOutputContent.innerHTML = marked.parse(fullContent);
 
     // 4. 触发 MathJax 对新渲染的内容进行排版
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
