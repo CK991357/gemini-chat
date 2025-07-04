@@ -2942,6 +2942,7 @@ function removeVisionAttachment(indexToRemove) {
  * 构建请求体，调用 API，并处理和显示返回的结果。
  */
 async function handleSendVisionMessage() {
+  let mathJaxDebounceTimer = null; // 为MathJax渲染添加防抖定时器
   const text = visionInputText.value.trim();
   if (!text && visionAttachedFiles.length === 0) {
     showToast('请输入文本或添加附件。');
@@ -2978,9 +2979,9 @@ async function handleSendVisionMessage() {
 你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
 
 # 输出规则
-当你处理学科习题和代码输出任务时必须严格遵循以下模型输出格式，并且所有内容都必须使用 Markdown 语法进行格式化：
+当你处理数学、物理、化学、生物学等科学练习题和代码输出任务时必须严格遵循以下模型输出格式，并且所有内容都必须使用 Markdown 语法进行格式化：
 
-1.  **学科习题**:
+1.  **科学练习题**:
     *   必须提供详细、清晰、分步的推理过程。
     *   解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的。
     *   **必须**使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的思考过程，使其结构清晰、易于阅读。
@@ -3079,11 +3080,15 @@ async function handleSendVisionMessage() {
             
             visionOutputContent.innerHTML = marked.parse(processedContent);
 
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-              MathJax.startup.promise.then(() => {
-                MathJax.typeset([visionOutputContent]);
-              }).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
+            // 使用防抖机制来调用MathJax，避免在高频更新中反复触发渲染
+            clearTimeout(mathJaxDebounceTimer);
+            mathJaxDebounceTimer = setTimeout(() => {
+                if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                    MathJax.startup.promise.then(() => {
+                        MathJax.typeset([visionOutputContent]);
+                    }).catch((err) => console.error('MathJax typesetting failed:', err));
+                }
+            }, 200); // 设置200毫秒的延迟
 
           } catch (e) {
             console.error('解析视觉模型流数据块时出错:', e, jsonStr);
@@ -3092,6 +3097,14 @@ async function handleSendVisionMessage() {
       }
     }
     // --- 结束流式处理逻辑 ---
+
+    // 确保在流结束后执行最后一次MathJax渲染
+    clearTimeout(mathJaxDebounceTimer);
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            MathJax.typeset([visionOutputContent]);
+        }).catch((err) => console.error('MathJax final typesetting failed:', err));
+    }
 
   } catch (error) {
     console.error('发送视觉消息时出错:', error);
