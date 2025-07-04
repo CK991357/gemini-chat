@@ -1739,3 +1739,95 @@ body.dark-mode {
         font-size: 20px;
     }
 }
+/* --- 视觉模型输出样式 --- */
+
+/* 推理过程容器 */
+.reasoning-container {
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-top: 8px;
+    border-left: 4px solid #6c757d; /* 灰色左边框 */
+    max-height: 400px; /* 限制最大高度，超出则滚动 */
+    overflow-y: auto;
+}
+
+/* 最终答案容器 */
+.final-container {
+    background-color: #f0f7ff;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+    border-left: 4px solid #007bff; /* 蓝色左边框 */
+}
+
+/* 特殊Token高亮框 */
+.highlight-box {
+    background-color: #fffbe6;
+    border: 1px solid #ffe58f;
+    border-radius: 4px;
+    padding: 12px;
+    margin: 16px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Token用量显示区域 */
+.token-usage {
+    margin-top: 20px;
+    padding: 8px 12px;
+    background-color: #f1f3f5;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: #495057;
+    text-align: right;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+/* 折叠面板 <details> 和 <summary> */
+details {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 8px 12px;
+    transition: background-color 0.3s ease;
+    margin-bottom: 10px;
+}
+
+details[open] {
+    background-color: #f8f9fa;
+}
+
+summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #343a40;
+    outline: none;
+    list-style: none; /* 移除默认的三角箭头 */
+    display: flex;
+    align-items: center;
+}
+
+summary::-webkit-details-marker {
+    display: none; /* 同样为了移除默认箭头 */
+}
+
+summary::before {
+    content: '▶';
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 0.8em;
+    transition: transform 0.2s ease-in-out;
+}
+
+details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+/* 简单的淡入动画 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+details[open] .reasoning-container, .final-container {
+    animation: fadeIn 0.4s ease;
+}
