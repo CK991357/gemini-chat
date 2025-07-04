@@ -1739,3 +1739,126 @@ body.dark-mode {
         font-size: 20px;
     }
 }
+/* ==========================================================================
+   视觉模型输出区域样式 (Vision Model Output Area Styles)
+   ========================================================================== */
+
+/* 推理过程容器样式 */
+.reasoning-container {
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 10px;
+    border-left: 3px solid #2196F3; /* 蓝色边框 */
+    max-height: 400px;
+    overflow-y: auto;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+/* 最终答案容器样式 */
+.final-container {
+    background-color: #f0f7ff;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 20px;
+    border-left: 3px solid #4CAF50; /* 绿色边框 */
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+/* 特殊Token高亮框样式 */
+.highlight-box {
+    background-color: #fff8e1;
+    border: 1px solid #ffd54f;
+    border-radius: 4px;
+    padding: 10px;
+    margin: 10px 0;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Token用量显示区域样式 */
+.token-usage {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: #666;
+    text-align: right;
+    font-family: monospace;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 可折叠的 details/summary 样式 */
+details {
+    margin-bottom: 15px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    transition: all 0.3s ease;
+}
+
+details[open] {
+    background-color: var(--bg-color);
+}
+
+summary {
+    cursor: pointer;
+    font-weight: bold;
+    padding: 8px 0;
+    outline: none;
+    display: flex;
+    align-items: center;
+    color: var(--text-color);
+}
+
+summary::before {
+    content: '▶';
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 0.8em;
+    transition: transform 0.2s ease;
+}
+
+details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.reasoning-container, .final-container {
+    animation: fadeIn 0.5s ease;
+}
+
+/* 暗色模式下的样式调整 */
+body.dark-mode .reasoning-container {
+    background-color: #2c2c2c;
+    border-left-color: #6366f1;
+}
+
+body.dark-mode .final-container {
+    background-color: #2a303c;
+    border-left-color: #34d399;
+}
+
+body.dark-mode .highlight-box {
+    background-color: #4d3800;
+    border-color: #a16207;
+    color: #fefce8;
+}
+
+body.dark-mode .token-usage {
+    background-color: #374151;
+    color: #d1d5db;
+}
+
+body.dark-mode details {
+    border-color: #4b5563;
+}
+
+body.dark-mode details[open] {
+    background-color: #374151;
+}
