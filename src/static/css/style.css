@@ -1354,19 +1354,23 @@ body {
     position: absolute;
     top: 8px;
     right: 8px;
-    background-color: var(--surface-color);
+    background: none; /* 移除背景色 */
+    border: none; /* 移除边框 */
     color: var(--text-secondary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 4px 8px;
+    border-radius: 4px; /* 调整圆角 */
+    padding: 5px; /* 调整内边距 */
     cursor: pointer;
-    font-size: 14px;
-    font-family: 'Roboto', sans-serif;
+    font-size: 20px; /* 调整图标大小 */
     opacity: 0;
-    transition: opacity 0.3s ease, background-color 0.3s ease;
+    transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease; /* 添加过渡效果 */
     display: flex;
     align-items: center;
-    gap: 4px;
+    justify-content: center; /* 居中图标 */
+    overflow: hidden; /* 隐藏文本 */
+    text-indent: -9999px; /* 隐藏文本 */
+    font-family: 'Material Symbols Outlined'; /* 确保图标字体 */
+    font-weight: normal;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
 .message .content pre:hover .copy-code-button {
@@ -1374,12 +1378,18 @@ body {
 }
 
 .copy-code-button:hover {
-    background-color: var(--bg-color);
-    color: var(--primary-color);
+    background-color: rgba(var(--primary-color-rgb), 0.1); /* 悬停背景色 */
+    color: var(--primary-color); /* 悬停颜色 */
+}
+
+/* 隐藏按钮内的 "Copy" 文字，只显示图标 */
+.copy-code-button span:not(.material-symbols-outlined) {
+    display: none;
 }
 
 .copy-code-button .material-symbols-outlined {
-    font-size: 16px;
+    font-size: 20px; /* 确保图标大小与按钮大小一致 */
+    text-indent: 0; /* 恢复图标的文本缩进 */
 }
 
 .message .content pre code {
