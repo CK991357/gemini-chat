@@ -3030,40 +3030,45 @@ async function handleSendVisionMessage() {
   visionSendButton.textContent = 'progress_activity';
 
   try {
-    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
-                          你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频、url等），并根据视觉内容回答问题。
-                          你需要解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的,在解释和推导过程中，应使用清晰、准确、无歧义的语言。`;
-
-    // 将系统提示和用户文本合并
-    const combinedText = systemPrompt + '\n\n' + text;
-    
     const videoUrl = visionVideoUrlInput.value.trim();
     const content = [];
+    let messages = [];
 
-    // 始终包含合并后的文本
-    content.push({ type: 'text', text: combinedText });
-
-    // 优先处理视频URL
     if (videoUrl) {
-      content.push({ type: 'video_url', video_url: { url: videoUrl } });
-      // 根据API文档，视频和图片不能同时输入，因此清空图片附件
-      if (visionAttachedFiles.length > 0) {
-        visionAttachedFiles = [];
-        visionAttachmentPreviews.innerHTML = '';
-        showToast('已输入视频URL，图片附件将被忽略。', 3000);
-      }
+        // --- 视频处理逻辑 ---
+        // 严格按照API文档，只包含 video_url 和 text，不加系统提示
+        content.push({ type: 'video_url', video_url: { url: videoUrl } });
+        if (text) {
+            content.push({ type: 'text', text: text });
+        }
+        
+        messages = [{ role: 'user', content: content }];
+
+        // 如果同时提供了图片，提示用户图片将被忽略并清空
+        if (visionAttachedFiles.length > 0) {
+            visionAttachedFiles = [];
+            visionAttachmentPreviews.innerHTML = '';
+            showToast('检测到视频URL，图片附件将被忽略。', 3000);
+        }
+
     } else {
-      // 如果没有视频URL，则处理图片附件
-      visionAttachedFiles.forEach(file => {
-        content.push({ type: 'image_url', image_url: { url: file.data } });
-      });
+        // --- 图片处理逻辑 (维持之前的优化) ---
+        const systemPrompt = `你是一个顶级的多模态视觉分析专家。
+                          你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频、url等），并根据视觉内容回答问题。
+                          你需要解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的,在解释和推导过程中，应使用清晰、准确、无歧义的语言。`;
+        
+        // 将系统提示和用户文本合并
+        const combinedText = systemPrompt + '\n\n' + text;
+        content.push({ type: 'text', text: combinedText });
+
+        visionAttachedFiles.forEach(file => {
+            content.push({ type: 'image_url', image_url: { url: file.data } });
+        });
+
+        messages = [{ role: 'user', content: content }];
     }
 
-    // 构建符合API文档的 messages 结构
-    const messages = [
-        { role: 'user', content: content }
-    ];
-
+    // 在 if/else 逻辑块外部统一构建 requestBody
     const requestBody = {
       model: selectedModel,
       messages: messages,
