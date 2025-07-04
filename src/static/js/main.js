@@ -3030,12 +3030,18 @@ async function handleSendVisionMessage() {
   visionSendButton.textContent = 'progress_activity';
 
   try {
+    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
+                          你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频、url等），并根据视觉内容回答问题。
+                          你需要解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的,在解释和推导过程中，应使用清晰、准确、无歧义的语言。`;
+
+    // 将系统提示和用户文本合并
+    const combinedText = systemPrompt + '\n\n' + text;
+    
     const videoUrl = visionVideoUrlInput.value.trim();
     const content = [];
 
-    if (text) {
-      content.push({ type: 'text', text: text });
-    }
+    // 始终包含合并后的文本
+    content.push({ type: 'text', text: combinedText });
 
     // 优先处理视频URL
     if (videoUrl) {
@@ -3053,14 +3059,8 @@ async function handleSendVisionMessage() {
       });
     }
 
-    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
-    
-                          你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频、url等），并根据视觉内容回答问题。
-
-                          你需要解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的,在解释和推导过程中，应使用清晰、准确、无歧义的语言。`;
-
+    // 构建符合API文档的 messages 结构
     const messages = [
-        { role: 'system', content: systemPrompt },
         { role: 'user', content: content }
     ];
 
