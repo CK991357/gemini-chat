@@ -1085,6 +1085,8 @@ client.on('content', (data) => {
             // 注意：marked.js 已经集成了 highlight.js，所以不需要单独调用 hljs.highlightElement
             // 立即更新 innerHTML，确保实时渲染
             currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
+            // 为新渲染的代码块添加复制按钮
+            addCopyButtonsToCodeBlocks(currentAIMessageContentDiv.markdownContainer);
             
             // 触发 MathJax 渲染
             if (typeof MathJax !== 'undefined') {
@@ -1236,6 +1238,8 @@ async function processHttpStream(requestBody, apiKey) {
                                         currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
                                         // 立即渲染Markdown
                                         currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
+                                        // 为新渲染的代码块添加复制按钮
+                                        addCopyButtonsToCodeBlocks(currentAIMessageContentDiv.markdownContainer);
                                         // 触发 MathJax 渲染
                                         if (typeof MathJax !== 'undefined') {
                                             if (typeof MathJax !== 'undefined' && MathJax.startup) {
@@ -2040,6 +2044,65 @@ function checkBrowserCompatibility() {
         }
     }
     return true;
+}
+
+/**
+ * 查找指定容器内的所有代码块，并为每个代码块添加一个复制按钮。
+ * @param {HTMLElement} container - 要在其中搜索代码块的容器元素。
+ */
+function addCopyButtonsToCodeBlocks(container) {
+    // 安全检查，如果容器不存在则直接返回
+    if (!container) return;
+
+    // 查找容器内所有的 <pre> 元素，它们是代码块的容器
+    const codeBlocks = container.querySelectorAll('pre');
+
+    codeBlocks.forEach(codeBlock => {
+        // 如果已经存在复制按钮，则跳过，避免重复添加
+        if (codeBlock.querySelector('.copy-code-button')) {
+            return;
+        }
+
+        // 创建按钮元素
+        const button = document.createElement('button');
+        button.className = 'copy-code-button';
+        // 使用 innerHTML 设置按钮内容，包含一个图标和文本
+        button.innerHTML = '&lt;span class="material-symbols-outlined"&gt;content_copy&lt;/span&gt;&lt;span&gt;Copy&lt;/span&gt;';
+        
+        /**
+         * 为按钮添加点击事件监听器。
+         * @param {MouseEvent} e - 点击事件对象。
+         */
+        button.addEventListener('click', (e) => {
+            // 阻止事件冒泡，以防触发其他父元素的点击事件
+            e.stopPropagation(); 
+            
+            // 找到当前代码块中的 <code> 元素
+            const codeElement = codeBlock.querySelector('code');
+            if (codeElement) {
+                // 获取代码的纯文本内容
+                const codeToCopy = codeElement.innerText;
+                
+                // 使用 Clipboard API 异步复制文本
+                navigator.clipboard.writeText(codeToCopy).then(() => {
+                    // 复制成功后，临时改变按钮内容提示用户
+                    button.innerHTML = '&lt;span class="material-symbols-outlined"&gt;check&lt;/span&gt;&lt;span&gt;Copied!&lt;/span&gt;';
+                    // 2秒后恢复按钮的原始状态
+                    setTimeout(() => {
+                        button.innerHTML = '&lt;span class="material-symbols-outlined"&gt;content_copy&lt;/span&gt;&lt;span&gt;Copy&lt;/span&gt;';
+                    }, 2000);
+                }).catch(err => {
+                    // 如果复制失败，在控制台打印错误并更新按钮提示
+                    console.error('Failed to copy code: ', err);
+                    const textSpan = button.querySelector('span:last-child');
+                    if(textSpan) textSpan.textContent = 'Error';
+                });
+            }
+        });
+
+        // 将创建的按钮添加到代码块中
+        codeBlock.appendChild(button);
+    });
 }
 
 /**
@@ -3079,6 +3142,8 @@ async function handleSendVisionMessage() {
               .replace(/<\|end_of_box\|>/g, '</div>');
             
             visionOutputContent.innerHTML = marked.parse(processedContent);
+            // 为新渲染的代码块添加复制按钮
+            addCopyButtonsToCodeBlocks(visionOutputContent);
 
             // 使用防抖机制来调用MathJax，避免在高频更新中反复触发渲染
             clearTimeout(mathJaxDebounceTimer);

@@ -1346,6 +1346,40 @@ body {
     border: 1px solid var(--border-color);
     max-height: 300px; /* 新增 */
     overflow-y: auto; /* 新增 */
+    position: relative; /* 为复制按钮定位 */
+}
+
+/* 代码块复制按钮 */
+.message .content pre .copy-code-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background-color: var(--surface-color);
+    color: var(--text-secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: 'Roboto', sans-serif;
+    opacity: 0;
+    transition: opacity 0.3s ease, background-color 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.message .content pre:hover .copy-code-button {
+    opacity: 1;
+}
+
+.copy-code-button:hover {
+    background-color: var(--bg-color);
+    color: var(--primary-color);
+}
+
+.copy-code-button .material-symbols-outlined {
+    font-size: 16px;
 }
 
 .message .content pre code {
