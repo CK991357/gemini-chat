@@ -2957,13 +2957,11 @@ async function handleSendVisionMessage() {
       return;
   }
 
-  // 获取并清空之前的输出
   const visionOutputContent = document.getElementById('vision-output-content');
   visionOutputContent.innerHTML = '正在请求模型...';
 
-  // 显示加载状态
   visionSendButton.disabled = true;
-  visionSendButton.textContent = 'progress_activity'; // 使用加载图标
+  visionSendButton.textContent = 'progress_activity';
 
   try {
     const content = [];
@@ -3010,13 +3008,16 @@ async function handleSendVisionMessage() {
         { role: 'user', content: content }
     ];
 
+    const requestBody = {
+      model: selectedModel,
+      messages: messages,
+      stream: true, // 关键：启用流式响应
+    };
+
     const response = await fetch('/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: selectedModel,
-        messages: messages,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -3024,54 +3025,84 @@ async function handleSendVisionMessage() {
       throw new Error(errorData.error?.message || 'API 请求失败');
     }
 
-    const result = await response.json();
-    const message = result.choices?.[0]?.message;
+    // --- 开始流式处理逻辑 ---
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let reasoningContent = '';
+    let finalContent = '';
+    let buffer = '';
 
-    // 1. 灵活地组合内容
-    let fullContent = '';
-    if (message?.reasoning_content) {
-        fullContent += message.reasoning_content;
-    }
-    if (message?.content) {
-        // 如果两部分内容都存在，用分隔线隔开，增加可读性
-        if (fullContent) {
-            fullContent += '\n\n---\n\n';
+    visionOutputContent.innerHTML = ''; // 清空"正在请求模型..."
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // 保留可能不完整的最后一行
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6);
+          if (jsonStr.trim() === '[DONE]') continue;
+          try {
+            const data = JSON.parse(jsonStr);
+            const delta = data.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.reasoning_content) {
+              reasoningContent += delta.reasoning_content;
+            }
+            if (delta.content) {
+              finalContent += delta.content;
+            }
+
+            // 组合并渲染
+            let fullContent = '';
+            if (reasoningContent) {
+              fullContent += reasoningContent;
+            }
+            if (finalContent) {
+              if (fullContent) {
+                fullContent += '\n\n---\n\n';
+              }
+              fullContent += finalContent;
+            }
+
+            // 预处理并渲染
+            let processedContent = fullContent
+              .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
+              .replace(/<\|end_of_box\|>/g, '</div>');
+            
+            visionOutputContent.innerHTML = marked.parse(processedContent);
+
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+              MathJax.startup.promise.then(() => {
+                MathJax.typeset([visionOutputContent]);
+              }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+
+          } catch (e) {
+            console.error('解析视觉模型流数据块时出错:', e, jsonStr);
+          }
         }
-        fullContent += message.content;
+      }
     }
-
-    if (!fullContent) {
-        fullContent = '模型未返回有效内容。';
-    }
-
-    // 2. 预处理特殊标记，替换为带样式的 HTML div
-    fullContent = fullContent
-        .replace(/<\|begin_of_box\|>/g, '<div class="final-answer-box">')
-        .replace(/<\|end_of_box\|>/g, '</div>');
-
-    // 3. 使用 marked.js 一次性渲染所有内容
-    visionOutputContent.innerHTML = marked.parse(fullContent);
-
-    // 4. 触发 MathJax 对新渲染的内容进行排版
-    if (typeof MathJax !== 'undefined' && MathJax.startup) {
-        MathJax.startup.promise.then(() => {
-            MathJax.typeset([visionOutputContent]);
-        }).catch((err) => console.error('MathJax typesetting failed:', err));
-    }
+    // --- 结束流式处理逻辑 ---
 
   } catch (error) {
-    console.error('Error sending vision message:', error);
+    console.error('发送视觉消息时出错:', error);
     showToast(`发生错误: ${error.message}`);
     visionOutputContent.innerHTML = `请求失败: ${error.message}`;
   } finally {
-    // 清理输入
     visionInputText.value = '';
     visionAttachedFiles = [];
     visionAttachmentPreviews.innerHTML = '';
-
-    // 恢复按钮状态
     visionSendButton.disabled = false;
-    visionSendButton.textContent = 'send'; // 恢复发送图标
+    visionSendButton.textContent = 'send';
   }
 }
 
