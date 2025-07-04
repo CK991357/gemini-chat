@@ -3005,48 +3005,39 @@ function removeVisionAttachment(indexToRemove) {
  * @description 发送消息到视觉模型。
  * 构建请求体，调用 API，并处理和显示返回的结果。
  */
-/**
- * @function handleSendVisionMessage
- * @description 发送消息到视觉模型。
- * 构建请求体，以流式方式调用API，并处理和显示返回的结果。
- * - 动态创建可折叠的推理过程区域和独立的最终答案区域。
- * - 分别累积和渲染 `reasoning_content` 和 `content`。
- * - 当 `content` 开始返回时，自动折叠推理过程。
- * - 处理特殊 token `<|begin_of_box|>` 和 `<|end_of_box|>` 以高亮显示最终答案。
- * - 在流结束后显示 Token 使用量。
- */
 async function handleSendVisionMessage() {
-    const text = visionInputText.value.trim();
-    if (!text && visionAttachedFiles.length === 0) {
-        showToast('请输入文本或添加附件。');
-        return;
+  let mathJaxDebounceTimer = null; // 为MathJax渲染添加防抖定时器
+  const text = visionInputText.value.trim();
+  if (!text && visionAttachedFiles.length === 0) {
+    showToast('请输入文本或添加附件。');
+    return;
+  }
+
+  const visionModelSelect = document.getElementById('vision-model-select');
+  const selectedModel = visionModelSelect.value;
+  const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
+
+  if (!selectedModelConfig || !selectedModelConfig.isZhipu) {
+      showToast('请选择一个有效的智谱视觉模型。');
+      return;
+  }
+
+  const visionOutputContent = document.getElementById('vision-output-content');
+  visionOutputContent.innerHTML = '正在请求模型...';
+
+  visionSendButton.disabled = true;
+  visionSendButton.textContent = 'progress_activity';
+
+  try {
+    const content = [];
+    if (text) {
+      content.push({ type: 'text', text: text });
     }
+    visionAttachedFiles.forEach(file => {
+      content.push({ type: 'image_url', image_url: { url: file.data } });
+    });
 
-    const visionModelSelect = document.getElementById('vision-model-select');
-    const selectedModel = visionModelSelect.value;
-    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
-
-    if (!selectedModelConfig || !selectedModelConfig.isZhipu) {
-        showToast('请选择一个有效的智谱视觉模型。');
-        return;
-    }
-
-    const visionOutputContent = document.getElementById('vision-output-content');
-    visionOutputContent.innerHTML = '正在请求模型...';
-
-    visionSendButton.disabled = true;
-    visionSendButton.textContent = 'progress_activity';
-
-    try {
-        const content = [];
-        if (text) {
-            content.push({ type: 'text', text: text });
-        }
-        visionAttachedFiles.forEach(file => {
-            content.push({ type: 'image_url', image_url: { url: file.data } });
-        });
-
-        const systemPrompt = `你是一个顶级的多模态视觉分析专家。
+    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
 
 # 核心任务
 你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
@@ -3056,153 +3047,117 @@ async function handleSendVisionMessage() {
     *   解释你是如何理解视觉信息，并如何基于这些信息进行逻辑推导的,在解释和推导过程中，应使用清晰、准确、无歧义的语言。
     *   确保使用双换行符（\\n\\n）来创建段落，保证格式正确。 `;
 
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: content }
-        ];
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: content }
+    ];
 
-        const requestBody = {
-            model: selectedModel,
-            messages: messages,
-            stream: true,
-        };
+    const requestBody = {
+      model: selectedModel,
+      messages: messages,
+      stream: true, // 关键：启用流式响应
+    };
 
-        const response = await fetch('/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-        });
+    const response = await fetch('/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'API 请求失败');
-        }
-
-        // --- 开始流式处理逻辑 ---
-        visionOutputContent.innerHTML = ''; // 清空"正在请求模型..."
-
-        // 1. 创建动态结构
-        const details = document.createElement('details');
-        details.id = 'reasoning-details';
-        details.open = true; // 默认展开
-
-        const summary = document.createElement('summary');
-        summary.textContent = '推理过程';
-        details.appendChild(summary);
-
-        const reasoningContainer = document.createElement('div');
-        reasoningContainer.id = 'reasoning-container';
-        reasoningContainer.className = 'reasoning-container markdown-body';
-        details.appendChild(reasoningContainer);
-
-        const finalContainer = document.createElement('div');
-        finalContainer.id = 'final-container';
-        finalContainer.className = 'final-container markdown-body';
-
-        const tokenUsageDiv = document.createElement('div');
-        tokenUsageDiv.id = 'token-usage';
-        tokenUsageDiv.className = 'token-usage';
-
-        visionOutputContent.appendChild(details);
-        visionOutputContent.appendChild(finalContainer);
-        visionOutputContent.appendChild(tokenUsageDiv);
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let reasoningContent = '';
-        let finalContent = '';
-        let buffer = '';
-        let mathJaxDebounceTimer = null;
-        let hasStartedFinalContent = false;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const jsonStr = line.substring(6);
-                    if (jsonStr.trim() === '[DONE]') continue;
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (!delta) continue;
-
-                        // 2. 分别累积和渲染
-                        if (delta.reasoning_content) {
-                            reasoningContent += delta.reasoning_content;
-                            reasoningContainer.innerHTML = marked.parse(reasoningContent);
-                            addCopyButtonsToCodeBlocks(reasoningContainer);
-                        }
-
-                        if (delta.content) {
-                            if (!hasStartedFinalContent) {
-                                hasStartedFinalContent = true;
-                                details.open = false; // 自动折叠推理过程
-                            }
-                            finalContent += delta.content;
-                            
-                            // 3. 处理特殊 Token
-                            let processedContent = finalContent
-                                .replace(/<\|begin_of_box\|>/g, '<div class="highlight-box">')
-                                .replace(/<\|end_of_box\|>/g, '</div>');
-                            
-                            finalContainer.innerHTML = marked.parse(processedContent);
-                            addCopyButtonsToCodeBlocks(finalContainer);
-                        }
-
-                        // 4. 更新Token用量
-                        if (data.usage) {
-                            const usage = data.usage;
-                            tokenUsageDiv.innerHTML = `
-                                Token用量:
-                                输入: ${usage.prompt_tokens} |
-                                输出: ${usage.completion_tokens} |
-                                总计: ${usage.total_tokens}
-                            `;
-                        }
-
-                        // 5. 使用防抖机制调用MathJax
-                        clearTimeout(mathJaxDebounceTimer);
-                        mathJaxDebounceTimer = setTimeout(() => {
-                            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                MathJax.startup.promise.then(() => {
-                                    MathJax.typeset([reasoningContainer, finalContainer]);
-                                }).catch((err) => console.error('MathJax typesetting failed:', err));
-                            }
-                        }, 200);
-
-                    } catch (e) {
-                        console.error('解析视觉模型流数据块时出错:', e, jsonStr);
-                    }
-                }
-            }
-        }
-        // --- 结束流式处理逻辑 ---
-
-        // 确保在流结束后执行最后一次MathJax渲染
-        clearTimeout(mathJaxDebounceTimer);
-        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-            MathJax.startup.promise.then(() => {
-                MathJax.typeset([reasoningContainer, finalContainer]);
-            }).catch((err) => console.error('MathJax final typesetting failed:', err));
-        }
-
-    } catch (error) {
-        console.error('发送视觉消息时出错:', error);
-        showToast(`发生错误: ${error.message}`);
-        visionOutputContent.innerHTML = `请求失败: ${error.message}`;
-    } finally {
-        visionInputText.value = '';
-        visionAttachedFiles = [];
-        visionAttachmentPreviews.innerHTML = '';
-        visionSendButton.disabled = false;
-        visionSendButton.textContent = 'send';
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'API 请求失败');
     }
+
+    // --- 开始流式处理逻辑 ---
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let reasoningContent = '';
+    let finalContent = '';
+    let buffer = '';
+
+    visionOutputContent.innerHTML = ''; // 清空"正在请求模型..."
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // 保留可能不完整的最后一行
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6);
+          if (jsonStr.trim() === '[DONE]') continue;
+          try {
+            const data = JSON.parse(jsonStr);
+            const delta = data.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.reasoning_content) {
+              reasoningContent += delta.reasoning_content;
+            }
+            if (delta.content) {
+              finalContent += delta.content;
+            }
+
+            // 组合并渲染
+            let fullContent = '';
+            if (reasoningContent) {
+              fullContent += reasoningContent;
+            }
+            if (finalContent) {
+              if (fullContent) {
+                fullContent += '\n\n---\n\n';
+              }
+              fullContent += finalContent;
+            }
+
+            // 预处理并渲染
+            visionOutputContent.innerHTML = marked.parse(fullContent);
+            // 为新渲染的代码块添加复制按钮
+            addCopyButtonsToCodeBlocks(visionOutputContent);
+
+            // 使用防抖机制来调用MathJax，避免在高频更新中反复触发渲染
+            clearTimeout(mathJaxDebounceTimer);
+            mathJaxDebounceTimer = setTimeout(() => {
+                if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                    MathJax.startup.promise.then(() => {
+                        MathJax.typeset([visionOutputContent]);
+                    }).catch((err) => console.error('MathJax typesetting failed:', err));
+                }
+            }, 200); // 设置200毫秒的延迟
+
+          } catch (e) {
+            console.error('解析视觉模型流数据块时出错:', e, jsonStr);
+          }
+        }
+      }
+    }
+    // --- 结束流式处理逻辑 ---
+
+    // 确保在流结束后执行最后一次MathJax渲染
+    clearTimeout(mathJaxDebounceTimer);
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            MathJax.typeset([visionOutputContent]);
+        }).catch((err) => console.error('MathJax final typesetting failed:', err));
+    }
+
+  } catch (error) {
+    console.error('发送视觉消息时出错:', error);
+    showToast(`发生错误: ${error.message}`);
+    visionOutputContent.innerHTML = `请求失败: ${error.message}`;
+  } finally {
+    visionInputText.value = '';
+    visionAttachedFiles = [];
+    visionAttachmentPreviews.innerHTML = '';
+    visionSendButton.disabled = false;
+    visionSendButton.textContent = 'send';
+  }
 }
 
 /**
