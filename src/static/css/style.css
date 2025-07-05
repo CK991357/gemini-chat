@@ -289,15 +289,11 @@ body {
 }
 
 /* 聊天容器 */
-.chat-container {
-    display: none; /* 默认隐藏 */
-    padding: 20px;
+.chat-container, .translation-container, .vision-container, .log-mode {
+    display: none; /* 默认隐藏所有容器 */
+    flex-direction: column;
     height: 100%;
-    box-sizing: border-box;
-    flex-direction: column; /* 内部使用 flex 布局 */
-    position: relative; /* 确保内部元素可以相对定位 */
-    min-height: 0; /* 关键修复：允许内部内容滚动 */
-    /* display: flex;  移除重复且错误的样式 */
+    overflow: hidden; /* 防止子元素溢出 */
 }
 
 /* 翻译功能区样式 */
@@ -543,8 +539,8 @@ body {
   object-fit: cover;
 }
 
-.chat-container.active {
-    display: flex; /* 激活时显示为 flex 容器 */
+.chat-container.active, .translation-container.active, .vision-container.active, .chat-container.log-mode.active {
+    display: flex; /* 激活时显示 */
 }
 
 /* 文字聊天区 */
@@ -1046,15 +1042,19 @@ body {
     margin-left: 10px;
 }
 
-.log-mode .log-content {
+.log-content {
+    display: none; /* 默认隐藏所有日志内容 */
     flex-grow: 1;
-    padding: 15px;
     overflow-y: auto;
-    font-family: 'SF Mono', monospace;
-    font-size: 13px;
-    color: var(--text-color);
-    white-space: pre-wrap;
-    word-break: break-all;
+    padding: 1rem;
+    background-color: var(--log-bg-color);
+    color: var(--log-text-color);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9rem;
+}
+
+.log-content.active {
+    display: block; /* 激活时显示 */
 }
 
 /* 响应式设计 */
@@ -1612,130 +1612,287 @@ body.dark-mode {
     background-color: var(--bg-color);
 }
 
-/* 视觉模型功能区样式 */
+/* ---------------------------------- */
+/* 视觉创意工作室 Vision Studio Styles */
+/* ---------------------------------- */
+
 .vision-container {
-    display: none; /* 默认隐藏 */
-    flex-direction: column;
-    height: 100%;
-    box-sizing: border-box;
-    padding: 20px;
-    gap: 20px; /* 输出和输入区域的间距 */
-    overflow-y: auto;
+    gap: 0; /* 移除 gap，使用 flex-grow 控制 */
+    padding: 0; /* 移除内边距，让子元素占满 */
 }
 
-.vision-container.active {
-    display: flex;
-}
-
-.vision-output-area {
+.vision-history {
     flex-grow: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    overflow-y: auto;
-    min-height: 0;
+    gap: 1.5rem;
 }
 
-.vision-output-box {
-    background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 15px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+.vision-message {
+    display: flex;
+    gap: 1rem;
+    max-width: 90%;
+    align-self: flex-start;
 }
 
-.vision-output-box h4 {
+.vision-message.user {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+
+.vision-message .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: var(--secondary-bg-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.vision-message.user .avatar {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.vision-message .content {
+    background-color: var(--secondary-bg-color);
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    width: 100%;
+}
+
+.vision-message.user .content {
+    background-color: var(--accent-color-light);
+}
+
+.vision-message .content p:first-child {
     margin-top: 0;
-    margin-bottom: 10px;
-    color: var(--primary-color);
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 10px;
 }
-
-#vision-output-content {
-    min-height: 100px; /* 最小高度，避免内容过少时塌陷 */
-    word-break: break-word;
-    white-space: pre-wrap;
-}
-
-/* 确保视觉区域内的 pre 标签也能正确换行 */
-#vision-reasoning-content pre,
-#vision-final-answer pre {
-    white-space: pre-wrap;
-    word-wrap: break-word;
+.vision-message .content p:last-child {
+    margin-bottom: 0;
 }
 
 .vision-input-area {
-    flex-shrink: 0;
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--primary-bg-color);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 0.5rem;
+    flex-shrink: 0; /* 防止输入区域被压缩 */
 }
 
-.vision-input-area #vision-attachment-previews {
+#vision-attachment-previews {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding-bottom: 10px;
-    max-height: 120px;
-    overflow-y: auto;
+    gap: 0.5rem;
+    padding-bottom: 0.5rem;
+    overflow-x: auto;
 }
 
-.vision-input-area #vision-input-text {
-    width: 100%;
-    padding: 12px;
+.file-preview-card {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    flex-shrink: 0;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-size: 16px;
-    resize: vertical;
-    min-height: 60px;
-    box-sizing: border-box;
 }
 
-.vision-action-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
+.file-preview-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
-#vision-attachment-button,
-#vision-send-button {
-    background-color: var(--primary-color);
+.file-preview-card .close-button {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background-color: rgba(0, 0, 0, 0.5);
     color: white;
     border: none;
-    border-radius: 8px;
-    width: 48px;
-    height: 48px;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 24px;
-    transition: background-color 0.3s ease;
+    opacity: 0;
+    transition: opacity 0.2s ease;
 }
 
-#vision-attachment-button:hover,
-#vision-send-button:hover {
-    background-color: var(--secondary-color);
+.file-preview-card:hover .close-button {
+    opacity: 1;
 }
 
-/* 视觉模型响应式调整 */
-@media (max-width: 768px) {
-    .vision-container {
-        padding: 15px;
-    }
+.vision-main-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
 
-    .vision-input-area #vision-input-text {
-        font-size: 14px;
-        min-height: 50px;
-    }
+.prompt-input-wrapper {
+    flex-grow: 1;
+    position: relative;
+}
 
-    #vision-attachment-button,
-    #vision-send-button {
-        width: 40px;
-        height: 40px;
-        font-size: 20px;
-    }
+#vision-prompt-input {
+    width: 100%;
+    padding-right: 40px; /* 为扩写按钮留出空间 */
+    resize: vertical;
+    min-height: 44px; /* 与按钮高度对齐 */
+    max-height: 200px;
+}
+
+#expand-prompt-button {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    width: 34px;
+    height: 34px;
+    background-color: transparent;
+    border: none;
+}
+
+#expand-prompt-button.loading .material-symbols-outlined {
+    animation: spin 1s linear infinite;
+}
+
+.vision-params-panel {
+    display: none; /* 默认隐藏 */
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin-top: 0.5rem;
+    display: none;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.vision-params-panel.active {
+    display: grid;
+}
+
+.param-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.param-group label {
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.param-group .slider-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.param-group input[type="range"] {
+    flex-grow: 1;
+}
+
+.param-group .param-value {
+    min-width: 30px;
+    text-align: right;
+    font-size: 0.9rem;
+}
+
+.param-group input[type="text"],
+.param-group input[type="number"],
+.param-group select {
+    width: 100%;
+}
+
+/* 视觉历史记录中的附件和生成图片样式 */
+.attachments-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.attachment-thumbnail {
+    width: 100%;
+    height: auto;
+    border-radius: var(--border-radius-small);
+    object-fit: cover;
+}
+
+.generated-images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.image-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--border-radius);
+}
+
+.image-card img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.image-card .actions {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+    padding: 0.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    opacity: 0;
+    transform: translateY(100%);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.image-card:hover .actions {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.image-card .action-button {
+    background-color: rgba(255, 255, 255, 0.8);
+    color: #333;
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.2s ease;
+}
+
+.image-card .action-button:hover {
+    background-color: white;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(0,0,0,0.1);
+    border-left-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 1rem auto;
 }

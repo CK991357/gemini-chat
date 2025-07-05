@@ -144,6 +144,37 @@ The report should include the following core sections:
         ],
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
     },
+    IMAGE_GENERATION: {
+        DEFAULT_PROMPT: "a cinematic shot of a baby raccoon wearing an intricate italian priest robe, in a grand cathedral, with beautiful stained glass windows, epic angle and pose, symmetrical, 3d, high detail, photorealistic, 8k",
+        DEFAULT_NEGATIVE_PROMPT: "blurry, low quality, bad anatomy, worst quality, normal quality, lowres, extra digits, fewer digits, cropped, jpeg artifacts, signature, watermark, username, artist name",
+        AVAILABLE_IMAGE_SIZES: [
+            "1024x1024", "960x1280", "1280x960", "768x1024", "1024x768", "720x1440", "1440x720", "720x1280", "1280x720"
+        ],
+        DEFAULT_IMAGE_SIZE: "1024x1024",
+        BATCH_SIZE: {
+            DEFAULT: 1,
+            MIN: 1,
+            MAX: 4,
+            STEP: 1
+        },
+        NUM_INFERENCE_STEPS: {
+            DEFAULT: 25,
+            MIN: 1,
+            MAX: 100,
+            STEP: 1
+        },
+        GUIDANCE_SCALE: {
+            DEFAULT: 7.5,
+            MIN: 0,
+            MAX: 20,
+            STEP: 0.1
+        },
+        SEED: {
+            MIN: 0,
+            MAX: 9999999999
+        },
+        EXPAND_PROMPT_MODEL: 'gemini-2.0-flash' // 用于提示词扩写的模型
+    },
     // If you are working in the RoArm branch
     // ROARM: {
     //     IP_ADDRESS: '192.168.1.4'

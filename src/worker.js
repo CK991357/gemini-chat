@@ -102,12 +102,22 @@ export default {
       return handleTranslationRequest(request, env);
     }
 
-    if (url.pathname.endsWith("/chat/completions") ||
-        url.pathname.endsWith("/embeddings") ||
-        url.pathname.endsWith("/models") ||
-        url.pathname === '/api/request') {
-      return handleAPIRequest(request, env);
+    // 新增：处理图像生成请求
+    if (url.pathname === '/api/image-generation') {
+      return handleImageGenerationRequest(request, env);
     }
+
+    // 新增：处理提示词扩写请求
+    if (url.pathname === '/api/expand-prompt') {
+        return handleExpandPromptRequest(request, env);
+    }
+ 
+     if (url.pathname.endsWith("/chat/completions") ||
+         url.pathname.endsWith("/embeddings") ||
+         url.pathname.endsWith("/models") ||
+         url.pathname === '/api/request') {
+       return handleAPIRequest(request, env);
+     }
 
     // 处理静态资源
     if (url.pathname === '/' || url.pathname === '/index.html') {
@@ -451,6 +461,131 @@ async function handleTranslationRequest(request, env) {
             headers: { 
                 'Content-Type': 'application/json', 
                 'Access-Control-Allow-Origin': '*' 
+            },
+        });
+    }
+}
+
+/**
+ * @function handleImageGenerationRequest
+ * @description 处理对 SiliconFlow 图像生成 API 的代理请求。
+ * @param {Request} request - 传入的请求对象，应包含模型所需的参数。
+ * @param {Object} env - Cloudflare Worker 的环境变量，必须包含 SF_API_TOKEN。
+ * @returns {Promise<Response>} - 返回一个 Promise，解析为从 SiliconFlow API 获取的响应。
+ * @throws {Error} - 如果 SF_API_TOKEN 未配置或 API 请求失败。
+ */
+async function handleImageGenerationRequest(request, env) {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+            status: 405,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+    }
+
+    try {
+        const apiKey = env.SF_API_TOKEN;
+        if (!apiKey) {
+            throw new Error('SF_API_TOKEN is not configured in environment variables.');
+        }
+
+        const body = await request.json();
+        const targetUrl = 'https://api.siliconflow.cn/v1/images/generations';
+
+        const response = await fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`SiliconFlow API request failed: ${response.status} - ${JSON.stringify(errorData)}`);
+        }
+
+        const result = await response.json();
+        return new Response(JSON.stringify(result), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        });
+
+    } catch (error) {
+        console.error('Image Generation API Error:', error);
+        return new Response(JSON.stringify({
+            error: error.message || 'Image generation failed',
+            details: error.stack || 'No stack information'
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+        });
+    }
+}
+
+/**
+ * @function handleExpandPromptRequest
+ * @description 处理对 Gemini API 的提示词扩写代理请求。
+ * @param {Request} request - 传入的请求对象，应包含原始提示词。
+ * @param {Object} env - Cloudflare Worker 的环境变量，必须包含 GEMINI_CHAT_API_KEY。
+ * @returns {Promise<Response>} - 返回一个 Promise，解析为从 Gemini API 获取的响应。
+ * @throws {Error} - 如果 GEMINI_CHAT_API_KEY 未配置或 API 请求失败。
+ */
+async function handleExpandPromptRequest(request, env) {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+            status: 405,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+    }
+
+    try {
+        const apiKey = env.GEMINI_CHAT_API_KEY; // 使用与聊天相同的key
+        if (!apiKey) {
+            throw new Error('GEMINI_CHAT_API_KEY is not configured in environment variables.');
+        }
+
+        const body = await request.json();
+        const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
+
+        // 直接将请求体转发到中转端点
+        const proxyResponse = await fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!proxyResponse.ok) {
+            const errorData = await proxyResponse.json();
+            throw new Error(`Gemini API request failed: ${proxyResponse.status} - ${JSON.stringify(errorData)}`);
+        }
+        
+        const result = await proxyResponse.json();
+        return new Response(JSON.stringify(result), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        });
+
+    } catch (error) {
+        console.error('Expand Prompt API Error:', error);
+        return new Response(JSON.stringify({
+            error: error.message || 'Expand prompt failed',
+            details: error.stack || 'No stack information'
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
             },
         });
     }

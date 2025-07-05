@@ -169,9 +169,9 @@
                         <h3>系统日志</h3>
                         <button id="clear-logs" class="action-button">清空</button>
                     </div>
-                    <div class="log-content" id="logs-container">
-                        <!-- 原始日志内容将动态插入此处 -->
-                    </div>
+                    <div id="chat-log-content" class="log-content active"></div>
+                    <div id="translation-log-content" class="log-content"></div>
+                    <div id="vision-log-content" class="log-content"></div>
                 </section>
 
                 <!-- 翻译功能区 -->
@@ -200,27 +200,55 @@
                     </div>
                 </section>
 
-                <!-- 视觉模型功能区 -->
+                <!-- 视觉创意工作室 -->
                 <section class="vision-container">
-                    <div class="vision-output-area">
-                        <div class="vision-output-box">
-                            <h4>模型输出</h4>
-                            <div id="vision-output-content" class="markdown-body"></div>
-                        </div>
+                    <div class="vision-history" id="vision-history">
+                        <!-- 对话式交互内容将动态插入此处 -->
                     </div>
                     <div class="vision-input-area">
-                        <div class="vision-controls">
-                            <label for="vision-model-select">模型选择:</label>
-                            <select id="vision-model-select"></select>
-                        </div>
-                        <div class="file-attachment-previews" id="vision-attachment-previews">
-                            <!-- 视觉模型附件预览 -->
-                        </div>
-                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="2"></textarea>
-                        <div class="vision-action-buttons">
-                            <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                        <!-- 附件预览区 -->
+                        <div class="file-attachment-previews" id="vision-attachment-previews"></div>
+                        <!-- 输入和控制区 -->
+                        <div class="vision-main-controls">
+                            <button id="vision-attachment-button" class="action-button material-symbols-outlined" title="上传图片/视频">attach_file</button>
                             <input type="file" id="vision-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
-                            <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
+                            <div class="prompt-input-wrapper">
+                                <textarea id="vision-prompt-input" placeholder="输入提示词或对图片提问..." rows="1"></textarea>
+                                <button id="expand-prompt-button" class="action-button material-symbols-outlined" title="扩写提示词">auto_fix_high</button>
+                            </div>
+                            <button id="toggle-params-button" class="action-button material-symbols-outlined" title="参数设置">tune</button>
+                            <button id="analyze-image-button" class="action-button primary" title="分析图片">image_search</button>
+                            <button id="generate-image-button" class="action-button primary" title="生成图片">brush</button>
+                        </div>
+                        <!-- 可折叠的参数面板 -->
+                        <div class="vision-params-panel" id="vision-params-panel">
+                            <div class="param-item">
+                                <label for="image-size-select">图片尺寸</label>
+                                <select id="image-size-select"></select>
+                            </div>
+                            <div class="param-item slider-item">
+                                <label for="batch-size-slider">生成数量</label>
+                                <input type="range" id="batch-size-slider" min="1" max="4" step="1" value="1">
+                                <span id="batch-size-value">1</span>
+                            </div>
+                            <div class="param-item slider-item">
+                                <label for="inference-steps-slider">推理步数</label>
+                                <input type="range" id="inference-steps-slider" min="1" max="100" step="1" value="25">
+                                <span id="inference-steps-value">25</span>
+                            </div>
+                            <div class="param-item slider-item">
+                                <label for="guidance-scale-slider">引导系数</label>
+                                <input type="range" id="guidance-scale-slider" min="0" max="20" step="0.1" value="7.5">
+                                <span id="guidance-scale-value">7.5</span>
+                            </div>
+                            <div class="param-item">
+                                <label for="seed-input">随机种子</label>
+                                <input type="number" id="seed-input" placeholder="留空则随机">
+                            </div>
+                             <div class="param-item full-width">
+                                <label for="negative-prompt-input">反向提示词</label>
+                                <textarea id="negative-prompt-input" placeholder="不想在图片中看到的内容..." rows="2"></textarea>
+                            </div>
                         </div>
                     </div>
                 </section>
