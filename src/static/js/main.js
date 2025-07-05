@@ -214,6 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none'; // 隐藏媒体预览
             } else if (mode === 'vision') { // 处理视觉模式 (创意创作区)
                 creativeStudioContainer.classList.add('active');
+                // 确保创意创作区容器可见并初始化
+                creativeStudioContainer.style.display = 'block';
                 initCreativeStudio(); // 激活创意创作区时，初始化其状态
                 if (inputArea) inputArea.style.display = 'flex'; // 创意创作区也需要输入区域
                 if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none'; // 隐藏聊天语音输入按钮
@@ -276,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
    creativeActionButton.addEventListener('click', handleCreativeAction);
  
    // 初始化翻译功能
-   initTranslation();
+   initTranslation(); // 确保在 DOMContentLoaded 中调用
    // 初始化创意创作区功能
    initCreativeStudio();
  });
@@ -2952,6 +2954,9 @@ function clearAttachedFile() {
  */
 function initCreativeStudio() {
     if (!creativeStudioContainer) return;
+
+    // 确保容器可见
+    creativeStudioContainer.style.display = 'block';
 
     // 初始化功能选择下拉菜单
     creativeFunctionSelect.addEventListener('change', updateCreativeStudioUI);
