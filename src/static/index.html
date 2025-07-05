@@ -211,11 +211,11 @@
                         <!-- Attachment previews for vision mode will be dynamically inserted here -->
                     </div>
 
+                    <div class="vision-controls">
+                        <label for="vision-model-select">模型:</label>
+                        <select id="vision-model-select"></select>
+                    </div>
                     <div class="input-area" id="vision-input-area">
-                        <div class="vision-controls">
-                            <label for="vision-model-select">模型:</label>
-                            <select id="vision-model-select"></select>
-                        </div>
                         <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
                         <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
                         <input type="file" id="vision-file-input" accept="image/*,video/*,application/pdf" style="display: none;" multiple>

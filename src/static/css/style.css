@@ -1589,6 +1589,7 @@ body.dark-mode {
 /* 视觉模式下的输入区域 */
 .vision-container .input-area {
     display: flex;
+    flex-wrap: wrap; /* 允许换行 */
     align-items: center;
     gap: 10px;
     padding: 15px 20px;
@@ -1601,6 +1602,8 @@ body.dark-mode {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%; /* 确保在小屏幕下独占一行 */
+    margin-bottom: 10px; /* 与输入框保持间距 */
 }
 
 .vision-container .vision-controls label {
@@ -1609,6 +1612,7 @@ body.dark-mode {
 }
 
 .vision-container .vision-controls select {
+    flex-grow: 1; /* 允许下拉菜单占据可用空间 */
     padding: 8px 12px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -1671,5 +1675,10 @@ body.dark-mode {
         width: 40px;
         height: 40px;
         font-size: 20px;
+    }
+
+    .vision-container .vision-controls {
+        width: 100%; /* 确保在小屏幕下独占一行 */
+        margin-bottom: 10px; /* 与输入框保持间距 */
     }
 }
