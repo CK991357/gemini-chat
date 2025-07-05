@@ -200,84 +200,30 @@
                     </div>
                 </section>
 
-<!-- 视觉模型功能区 -->
-<section class="vision-container">
-  <!-- 模式选择器 -->
-  <div class="vision-mode-selector">
-    <button class="vision-mode-btn active" data-mode="analysis">图像识别</button>
-    <button class="vision-mode-btn" data-mode="generation">文生图</button>
-  </div>
-
-  <div class="vision-output-area">
-    <div class="vision-output-box">
-      <!-- 聊天式输出历史 -->
-      <div id="vision-message-history" class="vision-message-history">
-        <!-- 消息将动态添加 -->
-      </div>
-    </div>
-  </div>
-  
-  <div class="vision-input-area">
-    <!-- 附件按钮 -->
-    <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
-    
-    <!-- 提示词输入 -->
-    <textarea id="vision-input-text" placeholder="输入描述或提示词..." rows="2"></textarea>
-    
-    <!-- 功能按钮 -->
-    <div class="vision-action-buttons">
-      <button id="vision-analyze-button" class="action-button">分析</button>
-      <button id="vision-generate-button" class="action-button" style="display: none;">生成</button>
-    </div>
-    
-    <!-- 参数设置区 (默认折叠) -->
-    <div class="vision-params-collapsible">
-      <div class="param-header">
-        <span>高级参数设置</span>
-        <button class="toggle-params material-symbols-outlined">expand_more</button>
-      </div>
-      
-      <div class="params-content">
-        <!-- 通用参数 (图像识别模型选择) -->
-        <div class="param-group analysis-params">
-          <label for="vision-model-select">分析模型:</label>
-          <select id="vision-model-select"></select>
-        </div>
-        
-        <!-- 文生图参数 -->
-        <div class="param-group generation-params" style="display: none;">
-          <label for="generation-model-select">生成模型:</label>
-          <select id="generation-model-select"></select>
-          
-          <label for="image-size">图片尺寸:</label>
-          <select id="image-size">
-            <option value="1024x1024">1024x1024</option>
-            <option value="960x1280">960x1280</option>
-            <option value="768x1024">768x1024</option>
-            <option value="720x1440">720x1440</option>
-            <option value="720x1280">720x1280</option>
-            <option value="others">其他</option>
-          </select>
-          
-          <label for="batch-size">生成数量:</label>
-          <input type="number" id="batch-size" min="1" max="4" value="1">
-          
-          <label for="num-inference-steps">迭代步数:</label>
-          <input type="number" id="num-inference-steps" min="1" max="100" value="20">
-
-          <label for="guidance-scale">引导系数:</label>
-          <input type="number" id="guidance-scale" min="0" max="20" step="0.1" value="7.5">
-
-          <label for="negative-prompt">负面提示词:</label>
-          <textarea id="negative-prompt" rows="2" placeholder="输入负面提示词..."></textarea>
-
-          <label for="seed">种子值:</label>
-          <input type="number" id="seed" min="0" max="9999999999" placeholder="可选">
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+                <!-- 视觉模型功能区 -->
+                <section class="vision-container">
+                    <div class="vision-output-area">
+                        <div class="vision-output-box">
+                            <h4>模型输出</h4>
+                            <div id="vision-output-content" class="markdown-body"></div>
+                        </div>
+                    </div>
+                    <div class="vision-input-area">
+                        <div class="vision-controls">
+                            <label for="vision-model-select">模型选择:</label>
+                            <select id="vision-model-select"></select>
+                        </div>
+                        <div class="file-attachment-previews" id="vision-attachment-previews">
+                            <!-- 视觉模型附件预览 -->
+                        </div>
+                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="2"></textarea>
+                        <div class="vision-action-buttons">
+                            <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                            <input type="file" id="vision-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
+                            <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
+                        </div>
+                    </div>
+                </section>
 
             </div>
         </div>
