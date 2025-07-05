@@ -1553,7 +1553,7 @@ body.dark-mode {
     background-color: var(--bg-color);
 }
 
-/* 视觉模式容器 */
+/* 视觉模型功能区样式 (重构为聊天样式) */
 .vision-container {
     display: none; /* 默认隐藏 */
     flex-direction: column;
@@ -1565,217 +1565,6 @@ body.dark-mode {
 
 .vision-container.active {
     display: flex;
-}
-
-/* 视觉功能选择下拉菜单容器 */
-.vision-function-select-container {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px;
-    background-color: var(--background-color-dark);
-    border-radius: 8px;
-    margin-bottom: 10px;
-}
-
-.vision-function-select-container label {
-    font-weight: bold;
-    color: var(--text-color);
-    white-space: nowrap;
-}
-
-.vision-function-select-container .function-select {
-    flex-grow: 1;
-    padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    background-color: var(--input-background-color);
-    color: var(--text-color);
-    font-size: 0.9rem;
-    cursor: pointer;
-    outline: none;
-    transition: border-color 0.3s ease;
-}
-
-.vision-function-select-container .function-select:focus {
-    border-color: var(--primary-color);
-}
-
-/* 视觉模型选择区域 */
-.vision-model-selection {
-    display: flex;
-    flex-direction: column; /* 垂直堆叠模型选择项 */
-    gap: 10px;
-    padding: 10px;
-    background-color: var(--background-color-dark);
-    border-radius: 8px;
-    margin-bottom: 10px;
-}
-
-.vision-model-item {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.vision-model-item label {
-    font-weight: bold;
-    color: var(--text-color);
-    white-space: nowrap; /* 防止标签换行 */
-}
-
-.vision-model-item select {
-    padding: 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    background-color: var(--input-background-color);
-    color: var(--text-color);
-    font-size: 0.9rem;
-    outline: none;
-    cursor: pointer;
-}
-
-/* 文生图参数设置面板 */
-.image-generation-params-panel {
-    background-color: var(--background-color-dark);
-    border-radius: 8px;
-    box-shadow: var(--box-shadow);
-    margin-bottom: 10px;
-    overflow: hidden; /* 确保折叠动画效果 */
-}
-
-.image-generation-params-panel .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 15px;
-    background-color: var(--header-background-color);
-    border-bottom: 1px solid var(--border-color);
-    cursor: pointer;
-}
-
-.image-generation-params-panel .panel-header h4 {
-    margin: 0;
-    color: var(--text-color);
-    font-size: 1rem;
-}
-
-.image-generation-params-panel .panel-header button {
-    background: none;
-    border: none;
-    color: var(--text-color);
-    cursor: pointer;
-    font-size: 1.5rem;
-    transition: transform 0.3s ease;
-}
-
-.image-generation-params-panel .panel-content {
-    padding: 15px;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* 响应式布局 */
-    gap: 15px;
-    transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
-    max-height: 500px; /* 初始最大高度，用于动画 */
-    opacity: 1;
-    overflow: hidden;
-}
-
-.image-generation-params-panel .panel-content.collapsed {
-    max-height: 0;
-    opacity: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-}
-
-.image-generation-params-panel .panel-header button.collapsed {
-    transform: rotate(180deg);
-}
-
-.image-generation-params-panel .setting-item {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-.image-generation-params-panel .setting-item.full-width {
-    grid-column: 1 / -1; /* 占据所有列 */
-}
-
-.image-generation-params-panel .setting-item label {
-    font-weight: bold;
-    color: var(--text-color);
-    font-size: 0.9rem;
-}
-
-.image-generation-params-panel .setting-item input[type="number"],
-.image-generation-params-panel .setting-item select,
-.image-generation-params-panel .setting-item textarea {
-    padding: 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    background-color: var(--input-background-color);
-    color: var(--text-color);
-    font-size: 0.9rem;
-    outline: none;
-    width: 100%; /* 填充父容器 */
-    box-sizing: border-box; /* 包含 padding 和 border 在宽度内 */
-}
-
-.image-generation-params-panel .setting-item textarea {
-    resize: vertical;
-    min-height: 60px;
-}
-
-/* 视觉模式输入区域 */
-.vision-container .input-area {
-    display: flex;
-    align-items: center;
-    padding: 10px;
-    background-color: var(--background-color-dark);
-    border-radius: 8px;
-    box-shadow: var(--box-shadow);
-}
-
-.vision-container .input-area textarea {
-    flex-grow: 1;
-    padding: 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    resize: none;
-    font-size: 1rem;
-    line-height: 1.5;
-    background-color: var(--input-background-color);
-    color: var(--text-color);
-    margin-right: 10px;
-    max-height: 150px; /* 限制最大高度 */
-    overflow-y: auto;
-}
-
-.vision-container .input-area .action-button,
-.vision-container .input-area .send-button {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 5px;
-    padding: 10px 15px;
-    cursor: pointer;
-    font-size: 1rem;
-    margin-left: 5px;
-    transition: background-color 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 40px; /* 确保按钮有最小宽度 */
-    height: 40px; /* 确保按钮有固定高度 */
-}
-
-.vision-container .input-area .action-button:hover,
-.vision-container .input-area .send-button:hover {
-    background-color: var(--primary-color-dark);
-}
-
-.vision-container .input-area .material-symbols-outlined {
-    font-size: 1.5rem;
 }
 
 /* 视觉模式下的消息历史记录 */
@@ -1797,118 +1586,71 @@ body.dark-mode {
     overflow-y: auto;
 }
 
-/* 附件预览容器 */
-.file-attachment-previews {
+/* 视觉模式下的输入区域 */
+.vision-container .input-area {
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     gap: 10px;
-    padding: 10px;
-    background-color: var(--background-color-dark);
-    border-radius: 8px;
-    margin-bottom: 10px;
-    max-height: 150px; /* 限制预览区域高度 */
-    overflow-y: auto;
-    align-items: flex-start; /* 顶部对齐 */
+    padding: 15px 20px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    flex-shrink: 0;
 }
 
-.file-preview-card {
-    position: relative;
-    width: 100px;
-    height: 100px;
+.vision-container .vision-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vision-container .vision-controls label {
+    font-weight: 500;
+    color: var(--text-secondary-color);
+}
+
+.vision-container .vision-controls select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+}
+
+.vision-container .input-area textarea {
+    flex-grow: 1;
+    padding: 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--background-color-light);
-    box-shadow: var(--box-shadow);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 16px;
+    resize: vertical;
+    max-height: 150px;
+    overflow-y: auto;
 }
 
-.file-preview-card img,
-.file-preview-card video {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-}
-
-.file-preview-card .file-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    color: var(--text-color-secondary);
-    font-size: 0.8rem;
-    padding: 5px;
-}
-
-.file-preview-card .file-placeholder .material-symbols-outlined {
-    font-size: 2rem;
-    margin-bottom: 5px;
-}
-
-.file-preview-card .close-button {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    background-color: rgba(0, 0, 0, 0.5);
+.vision-container .input-area .action-button,
+.vision-container .input-area .send-button {
+    background-color: var(--primary-color);
     color: white;
     border: none;
-    border-radius: 50%;
-    width: 24px;
-    height: 24px;
+    border-radius: 8px;
+    width: 48px;
+    height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
-    padding: 0;
+    font-size: 24px;
+    transition: background-color 0.3s ease;
+    flex-shrink: 0;
 }
 
-.file-preview-card .close-button:hover {
-    background-color: rgba(0, 0, 0, 0.7);
+.vision-container .input-area .action-button:hover,
+.vision-container .input-area .send-button:hover {
+    background-color: var(--secondary-color);
 }
 
-/* 聊天附件图片样式 */
-.chat-attachment {
-    max-width: 150px;
-    max-height: 150px;
-    border-radius: 8px;
-    margin-top: 5px;
-    display: block; /* 确保图片独占一行或按 flex 布局 */
-}
-
-.attachments-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); /* 响应式网格 */
-    gap: 10px;
-    margin-top: 10px;
-}
-
-/* 新增：图片生成结果网格容器 */
-.image-grid-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); /* 响应式网格 */
-    gap: 10px;
-    padding: 10px;
-    background-color: var(--background-color-dark);
-    border-radius: 8px;
-    margin-top: 10px;
-}
-
-.generated-image-thumbnail {
-    width: 100%;
-    height: auto;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: transform 0.2s ease-in-out;
-}
-
-.generated-image-thumbnail:hover {
-    transform: scale(1.05);
-}
 /* 视觉模型响应式调整 */
 @media (max-width: 768px) {
     .vision-container {
