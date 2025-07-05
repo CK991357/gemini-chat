@@ -53,6 +53,7 @@ const screenPreview = document.getElementById('screen-preview-element'); // 更�
 const _inputAudioVisualizer = document.getElementById('input-audio-visualizer'); // 保持，可能用于输入音频可视化
 const apiKeyInput = document.getElementById('api-key');
 const voiceSelect = document.getElementById('voice-select');
+const languageSelect = document.getElementById('language-select');
 const fpsInput = document.getElementById('fps-input');
 const configToggle = document.getElementById('toggle-config');
 const configContainer = document.querySelector('.control-panel');
@@ -106,6 +107,7 @@ const visionSendButton = document.getElementById('vision-send-button');
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
+const savedLanguage = localStorage.getItem('gemini_language');
 const savedFPS = localStorage.getItem('video_fps');
 const savedSystemInstruction = localStorage.getItem('system_instruction');
 
@@ -159,6 +161,46 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         modelSelect.appendChild(option);
     });
+
+    // 动态生成语言选择下拉菜单选项
+    const supportedLanguages = [
+        { name: 'English (US)', value: 'en-US' },
+        { name: 'English (UK)', value: 'en-GB' },
+        { name: 'English (Australia)', value: 'en-AU' },
+        { name: 'English (India)', value: 'en-IN' },
+        { name: 'Mandarin Chinese (China)', value: 'zh-CN' },
+        { name: 'Mandarin Chinese (Taiwan)', value: 'zh-TW' },
+        { name: 'Cantonese (Hong Kong)', value: 'yue-Hant-HK' },
+        { name: 'German (Germany)', value: 'de-DE' },
+        { name: 'French (France)', value: 'fr-FR' },
+        { name: 'Portuguese (Brazil)', value: 'pt-BR' },
+        { name: 'Indonesian (Indonesia)', value: 'id-ID' },
+        { name: 'Spanish (US)', value: 'es-US' },
+        { name: 'Hindi (India)', value: 'hi-IN' },
+        { name: 'Arabic (Generic)', value: 'ar-XA' },
+        { name: 'Italian (Italy)', value: 'it-IT' },
+        { name: 'Japanese (Japan)', value: 'ja-JP' },
+        { name: 'Korean (South Korea)', value: 'ko-KR' },
+        { name: 'Dutch (Netherlands)', value: 'nl-NL' },
+        { name: 'Polish (Poland)', value: 'pl-PL' },
+        { name: 'Russian (Russia)', value: 'ru-RU' },
+        { name: 'Turkish (Turkey)', value: 'tr-TR' },
+        { name: 'Ukrainian (Ukraine)', value: 'uk-UA' },
+        { name: 'Vietnamese (Vietnam)', value: 'vi-VN' }
+    ];
+    supportedLanguages.forEach(lang => {
+        const option = document.createElement('option');
+        option.value = lang.value;
+        option.textContent = lang.name;
+        languageSelect.appendChild(option);
+    });
+
+    // 加载保存的语言或设置默认值
+    if (savedLanguage) {
+        languageSelect.value = savedLanguage;
+    } else {
+        languageSelect.value = 'en-US'; // 默认选择美式英语
+    }
 
     // 1. 光暗模式切换逻辑
     const body = document.body;
@@ -774,6 +816,7 @@ async function connectToWebsocket() {
     // Save values to localStorage
     localStorage.setItem('gemini_api_key', apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
+    localStorage.setItem('gemini_language', languageSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
         /**
@@ -799,6 +842,7 @@ async function connectToWebsocket() {
             generationConfig: {
                 responseModalities: getResponseModalities(responseTypeSelect.value),
                 speechConfig: {
+                    languageCode: languageSelect.value,
                     voiceConfig: {
                         prebuiltVoiceConfig: {
                             voiceName: voiceSelect.value
@@ -1517,6 +1561,7 @@ async function connect() {
     // 保存值到 localStorage
     localStorage.setItem('gemini_api_key', apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
+    localStorage.setItem('gemini_language', languageSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
     localStorage.setItem('video_fps', fpsInput.value); // 保存 FPS
 
