@@ -191,11 +191,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 移除所有 tab 和 chat-container 的 active 类
             modeTabs.forEach(t => t.classList.remove('active'));
-            chatContainers.forEach(c => c.classList.remove('active'));
+            chatContainers.forEach(c => c.classList.remove('active')); // 移除所有 chat-container 的 active 类
 
             // 添加当前点击 tab 和对应 chat-container 的 active 类
             tab.classList.add('active');
-            document.querySelector(`.chat-container.${mode}-mode`).classList.add('active');
+            // 根据 mode 激活对应的容器
+            if (mode === 'text') {
+                document.querySelector('.chat-container.text-mode').classList.add('active');
+            } else if (mode === 'log') {
+                document.querySelector('.chat-container.log-mode').classList.add('active');
+            } else if (mode === 'vision') { // 新增：处理视觉模式
+                creativeStudioContainer.classList.add('active');
+                initCreativeStudio(); // 激活创意创作区时，初始化其状态
+            }
 
             // 确保在切换模式时停止所有媒体流
             if (videoManager) {
@@ -2244,22 +2252,25 @@ function initTranslation() {
     if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
   });
 
-  // 视觉模式按钮的事件监听器需要更新，以激活新的 creative-studio-container
+  // 视觉模式按钮的事件监听器 (现在是创意创作区按钮)
   visionModeBtn.addEventListener('click', () => {
-      if (creativeStudioContainer) creativeStudioContainer.classList.add('active');
+      // 移除所有 tab 和 chat-container 的 active 类
+      modeTabs.forEach(t => t.classList.remove('active'));
+      chatContainers.forEach(c => c.classList.remove('active')); // 移除所有 chat-container 的 active 类
+
+      // 激活视觉模式按钮和创意创作区容器
+      visionModeBtn.classList.add('active');
+      creativeStudioContainer.classList.add('active');
+      
+      // 隐藏其他模式的特定UI
       translationContainer.classList.remove('active');
       chatContainer.classList.remove('active');
       logContainer.classList.remove('active');
 
-      // 隐藏其他模式的特定UI
       if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
       if (inputArea) inputArea.style.display = 'none';
       if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
       if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
-
-      visionModeBtn.classList.add('active');
-      translationModeBtn.classList.remove('active');
-      chatModeBtn.classList.remove('active');
 
       // 确保停止所有媒体流
       if (videoManager) stopVideo();
