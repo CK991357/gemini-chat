@@ -83,33 +83,12 @@ const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 // 视觉模型相关 DOM 元素
 const visionModeBtn = document.getElementById('vision-mode-button');
 const visionContainer = document.querySelector('.vision-container');
-// const visionOutputContent = document.getElementById('vision-output-content'); // 移除，替换为 visionMessageHistory
+const visionMessageHistory = document.getElementById('vision-message-history');
 const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
 const visionInputText = document.getElementById('vision-input-text');
 const visionAttachmentButton = document.getElementById('vision-attachment-button');
 const visionFileInput = document.getElementById('vision-file-input');
-// const visionSendButton = document.getElementById('vision-send-button'); // 移除，替换为 visionAnalyzeButton 和 visionGenerateButton
-
-// 新增的视觉模式相关 DOM 元素
-const visionModeBtns = document.querySelectorAll('.vision-mode-btn');
-const visionOutputArea = document.querySelector('.vision-output-area');
-const visionMessageHistory = document.getElementById('vision-message-history');
-const visionAnalyzeButton = document.getElementById('vision-analyze-button');
-const visionGenerateButton = document.getElementById('vision-generate-button');
-const visionParamsCollapsible = document.querySelector('.vision-params-collapsible');
-const toggleParamsButton = visionParamsCollapsible?.querySelector('.toggle-params');
-const paramsContent = visionParamsCollapsible?.querySelector('.params-content');
-const analysisParamsGroup = document.querySelector('.analysis-params');
-const generationParamsGroup = document.querySelector('.generation-params');
-
-// 文生图参数 DOM 元素
-const generationModelSelect = document.getElementById('generation-model-select');
-const imageSizeSelect = document.getElementById('image-size');
-const batchSizeInput = document.getElementById('batch-size');
-const stepsInput = document.getElementById('steps');
-const guidanceScaleInput = document.getElementById('guidance-scale');
-const negativePromptInput = document.getElementById('negative-prompt');
-const seedInput = document.getElementById('seed');
+const visionSendButton = document.getElementById('vision-send-button');
 
 
 // Load saved values from localStorage
@@ -262,17 +241,17 @@ document.addEventListener('DOMContentLoaded', () => {
    // 附件按钮事件监听 (只绑定一次)
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.addEventListener('change', handleFileAttachment);
- 
+
    // 视觉模型附件按钮事件监听
    visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
-   visionFileInput.addEventListener('change', handleVisionFileAttachment);
-   // visionSendButton.addEventListener('click', handleSendVisionMessage); // 移除，由模式决定调用哪个函数
-
+   visionFileInput.addEventListener('change', (event) => handleFileAttachment(event, 'vision'));
+   visionSendButton.addEventListener('click', handleSendVisionMessage);
+ 
    // 初始化翻译功能
    initTranslation();
    // 初始化视觉功能
    initVision();
-  });
+ });
 
 // State variables
 let isRecording = false;
@@ -306,6 +285,7 @@ let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的�
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let attachedFile = null; // 新增：用于存储待发送的附件信息
 let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
+let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -1106,8 +1086,6 @@ client.on('content', (data) => {
             // 注意：marked.js 已经集成了 highlight.js，所以不需要单独调用 hljs.highlightElement
             // 立即更新 innerHTML，确保实时渲染
             currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
-            // 为新渲染的代码块添加复制按钮
-            addCopyButtonsToCodeBlocks(currentAIMessageContentDiv.markdownContainer);
             
             // 触发 MathJax 渲染
             if (typeof MathJax !== 'undefined') {
@@ -1259,8 +1237,6 @@ async function processHttpStream(requestBody, apiKey) {
                                         currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
                                         // 立即渲染Markdown
                                         currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
-                                        // 为新渲染的代码块添加复制按钮
-                                        addCopyButtonsToCodeBlocks(currentAIMessageContentDiv.markdownContainer);
                                         // 触发 MathJax 渲染
                                         if (typeof MathJax !== 'undefined') {
                                             if (typeof MathJax !== 'undefined' && MathJax.startup) {
@@ -2068,66 +2044,6 @@ function checkBrowserCompatibility() {
 }
 
 /**
- * 查找指定容器内的所有代码块，并为每个代码块添加一个复制按钮。
- * @param {HTMLElement} container - 要在其中搜索代码块的容器元素。
- */
-function addCopyButtonsToCodeBlocks(container) {
-    // 安全检查，如果容器不存在则直接返回
-    if (!container) return;
-
-    // 查找容器内所有的 <pre> 元素，它们是代码块的容器
-    const codeBlocks = container.querySelectorAll('pre');
-
-    codeBlocks.forEach(codeBlock => {
-        // 如果已经存在复制按钮，则跳过，避免重复添加
-        if (codeBlock.querySelector('.copy-code-button')) {
-            return;
-        }
-
-        // 创建按钮元素
-        const button = document.createElement('button');
-        button.className = 'copy-code-button';
-        // 使用 innerHTML 设置按钮内容，包含一个图标和文本
-        button.title = '复制代码';
-        
-        /**
-         * 为按钮添加点击事件监听器。
-         * @param {MouseEvent} e - 点击事件对象。
-         */
-        button.addEventListener('click', (e) => {
-            // 阻止事件冒泡，以防触发其他父元素的点击事件
-            e.stopPropagation(); 
-            
-            // 找到当前代码块中的 <code> 元素
-            const codeElement = codeBlock.querySelector('code');
-            if (codeElement) {
-                // 获取代码的纯文本内容
-                const codeToCopy = codeElement.innerText;
-                
-                // 使用 Clipboard API 异步复制文本
-                navigator.clipboard.writeText(codeToCopy).then(() => {
-                    // 复制成功后，临时改变按钮内容提示用户
-                    button.classList.add('copied'); // 添加 copied 类
-                    showToast('代码已复制到剪贴板'); // 使用 showToast 提示
-                    // 2秒后恢复按钮的原始状态
-                    setTimeout(() => {
-                        button.classList.remove('copied'); // 移除 copied 类
-                    }, 2000);
-                }).catch(err => {
-                    // 如果复制失败，在控制台打印错误并更新按钮提示
-                    console.error('Failed to copy code: ', err);
-                    const textSpan = button.querySelector('span:last-child');
-                    if(textSpan) textSpan.textContent = 'Error';
-                });
-            }
-        });
-
-        // 将创建的按钮添加到代码块中
-        codeBlock.appendChild(button);
-    });
-}
-
-/**
  * @function initTranslation
  * @description 初始化翻译功能，包括UI元素的获取、语言下拉菜单的填充、事件监听器的绑定以及模式切换逻辑。
  * @returns {void}
@@ -2815,77 +2731,69 @@ export function showSystemMessage(message) {
  * ----------------------------------------------------------------
  */
 
-/**
- * @function handleFileAttachment
- * @description 处理文件选择事件，读取文件并根据类型进行处理。
- * @param {Event} event - 文件输入变化事件。
- * @returns {Promise<void>}
- */
-async function handleFileAttachment(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+async function handleFileAttachment(event, mode = 'chat') {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    // 检查文件类型和大小
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!allowedTypes.includes(file.type)) {
-        showSystemMessage(`不支持的文件类型: ${file.type}。请选择图片或PDF。`);
-        return;
-    }
-    if (file.size > 4 * 1024 * 1024) { // 4MB 大小限制
-        showSystemMessage('文件大小不能超过 4MB。');
-        return;
-    }
+    const previewsContainer = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
+    const fileList = mode === 'vision' ? visionAttachedFiles : [attachedFile]; // a bit of a hack for single vs multi file
 
-    try {
-        let base64String;
-        let mimeType;
+    for (const file of files) {
+        // 检查文件类型和大小
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
+        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+            showSystemMessage(`不支持的文件类型: ${file.type}。`);
+            continue;
+        }
+        if (file.size > 20 * 1024 * 1024) { // 20MB 大小限制
+            showSystemMessage('文件大小不能超过 20MB。');
+            continue;
+        }
 
-        if (file.type === 'application/pdf') {
-            // 使用 pdf.js 处理 PDF
-            const pdfjsLib = window['pdfjs-dist/build/pdf'];
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
-
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            const page = await pdf.getPage(1); // 只处理第一页
-            const viewport = page.getViewport({ scale: 1.5 });
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-            base64String = canvas.toDataURL('image/jpeg');
-            mimeType = 'image/jpeg';
-        } else {
-            // 处理图片文件
-            const reader = new FileReader();
-            base64String = await new Promise((resolve, reject) => {
+        try {
+            const base64String = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
                 reader.onload = () => resolve(reader.result);
                 reader.onerror = error => reject(error);
                 reader.readAsDataURL(file);
             });
-            mimeType = file.type;
+
+            const fileData = {
+                name: file.name,
+                type: file.type,
+                base64: base64String
+            };
+
+            if (mode === 'vision') {
+                visionAttachedFiles.push(fileData);
+                displayFilePreview({
+                    type: file.type.startsWith('image/') ? 'image' : 'video',
+                    src: base64String,
+                    name: file.name,
+                    mode: 'vision',
+                    index: visionAttachedFiles.length - 1
+                });
+            } else {
+                // Chat mode currently only supports one attachment
+                clearAttachedFile(); // Clear previous before adding new one
+                attachedFile = fileData;
+                displayFilePreview({
+                    type: file.type.startsWith('image/') ? 'image' : 'pdf',
+                    src: base64String,
+                    name: file.name,
+                    mode: 'chat'
+                });
+            }
+            showToast(`文件已附加: ${file.name}`);
+
+        } catch (error) {
+            console.error('处理文件时出错:', error);
+            showSystemMessage(`处理文件失败: ${error.message}`);
         }
-
-        attachedFile = {
-            name: file.name,
-            type: mimeType,
-            base64: base64String
-        };
-
-        displayFilePreview({ type: 'image', src: base64String, name: file.name }); // 统一使用 image 类型和 base64
-        showToast(`文件已附加: ${file.name}`);
-
-    } catch (error) {
-        console.error('处理文件时出错:', error);
-        showSystemMessage(`处理文件失败: ${error.message}`);
-        removeAttachedFile();
-    } finally {
-        // 重置 file input 以便可以再次选择同一个文件
-        event.target.value = '';
     }
+
+    // 重置 file input 以便可以再次选择同一个文件
+    event.target.value = '';
 }
 
 /**
@@ -2897,483 +2805,328 @@ async function handleFileAttachment(event) {
  * @param {HTMLCanvasElement} [options.canvas] - Canvas 元素 (如果 type 是 'canvas')。
  * @param {string} options.name - 文件名。
  */
-function displayFilePreview({ type, src, canvas, name }) {
+function displayFilePreview({ type, src, name, mode, index }) {
+    const container = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
+    
+    // Clear previous preview in chat mode
+    if (mode === 'chat') {
+        container.innerHTML = '';
+    }
+
     const previewCard = document.createElement('div');
     previewCard.className = 'file-preview-card';
     previewCard.title = name;
+    if (mode === 'vision') {
+        previewCard.dataset.index = index;
+    }
 
     let previewElement;
-    if (type === 'image') {
+    if (type.startsWith('image')) {
         previewElement = document.createElement('img');
         previewElement.src = src;
         previewElement.alt = name;
-    } else if (type === 'canvas') {
-        previewElement = canvas;
+    } else if (type.startsWith('video')) {
+        previewElement = document.createElement('video');
+        previewElement.src = src;
+        previewElement.alt = name;
+        previewElement.muted = true;
+        previewElement.autoplay = true;
+        previewElement.loop = true;
+        previewElement.playsInline = true;
+    } else { // PDF or other
+        previewElement = document.createElement('div');
+        previewElement.className = 'file-placeholder';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.textContent = 'description'; // PDF icon
+        const text = document.createElement('p');
+        text.textContent = name;
+        previewElement.appendChild(icon);
+        previewElement.appendChild(text);
     }
+
 
     const closeButton = document.createElement('button');
     closeButton.className = 'close-button material-symbols-outlined';
     closeButton.textContent = 'close';
-    closeButton.onclick = () => {
-        clearAttachedFile();
+    closeButton.onclick = (e) => {
+        e.stopPropagation();
+        if (mode === 'vision') {
+            removeVisionAttachment(index);
+        } else {
+            clearAttachedFile();
+        }
     };
 
     previewCard.appendChild(previewElement);
     previewCard.appendChild(closeButton);
-    fileAttachmentPreviews.appendChild(previewCard);
+    container.appendChild(previewCard);
 }
 
 /**
  * @function clearAttachedFile
  * @description 清除已附加的文件状态和预览。
  */
-function clearAttachedFile() {
-    attachedFile = null;
-    fileAttachmentPreviews.innerHTML = '';
-}
-
-
-
-/**
- * @function handleVisionFileAttachment
- * @description 处理视觉模型的文件附件选择事件。
- * 读取用户选择的文件，生成预览，并将其存储在 visionAttachedFiles 数组中。
- *
- * @param {Event} event - 文件输入元素触发的 change 事件对象。
- */
-function handleVisionFileAttachment(event) {
-  const files = event.target.files;
-  if (!files) return;
-
-  for (const file of files) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64String = e.target.result;
-      const fileData = {
-        name: file.name,
-        type: file.type,
-        data: base64String,
-      };
-      visionAttachedFiles.push(fileData);
-      const previewElement = createVisionAttachmentPreview(fileData, visionAttachedFiles.length - 1);
-      visionAttachmentPreviews.appendChild(previewElement);
-    };
-    reader.readAsDataURL(file);
-  }
-
-  // 清空 file input 的值，以便用户可以重复上传同一个文件
-  event.target.value = '';
-}
-
-/**
- * @function createVisionAttachmentPreview
- * @description 为给定的附件文件创建一个预览 DOM 元素。
- * 预览元素包含文件名和一个移除按钮。
- *
- * @param {object} fileData - 包含文件信息（名称、类型、数据）的对象。
- * @param {number} index - 文件在 visionAttachedFiles 数组中的索引。
- * @returns {HTMLElement} - 创建的预览 div 元素。
- */
-function createVisionAttachmentPreview(fileData, index) {
-  const preview = document.createElement('div');
-  preview.classList.add('attachment-preview');
-  preview.dataset.index = index;
-
-  const fileName = document.createElement('span');
-  fileName.textContent = fileData.name;
-  preview.appendChild(fileName);
-
-  const removeButton = document.createElement('button');
-  removeButton.textContent = '×';
-  removeButton.onclick = () => removeVisionAttachment(index);
-  preview.appendChild(removeButton);
-
-  return preview;
-}
-
-/**
- * @function removeVisionAttachment
- * @description 从附件列表和预览中移除一个文件。
- *
- * @param {number} indexToRemove - 要移除的文件在 visionAttachedFiles 数组中的索引。
- */
-function removeVisionAttachment(indexToRemove) {
-  // 从数组中移除
-  visionAttachedFiles.splice(indexToRemove, 1);
-  
-  // 从 DOM 中移除预览
-  const previewToRemove = visionAttachmentPreviews.querySelector(`.attachment-preview[data-index='${indexToRemove}']`);
-  if (previewToRemove) {
-    visionAttachmentPreviews.removeChild(previewToRemove);
-  }
-
-  // 更新剩余预览元素的索引
-  const remainingPreviews = visionAttachmentPreviews.querySelectorAll('.attachment-preview');
-  remainingPreviews.forEach((preview, newIndex) => {
-    const oldIndex = parseInt(preview.dataset.index);
-    if (oldIndex > indexToRemove) {
-      preview.dataset.index = newIndex;
-      // 更新移除按钮的 onclick 事件
-      const removeButton = preview.querySelector('button');
-      removeButton.onclick = () => removeVisionAttachment(newIndex);
+function clearAttachedFile(mode = 'chat') {
+    if (mode === 'vision') {
+        visionAttachedFiles = [];
+        visionAttachmentPreviews.innerHTML = '';
+    } else {
+        attachedFile = null;
+        fileAttachmentPreviews.innerHTML = '';
     }
-  });
 }
 
 
-/**
- * @function handleVisionAnalyze
- * @description 发送消息到视觉模型进行图像识别。
- * 构建请求体，调用 API，并处理和显示返回的结果。
- */
-async function handleVisionAnalyze() {
-  let mathJaxDebounceTimer = null;
-  const text = visionInputText.value.trim();
-  if (!text && visionAttachedFiles.length === 0) {
-    showToast('请输入文本或添加附件。');
-    return;
-  }
 
-  const visionModelSelect = document.getElementById('vision-model-select');
-  const selectedModel = visionModelSelect.value;
-  const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
 
-  if (!selectedModelConfig || (!selectedModelConfig.isZhipu && !selectedModelConfig.isSiliconFlow)) {
-      showToast('请选择一个有效的视觉模型。');
-      return;
-  }
+function removeVisionAttachment(indexToRemove) {
+    visionAttachedFiles.splice(indexToRemove, 1);
+    // Re-render all previews to correctly update indices
+    visionAttachmentPreviews.innerHTML = '';
+    visionAttachedFiles.forEach((file, index) => {
+        displayFilePreview({
+            type: file.type,
+            src: file.base64,
+            name: file.name,
+            mode: 'vision',
+            index: index
+        });
+    });
+}
 
-  // 清空旧内容，显示加载状态
-  visionMessageHistory.innerHTML = '';
-  addVisionMessage('正在请求模型进行分析...', 'ai');
 
-  visionAnalyzeButton.disabled = true;
-  visionAnalyzeButton.textContent = 'progress_activity';
+async function handleSendVisionMessage() {
+    const text = visionInputText.value.trim();
+    if (!text && visionAttachedFiles.length === 0) {
+        showToast('请输入文本或添加附件。');
+        return;
+    }
 
-  try {
-    const content = [];
+    const visionModelSelect = document.getElementById('vision-model-select');
+    const selectedModel = visionModelSelect.value;
+    // 查找模型配置以确定是否为 Zhipu 模型
+    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
+
+    // 显示用户消息
+    displayVisionUserMessage(text, visionAttachedFiles);
+
+    // 将用户消息添加到历史记录
+    const userContent = [];
     if (text) {
-      content.push({ type: 'text', text: text });
+        userContent.push({ type: 'text', text });
     }
     visionAttachedFiles.forEach(file => {
-      content.push({ type: 'image_url', image_url: { url: file.data } });
+        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
     });
+    visionChatHistory.push({ role: 'user', content: userContent });
 
-    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
-# 核心任务
-1.你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
-2.使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的所有回复信息！使其结构清晰、易于阅读。
-3.当你收到用户图片识别类请作为高度智能化的图像处理系统，分析用户上传的图片。
-你的任务是自动提取图片中的关键要素，并根据Comfy UI文生图的要求进行分类和整理。
-最终输出完整的要素列表，并生成一份Comfy UI的提示词模板，包括英文和中文两个版本。
+    // 清理输入
+    visionInputText.value = '';
+    clearAttachedFile('vision');
 
-请严格按照以下结构和内容要求输出：
+    // 显示加载状态
+    visionSendButton.disabled = true;
+    visionSendButton.textContent = 'progress_activity';
+    const aiMessage = createVisionAIMessageElement();
+    const { markdownContainer } = aiMessage;
+    markdownContainer.innerHTML = '<p>正在请求模型...</p>';
 
-【图片要素提取与分类结果】
+    try {
+        // 根据模型类型决定处理逻辑
+        if (selectedModelConfig && selectedModelConfig.isZhipu) {
+            // --- 处理非流式 Zhipu/GLM 模型 ---
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: selectedModel,
+                    messages: visionChatHistory,
+                    stream: false, // 关键：对 Zhipu 模型使用非流式请求
+                }),
+            });
 
-1. 主体与物体：
-   - 识别图片中的所有物体和主体，包括人物、动物、建筑、自然景观、物品等。
-
-2. 场景与背景：
-   - 分析图片的背景和场景，提取出关键的场景信息，如室内、室外、城市、自然、天空、海洋等。
-
-3. 颜色与色调：
-   - 提取图片中的主要颜色和色调，分析色彩搭配和情感表达（如冷色调、暖色调）。
-
-4. 艺术风格：
-   - 判断图片的艺术风格，如写实、卡通、油画、水彩、赛博朋克、蒸汽朋克等。
-
-5. 情感与氛围：
-   - 识别图片所传达的情感和氛围，如快乐、悲伤、神秘、梦幻、宁静、怀旧、紧张等。
-
-6. 构图与布局：
-   - 识别图片的构图方式，如中心构图、对称构图、三分法则等。
-
-7. 纹理与材质：
-   - 提取图片中的纹理信息，如粗糙、光滑、细腻、金属、玻璃、布料、木质等。
-
-【Comfy UI 提示词模板 - 英文版】
-
-根据上述提取和分类的要素，生成一个英文的Comfy UI提示词模板。这个提示词应该是一个连贯的描述，包含所有关键细节，可以直接用于文生图。
-
-【Comfy UI 提示词模板 - 中文版】
-
-根据上述提取和分类的要素，生成一个中文的Comfy UI提示词模板。这个提示词应该是一个连贯的描述，包含所有关键细节，可以直接用于文生图。`;
-    
-    const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: content }
-    ];
-
-    const requestBody = {
-      model: selectedModel,
-      messages: messages,
-      stream: true, // 关键：启用流式响应
-    };
-
-    const response = await fetch('/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'API 请求失败');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let accumulatedContent = ''; // 用于累积 AI 的文本响应
-
-    // 创建一个新的 AI 消息气泡来显示流式文本
-    const aiMessageElement = addVisionMessage('', 'ai'); // 先添加一个空消息，后续更新内容
-    const markdownContainer = aiMessageElement.querySelector('.content .markdown-container');
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      const chunk = decoder.decode(value, { stream: true });
-      chunk.split('\n\n').forEach(part => {
-        if (part.startsWith('data: ')) {
-          const jsonStr = part.substring(6);
-          if (jsonStr.trim() === '[DONE]') return;
-          try {
-            const data = JSON.parse(jsonStr);
-            const delta = data.choices?.[0]?.delta;
-            if (!delta) return;
-
-            if (delta.content) {
-              accumulatedContent += delta.content;
-              markdownContainer.innerHTML = marked.parse(accumulatedContent);
-              addCopyButtonsToCodeBlocks(markdownContainer); // 为新渲染的代码块添加复制按钮
-
-              clearTimeout(mathJaxDebounceTimer);
-              mathJaxDebounceTimer = setTimeout(() => {
-                  if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                      MathJax.startup.promise.then(() => {
-                          MathJax.typeset([markdownContainer]);
-                      }).catch((err) => console.error('MathJax typesetting failed:', err));
-                  }
-              }, 200);
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || 'API 请求失败');
             }
-          } catch (e) {
-            console.error('解析视觉模型流数据块时出错:', e, jsonStr);
-          }
+
+            const result = await response.json();
+            const fullResponse = result.choices?.[0]?.message?.content || '';
+
+            // 渲染最终响应
+            markdownContainer.innerHTML = marked.parse(fullResponse);
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([markdownContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+            
+            // 将最终 AI 响应添加到历史记录
+            visionChatHistory.push({ role: 'assistant', content: fullResponse });
+
+        } else {
+            // --- 处理流式模型 (例如 Gemini) ---
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: selectedModel,
+                    messages: visionChatHistory,
+                    stream: true, // 保持流式
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || 'API 请求失败');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let fullResponse = '';
+            markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                chunk.split('\n\n').forEach(part => {
+                    if (part.startsWith('data: ')) {
+                        const jsonStr = part.substring(6);
+                        if (jsonStr === '[DONE]') return;
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            if (data.choices && data.choices[0]?.delta?.content) {
+                                fullResponse += data.choices[0].delta.content;
+                                markdownContainer.innerHTML = marked.parse(fullResponse);
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE chunk:', e, jsonStr);
+                        }
+                    }
+                });
+                 visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+            }
+
+            // 流结束后，对最终内容进行一次 MathJax 排版
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([markdownContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+            
+            // 将最终 AI 响应添加到历史记录
+            visionChatHistory.push({ role: 'assistant', content: fullResponse });
         }
-      });
-    }
 
-    clearTimeout(mathJaxDebounceTimer);
-    if (typeof MathJax !== 'undefined' && MathJax.startup) {
-        MathJax.startup.promise.then(() => {
-            MathJax.typeset([markdownContainer]);
-        }).catch((err) => console.error('MathJax final typesetting failed:', err));
+    } catch (error) {
+        console.error('Error sending vision message:', error);
+        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
+    } finally {
+        visionSendButton.disabled = false;
+        visionSendButton.textContent = 'send';
     }
-
-  } catch (error) {
-    console.error('发送视觉消息时出错:', error);
-    showToast(`发生错误: ${error.message}`);
-    addVisionMessage(`请求失败: ${error.message}`, 'ai'); // 在聊天历史中显示错误
-  } finally {
-    visionInputText.value = '';
-    visionAttachedFiles = [];
-    visionAttachmentPreviews.innerHTML = '';
-    visionAnalyzeButton.disabled = false;
-    visionAnalyzeButton.textContent = '分析';
-  }
 }
 
-/**
- * @function handleImageGeneration
- * @description 处理文生图请求。
- * 构建请求体，调用 /api/generate-image API，并显示生成的图片。
- * @returns {Promise<void>}
- */
-async function handleImageGeneration() {
-  const prompt = visionInputText.value.trim();
-  if (!prompt) {
-    showToast('请输入提示词');
-    return;
-  }
+function displayVisionUserMessage(text, files) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'user');
 
-  // 显示用户输入
-  addVisionMessage(prompt, 'user');
-  addVisionMessage('正在生成图像...', 'ai');
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '👤';
 
-  visionGenerateButton.disabled = true;
-  visionGenerateButton.textContent = 'progress_activity';
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
 
-  try {
-    const model = generationModelSelect.value;
-    const image_size = imageSizeSelect.value;
-    const batch_size = parseInt(batchSizeInput.value);
-    const num_inference_steps = parseInt(stepsInput.value);
-    const guidance_scale = parseFloat(guidanceScaleInput.value);
-    const negative_prompt = negativePromptInput.value.trim();
-    const seed = seedInput.value ? parseInt(seedInput.value) : undefined;
-
-    const requestBody = {
-      model,
-      prompt,
-      image_size,
-      batch_size,
-      num_inference_steps,
-      guidance_scale,
-    };
-
-    if (negative_prompt) {
-      requestBody.negative_prompt = negative_prompt;
-    }
-    if (seed !== undefined) {
-      requestBody.seed = seed;
+    if (text) {
+        const textNode = document.createElement('p');
+        textNode.textContent = text;
+        contentDiv.appendChild(textNode);
     }
 
-    const response = await fetch('/api/generate-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`图像生成失败: ${response.status} - ${errorData.error || JSON.stringify(errorData)}`);
+    if (files && files.length > 0) {
+        const attachmentsContainer = document.createElement('div');
+        attachmentsContainer.className = 'attachments-grid';
+        files.forEach(file => {
+            let attachmentElement;
+            if (file.type.startsWith('image/')) {
+                attachmentElement = document.createElement('img');
+                attachmentElement.src = file.base64;
+            } else if (file.type.startsWith('video/')) {
+                attachmentElement = document.createElement('video');
+                attachmentElement.src = file.base64;
+                attachmentElement.controls = true;
+            }
+            if (attachmentElement) {
+                attachmentElement.className = 'chat-attachment';
+                attachmentsContainer.appendChild(attachmentElement);
+            }
+        });
+        contentDiv.appendChild(attachmentsContainer);
     }
 
-    const result = await response.json();
-    if (result.images && result.images.length > 0) {
-      displayGeneratedImages(result.images);
-    } else {
-      addVisionMessage('未生成任何图像。', 'ai');
-    }
-
-  } catch (error) {
-    console.error('文生图错误:', error);
-    addVisionMessage(`生成失败: ${error.message}`, 'ai');
-  } finally {
-    visionInputText.value = '';
-    visionAttachedFiles = []; // 文生图模式下清空附件
-    visionAttachmentPreviews.innerHTML = ''; // 文生图模式下清空附件预览
-    visionGenerateButton.disabled = false;
-    visionGenerateButton.textContent = '生成';
-  }
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    visionMessageHistory.appendChild(messageDiv);
+    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
 }
 
-/**
- * @function addVisionMessage
- * @description 添加视觉模式下的消息到历史记录。
- * @param {string} content - 消息内容（文本）。
- * @param {string} role - 消息角色 ('user' 或 'ai')。
- * @returns {HTMLElement} - 创建的消息内容 div 元素。
- */
-function addVisionMessage(content, role) {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${role}`;
-  
-  const avatarDiv = document.createElement('div');
-  avatarDiv.classList.add('avatar');
-  avatarDiv.textContent = role === 'user' ? '👤' : '🤖';
-  
-  const contentDiv = document.createElement('div');
-  contentDiv.classList.add('content');
-  
-  const markdownContainer = document.createElement('div');
-  markdownContainer.classList.add('markdown-container');
-  markdownContainer.innerHTML = marked.parse(content); // 初始渲染内容
-  contentDiv.appendChild(markdownContainer);
+function createVisionAIMessageElement() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai');
 
-  // 为 AI 消息添加复制按钮
-  if (role === 'ai') {
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '🤖';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+    
+    const markdownContainer = document.createElement('div');
+    markdownContainer.classList.add('markdown-container');
+    contentDiv.appendChild(markdownContainer);
+    
     const copyButton = document.createElement('button');
     copyButton.classList.add('copy-button', 'material-symbols-outlined');
     copyButton.textContent = 'content_copy';
     copyButton.addEventListener('click', async () => {
-        const textToCopy = markdownContainer.textContent;
         try {
-            await navigator.clipboard.writeText(textToCopy);
+            await navigator.clipboard.writeText(markdownContainer.textContent);
             copyButton.textContent = 'check';
-            setTimeout(() => {
-                copyButton.textContent = 'content_copy';
-            }, 2000);
-            showToast('文本已复制到剪贴板');
+            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
         } catch (err) {
-            showToast('复制失败: ' + err);
-            console.error('复制文本失败:', err);
+            console.error('Failed to copy text: ', err);
         }
     });
+
     contentDiv.appendChild(copyButton);
-  }
-
-  messageDiv.appendChild(avatarDiv);
-  messageDiv.appendChild(contentDiv);
-  visionMessageHistory.appendChild(messageDiv);
-  
-  scrollToVisionBottom();
-  return contentDiv; // 返回内容 div，以便流式更新
-}
-
-/**
- * @function displayGeneratedImages
- * @description 在视觉消息历史中显示生成的图像。
- * @param {Array<Object>} images - 包含图像 URL 的对象数组。
- */
-function displayGeneratedImages(images) {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'message ai'; // 视为 AI 的响应
-
-  const avatarDiv = document.createElement('div');
-  avatarDiv.classList.add('avatar');
-  avatarDiv.textContent = '🤖';
-
-  const contentDiv = document.createElement('div');
-  contentDiv.classList.add('content');
-
-  const container = document.createElement('div');
-  container.className = 'generated-images-container';
-  
-  images.forEach(imageData => {
-    const img = document.createElement('img');
-    img.src = imageData.url;
-    img.alt = '生成的图像';
-    img.className = 'generated-image';
-    container.appendChild(img);
-  });
-  
-  contentDiv.appendChild(container);
-  messageDiv.appendChild(avatarDiv);
-  messageDiv.appendChild(contentDiv);
-  visionMessageHistory.appendChild(messageDiv);
-  
-  scrollToVisionBottom();
-}
-
-/**
- * @function scrollToVisionBottom
- * @description 滚动视觉模式下的消息历史到底部。
- */
-function scrollToVisionBottom() {
-    if (visionMessageHistory) {
-        requestAnimationFrame(() => {
-            visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-        });
-    }
+    
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    visionMessageHistory.appendChild(messageDiv);
+    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+    
+    return {
+        container: messageDiv,
+        markdownContainer,
+        contentDiv,
+    };
 }
 
 /**
  * @function initVision
- * @description 初始化视觉功能，包括填充模型选择下拉菜单、模式切换逻辑和参数设置折叠功能。
+ * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
  * @returns {void}
  */
 function initVision() {
     const visionModelSelect = document.getElementById('vision-model-select');
     if (!visionModelSelect) return;
 
-    // 填充图像识别模型下拉菜单
-    visionModelSelect.innerHTML = '';
-    CONFIG.VISION.MODELS.filter(model => !model.isImageGeneration).forEach(model => {
+    visionModelSelect.innerHTML = ''; // 清空现有选项
+    CONFIG.VISION.MODELS.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
         option.textContent = model.displayName;
@@ -3381,83 +3134,5 @@ function initVision() {
             option.selected = true;
         }
         visionModelSelect.appendChild(option);
-    });
-
-    // 填充文生图模型下拉菜单
-    generationModelSelect.innerHTML = '';
-    CONFIG.VISION.MODELS.filter(model => model.isImageGeneration).forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.displayName;
-        if (model.name === CONFIG.IMAGE_GENERATION.DEFAULT_MODEL) { // 使用 IMAGE_GENERATION 的默认模型
-            option.selected = true;
-        }
-        generationModelSelect.appendChild(option);
-    });
-
-    // 设置文生图参数的默认值
-    imageSizeSelect.value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.image_size;
-    batchSizeInput.value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.batch_size;
-    stepsInput.value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.num_inference_steps;
-    guidanceScaleInput.value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.guidance_scale;
-    negativePromptInput.value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.negative_prompt;
-    seedInput.value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.seed !== undefined ? CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.seed : '';
-
-
-    // 模式切换事件
-    visionModeBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            visionModeBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            
-            const mode = btn.dataset.mode;
-            // 根据模式显示/隐藏相关元素
-            if (mode === 'analysis') {
-                analysisParamsGroup.style.display = 'block';
-                generationParamsGroup.style.display = 'none';
-                visionAnalyzeButton.style.display = 'block';
-                visionGenerateButton.style.display = 'none';
-                visionAttachmentButton.style.display = 'inline-flex'; // 图像识别模式下显示附件按钮
-            } else if (mode === 'generation') {
-                analysisParamsGroup.style.display = 'none';
-                generationParamsGroup.style.display = 'block';
-                visionAnalyzeButton.style.display = 'none';
-                visionGenerateButton.style.display = 'block';
-                visionAttachmentButton.style.display = 'none'; // 文生图模式下隐藏附件按钮
-                // 文生图模式下清空附件预览
-                visionAttachedFiles = [];
-                visionAttachmentPreviews.innerHTML = '';
-            }
-        });
-    });
-
-    // 默认激活图像识别模式
-    document.querySelector('.vision-mode-btn[data-mode="analysis"]').click();
-
-    // 参数设置区折叠/展开功能
-    if (toggleParamsButton && paramsContent) {
-        toggleParamsButton.addEventListener('click', () => {
-            paramsContent.classList.toggle('visible');
-            toggleParamsButton.textContent = paramsContent.classList.contains('visible') ? 'expand_less' : 'expand_more';
-        });
-    }
-
-    // 绑定功能按钮事件
-    visionAnalyzeButton.addEventListener('click', handleVisionAnalyze);
-    visionGenerateButton.addEventListener('click', handleImageGeneration);
-
-    // 视觉模式下输入框的 Enter 键行为
-    visionInputText.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-            if (event.shiftKey || event.ctrlKey || event.metaKey) {
-                event.preventDefault(); // 阻止默认换行
-                const currentMode = document.querySelector('.vision-mode-btn.active').dataset.mode;
-                if (currentMode === 'analysis') {
-                    handleVisionAnalyze();
-                } else if (currentMode === 'generation') {
-                    handleImageGeneration();
-                }
-            }
-        }
     });
 }

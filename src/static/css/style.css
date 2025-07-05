@@ -1346,65 +1346,6 @@ body {
     border: 1px solid var(--border-color);
     max-height: 300px; /* 新增 */
     overflow-y: auto; /* 新增 */
-    position: relative; /* 为复制按钮定位 */
-}
-
-/* 代码块复制按钮 */
-.message .content pre .copy-code-button {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-secondary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease;
-    
-    /* 新增/修改为图标按钮样式 */
-    width: 30px;
-    height: 30px;
-    padding: 0; /* 移除内边距 */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden; /* 确保内容不会溢出 */
-}
-
-/* 使用伪元素添加图标 */
-.message .content pre .copy-code-button::before { /* 使用 ::before 避免与可能的文本内容冲突 */
-    content: "content_copy"; /* Material Icons 复制图标 */
-    font-family: 'Material Symbols Outlined';
-    font-size: 18px; /* 图标大小 */
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    line-height: 1; /* 确保图标垂直居中 */
-}
-
-.message .content pre:hover .copy-code-button {
-    opacity: 1;
-}
-
-.copy-code-button:hover {
-    background-color: var(--bg-color); /* 悬停背景色 */
-    color: var(--primary-color); /* 悬停图标颜色 */
-}
-
-/* 用户消息中的代码块复制按钮 */
-.message.user .content pre .copy-code-button {
-    color: rgba(255, 255, 255, 0.7); /* 用户消息中的默认图标颜色 */
-    background-color: rgba(255, 255, 255, 0.1); /* 用户消息中的默认背景色 */
-    border-color: rgba(255, 255, 255, 0.2); /* 用户消息中的默认边框颜色 */
-}
-
-.message.user .content pre .copy-code-button:hover {
-    color: white; /* 用户消息中的悬停图标颜色 */
-    background-color: rgba(255, 255, 255, 0.2); /* 用户消息中的悬停背景色 */
-}
-
-/* 复制成功后的图标变化 */
-.copy-code-button.copied::before {
-    content: "check"; /* 复制成功后显示打勾图标 */
 }
 
 .message .content pre code {
@@ -1612,236 +1553,70 @@ body.dark-mode {
     background-color: var(--bg-color);
 }
 
-/* 视觉模型功能区样式 */
+/* 视觉模型功能区样式 (重构为聊天样式) */
 .vision-container {
     display: none; /* 默认隐藏 */
     flex-direction: column;
     height: 100%;
     box-sizing: border-box;
     padding: 20px;
-    gap: 20px; /* 输出和输入区域的间距 */
-    overflow-y: auto;
-    background-color: var(--surface-color); /* 新增：确保背景色与主内容区一致 */
-    border-radius: 12px; /* 新增：确保圆角 */
-    box-shadow: 0 4px 16px var(--shadow-color); /* 新增：确保阴影 */
+    overflow: hidden; /* 父容器隐藏溢出 */
 }
 
 .vision-container.active {
     display: flex;
 }
 
-/* 视觉模式选择器 */
-.vision-mode-selector {
-    display: flex;
-    margin-bottom: 15px;
-    border-bottom: 1px solid var(--border-color);
+/* 视觉模式下的消息历史记录 */
+.vision-container .message-history {
+    flex-grow: 1;
+    overflow-y: auto;
     padding-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 视觉模式下的附件预览 */
+.vision-container .file-attachment-previews {
+    display: flex;
+    flex-wrap: wrap;
     gap: 10px;
-}
-
-.vision-mode-btn {
-    padding: 8px 16px;
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-secondary-color);
-    transition: all 0.3s ease;
-}
-
-.vision-mode-btn:hover {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-}
-
-.vision-mode-btn.active {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.2);
-}
-
-/* 视觉输出区域 */
-.vision-output-area {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    /* gap: 20px; */ /* 移除，由消息间距控制 */
+    padding: 0 20px 10px;
+    max-height: 120px;
     overflow-y: auto;
-    min-height: 0;
-    padding-bottom: 10px; /* 底部留白 */
 }
 
-.vision-output-box {
-    /* background-color: var(--bg-color); */ /* 移除，由消息气泡控制 */
-    /* border: 1px solid var(--border-color); */ /* 移除，由消息气泡控制 */
-    /* border-radius: 12px; */ /* 移除，由消息气泡控制 */
-    /* padding: 15px; */ /* 移除，由消息气泡控制 */
-    /* box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05); */ /* 移除，由消息气泡控制 */
-    flex-grow: 1; /* 确保占据可用空间 */
-    overflow-y: auto; /* 确保内部滚动 */
-    min-height: 0; /* 允许内部内容滚动 */
-}
-
-/* 视觉模式下的消息历史，与聊天模式类似 */
-.vision-message-history {
-    flex-grow: 1;
-    overflow-y: auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    padding-bottom: 10px;
-}
-
-/* 视觉模式下的消息气泡样式 (复用 .message, .avatar, .content 样式) */
-.vision-message-history .message {
-    display: flex;
-    align-items: flex-start;
-    margin-bottom: 15px;
-    max-width: 85%;
-}
-
-.vision-message-history .message.user {
-    flex-direction: row-reverse;
-    margin-left: auto;
-    margin-right: 45px;
-}
-
-.vision-message-history .message.ai {
-    margin-right: auto;
-    margin-left: 2px;
-}
-
-.vision-message-history .message .avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+/* 视觉模式下的输入区域 */
+.vision-container .input-area {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    flex-shrink: 0;
-    margin: 0 10px;
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.vision-message-history .message.ai .avatar {
-    background-color: var(--secondary-color);
-}
-
-.vision-message-history .message .content {
-    position: relative;
-    padding: 12px 18px;
-    border-radius: 18px;
-    background-color: var(--bg-color);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    color: var(--text-color);
-    word-break: break-word;
-}
-
-.vision-message-history .message.user .content {
-    background-color: var(--primary-color);
-    color: white;
-    border-bottom-right-radius: 4px;
-}
-
-.vision-message-history .message.ai .content {
-    background-color: var(--bg-color);
-    border-bottom-left-radius: 4px;
-}
-
-/* 视觉模式下 AI 消息的复制按钮 */
-.vision-message-history .message.ai .content .copy-button {
-    position: absolute;
-    bottom: -5px;
-    right: -30px;
-    background: none;
-    border: none;
-    color: var(--text-secondary-color);
-    font-size: 18px;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.3s ease, color 0.3s ease;
-    padding: 5px;
-    border-radius: 4px;
-    font-family: 'Material Symbols Outlined';
-    font-weight: normal;
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-}
-
-.vision-message-history .message.ai .content:hover .copy-button {
-    opacity: 1;
-}
-
-.vision-message-history .message.ai .content .copy-button:hover {
-    color: var(--primary-color);
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-/* 生成图片容器 */
-.generated-images-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); /* 适应小屏幕 */
     gap: 10px;
-    margin-top: 10px;
-    padding: 5px; /* 内部留白 */
-    background-color: var(--surface-color); /* 背景色 */
-    border-radius: 8px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.generated-image {
-    width: 100%;
-    height: auto;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    object-fit: cover; /* 确保图片填充容器 */
-}
-
-/* 视觉输入区域 */
-.vision-input-area {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center; /* 垂直居中对齐 */
-    gap: 10px;
-    padding-top: 15px;
+    padding: 15px 20px;
     border-top: 1px solid var(--border-color);
     background-color: var(--surface-color);
-    padding: 15px 20px; /* 调整内边距 */
-    box-sizing: border-box;
-    position: sticky;
-    bottom: 0;
-    z-index: 10;
-    flex-wrap: wrap; /* 允许换行，适应小屏幕 */
-}
-
-.vision-input-area #vision-attachment-button {
-    order: -1; /* 附件按钮排在最前面 */
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 48px;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 24px;
-    transition: background-color 0.3s ease, transform 0.2s ease;
     flex-shrink: 0;
 }
 
-.vision-input-area #vision-attachment-button:hover {
-    background-color: var(--secondary-color);
-    transform: scale(1.05);
+.vision-container .vision-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.vision-input-area #vision-input-text {
+.vision-container .vision-controls label {
+    font-weight: 500;
+    color: var(--text-secondary-color);
+}
+
+.vision-container .vision-controls select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+}
+
+.vision-container .input-area textarea {
     flex-grow: 1;
     padding: 12px;
     border: 1px solid var(--border-color);
@@ -1850,198 +1625,51 @@ body.dark-mode {
     color: var(--text-color);
     font-size: 16px;
     resize: vertical;
-    min-height: 60px;
-    max-height: 180px; /* 限制最大高度 */
+    max-height: 150px;
     overflow-y: auto;
-    box-sizing: border-box;
 }
 
-.vision-action-buttons {
-    display: flex;
-    gap: 10px;
-    flex-shrink: 0; /* 防止被压缩 */
-    margin-left: auto; /* 靠右对齐 */
-}
-
-.vision-action-buttons .action-button {
+.vision-container .input-area .action-button,
+.vision-container .input-area .send-button {
     background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 8px;
-    padding: 10px 20px;
-    cursor: pointer;
-    font-size: 16px;
-    font-weight: 600;
-    transition: background-color 0.3s ease, transform 0.2s ease;
+    width: 48px;
+    height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.vision-action-buttons .action-button:hover {
-    background-color: var(--secondary-color);
-    transform: translateY(-2px);
-}
-
-/* 视觉参数设置区 */
-.vision-params-collapsible {
-    margin-top: 15px;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    background-color: var(--bg-color);
-    box-shadow: 0 2px 8px var(--shadow-color);
-    overflow: hidden; /* 确保内容折叠时隐藏 */
-}
-
-.vision-params-collapsible .param-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 15px;
-    background-color: var(--surface-color);
     cursor: pointer;
-    font-weight: 600;
-    color: var(--text-color);
-    border-bottom: 1px solid var(--border-color);
-}
-
-.vision-params-collapsible .param-header span {
-    flex-grow: 1;
-}
-
-.vision-params-collapsible .param-header .toggle-params {
-    background: none;
-    border: none;
-    color: var(--text-secondary-color);
     font-size: 24px;
-    cursor: pointer;
-    transition: transform 0.3s ease;
+    transition: background-color 0.3s ease;
+    flex-shrink: 0;
 }
 
-.vision-params-collapsible .params-content {
-    display: none; /* 默认隐藏 */
-    padding: 15px;
-    flex-direction: column;
-    gap: 15px;
-}
-
-.vision-params-collapsible .params-content.visible {
-    display: flex; /* 展开时显示 */
-}
-
-.vision-params-collapsible .param-group {
-    margin-bottom: 10px;
-}
-
-.vision-params-collapsible .param-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 500;
-    color: var(--text-secondary-color);
-}
-
-.vision-params-collapsible .param-group select,
-.vision-params-collapsible .param-group input[type="number"],
-.vision-params-collapsible .param-group textarea {
-    width: calc(100% - 20px); /* 减去 padding */
-    padding: 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    transition: border-color 0.3s ease;
-}
-
-.vision-params-collapsible .param-group input:focus,
-.vision-params-collapsible .param-group select:focus,
-.vision-params-collapsible .param-group textarea:focus {
-    border-color: var(--primary-color);
-    outline: none;
-}
-
-.vision-params-collapsible .param-group textarea {
-    resize: vertical;
-    min-height: 50px;
-}
-
-/* 图像识别参数组 */
-.analysis-params {
-    display: block; /* 默认显示 */
-}
-
-/* 文生图参数组 */
-.generation-params {
-    display: none; /* 默认隐藏 */
+.vision-container .input-area .action-button:hover,
+.vision-container .input-area .send-button:hover {
+    background-color: var(--secondary-color);
 }
 
 /* 视觉模型响应式调整 */
 @media (max-width: 768px) {
     .vision-container {
         padding: 15px;
-        gap: 15px;
     }
 
-    .vision-mode-selector {
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .vision-mode-btn {
-        width: 100%;
-        text-align: center;
-    }
-
-    .vision-input-area {
+    .vision-container .input-area {
         padding: 10px;
         gap: 8px;
-        flex-direction: column; /* 垂直排列 */
-        align-items: stretch; /* 宽度拉伸 */
     }
 
-    .vision-input-area #vision-attachment-button {
-        width: 100%; /* 附件按钮宽度拉伸 */
-        border-radius: 8px; /* 变为圆角矩形 */
-        order: 0; /* 恢复正常顺序 */
-    }
-
-    .vision-input-area #vision-input-text {
-        font-size: 14px;
-        min-height: 50px;
-        width: auto; /* 自动宽度 */
-    }
-
-    .vision-action-buttons {
-        flex-direction: column; /* 垂直排列 */
-        width: 100%; /* 宽度拉伸 */
-        margin-left: 0; /* 取消右对齐 */
-    }
-
-    .vision-action-buttons .action-button {
-        width: 100%;
-        font-size: 14px;
-        padding: 8px 15px;
-    }
-
-    .vision-params-collapsible .param-header {
-        padding: 10px 12px;
+    .vision-container .input-area textarea {
         font-size: 14px;
     }
 
-    .vision-params-collapsible .params-content {
-        padding: 12px;
-        gap: 10px;
-    }
-
-    .vision-params-collapsible .param-group select,
-    .vision-params-collapsible .param-group input[type="number"],
-    .vision-params-collapsible .param-group textarea {
-        font-size: 14px;
-        padding: 8px;
-        width: calc(100% - 16px); /* 减去 padding */
-    }
-
-    .generated-images-container {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); /* 进一步缩小图片网格 */
-        gap: 8px;
+    .vision-container .input-area .action-button,
+    .vision-container .input-area .send-button {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
     }
 }
