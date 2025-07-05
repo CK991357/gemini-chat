@@ -189,20 +189,36 @@ document.addEventListener('DOMContentLoaded', () => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
 
-            // 移除所有 tab 和 chat-container 的 active 类
+            // 移除所有 tab 的 active 类
             modeTabs.forEach(t => t.classList.remove('active'));
-            chatContainers.forEach(c => c.classList.remove('active')); // 移除所有 chat-container 的 active 类
+            // 移除所有 chat-container 类的 active 类
+            chatContainers.forEach(c => c.classList.remove('active'));
+            translationContainer.classList.remove('active'); // 确保翻译容器也被隐藏
+            if (creativeStudioContainer) creativeStudioContainer.classList.remove('active'); // 确保创意创作区容器也被隐藏
 
-            // 添加当前点击 tab 和对应 chat-container 的 active 类
+            // 添加当前点击 tab 的 active 类
             tab.classList.add('active');
+
             // 根据 mode 激活对应的容器
             if (mode === 'text') {
                 document.querySelector('.chat-container.text-mode').classList.add('active');
+                if (inputArea) inputArea.style.display = 'flex'; // 恢复输入区域显示
+                if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'inline-flex'; // 聊天模式下显示聊天语音输入按钮
+                if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none'; // 隐藏翻译语音输入按钮
+                updateMediaPreviewsDisplay(); // 根据视频/屏幕共享状态更新媒体预览显示
             } else if (mode === 'log') {
                 document.querySelector('.chat-container.log-mode').classList.add('active');
-            } else if (mode === 'vision') { // 新增：处理视觉模式
+                if (inputArea) inputArea.style.display = 'none'; // 隐藏输入区域
+                if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none'; // 隐藏聊天语音输入按钮
+                if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none'; // 隐藏翻译语音输入按钮
+                if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none'; // 隐藏媒体预览
+            } else if (mode === 'vision') { // 处理视觉模式 (创意创作区)
                 creativeStudioContainer.classList.add('active');
                 initCreativeStudio(); // 激活创意创作区时，初始化其状态
+                if (inputArea) inputArea.style.display = 'flex'; // 创意创作区也需要输入区域
+                if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none'; // 隐藏聊天语音输入按钮
+                if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none'; // 隐藏翻译语音输入按钮
+                if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none'; // 隐藏媒体预览
             }
 
             // 确保在切换模式时停止所有媒体流
@@ -212,8 +228,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (screenRecorder) {
                 stopScreenSharing();
             }
-            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
-            updateMediaPreviewsDisplay();
         });
     });
 
