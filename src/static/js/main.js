@@ -23,6 +23,17 @@ const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `You are a professional translation 
 5. Format Preservation: Only translate the text content from the original. Content that cannot be translated should remain as is. Do not add extra formatting to the translated content.
 `;
 
+const VISION_SYSTEM_PROMPT = `You are a helpful assistant that responds in Markdown format.
+Strictly adhere to the following rules for all responses:
+1.  **Markdown Formatting:** Always use standard Markdown syntax for text, code blocks, and lists.
+2.  **LaTeX for Math:** For all mathematical formulas, use correct LaTeX syntax.
+    -   Inline math should be enclosed in single dollar signs (e.g., $\sin^2\theta + \cos^2\theta = 1$).
+    -   Display math should be enclosed in double dollar signs (e.g., $$\sum_{i=1}^n i = \frac{n(n+1)}{2}$$).
+    -   Ensure all LaTeX commands are correctly spelled and properly closed (e.g., \boldsymbol{\sin} not \boldsymbol{\sin}}).
+3.  **Conciseness:** Provide direct answers without unnecessary conversational filler, introductory phrases, or polite expressions.
+4.  **Accuracy:** Ensure the content is accurate and directly addresses the user's query.
+`;
+
 // DOM Elements
 const logsContainer = document.getElementById('logs-container'); // 用于原始日志输出
 const toolManager = new ToolManager(); // 初始化 ToolManager
@@ -2955,7 +2966,10 @@ async function handleSendVisionMessage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: selectedModel,
-                    messages: visionChatHistory,
+                    messages: [
+                        { role: 'system', content: VISION_SYSTEM_PROMPT },
+                        ...visionChatHistory
+                    ],
                     stream: false, // 关键：对 Zhipu 模型使用非流式请求
                 }),
             });
@@ -2998,7 +3012,10 @@ async function handleSendVisionMessage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: selectedModel,
-                    messages: visionChatHistory,
+                    messages: [
+                        { role: 'system', content: VISION_SYSTEM_PROMPT },
+                        ...visionChatHistory
+                    ],
                     stream: true, // 保持流式
                 }),
             });
