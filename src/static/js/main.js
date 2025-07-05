@@ -3162,22 +3162,83 @@ function createVisionAIMessageElement() {
 }
 
 /**
+ * @function updateVisionUI
+ * @description 根据选择的视觉功能更新视觉模式下的UI显示。
+ * @param {string} selectedFunction - 当前选择的视觉功能，例如 'image-analysis' 或 'image-generation'。
+ * @returns {void}
+ */
+function updateVisionUI(selectedFunction) {
+    const imageAnalysisGroup = document.getElementById('image-analysis-model-group');
+    const imageGenerationGroup = document.getElementById('image-generation-model-group');
+    const imageGenerationParamsPanel = document.getElementById('image-generation-params-panel');
+
+    if (selectedFunction === 'image-analysis') {
+        if (imageAnalysisGroup) imageAnalysisGroup.style.display = 'block';
+        if (imageGenerationGroup) imageGenerationGroup.style.display = 'none';
+        if (imageGenerationParamsPanel) imageGenerationParamsPanel.style.display = 'none';
+        // 更新当前选中的视觉模型配置
+        selectedVisionModelConfig = CONFIG.VISION.MODELS.find(m => m.name === visionAnalysisModelSelect.value);
+        logMessage(`视觉功能切换为：图像分析，模型：${selectedVisionModelConfig.displayName}`, 'system');
+    } else if (selectedFunction === 'image-generation') {
+        if (imageAnalysisGroup) imageAnalysisGroup.style.display = 'none';
+        if (imageGenerationGroup) imageGenerationGroup.style.display = 'block';
+        if (imageGenerationParamsPanel) imageGenerationParamsPanel.style.display = 'block';
+        // 更新当前选中的文生图模型配置
+        selectedImageGenerationModelConfig = CONFIG.VISION.MODELS.find(m => m.name === visionGenerationModelSelect.value);
+        logMessage(`视觉功能切换为：文生图，模型：${selectedImageGenerationModelConfig.displayName}`, 'system');
+    }
+}
+
+/**
  * @function initVision
  * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
  * @returns {void}
  */
 function initVision() {
     const visionModelSelect = document.getElementById('vision-model-select');
-    if (!visionModelSelect) return;
+    const visionAnalysisModelSelect = document.getElementById('vision-analysis-model-select');
+    const visionGenerationModelSelect = document.getElementById('vision-generation-model-select');
 
-    visionModelSelect.innerHTML = ''; // 清空现有选项
-    CONFIG.VISION.MODELS.forEach(model => {
+    if (!visionModelSelect || !visionAnalysisModelSelect || !visionGenerationModelSelect) return;
+
+    // 填充图像分析模型选择下拉菜单
+    visionAnalysisModelSelect.innerHTML = '';
+    CONFIG.VISION.MODELS.filter(model => model.type === 'analysis').forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
         option.textContent = model.displayName;
         if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
             option.selected = true;
         }
-        visionModelSelect.appendChild(option);
+        visionAnalysisModelSelect.appendChild(option);
     });
+
+    // 填充文生图模型选择下拉菜单
+    visionGenerationModelSelect.innerHTML = '';
+    CONFIG.VISION.MODELS.filter(model => model.type === 'generation').forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.name;
+        option.textContent = model.displayName;
+        if (model.name === CONFIG.VISION.DEFAULT_IMAGE_GENERATION_MODEL) {
+            option.selected = true;
+        }
+        visionGenerationModelSelect.appendChild(option);
+    });
+
+    // 监听图像分析模型选择变化
+    visionAnalysisModelSelect.addEventListener('change', () => {
+        const selectedModelName = visionAnalysisModelSelect.value;
+        selectedVisionModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModelName);
+        logMessage(`图像分析模型已更改为: ${selectedVisionModelConfig.displayName}`, 'system');
+    });
+
+    // 监听文生图模型选择变化
+    visionGenerationModelSelect.addEventListener('change', () => {
+        const selectedModelName = visionGenerationModelSelect.value;
+        selectedImageGenerationModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModelName);
+        logMessage(`文生图模型已更改为: ${selectedImageGenerationModelConfig.displayName}`, 'system');
+    });
+
+    // 初始化时根据默认功能显示UI
+    updateVisionUI(visionFunctionSelect.value);
 }

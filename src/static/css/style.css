@@ -1567,34 +1567,49 @@ body.dark-mode {
     display: flex;
 }
 
-/* 视觉功能选择下拉菜单 */
-.app-nav .function-select {
+/* 视觉功能选择下拉菜单容器 */
+.vision-function-select-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background-color: var(--background-color-dark);
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.vision-function-select-container label {
+    font-weight: bold;
+    color: var(--text-color);
+    white-space: nowrap;
+}
+
+.vision-function-select-container .function-select {
+    flex-grow: 1;
     padding: 8px 12px;
     border: 1px solid var(--border-color);
     border-radius: 5px;
     background-color: var(--input-background-color);
     color: var(--text-color);
     font-size: 0.9rem;
-    margin-left: 10px;
     cursor: pointer;
     outline: none;
     transition: border-color 0.3s ease;
 }
 
-.app-nav .function-select:focus {
+.vision-function-select-container .function-select:focus {
     border-color: var(--primary-color);
 }
 
 /* 视觉模型选择区域 */
 .vision-model-selection {
     display: flex;
-    flex-wrap: wrap; /* 允许换行 */
+    flex-direction: column; /* 垂直堆叠模型选择项 */
     gap: 10px;
     padding: 10px;
     background-color: var(--background-color-dark);
     border-radius: 8px;
     margin-bottom: 10px;
-    align-items: center;
 }
 
 .vision-model-item {

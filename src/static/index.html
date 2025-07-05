@@ -47,11 +47,6 @@
                 <button id="translation-mode-button" class="mode-button material-symbols-outlined">translate</button>
                 <button id="chat-mode-button" class="mode-button material-symbols-outlined active">chat</button>
                 <button id="vision-mode-button" class="mode-button material-symbols-outlined">camera_enhance</button>
-                <!-- 新增功能选择下拉菜单 -->
-                <select id="vision-function-select" class="function-select" title="选择视觉功能">
-                    <option value="image-analysis">图像分析</option>
-                    <option value="image-generation">文生图</option>
-                </select>
             </div>
             <div class="nav-tools">
                 <button id="new-chat-button" class="material-symbols-outlined">add_box</button>
@@ -216,8 +211,17 @@
                         <!-- Attachment previews for vision mode will be dynamically inserted here -->
                     </div>
 
+                    <!-- 新增功能选择下拉菜单 -->
+                    <div class="vision-function-select-container">
+                        <label for="vision-function-select">视觉功能:</label>
+                        <select id="vision-function-select" class="function-select" title="选择视觉功能">
+                            <option value="image-analysis">图像分析</option>
+                            <option value="image-generation">文生图</option>
+                        </select>
+                    </div>
+
                     <div class="vision-model-selection">
-                        <div class="vision-model-item">
+                        <div class="vision-model-item" id="image-analysis-model-group">
                             <label for="vision-analysis-model-select">图像分析模型:</label>
                             <select id="vision-analysis-model-select"></select>
                         </div>
