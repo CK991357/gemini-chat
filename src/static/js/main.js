@@ -136,29 +136,28 @@ if (savedSystemInstruction) {
 document.addEventListener('DOMContentLoaded', () => {
     // 配置 marked.js
     marked.setOptions({
-      breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
-      highlight: function(code, lang) {
-        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-        return hljs.highlight(code, { language }).value;
-      },
-      langPrefix: 'hljs language-' // highlight.js css expects a language prefix
+        breaks: true,
+        highlight: function(code, lang) {
+            const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+            return hljs.highlight(code, { language }).value;
+        },
+        langPrefix: 'hljs language-'
     });
 
-    // 初始化highlight.js
+    // 初始化 highlight.js
     hljs.configure({
-      ignoreUnescapedHTML: true,
-      throwUnescapedHTML: false
+        ignoreUnescapedHTML: true,
+        throwUnescapedHTML: false
     });
-    // hljs.highlightAll(); // 不再需要在这里调用，因为 marked.js 会处理
 
     // 动态生成模型选择下拉菜单选项
     const modelSelect = document.getElementById('model-select');
-    modelSelect.innerHTML = ''; // 清空现有选项
+    modelSelect.innerHTML = '';
     CONFIG.API.AVAILABLE_MODELS.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
         option.textContent = model.displayName;
-        if (model.name === CONFIG.API.MODEL_NAME) { // 默认选中 config 中定义的模型
+        if (model.name === CONFIG.API.MODEL_NAME) {
             option.selected = true;
         }
         modelSelect.appendChild(option);
@@ -167,12 +166,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. 光暗模式切换逻辑
     const body = document.body;
     const savedTheme = localStorage.getItem('theme');
-
     if (savedTheme) {
         body.classList.add(savedTheme);
         themeToggleBtn.textContent = savedTheme === 'dark-mode' ? 'dark_mode' : 'light_mode';
     } else {
-        if (globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: dark)').matches) {
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
             body.classList.add('dark-mode');
             themeToggleBtn.textContent = 'dark_mode';
         } else {
@@ -180,7 +178,6 @@ document.addEventListener('DOMContentLoaded', () => {
             themeToggleBtn.textContent = 'light_mode';
         }
     }
-
     themeToggleBtn.addEventListener('click', () => {
         if (body.classList.contains('dark-mode')) {
             body.classList.remove('dark-mode');
@@ -195,40 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 2. 模式切换逻辑 (文字聊天/系统日志)
-    modeTabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const mode = tab.dataset.mode;
-
-            // 移除所有 tab 和 chat-container 的 active 类
-            modeTabs.forEach(t => t.classList.remove('active'));
-            chatContainers.forEach(c => c.classList.remove('active'));
-
-            // 添加当前点击 tab 和对应 chat-container 的 active 类
-            tab.classList.add('active');
-            document.querySelector(`.chat-container.${mode}-mode`).classList.add('active');
-
-            // 确保在切换模式时停止所有媒体流
-            if (videoManager) {
-                stopVideo();
-            }
-            if (screenRecorder) {
-                stopScreenSharing();
-            }
-            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
-            updateMediaPreviewsDisplay();
-        });
-    });
-
-    // 默认激活文字聊天模式
-    document.querySelector('.tab[data-mode="text"]').click();
-
-    // 3. 日志显示控制逻辑
-    toggleLogBtn.addEventListener('click', () => {
-        // 切换到日志标签页
-        document.querySelector('.tab[data-mode="log"]').click();
-    });
-
+    // 2. 日志面板相关逻辑
     clearLogsBtn.addEventListener('click', () => {
         const activeLogContainer = document.querySelector('.log-content.active');
         if (activeLogContainer) {
@@ -237,39 +201,98 @@ document.addEventListener('DOMContentLoaded', () => {
         logMessage('当前模式日志已清空', 'system', getCurrentMode());
     });
 
-    // 4. 配置面板切换逻辑 (现在通过顶部导航的齿轮图标控制)
+    // 3. 配置面板切换逻辑
     configToggle.addEventListener('click', () => {
-        configContainer.classList.toggle('active'); // control-panel 现在是 configContainer
+        configContainer.classList.toggle('active');
         configToggle.classList.toggle('active');
-        // 移动端滚动锁定
-        if (globalThis.innerWidth <= 1200) {
-            document.body.style.overflow = configContainer.classList.contains('active')
-                ? 'hidden' : '';
+        if (window.innerWidth <= 1200) {
+            document.body.style.overflow = configContainer.classList.contains('active') ? 'hidden' : '';
         }
     });
 
     applyConfigButton.addEventListener('click', () => {
         configContainer.classList.remove('active');
         configToggle.classList.remove('active');
-        // 确保关闭设置面板时解除滚动锁定
-        if (globalThis.innerWidth <= 1200) {
+        if (window.innerWidth <= 1200) {
             document.body.style.overflow = '';
         }
     });
 
-   // 附件按钮事件监听 (只绑定一次)
-   attachmentButton.addEventListener('click', () => fileInput.click());
-   fileInput.addEventListener('change', handleFileAttachment);
+    // 4. 附件按钮事件监听
+    attachmentButton.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', handleFileAttachment);
+    visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
+    visionFileInput.addEventListener('change', handleVisionFileAttachment);
 
-   // 视觉模型附件按钮事件监听
-   visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
-   visionFileInput.addEventListener('change', handleVisionFileAttachment);
- 
-  // 初始化翻译功能
-  initTranslation();
-  // 初始化视觉功能
-  initVision();
- });
+    // 5. 初始化所有功能模块
+    initTranslation();
+    initVision();
+    initMobileHandlers(); // 移动端事件处理
+
+    // 6. “新建会话”按钮逻辑
+    newChatButton.addEventListener('click', () => {
+        const mode = getCurrentMode();
+        logMessage(`新会话已在 ${mode} 模式下开始`, 'system', mode);
+
+        switch (mode) {
+            case 'chat':
+                chatHistory = [];
+                currentSessionId = null;
+                messageHistory.innerHTML = '';
+                clearAttachedFile();
+                break;
+            case 'translation':
+                document.getElementById('translation-input-text').value = '';
+                document.getElementById('translation-output-text').innerHTML = '';
+                break;
+            case 'vision':
+                visionHistory.innerHTML = '';
+                visionAttachedFiles = [];
+                visionAttachmentPreviews.innerHTML = '';
+                visionPromptInput.value = '';
+                break;
+        }
+        showToast(`新的 ${mode} 会话已开始`);
+    });
+
+    // 新增：日志面板切换按钮逻辑
+    toggleLogBtn.addEventListener('click', () => {
+        // 如果当前不是日志模式，则切换到日志模式；否则，切换回上一个模式
+        if (currentUIMode !== 'log') {
+            switchUIMode('log');
+        } else {
+            switchUIMode(lastUIMode);
+        }
+    });
+
+    // 7. 滚动行为处理
+    const messageHistory = document.getElementById('message-history');
+    if (messageHistory) {
+        messageHistory.addEventListener('wheel', () => { isUserScrolling = true; }, { passive: true });
+        messageHistory.addEventListener('scroll', () => {
+            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
+                isUserScrolling = false;
+            }
+        });
+        if ('ontouchstart' in window) {
+            messageHistory.addEventListener('touchstart', () => { isUserScrolling = true; }, { passive: true });
+            messageHistory.addEventListener('touchend', () => {
+                isUserScrolling = false;
+                const threshold = 50;
+                const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + threshold;
+                if (isNearBottom) {
+                    scrollToBottom();
+                }
+            }, { passive: true });
+        }
+    }
+
+    // 8. 浏览器兼容性检测
+    checkBrowserCompatibility();
+
+    // 9. 默认激活聊天模式
+    switchUIMode('chat');
+});
 
 // State variables
 let isRecording = false;
@@ -304,6 +327,7 @@ let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let attachedFile = null; // 新增：用于存储待发送的附件信息
 let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
 let currentUIMode = 'chat'; // 新增：用于跟踪当前UI模式 ('chat', 'translation', 'vision')
+let lastUIMode = 'chat'; // 新增：用于在打开日志面板前记录最后一个活动的UI模式
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -1948,112 +1972,7 @@ function initMobileHandlers() {
 }
 
 // 在 DOMContentLoaded 中调用
-document.addEventListener('DOMContentLoaded', () => {
-    // ... 原有代码 ...
-    
-    // 添加移动端事件处理
-    if ('ontouchstart' in window) {
-        initMobileHandlers();
-    }
-
-    /**
-     * @function
-     * @description 处理“新建聊天”按钮点击事件，根据当前模式清空对应内容。
-     * @returns {void}
-     */
-    newChatButton.addEventListener('click', () => {
-        const mode = getCurrentMode();
-        logMessage(`新会话已在 ${mode} 模式下开始`, 'system', mode);
-
-        switch (mode) {
-            case 'chat':
-                chatHistory = [];
-                currentSessionId = null;
-                messageHistory.innerHTML = '';
-                clearAttachedFile();
-                break;
-            case 'translation':
-                document.getElementById('translation-input-text').value = '';
-                document.getElementById('translation-output-text').innerHTML = '';
-                break;
-            case 'vision':
-                visionHistory.innerHTML = '';
-                visionAttachedFiles = [];
-                visionAttachmentPreviews.innerHTML = '';
-                visionPromptInput.value = '';
-                break;
-        }
-        showToast(`新的 ${mode} 会话已开始`);
-    });
-
-    /**
-     * @function
-     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
-     * @returns {void}
-     */
-    // 添加视图缩放阻止
-    document.addEventListener('touchmove', (e) => {
-        // 仅在非 message-history 区域阻止缩放行为
-        if (!e.target.closest('#message-history') && e.scale !== 1) {
-            e.preventDefault();
-        }
-    }, { passive: true }); // 将 passive 设置为 true，提高滚动性能
-
-    // 添加浏览器兼容性检测
-    if (!checkBrowserCompatibility()) {
-        return; // 阻止后续初始化
-    }
-
-    const messageHistory = document.getElementById('message-history');
-    if (messageHistory) {
-        /**
-         * 监听鼠标滚轮事件，判断用户是否正在手动滚动。
-         * @param {WheelEvent} e - 滚轮事件对象。
-         */
-        messageHistory.addEventListener('wheel', () => {
-            isUserScrolling = true;
-        }, { passive: true }); // 使用 passive: true 提高滚动性能
-
-        /**
-         * 监听滚动事件，如果滚动条已经到底部，则重置 isUserScrolling。
-         * @param {Event} e - 滚动事件对象。
-         */
-        messageHistory.addEventListener('scroll', () => {
-            // 如果滚动条已经到底部，则重置 isUserScrolling
-            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
-                isUserScrolling = false;
-            }
-        });
-    }
-
-    // 移动端触摸事件支持
-    if ('ontouchstart' in window) {
-        if (messageHistory) {
-            /**
-             * 监听触摸开始事件，判断用户是否正在手动滚动。
-             * @param {TouchEvent} e - 触摸事件对象。
-             */
-            messageHistory.addEventListener('touchstart', () => {
-                isUserScrolling = true;
-            }, { passive: true });
-
-            /**
-             * 监听触摸结束事件，无论是否接近底部，都重置 isUserScrolling。
-             * @param {TouchEvent} e - 触摸事件对象。
-             */
-            messageHistory.addEventListener('touchend', () => {
-                isUserScrolling = false; // 无论是否接近底部，都重置为 false
-                // 如果用户在触摸结束时接近底部，可以尝试自动滚动
-                const threshold = 50; // 离底部50px视为"接近底部"
-                const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <=
-                                    messageHistory.scrollTop + threshold;
-                if (isNearBottom) {
-                    scrollToBottom(); // 尝试滚动到底部
-                }
-            }, { passive: true });
-        }
-    }
-});
+// (This block is removed as its content is merged into the main DOMContentLoaded listener)
 
 /**
  * 检测当前设备是否为移动设备。
@@ -2223,31 +2142,6 @@ function initTranslation() {
   chatModeBtn.addEventListener('click', () => switchUIMode('chat'));
   visionModeBtn.addEventListener('click', () => switchUIMode('vision'));
 
-  // 日志按钮切换逻辑
-  toggleLogBtn.addEventListener('click', () => {
-      const logPanel = document.querySelector('.chat-container.log-mode');
-      const mainContentArea = document.querySelector('.content-area');
-      
-      // 切换日志面板的显示状态
-      logPanel.classList.toggle('active');
-      
-      // 根据当前UI模式，显示对应的日志内容
-      const activeLogContent = document.getElementById(`${currentUIMode}-log-content`);
-      document.querySelectorAll('.log-content').forEach(lc => lc.classList.remove('active'));
-      if (activeLogContent) {
-          activeLogContent.classList.add('active');
-      }
-
-      // 隐藏其他主功能区
-      if (logPanel.classList.contains('active')) {
-          chatContainer.classList.remove('active');
-          translationContainer.classList.remove('active');
-          visionContainer.classList.remove('active');
-      } else {
-          // 如果关闭日志，则恢复到当前模式的主功能区
-          switchUIMode(currentUIMode);
-      }
-  });
 
   // 翻译模式语音输入按钮事件监听
   if (translationVoiceInputButton) {
@@ -2906,10 +2800,7 @@ function clearAttachedFile() {
  * @returns {string} 当前模式 ('chat', 'translation', 'vision')。
  */
 function getCurrentMode() {
-    if (chatContainer.classList.contains('active')) return 'chat';
-    if (translationContainer.classList.contains('active')) return 'translation';
-    if (visionContainer.classList.contains('active')) return 'vision';
-    return 'chat'; // 默认返回 chat
+    return currentUIMode;
 }
 
 
@@ -2919,44 +2810,87 @@ function getCurrentMode() {
  * @param {string} mode - 要切换到的模式 ('chat', 'translation', 'vision')。
  */
 function switchUIMode(mode) {
+    /**
+     * @function switchUIMode
+     * @description 切换应用的主功能区UI模式，作为所有UI状态变化的唯一真实来源。
+     * @param {string} mode - 要切换到的模式 ('chat', 'translation', 'vision', 'log')。
+     */
+    // 如果请求切换到日志模式，但当前已经是日志模式，则不执行任何操作以避免不必要的状态刷新
+    if (mode === 'log' && currentUIMode === 'log') return;
+
+    const chatContainer = document.querySelector('.chat-container.text-mode');
+    const translationContainer = document.querySelector('.translation-container');
+    const visionContainer = document.querySelector('.vision-container');
+    const logContainer = document.querySelector('.chat-container.log-mode');
+    const inputArea = document.querySelector('.input-area');
+
+    const allContentContainers = [chatContainer, translationContainer, visionContainer, logContainer];
+    const allModeButtons = [
+        document.getElementById('chat-mode-button'),
+        document.getElementById('translation-mode-button'),
+        document.getElementById('vision-mode-button')
+    ];
+
+    // 在切换到非日志模式时，更新 lastUIMode
+    // 在切换到日志模式时，保持 lastUIMode 不变
+    if (mode !== 'log') {
+        lastUIMode = mode;
+    }
+    // 更新当前模式状态
     currentUIMode = mode;
-    const allContainers = [chatContainer, translationContainer, visionContainer];
-    const allModeButtons = [chatModeBtn, translationModeBtn, visionModeBtn];
-    const logPanel = document.querySelector('.chat-container.log-mode');
 
-    // 隐藏所有主容器和日志面板，取消所有按钮的激活状态
-    allContainers.forEach(c => c.classList.remove('active'));
-    allModeButtons.forEach(b => b.classList.remove('active'));
-    logPanel.classList.remove('active');
+    // 1. 重置所有容器和按钮的激活状态
+    allContentContainers.forEach(c => { if(c) c.classList.remove('active'); });
+    allModeButtons.forEach(b => { if(b) b.classList.remove('active'); });
+    if(toggleLogBtn) toggleLogBtn.classList.remove('active'); // 确保日志按钮也重置
 
-    // 激活目标模式的容器和按钮
+    // 2. 激活目标模式的容器和按钮
+    let targetContainer;
+    let targetButton;
+
     switch (mode) {
         case 'translation':
-            translationContainer.classList.add('active');
-            translationModeBtn.classList.add('active');
+            targetContainer = translationContainer;
+            targetButton = allModeButtons[1];
             break;
         case 'vision':
-            visionContainer.classList.add('active');
-            visionModeBtn.classList.add('active');
+            targetContainer = visionContainer;
+            targetButton = allModeButtons[2];
+            break;
+        case 'log':
+            targetContainer = logContainer;
+            if(toggleLogBtn) toggleLogBtn.classList.add('active'); // 激活日志按钮
+            // 确保显示正确模式的日志内容
+            document.querySelectorAll('.log-content').forEach(lc => lc.classList.remove('active'));
+            const activeLogContent = document.getElementById(`${lastUIMode}-log-content`);
+            if (activeLogContent) {
+                activeLogContent.classList.add('active');
+            }
             break;
         case 'chat':
         default:
-            chatContainer.classList.add('active');
-            chatModeBtn.classList.add('active');
+            targetContainer = chatContainer;
+            targetButton = allModeButtons[0];
             break;
     }
 
-    // 停止所有媒体流
+    if (targetContainer) {
+        targetContainer.classList.add('active');
+    }
+    if (targetButton) {
+        targetButton.classList.add('active');
+    }
+
+    // 3. 停止任何正在运行的媒体流
     if (videoManager && isVideoActive) stopVideo();
     if (screenRecorder && isScreenSharing) stopScreenSharing();
 
-    // 更新UI元素的显示状态
+    // 4. 根据新模式更新UI元素的可见性
     updateMediaPreviewsDisplay();
-    inputArea.style.display = mode === 'chat' ? 'flex' : 'none';
-    translationVoiceInputButton.style.display = mode === 'translation' ? 'inline-flex' : 'none';
-    chatVoiceInputButton.style.display = mode === 'chat' ? 'inline-flex' : 'none';
+    // 聊天输入区域只在聊天模式下显示
+    if(inputArea) inputArea.style.display = mode === 'chat' ? 'flex' : 'none';
 
-    logMessage(`Switched to ${mode} mode`, 'system', mode);
+    logMessage(`已切换到 ${mode} 模式`, 'system', mode);
 }
 
 
