@@ -120,7 +120,6 @@
                 <!-- 模式切换选项卡 -->
                 <div class="mode-tabs">
                     <button class="tab active" data-mode="text">📝 文字聊天</button>
-                    <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
                 </div>
 
@@ -140,33 +139,29 @@
                   </div>
                   
                   <div class="message-history" id="message-history">
-                    <!-- 聊天消息动态插入 -->
                   </div>
 
-                  <!-- 新增：文件附件预览容器 -->
                   <div class="file-attachment-previews" id="file-attachment-previews">
-                      <!-- 附件预览将动态插入此处 -->
                   </div>
                   
-                  <!-- 输入区域保持不变 -->
-
                     <div class="input-area">
                         <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
                         <button id="send-button" class="send-button material-symbols-outlined">send</button>
                         <button id="interrupt-button" class="action-button">||</button>
-                        <!-- 新增：附件按钮 -->
                         <button id="attachment-button" class="action-button material-symbols-outlined">attach_file</button>
-                        <!-- 新增：聊天模式下的语音输入按钮 -->
                         <button id="chat-voice-input-button" class="action-button material-symbols-outlined">mic</button>
                         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,application/pdf" style="display: none;">
                     </div>
                     
                 </section>
 
-                <!-- 系统日志区 (保持不变) -->
                 <section class="chat-container log-mode">
                     <div class="log-header">
-                        <h3>系统日志</h3>
+                        <div class="log-tabs">
+                            <button class="log-tab active" data-log-target="chat-log-content">文字聊天</button>
+                            <button class="log-tab" data-log-target="translation-log-content">翻译</button>
+                            <button class="log-tab" data-log-target="vision-log-content">创意工坊</button>
+                        </div>
                         <button id="clear-logs" class="action-button">清空</button>
                     </div>
                     <div id="chat-log-content" class="log-content active"></div>
@@ -206,21 +201,6 @@
                         <!-- 对话式交互内容将动态插入此处 -->
                     </div>
                     <div class="vision-input-area">
-                        <!-- 附件预览区 -->
-                        <div class="file-attachment-previews" id="vision-attachment-previews"></div>
-                        <!-- 输入和控制区 -->
-                        <div class="vision-main-controls">
-                            <button id="vision-attachment-button" class="action-button material-symbols-outlined" title="上传图片/视频">attach_file</button>
-                            <input type="file" id="vision-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
-                            <div class="prompt-input-wrapper">
-                                <textarea id="vision-prompt-input" placeholder="输入提示词或对图片提问..." rows="1"></textarea>
-                                <button id="expand-prompt-button" class="action-button material-symbols-outlined" title="扩写提示词">auto_fix_high</button>
-                            </div>
-                            <button id="toggle-params-button" class="action-button material-symbols-outlined" title="参数设置">tune</button>
-                            <button id="analyze-image-button" class="action-button primary" title="分析图片">image_search</button>
-                            <button id="generate-image-button" class="action-button primary" title="生成图片">brush</button>
-                        </div>
-                        <!-- 可折叠的参数面板 -->
                         <div class="vision-params-panel" id="vision-params-panel">
                             <div class="param-item">
                                 <label for="image-size-select">图片尺寸</label>
@@ -245,10 +225,30 @@
                                 <label for="seed-input">随机种子</label>
                                 <input type="number" id="seed-input" placeholder="留空则随机">
                             </div>
-                             <div class="param-item full-width">
+                            <div class="param-item full-width">
                                 <label for="negative-prompt-input">反向提示词</label>
                                 <textarea id="negative-prompt-input" placeholder="不想在图片中看到的内容..." rows="2"></textarea>
                             </div>
+                        </div>
+                        <div class="file-attachment-previews" id="vision-attachment-previews"></div>
+                        <div class="vision-model-selection">
+                            <div class="model-select-group">
+                                <label for="vision-analysis-model-select">视觉分析模型</label>
+                                <select id="vision-analysis-model-select"></select>
+                            </div>
+                            <div class="model-select-group">
+                                <label for="image-generation-model-select">图像生成模型</label>
+                                <select id="image-generation-model-select"></select>
+                            </div>
+                        </div>
+                        <div class="vision-main-controls">
+                            <button id="vision-attachment-button" class="action-button material-symbols-outlined" title="上传图片/视频">attach_file</button>
+                            <input type="file" id="vision-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
+                            <textarea id="vision-prompt-input" placeholder="输入提示词或对图片提问..." rows="1"></textarea>
+                            <button id="expand-prompt-button" class="action-button" title="扩写提示词">提词扩写</button>
+                            <button id="analyze-image-button" class="action-button" title="分析图片">图片分析</button>
+                            <button id="generate-image-button" class="action-button" title="生成图片">图片生成</button>
+                            <button id="toggle-params-button" class="action-button material-symbols-outlined" title="参数设置">tune</button>
                         </div>
                     </div>
                 </section>

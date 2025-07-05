@@ -145,6 +145,14 @@ The report should include the following core sections:
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
     },
     IMAGE_GENERATION: {
+        MODELS: [
+            {
+                name: 'Kwai-Kolors/Kolors',
+                displayName: 'Kolors',
+                isSiliconFlow: true
+            }
+        ],
+        DEFAULT_MODEL: 'Kwai-Kolors/Kolors',
         DEFAULT_PROMPT: "a cinematic shot of a baby raccoon wearing an intricate italian priest robe, in a grand cathedral, with beautiful stained glass windows, epic angle and pose, symmetrical, 3d, high detail, photorealistic, 8k",
         DEFAULT_NEGATIVE_PROMPT: "blurry, low quality, bad anatomy, worst quality, normal quality, lowres, extra digits, fewer digits, cropped, jpeg artifacts, signature, watermark, username, artist name",
         AVAILABLE_IMAGE_SIZES: [
