@@ -2952,10 +2952,21 @@ async function handleSendVisionMessage() {
             }
 
             const result = await response.json();
-            const fullResponse = result.choices?.[0]?.message?.content || '';
+            const message = result.choices?.[0]?.message;
+            const content = message?.content || '';
+            const reasoningContent = message?.reasoning_content || '';
+
+            let combinedContent = '';
+            if (reasoningContent) {
+                combinedContent += `**思维链：**\n\n${reasoningContent}\n\n`;
+            }
+            combinedContent += content;
+
+            // 处理特殊 Token 进行高亮
+            combinedContent = combinedContent.replace(/<\|begin_of_box\|>(.*?)<\|end_of_box\|>/gs, '<span class="highlight-box">$1</span>');
 
             // 渲染最终响应
-            markdownContainer.innerHTML = marked.parse(fullResponse);
+            markdownContainer.innerHTML = marked.parse(combinedContent);
             if (typeof MathJax !== 'undefined' && MathJax.startup) {
                 MathJax.startup.promise.then(() => {
                     MathJax.typeset([markdownContainer]);
@@ -2963,7 +2974,8 @@ async function handleSendVisionMessage() {
             }
             
             // 将最终 AI 响应添加到历史记录
-            visionChatHistory.push({ role: 'assistant', content: fullResponse });
+            // 历史记录中只保存最终的 content，reasoning_content 不单独保存
+            visionChatHistory.push({ role: 'assistant', content: content });
 
         } else {
             // --- 处理流式模型 (例如 Gemini) ---

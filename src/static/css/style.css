@@ -1682,3 +1682,19 @@ body.dark-mode {
         margin-bottom: 10px; /* 与输入框保持间距 */
     }
 }
+
+/* 高亮答案内容的样式 */
+.highlight-box {
+    background-color: #fff3cd; /* 浅黄色背景 */
+    color: #664d03; /* 深色文本 */
+    padding: 0.2em 0.5em;
+    border-radius: 4px;
+    font-weight: bold;
+    border: 1px solid #ffeeba;
+}
+
+body.dark-mode .highlight-box {
+    background-color: #4a4a00; /* 暗色模式下的深色背景 */
+    color: #ffeb3b; /* 暗色模式下的亮色文本 */
+    border-color: #808000;
+}
