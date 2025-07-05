@@ -148,7 +148,8 @@ The report should include the following core sections:
                 isImageGeneration: true // 标记为文生图模型
             }
         ],
-        DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
+        DEFAULT_MODEL: 'glm-4.1v-thinking-flash', // 图像分析默认模型
+        DEFAULT_IMAGE_GENERATION_MODEL: 'Kwai-Kolors/Kolors' // 文生图默认模型
     },
     IMAGE_GENERATION: { // 新增文生图默认参数配置
         DEFAULT_PARAMS: {

@@ -89,6 +89,21 @@ const visionInputText = document.getElementById('vision-input-text');
 const visionAttachmentButton = document.getElementById('vision-attachment-button');
 const visionFileInput = document.getElementById('vision-file-input');
 const visionSendButton = document.getElementById('vision-send-button');
+// 新增视觉功能选择和模型选择
+const visionFunctionSelect = document.getElementById('vision-function-select');
+const visionAnalysisModelSelect = document.getElementById('vision-analysis-model-select');
+const visionGenerationModelSelect = document.getElementById('vision-generation-model-select');
+const imageGenerationModelGroup = document.getElementById('image-generation-model-group');
+// 新增文生图参数面板相关 DOM 元素
+const imageGenerationParamsPanel = document.getElementById('image-generation-params-panel');
+const toggleParamsButton = document.getElementById('toggle-params-button');
+const imageGenerationParamsContent = document.getElementById('image-generation-params-content');
+const imageSizeSelect = document.getElementById('image-size-select');
+const batchSizeInput = document.getElementById('batch-size-input');
+const numInferenceStepsInput = document.getElementById('num-inference-steps-input');
+const guidanceScaleInput = document.getElementById('guidance-scale-input');
+const negativePromptInput = document.getElementById('negative-prompt-input');
+const seedInput = document.getElementById('seed-input');
 
 
 // Load saved values from localStorage
@@ -247,10 +262,23 @@ document.addEventListener('DOMContentLoaded', () => {
    visionFileInput.addEventListener('change', (event) => handleFileAttachment(event, 'vision'));
    visionSendButton.addEventListener('click', handleSendVisionMessage);
  
+   // 文生图参数面板折叠/展开
+   if (toggleParamsButton) {
+       toggleParamsButton.addEventListener('click', () => {
+           imageGenerationParamsContent.classList.toggle('collapsed');
+           toggleParamsButton.textContent = imageGenerationParamsContent.classList.contains('collapsed') ? 'expand_less' : 'expand_more';
+       });
+   }
+ 
    // 初始化翻译功能
    initTranslation();
    // 初始化视觉功能
    initVision();
+   // 初始设置视觉功能选择为图像分析
+   if (visionFunctionSelect) {
+       visionFunctionSelect.value = 'image-analysis';
+       updateVisionUI('image-analysis');
+   }
  });
 
 // State variables
@@ -286,12 +314,15 @@ let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let attachedFile = null; // 新增：用于存储待发送的附件信息
 let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
 let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
+let imageGenerationHistory = []; // 新增：用于存储文生图模式的聊天历史
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
 
 // State variables
 let selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === CONFIG.API.MODEL_NAME); // 初始选中默认模型
+let selectedVisionModelConfig = CONFIG.VISION.MODELS.find(m => m.name === CONFIG.VISION.DEFAULT_MODEL); // 初始选中视觉默认模型
+let selectedImageGenerationModelConfig = CONFIG.VISION.MODELS.find(m => m.name === CONFIG.VISION.DEFAULT_IMAGE_GENERATION_MODEL); // 初始选中文生图默认模型
 
 /**
  * 将PCM数据转换为WAV Blob。
@@ -2196,7 +2227,21 @@ function initTranslation() {
       // 确保停止所有媒体流
       if (videoManager) stopVideo();
       if (screenRecorder) stopScreenSharing();
+
+      // 切换到视觉模式时，默认显示图像分析界面
+      if (visionFunctionSelect) {
+          visionFunctionSelect.value = 'image-analysis';
+          updateVisionUI('image-analysis');
+      }
     });
+  }
+
+  // 视觉功能选择下拉菜单事件监听
+  if (visionFunctionSelect) {
+      visionFunctionSelect.addEventListener('change', (event) => {
+          const selectedFunction = event.target.value;
+          updateVisionUI(selectedFunction);
+      });
   }
 
   // 翻译模式语音输入按钮事件监听
