@@ -132,8 +132,15 @@ export default {
 
 
 
-    return new Response('Not found', { status: 404 });
-  },
+        // 添加文生图API路由
+        if (url.pathname === '/api/generate-image') {
+            return handleImageGenerationRequest(request, env);
+        }
+
+        // ... 其他路由 ...
+
+        return new Response('Not found', { status: 404 });
+    },
 };
 
 function getContentType(path) {
@@ -448,10 +455,58 @@ async function handleTranslationRequest(request, env) {
             details: error.stack || '无堆栈信息'
         }), {
             status: 500,
-            headers: { 
-                'Content-Type': 'application/json', 
-                'Access-Control-Allow-Origin': '*' 
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
             },
+        });
+    }
+}
+
+// 添加文生图API处理函数
+async function handleImageGenerationRequest(request, env) {
+    try {
+        const body = await request.json();
+        const siliconFlowApiToken = env.SF_API_TOKEN; // 从环境变量获取 SiliconFlow API 令牌
+        const siliconFlowApiUrl = "https://api.siliconflow.cn/v1/images/generations";
+
+        if (!siliconFlowApiToken) {
+            throw new Error('SF_API_TOKEN is not configured in environment variables.');
+        }
+
+        const response = await fetch(siliconFlowApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${siliconFlowApiToken}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`SiliconFlow 图像生成API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
+        }
+
+        const result = await response.json();
+        return new Response(JSON.stringify(result), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*' // 确保CORS头部
+            }
+        });
+
+    } catch (error) {
+        console.error('图像生成API错误:', error);
+        return new Response(JSON.stringify({
+            error: error.message || '图像生成失败',
+            details: error.stack || '无堆栈信息'
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
         });
     }
 }

@@ -140,14 +140,24 @@ The report should include the following core sections:
                 name: 'THUDM/GLM-4.1V-9B-Thinking',
                 displayName: 'GLM-4.1V-9B-Thinking',
                 isSiliconFlow: true // 标记为SiliconFlow模型
+            },
+            // 新增文生图模型
+            {
+                name: 'Kwai-Kolors/Kolors',
+                displayName: 'Kwai Kolors (文生图)',
+                isImageGeneration: true // 标记为文生图模型
             }
         ],
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
     },
-    // If you are working in the RoArm branch
-    // ROARM: {
-    //     IP_ADDRESS: '192.168.1.4'
-    // }
-  };
-  
-  export default CONFIG;
+    IMAGE_GENERATION: { // 新增文生图默认参数配置
+        DEFAULT_PARAMS: {
+            image_size: "1024x1024",
+            batch_size: 1,
+            num_inference_steps: 20,
+            guidance_scale: 7.5,
+            negative_prompt: "",
+            seed: undefined
+        }
+    }
+};
