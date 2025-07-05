@@ -46,7 +46,7 @@
                 <h1 class="app-title">Gemini Chat</h1>
                 <button id="translation-mode-button" class="mode-button material-symbols-outlined">translate</button>
                 <button id="chat-mode-button" class="mode-button material-symbols-outlined active">chat</button>
-                <button id="vision-mode-button" class="mode-button material-symbols-outlined">auto_awesome</button>
+                <button id="vision-mode-button" class="mode-button material-symbols-outlined">camera_enhance</button>
             </div>
             <div class="nav-tools">
                 <button id="new-chat-button" class="material-symbols-outlined">add_box</button>
@@ -201,85 +201,26 @@
                 </section>
 
                 <!-- 视觉模型功能区 -->
-                <section class="chat-container vision-mode" id="creative-studio-container">
-                    <div class="vision-controls-top">
-                        <!-- 功能选择下拉菜单 -->
-                        <select id="creative-function-select" title="选择功能">
-                            <option value="analysis">图像分析</option>
-                            <option value="generation">文生图</option>
-                        </select>
-
-                        <!-- 模型选择下拉菜单 (用于图像分析和文生图) -->
-                        <label for="creative-model-select">模型:</label>
-                        <select id="creative-model-select"></select>
-                    </div>
-
-                    <!-- 图片生成参数区域 (默认隐藏) -->
-                    <div class="generation-params-container" id="generation-params-container" style="display: none;">
-                        <div class="param-group">
-                            <label for="image-size">图片尺寸:</label>
-                            <select id="image-size">
-                                <option value="1024x1024">1024x1024</option>
-                                <option value="960x1280">960x1280</option>
-                                <option value="768x1024">768x1024</option>
-                                <option value="720x1440">720x1440</option>
-                                <option value="720x1280">720x1280</option>
-                            </select>
-                        </div>
-                        <div class="param-group">
-                            <label for="batch-size">生成数量 (1-4):</label>
-                            <input type="number" id="batch-size" min="1" max="4" value="1">
-                        </div>
-                        <div class="param-group">
-                            <label for="num-inference-steps">迭代步数 (1-100):</label>
-                            <input type="number" id="num-inference-steps" min="1" max="100" value="20">
-                        </div>
-                        <div class="param-group">
-                            <label for="guidance-scale">引导强度 (0-20):</label>
-                            <input type="number" id="guidance-scale" min="0" max="20" step="0.5" value="7.5">
-                        </div>
-                        <div class="param-group full-width">
-                            <label for="negative-prompt">负面提示词:</label>
-                            <input type="text" id="negative-prompt" placeholder="不想要的内容">
-                        </div>
-                        <div class="param-group">
-                            <label for="seed">随机种子:</label>
-                            <input type="number" id="seed" min="0" max="9999999999">
-                        </div>
-                    </div>
-
-                    <!-- 统一的输入区域 -->
-                    <div class="vision-input-area">
-                        <!-- 附件按钮 -->
-                        <button id="creative-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
-                        <input type="file" id="creative-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
-                        
-                        <!-- 提示词输入 -->
-                        <textarea id="creative-prompt-input" placeholder="输入描述或提示词..." rows="2"></textarea>
-                        
-                        <!-- 发送/执行按钮 -->
-                        <button id="creative-action-button" class="send-button material-symbols-outlined">send</button>
-                    </div>
-
-                    <!-- 附件预览区域 -->
-                    <div class="file-attachment-previews" id="creative-attachment-previews">
-                        <!-- 附件预览将动态插入此处 -->
-                    </div>
-
-                    <!-- 输出区域 -->
+                <section class="vision-container">
                     <div class="vision-output-area">
-                        <!-- 图像分析结果区 -->
-                        <div class="vision-output-box" id="analysis-output-box">
-                            <h4>图像分析结果</h4>
-                            <div id="analysis-output-content" class="markdown-body"></div>
+                        <div class="vision-output-box">
+                            <h4>模型输出</h4>
+                            <div id="vision-output-content" class="markdown-body"></div>
                         </div>
-                        
-                        <!-- 图像生成结果区 -->
-                        <div class="vision-output-box" id="generation-output-box" style="display: none;">
-                            <h4>图像生成结果</h4>
-                            <div id="generation-output-content" class="generated-images-grid">
-                                <!-- 生成的图片将在这里显示 -->
-                            </div>
+                    </div>
+                    <div class="vision-input-area">
+                        <div class="vision-controls">
+                            <label for="vision-model-select">模型选择:</label>
+                            <select id="vision-model-select"></select>
+                        </div>
+                        <div class="file-attachment-previews" id="vision-attachment-previews">
+                            <!-- 视觉模型附件预览 -->
+                        </div>
+                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="2"></textarea>
+                        <div class="vision-action-buttons">
+                            <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                            <input type="file" id="vision-file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-flv,video/webm" style="display: none;" multiple>
+                            <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
                         </div>
                     </div>
                 </section>
@@ -291,11 +232,3 @@
     <script src="js/main.js" type="module"></script>
 </body>
 </html>
-<style>
-  .vision-mode {
-    display: none;
-  }
-  .vision-mode.active {
-    display: block;
-  }
-</style>

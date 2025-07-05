@@ -80,20 +80,15 @@ const translationInputTextarea = document.getElementById('translation-input-text
 // 新增：聊天模式语音输入相关 DOM 元素
 const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 
-// 创意创作区相关 DOM 元素
-const creativeStudioContainer = document.getElementById('creative-studio-container');
-const creativeFunctionSelect = document.getElementById('creative-function-select');
-const creativeModelSelect = document.getElementById('creative-model-select');
-const generationParamsContainer = document.getElementById('generation-params-container');
-const creativeAttachmentButton = document.getElementById('creative-attachment-button');
-const creativeFileInput = document.getElementById('creative-file-input');
-const creativePromptInput = document.getElementById('creative-prompt-input');
-const creativeActionButton = document.getElementById('creative-action-button');
-const creativeAttachmentPreviews = document.getElementById('creative-attachment-previews');
-const analysisOutputBox = document.getElementById('analysis-output-box');
-const analysisOutputContent = document.getElementById('analysis-output-content');
-const generationOutputBox = document.getElementById('generation-output-box');
-const generationOutputContent = document.getElementById('generation-output-content');
+// 视觉模型相关 DOM 元素
+const visionModeBtn = document.getElementById('vision-mode-button');
+const visionContainer = document.querySelector('.vision-container');
+const visionOutputContent = document.getElementById('vision-output-content');
+const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
+const visionInputText = document.getElementById('vision-input-text');
+const visionAttachmentButton = document.getElementById('vision-attachment-button');
+const visionFileInput = document.getElementById('vision-file-input');
+const visionSendButton = document.getElementById('vision-send-button');
 
 
 // Load saved values from localStorage
@@ -189,39 +184,13 @@ document.addEventListener('DOMContentLoaded', () => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
 
-            // 移除所有 tab 的 active 类
+            // 移除所有 tab 和 chat-container 的 active 类
             modeTabs.forEach(t => t.classList.remove('active'));
-            // 移除所有 chat-container 类的 active 类
             chatContainers.forEach(c => c.classList.remove('active'));
-            translationContainer.classList.remove('active'); // 确保翻译容器也被隐藏
-            if (creativeStudioContainer) creativeStudioContainer.classList.remove('active'); // 确保创意创作区容器也被隐藏
 
-            // 添加当前点击 tab 的 active 类
+            // 添加当前点击 tab 和对应 chat-container 的 active 类
             tab.classList.add('active');
-
-            // 根据 mode 激活对应的容器
-            if (mode === 'text') {
-                document.querySelector('.chat-container.text-mode').classList.add('active');
-                if (inputArea) inputArea.style.display = 'flex'; // 恢复输入区域显示
-                if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'inline-flex'; // 聊天模式下显示聊天语音输入按钮
-                if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none'; // 隐藏翻译语音输入按钮
-                updateMediaPreviewsDisplay(); // 根据视频/屏幕共享状态更新媒体预览显示
-            } else if (mode === 'log') {
-                document.querySelector('.chat-container.log-mode').classList.add('active');
-                if (inputArea) inputArea.style.display = 'none'; // 隐藏输入区域
-                if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none'; // 隐藏聊天语音输入按钮
-                if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none'; // 隐藏翻译语音输入按钮
-                if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none'; // 隐藏媒体预览
-            } else if (mode === 'vision') { // 处理视觉模式 (创意创作区)
-                creativeStudioContainer.classList.add('active');
-                // 确保创意创作区容器可见并初始化
-                creativeStudioContainer.style.display = 'block';
-                initCreativeStudio(); // 激活创意创作区时，初始化其状态
-                if (inputArea) inputArea.style.display = 'flex'; // 创意创作区也需要输入区域
-                if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none'; // 隐藏聊天语音输入按钮
-                if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none'; // 隐藏翻译语音输入按钮
-                if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none'; // 隐藏媒体预览
-            }
+            document.querySelector(`.chat-container.${mode}-mode`).classList.add('active');
 
             // 确保在切换模式时停止所有媒体流
             if (videoManager) {
@@ -230,6 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (screenRecorder) {
                 stopScreenSharing();
             }
+            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
+            updateMediaPreviewsDisplay();
         });
     });
 
@@ -271,16 +242,15 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.addEventListener('change', handleFileAttachment);
 
-   // 创意创作区附件按钮事件监听
-   creativeAttachmentButton.addEventListener('click', () => creativeFileInput.click());
-   creativeFileInput.addEventListener('change', handleCreativeFileAttachment);
-   // 创意创作区发送/执行按钮事件监听
-   creativeActionButton.addEventListener('click', handleCreativeAction);
+   // 视觉模型附件按钮事件监听
+   visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
+   visionFileInput.addEventListener('change', handleVisionFileAttachment);
+   visionSendButton.addEventListener('click', handleSendVisionMessage);
  
    // 初始化翻译功能
-   initTranslation(); // 确保在 DOMContentLoaded 中调用
-   // 初始化创意创作区功能
-   initCreativeStudio();
+   initTranslation();
+   // 初始化视觉功能
+   initVision();
  });
 
 // State variables
@@ -314,7 +284,7 @@ let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let attachedFile = null; // 新增：用于存储待发送的附件信息
-let creativeAttachedFiles = []; // 用于存储创意创作区的附件
+let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -2205,7 +2175,7 @@ function initTranslation() {
   translationModeBtn.addEventListener('click', () => {
     translationContainer.classList.add('active');
     chatContainer.classList.remove('active');
-    if (creativeStudioContainer) creativeStudioContainer.classList.remove('active'); // 隐藏创意创作区容器
+    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
     logContainer.classList.remove('active'); // 隐藏日志容器
     
     // 隐藏聊天模式特有的元素
@@ -2228,7 +2198,7 @@ function initTranslation() {
   chatModeBtn.addEventListener('click', () => {
     translationContainer.classList.remove('active');
     chatContainer.classList.add('active');
-    if (creativeStudioContainer) creativeStudioContainer.classList.remove('active'); // 隐藏创意创作区容器
+    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
     logContainer.classList.remove('active'); // 确保日志容器在聊天模式下也隐藏
     
     // 恢复聊天模式特有的元素显示
@@ -2248,7 +2218,7 @@ function initTranslation() {
   document.getElementById('toggle-log').addEventListener('click', () => {
     translationContainer.classList.remove('active');
     chatContainer.classList.remove('active');
-    if (creativeStudioContainer) creativeStudioContainer.classList.remove('active'); // 隐藏创意创作区容器
+    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
     logContainer.classList.add('active');
     
     // 隐藏聊天模式特有的元素
@@ -2268,33 +2238,29 @@ function initTranslation() {
     if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
   });
 
-  // 视觉模式按钮的事件监听器 (现在是创意创作区按钮)
-  visionModeBtn.addEventListener('click', () => {
-      // 移除所有 tab 和 chat-container 的 active 类
-      modeTabs.forEach(t => t.classList.remove('active'));
-      chatContainers.forEach(c => c.classList.remove('active')); // 移除所有 chat-container 的 active 类
-
-      // 激活视觉模式按钮和创意创作区容器
-      visionModeBtn.classList.add('active');
-      creativeStudioContainer.classList.add('active');
-      
-      // 隐藏其他模式的特定UI
+  // 新增：视觉模式切换事件
+  if (visionModeBtn) {
+    visionModeBtn.addEventListener('click', () => {
+      if (visionContainer) visionContainer.classList.add('active');
       translationContainer.classList.remove('active');
       chatContainer.classList.remove('active');
       logContainer.classList.remove('active');
 
+      // 隐藏其他模式的特定UI
       if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
       if (inputArea) inputArea.style.display = 'none';
       if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
       if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
 
+      visionModeBtn.classList.add('active');
+      translationModeBtn.classList.remove('active');
+      chatModeBtn.classList.remove('active');
+
       // 确保停止所有媒体流
       if (videoManager) stopVideo();
       if (screenRecorder) stopScreenSharing();
-
-      // 激活创意创作区时，初始化其状态
-      initCreativeStudio();
-  });
+    });
+  }
 
   // 翻译模式语音输入按钮事件监听
   if (translationVoiceInputButton) {
@@ -2948,578 +2914,301 @@ function clearAttachedFile() {
 
 
 /**
- * @function initCreativeStudio
- * @description 初始化创意创作区功能，包括填充模型选择下拉菜单和设置事件监听器。
+ * @function handleVisionFileAttachment
+ * @description 处理视觉模型的文件附件选择事件。
+ * 读取用户选择的文件，生成预览，并将其存储在 visionAttachedFiles 数组中。
+ *
+ * @param {Event} event - 文件输入元素触发的 change 事件对象。
+ */
+function handleVisionFileAttachment(event) {
+  const files = event.target.files;
+  if (!files) return;
+
+  for (const file of files) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64String = e.target.result;
+      const fileData = {
+        name: file.name,
+        type: file.type,
+        data: base64String,
+      };
+      visionAttachedFiles.push(fileData);
+      const previewElement = createVisionAttachmentPreview(fileData, visionAttachedFiles.length - 1);
+      visionAttachmentPreviews.appendChild(previewElement);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // 清空 file input 的值，以便用户可以重复上传同一个文件
+  event.target.value = '';
+}
+
+/**
+ * @function createVisionAttachmentPreview
+ * @description 为给定的附件文件创建一个预览 DOM 元素。
+ * 预览元素包含文件名和一个移除按钮。
+ *
+ * @param {object} fileData - 包含文件信息（名称、类型、数据）的对象。
+ * @param {number} index - 文件在 visionAttachedFiles 数组中的索引。
+ * @returns {HTMLElement} - 创建的预览 div 元素。
+ */
+function createVisionAttachmentPreview(fileData, index) {
+  const preview = document.createElement('div');
+  preview.classList.add('attachment-preview');
+  preview.dataset.index = index;
+
+  const fileName = document.createElement('span');
+  fileName.textContent = fileData.name;
+  preview.appendChild(fileName);
+
+  const removeButton = document.createElement('button');
+  removeButton.textContent = '×';
+  removeButton.onclick = () => removeVisionAttachment(index);
+  preview.appendChild(removeButton);
+
+  return preview;
+}
+
+/**
+ * @function removeVisionAttachment
+ * @description 从附件列表和预览中移除一个文件。
+ *
+ * @param {number} indexToRemove - 要移除的文件在 visionAttachedFiles 数组中的索引。
+ */
+function removeVisionAttachment(indexToRemove) {
+  // 从数组中移除
+  visionAttachedFiles.splice(indexToRemove, 1);
+  
+  // 从 DOM 中移除预览
+  const previewToRemove = visionAttachmentPreviews.querySelector(`.attachment-preview[data-index='${indexToRemove}']`);
+  if (previewToRemove) {
+    visionAttachmentPreviews.removeChild(previewToRemove);
+  }
+
+  // 更新剩余预览元素的索引
+  const remainingPreviews = visionAttachmentPreviews.querySelectorAll('.attachment-preview');
+  remainingPreviews.forEach((preview, newIndex) => {
+    const oldIndex = parseInt(preview.dataset.index);
+    if (oldIndex > indexToRemove) {
+      preview.dataset.index = newIndex;
+      // 更新移除按钮的 onclick 事件
+      const removeButton = preview.querySelector('button');
+      removeButton.onclick = () => removeVisionAttachment(newIndex);
+    }
+  });
+}
+
+
+/**
+ * @function handleSendVisionMessage
+ * @description 发送消息到视觉模型。
+ * 构建请求体，调用 API，并处理和显示返回的结果。
+ */
+async function handleSendVisionMessage() {
+  let mathJaxDebounceTimer = null; // 为MathJax渲染添加防抖定时器
+  const text = visionInputText.value.trim();
+  if (!text && visionAttachedFiles.length === 0) {
+    showToast('请输入文本或添加附件。');
+    return;
+  }
+
+  const visionModelSelect = document.getElementById('vision-model-select');
+  const selectedModel = visionModelSelect.value;
+  const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
+
+  if (!selectedModelConfig || (!selectedModelConfig.isZhipu && !selectedModelConfig.isSiliconFlow)) {
+      showToast('请选择一个有效的视觉模型。');
+      return;
+  }
+
+  const visionOutputContent = document.getElementById('vision-output-content');
+  visionOutputContent.innerHTML = '正在请求模型...';
+
+  visionSendButton.disabled = true;
+  visionSendButton.textContent = 'progress_activity';
+
+  try {
+    const content = [];
+    if (text) {
+      content.push({ type: 'text', text: text });
+    }
+    visionAttachedFiles.forEach(file => {
+      content.push({ type: 'image_url', image_url: { url: file.data } });
+    });
+
+    const systemPrompt = `你是一个顶级的多模态视觉分析专家。
+
+# 核心任务
+1.你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
+2.使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的所有回复信息！使其结构清晰、易于阅读。
+3.当你收到用户图片识别类请作为高度智能化的图像处理系统，分析用户上传的图片。
+你的任务是自动提取图片中的关键要素，并根据Comfy UI文生图的要求进行分类和整理。
+最终输出完整的要素列表，并生成一份Comfy UI的提示词模板，包括英文和中文两个版本。
+
+请严格按照以下结构和内容要求输出：
+
+【图片要素提取与分类结果】
+
+1. 主体与物体：
+   - 识别图片中的所有物体和主体，包括人物、动物、建筑、自然景观、物品等。
+
+2. 场景与背景：
+   - 分析图片的背景和场景，提取出关键的场景信息，如室内、室外、城市、自然、天空、海洋等。
+
+3. 颜色与色调：
+   - 提取图片中的主要颜色和色调，分析色彩搭配和情感表达（如冷色调、暖色调）。
+
+4. 艺术风格：
+   - 判断图片的艺术风格，如写实、卡通、油画、水彩、赛博朋克、蒸汽朋克等。
+
+5. 情感与氛围：
+   - 识别图片所传达的情感和氛围，如快乐、悲伤、神秘、梦幻、宁静、怀旧、紧张等。
+
+6. 构图与布局：
+   - 识别图片的构图方式，如中心构图、对称构图、三分法则等。
+
+7. 纹理与材质：
+   - 提取图片中的纹理信息，如粗糙、光滑、细腻、金属、玻璃、布料、木质等。
+
+【Comfy UI 提示词模板 - 英文版】
+
+根据上述提取和分类的要素，生成一个英文的Comfy UI提示词模板。这个提示词应该是一个连贯的描述，包含所有关键细节，可以直接用于文生图。
+
+【Comfy UI 提示词模板 - 中文版】
+
+根据上述提取和分类的要素，生成一个中文的Comfy UI提示词模板。这个提示词应该是一个连贯的描述，包含所有关键细节，可以直接用于文生图。`;
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: content }
+    ];
+
+    const requestBody = {
+      model: selectedModel,
+      messages: messages,
+      stream: true, // 关键：启用流式响应
+    };
+
+    const response = await fetch('/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'API 请求失败');
+    }
+
+    // --- 开始流式处理逻辑 ---
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let reasoningContent = '';
+    let finalContent = '';
+    let buffer = '';
+
+    visionOutputContent.innerHTML = ''; // 清空"正在请求模型..."
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // 保留可能不完整的最后一行
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6);
+          if (jsonStr.trim() === '[DONE]') continue;
+          try {
+            const data = JSON.parse(jsonStr);
+            const delta = data.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.reasoning_content) {
+              reasoningContent += delta.reasoning_content;
+            }
+            if (delta.content) {
+              finalContent += delta.content;
+            }
+
+            // 组合并渲染
+            let fullContent = '';
+            if (reasoningContent) {
+              fullContent += reasoningContent;
+            }
+            if (finalContent) {
+              if (fullContent) {
+                fullContent += '\n\n---\n\n';
+              }
+              fullContent += finalContent;
+            }
+
+            // 预处理并渲染
+            visionOutputContent.innerHTML = marked.parse(fullContent);
+            // 为新渲染的代码块添加复制按钮
+            addCopyButtonsToCodeBlocks(visionOutputContent);
+
+            // 使用防抖机制来调用MathJax，避免在高频更新中反复触发渲染
+            clearTimeout(mathJaxDebounceTimer);
+            mathJaxDebounceTimer = setTimeout(() => {
+                if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                    MathJax.startup.promise.then(() => {
+                        MathJax.typeset([visionOutputContent]);
+                    }).catch((err) => console.error('MathJax typesetting failed:', err));
+                }
+            }, 200); // 设置200毫秒的延迟
+
+          } catch (e) {
+            console.error('解析视觉模型流数据块时出错:', e, jsonStr);
+          }
+        }
+      }
+    }
+    // --- 结束流式处理逻辑 ---
+
+    // 确保在流结束后执行最后一次MathJax渲染
+    clearTimeout(mathJaxDebounceTimer);
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            MathJax.typeset([visionOutputContent]);
+        }).catch((err) => console.error('MathJax final typesetting failed:', err));
+    }
+
+  } catch (error) {
+    console.error('发送视觉消息时出错:', error);
+    showToast(`发生错误: ${error.message}`);
+    visionOutputContent.innerHTML = `请求失败: ${error.message}`;
+  } finally {
+    visionInputText.value = '';
+    visionAttachedFiles = [];
+    visionAttachmentPreviews.innerHTML = '';
+    visionSendButton.disabled = false;
+    visionSendButton.textContent = 'send';
+  }
+}
+
+/**
+ * @function initVision
+ * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
  * @returns {void}
  */
-function initCreativeStudio() {
-    if (!creativeStudioContainer) return;
+function initVision() {
+    const visionModelSelect = document.getElementById('vision-model-select');
+    if (!visionModelSelect) return;
 
-    // 确保容器可见
-    creativeStudioContainer.style.display = 'block';
-
-    // 初始化功能选择下拉菜单
-    creativeFunctionSelect.addEventListener('change', updateCreativeStudioUI);
-    
-    // 初始化模型选择下拉菜单
-    creativeModelSelect.innerHTML = ''; // 清空现有选项
+    visionModelSelect.innerHTML = ''; // 清空现有选项
     CONFIG.VISION.MODELS.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
         option.textContent = model.displayName;
-        option.dataset.isImageGeneration = model.isImageGeneration || false; // 存储模型类型
-        creativeModelSelect.appendChild(option);
-    });
-    // 默认选中第一个模型，并触发UI更新
-    creativeModelSelect.value = CONFIG.VISION.DEFAULT_MODEL;
-    updateCreativeStudioUI(); // 初始调用以设置正确的UI状态
-
-    // 初始化图片生成参数的默认值
-    document.getElementById('image-size').value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.image_size;
-    document.getElementById('batch-size').value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.batch_size;
-    document.getElementById('num-inference-steps').value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.num_inference_steps;
-    document.getElementById('guidance-scale').value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.guidance_scale;
-    document.getElementById('negative-prompt').value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.negative_prompt;
-    if (CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.seed !== undefined) {
-        document.getElementById('seed').value = CONFIG.IMAGE_GENERATION.DEFAULT_PARAMS.seed;
-    }
-
-    // 附件按钮事件监听
-    creativeAttachmentButton.addEventListener('click', () => creativeFileInput.click());
-    creativeFileInput.addEventListener('change', handleCreativeFileAttachment);
-
-    // 发送/执行按钮事件监听
-    creativeActionButton.addEventListener('click', handleCreativeAction);
-
-    // 清空附件预览
-    creativeAttachedFiles = [];
-    creativeAttachmentPreviews.innerHTML = '';
-}
-
-/**
- * @function updateCreativeStudioUI
- * @description 根据 creative-function-select 和 creative-model-select 的选择更新UI。
- */
-function updateCreativeStudioUI() {
-    const selectedFunction = creativeFunctionSelect.value;
-    const selectedModelOption = creativeModelSelect.options[creativeModelSelect.selectedIndex];
-    const isImageGenerationModel = selectedModelOption ? selectedModelOption.dataset.isImageGeneration === 'true' : false;
-
-    // 根据功能选择显示/隐藏参数区和输出区
-    if (selectedFunction === 'generation') {
-        generationParamsContainer.style.display = 'grid'; // 显示文生图参数
-        analysisOutputBox.style.display = 'none'; // 隐藏分析结果
-        generationOutputBox.style.display = 'block'; // 显示生成结果
-        creativeActionButton.textContent = '生成';
-        creativeActionButton.classList.remove('material-symbols-outlined');
-        creativeActionButton.classList.add('material-symbols-outlined');
-        creativeActionButton.textContent = 'auto_awesome'; // 生成图标
-        creativePromptInput.placeholder = '输入图片描述或提示词...';
-    } else { // analysis
-        generationParamsContainer.style.display = 'none'; // 隐藏文生图参数
-        analysisOutputBox.style.display = 'block'; // 显示分析结果
-        generationOutputBox.style.display = 'none'; // 隐藏生成结果
-        creativeActionButton.textContent = '分析';
-        creativeActionButton.classList.remove('material-symbols-outlined');
-        creativeActionButton.classList.add('material-symbols-outlined');
-        creativeActionButton.textContent = 'send'; // 分析图标
-        creativePromptInput.placeholder = '输入描述或问题...';
-    }
-
-    // 根据模型类型动态更新模型选择下拉菜单的选项
-    // 重新填充 creativeModelSelect，只显示与当前功能匹配的模型
-    creativeModelSelect.innerHTML = '';
-    const modelsToShow = CONFIG.VISION.MODELS.filter(model => {
-        if (selectedFunction === 'analysis') {
-            return !model.isImageGeneration; // 图像分析模式只显示非文生图模型
-        } else { // generation
-            return model.isImageGeneration; // 文生图模式只显示文生图模型
+        if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
+            option.selected = true;
         }
-    });
-
-    modelsToShow.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.displayName;
-        option.dataset.isImageGeneration = model.isImageGeneration || false;
-        creativeModelSelect.appendChild(option);
-    });
-
-    // 默认选中第一个模型
-    if (modelsToShow.length > 0) {
-        creativeModelSelect.value = modelsToShow[0].name;
-    }
-}
-
-
-/**
- * @function handleCreativeFileAttachment
- * @description 处理创意创作区的文件选择事件。
- * 读取用户选择的文件，生成预览，并将其存储在 creativeAttachedFiles 数组中。
- *
- * @param {Event} event - 文件输入元素触发的 change 事件对象。
- */
-async function handleCreativeFileAttachment(event) {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    creativeAttachedFiles = []; // 清空之前的附件
-    creativeAttachmentPreviews.innerHTML = ''; // 清空预览区
-
-    for (const file of files) {
-        // 检查文件类型和大小
-        const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
-        const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
-        const allowedPdfType = 'application/pdf';
-
-        const selectedFunction = creativeFunctionSelect.value;
-
-        let isValidFile = false;
-        if (selectedFunction === 'analysis') {
-            // 图像分析模式支持图片、视频、PDF
-            if (allowedImageTypes.includes(file.type) || allowedVideoTypes.includes(file.type) || file.type === allowedPdfType) {
-                isValidFile = true;
-            }
-        } else { // generation (文生图模式，只支持图片作为图生图输入)
-            if (allowedImageTypes.includes(file.type)) {
-                isValidFile = true;
-            } else {
-                showToast('文生图模式只支持图片作为参考图。');
-            }
-        }
-
-        if (!isValidFile) {
-            showToast(`不支持的文件类型: ${file.type}。`);
-            continue;
-        }
-
-        if (file.size > 4 * 1024 * 1024) { // 4MB 大小限制
-            showToast('文件大小不能超过 4MB。');
-            continue;
-        }
-
-        try {
-            let base64String;
-            let mimeType = file.type;
-
-            if (file.type === allowedPdfType) {
-                const pdfjsLib = window['pdfjs-dist/build/pdf'];
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
-
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                const page = await pdf.getPage(1);
-                const viewport = page.getViewport({ scale: 1.5 });
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-
-                await page.render({ canvasContext: context, viewport: viewport }).promise;
-                base64String = canvas.toDataURL('image/jpeg');
-                mimeType = 'image/jpeg'; // PDF 转换为 JPEG
-            } else {
-                const reader = new FileReader();
-                base64String = await new Promise((resolve, reject) => {
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = error => reject(error);
-                    reader.readAsDataURL(file);
-                });
-            }
-
-            const fileData = {
-                name: file.name,
-                type: mimeType,
-                data: base64String,
-            };
-            creativeAttachedFiles.push(fileData);
-            const previewElement = createCreativeAttachmentPreview(fileData, creativeAttachedFiles.length - 1);
-            creativeAttachmentPreviews.appendChild(previewElement);
-            showToast(`文件已附加: ${file.name}`);
-
-        } catch (error) {
-            console.error('处理文件时出错:', error);
-            showToast(`处理文件失败: ${error.message}`);
-        }
-    }
-    event.target.value = ''; // 重置 file input
-}
-
-/**
- * @function createCreativeAttachmentPreview
- * @description 为给定的附件文件创建一个预览 DOM 元素。
- * @param {object} fileData - 包含文件信息（名称、类型、数据）的对象。
- * @param {number} index - 文件在 creativeAttachedFiles 数组中的索引。
- * @returns {HTMLElement} - 创建的预览 div 元素。
- */
-function createCreativeAttachmentPreview(fileData, index) {
-    const preview = document.createElement('div');
-    preview.classList.add('attachment-preview');
-    preview.dataset.index = index;
-
-    const img = document.createElement('img');
-    img.src = fileData.data;
-    img.alt = fileData.name;
-    preview.appendChild(img);
-
-    const fileName = document.createElement('span');
-    fileName.textContent = fileData.name;
-    preview.appendChild(fileName);
-
-    const removeButton = document.createElement('button');
-    removeButton.textContent = '×';
-    removeButton.onclick = () => removeCreativeAttachment(index);
-    preview.appendChild(removeButton);
-
-    return preview;
-}
-
-/**
- * @function removeCreativeAttachment
- * @description 从附件列表和预览中移除一个文件。
- * @param {number} indexToRemove - 要移除的文件在 creativeAttachedFiles 数组中的索引。
- */
-function removeCreativeAttachment(indexToRemove) {
-    creativeAttachedFiles.splice(indexToRemove, 1);
-    const previewToRemove = creativeAttachmentPreviews.querySelector(`.attachment-preview[data-index='${indexToRemove}']`);
-    if (previewToRemove) {
-        creativeAttachmentPreviews.removeChild(previewToRemove);
-    }
-    // 更新剩余预览元素的索引
-    const remainingPreviews = creativeAttachmentPreviews.querySelectorAll('.attachment-preview');
-    remainingPreviews.forEach((preview, newIndex) => {
-        const oldIndex = parseInt(preview.dataset.index);
-        if (oldIndex > indexToRemove) {
-            preview.dataset.index = newIndex;
-            const removeButton = preview.querySelector('button');
-            removeButton.onclick = () => removeCreativeAttachment(newIndex);
-        }
+        visionModelSelect.appendChild(option);
     });
 }
-
-/**
- * @function handleCreativeAction
- * @description 处理创意创作区的发送/执行按钮点击事件。
- * 根据当前选择的功能（图像分析或文生图）调用相应的处理函数。
- */
-async function handleCreativeAction() {
-    const selectedFunction = creativeFunctionSelect.value;
-    creativeActionButton.disabled = true;
-    creativeActionButton.textContent = 'progress_activity';
-
-    try {
-        if (selectedFunction === 'analysis') {
-            await handleImageAnalysis();
-        } else if (selectedFunction === 'generation') {
-            await handleImageGeneration();
-        }
-    } catch (error) {
-        console.error('创意创作操作失败:', error);
-        showToast(`操作失败: ${error.message}`);
-    } finally {
-        creativeActionButton.disabled = false;
-        updateCreativeStudioUI(); // 恢复按钮文本和图标
-    }
-}
-
-/**
- * @function handleImageAnalysis
- * @description 处理图像分析请求。
- * 构建请求体，调用 API，并处理和显示返回的结果。
- */
-async function handleImageAnalysis() {
-    let mathJaxDebounceTimer = null;
-    const text = creativePromptInput.value.trim();
-    if (!text && creativeAttachedFiles.length === 0) {
-        showToast('请输入文本或添加附件进行图像分析。');
-        return;
-    }
-
-    const selectedModel = creativeModelSelect.value;
-    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
-
-    if (!selectedModelConfig || (selectedModelConfig.isImageGeneration)) {
-        showToast('请选择一个有效的图像分析模型。');
-        return;
-    }
-
-    analysisOutputContent.innerHTML = '正在请求模型进行图像分析...';
-    generationOutputContent.innerHTML = ''; // 清空生成结果区
-
-    try {
-        const content = [];
-        if (text) {
-            content.push({ type: 'text', text: text });
-        }
-        creativeAttachedFiles.forEach(file => {
-            content.push({ type: 'image_url', image_url: { url: file.data } });
-        });
-
-        const systemPrompt = `你是一个顶级的多模态视觉分析专家。
-        # 核心任务
-        1.你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
-        2.使用 Markdown 语法（如标题、列表、粗体、斜体、代码块、表格等）来组织你的所有回复信息！使其结构清晰、易于阅读。
-        3.当你收到用户图片识别类请作为高度智能化的图像处理系统，分析用户上传的图片。
-        你的任务是自动提取图片中的关键要素，并根据Comfy UI文生图的要求进行分类和整理。
-        最终输出完整的要素列表，并生成一份Comfy UI的提示词模板，包括英文和中文两个版本。
-        
-        请严格按照以下结构和内容要求输出：
-        
-        【图片要素提取与分类结果】
-        
-        1. 主体与物体：
-           - 识别图片中的所有物体和主体，包括人物、动物、建筑、自然景观、物品等。
-        
-        2. 场景与背景：
-           - 分析图片的背景和场景，提取出关键的场景信息，如室内、室外、城市、自然、天空、海洋等。
-        
-        3. 颜色与色调：
-           - 提取图片中的主要颜色和色调，分析色彩搭配和情感表达（如冷色调、暖色调）。
-        
-        4. 艺术风格：
-           - 判断图片的艺术风格，如写实、卡通、油画、水彩、赛博朋克、蒸汽朋克等。
-        
-        5. 情感与氛围：
-           - 识别图片所传达的情感和氛围，如快乐、悲伤、神秘、梦幻、宁静、怀旧、紧张等。
-        
-        6. 构图与布局：
-           - 识别图片的构图方式，如中心构图、对称构图、三分法则等。
-        
-        7. 纹理与材质：
-           - 提取图片中的纹理信息，如粗糙、光滑、细腻、金属、玻璃、布料、木质等。
-        
-        【Comfy UI 提示词模板 - 英文版】
-        
-        根据上述提取和分类的要素，生成一个英文的Comfy UI提示词模板。这个提示词应该是一个连贯的描述，包含所有关键细节，可以直接用于文生图。
-        
-        【Comfy UI 提示词模板 - 中文版】
-        
-        根据上述提取和分类的要素，生成一个中文的Comfy UI提示词模板。这个提示词应该是一个连贯的描述，包含所有关键细节，可以直接用于文生图。`;
-
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: content }
-        ];
-
-        const requestBody = {
-            model: selectedModel,
-            messages: messages,
-            stream: true,
-        };
-
-        const response = await fetch('/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'API 请求失败');
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let reasoningContent = '';
-        let finalContent = '';
-        let buffer = '';
-
-        analysisOutputContent.innerHTML = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                break;
-            }
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const jsonStr = line.substring(6);
-                    if (jsonStr.trim() === '[DONE]') continue;
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (!delta) continue;
-
-                        if (delta.reasoning_content) {
-                            reasoningContent += delta.reasoning_content;
-                        }
-                        if (delta.content) {
-                            finalContent += delta.content;
-                        }
-
-                        let fullContent = '';
-                        if (reasoningContent) {
-                            fullContent += reasoningContent;
-                        }
-                        if (finalContent) {
-                            if (fullContent) {
-                                fullContent += '\n\n---\n\n';
-                            }
-                            fullContent += finalContent;
-                        }
-
-                        analysisOutputContent.innerHTML = marked.parse(fullContent);
-                        addCopyButtonsToCodeBlocks(analysisOutputContent);
-
-                        clearTimeout(mathJaxDebounceTimer);
-                        mathJaxDebounceTimer = setTimeout(() => {
-                            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                MathJax.startup.promise.then(() => {
-                                    MathJax.typeset([analysisOutputContent]);
-                                }).catch((err) => console.error('MathJax typesetting failed:', err));
-                            }
-                        }, 200);
-
-                    } catch (e) {
-                        console.error('解析图像分析流数据块时出错:', e, jsonStr);
-                    }
-                }
-            }
-        }
-        clearTimeout(mathJaxDebounceTimer);
-        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-            MathJax.startup.promise.then(() => {
-                MathJax.typeset([analysisOutputContent]);
-            }).catch((err) => console.error('MathJax final typesetting failed:', err));
-        }
-
-    } catch (error) {
-        console.error('发送图像分析消息时出错:', error);
-        showToast(`发生错误: ${error.message}`);
-        analysisOutputContent.innerHTML = `请求失败: ${error.message}`;
-    } finally {
-        creativePromptInput.value = '';
-        creativeAttachedFiles = [];
-        creativeAttachmentPreviews.innerHTML = '';
-    }
-}
-
-/**
- * @function handleImageGeneration
- * @description 处理文生图请求。
- * 获取参数，构建请求体，调用 API，并显示生成的图片。
- */
-async function handleImageGeneration() {
-    const prompt = creativePromptInput.value.trim();
-    if (!prompt) {
-        showToast('请输入提示词进行图片生成。');
-        return;
-    }
-
-    const selectedModel = creativeModelSelect.value;
-    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
-
-    if (!selectedModelConfig || !selectedModelConfig.isImageGeneration) {
-        showToast('请选择一个有效的文生图模型。');
-        return;
-    }
-
-    generationOutputContent.innerHTML = '正在生成图像...';
-    analysisOutputContent.innerHTML = ''; // 清空分析结果区
-
-    try {
-        const params = {
-            model: selectedModel,
-            prompt: prompt,
-            image_size: document.getElementById('image-size').value,
-            batch_size: parseInt(document.getElementById('batch-size').value),
-            num_inference_steps: parseInt(document.getElementById('num-inference-steps').value),
-            guidance_scale: parseFloat(document.getElementById('guidance-scale').value),
-            negative_prompt: document.getElementById('negative-prompt').value,
-            seed: document.getElementById('seed').value ? parseInt(document.getElementById('seed').value) : undefined
-        };
-
-        // 如果有附件图片，作为图生图的输入
-        if (creativeAttachedFiles.length > 0) {
-            params.image = creativeAttachedFiles[0].data; // 只取第一张图片作为输入
-        }
-
-        const response = await fetch('/api/generate-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(params)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`图像生成失败: ${response.status} - ${JSON.stringify(errorData)}`);
-        }
-
-        const result = await response.json();
-        displayGeneratedImages(result.images);
-
-    } catch (error) {
-        console.error('文生图错误:', error);
-        showToast(`生成失败: ${error.message}`);
-        generationOutputContent.innerHTML = `生成失败: ${error.message}`;
-    } finally {
-        creativePromptInput.value = '';
-        creativeAttachedFiles = [];
-        creativeAttachmentPreviews.innerHTML = '';
-    }
-}
-
-/**
- * @function displayGeneratedImages
- * @description 在生成结果区显示生成的图片。
- * @param {Array<Object>} images - 包含图片URL的对象数组。
- */
-function displayGeneratedImages(images) {
-    const container = generationOutputContent;
-    container.innerHTML = ''; // 清空之前的图片
-
-    if (!images || images.length === 0) {
-        container.innerHTML = '<p>未生成任何图片。</p>';
-        return;
-    }
-
-    images.forEach((imageData, index) => {
-        const imageCard = document.createElement('div');
-        imageCard.className = 'generated-image-card';
-        
-        const img = document.createElement('img');
-        img.src = imageData.url;
-        img.alt = `生成的图像 ${index + 1}`;
-        imageCard.appendChild(img);
-        
-        const actions = document.createElement('div');
-        actions.className = 'image-actions';
-        
-        const downloadBtn = document.createElement('button');
-        downloadBtn.className = 'material-symbols-outlined';
-        downloadBtn.textContent = 'download';
-        downloadBtn.title = '下载图片';
-        downloadBtn.onclick = () => downloadImage(imageData.url, `generated-image-${Date.now()}-${index}.png`);
-        actions.appendChild(downloadBtn);
-        
-        imageCard.appendChild(actions);
-        container.appendChild(imageCard);
-    });
-}
-
-/**
- * @function downloadImage
- * @description 下载图片。
- * @param {string} url - 图片的 URL。
- * @param {string} filename - 下载的文件名。
- */
-function downloadImage(url, filename) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast(`图片已开始下载: ${filename}`);
-}
-
-// 确保在 DOMContentLoaded 后调用 initCreativeStudio
-document.addEventListener('DOMContentLoaded', () => {
-    // ... 其他初始化代码 ...
-    initCreativeStudio(); // 调用新的初始化函数
-});
