@@ -519,8 +519,15 @@ function displayAudioMessage(audioUrl, duration, type) {
             const result = await response.json();
             const transcriptionText = result.text || '未获取到转录文本。';
 
-            // 显示转录文本
-            logMessage(transcriptionText, 'ai', 'text'); // 调用 logMessage 函数
+            const { markdownContainer } = createAIMessageElement();
+            markdownContainer.innerHTML = marked.parse(transcriptionText);
+            // 触发 MathJax 渲染 (如果需要)
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([markdownContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+            scrollToBottom();
 
             logMessage('语音转文字成功', 'system');
         } catch (error) {
