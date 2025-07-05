@@ -1927,13 +1927,27 @@ document.addEventListener('DOMContentLoaded', () => {
      * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
      * @returns {void}
      */
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，根据当前激活的模式清空对应的聊天历史。
+     * @returns {void}
+     */
     newChatButton.addEventListener('click', () => {
-        chatHistory = []; // 清空聊天历史
-        currentSessionId = null; // 重置会话ID
-        messageHistory.innerHTML = ''; // 清空显示区域
-        logMessage('新聊天已开始', 'system');
-        // 如果不需要完全刷新页面，可以移除这行
-        // location.reload();
+        const currentActiveModeTab = document.querySelector('.mode-tabs .tab.active');
+        const activeMode = currentActiveModeTab ? currentActiveModeTab.dataset.mode : 'text'; // 默认文本模式
+
+        if (activeMode === 'text') {
+            chatHistory = []; // 清空文本聊天历史
+            currentSessionId = null; // 重置会话ID
+            messageHistory.innerHTML = ''; // 清空文本聊天显示区域
+            logMessage('新文本聊天已开始', 'system');
+        } else if (activeMode === 'vision') {
+            visionChatHistory = []; // 清空视觉聊天历史
+            visionMessageHistory.innerHTML = ''; // 清空视觉聊天显示区域
+            logMessage('新视觉聊天已开始', 'system');
+        } else {
+            logMessage(`当前模式 (${activeMode}) 不支持新建聊天。`, 'system');
+        }
     });
 
     /**
