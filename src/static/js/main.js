@@ -2929,8 +2929,6 @@ async function handleSendVisionMessage() {
 
     const visionModelSelect = document.getElementById('vision-model-select');
     const selectedModel = visionModelSelect.value;
-    // 查找模型配置以确定是否为 Zhipu 模型
-    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
 
     // 显示用户消息
     displayVisionUserMessage(text, visionAttachedFiles);
@@ -2953,115 +2951,81 @@ async function handleSendVisionMessage() {
     visionSendButton.disabled = true;
     visionSendButton.textContent = 'progress_activity';
     const aiMessage = createVisionAIMessageElement();
-    const { markdownContainer } = aiMessage;
+    const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
 
     try {
-        // 根据模型类型决定处理逻辑
-        if (selectedModelConfig && selectedModelConfig.isZhipu) {
-            // --- 处理非流式 Zhipu/GLM 模型 ---
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: selectedModel,
-                    messages: [
-                        { role: 'system', content: VISION_SYSTEM_PROMPT },
-                        ...visionChatHistory
-                    ],
-                    stream: false, // 关键：对 Zhipu 模型使用非流式请求
-                }),
-            });
+        // 统一使用流式请求
+        const response = await fetch('/api/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: selectedModel,
+                messages: [
+                    { role: 'system', content: VISION_SYSTEM_PROMPT },
+                    ...visionChatHistory
+                ],
+                stream: true, // 始终启用流式响应
+            }),
+        });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error?.message || 'API 请求失败');
-            }
-
-            const result = await response.json();
-            const message = result.choices?.[0]?.message;
-            const content = message?.content || '';
-            const reasoningContent = message?.reasoning_content || '';
-
-            let combinedContent = '';
-            if (reasoningContent) {
-                combinedContent += `**思维链：**\n\n${reasoningContent}\n\n`;
-            }
-            combinedContent += content;
-
-            // 处理特殊 Token 进行高亮
-            combinedContent = combinedContent.replace(/<\|begin_of_box\|>(.*?)<\|end_of_box\|>/gs, '<span class="highlight-box">$1</span>');
-
-            // 渲染最终响应
-            markdownContainer.innerHTML = marked.parse(combinedContent);
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                MathJax.startup.promise.then(() => {
-                    MathJax.typeset([markdownContainer]);
-                }).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
-            
-            // 将最终 AI 响应添加到历史记录
-            // 历史记录中只保存最终的 content，reasoning_content 不单独保存
-            visionChatHistory.push({ role: 'assistant', content: content });
-
-        } else {
-            // --- 处理流式模型 (例如 Gemini) ---
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: selectedModel,
-                    messages: [
-                        { role: 'system', content: VISION_SYSTEM_PROMPT },
-                        ...visionChatHistory
-                    ],
-                    stream: true, // 保持流式
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error?.message || 'API 请求失败');
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let fullResponse = '';
-            markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                chunk.split('\n\n').forEach(part => {
-                    if (part.startsWith('data: ')) {
-                        const jsonStr = part.substring(6);
-                        if (jsonStr === '[DONE]') return;
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            if (data.choices && data.choices[0]?.delta?.content) {
-                                fullResponse += data.choices[0].delta.content;
-                                markdownContainer.innerHTML = marked.parse(fullResponse);
-                            }
-                        } catch (e) {
-                            console.error('Error parsing SSE chunk:', e, jsonStr);
-                        }
-                    }
-                });
-                 visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-            }
-
-            // 流结束后，对最终内容进行一次 MathJax 排版
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                MathJax.startup.promise.then(() => {
-                    MathJax.typeset([markdownContainer]);
-                }).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
-            
-            // 将最终 AI 响应添加到历史记录
-            visionChatHistory.push({ role: 'assistant', content: fullResponse });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || 'API 请求失败');
         }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let finalContent = ''; // 用于存储最终的 content 部分
+        let reasoningStarted = false;
+
+        markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            chunk.split('\n\n').forEach(part => {
+                if (part.startsWith('data: ')) {
+                    const jsonStr = part.substring(6);
+                    if (jsonStr === '[DONE]') return;
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        const delta = data.choices?.[0]?.delta;
+                        if (delta) {
+                            // 处理思维链内容
+                            if (delta.reasoning_content) {
+                                if (!reasoningStarted) {
+                                    reasoningContainer.style.display = 'block'; // 显示思维链容器
+                                    reasoningStarted = true;
+                                }
+                                // 使用 innerHTML 追加，以便渲染 Markdown 换行等
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                            }
+                            // 处理主要内容
+                            if (delta.content) {
+                                finalContent += delta.content;
+                                markdownContainer.innerHTML = marked.parse(finalContent);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE chunk:', e, jsonStr);
+                    }
+                }
+            });
+            visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+        }
+
+        // 流结束后，对最终内容进行一次 MathJax 排版
+        if (typeof MathJax !== 'undefined' && MathJax.startup) {
+            MathJax.startup.promise.then(() => {
+                MathJax.typeset([markdownContainer, reasoningContainer]);
+            }).catch((err) => console.error('MathJax typesetting failed:', err));
+        }
+        
+        // 将最终的 AI content（不包含思维链）添加到历史记录
+        visionChatHistory.push({ role: 'assistant', content: finalContent });
 
     } catch (error) {
         console.error('Error sending vision message:', error);
@@ -3127,6 +3091,19 @@ function createVisionAIMessageElement() {
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('content');
     
+    // 新增：思维链容器
+    const reasoningContainer = document.createElement('div');
+    reasoningContainer.className = 'reasoning-container';
+    reasoningContainer.style.display = 'none'; // 默认隐藏
+    const reasoningTitle = document.createElement('h4');
+    reasoningTitle.className = 'reasoning-title';
+    reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
+    const reasoningContent = document.createElement('div');
+    reasoningContent.className = 'reasoning-content';
+    reasoningContainer.appendChild(reasoningTitle);
+    reasoningContainer.appendChild(reasoningContent);
+    contentDiv.appendChild(reasoningContainer);
+
     const markdownContainer = document.createElement('div');
     markdownContainer.classList.add('markdown-container');
     contentDiv.appendChild(markdownContainer);
@@ -3136,7 +3113,12 @@ function createVisionAIMessageElement() {
     copyButton.textContent = 'content_copy';
     copyButton.addEventListener('click', async () => {
         try {
-            await navigator.clipboard.writeText(markdownContainer.textContent);
+            // 合并思维链和主要内容进行复制
+            const reasoningText = reasoningContainer.style.display !== 'none'
+                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
+                : '';
+            const mainText = markdownContainer.innerText;
+            await navigator.clipboard.writeText(reasoningText + mainText);
             copyButton.textContent = 'check';
             setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
         } catch (err) {
@@ -3154,6 +3136,7 @@ function createVisionAIMessageElement() {
     return {
         container: messageDiv,
         markdownContainer,
+        reasoningContainer, // 返回思维链容器
         contentDiv,
     };
 }
