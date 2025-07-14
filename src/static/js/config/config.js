@@ -31,7 +31,7 @@ export const CONFIG = {
 
 When you are in audio response type, no matter which language I use for input, you must respond in English, all outputs must be in English!
 
-When you are in text response type your default respond is in Chinese, unless i ask you to respond in English.
+When you are in text response type your default respond is in Chinese, unless i ask you to respond in English!
 
 Your task is to provide in-depth, comprehensive, and professional answers. When responding to questions, please follow the following steps:
 1. Analyze the core elements of the question and think from multiple perspectives.
