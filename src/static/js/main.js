@@ -2950,7 +2950,8 @@ async function handleSendVisionMessage() {
     // 显示加载状态
     visionSendButton.disabled = true;
     visionSendButton.textContent = 'progress_activity';
-    const { markdownContainer, reasoningContainer, reasoningContentDiv } = createVisionAIMessageElement();
+    const aiMessage = createVisionAIMessageElement();
+    const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
 
     try {
@@ -2976,7 +2977,6 @@ async function handleSendVisionMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let finalContent = ''; // 用于存储最终的 content 部分
-        let finalReasoningContent = ''; // 新增：用于存储最终的 reasoning_content 部分
         let reasoningStarted = false;
 
         markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
@@ -3000,9 +3000,8 @@ async function handleSendVisionMessage() {
                                     reasoningContainer.style.display = 'block'; // 显示思维链容器
                                     reasoningStarted = true;
                                 }
-                                finalReasoningContent += delta.reasoning_content;
-                                // 使用 marked.parse 渲染思维链
-                                reasoningContentDiv.innerHTML = marked.parse(finalReasoningContent);
+                                // 使用 innerHTML 追加，以便渲染 Markdown 换行等
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
                             }
                             // 处理主要内容
                             if (delta.content) {
@@ -3099,10 +3098,10 @@ function createVisionAIMessageElement() {
     const reasoningTitle = document.createElement('h4');
     reasoningTitle.className = 'reasoning-title';
     reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
-    const reasoningContentDiv = document.createElement('div');
-    reasoningContentDiv.className = 'reasoning-content';
+    const reasoningContent = document.createElement('div');
+    reasoningContent.className = 'reasoning-content';
     reasoningContainer.appendChild(reasoningTitle);
-    reasoningContainer.appendChild(reasoningContentDiv);
+    reasoningContainer.appendChild(reasoningContent);
     contentDiv.appendChild(reasoningContainer);
 
     const markdownContainer = document.createElement('div');
@@ -3116,7 +3115,7 @@ function createVisionAIMessageElement() {
         try {
             // 合并思维链和主要内容进行复制
             const reasoningText = reasoningContainer.style.display !== 'none'
-                ? `[思维链]\n${reasoningContentDiv.innerText}\n\n`
+                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
                 : '';
             const mainText = markdownContainer.innerText;
             await navigator.clipboard.writeText(reasoningText + mainText);
@@ -3137,8 +3136,7 @@ function createVisionAIMessageElement() {
     return {
         container: messageDiv,
         markdownContainer,
-        reasoningContainer,
-        reasoningContentDiv,
+        reasoningContainer, // 返回思维链容器
         contentDiv,
     };
 }
