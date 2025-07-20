@@ -109,6 +109,9 @@
   .message {
     max-width: 90%;
   }
+  .message.user {
+    margin-right: 10px; // Adjust for mobile to prevent avatar cutoff
+  }
   .input-area {
     padding: 10px;
     gap: 8px;
