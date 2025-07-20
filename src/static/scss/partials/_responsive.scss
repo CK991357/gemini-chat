@@ -128,21 +128,24 @@
     font-size: 20px;
   }
   // Specific button sizes in chat input area for mobile
-  .input-area {
-    #send-button {
-      width: 32px;
-      height: 32px;
-      font-size: 16px;
-      border-radius: 8px;
+  .text-mode .input-area { // 使用更具体的选择器以避免影响其他模式
+    flex-wrap: nowrap; // 明确禁止换行
+    gap: 5px; // 减小元素间距
+
+    #message-input {
+        min-width: 50px; // 防止输入框被过度压缩
     }
 
+    // 统一所有按钮的尺寸并设为圆形以节省空间
+    #send-button,
     #interrupt-button,
     #attachment-button,
     #chat-voice-input-button {
-      width: 28px;
-      height: 28px;
-      font-size: 12px;
-      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      font-size: 18px;
+      border-radius: 50%; // 圆形按钮
+      flex-shrink: 0; // 防止按钮自身被压缩
     }
   }
   
