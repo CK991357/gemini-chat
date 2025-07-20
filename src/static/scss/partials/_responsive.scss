@@ -112,6 +112,9 @@
   .message.user {
     margin-right: 35px; // Adjust for mobile to prevent avatar cutoff
   }
+  .message.ai {
+    margin-left: -10px; // Adjust for mobile to move AI message closer to left edge
+  }
   .input-area {
     padding: 10px;
     gap: 8px;
