@@ -1,0 +1,175 @@
+// =================================================================
+// SCSS Partials: _responsive.scss
+// =================================================================
+// This file contains all media queries for adapting the layout
+// to different screen sizes.
+// =================================================================
+
+// For tablets and smaller desktops
+@media (max-width: 1200px) {
+  .main-container {
+    grid-template-columns: 1fr; // Single column layout
+  }
+  .control-panel {
+    display: none; // Hide by default on smaller screens
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    justify-content: flex-end;
+    transition: background-color 0.3s ease;
+
+    &.active {
+      display: flex;
+    }
+
+    .settings-wrapper {
+      width: 85%;
+      max-width: 400px;
+      height: 100%;
+      background-color: var(--surface-color);
+      box-shadow: -4px 0 16px var(--shadow-color);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      overflow-y: auto;
+      transform: translateX(100%);
+      transition: transform 0.3s ease-out;
+    }
+
+    &.active .settings-wrapper {
+      transform: translateX(0);
+    }
+  }
+  .content-area {
+    order: 1;
+  }
+}
+
+// For mobile devices
+@media (max-width: 768px) {
+  .app-nav {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 10px;
+  }
+  .app-title {
+    font-size: 20px;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .nav-tools {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-top: 10px;
+  }
+  .media-controls {
+    grid-column: span 4;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-top: 5px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+  }
+  .nav-tools > button,
+  .media-controls > button {
+    width: 100%;
+    height: 40px;
+    font-size: 20px;
+  }
+  .main-container {
+    padding: 15px;
+    gap: 15px;
+  }
+  .tab {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .chat-container, .vision-container {
+    padding: 15px;
+  }
+  .message .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+  .message .content {
+    padding: 10px 15px;
+    font-size: 14px;
+  }
+  .message {
+    max-width: 90%;
+  }
+  .input-area {
+    padding: 10px;
+    gap: 8px;
+  }
+  #message-input {
+    font-size: 14px;
+  }
+  .input-area > button {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+  // Specific button sizes in chat input area for mobile
+  .input-area {
+    #send-button {
+      width: 32px;
+      height: 32px;
+      font-size: 16px;
+      border-radius: 8px;
+    }
+
+    #interrupt-button,
+    #attachment-button,
+    #chat-voice-input-button {
+      width: 28px;
+      height: 28px;
+      font-size: 12px;
+      border-radius: 8px;
+    }
+  }
+  
+  // Translation specific
+  .translation-container {
+    padding: 15px;
+  }
+  .translation-input-area,
+  .translation-output-area {
+    padding: 10px;
+    margin-bottom: 15px;
+  }
+  .translation-controls {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .translation-input-area textarea,
+  .translation-output-display {
+    min-height: 100px;
+    font-size: 14px;
+  }
+  .translation-action-buttons {
+    justify-content: center;
+  }
+  .translation-output-area .copy-button {
+    opacity: 1;
+  }
+  
+  // Vision specific
+  .vision-container .input-area .action-button,
+  .vision-container .input-area .send-button {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+}

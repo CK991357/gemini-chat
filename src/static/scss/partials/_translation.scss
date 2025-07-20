@@ -1,0 +1,114 @@
+// =================================================================
+// SCSS Partials: _translation.scss
+// =================================================================
+// This file contains styles specific to the translation mode.
+// =================================================================
+
+.translation-container {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 20px;
+  gap: 20px;
+  overflow-y: auto;
+
+  &.active {
+    display: flex;
+  }
+}
+
+.translation-input-area,
+.translation-output-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px;
+  border-radius: 8px;
+  background-color: var(--bg-color);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.translation-output-area {
+  flex-grow: 1;
+}
+
+.translation-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+
+  select {
+    flex-grow: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 15px;
+  }
+}
+
+.translation-input-area textarea {
+  flex-grow: 1;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  font-size: 16px;
+  resize: vertical;
+  min-height: 150px;
+}
+
+.translation-action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  
+  #translation-voice-input-button.recording-active {
+    background-color: var(--danger-color);
+    color: white;
+    animation: pulse 1.5s infinite;
+  }
+}
+
+.translation-output-display {
+  flex-grow: 1;
+  padding: 12px;
+  padding-bottom: 40px; // Space for copy button
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  font-size: 16px;
+  min-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.translation-output-area .copy-button {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background-color: transparent;
+  color: var(--text-secondary-color);
+  border: none;
+  border-radius: 4px;
+  padding: 5px;
+  cursor: pointer;
+  font-size: 20px;
+  opacity: 0;
+  transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease;
+  z-index: 1;
+
+  &:hover {
+    opacity: 1;
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    color: var(--primary-color);
+  }
+}

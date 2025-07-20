@@ -1,0 +1,29 @@
+// =================================================================
+// Main SCSS File
+// =================================================================
+// This file imports all other SCSS partials.
+// The order of imports is crucial for the cascading of styles.
+// =================================================================
+
+// 1. Variables and Mixins - Foundational elements
+@import 'partials/_variables';
+
+// 2. Base Styles - Global styles and resets
+@import 'partials/_base';
+
+// 3. Layout - Main page structure
+@import 'partials/_layout';
+
+// 4. Components - Reusable UI elements
+@import 'partials/_components';
+
+// 5. Page-specific modules - Styles for different sections/modes
+@import 'partials/_chat';
+@import 'partials/_translation';
+@import 'partials/_vision';
+@import 'partials/_media';
+@import 'partials/_log';
+@import 'partials/_markdown';
+
+// 6. Responsive Styles - Media queries
+@import 'partials/_responsive';

@@ -1,0 +1,186 @@
+// =================================================================
+// SCSS Partials: _chat.scss
+// =================================================================
+// This file contains styles specific to the main chat interface,
+// including the message history, individual messages, and input area.
+// =================================================================
+
+.chat-container {
+  display: none; // Hidden by default
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  position: relative;
+  min-height: 0;
+
+  &.active {
+    display: flex;
+  }
+}
+
+.message-history {
+  flex-grow: 1;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  padding-bottom: 10px;
+}
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 15px;
+  max-width: 85%;
+  position: relative;
+
+  &.user {
+    flex-direction: row-reverse;
+    margin-left: auto;
+  }
+
+  &.ai {
+    margin-right: auto;
+  }
+
+  .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    margin: 0 10px;
+    background-color: var(--primary-color);
+    color: white;
+  }
+
+  &.ai .avatar {
+    background-color: var(--secondary-color);
+  }
+
+  .content {
+    padding: 12px 18px;
+    border-radius: 18px;
+    position: relative;
+  }
+
+  &.user .content {
+    background-color: var(--primary-color);
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+
+  &.ai .content {
+    background-color: var(--bg-color);
+    border-bottom-left-radius: 4px;
+  }
+}
+
+// System info message style
+.message.system-info {
+  justify-content: center;
+  align-items: center;
+  margin: 10px 0;
+  color: var(--text-secondary-color);
+  font-size: 14px;
+  font-style: italic;
+  width: 100%;
+  max-width: 100%;
+
+  .content {
+    background-color: var(--bg-color);
+    padding: 5px 15px;
+  }
+}
+
+// Input area at the bottom
+.input-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 20px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  flex-shrink: 0;
+
+  #message-input {
+    flex-grow: 1;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 16px;
+    resize: none; // Disable manual resize
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  #send-button,
+  #interrupt-button,
+  #attachment-button,
+  #chat-voice-input-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 24px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    flex-shrink: 0;
+
+    &:hover {
+      background-color: var(--secondary-color);
+      transform: scale(1.05);
+    }
+    
+    &.recording {
+      background-color: var(--danger-color);
+      animation: pulse 1.5s infinite;
+    }
+  }
+  
+  #attachment-button,
+  #chat-voice-input-button {
+    border-radius: 50%;
+  }
+}
+// =================================================================
+// Chat-specific overrides for components
+// =================================================================
+
+.message .content {
+  // Position the copy button relative to the message content bubble
+  .copy-button {
+    position: absolute;
+    bottom: -5px;
+    right: -30px;
+    opacity: 0; // Hidden by default, shown on hover
+  }
+
+  // Show the copy button when hovering over the message content
+  &:hover .copy-button {
+    opacity: 1;
+  }
+}
+
+// Specific styles for the copy button within a user's message
+.message.user {
+  .copy-button {
+    color: rgba(255, 255, 255, 0.7);
+
+    &:hover {
+      color: white;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+  }
+}

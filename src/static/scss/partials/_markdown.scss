@@ -1,0 +1,145 @@
+// =================================================================
+// SCSS Partials: _markdown.scss
+// =================================================================
+// This file contains styles for rendering Markdown content within
+// chat messages.
+// =================================================================
+
+.message .content {
+  .markdown-container {
+    overflow-x: auto;
+    word-wrap: break-word;
+  }
+
+  p {
+    margin-bottom: 1em;
+    line-height: 1.6;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    margin-top: 1.5em;
+    margin-bottom: 0.8em;
+    font-weight: bold;
+    line-height: 1.2;
+    color: var(--text-color);
+  }
+
+  h1 { font-size: 1.8em; }
+  h2 { font-size: 1.6em; }
+  h3 { font-size: 1.4em; }
+  h4 { font-size: 1.2em; }
+  h5 { font-size: 1.1em; }
+  h6 { font-size: 1em; }
+
+  ul, ol {
+    margin-left: 20px;
+    padding-left: 1.5em;
+    margin-bottom: 1em;
+  }
+
+  li {
+    margin-bottom: 0.5em;
+  }
+
+  ul li {
+    list-style-type: disc;
+  }
+
+  ol li {
+    list-style-type: decimal;
+  }
+
+  pre {
+    background-color: var(--code-bg-color);
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin-bottom: 1em;
+    border: 1px solid var(--border-color);
+    max-height: 300px;
+    overflow-y: auto;
+
+    code {
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-family: 'SF Mono', monospace, 'Courier New', Courier;
+      font-size: 0.9em;
+      line-height: 1.5;
+      padding: 0; // Reset padding for code inside pre
+      background: none; // Reset background for code inside pre
+    }
+  }
+
+  // Inline code
+  code:not(pre > code) {
+    background-color: var(--code-bg-color);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-family: 'SF Mono', monospace, 'Courier New', Courier;
+    font-size: 0.9em;
+    color: var(--code-text-color);
+  }
+
+  blockquote {
+    border-left: 4px solid var(--primary-color);
+    padding-left: 1em;
+    margin: 1em 0;
+    color: var(--text-secondary-color);
+    background-color: rgba(var(--primary-color-rgb), 0.05);
+    border-radius: 4px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+    overflow-x: auto;
+    display: block;
+  }
+
+  th, td {
+    border: 1px solid var(--border-color);
+    padding: 8px;
+    text-align: left;
+  }
+
+  th {
+    background-color: var(--bg-color);
+    font-weight: bold;
+  }
+
+  tr:nth-child(even) {
+    background-color: var(--bg-color);
+  }
+
+  a {
+    color: var(--primary-color);
+    text-decoration: underline;
+    &:hover {
+      text-decoration: none;
+    }
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1em 0;
+    border-radius: 8px;
+  }
+}
+
+// Dark theme overrides for markdown
+body.dark-mode .message .content {
+  pre {
+    background-color: #333;
+    border-color: #444;
+  }
+  code:not(pre > code) {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  blockquote {
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+  }
+}

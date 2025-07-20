@@ -1,0 +1,46 @@
+// =================================================================
+// SCSS Partials: _variables.scss
+// =================================================================
+// This file contains all global CSS variables, primarily for theming.
+// =================================================================
+
+:root {
+  // Light Theme
+  --bg-color: #f5f7fa;
+  --surface-color: #ffffff;
+  --text-color: #202124;
+  --text-secondary-color: #5f6368;
+  --text-tertiary-color: #80868b; // For less important text like timestamps
+  --border-color: #dadce0;
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --primary-color: #4285f4; // Google Blue
+  --secondary-color: #34a853; // Google Green
+  --danger-color: #ea4335; // Google Red
+  --code-bg-color: #f8f9fa;
+  --code-text-color: #3c4043;
+
+  // RGB values for use in rgba()
+  --primary-color-rgb: 66, 133, 244;
+  --danger-color-rgb: 234, 67, 53;
+}
+
+body.dark-mode,
+[data-theme="dark"] {
+  // Dark Theme
+  --bg-color: #1a1a1a;
+  --surface-color: #2d2d2d;
+  --text-color: #f8fafc;
+  --text-secondary-color: #a0a0a0;
+  --text-tertiary-color: #7f8c8d;
+  --border-color: #374151;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --primary-color: #6366f1; // Indigo
+  --secondary-color: #8b5cf6; // Violet
+  --danger-color: #ef4444; // Red
+  --code-bg-color: #202124;
+  --code-text-color: #e8eaed;
+
+  // RGB values for use in rgba()
+  --primary-color-rgb: 99, 102, 241;
+  --danger-color-rgb: 239, 68, 68;
+}

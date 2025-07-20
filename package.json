@@ -3,14 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "deploy": "wrangler deploy",
+    "deploy": "npm run build:css && wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "test": "vitest"
+    "test": "vitest",
+    "build:css": "sass src/static/scss/style.scss src/static/css/style.css"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.2",
     "wrangler": "^3.60.3",
-    "vitest": "2.1.8"
+    "vitest": "2.1.8",
+    "sass": "^1.77.6"
   }
 }

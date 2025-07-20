@@ -1,0 +1,87 @@
+// =================================================================
+// SCSS Partials: _layout.scss
+// =================================================================
+// This file contains styles for the main application layout,
+// including the header, main container, sidebar, and content area.
+// =================================================================
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--bg-color);
+}
+
+// Top navigation bar
+.app-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 25px;
+  background-color: var(--surface-color);
+  box-shadow: 0 2px 8px var(--shadow-color);
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin-left: 15px;
+}
+
+.mode-switcher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-tools {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+// Main container with sidebar and content
+.main-container {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 20px;
+  padding: 20px;
+  flex-grow: 1;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+// Left control panel (sidebar)
+.control-panel {
+  background-color: var(--surface-color);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px var(--shadow-color);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  overflow-y: auto;
+}
+
+// Right content area
+.content-area {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background-color: var(--surface-color);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px var(--shadow-color);
+  overflow: hidden;
+}
+
+// Mode tabs within the content area
+.mode-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+  background-color: var(--surface-color);
+  flex-shrink: 0;
+}

@@ -1,0 +1,53 @@
+// =================================================================
+// SCSS Partials: _log.scss
+// =================================================================
+// This file contains styles for the log viewer panel.
+// =================================================================
+
+.log-mode {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  background-color: var(--surface-color);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px var(--shadow-color);
+  overflow: hidden;
+
+  &.active {
+    display: flex;
+  }
+
+  .log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: var(--surface-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+
+    h3 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+    }
+
+    .action-button {
+      padding: 5px 10px;
+      font-size: 14px;
+      margin-left: 10px;
+    }
+  }
+
+  .log-content {
+    flex-grow: 1;
+    padding: 15px;
+    overflow-y: auto;
+    font-family: 'SF Mono', monospace, 'Courier New', Courier;
+    font-size: 13px;
+    color: var(--text-color);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+}
