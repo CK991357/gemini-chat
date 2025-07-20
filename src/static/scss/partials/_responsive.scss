@@ -134,13 +134,7 @@
     gap: 5px;
     flex-wrap: nowrap;
 
-    #send-button {
-      width: 28px;
-      height: 28px;
-      font-size: 12px;
-      border-radius: 8px;
-    }
-
+    #send-button,
     #interrupt-button,
     #attachment-button,
     #chat-voice-input-button {

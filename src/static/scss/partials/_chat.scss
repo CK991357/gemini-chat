@@ -123,10 +123,10 @@
     background-color: var(--bg-color);
     color: var(--text-color);
     font-size: 16px;
-    resize: none; // Disable textarea resizing to prevent expansion on focus
+    resize: vertical; // Restore to match original CSS 'resize' property
+    height: 42px;     // Set initial height to prevent expansion on focus, mimicking original behavior
     max-height: 180px;
     overflow-y: auto;
-    transition: height 0.2s ease; // Add smooth transition for height changes
   }
 
   #send-button,
@@ -158,10 +158,6 @@
     }
   }
   
-  #attachment-button,
-  #chat-voice-input-button {
-    border-radius: 50%;
-  }
 }
 // =================================================================
 // Chat-specific overrides for components
