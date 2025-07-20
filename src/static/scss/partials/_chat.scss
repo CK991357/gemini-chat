@@ -37,11 +37,11 @@
 
   &.user {
     flex-direction: row-reverse;
-    margin-left: auto;
+    align-self: flex-end;
   }
 
   &.ai {
-    margin-right: auto;
+    align-self: flex-start;
   }
 
   .avatar {
