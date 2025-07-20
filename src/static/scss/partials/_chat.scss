@@ -107,6 +107,9 @@
   border-top: 1px solid var(--border-color);
   background-color: var(--surface-color);
   flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
 
   #message-input {
     flex-grow: 1;
@@ -116,7 +119,7 @@
     background-color: var(--bg-color);
     color: var(--text-color);
     font-size: 16px;
-    resize: none; // Disable manual resize
+    resize: vertical; // Enable vertical resize
     max-height: 180px;
     overflow-y: auto;
   }
