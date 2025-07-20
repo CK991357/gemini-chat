@@ -123,9 +123,10 @@
     background-color: var(--bg-color);
     color: var(--text-color);
     font-size: 16px;
-    resize: vertical; // Enable vertical resize
+    resize: none; // Disable textarea resizing to prevent expansion on focus
     max-height: 180px;
     overflow-y: auto;
+    transition: height 0.2s ease; // Add smooth transition for height changes
   }
 
   #send-button,
