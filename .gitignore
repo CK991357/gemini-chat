@@ -177,8 +177,4 @@ deno.lock
 .vscode/launch.json
 
 /docs
-/gemini_chat_vue
 
-# Ignore compiled CSS files from SCSS
-src/static/css/style.css
-src/static/css/style.css.map
