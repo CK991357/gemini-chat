@@ -62,8 +62,6 @@
   }
   .app-title {
     font-size: 20px;
-    text-align: center;
-    margin-bottom: 10px;
   }
   .nav-tools {
     display: grid;
@@ -107,13 +105,11 @@
     font-size: 14px;
   }
   .message {
-    max-width: 90%;
-  }
-  .message.user {
-    margin-right: 35px; // Adjust for mobile to prevent avatar cutoff
+    max-width: 85%;
+    padding: 0 5px;
   }
   .message.ai {
-    margin-left: -10px; // Adjust for mobile to move AI message closer to left edge
+    margin-left: -5px;
   }
   .input-area {
     padding: 10px;
@@ -129,7 +125,12 @@
     font-size: 20px;
   }
   // Specific button sizes in chat input area for mobile
+  .text-mode #message-input {
+    padding: 10px;
+  }
   .text-mode .input-area {
+    padding-left: 0px;
+    padding-right: 10px;
     gap: 5px;
     flex-wrap: nowrap;
 
@@ -176,6 +177,13 @@
   }
   
   // Vision specific
+  .vision-container .input-area textarea {
+    font-size: 14px;
+  }
+  .vision-container .vision-controls {
+    width: 100%;
+    margin-bottom: 10px;
+  }
   .vision-container .input-area .action-button,
   .vision-container .input-area .send-button {
     width: 40px;
