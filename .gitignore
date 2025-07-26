@@ -178,3 +178,5 @@ deno.lock
 
 /docs
 
+/specs_framework
+/specs
