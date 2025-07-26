@@ -374,45 +374,6 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-            } else if (model === 'Qwen/Qwen3-Coder-480B-A35B-Instruct') {
-                console.log(`DEBUG: Routing to Qwen chat proxy for model: ${model}`);
-                const targetUrl = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
-                const apiKey = env.QWEN_API_KEY;
-
-                if (!apiKey) {
-                    throw new Error('QWEN_API_KEY is not configured in environment variables.');
-                }
-
-                // 构造符合通义千问格式的请求体
-                const qwenBody = {
-                    model: "qwen-turbo", // 这里可能需要根据实际情况调整
-                    input: {
-                        messages: body.messages
-                    },
-                    parameters: {
-                        result_format: "message"
-                    }
-                };
-
-                const proxyResponse = await fetch(targetUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`,
-                        'X-DashScope-SSE': 'enable' // 开启 SSE
-                    },
-                    body: JSON.stringify(qwenBody)
-                });
-
-                // 将中转端点的响应（包括流）直接返回给客户端
-                return new Response(proxyResponse.body, {
-                    status: proxyResponse.status,
-                    statusText: proxyResponse.statusText,
-                    headers: {
-                        'Content-Type': proxyResponse.headers.get('Content-Type'),
-                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
-                    }
-                });
             }
         }
 

@@ -944,32 +944,9 @@ async function handleSendMessage() {
             // 清除附件（发送后）
             clearAttachedFile();
 
-            // 动态构建消息历史，以支持特殊模型的自定义系统提示
-            let messagesWithSystemPrompt = [...chatHistory];
-            let finalSystemInstruction = null;
-
-            if (selectedModelConfig.isSpecial && selectedModelConfig.promptKey) {
-                const specialPrompt = CONFIG.PROMPTS[selectedModelConfig.promptKey];
-                if (specialPrompt) {
-                    // 对于特殊模型，将特殊提示词作为第一条 system 消息
-                    messagesWithSystemPrompt.unshift({
-                        role: 'system',
-                        content: specialPrompt
-                    });
-                } else {
-                    console.warn(`未在 CONFIG.PROMPTS 中找到 key 为 "${selectedModelConfig.promptKey}" 的特殊提示词。`);
-                    // 如果找不到特殊提示词，则退回使用通用系统指令
-                    finalSystemInstruction = { parts: [{ text: systemInstruction }] };
-                }
-            } else if (systemInstruction) {
-                // 对于普通模型，使用通用的 systemInstruction
-                finalSystemInstruction = { parts: [{ text: systemInstruction }] };
-            }
-
-
             let requestBody = {
                 model: modelName,
-                messages: messagesWithSystemPrompt, // 使用包含系统提示的消息历史
+                messages: chatHistory,
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -984,9 +961,10 @@ async function handleSendMessage() {
                 sessionId: currentSessionId
             };
 
-            // 只有在未使用特殊提示词时，才添加通用的 systemInstruction
-            if (finalSystemInstruction) {
-                requestBody.systemInstruction = finalSystemInstruction;
+            if (systemInstruction) {
+                requestBody.systemInstruction = {
+                    parts: [{ text: systemInstruction }]
+                };
             }
 
             await processHttpStream(requestBody, apiKey);
