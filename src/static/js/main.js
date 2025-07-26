@@ -1223,7 +1223,8 @@ async function processHttpStream(requestBody, apiKey) {
         const decoder = new TextDecoder('utf-8');
         let functionCallDetected = false;
         let currentFunctionCall = null;
-        let reasoningStarted = false; // 新增：用于标记思维链是否开始
+        let reasoningStarted = false;
+        let answerStarted = false; // 新增：用于标记最终答案是否开始
 
         // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
         // 只有当不是工具响应的后续文本时才创建新消息块
@@ -1252,14 +1253,11 @@ async function processHttpStream(requestBody, apiKey) {
                         if (data.choices && data.choices.length > 0) {
                             const choice = data.choices[0];
                             if (choice.delta) {
-                                // 检查是否有 functionCall
                                 const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
 
-                                // 优先处理思维链内容
+                                // 1. 处理思维链
                                 if (choice.delta.reasoning_content) {
-                                    if (!currentAIMessageContentDiv) {
-                                        currentAIMessageContentDiv = createAIMessageElement();
-                                    }
+                                    if (!currentAIMessageContentDiv) currentAIMessageContentDiv = createAIMessageElement();
                                     if (!reasoningStarted) {
                                         currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
                                         reasoningStarted = true;
@@ -1267,32 +1265,34 @@ async function processHttpStream(requestBody, apiKey) {
                                     currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
                                 }
                                 
+                                // 2. 处理工具调用
                                 if (functionCallPart) {
                                     functionCallDetected = true;
                                     currentFunctionCall = functionCallPart.functionCall;
                                     Logger.info('Function call detected:', currentFunctionCall);
                                     logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    // 在工具调用前，确保当前 AI 消息完成
-                                    if (currentAIMessageContentDiv) {
-                                        currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
-                                    }
-                                } else if (choice.delta.content) {
-                                    // 只有在没有 functionCall 时才累积文本
+                                    if (currentAIMessageContentDiv) currentAIMessageContentDiv = null;
+                                }
+                                // 3. 处理最终答案
+                                else if (choice.delta.content) {
                                     if (!functionCallDetected) {
-                                        if (!currentAIMessageContentDiv) {
-                                            currentAIMessageContentDiv = createAIMessageElement();
+                                        if (!currentAIMessageContentDiv) currentAIMessageContentDiv = createAIMessageElement();
+                                        
+                                        // 当思维链存在且最终答案首次出现时，插入分隔符
+                                        if (reasoningStarted && !answerStarted) {
+                                            const separator = document.createElement('hr');
+                                            separator.className = 'answer-separator';
+                                            currentAIMessageContentDiv.markdownContainer.before(separator);
+                                            answerStarted = true;
                                         }
-                                        // 追加到原始Markdown缓冲区
+
                                         currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                        // 立即渲染Markdown
                                         currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
-                                        // 触发 MathJax 渲染
-                                        if (typeof MathJax !== 'undefined') {
-                                            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                               MathJax.startup.promise.then(() => {
-                                                   MathJax.typeset([currentAIMessageContentDiv.markdownContainer, currentAIMessageContentDiv.reasoningContainer]);
-                                               }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                            }
+                                        
+                                        if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                                            MathJax.startup.promise.then(() => {
+                                                MathJax.typeset([currentAIMessageContentDiv.markdownContainer, currentAIMessageContentDiv.reasoningContainer]);
+                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
                                         }
                                         scrollToBottom();
                                     }
