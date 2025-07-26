@@ -3008,6 +3008,7 @@ async function handleSendVisionMessage() {
         const decoder = new TextDecoder('utf-8');
         let finalContent = ''; // 用于存储最终的 content 部分
         let reasoningStarted = false;
+        let answerStarted = false; // 新增：用于标记最终答案是否开始
 
         markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
 
@@ -3035,6 +3036,14 @@ async function handleSendVisionMessage() {
                             }
                             // 处理主要内容
                             if (delta.content) {
+                                // 当思维链存在且最终答案首次出现时，插入分隔符
+                                if (reasoningStarted && !answerStarted) {
+                                    const separator = document.createElement('hr');
+                                    separator.className = 'answer-separator';
+                                    // 将分隔符插入到 markdownContainer 之前，但在 reasoningContainer 之后
+                                    reasoningContainer.after(separator);
+                                    answerStarted = true;
+                                }
                                 finalContent += delta.content;
                                 markdownContainer.innerHTML = marked.parse(finalContent);
                             }
