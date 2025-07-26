@@ -135,12 +135,17 @@ The report should include the following core sections:
             {
                 name: 'glm-4.1v-thinking-flash',
                 displayName: 'GLM-4.1V-Thinking-Flash',
-                isZhipu: true // 标记为智谱模型
+                isZhipu: true, // 标记为智谱模型
             },
             {
                 name: 'glm-4v-flash',
                 displayName: 'GLM-4V-Flash',
                 isZhipu: true // 标记为智谱模型
+            },
+            {
+                name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
+                displayName: 'Qwen3-235B-A22B-Thinking-2507',
+                isQwen: true, // 标记为通义千问模型
             }
         ],
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
