@@ -29,6 +29,12 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true // 标记为通义千问模型
             },
+            {
+                name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
+                displayName: 'Qwen3-235B-A22B-Thinking-2507 (HTTP)',
+                isWebSocket: false,
+                isQwen: true, // 标记为通义千问模型
+            }
         ]
     },
     // You can change the system instruction to your liking
@@ -142,11 +148,6 @@ The report should include the following core sections:
                 displayName: 'GLM-4V-Flash',
                 isZhipu: true // 标记为智谱模型
             },
-            {
-                name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
-                displayName: 'Qwen3-235B-A22B-Thinking-2507',
-                isQwen: true, // 标记为通义千问模型
-            }
         ],
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
     },

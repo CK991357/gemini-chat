@@ -1027,6 +1027,19 @@ function createAIMessageElement() {
 
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('content');
+
+    // 新增：思维链容器
+    const reasoningContainer = document.createElement('div');
+    reasoningContainer.className = 'reasoning-container';
+    reasoningContainer.style.display = 'none'; // 默认隐藏
+    const reasoningTitle = document.createElement('h4');
+    reasoningTitle.className = 'reasoning-title';
+    reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
+    const reasoningContent = document.createElement('div');
+    reasoningContent.className = 'reasoning-content';
+    reasoningContainer.appendChild(reasoningTitle);
+    reasoningContainer.appendChild(reasoningContent);
+    contentDiv.appendChild(reasoningContainer);
     
     // 创建Markdown容器
     const markdownContainer = document.createElement('div');
@@ -1045,13 +1058,15 @@ function createAIMessageElement() {
      * @returns {void}
      */
     copyButton.addEventListener('click', async () => {
-        const textToCopy = markdownContainer.textContent; // 从 markdownContainer 获取文本
         try {
-            await navigator.clipboard.writeText(textToCopy);
+            // 合并思维链和主要内容进行复制
+            const reasoningText = reasoningContainer.style.display !== 'none'
+                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
+                : '';
+            const mainText = markdownContainer.innerText;
+            await navigator.clipboard.writeText(reasoningText + mainText);
             copyButton.textContent = 'check';
-            setTimeout(() => {
-                copyButton.textContent = 'content_copy';
-            }, 2000);
+            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
             logMessage('文本已复制到剪贴板', 'system');
         } catch (err) {
             logMessage('复制失败: ' + err, 'system');
@@ -1068,6 +1083,7 @@ function createAIMessageElement() {
     return {
         container: messageDiv,
         markdownContainer, // 返回Markdown容器引用
+        reasoningContainer, // 返回思维链容器引用
         contentDiv,
         rawMarkdownBuffer: '' // 新增：用于累积原始Markdown文本
     };
@@ -1207,6 +1223,7 @@ async function processHttpStream(requestBody, apiKey) {
         const decoder = new TextDecoder('utf-8');
         let functionCallDetected = false;
         let currentFunctionCall = null;
+        let reasoningStarted = false; // 新增：用于标记思维链是否开始
 
         // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
         // 只有当不是工具响应的后续文本时才创建新消息块
@@ -1237,6 +1254,19 @@ async function processHttpStream(requestBody, apiKey) {
                             if (choice.delta) {
                                 // 检查是否有 functionCall
                                 const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
+
+                                // 优先处理思维链内容
+                                if (choice.delta.reasoning_content) {
+                                    if (!currentAIMessageContentDiv) {
+                                        currentAIMessageContentDiv = createAIMessageElement();
+                                    }
+                                    if (!reasoningStarted) {
+                                        currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
+                                        reasoningStarted = true;
+                                    }
+                                    currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
+                                }
+                                
                                 if (functionCallPart) {
                                     functionCallDetected = true;
                                     currentFunctionCall = functionCallPart.functionCall;
@@ -1260,7 +1290,7 @@ async function processHttpStream(requestBody, apiKey) {
                                         if (typeof MathJax !== 'undefined') {
                                             if (typeof MathJax !== 'undefined' && MathJax.startup) {
                                                MathJax.startup.promise.then(() => {
-                                                   MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
+                                                   MathJax.typeset([currentAIMessageContentDiv.markdownContainer, currentAIMessageContentDiv.reasoningContainer]);
                                                }).catch((err) => console.error('MathJax typesetting failed:', err));
                                             }
                                         }
