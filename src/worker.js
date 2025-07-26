@@ -374,6 +374,34 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
+            } else if (model === 'Qwen/Qwen3-Coder-480B-A35B-Instruct') {
+                console.log(`DEBUG: Routing to ModelScope chat proxy for model: ${model}`);
+                const targetUrl = 'https://api-inference.modelscope.cn/v1/chat/completions';
+                const apiKey = env.QWEN_API_KEY;
+
+                if (!apiKey) {
+                    throw new Error('QWEN_API_KEY is not configured in environment variables.');
+                }
+
+                // 直接将请求体转发到中转端点
+                const proxyResponse = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                // 将中转端点的响应（包括流）直接返回给客户端
+                return new Response(proxyResponse.body, {
+                    status: proxyResponse.status,
+                    statusText: proxyResponse.statusText,
+                    headers: {
+                        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                    }
+                });
             }
         }
 

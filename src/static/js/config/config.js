@@ -23,6 +23,12 @@ export const CONFIG = {
                 displayName: 'gemini-2.0-flash (HTTP)',
                 isWebSocket: false
             },
+            {
+                name: 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+                displayName: 'Qwen3-Coder-480B-A35B-Instruct (HTTP)',
+                isWebSocket: false,
+                isQwen: true // 标记为通义千问模型
+            },
         ]
     },
     // You can change the system instruction to your liking
