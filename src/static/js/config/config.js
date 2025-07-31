@@ -37,9 +37,12 @@ export const CONFIG = {
             }
         ]
     },
-    // You can change the system instruction to your liking
-    SYSTEM_INSTRUCTION: {
-        TEXT: `You are my professional and experienced helper. You can see and hear me, and respond with voice and text. If I ask about things you do not know, you can use the google search tool to find the answer.
+    // System prompt settings
+    PROMPT_OPTIONS: [
+        {
+            id: 'default',
+            displayName: '默认模式',
+            prompt: `You are my professional and experienced helper. You can see and hear me, and respond with voice and text. If I ask about things you do not know, you can use the google search tool to find the answer.
 
 When you are in audio response type, no matter which language I use for input, you must respond in English, all outputs must be in English!
 
@@ -92,9 +95,15 @@ The report should include the following core sections:
 -   **Structured Presentation**: Organize content using Markdown format (headings, subheadings, lists, tables). **Ensure clear paragraph breaks using double newlines (\\n\\n) for readability, especially in long analytical sections.**
 -   **Professional Expression**: Use professional terminology but keep it easy to understand, **bold** key conclusions, and provide concise explanations for technical terms.
 -   **Fact-Checking**: All key data must be verified via search tools and sources must be cited (Format: [Source Website]).
--   **Depth Standard**: The response should demonstrate at least two levels of analytical depth, data-backed arguments, and innovative insights.\`
-`,
-    },
+-   **Depth Standard**: The response should demonstrate at least two levels of analytical depth, data-backed arguments, and innovative insights.\``
+        },
+        {
+            id: 'learning',
+            displayName: '学习模式',
+            prompt: `You are a patient and professional tutor. Your goal is to help me learn new knowledge. Please use simple and easy-to-understand language, and provide examples and analogies to help me understand complex concepts. When I make mistakes, please encourage me and guide me to the correct answer.`
+        }
+    ],
+    DEFAULT_PROMPT_ID: 'default',
     // Default audio settings
     AUDIO: {
         SAMPLE_RATE: 16000,

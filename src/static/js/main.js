@@ -56,8 +56,8 @@ const voiceSelect = document.getElementById('voice-select');
 const fpsInput = document.getElementById('fps-input');
 const configToggle = document.getElementById('toggle-config');
 const configContainer = document.querySelector('.control-panel');
+const promptSelect = document.getElementById('prompt-select');
 const systemInstructionInput = document.getElementById('system-instruction');
-systemInstructionInput.value = CONFIG.SYSTEM_INSTRUCTION.TEXT;
 const applyConfigButton = document.getElementById('apply-config');
 const responseTypeSelect = document.getElementById('response-type-select');
 const mobileConnectButton = document.getElementById('mobile-connect');
@@ -120,14 +120,8 @@ if (savedVoice) {
 if (savedFPS) {
     fpsInput.value = savedFPS;
 }
-if (savedSystemInstruction) {
-    systemInstructionInput.value = savedSystemInstruction;
-    CONFIG.SYSTEM_INSTRUCTION.TEXT = savedSystemInstruction;
-} else {
-    // 如果没有保存的系统指令，使用新的通用翻译系统指令作为默认值
-    systemInstructionInput.value = UNIVERSAL_TRANSLATION_SYSTEM_PROMPT;
-    CONFIG.SYSTEM_INSTRUCTION.TEXT = UNIVERSAL_TRANSLATION_SYSTEM_PROMPT;
-}
+// Note: The logic for loading saved system instructions is now handled by the prompt selection logic.
+// We will set the default prompt based on the new config structure.
 
 document.addEventListener('DOMContentLoaded', () => {
     // 配置 marked.js
@@ -263,6 +257,8 @@ document.addEventListener('DOMContentLoaded', () => {
    initTranslation();
    // 初始化视觉功能
    initVision();
+   // 初始化指令模式选择
+   initializePromptSelect();
  });
 
 // State variables
@@ -3199,4 +3195,54 @@ function initVision() {
         }
         visionModelSelect.appendChild(option);
     });
+}
+
+/**
+ * @function initializePromptSelect
+ * @description 初始化指令模式下拉菜单，填充选项并设置事件监听器。
+ */
+function initializePromptSelect() {
+    if (!promptSelect) return;
+
+    // 1. 清空现有选项
+    promptSelect.innerHTML = '';
+
+    // 2. 从配置填充选项
+    CONFIG.PROMPT_OPTIONS.forEach(option => {
+        const optionElement = document.createElement('option');
+        optionElement.value = option.id;
+        optionElement.textContent = option.displayName;
+        promptSelect.appendChild(optionElement);
+    });
+
+    // 3. 设置默认值并更新文本域
+    const savedPromptId = localStorage.getItem('selected_prompt_id') || CONFIG.DEFAULT_PROMPT_ID;
+    promptSelect.value = savedPromptId;
+    updateSystemInstruction();
+
+
+    // 4. 添加事件监听器
+    promptSelect.addEventListener('change', () => {
+        updateSystemInstruction();
+        // 保存用户的选择
+        localStorage.setItem('selected_prompt_id', promptSelect.value);
+    });
+}
+
+/**
+ * @function updateSystemInstruction
+ * @description 根据下拉菜单的当前选择，更新隐藏的 system-instruction 文本域的值。
+ */
+function updateSystemInstruction() {
+    if (!promptSelect || !systemInstructionInput) return;
+
+    const selectedId = promptSelect.value;
+    const selectedOption = CONFIG.PROMPT_OPTIONS.find(option => option.id === selectedId);
+
+    if (selectedOption) {
+        systemInstructionInput.value = selectedOption.prompt;
+        // (可选) 如果需要，也可以更新 CONFIG 对象，但这通常在连接时才需要
+        // CONFIG.SYSTEM_INSTRUCTION.TEXT = selectedOption.prompt;
+        logMessage(`指令模式已切换为: ${selectedOption.displayName}`, 'system');
+    }
 }

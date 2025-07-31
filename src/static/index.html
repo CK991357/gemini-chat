@@ -104,8 +104,12 @@
                         <input type="number" id="fps-input" placeholder="Video FPS" value="1" min="1" max="30" step="1"/>
                         <span class="fps-help">更高 FPS 需要更多网络带宽</span>
                     </div>
-                    <div class="setting-item full-width">
-                        <label for="system-instruction">系统指令:</label>
+                    <div class="setting-item">
+                        <label for="prompt-select">指令模式:</label>
+                        <select id="prompt-select"></select>
+                    </div>
+                    <div class="setting-item full-width" style="display: none;">
+                        <label for="system-instruction">系统指令 (隐藏):</label>
                         <textarea id="system-instruction" placeholder="Enter custom system instructions..." rows="6"></textarea>
                     </div>
                     <div class="button-group">

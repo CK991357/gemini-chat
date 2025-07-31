@@ -1698,3 +1698,19 @@ body.dark-mode .highlight-box {
     color: #ffeb3b; /* 暗色模式下的亮色文本 */
     border-color: #808000;
 }
+/* Prompt Select Styles */
+#prompt-select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+#prompt-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
