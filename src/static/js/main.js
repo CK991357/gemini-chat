@@ -92,6 +92,10 @@ const translationInputTextarea = document.getElementById('translation-input-text
 // 新增：聊天模式语音输入相关 DOM 元素
 const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 
+// 新增：翻译OCR相关 DOM 元素
+const translationOcrButton = document.getElementById('translation-ocr-button');
+const translationOcrInput = document.getElementById('translation-ocr-input');
+
 // 视觉模型相关 DOM 元素
 const visionModeBtn = document.getElementById('vision-mode-button');
 const visionContainer = document.querySelector('.vision-container');
@@ -2147,6 +2151,15 @@ function initTranslation() {
   
   // 翻译按钮事件
   document.getElementById('translate-button').addEventListener('click', handleTranslation);
+
+  // 新增：OCR按钮事件
+  translationOcrButton.addEventListener('click', () => translationOcrInput.click());
+  translationOcrInput.addEventListener('change', handleTranslationOcr);
+
+  // 新增：监听翻译模型选择变化，以控制OCR按钮的显示
+  document.getElementById('translation-model-select').addEventListener('change', toggleOcrButtonVisibility);
+  // 初始加载时也调用一次，以设置正确的初始状态
+  toggleOcrButtonVisibility();
   
   // 复制按钮事件
   document.getElementById('translation-copy-button').addEventListener('click', () => {
@@ -3223,6 +3236,114 @@ function initializePromptSelect() {
         // 保存用户的选择
         localStorage.setItem('selected_prompt_id', promptSelect.value);
     });
+}
+
+/**
+ * @function toggleOcrButtonVisibility
+ * @description 根据当前选择的翻译模型，决定是否显示OCR（图片识别）按钮。
+ *              仅当选择的模型是 Gemini 系列时显示该按钮。
+ * @returns {void}
+ */
+function toggleOcrButtonVisibility() {
+    const selectedModel = document.getElementById('translation-model-select').value;
+    if (selectedModel.startsWith('gemini-')) {
+        translationOcrButton.style.display = 'inline-flex';
+    } else {
+        translationOcrButton.style.display = 'none';
+    }
+}
+
+/**
+ * @function handleTranslationOcr
+ * @description 处理用户通过OCR按钮上传的图片。它会读取图片，发送给Gemini模型进行文字识别，
+ *              然后将识别出的文本填充到翻译输入框中。
+ * @param {Event} event - 文件输入框的 change 事件对象。
+ * @returns {Promise<void>}
+ */
+async function handleTranslationOcr(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+        showToast('请上传图片文件。');
+        return;
+    }
+
+    const outputElement = document.getElementById('translation-output-text');
+    const inputTextarea = document.getElementById('translation-input-text');
+    
+    // 显示处理中的提示
+    inputTextarea.value = ''; // 清空输入框
+    inputTextarea.placeholder = '正在识别图片中的文字...';
+    outputElement.textContent = ''; // 清空旧的翻译结果
+    translationOcrButton.disabled = true; // 禁用按钮防止重复点击
+
+    try {
+        const base64String = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = error => reject(error);
+            reader.readAsDataURL(file);
+        });
+
+        const model = document.getElementById('translation-model-select').value;
+
+        // 构建发送给模型的请求体
+        const requestBody = {
+            model: model,
+            messages: [
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: 'Extract all text from this image.' },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: base64String
+                            }
+                        }
+                    ]
+                }
+            ],
+            stream: false
+        };
+
+        // 使用与翻译相同的后端API端点
+        const response = await fetch('/api/translate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`图片文字识别失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
+        }
+
+        const data = await response.json();
+        const extractedText = data.choices[0].message.content;
+
+        if (extractedText) {
+            inputTextarea.value = extractedText;
+            showToast('文字识别成功！');
+        } else {
+            showToast('图片中未识别到文字。');
+        }
+
+    } catch (error) {
+        logMessage(`OCR 失败: ${error.message}`, 'system');
+        showToast('图片文字识别失败，请重试。');
+        console.error('OCR Error:', error);
+    } finally {
+        // 重置状态
+        inputTextarea.placeholder = '输入要翻译的内容...';
+        translationOcrButton.disabled = false;
+        // 重置文件输入，以便可以再次选择同一个文件
+        event.target.value = '';
+    }
 }
 
 /**
