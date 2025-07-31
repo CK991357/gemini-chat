@@ -2674,8 +2674,8 @@ async function handleTranslation() {
   try {
     // 构建提示词
     const prompt = inputLang === 'auto' ?
-      `你是一个专业的翻译助手，请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
-      `你是一个专业的翻译助手，请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
+      `请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
+      `请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
     
     const response = await fetch('/api/translate', {
       method: 'POST',
@@ -2688,11 +2688,7 @@ async function handleTranslation() {
         messages: [
             {
                 role: 'system',
-                content: systemInstructionInput.value
-                    .replace(/\{\{to\}\}/g, getLanguageName(outputLang))
-                    .replace(/\{\{title_prompt\}\}/g, '') // 暂时替换为空字符串
-                    .replace(/\{\{summary_prompt\}\}/g, '') // 暂时替换为空字符串
-                    .replace(/\{\{terms_prompt\}\}/g, '') // 暂时替换为空字符串
+                content: UNIVERSAL_TRANSLATION_SYSTEM_PROMPT
             },
             { role: 'user', content: prompt }
         ],
