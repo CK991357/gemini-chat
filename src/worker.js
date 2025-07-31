@@ -465,17 +465,28 @@ async function handleAPIRequest(request, env) {
 async function handleTranslationRequest(request, env) {
     try {
         const body = await request.json();
+        const modelName = body.model;
         
         let targetUrl;
         let apiKey;
+        let provider = ''; // 用于错误信息
 
-        if (body.model === 'gemini-2.5-flash-lite-preview-06-17' || body.model === 'gemini-2.0-flash') {
+        if (modelName.startsWith('gemini-')) {
+            provider = 'Gemini';
             targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
             apiKey = env.GEMINI_TRANSLATION_API_KEY;
             if (!apiKey) {
                 throw new Error('GEMINI_TRANSLATION_API_KEY is not configured in environment variables for Gemini models.');
             }
-        } else {
+        } else if (modelName.startsWith('GLM-')) {
+            provider = 'Zhipu';
+            targetUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+            apiKey = env.ZHIPUAI_API_KEY;
+            if (!apiKey) {
+                throw new Error('ZHIPUAI_API_KEY is not configured in environment variables for Zhipu models.');
+            }
+        } else { // 默认为 SiliconFlow (用于 THUDM 等)
+            provider = 'SiliconFlow';
             targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
             apiKey = env.SF_API_TOKEN;
             if (!apiKey) {
@@ -494,7 +505,7 @@ async function handleTranslationRequest(request, env) {
         
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`SiliconFlow API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
+            throw new Error(`${provider} API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
         }
         
         const result = await response.json();

@@ -133,8 +133,9 @@ Be warm, patient, and plain-spoken; don't use too many exclamation marks or emoj
                 displayName: 'gemini-2.0-flash'
             },
             {
-                name: 'gemini-2.5-flash-lite-preview-06-17',
-                displayName: 'gemini-2.5-flash-lite-preview-06-17'
+                name: 'GLM-4.5-Flash',
+                displayName: 'GLM-4.5-Flash',
+                isZhipu: true
             },
             {
                 name: 'THUDM/GLM-4-9B-0414',
