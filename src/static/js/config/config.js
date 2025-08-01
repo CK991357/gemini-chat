@@ -34,6 +34,12 @@ export const CONFIG = {
                 displayName: 'Qwen3-235B-A22B-Thinking-2507 (HTTP)',
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
+            },
+            {
+                name: 'GLM-4.5-Flash',
+                displayName: 'GLM-4.5-Flash (HTTP)',
+                isWebSocket: false,
+                isZhipu: true // 标记为智谱模型
             }
         ]
     },
@@ -135,11 +141,6 @@ Be warm, patient, and plain-spoken; don't use too many exclamation marks or emoj
             {
                 name: 'gemini-2.5-flash-lite-preview-06-17',
                 displayName: 'gemini-2.5-flash-lite-preview-06-17'
-            },
-            {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash',
-                isZhipu: true
             },
             {
                 name: 'THUDM/GLM-4-9B-0414',
