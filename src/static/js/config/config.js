@@ -35,12 +35,6 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
             },
-            {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash (HTTP)',
-                isWebSocket: false,
-                isZhipu: true // 标记为智谱模型
-            }
         ]
     },
     // System prompt settings
@@ -178,6 +172,12 @@ Be warm, patient, and plain-spoken; don't use too many exclamation marks or emoj
                 displayName: 'GLM-4V-Flash',
                 isZhipu: true // 标记为智谱模型
             },
+            {
+                name: 'GLM-4.5-Flash',
+                displayName: 'GLM-4.5-Flash (HTTP)',
+                isWebSocket: false,
+                isZhipu: true // 标记为智谱模型
+            }
         ],
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash'
     },
