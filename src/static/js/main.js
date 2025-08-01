@@ -2690,33 +2690,23 @@ async function handleTranslation() {
       `请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
       `请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
     
-    const requestBody = {
-      model: model,
-      messages: [
-          {
-              role: 'system',
-              content: UNIVERSAL_TRANSLATION_SYSTEM_PROMPT
-          },
-          { role: 'user', content: prompt }
-      ],
-      stream: false // 翻译通常不需要流式响应
-    };
-
-    // 根据官方文档，GLM-4.5 系列模型默认开启思考模式。
-    // 对于翻译这类简单任务，我们显式地禁用它以提高响应速度。
-    if (model.startsWith('glm-4.5')) {
-      requestBody.thinking = {
-        type: "disabled"
-      };
-    }
-
     const response = await fetch('/api/translate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         // Authorization 头部由后端 worker.js 在 handleTranslationRequest 中处理
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify({
+        model: model,
+        messages: [
+            {
+                role: 'system',
+                content: UNIVERSAL_TRANSLATION_SYSTEM_PROMPT
+            },
+            { role: 'user', content: prompt }
+        ],
+        stream: false // 翻译通常不需要流式响应
+      })
     });
     
     if (!response.ok) {
