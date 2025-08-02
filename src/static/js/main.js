@@ -3296,7 +3296,7 @@ async function handleTranslationOcr(event) {
                 {
                     role: 'user',
                     content: [
-                        { type: 'text', text: 'Extract all text from this image.' },
+                        { type: 'text', text: '请对图片进行OCR识别。提取所有文本，并严格保持其原始的布局和格式，包括表格、列、缩进和换行。请使用Markdown格式化输出，尤其是表格。' },
                         {
                             type: 'image_url',
                             image_url: {
