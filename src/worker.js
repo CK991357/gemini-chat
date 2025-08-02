@@ -287,7 +287,6 @@ async function handleAPIRequest(request, env) {
 
             // 路由到新的聊天/搜索请求处理器
             if (
-                model === 'models/gemini-2.5-pro' ||
                 model === 'models/gemini-2.5-flash-preview-05-20' ||
                 model === 'models/gemini-2.5-flash-lite-preview-06-17' ||
                 model === 'models/gemini-2.0-flash'
@@ -300,20 +299,6 @@ async function handleAPIRequest(request, env) {
                     throw new Error('GEMINI_CHAT_API_KEY is not configured in environment variables.');
                 }
 
-                // 为 gemini-2.5-pro 启用思考模式
-                let requestBody = body;
-                if (model === 'models/gemini-2.5-pro') {
-                    // 深拷贝以避免修改原始 body 对象
-                    requestBody = JSON.parse(JSON.stringify(body));
-                    if (!requestBody.generationConfig) {
-                        requestBody.generationConfig = {};
-                    }
-                    requestBody.generationConfig.thinking_config = {
-                        "include_thoughts": true
-                    };
-                    console.log('Enabled thinking mode for gemini-2.5-pro');
-                }
-
                 // 直接将请求体转发到中转端点
                 const proxyResponse = await fetch(targetUrl, {
                     method: 'POST',
@@ -321,7 +306,7 @@ async function handleAPIRequest(request, env) {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify(body)
                 });
 
                 // 将中转端点的响应（包括流）直接返回给客户端

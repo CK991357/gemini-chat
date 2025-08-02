@@ -1264,18 +1264,6 @@ async function processHttpStream(requestBody, apiKey) {
                                     }
                                     currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
                                 }
-// 新增：处理 gemini-2.5-pro 的 thought
-                                const thoughtPart = choice.delta.thought;
-                                if (thoughtPart && thoughtPart.toolUse && thoughtPart.toolUse.thought) {
-                                    if (!currentAIMessageContentDiv) currentAIMessageContentDiv = createAIMessageElement();
-                                    if (!reasoningStarted) {
-                                        currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                        reasoningStarted = true;
-                                    }
-                                    // 将思考过程追加到思维链容器，并处理换行
-                                    const reasoningContentEl = currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
-                                    reasoningContentEl.innerHTML += thoughtPart.toolUse.thought.replace(/\n/g, '<br>');
-                                }
                                 
                                 // 2. 处理工具调用
                                 if (functionCallPart) {
@@ -1583,17 +1571,6 @@ function disconnect() {
     }
 }
 
-// 新增：处理 gemini-2.5-pro 的 thought
-                        const thoughtPart = choice.delta.thought;
-                        if (thoughtPart && thoughtPart.toolUse && thoughtPart.toolUse.thought) {
-                            if (!reasoningStarted) {
-                                reasoningContainer.style.display = 'block';
-                                reasoningStarted = true;
-                            }
-                            // 将思考过程追加到思维链容器，并处理换行
-                            const reasoningContentEl = reasoningContainer.querySelector('.reasoning-content');
-                            reasoningContentEl.innerHTML += thoughtPart.toolUse.thought.replace(/\n/g, '<br>');
-                        }
 /**
  * 连接到 HTTP API。
  * @returns {Promise<void>}
