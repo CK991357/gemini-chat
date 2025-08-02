@@ -294,10 +294,10 @@ async function handleAPIRequest(request, env) {
             ) {
                 console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
                 const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
-                const apiKey = env.GEMINI_CHAT_API_KEY;
+                const apiKey = env.AUTH_KEY;
 
                 if (!apiKey) {
-                    throw new Error('GEMINI_CHAT_API_KEY is not configured in environment variables.');
+                    throw new Error('AUTH_KEY is not configured in environment variables.');
                 }
 
                 // 直接将请求体转发到中转端点
@@ -475,9 +475,9 @@ async function handleTranslationRequest(request, env) {
         if (modelName.startsWith('gemini-')) {
             provider = 'Gemini';
             targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
-            apiKey = env.GEMINI_TRANSLATION_API_KEY;
+            apiKey = env.AUTH_KEY;
             if (!apiKey) {
-                throw new Error('GEMINI_TRANSLATION_API_KEY is not configured in environment variables for Gemini models.');
+                throw new Error('AUTH_KEY is not configured in environment variables for Gemini models.');
             }
         } else if (modelName.startsWith('GLM-')) {
             provider = 'Zhipu';
