@@ -4,6 +4,11 @@ export const CONFIG = {
         MODEL_NAME: 'models/gemini-2.0-flash-exp', // 默认模型
         AVAILABLE_MODELS: [
             {
+                name: 'models/gemini-2.5-pro',
+                displayName: 'gemini-2.5-pro (HTTP/Thinking)',
+                isWebSocket: false
+            },
+            {
                 name: 'models/gemini-2.0-flash-exp',
                 displayName: 'gemini-2.0-flash-exp (WebSocket)',
                 isWebSocket: true
