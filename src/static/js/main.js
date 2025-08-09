@@ -195,13 +195,40 @@ document.addEventListener('DOMContentLoaded', () => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
 
+            // 修正：在切换子模式前，先隐藏视觉模式容器（如果它处于激活状态）
+            if (visionContainer && visionContainer.classList.contains('active')) {
+                visionContainer.classList.remove('active');
+                // 同时取消视觉主模式按钮的激活状态
+                visionModeBtn.classList.remove('active');
+            }
+
             // 移除所有 tab 和 chat-container 的 active 类
             modeTabs.forEach(t => t.classList.remove('active'));
             chatContainers.forEach(c => c.classList.remove('active'));
 
             // 添加当前点击 tab 和对应 chat-container 的 active 类
             tab.classList.add('active');
-            document.querySelector(`.chat-container.${mode}-mode`).classList.add('active');
+            const targetContainer = document.querySelector(`.chat-container.${mode}-mode`);
+            if (targetContainer) {
+                targetContainer.classList.add('active');
+            }
+
+            // 特别处理历史记录的占位符
+            if (mode === 'history') {
+                // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
+                // 但为了保险起见，我们保留一个明确的检查
+                // 此处假设：如果用户刚才在视觉模式，那么历史记录应该显示占位符
+                // 一个简单的判断方法是检查 visionModeBtn 是否还有 active class (虽然我们上面移除了，但可以作为逻辑标记)
+                // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
+                // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
+                // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
+                if (!chatModeBtn.classList.contains('active')) {
+                     historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+                } else {
+                    renderHistoryList();
+                }
+            }
+
 
             // 确保在切换模式时停止所有媒体流
             if (videoManager) {
@@ -2456,6 +2483,10 @@ function initTranslation() {
     translationModeBtn.classList.remove('active');
     chatModeBtn.classList.add('active');
     if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
+    
+    // 激活文字聊天子标签页
+    document.querySelector('.tab[data-mode="text"]').click();
+
     // 聊天模式下隐藏翻译语音输入按钮
     if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
     // 聊天模式下显示聊天语音输入按钮
@@ -3236,6 +3267,7 @@ async function handleSendVisionMessage() {
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
+    logMessage(`正在请求视觉模型: ${selectedModel}`, 'system');
 
     try {
         // 统一使用流式请求
@@ -3322,6 +3354,7 @@ async function handleSendVisionMessage() {
     } catch (error) {
         console.error('Error sending vision message:', error);
         markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
+        logMessage(`视觉模型请求失败: ${error.message}`, 'system');
     } finally {
         visionSendButton.disabled = false;
         visionSendButton.textContent = 'send';
