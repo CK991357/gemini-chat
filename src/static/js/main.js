@@ -1419,10 +1419,11 @@ async function processHttpStream(requestBody, apiKey) {
     } catch (error) {
         Logger.error('处理 HTTP 流失败:', error);
         logMessage(`处理流失败: ${error.message}`, 'system');
-        // 错误发生时也重置 currentAIMessageContentDiv
-        if (currentAIMessageContentDiv) {
-            currentAIMessageContentDiv = null;
+        // 错误发生时，确保AI消息容器存在再更新内容，否则直接重置
+        if (currentAIMessageContentDiv && currentAIMessageContentDiv.markdownContainer) {
+            currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
         }
+        currentAIMessageContentDiv = null; // 最终重置
     }
 }
 
@@ -2232,14 +2233,18 @@ async function loadSessionHistory(sessionId) {
  * @returns {Promise<void>}
  */
 async function saveHistory() {
+    // 在函数开始时进行严格检查，确保关键变量存在
     if (!currentSessionId || chatHistory.length === 0) {
-        return; // 如果没有会话ID或历史记录，则不执行任何操作
+        return;
     }
 
     try {
         const sessions = getChatSessionMeta();
         const currentSessionMeta = sessions.find(s => s.id === currentSessionId);
-        if (!currentSessionMeta) return;
+        if (!currentSessionMeta) {
+            console.error(`无法在元数据中找到当前会话ID: ${currentSessionId}`);
+            return;
+        }
 
         const now = new Date().toISOString();
 
