@@ -65,6 +65,7 @@ const interruptButton = document.getElementById('interrupt-button'); // 新增
 const newChatButton = document.getElementById('new-chat-button'); // 新增
 
 // 新增的 DOM 元素
+const chatModeBtn = document.getElementById('chat-mode-button');
 const themeToggleBtn = document.getElementById('theme-toggle');
 const toggleLogBtn = document.getElementById('toggle-log');
 const _logPanel = document.querySelector('.chat-container.log-mode');
@@ -2379,7 +2380,6 @@ function checkBrowserCompatibility() {
  */
 function initTranslation() {
   const translationModeBtn = document.getElementById('translation-mode-button');
-  const chatModeBtn = document.getElementById('chat-mode-button');
   const translationContainer = document.querySelector('.translation-container');
   const chatContainer = document.querySelector('.chat-container.text-mode'); // 确保是文字聊天容器
   const logContainer = document.querySelector('.chat-container.log-mode'); // 获取日志容器
