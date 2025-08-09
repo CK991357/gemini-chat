@@ -897,6 +897,12 @@ async function handleSendMessage() {
     // 如果没有文本消息，但有附件，也允许发送
     if (!message && !attachedFile) return;
 
+    // 确保在处理任何消息之前，会话已经存在
+    // 这是修复“新会话第一条消息不显示”问题的关键
+    if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
+        generateNewSession();
+    }
+
     // 使用新的函数显示用户消息
     displayUserMessage(message, attachedFile);
     messageInput.value = ''; // 清空输入框
@@ -918,11 +924,6 @@ async function handleSendMessage() {
             const apiKey = apiKeyInput.value;
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
-
-            // HTTP 模式下，如果没有当前会话ID，则创建一个新的
-            if (!currentSessionId) {
-                generateNewSession();
-            }
 
             // 构建消息内容，参考 OCR 项目的成功实践
             const userContent = [];
