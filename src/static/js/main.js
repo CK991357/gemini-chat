@@ -1,12 +1,42 @@
+import {
+    attachedFile,
+    clearAttachedFile,
+    handleFileAttachment
+} from './attachments/file-attachment.js';
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
+import {
+    createAIMessageElement,
+    displayAudioMessage,
+    displayUserMessage,
+    pcmToWavBlob,
+    scrollToBottom,
+    showSystemMessage
+} from './chat/chat-ui.js';
 import { CONFIG } from './config/config.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
-import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
+import {
+    chatHistory,
+    currentSessionId,
+    generateNewSession,
+    renderHistoryList,
+    saveHistory,
+    setChatHistory,
+    setCurrentSessionId
+} from './history/session-manager.js';
+import { handleVideoToggle, stopVideo, updateMediaPreviewsDisplay } from './media/video-handlers.js';
+import {
+    cancelTranslationRecording,
+    isRecording as isTranslationAudioRecording,
+    startTranslationRecording,
+    stopTranslationRecording,
+    initialTouchY as translationInitialTouchY
+} from './translation/translation-audio.js';
+import { handleTranslation } from './translation/translation-core.js';
+import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation/translation-ocr.js';
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
-import { VideoManager } from './video/video-manager.js';
-
+import { handleSendVisionMessage, initVision } from './vision/vision-core.js';
 /**
  * @fileoverview Main entry point for the application.
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
@@ -23,89 +53,7 @@ const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `You are a professional translation 
 5. Format Preservation: Only translate the text content from the original. Content that cannot be translated should remain as is. Do not add extra formatting to the translated content.
 `;
 
-const VISION_SYSTEM_PROMPT = `你是一个顶级的多模态视觉分析专家，你的首要任务是精确、深入地分析用户提供的视觉材料（如图片、图表、截图、视频等），并根据视觉内容回答问题。
-所有回复信息以Markdown格式响应。
-严格遵循以下规则进行所有响应：
-1. **Markdown格式化：**始终使用标准的Markdown语法进行文本、代码块和列表。
-2. **LaTeX数学公式：**对于所有数学公式，使用正确的LaTeX语法。
-    - 行内数学公式应使用单个美元符号括起来（例如，$\sin^2\theta + \cos^2\theta = 1$）。
-    - 展示数学公式应使用双美元符号括起来（例如，$$\sum_{i=1}^n i = \frac{n(n+1)}{2}$$）。
-    - 确保所有LaTeX命令拼写正确且正确关闭（例如，\boldsymbol{\sin}而不是\boldsymbol{\sin}}）。
-3. **简洁性：**提供直接答案，无需不必要的对话填充、开场白或礼貌用语。
-4. **准确性：**确保内容准确并直接回答用户的问题。
-`;
 
-// DOM Elements
-const logsContainer = document.getElementById('logs-container'); // 用于原始日志输出
-const toolManager = new ToolManager(); // 初始化 ToolManager
-const messageHistory = document.getElementById('message-history'); // 用于聊天消息显示
-const messageInput = document.getElementById('message-input');
-const sendButton = document.getElementById('send-button');
-const micButton = document.getElementById('mic-button');
-const _audioVisualizer = document.getElementById('audio-visualizer'); // 保持，虽然音频模式删除，但可能用于其他音频可视化
-const connectButton = document.getElementById('connect-button');
-const cameraButton = document.getElementById('camera-button');
-const stopVideoButton = document.getElementById('stop-video'); // 使用正确的ID
-const screenButton = document.getElementById('screen-button');
-// const screenIcon = document.getElementById('screen-icon'); // 删除，不再需要
-const screenContainer = document.getElementById('screen-preview-container'); // 更新 ID
-const screenPreview = document.getElementById('screen-preview-element'); // 更新 ID
-const _inputAudioVisualizer = document.getElementById('input-audio-visualizer'); // 保持，可能用于输入音频可视化
-const apiKeyInput = document.getElementById('api-key');
-const voiceSelect = document.getElementById('voice-select');
-const fpsInput = document.getElementById('fps-input');
-const configToggle = document.getElementById('toggle-config');
-const configContainer = document.querySelector('.control-panel');
-const promptSelect = document.getElementById('prompt-select');
-const systemInstructionInput = document.getElementById('system-instruction');
-const applyConfigButton = document.getElementById('apply-config');
-const responseTypeSelect = document.getElementById('response-type-select');
-const mobileConnectButton = document.getElementById('mobile-connect');
-const interruptButton = document.getElementById('interrupt-button'); // 新增
-const newChatButton = document.getElementById('new-chat-button'); // 新增
-
-// 新增的 DOM 元素
-const themeToggleBtn = document.getElementById('theme-toggle');
-const toggleLogBtn = document.getElementById('toggle-log');
-const _logPanel = document.querySelector('.chat-container.log-mode');
-const clearLogsBtn = document.getElementById('clear-logs');
-const modeTabs = document.querySelectorAll('.mode-tabs .tab');
-const chatContainers = document.querySelectorAll('.chat-container');
-const historyContent = document.getElementById('history-list-container'); // 新增：历史记录面板
-
-// 新增媒体预览相关 DOM 元素
-const mediaPreviewsContainer = document.getElementById('media-previews');
-const videoPreviewContainer = document.getElementById('video-container'); // 对应 video-manager.js 中的 video-container
-const videoPreviewElement = document.getElementById('preview'); // 对应 video-manager.js 中的 preview
-const stopScreenButton = document.getElementById('stop-screen-button');
-
-// 附件相关 DOM 元素
-const attachmentButton = document.getElementById('attachment-button');
-const fileInput = document.getElementById('file-input');
-
-
-// 附件预览 DOM 元素
-const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
-
-// 翻译模式相关 DOM 元素
-const translationVoiceInputButton = document.getElementById('translation-voice-input-button'); // 新增
-const translationInputTextarea = document.getElementById('translation-input-text'); // 新增
-// 新增：聊天模式语音输入相关 DOM 元素
-const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
-
-// 新增：翻译OCR相关 DOM 元素
-const translationOcrButton = document.getElementById('translation-ocr-button');
-const translationOcrInput = document.getElementById('translation-ocr-input');
-
-// 视觉模型相关 DOM 元素
-const visionModeBtn = document.getElementById('vision-mode-button');
-const visionContainer = document.querySelector('.vision-container');
-const visionMessageHistory = document.getElementById('vision-message-history');
-const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
-const visionInputText = document.getElementById('vision-input-text');
-const visionAttachmentButton = document.getElementById('vision-attachment-button');
-const visionFileInput = document.getElementById('vision-file-input');
-const visionSendButton = document.getElementById('vision-send-button');
 
 
 // Load saved values from localStorage
@@ -116,7 +64,7 @@ const savedSystemInstruction = localStorage.getItem('system_instruction');
 
 
 if (savedApiKey) {
-    apiKeyInput.value = savedApiKey;
+    DOM.apiKeyInput.value = savedApiKey;
 }
 if (savedVoice) {
     voiceSelect.value = savedVoice;
@@ -238,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 stopScreenSharing();
             }
             // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
-            updateMediaPreviewsDisplay();
+            updateMediaPreviewsDisplay(isScreenSharing);
         });
     });
 
@@ -246,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('.tab[data-mode="text"]').click();
 
     // 3. 日志显示控制逻辑
-    toggleLogBtn.addEventListener('click', () => {
+    DOM.toggleLogBtn.addEventListener('click', () => {
         // 切换到日志标签页
         document.querySelector('.tab[data-mode="log"]').click();
     });
@@ -302,22 +250,12 @@ let audioCtx = null;
 let isConnected = false;
 let audioRecorder = null;
 let micStream = null; // 新增：用于保存麦克风流
-let isVideoActive = false;
-let videoManager = null;
 let isScreenSharing = false;
 let screenRecorder = null;
 let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
-let chatHistory = []; // 用于存储聊天历史
-let currentSessionId = null; // 用于存储当前会话ID
-let isTranslationRecording = false; // 新增：翻译模式下是否正在录音
-let hasRequestedTranslationMicPermission = false; // 新增：标记是否已请求过翻译麦克风权限
-let translationAudioRecorder = null; // 新增：翻译模式下的 AudioRecorder 实例
-let translationAudioChunks = []; // 新增：翻译模式下录制的音频数据块
-let recordingTimeout = null; // 新增：用于处理长按录音的定时器
-let initialTouchY = 0; // 新增：用于判断手指上滑取消
 // 新增：聊天模式语音输入相关状态变量
 let isChatRecording = false; // 聊天模式下是否正在录音
 let hasRequestedChatMicPermission = false; // 标记是否已请求过聊天麦克风权限
@@ -325,80 +263,12 @@ let chatAudioRecorder = null; // 聊天模式下的 AudioRecorder 实例
 let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
-let attachedFile = null; // 新增：用于存储待发送的附件信息
-let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
-let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
 
 // State variables
 let selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === CONFIG.API.MODEL_NAME); // 初始选中默认模型
-
-/**
- * 将PCM数据转换为WAV Blob。
- * @param {Uint8Array[]} pcmDataBuffers - 包含PCM数据的Uint8Array数组。
- * @param {number} sampleRate - 采样率 (例如 24000)。
- * @returns {Blob} WAV格式的Blob。
- */
-function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.OUTPUT_SAMPLE_RATE) { // 确保使用配置中的输出采样率
-    let dataLength = 0;
-    for (const buffer of pcmDataBuffers) {
-        dataLength += buffer.length;
-    }
-
-    const buffer = new ArrayBuffer(44 + dataLength);
-    const view = new DataView(buffer);
-
-    // WAV header
-    writeString(view, 0, 'RIFF'); // RIFF identifier
-    view.setUint32(4, 36 + dataLength, true); // file length
-    writeString(view, 8, 'WAVE'); // RIFF type
-    writeString(view, 12, 'fmt '); // format chunk identifier
-    view.setUint32(16, 16, true); // format chunk length
-    view.setUint16(20, 1, true); // sample format (1 = PCM)
-    view.setUint16(22, 1, true); // num channels
-    view.setUint32(24, sampleRate, true); // sample rate
-    view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * numChannels * bytesPerSample)
-    view.setUint16(32, 2, true); // block align (numChannels * bytesPerSample)
-    view.setUint16(34, 16, true); // bits per sample
-    writeString(view, 36, 'data'); // data chunk identifier
-    view.setUint32(40, dataLength, true); // data length
-
-    // Write PCM data
-    let offset = 44;
-    for (const pcmBuffer of pcmDataBuffers) {
-        for (let i = 0; i < pcmBuffer.length; i++) {
-            view.setUint8(offset + i, pcmBuffer[i]);
-        }
-        offset += pcmBuffer.length;
-    }
-
-    return new Blob([view], { type: 'audio/wav' });
-}
-
-/**
- * 辅助函数：写入字符串到DataView。
- * @param {DataView} view - DataView实例。
- * @param {number} offset - 写入偏移量。
- * @param {string} string - 要写入的字符串。
- */
-function writeString(view, offset, string) {
-    for (let i = 0; i < string.length; i++) {
-        view.setUint8(offset + i, string.charCodeAt(i));
-    }
-}
-
-/**
- * 格式化秒数为 MM:SS 格式。
- * @param {number} seconds - 总秒数。
- * @returns {string} 格式化后的时间字符串。
- */
-function formatTime(seconds) {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-}
 
 /**
  * Logs a message to the UI.
@@ -418,224 +288,6 @@ function logMessage(message, type = 'system', messageType = 'text') {
     logsContainer.appendChild(rawLogEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
 
-}
-
-/**
- * 在聊天历史中显示用户的多模态消息。
- * @param {string} text - 文本消息内容。
- * @param {object|null} file - 附加的文件对象，包含 base64 等信息。
- */
-function displayUserMessage(text, file) {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'user');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '👤';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-
-    // 如果有文本，则添加文本内容
-    if (text) {
-        const textNode = document.createElement('p');
-        // 为了安全，纯文本使用 textContent
-        textNode.textContent = text;
-        contentDiv.appendChild(textNode);
-    }
-
-    // 如果有文件，则添加图片预览
-    if (file && file.base64) {
-        const img = document.createElement('img');
-        img.src = file.base64;
-        img.alt = file.name || 'Attached Image';
-        img.style.maxWidth = '200px';
-        img.style.maxHeight = '200px';
-        img.style.borderRadius = '8px';
-        img.style.marginTop = text ? '10px' : '0';
-        contentDiv.appendChild(img);
-    }
-
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    messageHistory.appendChild(messageDiv);
-
-    scrollToBottom();
-}
-
-/**
- * 在聊天历史中显示语音消息。
- * @param {string} audioUrl - 语音文件的URL。
- * @param {number} duration - 语音时长（秒）。
- * @param {string} type - 消息类型 ('user' 或 'ai')。
- */
-function displayAudioMessage(audioUrl, duration, type) {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', type);
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = type === 'user' ? '👤' : '🤖';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content', 'audio-content'); // 添加 audio-content 类
-
-    const audioPlayerDiv = document.createElement('div');
-    audioPlayerDiv.classList.add('audio-player');
-
-    const playButton = document.createElement('button');
-    playButton.classList.add('audio-play-button', 'material-icons');
-    playButton.textContent = 'play_arrow'; // 默认播放图标
-
-    const audioWaveform = document.createElement('div');
-    audioWaveform.classList.add('audio-waveform');
-
-    const audioProgressBar = document.createElement('div');
-    audioProgressBar.classList.add('audio-progress-bar');
-    audioWaveform.appendChild(audioProgressBar);
-
-    const audioDurationSpan = document.createElement('span');
-    audioDurationSpan.classList.add('audio-duration');
-    audioDurationSpan.textContent = formatTime(duration);
-
-    const downloadButton = document.createElement('a');
-    downloadButton.classList.add('audio-download-button', 'material-icons');
-    downloadButton.textContent = 'download';
-    downloadButton.download = `gemini_audio_${Date.now()}.wav`;
-    downloadButton.href = audioUrl;
-
-    const transcribeButton = document.createElement('button');
-    transcribeButton.classList.add('audio-transcribe-button', 'material-icons');
-    transcribeButton.textContent = 'text_fields'; // 转文字图标
-
-    transcribeButton.addEventListener('click', async () => {
-        // 禁用按钮防止重复点击
-        transcribeButton.disabled = true;
-        transcribeButton.textContent = 'hourglass_empty'; // 显示加载状态
-
-        try {
-            // 获取原始音频 Blob
-            // 由于 audioUrl 是通过 URL.createObjectURL(audioBlob) 创建的，
-            // 我们需要一种方式来获取原始的 Blob。
-            // 最直接的方式是修改 displayAudioMessage 的调用，让它直接传递 Blob。
-            // 但为了最小化改动，我们假设 audioUrl 对应的 Blob 仍然在内存中，
-            // 或者我们可以重新 fetch 一次（但这不是最佳实践）。
-            // 更好的方法是，在生成 audioUrl 的地方，同时保存 audioBlob。
-            // 考虑到当前结构，我们假设 audioUrl 对应的 Blob 仍然有效，
-            // 或者我们可以在这里重新获取一次，但更推荐的方式是传递原始 Blob。
-
-            // 临时方案：重新 fetch audioUrl 获取 Blob。
-            // 长期方案：修改 displayAudioMessage 的调用，直接传递 audioBlob。
-            const audioBlobResponse = await fetch(audioUrl);
-            if (!audioBlobResponse.ok) {
-                throw new Error(`无法获取音频 Blob: ${audioBlobResponse.statusText}`);
-            }
-            const audioBlob = await audioBlobResponse.blob();
-
-            // 发送转文字请求到 Worker，直接发送 Blob
-            const response = await fetch('/api/transcribe-audio', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': audioBlob.type, // 使用 Blob 的 MIME 类型
-                },
-                body: audioBlob, // 直接发送 Blob
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`转文字失败: ${errorData.error || response.statusText}`);
-            }
-
-            const result = await response.json();
-            const transcriptionText = result.text || '未获取到转录文本。';
-
-            const { markdownContainer } = createAIMessageElement();
-            markdownContainer.innerHTML = marked.parse(transcriptionText);
-            // 触发 MathJax 渲染 (如果需要)
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                MathJax.startup.promise.then(() => {
-                    MathJax.typeset([markdownContainer]);
-                }).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
-            scrollToBottom();
-
-            logMessage('语音转文字成功', 'system');
-        } catch (error) {
-            logMessage(`语音转文字失败: ${error.message}`, 'system');
-            console.error('语音转文字失败:', error);
-        } finally {
-            transcribeButton.disabled = false; // 重新启用按钮
-            transcribeButton.textContent = 'text_fields'; // 恢复图标
-        }
-    });
-
-    const audioElement = new Audio(audioUrl);
-    audioElement.preload = 'metadata'; // 预加载元数据以获取时长
-    audioElement.playbackRate = 1.0; // 新增：确保播放速率为1.0
-
-    playButton.addEventListener('click', () => {
-        if (currentAudioElement && currentAudioElement !== audioElement) {
-            // 暂停上一个播放的音频
-            currentAudioElement.pause();
-            const prevPlayButton = currentAudioElement.closest('.audio-player').querySelector('.audio-play-button');
-            if (prevPlayButton) {
-                prevPlayButton.textContent = 'play_arrow';
-            }
-        }
-
-        if (audioElement.paused) {
-            audioElement.play();
-            playButton.textContent = 'pause';
-            currentAudioElement = audioElement;
-        } else {
-            audioElement.pause();
-            playButton.textContent = 'play_arrow';
-            currentAudioElement = null;
-        }
-    });
-
-    audioElement.addEventListener('timeupdate', () => {
-        const progress = (audioElement.currentTime / audioElement.duration) * 100;
-        audioProgressBar.style.width = `${progress}%`;
-        audioDurationSpan.textContent = formatTime(audioElement.currentTime); // 显示当前播放时间
-    });
-
-    audioElement.addEventListener('ended', () => {
-        playButton.textContent = 'play_arrow';
-        audioProgressBar.style.width = '0%';
-        audioDurationSpan.textContent = formatTime(duration); // 播放结束后显示总时长
-        currentAudioElement = null;
-    });
-
-    audioPlayerDiv.appendChild(playButton);
-    audioPlayerDiv.appendChild(audioWaveform);
-    audioPlayerDiv.appendChild(audioDurationSpan);
-    audioPlayerDiv.appendChild(downloadButton); // 添加下载按钮
-    audioPlayerDiv.appendChild(transcribeButton); // 添加转文字按钮
-    contentDiv.appendChild(audioPlayerDiv);
-
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    messageHistory.appendChild(messageDiv);
-
-    scrollToBottom();
-}
-
-/**
- * Scrolls the message history to the bottom.
- * @returns {void}
- */
-function scrollToBottom() {
-    const messageHistory = document.getElementById('message-history');
-    if (!messageHistory) return; // 安全检查
-
-    // 使用 requestAnimationFrame 确保在浏览器下一次重绘前执行，提高平滑度
-    requestAnimationFrame(() => {
-        // 检查用户是否正在手动滚动
-        if (typeof isUserScrolling !== 'boolean' || !isUserScrolling) {
-            messageHistory.scrollTop = messageHistory.scrollHeight;
-        }
-    });
 }
 
 /**
@@ -796,13 +448,13 @@ async function resumeAudioContext() {
  * @returns {Promise<void>}
  */
 async function connectToWebsocket() {
-    if (!apiKeyInput.value) {
+    if (!DOM.apiKeyInput.value) {
         logMessage('Please input API Key', 'system');
         return;
     }
 
     // Save values to localStorage
-    localStorage.setItem('gemini_api_key', apiKeyInput.value);
+    localStorage.setItem('gemini_api_key', DOM.apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
@@ -845,7 +497,7 @@ async function connectToWebsocket() {
         };  
 
     try {
-        await client.connect(config,apiKeyInput.value);
+        await client.connect(config,DOM.apiKeyInput.value);
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';
@@ -927,6 +579,8 @@ async function handleSendMessage() {
     // 确保在处理任何消息之前，会话已经存在
     // 这是修复“新会话第一条消息不显示”问题的关键
     if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
+        setCurrentSessionId(null);
+        setChatHistory([]);
         generateNewSession();
     }
 
@@ -948,7 +602,7 @@ async function handleSendMessage() {
     } else {
         // HTTP 模式下发送消息
         try {
-            const apiKey = apiKeyInput.value;
+            const apiKey = DOM.apiKeyInput.value;
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
 
@@ -967,17 +621,18 @@ async function handleSendMessage() {
                 });
             }
 
-            chatHistory.push({
+            const newHistory = [...chatHistory, {
                 role: 'user',
-                content: userContent // 保持为数组，因为可能包含文本和图片
-            });
+                content: userContent
+            }];
+            setChatHistory(newHistory);
 
             // 清除附件（发送后）
             clearAttachedFile();
 
             let requestBody = {
                 model: modelName,
-                messages: chatHistory,
+                messages: [...chatHistory],
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -1041,84 +696,7 @@ client.on('audio', async (data) => {
     }
 });
 
-// 声明一个全局变量来跟踪当前 AI 消息的内容 div
 let currentAIMessageContentDiv = null;
-
-/**
- * 创建并添加一个新的 AI 消息元素到聊天历史。
- * @returns {HTMLElement} 新创建的 AI 消息的内容 div 元素。
- */
-function createAIMessageElement() {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'ai');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '🤖';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-
-    // 新增：思维链容器
-    const reasoningContainer = document.createElement('div');
-    reasoningContainer.className = 'reasoning-container';
-    reasoningContainer.style.display = 'none'; // 默认隐藏
-    const reasoningTitle = document.createElement('h4');
-    reasoningTitle.className = 'reasoning-title';
-    reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
-    const reasoningContent = document.createElement('div');
-    reasoningContent.className = 'reasoning-content';
-    reasoningContainer.appendChild(reasoningTitle);
-    reasoningContainer.appendChild(reasoningContent);
-    contentDiv.appendChild(reasoningContainer);
-    
-    // 创建Markdown容器
-    const markdownContainer = document.createElement('div');
-    markdownContainer.classList.add('markdown-container');
-    contentDiv.appendChild(markdownContainer);
-    
-    // 复制按钮（保持不变）
-    const copyButton = document.createElement('button');
-    copyButton.classList.add('copy-button', 'material-symbols-outlined');
-    copyButton.textContent = 'content_copy';
-
-    /**
-     * @function
-     * @description 处理复制按钮点击事件，将消息内容复制到剪贴板。
-     * @param {Event} event - 点击事件对象。
-     * @returns {void}
-     */
-    copyButton.addEventListener('click', async () => {
-        try {
-            // 合并思维链和主要内容进行复制
-            const reasoningText = reasoningContainer.style.display !== 'none'
-                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
-                : '';
-            const mainText = markdownContainer.innerText;
-            await navigator.clipboard.writeText(reasoningText + mainText);
-            copyButton.textContent = 'check';
-            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
-            logMessage('文本已复制到剪贴板', 'system');
-        } catch (err) {
-            logMessage('复制失败: ' + err, 'system');
-            console.error('复制文本失败:', err);
-        }
-    });
-
-    contentDiv.appendChild(copyButton); // 复制按钮放在内容div内
-    
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    messageHistory.appendChild(messageDiv);
-    scrollToBottom();
-    return {
-        container: messageDiv,
-        markdownContainer, // 返回Markdown容器引用
-        reasoningContainer, // 返回思维链容器引用
-        contentDiv,
-        rawMarkdownBuffer: '' // 新增：用于累积原始Markdown文本
-    };
-}
 
 client.on('content', (data) => {
     if (data.modelTurn) {
@@ -1173,10 +751,11 @@ client.on('interrupted', () => {
     logMessage('Model interrupted', 'system');
     // 确保在中断时完成当前文本消息并添加到聊天历史
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-        chatHistory.push({
+        const newHistory = [...chatHistory, {
             role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-        });
+            content: currentAIMessageContentDiv.rawMarkdownBuffer
+        }];
+        setChatHistory(newHistory);
     }
     currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
     // 处理累积的音频数据 (保持不变)
@@ -1198,10 +777,11 @@ client.on('turncomplete', () => {
     logMessage('Turn complete', 'system');
     // 在对话结束时刷新文本缓冲区并添加到聊天历史
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-        chatHistory.push({
+        const newHistory = [...chatHistory, {
             role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-        });
+            content: currentAIMessageContentDiv.rawMarkdownBuffer
+        }];
+        setChatHistory(newHistory);
     }
     currentAIMessageContentDiv = null; // 重置
     // 处理累积的音频数据
@@ -1349,10 +929,11 @@ async function processHttpStream(requestBody, apiKey) {
         if (functionCallDetected && currentFunctionCall) {
             // 确保在处理工具调用前，当前 AI 消息已完成并添加到聊天历史
             if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                chatHistory.push({
+                const newHistory = [...chatHistory, {
                     role: 'assistant',
-                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-                });
+                    content: currentAIMessageContentDiv.rawMarkdownBuffer
+                }];
+                setChatHistory(newHistory);
             }
             currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
 
@@ -1364,33 +945,33 @@ async function processHttpStream(requestBody, apiKey) {
                 const toolResponsePart = toolResult.functionResponses[0].response.output;
 
                 // 将模型调用工具添加到 chatHistory
-                chatHistory.push({
-                    role: 'assistant', // 模型角色
-                    // 恢复使用 parts 数组以匹配参考代码
+                const newHistoryWithFuncCall = [...chatHistory, {
+                    role: 'assistant',
                     parts: [{
                         functionCall: {
                             name: currentFunctionCall.name,
                             args: currentFunctionCall.args
                         }
                     }]
-                });
+                }];
+                setChatHistory(newHistoryWithFuncCall);
 
                 // 将工具响应添加到 chatHistory
-                chatHistory.push({
-                    role: 'tool', // 工具角色
-                    // 恢复使用 parts 数组
+                const newHistoryWithToolResponse = [...chatHistory, {
+                    role: 'tool',
                     parts: [{
                         functionResponse: {
                             name: currentFunctionCall.name,
                             response: toolResponsePart
                         }
                     }]
-                });
+                }];
+                setChatHistory(newHistoryWithToolResponse);
 
                 // 递归调用，将工具结果发送回模型
                 await processHttpStream({
                     ...requestBody,
-                    messages: chatHistory, // 直接使用更新后的 chatHistory
+                    messages: [...chatHistory],
                     tools: toolManager.getToolDeclarations(),
                     sessionId: currentSessionId // 确保传递会话ID
                 }, apiKey);
@@ -1400,7 +981,7 @@ async function processHttpStream(requestBody, apiKey) {
                 logMessage(`工具执行失败: ${toolError.message}`, 'system');
                 
                 // 将模型调用工具添加到 chatHistory (即使失败也要记录)
-                chatHistory.push({
+                const newHistoryWithFuncCallError = [...chatHistory, {
                     role: 'assistant',
                     parts: [{
                         functionCall: {
@@ -1408,10 +989,11 @@ async function processHttpStream(requestBody, apiKey) {
                             args: currentFunctionCall.args
                         }
                     }]
-                });
+                }];
+                setChatHistory(newHistoryWithFuncCallError);
 
                 // 将工具错误响应添加到 chatHistory
-                chatHistory.push({
+                const newHistoryWithToolError = [...chatHistory, {
                     role: 'tool',
                     parts: [{
                         functionResponse: {
@@ -1419,11 +1001,12 @@ async function processHttpStream(requestBody, apiKey) {
                             response: { error: toolError.message }
                         }
                     }]
-                });
+                }];
+                setChatHistory(newHistoryWithToolError);
 
                 await processHttpStream({
                     ...requestBody,
-                    messages: chatHistory, // 直接使用更新后的 chatHistory
+                    messages: [...chatHistory],
                     tools: toolManager.getToolDeclarations(),
                     sessionId: currentSessionId // 确保传递会话ID
                 }, apiKey);
@@ -1433,10 +1016,11 @@ async function processHttpStream(requestBody, apiKey) {
         } else {
             // 如果没有工具调用，且流已完成，将完整的 AI 响应添加到 chatHistory
             if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                chatHistory.push({
+                const newHistory = [...chatHistory, {
                     role: 'assistant',
-                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-                });
+                    content: currentAIMessageContentDiv.rawMarkdownBuffer
+                }];
+                setChatHistory(newHistory);
             }
             currentAIMessageContentDiv = null; // 重置
             logMessage('Turn complete (HTTP)', 'system');
@@ -1482,10 +1066,11 @@ function handleInterruptPlayback() {
         logMessage('语音播放已中断', 'system');
         // 确保在中断时也刷新文本缓冲区并添加到聊天历史
         if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-            chatHistory.push({
+            const newHistory = [...chatHistory, {
                 role: 'assistant',
-                content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-            });
+                content: currentAIMessageContentDiv.rawMarkdownBuffer
+            }];
+            setChatHistory(newHistory);
         }
         currentAIMessageContentDiv = null; // 重置
         // 处理累积的音频数据
@@ -1578,13 +1163,13 @@ modelSelect.addEventListener('change', () => {
  * 统一的连接函数，根据模型类型选择 WebSocket 或 HTTP。
  */
 async function connect() {
-    if (!apiKeyInput.value) {
+    if (!DOM.apiKeyInput.value) {
         logMessage('请输入 API Key', 'system');
         return;
     }
 
     // 保存值到 localStorage
-    localStorage.setItem('gemini_api_key', apiKeyInput.value);
+    localStorage.setItem('gemini_api_key', DOM.apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
     localStorage.setItem('video_fps', fpsInput.value); // 保存 FPS
@@ -1699,109 +1284,6 @@ function updateConnectionStatus() {
 
 updateConnectionStatus(); // 初始更新连接状态
 
-/**
- * Updates the display of media preview containers.
- */
-function updateMediaPreviewsDisplay() {
-    if (isVideoActive || isScreenSharing) {
-        mediaPreviewsContainer.style.display = 'flex'; // 使用 flex 布局
-        if (isVideoActive) {
-            videoPreviewContainer.style.display = 'block';
-        } else {
-            videoPreviewContainer.style.display = 'none';
-        }
-        if (isScreenSharing) {
-            screenContainer.style.display = 'block';
-        } else {
-            screenContainer.style.display = 'none';
-        }
-    } else {
-        mediaPreviewsContainer.style.display = 'none';
-    }
-}
-
-/**
- * Handles the video toggle. Starts or stops video streaming.
- * @returns {Promise<void>}
- */
-async function handleVideoToggle() {
-    if (!isVideoActive) {
-        // 开启摄像头逻辑...
-        Logger.info('Video toggle clicked, current state:', { isVideoActive, isConnected });
-        
-        localStorage.setItem('video_fps', fpsInput.value);
-
-        try {
-            // 显示预览容器
-            mediaPreviewsContainer.style.display = 'flex';
-            videoPreviewContainer.style.display = 'block';
-
-            Logger.info('Attempting to start video');
-            if (!videoManager) {
-                videoManager = new VideoManager(videoPreviewElement, { // 传入 videoPreviewElement
-                    width: 640,
-                    height: 480,
-                    facingMode: 'user' // 默认前置摄像头
-                });
-            }
-            
-            await videoManager.start(fpsInput.value,(frameData) => {
-                if (isConnected) {
-                    client.sendRealtimeInput([frameData]);
-                }
-            });
-
-            isVideoActive = true;
-            cameraButton.classList.add('active');
-            cameraButton.textContent = 'videocam_off'; // 直接修改按钮文本
-            updateMediaPreviewsDisplay(); // 更新预览显示
-            Logger.info('摄像头已启动');
-            logMessage('摄像头已启动', 'system');
-
-        } catch (error) {
-            Logger.error('摄像头错误:', error);
-            logMessage(`错误: ${error.message}`, 'system');
-            isVideoActive = false;
-            videoManager = null;
-            cameraButton.classList.remove('active');
-            cameraButton.textContent = 'videocam'; // 直接修改按钮文本
-            // 错误处理时隐藏预览
-            mediaPreviewsContainer.style.display = 'none';
-            videoPreviewContainer.style.display = 'none';
-            updateMediaPreviewsDisplay(); // 更新预览显示
-        }
-    } else {
-        // 修复：确保能通过控制台按钮关闭摄像头
-        stopVideo();
-    }
-}
-
-/**
- * Stops the video streaming.
- */
-function stopVideo() {
-    // 确保更新状态
-    isVideoActive = false;
-    // 修复：更新控制台按钮状态
-    cameraButton.textContent = 'videocam';
-    cameraButton.classList.remove('active');
-    
-    // 其余关闭逻辑保持不变...
-    Logger.info('Stopping video...');
-    if (videoManager) {
-        videoManager.stop(); // 调用 videoManager 自身的停止方法
-        // 关闭视频流
-        if (videoManager.stream) { // videoManager.stream 应该保存了 MediaStream 对象
-            videoManager.stream.getTracks().forEach(track => track.stop());
-        }
-        videoManager = null; // 清空 videoManager 引用
-    }
-    // 停止时隐藏预览
-    mediaPreviewsContainer.style.display = 'none';
-    videoPreviewContainer.style.display = 'none';
-    updateMediaPreviewsDisplay(); // 更新预览显示
-    logMessage('摄像头已停止', 'system');
-}
 
 cameraButton.addEventListener('click', () => {
     if (isConnected) handleVideoToggle();
@@ -1883,7 +1365,7 @@ async function handleScreenShare() {
             // 修改按钮状态
             screenButton.textContent = 'stop_screen_share';
             screenButton.classList.add('active');
-            updateMediaPreviewsDisplay(); // 更新预览显示
+            updateMediaPreviewsDisplay(isScreenSharing);
             Logger.info('屏幕共享已启动');
             logMessage('屏幕共享已启动', 'system');
 
@@ -1896,7 +1378,7 @@ async function handleScreenShare() {
             screenButton.textContent = 'screen_share';
             mediaPreviewsContainer.style.display = 'none';
             screenContainer.style.display = 'none';
-            updateMediaPreviewsDisplay(); // 更新预览显示
+            updateMediaPreviewsDisplay(isScreenSharing);
         }
     } else {
         stopScreenSharing();
@@ -1918,7 +1400,7 @@ function stopScreenSharing() {
     // 停止时隐藏预览
     mediaPreviewsContainer.style.display = 'none';
     screenContainer.style.display = 'none';
-    updateMediaPreviewsDisplay(); // 更新预览显示
+    updateMediaPreviewsDisplay(isScreenSharing);
     logMessage('屏幕共享已停止', 'system');
 }
 
@@ -2026,8 +1508,8 @@ document.addEventListener('DOMContentLoaded', () => {
             generateNewSession();
         } else {
             // 对于 WebSocket 模式或未连接时，保持原有简单重置逻辑
-            chatHistory = [];
-            currentSessionId = null;
+            setChatHistory([]);
+            setCurrentSessionId(null);
             messageHistory.innerHTML = '';
             logMessage('新聊天已开始', 'system');
             showSystemMessage('实时模式不支持历史记录。');
@@ -2111,244 +1593,6 @@ function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-/**
- * @function getChatSessionMeta
- * @description 从 localStorage 获取聊天会话元数据列表。
- * @returns {Array<object>} 会话元数据数组，如果解析失败则返回空数组。
- */
-function getChatSessionMeta() {
-    try {
-        const meta = localStorage.getItem('chat_session_meta');
-        return meta ? JSON.parse(meta) : [];
-    } catch (e) {
-        console.error('Failed to parse chat session meta:', e);
-        return [];
-    }
-}
-
-/**
- * @function saveChatSessionMeta
- * @description 将聊天会话元数据列表保存到 localStorage。
- * @param {Array<object>} meta - 要保存的会话元数据数组。每个元素应包含 id, title, updatedAt 等。
- */
-function saveChatSessionMeta(meta) {
-    try {
-        localStorage.setItem('chat_session_meta', JSON.stringify(meta));
-    } catch (e) {
-        console.error('Failed to save chat session meta:', e);
-    }
-}
-
-
-/**
- * @function generateNewSession
- * @description 生成一个新的聊天会话，此函数会生成一个新的会话ID，清空聊天记录和UI，
- *              并更新localStorage中的会话元数据列表。
- * @returns {void}
- */
-function generateNewSession() {
-    chatHistory = []; // 清空内存中的聊天历史
-    currentSessionId = `session-${crypto.randomUUID()}`; // 使用 crypto.randomUUID() 生成新的会话ID
-    messageHistory.innerHTML = ''; // 清空聊天显示区域
-
-    // 更新或添加会话元数据
-    let sessions = getChatSessionMeta();
-    const now = new Date().toISOString();
-    const newSessionMeta = {
-        id: currentSessionId,
-        title: '新聊天', // 默认标题
-        updatedAt: now,
-        createdAt: now
-    };
-    sessions.unshift(newSessionMeta); // 将新会话添加到列表开头
-    saveChatSessionMeta(sessions);
-
-    logMessage(`新聊天已开始 (ID: ${currentSessionId})`, 'system');
-    renderHistoryList(); // 创建新会话后立即刷新历史列表
-}
-
-/**
- * @function renderHistoryList
- * @description 从localStorage读取会话元数据并将其渲染到历史记录面板中。
- *              同时为每个列表项添加点击事件以加载会话。
- */
-function renderHistoryList() {
-    const sessions = getChatSessionMeta();
-    historyContent.innerHTML = ''; // 清空现有列表
-
-    if (sessions.length === 0) {
-        historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
-        return;
-    }
-
-    const ul = document.createElement('ul');
-    ul.className = 'history-list';
-
-    sessions.forEach(session => {
-        const li = document.createElement('li');
-        li.className = 'history-item';
-        li.dataset.sessionId = session.id;
-        li.innerHTML = `
-            <span class="history-title">${session.title}</span>
-            <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
-        `;
-        li.addEventListener('click', () => loadSessionHistory(session.id));
-        ul.appendChild(li);
-    });
-
-    historyContent.appendChild(ul);
-}
-
-/**
- * @function loadSessionHistory
- * @description 根据会话ID从后端加载完整的聊天历史记录，并将其渲染到主聊天窗口。
- * @param {string} sessionId - 要加载的会话ID。
- */
-async function loadSessionHistory(sessionId) {
-    showToast(`正在加载会话: ${sessionId}`);
-    try {
-        const response = await fetch(`/api/history/load/${sessionId}`);
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `无法加载会话: ${response.statusText}`);
-        }
-        const sessionData = await response.json();
-
-        // 清理当前状态和UI
-        messageHistory.innerHTML = '';
-        
-        // 更新当前会话状态
-        currentSessionId = sessionData.sessionId;
-        chatHistory = sessionData.messages;
-
-        // 重新渲染聊天记录
-        chatHistory.forEach(message => {
-            if (message.role === 'user') {
-                // 用户消息可能包含文本和图片
-                const textPart = message.content.find(p => p.type === 'text')?.text || '';
-                const imagePart = message.content.find(p => p.type === 'image_url');
-                const file = imagePart ? { base64: imagePart.image_url.url, name: 'Loaded Image' } : null;
-                displayUserMessage(textPart, file);
-            } else if (message.role === 'assistant') {
-                // AI消息目前只处理文本
-                const aiMessage = createAIMessageElement();
-                aiMessage.rawMarkdownBuffer = message.content; // 假设 content 是字符串
-                aiMessage.markdownContainer.innerHTML = marked.parse(message.content);
-                 // 触发 MathJax 渲染
-                if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                    MathJax.startup.promise.then(() => {
-                        MathJax.typeset([aiMessage.markdownContainer]);
-                    }).catch((err) => console.error('MathJax typesetting failed:', err));
-                }
-            }
-        });
-
-        // 切换回聊天标签页
-        document.querySelector('.tab[data-mode="text"]').click();
-        showToast('会话加载成功！');
-
-    } catch (error) {
-        console.error('加载历史记录失败:', error);
-        showSystemMessage(`加载历史记录失败: ${error.message}`);
-    }
-}
-
-
-/**
- * @function saveHistory
- * @description 将当前会话的完整历史记录保存到后端，并在成功后更新本地元数据。
- *              同时，此函数还包含在适当时机（第二次对话后）自动生成标题的逻辑 (T16)。
- * @returns {Promise<void>}
- */
-async function saveHistory() {
-    // 在函数开始时进行严格检查，确保关键变量存在
-    if (!currentSessionId || chatHistory.length === 0) {
-        return;
-    }
-
-    try {
-        const sessions = getChatSessionMeta();
-        const currentSessionMeta = sessions.find(s => s.id === currentSessionId);
-        if (!currentSessionMeta) {
-            console.error(`无法在元数据中找到当前会话ID: ${currentSessionId}`);
-            return;
-        }
-
-        const now = new Date().toISOString();
-
-        // 1. 保存完整会话数据到后端
-        const response = await fetch('/api/history/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId: currentSessionId,
-                title: currentSessionMeta.title,
-                createdAt: currentSessionMeta.createdAt,
-                updatedAt: now,
-                messages: chatHistory
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || '保存历史记录失败');
-        }
-
-        // 2. 更新本地元数据
-        currentSessionMeta.updatedAt = now;
-        saveChatSessionMeta(sessions);
-        renderHistoryList(); // 刷新列表以显示最新的更新时间
-
-        // 3. T16: 检查是否需要生成标题
-        // 条件：第二次对话完成时（历史记录中有2条消息：1用户+1助手），且标题是默认的“新聊天”
-        if (chatHistory.length === 2 && currentSessionMeta.title === '新聊天') {
-            generateTitleForSession(currentSessionId, chatHistory);
-        }
-
-    } catch (error) {
-        console.error('保存历史记录失败:', error);
-        showSystemMessage(`保存历史记录失败: ${error.message}`);
-    }
-}
-
-/**
- * @function generateTitleForSession
- * @description 为指定的会话异步生成标题，并更新本地元数据和UI。
- * @param {string} sessionId - 需要生成标题的会话ID。
- * @param {Array<object>} messages - 用于生成标题的消息列表。
- */
-async function generateTitleForSession(sessionId, messages) {
-    try {
-        const response = await fetch('/api/history/generate-title', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId, messages })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || '生成标题失败');
-        }
-
-        const { title } = await response.json();
-
-        if (title) {
-            // 更新 localStorage 中的元数据
-            const sessions = getChatSessionMeta();
-            const sessionToUpdate = sessions.find(s => s.id === sessionId);
-            if (sessionToUpdate) {
-                sessionToUpdate.title = title;
-                saveChatSessionMeta(sessions);
-                // 重新渲染历史列表以显示新标题
-                renderHistoryList();
-                showToast('会话标题已生成');
-            }
-        }
-    } catch (error) {
-        console.error('生成标题失败:', error);
-        // 此处失败不打扰用户，仅在控制台记录
-    }
-}
 
 
 /**
@@ -2465,7 +1709,7 @@ function initTranslation() {
     if (videoManager) stopVideo();
     if (screenRecorder) stopScreenSharing();
     // 翻译模式下显示语音输入按钮
-    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'inline-flex'; // 使用 inline-flex 保持 Material Symbols 的对齐
+    if (DOM.translationVoiceInputButton) DOM.translationVoiceInputButton.style.display = 'inline-flex'; // 使用 inline-flex 保持 Material Symbols 的对齐
     // 翻译模式下隐藏聊天语音输入按钮
     if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
   });
@@ -2477,7 +1721,7 @@ function initTranslation() {
     logContainer.classList.remove('active'); // 确保日志容器在聊天模式下也隐藏
     
     // 恢复聊天模式特有的元素显示
-    updateMediaPreviewsDisplay(); // 根据视频/屏幕共享状态更新媒体预览显示
+    updateMediaPreviewsDisplay(isScreenSharing);
     if (inputArea) inputArea.style.display = 'flex'; // 恢复输入区域显示
 
     translationModeBtn.classList.remove('active');
@@ -2488,7 +1732,7 @@ function initTranslation() {
     document.querySelector('.tab[data-mode="text"]').click();
 
     // 聊天模式下隐藏翻译语音输入按钮
-    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
+    if (DOM.translationVoiceInputButton) DOM.translationVoiceInputButton.style.display = 'none';
     // 聊天模式下显示聊天语音输入按钮
     if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'inline-flex';
   });
@@ -2512,7 +1756,7 @@ function initTranslation() {
     if (screenRecorder) stopScreenSharing();
 
     // 日志模式下隐藏语音输入按钮
-    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
+    if (DOM.translationVoiceInputButton) DOM.translationVoiceInputButton.style.display = 'none';
     // 日志模式下隐藏聊天语音输入按钮
     if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
   });
@@ -2528,7 +1772,7 @@ function initTranslation() {
       // 隐藏其他模式的特定UI
       if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
       if (inputArea) inputArea.style.display = 'none';
-      if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
+      if (DOM.translationVoiceInputButton) DOM.translationVoiceInputButton.style.display = 'none';
       if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
 
       visionModeBtn.classList.add('active');
@@ -2542,32 +1786,30 @@ function initTranslation() {
   }
 
   // 翻译模式语音输入按钮事件监听
-  if (translationVoiceInputButton) {
+  if (DOM.translationVoiceInputButton) {
     // 鼠标事件
-    translationVoiceInputButton.addEventListener('mousedown', startTranslationRecording);
-    translationVoiceInputButton.addEventListener('mouseup', stopTranslationRecording);
-    translationVoiceInputButton.addEventListener('mouseleave', (e) => {
-      // 如果鼠标在按住时移出按钮区域，也视为取消
-      if (isTranslationRecording) {
+    DOM.translationVoiceInputButton.addEventListener('mousedown', startTranslationRecording);
+    DOM.translationVoiceInputButton.addEventListener('mouseup', stopTranslationRecording);
+    DOM.translationVoiceInputButton.addEventListener('mouseleave', () => {
+      if (isTranslationAudioRecording()) {
         cancelTranslationRecording();
       }
     });
 
     // 触摸事件
-    translationVoiceInputButton.addEventListener('touchstart', (e) => {
-      e.preventDefault(); // 阻止默认的触摸行为，如滚动
-      initialTouchY = e.touches[0].clientY; // 记录初始Y坐标
+    DOM.translationVoiceInputButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      translationInitialTouchY = e.touches[0].clientY;
       startTranslationRecording();
     });
-    translationVoiceInputButton.addEventListener('touchend', (e) => {
+    DOM.translationVoiceInputButton.addEventListener('touchend', (e) => {
       e.preventDefault();
       stopTranslationRecording();
     });
-    translationVoiceInputButton.addEventListener('touchmove', (e) => {
-      if (isTranslationRecording) {
+    DOM.translationVoiceInputButton.addEventListener('touchmove', (e) => {
+      if (isTranslationAudioRecording()) {
         const currentTouchY = e.touches[0].clientY;
-        // 如果手指上滑超过一定距离，视为取消
-        if (initialTouchY - currentTouchY > 50) { // 50px 阈值
+        if (translationInitialTouchY - currentTouchY > 50) {
           cancelTranslationRecording();
         }
       }
@@ -2609,7 +1851,7 @@ function initTranslation() {
 
   // 监听 Esc 键取消录音
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isTranslationRecording) {
+    if (e.key === 'Escape' && isTranslationAudioRecording()) {
       cancelTranslationRecording();
     } else if (e.key === 'Escape' && isChatRecording) { // 新增：聊天模式下按 Esc 取消录音
       cancelChatRecording();
@@ -2629,158 +1871,6 @@ function initTranslation() {
   }
 } // 闭合 initTranslation 函数
 
-/**
- * @function startTranslationRecording
- * @description 开始翻译模式下的语音录音。
- * @returns {Promise<void>}
- */
-async function startTranslationRecording() {
-  if (isTranslationRecording) return;
-
-  // 首次点击，只请求权限
-  if (!hasRequestedTranslationMicPermission) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // 成功获取权限后，立即停止流，因为我们只是为了请求权限
-      stream.getTracks().forEach(track => track.stop());
-      hasRequestedTranslationMicPermission = true;
-      logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
-      translationVoiceInputButton.textContent = '点击开始录音'; // 提示用户再次点击
-      // 不开始录音，直接返回
-      return;
-    } catch (error) {
-      logMessage(`获取麦克风权限失败: ${error.message}`, 'system');
-      console.error('获取麦克风权限失败:', error);
-      alert('无法访问麦克风。请确保已授予麦克风权限。');
-      resetTranslationRecordingState(); // 权限失败时重置所有状态
-      hasRequestedTranslationMicPermission = false; // 确保权限请求状态也重置
-      return;
-    }
-  }
-
-  // 权限已请求过，现在开始录音
-  try {
-    logMessage('开始录音...', 'system');
-    translationVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
-    translationInputTextarea.placeholder = '正在录音，请说话...';
-    translationInputTextarea.value = ''; // 清空输入区
-
-    translationAudioChunks = []; // 清空之前的音频数据
-    translationAudioRecorder = new AudioRecorder(); // 创建新的 AudioRecorder 实例
-
-    await translationAudioRecorder.start((chunk) => {
-      // AudioRecorder 现在应该返回 ArrayBuffer 或 Uint8Array
-      translationAudioChunks.push(chunk);
-    }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
-
-    isTranslationRecording = true;
-    translationVoiceInputButton.textContent = '录音中...'; // 更新按钮文本
-
-    // 设置一个超时，防止用户忘记松开按钮
-    recordingTimeout = setTimeout(() => {
-      if (isTranslationRecording) {
-        logMessage('录音超时，自动停止并发送', 'system');
-        stopTranslationRecording();
-      }
-    }, 60 * 1000); // 最长录音 60 秒
-
-  } catch (error) {
-    logMessage(`启动录音失败: ${error.message}`, 'system');
-    console.error('启动录音失败:', error);
-    alert('无法访问麦克风。请确保已授予麦克风权限。');
-    resetTranslationRecordingState(); // 录音失败时重置所有状态
-    hasRequestedTranslationMicPermission = false; // 确保权限请求状态也重置
-  }
-}
-
-/**
- * @function stopTranslationRecording
- * @description 停止翻译模式下的语音录音并发送进行转文字。
- * @returns {Promise<void>}
- */
-async function stopTranslationRecording() {
-  if (!isTranslationRecording) return;
-
-  clearTimeout(recordingTimeout); // 清除超时定时器
-  logMessage('停止录音，正在转文字...', 'system');
-  translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  translationInputTextarea.placeholder = '正在处理语音...';
-
-  try {
-    if (translationAudioRecorder) {
-      translationAudioRecorder.stop(); // 停止录音
-      translationAudioRecorder = null;
-    }
-
-    if (translationAudioChunks.length === 0) {
-      logMessage('没有录到音频，请重试', 'system');
-      resetTranslationRecordingState();
-      return;
-    }
-
-    // 将所有音频块合并成一个 Uint8Array
-    const totalLength = translationAudioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
-    const mergedAudioData = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of translationAudioChunks) {
-      mergedAudioData.set(new Uint8Array(chunk), offset);
-      offset += chunk.byteLength;
-    }
-    translationAudioChunks = []; // 清空缓冲区
-
-    // 将合并后的原始音频数据转换为 WAV Blob
-    const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE); // 使用 pcmToWavBlob 函数
-
-    // 发送转文字请求到 Worker
-    const response = await fetch('/api/transcribe-audio', {
-      method: 'POST',
-      headers: {
-        'Content-Type': audioBlob.type, // 使用 Blob 的 MIME 类型
-      },
-      body: audioBlob,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`转文字失败: ${errorData.error || response.statusText}`);
-    }
-
-    const result = await response.json();
-    const transcriptionText = result.text || '未获取到转录文本。';
-
-    translationInputTextarea.value = transcriptionText; // 打印到输入区
-    logMessage('语音转文字成功', 'system');
-
-  } catch (error) {
-    logMessage(`语音转文字失败: ${error.message}`, 'system');
-    console.error('语音转文字失败:', error);
-    translationInputTextarea.placeholder = '语音转文字失败，请重试。';
-  } finally {
-    resetTranslationRecordingState();
-    hasRequestedTranslationMicPermission = false; // 录音停止后，重置权限请求状态
-  }
-}
-
-/**
- * @function cancelTranslationRecording
- * @description 取消翻译模式下的语音录音。
- * @returns {void}
- */
-function cancelTranslationRecording() {
-  if (!isTranslationRecording) return;
-
-  clearTimeout(recordingTimeout); // 清除超时定时器
-  logMessage('录音已取消', 'system');
-  
-  if (translationAudioRecorder) {
-    translationAudioRecorder.stop(); // 停止录音
-    translationAudioRecorder = null;
-  }
-  translationAudioChunks = []; // 清空音频数据
-  resetTranslationRecordingState();
-  translationInputTextarea.placeholder = '输入要翻译的内容...';
-  hasRequestedTranslationMicPermission = false; // 录音取消后，重置权限请求状态
-}
 
 /**
  * @function startChatRecording
@@ -2933,88 +2023,7 @@ function resetChatRecordingState() {
   messageInput.placeholder = '输入消息...';
 }
 
-/**
- * @function resetTranslationRecordingState
- * @description 重置翻译模式录音相关的状态。
- * @returns {void}
- */
-function resetTranslationRecordingState() {
-  isTranslationRecording = false;
-  translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  translationVoiceInputButton.textContent = '语音输入'; // 恢复按钮文本
-}
 
-/**
- * @function handleTranslation
- * @description 处理翻译请求，获取输入内容、语言和模型，向后端发送翻译请求，并显示翻译结果。
- * @returns {Promise<void>}
- */
-async function handleTranslation() {
-  const inputText = document.getElementById('translation-input-text').value.trim();
-  if (!inputText) {
-    logMessage('请输入要翻译的内容', 'system');
-    return;
-  }
-  
-  const inputLang = document.getElementById('translation-input-language-select').value;
-  const outputLang = document.getElementById('translation-output-language-select').value;
-  const model = document.getElementById('translation-model-select').value;
-  
-  const outputElement = document.getElementById('translation-output-text');
-  outputElement.textContent = '翻译中...';
-  
-  try {
-    // 构建提示词
-    const prompt = inputLang === 'auto' ?
-      `请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
-      `请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
-    
-    const response = await fetch('/api/translate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Authorization 头部由后端 worker.js 在 handleTranslationRequest 中处理
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-            {
-                role: 'system',
-                content: UNIVERSAL_TRANSLATION_SYSTEM_PROMPT
-            },
-            { role: 'user', content: prompt }
-        ],
-        stream: false // 翻译通常不需要流式响应
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`翻译请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-    }
-    
-    const data = await response.json();
-    const translatedText = data.choices[0].message.content;
-    
-    outputElement.textContent = translatedText;
-    logMessage('翻译完成', 'system');
-  } catch (error) {
-    logMessage(`翻译失败: ${error.message}`, 'system');
-    outputElement.textContent = '翻译失败，请重试';
-    console.error('翻译错误:', error);
-  }
-}
-
-/**
- * @function getLanguageName
- * @description 根据语言代码获取语言的中文名称。
- * @param {string} code - 语言代码（如 'en', 'zh', 'auto'）。
- * @returns {string} 语言的中文名称或原始代码（如果未找到）。
- */
-function getLanguageName(code) {
-  const language = CONFIG.TRANSLATION.LANGUAGES.find(lang => lang.code === code);
-  return language ? language.name : code;
-}
 
 /**
  * 显示一个 Toast 轻提示。
@@ -3063,578 +2072,48 @@ export function showSystemMessage(message) {
     scrollToBottom();
 }
 
-/**
- * ----------------------------------------------------------------
- * 附件处理相关函数
- * ----------------------------------------------------------------
- */
-
-async function handleFileAttachment(event, mode = 'chat') {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    const previewsContainer = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
-    const fileList = mode === 'vision' ? visionAttachedFiles : [attachedFile]; // a bit of a hack for single vs multi file
-
-    for (const file of files) {
-        // 检查文件类型和大小
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
-        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-            showSystemMessage(`不支持的文件类型: ${file.type}。`);
-            continue;
-        }
-        if (file.size > 20 * 1024 * 1024) { // 20MB 大小限制
-            showSystemMessage('文件大小不能超过 20MB。');
-            continue;
-        }
-
-        try {
-            const base64String = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-                reader.readAsDataURL(file);
-            });
-
-            const fileData = {
-                name: file.name,
-                type: file.type,
-                base64: base64String
-            };
-
-            if (mode === 'vision') {
-                visionAttachedFiles.push(fileData);
-                displayFilePreview({
-                    type: file.type.startsWith('image/') ? 'image' : 'video',
-                    src: base64String,
-                    name: file.name,
-                    mode: 'vision',
-                    index: visionAttachedFiles.length - 1
-                });
-            } else {
-                // Chat mode currently only supports one attachment
-                clearAttachedFile(); // Clear previous before adding new one
-                attachedFile = fileData;
-                displayFilePreview({
-                    type: file.type.startsWith('image/') ? 'image' : 'pdf',
-                    src: base64String,
-                    name: file.name,
-                    mode: 'chat'
-                });
-            }
-            showToast(`文件已附加: ${file.name}`);
-
-        } catch (error) {
-            console.error('处理文件时出错:', error);
-            showSystemMessage(`处理文件失败: ${error.message}`);
-        }
-    }
-
-    // 重置 file input 以便可以再次选择同一个文件
-    event.target.value = '';
-}
-
-/**
- * @function displayFilePreview
- * @description 在预览区域显示选定文件的预览。
- * @param {object} options - 预览选项。
- * @param {string} options.type - 预览类型 ('image' 或 'canvas')。
- * @param {string} [options.src] - 图像的 Base64 数据 URL (如果 type 是 'image')。
- * @param {HTMLCanvasElement} [options.canvas] - Canvas 元素 (如果 type 是 'canvas')。
- * @param {string} options.name - 文件名。
- */
-function displayFilePreview({ type, src, name, mode, index }) {
-    const container = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
-    
-    // Clear previous preview in chat mode
-    if (mode === 'chat') {
-        container.innerHTML = '';
-    }
-
-    const previewCard = document.createElement('div');
-    previewCard.className = 'file-preview-card';
-    previewCard.title = name;
-    if (mode === 'vision') {
-        previewCard.dataset.index = index;
-    }
-
-    let previewElement;
-    if (type.startsWith('image')) {
-        previewElement = document.createElement('img');
-        previewElement.src = src;
-        previewElement.alt = name;
-    } else if (type.startsWith('video')) {
-        previewElement = document.createElement('video');
-        previewElement.src = src;
-        previewElement.alt = name;
-        previewElement.muted = true;
-        previewElement.autoplay = true;
-        previewElement.loop = true;
-        previewElement.playsInline = true;
-    } else { // PDF or other
-        previewElement = document.createElement('div');
-        previewElement.className = 'file-placeholder';
-        const icon = document.createElement('span');
-        icon.className = 'material-symbols-outlined';
-        icon.textContent = 'description'; // PDF icon
-        const text = document.createElement('p');
-        text.textContent = name;
-        previewElement.appendChild(icon);
-        previewElement.appendChild(text);
-    }
-
-
-    const closeButton = document.createElement('button');
-    closeButton.className = 'close-button material-symbols-outlined';
-    closeButton.textContent = 'close';
-    closeButton.onclick = (e) => {
-        e.stopPropagation();
-        if (mode === 'vision') {
-            removeVisionAttachment(index);
-        } else {
-            clearAttachedFile();
-        }
-    };
-
-    previewCard.appendChild(previewElement);
-    previewCard.appendChild(closeButton);
-    container.appendChild(previewCard);
-}
-
-/**
- * @function clearAttachedFile
- * @description 清除已附加的文件状态和预览。
- */
-function clearAttachedFile(mode = 'chat') {
-    if (mode === 'vision') {
-        visionAttachedFiles = [];
-        visionAttachmentPreviews.innerHTML = '';
-    } else {
-        attachedFile = null;
-        fileAttachmentPreviews.innerHTML = '';
-    }
-}
-
-
-
-
-function removeVisionAttachment(indexToRemove) {
-    visionAttachedFiles.splice(indexToRemove, 1);
-    // Re-render all previews to correctly update indices
-    visionAttachmentPreviews.innerHTML = '';
-    visionAttachedFiles.forEach((file, index) => {
-        displayFilePreview({
-            type: file.type,
-            src: file.base64,
-            name: file.name,
-            mode: 'vision',
-            index: index
-        });
-    });
-}
-
-
-async function handleSendVisionMessage() {
-    const text = visionInputText.value.trim();
-    if (!text && visionAttachedFiles.length === 0) {
-        showToast('请输入文本或添加附件。');
-        return;
-    }
-
-    const visionModelSelect = document.getElementById('vision-model-select');
-    const selectedModel = visionModelSelect.value;
-
-    // 显示用户消息
-    displayVisionUserMessage(text, visionAttachedFiles);
-
-    // 将用户消息添加到历史记录
-    const userContent = [];
-    if (text) {
-        userContent.push({ type: 'text', text });
-    }
-    visionAttachedFiles.forEach(file => {
-        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-    });
-    visionChatHistory.push({ role: 'user', content: userContent });
-
-    // 清理输入
-    visionInputText.value = '';
-    clearAttachedFile('vision');
-
-    // 显示加载状态
-    visionSendButton.disabled = true;
-    visionSendButton.textContent = 'progress_activity';
-    const aiMessage = createVisionAIMessageElement();
-    const { markdownContainer, reasoningContainer } = aiMessage;
-    markdownContainer.innerHTML = '<p>正在请求模型...</p>';
-    logMessage(`正在请求视觉模型: ${selectedModel}`, 'system');
-
-    try {
-        // 统一使用流式请求
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: selectedModel,
-                messages: [
-                    { role: 'system', content: VISION_SYSTEM_PROMPT },
-                    ...visionChatHistory
-                ],
-                stream: true, // 始终启用流式响应
-            }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'API 请求失败');
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let finalContent = ''; // 用于存储最终的 content 部分
-        let reasoningStarted = false;
-        let answerStarted = false; // 新增：用于标记最终答案是否开始
-
-        markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') return;
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (delta) {
-                            // 处理思维链内容
-                            if (delta.reasoning_content) {
-                                if (!reasoningStarted) {
-                                    reasoningContainer.style.display = 'block'; // 显示思维链容器
-                                    reasoningStarted = true;
-                                }
-                                // 使用 innerHTML 追加，以便渲染 Markdown 换行等
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
-                            }
-                            // 处理主要内容
-                            if (delta.content) {
-                                // 当思维链存在且最终答案首次出现时，插入分隔符
-                                if (reasoningStarted && !answerStarted) {
-                                    const separator = document.createElement('hr');
-                                    separator.className = 'answer-separator';
-                                    // 将分隔符插入到 markdownContainer 之前，但在 reasoningContainer 之后
-                                    reasoningContainer.after(separator);
-                                    answerStarted = true;
-                                }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Error parsing SSE chunk:', e, jsonStr);
-                    }
-                }
-            });
-            visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-        }
-
-        // 流结束后，对最终内容进行一次 MathJax 排版
-        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-            MathJax.startup.promise.then(() => {
-                MathJax.typeset([markdownContainer, reasoningContainer]);
-            }).catch((err) => console.error('MathJax typesetting failed:', err));
-        }
-        
-        // 将最终的 AI content（不包含思维链）添加到历史记录
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
-
-    } catch (error) {
-        console.error('Error sending vision message:', error);
-        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
-        logMessage(`视觉模型请求失败: ${error.message}`, 'system');
-    } finally {
-        visionSendButton.disabled = false;
-        visionSendButton.textContent = 'send';
-    }
-}
-
-function displayVisionUserMessage(text, files) {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'user');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '👤';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-
-    if (text) {
-        const textNode = document.createElement('p');
-        textNode.textContent = text;
-        contentDiv.appendChild(textNode);
-    }
-
-    if (files && files.length > 0) {
-        const attachmentsContainer = document.createElement('div');
-        attachmentsContainer.className = 'attachments-grid';
-        files.forEach(file => {
-            let attachmentElement;
-            if (file.type.startsWith('image/')) {
-                attachmentElement = document.createElement('img');
-                attachmentElement.src = file.base64;
-            } else if (file.type.startsWith('video/')) {
-                attachmentElement = document.createElement('video');
-                attachmentElement.src = file.base64;
-                attachmentElement.controls = true;
-            }
-            if (attachmentElement) {
-                attachmentElement.className = 'chat-attachment';
-                attachmentsContainer.appendChild(attachmentElement);
-            }
-        });
-        contentDiv.appendChild(attachmentsContainer);
-    }
-
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    visionMessageHistory.appendChild(messageDiv);
-    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-}
-
-function createVisionAIMessageElement() {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'ai');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '🤖';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-    
-    // 新增：思维链容器
-    const reasoningContainer = document.createElement('div');
-    reasoningContainer.className = 'reasoning-container';
-    reasoningContainer.style.display = 'none'; // 默认隐藏
-    const reasoningTitle = document.createElement('h4');
-    reasoningTitle.className = 'reasoning-title';
-    reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
-    const reasoningContent = document.createElement('div');
-    reasoningContent.className = 'reasoning-content';
-    reasoningContainer.appendChild(reasoningTitle);
-    reasoningContainer.appendChild(reasoningContent);
-    contentDiv.appendChild(reasoningContainer);
-
-    const markdownContainer = document.createElement('div');
-    markdownContainer.classList.add('markdown-container');
-    contentDiv.appendChild(markdownContainer);
-    
-    const copyButton = document.createElement('button');
-    copyButton.classList.add('copy-button', 'material-symbols-outlined');
-    copyButton.textContent = 'content_copy';
-    copyButton.addEventListener('click', async () => {
-        try {
-            // 合并思维链和主要内容进行复制
-            const reasoningText = reasoningContainer.style.display !== 'none'
-                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
-                : '';
-            const mainText = markdownContainer.innerText;
-            await navigator.clipboard.writeText(reasoningText + mainText);
-            copyButton.textContent = 'check';
-            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
-        } catch (err) {
-            console.error('Failed to copy text: ', err);
-        }
-    });
-
-    contentDiv.appendChild(copyButton);
-    
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    visionMessageHistory.appendChild(messageDiv);
-    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-    
-    return {
-        container: messageDiv,
-        markdownContainer,
-        reasoningContainer, // 返回思维链容器
-        contentDiv,
-    };
-}
-
-/**
- * @function initVision
- * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
- * @returns {void}
- */
-function initVision() {
-    const visionModelSelect = document.getElementById('vision-model-select');
-    if (!visionModelSelect) return;
-
-    visionModelSelect.innerHTML = ''; // 清空现有选项
-    CONFIG.VISION.MODELS.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.displayName;
-        if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
-            option.selected = true;
-        }
-        visionModelSelect.appendChild(option);
-    });
-}
 
 /**
  * @function initializePromptSelect
  * @description 初始化指令模式下拉菜单，填充选项并设置事件监听器。
  */
 function initializePromptSelect() {
-    if (!promptSelect) return;
+    if (!DOM.promptSelect) return;
 
     // 1. 清空现有选项
-    promptSelect.innerHTML = '';
+    DOM.promptSelect.innerHTML = '';
 
     // 2. 从配置填充选项
     CONFIG.PROMPT_OPTIONS.forEach(option => {
         const optionElement = document.createElement('option');
         optionElement.value = option.id;
         optionElement.textContent = option.displayName;
-        promptSelect.appendChild(optionElement);
+        DOM.promptSelect.appendChild(optionElement);
     });
 
     // 3. 设置默认值并更新文本域
     const savedPromptId = localStorage.getItem('selected_prompt_id') || CONFIG.DEFAULT_PROMPT_ID;
-    promptSelect.value = savedPromptId;
+    DOM.promptSelect.value = savedPromptId;
     updateSystemInstruction();
 
 
     // 4. 添加事件监听器
-    promptSelect.addEventListener('change', () => {
+    DOM.promptSelect.addEventListener('change', () => {
         updateSystemInstruction();
         // 保存用户的选择
-        localStorage.setItem('selected_prompt_id', promptSelect.value);
+        localStorage.setItem('selected_prompt_id', DOM.promptSelect.value);
     });
 }
 
-/**
- * @function toggleOcrButtonVisibility
- * @description 根据当前选择的翻译模型，决定是否显示OCR（图片识别）按钮。
- *              仅当选择的模型是 Gemini 系列时显示该按钮。
- * @returns {void}
- */
-function toggleOcrButtonVisibility() {
-    const selectedModel = document.getElementById('translation-model-select').value;
-    if (selectedModel.startsWith('gemini-')) {
-        translationOcrButton.style.display = 'inline-flex';
-    } else {
-        translationOcrButton.style.display = 'none';
-    }
-}
-
-/**
- * @function handleTranslationOcr
- * @description 处理用户通过OCR按钮上传的图片。它会读取图片，发送给Gemini模型进行文字识别，
- *              然后将识别出的文本填充到翻译输入框中。
- * @param {Event} event - 文件输入框的 change 事件对象。
- * @returns {Promise<void>}
- */
-async function handleTranslationOcr(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // 检查文件类型
-    if (!file.type.startsWith('image/')) {
-        showToast('请上传图片文件。');
-        return;
-    }
-
-    const outputElement = document.getElementById('translation-output-text');
-    const inputTextarea = document.getElementById('translation-input-text');
-    
-    // 显示处理中的提示
-    inputTextarea.value = ''; // 清空输入框
-    inputTextarea.placeholder = '正在识别图片中的文字...';
-    outputElement.textContent = ''; // 清空旧的翻译结果
-    translationOcrButton.disabled = true; // 禁用按钮防止重复点击
-
-    try {
-        const base64String = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = error => reject(error);
-            reader.readAsDataURL(file);
-        });
-
-        const model = document.getElementById('translation-model-select').value;
-
-        // 构建发送给模型的请求体
-        const requestBody = {
-            model: model,
-            messages: [
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: '请对图片进行OCR识别。提取所有文本，并严格保持其原始的布局和格式，包括表格、列、缩进和换行。请使用Markdown格式化输出，尤其是表格。' },
-                        {
-                            type: 'image_url',
-                            image_url: {
-                                url: base64String
-                            }
-                        }
-                    ]
-                }
-            ],
-            stream: false
-        };
-
-        // 使用与翻译相同的后端API端点
-        const response = await fetch('/api/translate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`图片文字识别失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-        }
-
-        const data = await response.json();
-        const extractedText = data.choices[0].message.content;
-
-        if (extractedText) {
-            inputTextarea.value = extractedText;
-            showToast('文字识别成功！');
-        } else {
-            showToast('图片中未识别到文字。');
-        }
-
-    } catch (error) {
-        logMessage(`OCR 失败: ${error.message}`, 'system');
-        showToast('图片文字识别失败，请重试。');
-        console.error('OCR Error:', error);
-    } finally {
-        // 重置状态
-        inputTextarea.placeholder = '输入要翻译的内容...';
-        translationOcrButton.disabled = false;
-        // 重置文件输入，以便可以再次选择同一个文件
-        event.target.value = '';
-    }
-}
 
 /**
  * @function updateSystemInstruction
  * @description 根据下拉菜单的当前选择，更新隐藏的 system-instruction 文本域的值。
  */
 function updateSystemInstruction() {
-    if (!promptSelect || !systemInstructionInput) return;
+    if (!DOM.promptSelect || !systemInstructionInput) return;
 
-    const selectedId = promptSelect.value;
+    const selectedId = DOM.promptSelect.value;
     const selectedOption = CONFIG.PROMPT_OPTIONS.find(option => option.id === selectedId);
 
     if (selectedOption) {
