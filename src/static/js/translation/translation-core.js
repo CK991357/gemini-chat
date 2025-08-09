@@ -1,6 +1,5 @@
 import { logMessage, showToast } from '../chat/chat-ui.js';
 import { CONFIG } from '../config/config.js';
-import * as DOM from '../ui/dom-elements.js';
 
 /**
  * @const {string} UNIVERSAL_TRANSLATION_SYSTEM_PROMPT
@@ -21,21 +20,26 @@ const UNIVERSAL_TRANSLATION_SYSTEM_PROMPT = `You are a professional translation 
  * @function handleTranslation
  * @description Handles the translation request by getting input text, languages, and model,
  *              sending the request to the backend, and displaying the result.
+ * @param {HTMLTextAreaElement} translationInputTextarea - The textarea for the input text.
+ * @param {HTMLSelectElement} translationInputLanguageSelect - The select element for the input language.
+ * @param {HTMLSelectElement} translationOutputLanguageSelect - The select element for the output language.
+ * @param {HTMLSelectElement} translationModelSelect - The select element for the translation model.
+ * @param {HTMLElement} translationOutputText - The element to display the translated text.
  * @async
  * @returns {Promise<void>} A promise that resolves when the translation is complete or fails.
  */
-export async function handleTranslation() {
-  const inputText = DOM.translationInputTextarea.value.trim();
+export async function handleTranslation(translationInputTextarea, translationInputLanguageSelect, translationOutputLanguageSelect, translationModelSelect, translationOutputText) {
+  const inputText = translationInputTextarea.value.trim();
   if (!inputText) {
     showToast('请输入要翻译的内容');
     return;
   }
 
-  const inputLang = DOM.translationInputLanguageSelect.value;
-  const outputLang = DOM.translationOutputLanguageSelect.value;
-  const model = DOM.translationModelSelect.value;
+  const inputLang = translationInputLanguageSelect.value;
+  const outputLang = translationOutputLanguageSelect.value;
+  const model = translationModelSelect.value;
 
-  const outputElement = DOM.translationOutputText;
+  const outputElement = translationOutputText;
   outputElement.textContent = '翻译中...';
 
   try {

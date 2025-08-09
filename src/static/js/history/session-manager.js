@@ -1,5 +1,3 @@
-import { createAIMessageElement, displayUserMessage, showSystemMessage, showToast } from '../chat/chat-ui.js';
-import * as DOM from '../ui/dom-elements.js';
 
 /**
  * @fileoverview Manages chat session history, including creating, loading, saving, and rendering sessions.
@@ -67,17 +65,17 @@ function saveChatSessionMeta(meta) {
 
 /**
  * Generates a new chat session.
- * @function generateNewSession
- * @description Creates a new chat session by generating a new session ID, clearing the chat history and UI, and updating the session metadata in localStorage.
- * @returns {void} - No return value.
+ * @param {HTMLElement} messageHistoryEl - The message history container element.
+ * @param {Function} showSystemMessageFunc - Function to show a system message.
+ * @param {Function} renderHistoryListFunc - Function to render the history list.
  */
-export function generateNewSession() {
+export function generateNewSession(messageHistoryEl, showSystemMessageFunc, renderHistoryListFunc) {
     chatHistory = []; // Clear in-memory chat history
     currentSessionId = `session-${crypto.randomUUID()}`; // Generate a new session ID
-    DOM.messageHistory.innerHTML = ''; // Clear the chat display area
+    messageHistoryEl.innerHTML = ''; // Clear the chat display area
 
     // Update or add session metadata
-    let sessions = getChatSessionMeta();
+    const sessions = getChatSessionMeta();
     const now = new Date().toISOString();
     const newSessionMeta = {
         id: currentSessionId,
@@ -88,22 +86,21 @@ export function generateNewSession() {
     sessions.unshift(newSessionMeta); // Add the new session to the beginning of the list
     saveChatSessionMeta(sessions);
 
-    showSystemMessage(`新聊天已开始 (ID: ${currentSessionId})`, 'system');
-    renderHistoryList(); // Refresh the history list immediately after creating a new session
+    showSystemMessageFunc(`新聊天已开始 (ID: ${currentSessionId})`, 'system');
+    renderHistoryListFunc(); // Refresh the history list immediately after creating a new session
 }
 
 /**
  * Renders the list of chat sessions in the history panel.
- * @function renderHistoryList
- * @description Reads session metadata from localStorage and renders it into the history panel. It also adds click event listeners to each list item to load the session.
- * @returns {void} - No return value.
+ * @param {HTMLElement} historyContentEl - The history content container element.
+ * @param {Function} loadSessionHistoryFunc - Function to load session history.
  */
-export function renderHistoryList() {
+export function renderHistoryList(historyContentEl, loadSessionHistoryFunc) {
     const sessions = getChatSessionMeta();
-    DOM.historyContent.innerHTML = ''; // Clear the existing list
+    historyContentEl.innerHTML = ''; // Clear the existing list
 
     if (sessions.length === 0) {
-        DOM.historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
+        historyContentEl.innerHTML = '<p class="empty-history">暂无历史记录</p>';
         return;
     }
 
@@ -118,22 +115,24 @@ export function renderHistoryList() {
             <span class="history-title">${session.title}</span>
             <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
         `;
-        li.addEventListener('click', () => loadSessionHistory(session.id));
+        li.addEventListener('click', () => loadSessionHistoryFunc(session.id));
         ul.appendChild(li);
     });
 
-    DOM.historyContent.appendChild(ul);
+    historyContentEl.appendChild(ul);
 }
 
 /**
  * Loads a complete chat history for a session from the backend and renders it.
- * @function loadSessionHistory
- * @description Loads the full chat history for a given session ID from the backend and renders it in the main chat window.
  * @param {string} sessionId - The ID of the session to load.
- * @returns {Promise<void>} - A promise that resolves when the session is loaded and rendered.
+ * @param {HTMLElement} messageHistoryEl - The message history container element.
+ * @param {Function} showToastFunc - Function to show a toast message.
+ * @param {Function} showSystemMessageFunc - Function to show a system message.
+ * @param {Function} displayUserMessageFunc - Function to display a user message.
+ * @param {Function} createAIMessageElementFunc - Function to create an AI message element.
  */
-async function loadSessionHistory(sessionId) {
-    showToast(`正在加载会话: ${sessionId}`);
+export async function loadSessionHistory(sessionId, messageHistoryEl, showToastFunc, showSystemMessageFunc, displayUserMessageFunc, createAIMessageElementFunc) {
+    showToastFunc(`正在加载会话: ${sessionId}`);
     try {
         const response = await fetch(`/api/history/load/${sessionId}`);
         if (!response.ok) {
@@ -143,7 +142,7 @@ async function loadSessionHistory(sessionId) {
         const sessionData = await response.json();
 
         // Clear current state and UI
-        DOM.messageHistory.innerHTML = '';
+        messageHistoryEl.innerHTML = '';
         
         // Update current session state
         currentSessionId = sessionData.sessionId;
@@ -156,10 +155,10 @@ async function loadSessionHistory(sessionId) {
                 const textPart = message.content.find(p => p.type === 'text')?.text || '';
                 const imagePart = message.content.find(p => p.type === 'image_url');
                 const file = imagePart ? { base64: imagePart.image_url.url, name: 'Loaded Image' } : null;
-                displayUserMessage(textPart, file);
+                displayUserMessageFunc(textPart, file);
             } else if (message.role === 'assistant') {
                 // AI messages are currently text only
-                const aiMessage = createAIMessageElement();
+                const aiMessage = createAIMessageElementFunc();
                 aiMessage.rawMarkdownBuffer = message.content; // Assuming content is a string
                 aiMessage.markdownContainer.innerHTML = marked.parse(message.content);
                  // Trigger MathJax rendering
@@ -173,21 +172,21 @@ async function loadSessionHistory(sessionId) {
 
         // Switch back to the chat tab
         document.querySelector('.tab[data-mode="text"]').click();
-        showToast('会话加载成功！');
+        showToastFunc('会话加载成功！');
 
     } catch (error) {
         console.error('加载历史记录失败:', error);
-        showSystemMessage(`加载历史记录失败: ${error.message}`);
+        showSystemMessageFunc(`加载历史记录失败: ${error.message}`);
     }
 }
 
 /**
  * Saves the current session's full history to the backend.
- * @function saveHistory
- * @description Saves the complete history of the current session to the backend and updates local metadata upon success. It also includes logic to automatically generate a title for the session at the appropriate time (T16).
- * @returns {Promise<void>} - A promise that resolves when the history is saved.
+ * @param {Function} renderHistoryListFunc - Function to render the history list.
+ * @param {Function} showSystemMessageFunc - Function to show a system message.
+ * @param {Function} generateTitleForSessionFunc - Function to generate a title for the session.
  */
-export async function saveHistory() {
+export async function saveHistory(renderHistoryListFunc, showSystemMessageFunc, generateTitleForSessionFunc) {
     // Strict check at the beginning of the function to ensure key variables exist
     if (!currentSessionId || chatHistory.length === 0) {
         return;
@@ -224,29 +223,28 @@ export async function saveHistory() {
         // 2. Update local metadata
         currentSessionMeta.updatedAt = now;
         saveChatSessionMeta(sessions);
-        renderHistoryList(); // Refresh the list to show the latest update time
+        renderHistoryListFunc(); // Refresh the list to show the latest update time
 
         // 3. T16: Check if a title needs to be generated
         // Condition: When the second turn is complete (2 messages in history: 1 user + 1 assistant), and the title is the default "新聊天"
         if (chatHistory.length === 2 && currentSessionMeta.title === '新聊天') {
-            generateTitleForSession(currentSessionId, chatHistory);
+            generateTitleForSessionFunc(currentSessionId, chatHistory);
         }
 
     } catch (error) {
         console.error('保存历史记录失败:', error);
-        showSystemMessage(`保存历史记录失败: ${error.message}`);
+        showSystemMessageFunc(`保存历史记录失败: ${error.message}`);
     }
 }
 
 /**
  * Asynchronously generates a title for a given session and updates metadata and UI.
- * @function generateTitleForSession
- * @description Asynchronously generates a title for the specified session and updates the local metadata and UI.
  * @param {string} sessionId - The ID of the session for which to generate a title.
  * @param {Array<object>} messages - The list of messages to use for generating the title.
- * @returns {Promise<void>} - A promise that resolves when the title is generated and updated.
+ * @param {Function} renderHistoryListFunc - Function to render the history list.
+ * @param {Function} showToastFunc - Function to show a toast message.
  */
-async function generateTitleForSession(sessionId, messages) {
+export async function generateTitleForSession(sessionId, messages, renderHistoryListFunc, showToastFunc) {
     try {
         const response = await fetch('/api/history/generate-title', {
             method: 'POST',
@@ -269,8 +267,8 @@ async function generateTitleForSession(sessionId, messages) {
                 sessionToUpdate.title = title;
                 saveChatSessionMeta(sessions);
                 // Re-render the history list to show the new title
-                renderHistoryList();
-                showToast('会话标题已生成');
+                renderHistoryListFunc();
+                showToastFunc('会话标题已生成');
             }
         }
     } catch (error) {

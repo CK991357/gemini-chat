@@ -5,7 +5,7 @@
  */
 
 import { CONFIG } from '../config/config.js';
-import * as DOM from '../ui/dom-elements.js';
+// DOM elements are now passed as arguments to functions.
 
 // State variables that might be needed by UI functions.
 // In a further refactoring, these could be managed by a state module.
@@ -18,12 +18,12 @@ let isUserScrolling = false; // Tracks if the user is manually scrolling the cha
  * @function scrollToBottom
  * @returns {void}
  */
-export function scrollToBottom() {
-    if (!DOM.messageHistory) return; // Safety check
+export function scrollToBottom(messageHistoryElement) {
+    if (!messageHistoryElement) return; // Safety check
 
     requestAnimationFrame(() => {
         if (typeof isUserScrolling !== 'boolean' || !isUserScrolling) {
-            DOM.messageHistory.scrollTop = DOM.messageHistory.scrollHeight;
+            messageHistoryElement.scrollTop = messageHistoryElement.scrollHeight;
         }
     });
 }
@@ -49,7 +49,7 @@ export function formatTime(seconds) {
  * @param {string} [file.name] - The name of the file.
  * @returns {void}
  */
-export function displayUserMessage(text, file) {
+export function displayUserMessage(messageHistoryElement, text, file) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message', 'user');
 
@@ -79,9 +79,9 @@ export function displayUserMessage(text, file) {
 
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
-    DOM.messageHistory.appendChild(messageDiv);
+    messageHistoryElement.appendChild(messageDiv);
 
-    scrollToBottom();
+    scrollToBottom(messageHistoryElement);
 }
 
 /**
@@ -90,7 +90,7 @@ export function displayUserMessage(text, file) {
  * @function createAIMessageElement
  * @returns {{container: HTMLElement, markdownContainer: HTMLElement, reasoningContainer: HTMLElement, contentDiv: HTMLElement, rawMarkdownBuffer: string}} - An object containing references to the new message's elements and a buffer for accumulating raw markdown.
  */
-export function createAIMessageElement() {
+export function createAIMessageElement(messageHistoryElement) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message', 'ai');
 
@@ -139,8 +139,8 @@ export function createAIMessageElement() {
     
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
-    DOM.messageHistory.appendChild(messageDiv);
-    scrollToBottom();
+    messageHistoryElement.appendChild(messageDiv);
+    scrollToBottom(messageHistoryElement);
     return {
         container: messageDiv,
         markdownContainer,
@@ -156,7 +156,7 @@ export function createAIMessageElement() {
  * @param {string} message - The system message to display.
  * @returns {void}
  */
-export function showSystemMessage(message) {
+export function showSystemMessage(messageHistoryElement, message) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message', 'system-info');
 
@@ -165,8 +165,8 @@ export function showSystemMessage(message) {
     contentDiv.textContent = message;
 
     messageDiv.appendChild(contentDiv);
-    DOM.messageHistory.appendChild(messageDiv);
-    scrollToBottom();
+    messageHistoryElement.appendChild(messageDiv);
+    scrollToBottom(messageHistoryElement);
 }
 
 /**
@@ -231,7 +231,7 @@ export function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.OUTPUT_SA
  * @param {string} type - The message type, either 'user' or 'ai'.
  * @returns {void}
  */
-export function displayAudioMessage(audioUrl, duration, type) {
+export function displayAudioMessage(messageHistoryElement, audioUrl, duration, type) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message', type);
 
@@ -291,12 +291,12 @@ export function displayAudioMessage(audioUrl, duration, type) {
 
             const result = await response.json();
             const transcriptionText = result.text || 'No transcription available.';
-            const { markdownContainer } = createAIMessageElement();
+            const { markdownContainer } = createAIMessageElement(messageHistoryElement);
             markdownContainer.innerHTML = marked.parse(transcriptionText);
             if (typeof MathJax !== 'undefined' && MathJax.startup) {
                 MathJax.startup.promise.then(() => MathJax.typeset([markdownContainer]));
             }
-            scrollToBottom();
+            scrollToBottom(messageHistoryElement);
         } catch (error) {
             console.error('Transcription failed:', error);
         } finally {
@@ -348,29 +348,30 @@ export function displayAudioMessage(audioUrl, duration, type) {
 
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
-    DOM.messageHistory.appendChild(messageDiv);
+    messageHistoryElement.appendChild(messageDiv);
 
-    scrollToBottom();
+    scrollToBottom(messageHistoryElement);
 }
 
-// Initialize scroll listeners
-if (DOM.messageHistory) {
-    DOM.messageHistory.addEventListener('wheel', () => { isUserScrolling = true; }, { passive: true });
-    DOM.messageHistory.addEventListener('scroll', () => {
-        if (DOM.messageHistory.scrollHeight - DOM.messageHistory.clientHeight <= DOM.messageHistory.scrollTop + 1) {
-            isUserScrolling = false;
-        }
-    });
-
-    if ('ontouchstart' in window) {
-        DOM.messageHistory.addEventListener('touchstart', () => { isUserScrolling = true; }, { passive: true });
-        DOM.messageHistory.addEventListener('touchend', () => {
-            isUserScrolling = false;
-            const threshold = 50;
-            const isNearBottom = DOM.messageHistory.scrollHeight - DOM.messageHistory.clientHeight <= DOM.messageHistory.scrollTop + threshold;
-            if (isNearBottom) {
-                scrollToBottom();
+export function initializeChatUI(messageHistoryElement) {
+    if (messageHistoryElement) {
+        messageHistoryElement.addEventListener('wheel', () => { isUserScrolling = true; }, { passive: true });
+        messageHistoryElement.addEventListener('scroll', () => {
+            if (messageHistoryElement.scrollHeight - messageHistoryElement.clientHeight <= messageHistoryElement.scrollTop + 1) {
+                isUserScrolling = false;
             }
-        }, { passive: true });
+        });
+
+        if ('ontouchstart' in window) {
+            messageHistoryElement.addEventListener('touchstart', () => { isUserScrolling = true; }, { passive: true });
+            messageHistoryElement.addEventListener('touchend', () => {
+                isUserScrolling = false;
+                const threshold = 50;
+                const isNearBottom = messageHistoryElement.scrollHeight - messageHistoryElement.clientHeight <= messageHistoryElement.scrollTop + threshold;
+                if (isNearBottom) {
+                    scrollToBottom(messageHistoryElement);
+                }
+            }, { passive: true });
+        }
     }
 }

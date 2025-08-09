@@ -1,9 +1,8 @@
 import { showSystemMessage, showToast } from '../chat/chat-ui.js';
-import * as DOM from '../ui/dom-elements.js';
 
 // State variables
 export let attachedFile = null;
-export let visionAttachedFiles = [];
+export const visionAttachedFiles = [];
 
 /**
  * @function handleFileAttachment
@@ -14,11 +13,10 @@ export let visionAttachedFiles = [];
  * @param {string} [mode='chat'] - The mode of attachment, can be 'chat' or 'vision'.
  * @returns {Promise<void>}
  */
-export async function handleFileAttachment(event, mode = 'chat') {
+export async function handleFileAttachment(event, fileAttachmentPreviews, visionAttachmentPreviews, mode = 'chat') {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    const previewsContainer = mode === 'vision' ? DOM.visionAttachmentPreviews : DOM.fileAttachmentPreviews;
 
     for (const file of files) {
         // Check file type and size
@@ -54,17 +52,17 @@ export async function handleFileAttachment(event, mode = 'chat') {
                     name: file.name,
                     mode: 'vision',
                     index: visionAttachedFiles.length - 1
-                });
+                }, fileAttachmentPreviews, visionAttachmentPreviews);
             } else {
                 // Chat mode currently only supports one attachment
-                clearAttachedFile(); // Clear previous before adding new one
+                clearAttachedFile('chat', fileAttachmentPreviews, visionAttachmentPreviews); // Clear previous before adding new one
                 attachedFile = fileData;
                 displayFilePreview({
                     type: file.type.startsWith('image/') ? 'image' : 'pdf',
                     src: base64String,
                     name: file.name,
                     mode: 'chat'
-                });
+                }, fileAttachmentPreviews, visionAttachmentPreviews);
             }
             showToast(`File attached: ${file.name}`);
 
@@ -88,8 +86,8 @@ export async function handleFileAttachment(event, mode = 'chat') {
  * @param {string} options.mode - The mode, 'chat' or 'vision'.
  * @param {number} [options.index] - The index of the file in the vision attachments array.
  */
-function displayFilePreview({ type, src, name, mode, index }) {
-    const container = mode === 'vision' ? DOM.visionAttachmentPreviews : DOM.fileAttachmentPreviews;
+function displayFilePreview({ type, src, name, mode, index }, fileAttachmentPreviews, visionAttachmentPreviews) {
+    const container = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
     
     // Clear previous preview in chat mode
     if (mode === 'chat') {
@@ -134,9 +132,9 @@ function displayFilePreview({ type, src, name, mode, index }) {
     closeButton.onclick = (e) => {
         e.stopPropagation();
         if (mode === 'vision') {
-            removeVisionAttachment(index);
+            removeVisionAttachment(index, visionAttachmentPreviews);
         } else {
-            clearAttachedFile();
+            clearAttachedFile('chat', fileAttachmentPreviews, visionAttachmentPreviews);
         }
     };
 
@@ -150,13 +148,13 @@ function displayFilePreview({ type, src, name, mode, index }) {
  * @description Clears the attached file state and its preview from the UI.
  * @param {string} [mode='chat'] - The mode to clear attachments for, 'chat' or 'vision'.
  */
-export function clearAttachedFile(mode = 'chat') {
+export function clearAttachedFile(mode = 'chat', fileAttachmentPreviews, visionAttachmentPreviews) {
     if (mode === 'vision') {
         visionAttachedFiles.length = 0; // More efficient way to clear array
-        DOM.visionAttachmentPreviews.innerHTML = '';
+        visionAttachmentPreviews.innerHTML = '';
     } else {
         attachedFile = null;
-        DOM.fileAttachmentPreviews.innerHTML = '';
+        fileAttachmentPreviews.innerHTML = '';
     }
 }
 
@@ -165,10 +163,10 @@ export function clearAttachedFile(mode = 'chat') {
  * @description Removes a specific attachment from the vision mode file list and re-renders the previews.
  * @param {number} indexToRemove - The index of the attachment to remove.
  */
-function removeVisionAttachment(indexToRemove) {
+function removeVisionAttachment(indexToRemove, visionAttachmentPreviews) {
     visionAttachedFiles.splice(indexToRemove, 1);
     // Re-render all previews to correctly update indices
-    DOM.visionAttachmentPreviews.innerHTML = '';
+    visionAttachmentPreviews.innerHTML = '';
     visionAttachedFiles.forEach((file, index) => {
         displayFilePreview({
             type: file.type,
@@ -176,6 +174,6 @@ function removeVisionAttachment(indexToRemove) {
             name: file.name,
             mode: 'vision',
             index: index
-        });
+        }, null, visionAttachmentPreviews);
     });
 }

@@ -1,7 +1,4 @@
-import { clearAttachedFile, visionAttachedFiles } from '../attachments/file-attachment.js';
-import { logMessage, showToast } from '../chat/chat-ui.js';
-import { CONFIG } from '../config/config.js';
-import * as DOM from '../ui/dom-elements.js';
+import { clearAttachedFile } from '../attachments/file-attachment.js';
 
 /**
  * @fileoverview Manages the vision chat mode, including UI, message handling, and API interaction.
@@ -27,24 +24,26 @@ const VISION_SYSTEM_PROMPT = `你是一个顶级的多模态视觉分析专家�
  * Stores the chat history for the vision mode.
  * @type {Array<object>}
  */
-let visionChatHistory = [];
+export const visionChatHistory = [];
 
 /**
  * Initializes the vision mode UI, specifically the model selection dropdown.
  * @function initVision
  * @description Initializes the vision functionality, primarily populating the model selection dropdown.
+ * @param {HTMLSelectElement} visionModelSelect - The select element for vision models.
+ * @param {Array<object>} models - The list of available vision models.
+ * @param {string} defaultModel - The name of the default vision model.
  * @returns {void} - No return value.
  */
-export function initVision() {
-    const visionModelSelect = DOM.visionModelSelect;
+export function initVision(visionModelSelect, models, defaultModel) {
     if (!visionModelSelect) return;
 
     visionModelSelect.innerHTML = ''; // Clear existing options
-    CONFIG.VISION.MODELS.forEach(model => {
+    models.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
         option.textContent = model.displayName;
-        if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
+        if (model.name === defaultModel) {
             option.selected = true;
         }
         visionModelSelect.appendChild(option);
@@ -58,17 +57,17 @@ export function initVision() {
  * @description Handles the entire process of sending a user's query (text and files) in vision mode and rendering the model's response.
  * @returns {Promise<void>} - A promise that resolves when the message is sent and response handling is complete.
  */
-export async function handleSendVisionMessage() {
-    const text = DOM.visionInputText.value.trim();
+export async function handleSendVisionMessage(visionInputText, visionAttachedFiles, visionModelSelect, visionChatHistory, fileAttachmentPreviews, visionAttachmentPreviews, visionSendButton, visionMessageHistory, logMessage, showToast) {
+    const text = visionInputText.value.trim();
     if (!text && visionAttachedFiles.length === 0) {
         showToast('请输入文本或添加附件。');
         return;
     }
 
-    const selectedModel = DOM.visionModelSelect.value;
+    const selectedModel = visionModelSelect.value;
 
     // Display user message
-    displayVisionUserMessage(text, visionAttachedFiles);
+    displayVisionUserMessage(text, visionAttachedFiles, visionMessageHistory);
 
     // Add user message to history
     const userContent = [];
@@ -81,13 +80,13 @@ export async function handleSendVisionMessage() {
     visionChatHistory.push({ role: 'user', content: userContent });
 
     // Clear input
-    DOM.visionInputText.value = '';
-    clearAttachedFile('vision');
+    visionInputText.value = '';
+    clearAttachedFile('vision', fileAttachmentPreviews, visionAttachmentPreviews);
 
     // Show loading state
-    DOM.visionSendButton.disabled = true;
-    DOM.visionSendButton.textContent = 'progress_activity';
-    const aiMessage = createVisionAIMessageElement();
+    visionSendButton.disabled = true;
+    visionSendButton.textContent = 'progress_activity';
+    const aiMessage = createVisionAIMessageElement(visionMessageHistory);
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
     logMessage(`正在请求视觉模型: ${selectedModel}`, 'system');
@@ -161,7 +160,7 @@ export async function handleSendVisionMessage() {
                     }
                 }
             });
-            DOM.visionMessageHistory.scrollTop = DOM.visionMessageHistory.scrollHeight;
+            visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
         }
 
         // After the stream ends, typeset the final content with MathJax
@@ -179,8 +178,8 @@ export async function handleSendVisionMessage() {
         markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
         logMessage(`视觉模型请求失败: ${error.message}`, 'system');
     } finally {
-        DOM.visionSendButton.disabled = false;
-        DOM.visionSendButton.textContent = 'send';
+        visionSendButton.disabled = false;
+        visionSendButton.textContent = 'send';
     }
 }
 
@@ -192,7 +191,7 @@ export async function handleSendVisionMessage() {
  * @param {Array<object>} files - An array of file objects to be displayed as attachments. Each object should have `type` and `base64` properties.
  * @returns {void} - No return value.
  */
-function displayVisionUserMessage(text, files) {
+function displayVisionUserMessage(text, files, visionMessageHistory) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message', 'user');
 
@@ -232,8 +231,8 @@ function displayVisionUserMessage(text, files) {
 
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
-    DOM.visionMessageHistory.appendChild(messageDiv);
-    DOM.visionMessageHistory.scrollTop = DOM.visionMessageHistory.scrollHeight;
+    visionMessageHistory.appendChild(messageDiv);
+    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
 }
 
 /**
@@ -242,7 +241,7 @@ function displayVisionUserMessage(text, files) {
  * @description Creates the DOM structure for a new AI response, including containers for reasoning and the main markdown content, and appends it to the chat history.
  * @returns {object} - An object containing references to the created DOM elements: `container`, `markdownContainer`, `reasoningContainer`, and `contentDiv`.
  */
-function createVisionAIMessageElement() {
+function createVisionAIMessageElement(visionMessageHistory) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message', 'ai');
 
@@ -292,8 +291,8 @@ function createVisionAIMessageElement() {
     
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
-    DOM.visionMessageHistory.appendChild(messageDiv);
-    DOM.visionMessageHistory.scrollTop = DOM.visionMessageHistory.scrollHeight;
+    visionMessageHistory.appendChild(messageDiv);
+    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
     
     return {
         container: messageDiv,

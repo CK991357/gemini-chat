@@ -1,18 +1,19 @@
 import { logMessage, showToast } from '../chat/chat-ui.js';
-import * as DOM from '../ui/dom-elements.js';
 
 /**
  * @function toggleOcrButtonVisibility
  * @description Toggles the visibility of the OCR button based on the selected translation model.
  *              The button is only shown for Gemini models.
+ * @param {HTMLSelectElement} translationModelSelect - The select element for the translation model.
+ * @param {HTMLButtonElement} translationOcrButton - The OCR button.
  * @returns {void}
  */
-export function toggleOcrButtonVisibility() {
-    const selectedModel = DOM.translationModelSelect.value;
+export function toggleOcrButtonVisibility(translationModelSelect, translationOcrButton) {
+    const selectedModel = translationModelSelect.value;
     if (selectedModel.startsWith('gemini-')) {
-        DOM.translationOcrButton.style.display = 'inline-flex';
+        translationOcrButton.style.display = 'inline-flex';
     } else {
-        DOM.translationOcrButton.style.display = 'none';
+        translationOcrButton.style.display = 'none';
     }
 }
 
@@ -23,9 +24,13 @@ export function toggleOcrButtonVisibility() {
  *              and populates the translation input area with the result.
  * @async
  * @param {Event} event - The file input change event.
+ * @param {HTMLElement} translationOutputText - The element to display the translated text.
+ * @param {HTMLTextAreaElement} translationInputTextarea - The textarea for the input text.
+ * @param {HTMLButtonElement} translationOcrButton - The OCR button.
+ * @param {HTMLSelectElement} translationModelSelect - The select element for the translation model.
  * @returns {Promise<void>}
  */
-export async function handleTranslationOcr(event) {
+export async function handleTranslationOcr(event, translationOutputText, translationInputTextarea, translationOcrButton, translationModelSelect) {
     const file = event.target.files[0];
     if (!file) return;
 
@@ -34,13 +39,13 @@ export async function handleTranslationOcr(event) {
         return;
     }
 
-    const outputElement = DOM.translationOutputText;
-    const inputTextarea = DOM.translationInputTextarea;
+    const outputElement = translationOutputText;
+    const inputTextarea = translationInputTextarea;
     
     inputTextarea.value = '';
     inputTextarea.placeholder = '正在识别图片中的文字...';
     outputElement.textContent = '';
-    DOM.translationOcrButton.disabled = true;
+    translationOcrButton.disabled = true;
 
     try {
         const base64String = await new Promise((resolve, reject) => {
@@ -50,7 +55,7 @@ export async function handleTranslationOcr(event) {
             reader.readAsDataURL(file);
         });
 
-        const model = DOM.translationModelSelect.value;
+        const model = translationModelSelect.value;
 
         const requestBody = {
             model: model,
@@ -100,7 +105,7 @@ export async function handleTranslationOcr(event) {
         console.error('OCR Error:', error);
     } finally {
         inputTextarea.placeholder = '输入要翻译的内容...';
-        DOM.translationOcrButton.disabled = false;
+        translationOcrButton.disabled = false;
         event.target.value = '';
     }
 }

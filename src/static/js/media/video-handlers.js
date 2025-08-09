@@ -1,6 +1,3 @@
-import { logMessage } from '../chat/chat-ui.js';
-import { client } from '../core/websocket-client.js';
-import * as DOM from '../ui/dom-elements.js';
 import { Logger } from '../utils/logger.js';
 import { VideoManager } from '../video/video-manager.js';
 
@@ -26,32 +23,32 @@ let videoManager = null;
  * @description Handles the UI logic for starting and stopping the video camera, including updating button states and managing the VideoManager instance.
  * @returns {Promise<void>}
  */
-export async function handleVideoToggle() {
+export async function handleVideoToggle(fpsInput, mediaPreviewsContainer, videoPreviewContainer, videoPreviewElement, cameraButton, client, logMessage, updateMediaPreviewsDisplay) {
     if (!isVideoActive) {
         Logger.info('Video toggle clicked, starting video...');
-        localStorage.setItem('video_fps', DOM.fpsInput.value);
+        localStorage.setItem('video_fps', fpsInput.value);
 
         try {
-            DOM.mediaPreviewsContainer.style.display = 'flex';
-            DOM.videoPreviewContainer.style.display = 'block';
+            mediaPreviewsContainer.style.display = 'flex';
+            videoPreviewContainer.style.display = 'block';
 
             if (!videoManager) {
-                videoManager = new VideoManager(DOM.videoPreviewElement, {
+                videoManager = new VideoManager(videoPreviewElement, {
                     width: 640,
                     height: 480,
                     facingMode: 'user'
                 });
             }
             
-            await videoManager.start(DOM.fpsInput.value, (frameData) => {
+            await videoManager.start(fpsInput.value, (frameData) => {
                 if (client.isConnected()) {
                     client.sendRealtimeInput([frameData]);
                 }
             });
 
             isVideoActive = true;
-            DOM.cameraButton.classList.add('active');
-            DOM.cameraButton.textContent = 'videocam_off';
+            cameraButton.classList.add('active');
+            cameraButton.textContent = 'videocam_off';
             updateMediaPreviewsDisplay();
             logMessage('摄像头已启动', 'system');
 
@@ -60,12 +57,12 @@ export async function handleVideoToggle() {
             logMessage(`错误: ${error.message}`, 'system');
             isVideoActive = false;
             videoManager = null;
-            DOM.cameraButton.classList.remove('active');
-            DOM.cameraButton.textContent = 'videocam';
+            cameraButton.classList.remove('active');
+            cameraButton.textContent = 'videocam';
             updateMediaPreviewsDisplay();
         }
     } else {
-        stopVideo();
+        stopVideo(cameraButton, logMessage, updateMediaPreviewsDisplay);
     }
 }
 
@@ -75,10 +72,10 @@ export async function handleVideoToggle() {
  * @description Stops the video stream, cleans up the VideoManager instance, and resets the UI elements to their inactive state.
  * @returns {void}
  */
-export function stopVideo() {
+export function stopVideo(cameraButton, logMessage, updateMediaPreviewsDisplay) {
     isVideoActive = false;
-    DOM.cameraButton.textContent = 'videocam';
-    DOM.cameraButton.classList.remove('active');
+    cameraButton.textContent = 'videocam';
+    cameraButton.classList.remove('active');
     
     Logger.info('Stopping video...');
     if (videoManager) {
@@ -99,12 +96,12 @@ export function stopVideo() {
  * @param {boolean} isScreenSharingActive - The current state of screen sharing.
  * @returns {void}
  */
-export function updateMediaPreviewsDisplay(isScreenSharingActive) {
+export function updateMediaPreviewsDisplay(isScreenSharingActive, mediaPreviewsContainer, videoPreviewContainer, screenContainer) {
     if (isVideoActive || isScreenSharingActive) {
-        DOM.mediaPreviewsContainer.style.display = 'flex';
-        DOM.videoPreviewContainer.style.display = isVideoActive ? 'block' : 'none';
-        DOM.screenContainer.style.display = isScreenSharingActive ? 'block' : 'none';
+        mediaPreviewsContainer.style.display = 'flex';
+        videoPreviewContainer.style.display = isVideoActive ? 'block' : 'none';
+        screenContainer.style.display = isScreenSharingActive ? 'block' : 'none';
     } else {
-        DOM.mediaPreviewsContainer.style.display = 'none';
+        mediaPreviewsContainer.style.display = 'none';
     }
 }
