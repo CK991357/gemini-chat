@@ -2268,14 +2268,25 @@ async function saveHistory() {
     }
 
     try {
-        const sessions = getChatSessionMeta();
-        const currentSessionMeta = sessions.find(s => s.id === currentSessionId);
-        if (!currentSessionMeta) {
-            console.error(`无法在元数据中找到当前会话ID: ${currentSessionId}`);
-            return;
-        }
-
+        let sessions = getChatSessionMeta(); // 确保获取最新会话列表
         const now = new Date().toISOString();
+
+        // 查找并移除旧的会话元数据（如果存在）
+        const existingIndex = sessions.findIndex(s => s.id === currentSessionId);
+        let currentSessionMeta;
+
+        if (existingIndex !== -1) {
+            currentSessionMeta = sessions.splice(existingIndex, 1)[0]; // 移除并获取
+            currentSessionMeta.updatedAt = now; // 更新时间
+        } else {
+            // 如果是新会话（例如，第一次保存），则创建一个新的元数据对象
+            currentSessionMeta = {
+                id: currentSessionId,
+                title: '新聊天', // 默认标题
+                createdAt: now,
+                updatedAt: now
+            };
+        }
 
         // 1. 保存完整会话数据到后端
         const response = await fetch('/api/history/save', {
@@ -2295,8 +2306,8 @@ async function saveHistory() {
             throw new Error(errorData.error || '保存历史记录失败');
         }
 
-        // 2. 更新本地元数据
-        currentSessionMeta.updatedAt = now;
+        // 2. 将更新后的会话元数据添加到列表最前面
+        sessions.unshift(currentSessionMeta);
         saveChatSessionMeta(sessions);
         renderHistoryList(); // 刷新列表以显示最新的更新时间
 
