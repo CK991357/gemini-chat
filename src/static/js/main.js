@@ -71,7 +71,7 @@ const _logPanel = document.querySelector('.chat-container.log-mode');
 const clearLogsBtn = document.getElementById('clear-logs');
 const modeTabs = document.querySelectorAll('.mode-tabs .tab');
 const chatContainers = document.querySelectorAll('.chat-container');
-const historyContent = document.getElementById('history-content'); // 新增：历史记录面板
+const historyContent = document.getElementById('history-list-container'); // 新增：历史记录面板
 
 // 新增媒体预览相关 DOM 元素
 const mediaPreviewsContainer = document.getElementById('media-previews');
