@@ -179,7 +179,7 @@ Be warm, patient, and plain-spoken; don't use too many exclamation marks or emoj
             },
             {
                 name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash (HTTP)',
+                displayName: 'GLM-4.5-Flash',
                 isWebSocket: false,
                 isZhipu: true // 标记为智谱模型
             }

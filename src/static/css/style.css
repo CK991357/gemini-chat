@@ -1714,3 +1714,48 @@ body.dark-mode .highlight-box {
     border-color: var(--accent-color);
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
 }
+
+/* 历史记录区样式 */
+.history-mode {
+    display: none; /* 默认隐藏 */
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.history-mode.active {
+    display: flex; /* 激活时显示 */
+}
+
+.history-list-container {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 10px 15px;
+}
+
+.history-item {
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.history-item:hover {
+    background-color: var(--bg-color);
+}
+
+.history-item-title {
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 5px;
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-item-time {
+    font-size: 12px;
+    color: var(--text-secondary-color);
+}

@@ -109,6 +109,11 @@ export default {
       return handleAPIRequest(request, env);
     }
 
+    // 处理历史记录API请求
+    if (url.pathname.startsWith('/api/history/')) {
+      return handleHistoryRequest(request, env);
+    }
+ 
     // 处理静态资源
     if (url.pathname === '/' || url.pathname === '/index.html') {
       console.log('Serving index.html',env);
@@ -577,4 +582,132 @@ async function handleImageGenerationRequest(request, env) {
             }
         });
     }
+}
+
+/**
+ * @function handleHistoryRequest
+ * @description 处理所有与聊天历史记录相关的API请求。
+ * @param {Request} request - 传入的请求对象。
+ * @param {Object} env - 环境变量对象，包含KV命名空间等。
+ * @returns {Promise<Response>} - 返回一个 Promise，解析为处理后的响应。
+ */
+async function handleHistoryRequest(request, env) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  // 路由: 保存会话
+  if (path === '/api/history/save' && request.method === 'POST') {
+    try {
+      const sessionData = await request.json();
+      if (!sessionData || !sessionData.sessionId) {
+        return new Response(JSON.stringify({ error: 'Missing session data or sessionId' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      const key = `history:${sessionData.sessionId}`;
+      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(sessionData));
+      return new Response(JSON.stringify({ status: 'success' }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (error) {
+      console.error('Failed to save history:', error);
+      return new Response(JSON.stringify({ error: 'Failed to save history', details: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  // 路由: 加载会话
+  const loadMatch = path.match(/^\/api\/history\/load\/(.+)$/);
+  if (loadMatch && request.method === 'GET') {
+    try {
+      const sessionId = loadMatch[1];
+      const key = `history:${sessionId}`;
+      const sessionData = await env.GEMINICHAT_HISTORY_KV.get(key);
+
+      if (sessionData === null) {
+        return new Response(JSON.stringify({ error: 'Session not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      return new Response(sessionData, {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (error) {
+      console.error('Failed to load history:', error);
+      return new Response(JSON.stringify({ error: 'Failed to load history', details: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  // 路由: 生成标题
+  if (path === '/api/history/generate-title' && request.method === 'POST') {
+    try {
+        const { messages } = await request.json();
+        if (!messages || messages.length === 0) {
+            return new Response(JSON.stringify({ error: 'Missing messages for title generation' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            });
+        }
+
+        // 使用 gemini-2.0-flash 模型进行总结
+        const model = 'models/gemini-2.0-flash';
+        const apiKey = env.AUTH_KEY;
+        const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
+
+        if (!apiKey) {
+            throw new Error('AUTH_KEY is not configured in environment variables.');
+        }
+
+        const systemPrompt = "你是一个对话总结专家。请根据以下对话内容，生成一个不超过10个字的、简洁明了的标题。只返回标题本身，不要任何多余的文字。";
+        const userContent = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+
+        const proxyResponse = await fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userContent }
+                ],
+                stream: false
+            })
+        });
+
+        if (!proxyResponse.ok) {
+            const errorData = await proxyResponse.text();
+            throw new Error(`AI title generation failed: ${proxyResponse.status} - ${errorData}`);
+        }
+
+        const result = await proxyResponse.json();
+        const title = result.choices[0]?.message?.content.trim() || '无标题对话';
+
+        return new Response(JSON.stringify({ title: title }), {
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+
+    } catch (error) {
+        console.error('Failed to generate title:', error);
+        return new Response(JSON.stringify({ error: 'Failed to generate title', details: error.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+    }
+  }
+
+  return new Response(JSON.stringify({ error: 'History API route not found' }), {
+    status: 404,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  });
 }

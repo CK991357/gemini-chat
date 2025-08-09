@@ -183,3 +183,4 @@ deno.lock
 /.kilocode
 
 CLAUDE.md
+/.claude

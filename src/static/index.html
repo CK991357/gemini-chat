@@ -126,6 +126,7 @@
                     <button class="tab active" data-mode="text">📝 文字聊天</button>
                     <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
+                    <button class="tab" data-mode="history">📜 历史记录</button>
                 </div>
 
                 <section class="chat-container text-mode active">
@@ -175,6 +176,16 @@
                     </div>
                     <div class="log-content" id="logs-container">
                         <!-- 原始日志内容将动态插入此处 -->
+                    </div>
+                </section>
+
+                <!-- 历史记录区 -->
+                <section class="chat-container history-mode">
+                    <div class="log-header">
+                        <h3>历史记录</h3>
+                    </div>
+                    <div class="history-list" id="history-list-container">
+                        <!-- 历史记录列表将动态插入此处 -->
                     </div>
                 </section>
 

@@ -71,6 +71,7 @@ const _logPanel = document.querySelector('.chat-container.log-mode');
 const clearLogsBtn = document.getElementById('clear-logs');
 const modeTabs = document.querySelectorAll('.mode-tabs .tab');
 const chatContainers = document.querySelectorAll('.chat-container');
+const historyContent = document.getElementById('history-content'); // 新增：历史记录面板
 
 // 新增媒体预览相关 DOM 元素
 const mediaPreviewsContainer = document.getElementById('media-previews');
@@ -263,6 +264,8 @@ document.addEventListener('DOMContentLoaded', () => {
    initVision();
    // 初始化指令模式选择
    initializePromptSelect();
+   // 初始化时渲染历史记录列表
+   renderHistoryList();
  });
 
 // State variables
@@ -916,9 +919,9 @@ async function handleSendMessage() {
             const modelName = selectedModelConfig.name;
             const systemInstruction = systemInstructionInput.value;
 
+            // HTTP 模式下，如果没有当前会话ID，则创建一个新的
             if (!currentSessionId) {
-                currentSessionId = generateUniqueSessionId();
-                logMessage(`新会话开始，ID: ${currentSessionId}`, 'system');
+                generateNewSession();
             }
 
             // 构建消息内容，参考 OCR 项目的成功实践
@@ -1181,6 +1184,11 @@ client.on('turncomplete', () => {
         displayAudioMessage(audioUrl, duration, 'ai');
         audioDataBuffer = []; // 清空缓冲区
     }
+
+    // T15: 在WebSocket模式对话完成时保存历史
+    if (isConnected && !selectedModelConfig.isWebSocket) {
+        saveHistory();
+    }
 });
 
 client.on('error', (error) => {
@@ -1404,6 +1412,8 @@ async function processHttpStream(requestBody, apiKey) {
             }
             currentAIMessageContentDiv = null; // 重置
             logMessage('Turn complete (HTTP)', 'system');
+            // T15: 在HTTP模式对话完成时保存历史
+            saveHistory();
         }
 
     } catch (error) {
@@ -1982,12 +1992,17 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {void}
      */
     newChatButton.addEventListener('click', () => {
-        chatHistory = []; // 清空聊天历史
-        currentSessionId = null; // 重置会话ID
-        messageHistory.innerHTML = ''; // 清空显示区域
-        logMessage('新聊天已开始', 'system');
-        // 如果不需要完全刷新页面，可以移除这行
-        // location.reload();
+        // 仅在 HTTP 模式下启用历史记录功能
+        if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
+            generateNewSession();
+        } else {
+            // 对于 WebSocket 模式或未连接时，保持原有简单重置逻辑
+            chatHistory = [];
+            currentSessionId = null;
+            messageHistory.innerHTML = '';
+            logMessage('新聊天已开始', 'system');
+            showSystemMessage('实时模式不支持历史记录。');
+        }
     });
 
     /**
@@ -2068,13 +2083,240 @@ function isMobileDevice() {
 }
 
 /**
- * @function generateUniqueSessionId
- * @description 生成一个唯一的会话ID。
- * @returns {string} 唯一的会话ID字符串。
+ * @function getChatSessionMeta
+ * @description 从 localStorage 获取聊天会话元数据列表。
+ * @returns {Array<object>} 会话元数据数组，如果解析失败则返回空数组。
  */
-function generateUniqueSessionId() {
-    return 'session-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+function getChatSessionMeta() {
+    try {
+        const meta = localStorage.getItem('chat_session_meta');
+        return meta ? JSON.parse(meta) : [];
+    } catch (e) {
+        console.error('Failed to parse chat session meta:', e);
+        return [];
+    }
 }
+
+/**
+ * @function saveChatSessionMeta
+ * @description 将聊天会话元数据列表保存到 localStorage。
+ * @param {Array<object>} meta - 要保存的会话元数据数组。每个元素应包含 id, title, updatedAt 等。
+ */
+function saveChatSessionMeta(meta) {
+    try {
+        localStorage.setItem('chat_session_meta', JSON.stringify(meta));
+    } catch (e) {
+        console.error('Failed to save chat session meta:', e);
+    }
+}
+
+
+/**
+ * @function generateNewSession
+ * @description 生成一个新的聊天会话，此函数会生成一个新的会话ID，清空聊天记录和UI，
+ *              并更新localStorage中的会话元数据列表。
+ * @returns {void}
+ */
+function generateNewSession() {
+    chatHistory = []; // 清空内存中的聊天历史
+    currentSessionId = `session-${crypto.randomUUID()}`; // 使用 crypto.randomUUID() 生成新的会话ID
+    messageHistory.innerHTML = ''; // 清空聊天显示区域
+
+    // 更新或添加会话元数据
+    let sessions = getChatSessionMeta();
+    const now = new Date().toISOString();
+    const newSessionMeta = {
+        id: currentSessionId,
+        title: '新聊天', // 默认标题
+        updatedAt: now,
+        createdAt: now
+    };
+    sessions.unshift(newSessionMeta); // 将新会话添加到列表开头
+    saveChatSessionMeta(sessions);
+
+    logMessage(`新聊天已开始 (ID: ${currentSessionId})`, 'system');
+    renderHistoryList(); // 创建新会话后立即刷新历史列表
+}
+
+/**
+ * @function renderHistoryList
+ * @description 从localStorage读取会话元数据并将其渲染到历史记录面板中。
+ *              同时为每个列表项添加点击事件以加载会话。
+ */
+function renderHistoryList() {
+    const sessions = getChatSessionMeta();
+    historyContent.innerHTML = ''; // 清空现有列表
+
+    if (sessions.length === 0) {
+        historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
+        return;
+    }
+
+    const ul = document.createElement('ul');
+    ul.className = 'history-list';
+
+    sessions.forEach(session => {
+        const li = document.createElement('li');
+        li.className = 'history-item';
+        li.dataset.sessionId = session.id;
+        li.innerHTML = `
+            <span class="history-title">${session.title}</span>
+            <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
+        `;
+        li.addEventListener('click', () => loadSessionHistory(session.id));
+        ul.appendChild(li);
+    });
+
+    historyContent.appendChild(ul);
+}
+
+/**
+ * @function loadSessionHistory
+ * @description 根据会话ID从后端加载完整的聊天历史记录，并将其渲染到主聊天窗口。
+ * @param {string} sessionId - 要加载的会话ID。
+ */
+async function loadSessionHistory(sessionId) {
+    showToast(`正在加载会话: ${sessionId}`);
+    try {
+        const response = await fetch(`/api/history/load/${sessionId}`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `无法加载会话: ${response.statusText}`);
+        }
+        const sessionData = await response.json();
+
+        // 清理当前状态和UI
+        messageHistory.innerHTML = '';
+        
+        // 更新当前会话状态
+        currentSessionId = sessionData.sessionId;
+        chatHistory = sessionData.messages;
+
+        // 重新渲染聊天记录
+        chatHistory.forEach(message => {
+            if (message.role === 'user') {
+                // 用户消息可能包含文本和图片
+                const textPart = message.content.find(p => p.type === 'text')?.text || '';
+                const imagePart = message.content.find(p => p.type === 'image_url');
+                const file = imagePart ? { base64: imagePart.image_url.url, name: 'Loaded Image' } : null;
+                displayUserMessage(textPart, file);
+            } else if (message.role === 'assistant') {
+                // AI消息目前只处理文本
+                const aiMessage = createAIMessageElement();
+                aiMessage.rawMarkdownBuffer = message.content; // 假设 content 是字符串
+                aiMessage.markdownContainer.innerHTML = marked.parse(message.content);
+                 // 触发 MathJax 渲染
+                if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                    MathJax.startup.promise.then(() => {
+                        MathJax.typeset([aiMessage.markdownContainer]);
+                    }).catch((err) => console.error('MathJax typesetting failed:', err));
+                }
+            }
+        });
+
+        // 切换回聊天标签页
+        document.querySelector('.tab[data-mode="text"]').click();
+        showToast('会话加载成功！');
+
+    } catch (error) {
+        console.error('加载历史记录失败:', error);
+        showSystemMessage(`加载历史记录失败: ${error.message}`);
+    }
+}
+
+
+/**
+ * @function saveHistory
+ * @description 将当前会话的完整历史记录保存到后端，并在成功后更新本地元数据。
+ *              同时，此函数还包含在适当时机（第二次对话后）自动生成标题的逻辑 (T16)。
+ * @returns {Promise<void>}
+ */
+async function saveHistory() {
+    if (!currentSessionId || chatHistory.length === 0) {
+        return; // 如果没有会话ID或历史记录，则不执行任何操作
+    }
+
+    try {
+        const sessions = getChatSessionMeta();
+        const currentSessionMeta = sessions.find(s => s.id === currentSessionId);
+        if (!currentSessionMeta) return;
+
+        const now = new Date().toISOString();
+
+        // 1. 保存完整会话数据到后端
+        const response = await fetch('/api/history/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: currentSessionId,
+                title: currentSessionMeta.title,
+                createdAt: currentSessionMeta.createdAt,
+                updatedAt: now,
+                messages: chatHistory
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || '保存历史记录失败');
+        }
+
+        // 2. 更新本地元数据
+        currentSessionMeta.updatedAt = now;
+        saveChatSessionMeta(sessions);
+        renderHistoryList(); // 刷新列表以显示最新的更新时间
+
+        // 3. T16: 检查是否需要生成标题
+        // 条件：第二次对话完成时（历史记录中有2条消息：1用户+1助手），且标题是默认的“新聊天”
+        if (chatHistory.length === 2 && currentSessionMeta.title === '新聊天') {
+            generateTitleForSession(currentSessionId, chatHistory);
+        }
+
+    } catch (error) {
+        console.error('保存历史记录失败:', error);
+        showSystemMessage(`保存历史记录失败: ${error.message}`);
+    }
+}
+
+/**
+ * @function generateTitleForSession
+ * @description 为指定的会话异步生成标题，并更新本地元数据和UI。
+ * @param {string} sessionId - 需要生成标题的会话ID。
+ * @param {Array<object>} messages - 用于生成标题的消息列表。
+ */
+async function generateTitleForSession(sessionId, messages) {
+    try {
+        const response = await fetch('/api/history/generate-title', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, messages })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || '生成标题失败');
+        }
+
+        const { title } = await response.json();
+
+        if (title) {
+            // 更新 localStorage 中的元数据
+            const sessions = getChatSessionMeta();
+            const sessionToUpdate = sessions.find(s => s.id === sessionId);
+            if (sessionToUpdate) {
+                sessionToUpdate.title = title;
+                saveChatSessionMeta(sessions);
+                // 重新渲染历史列表以显示新标题
+                renderHistoryList();
+                showToast('会话标题已生成');
+            }
+        }
+    } catch (error) {
+        console.error('生成标题失败:', error);
+        // 此处失败不打扰用户，仅在控制台记录
+    }
+}
+
 
 /**
  * 检查浏览器兼容性并显示警告。
