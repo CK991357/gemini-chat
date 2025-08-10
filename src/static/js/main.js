@@ -2174,13 +2174,22 @@ function generateNewSession() {
  *              同时为每个列表项添加点击事件以加载会话。
  */
 function renderHistoryList() {
-    const sessions = getChatSessionMeta();
+    let sessions = getChatSessionMeta();
     historyContent.innerHTML = ''; // 清空现有列表
 
     if (sessions.length === 0) {
         historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
         return;
     }
+
+    // 优化排序：置顶的会话在前，然后按 updatedAt 倒序排列
+    sessions.sort((a, b) => {
+        // 置顶的会话排在前面
+        if (a.is_pinned && !b.is_pinned) return -1;
+        if (!a.is_pinned && b.is_pinned) return 1;
+        // 未置顶的会话或都置顶/都未置顶的会话，按 updatedAt 倒序排列
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
 
     const ul = document.createElement('ul');
     ul.className = 'history-list';
@@ -2189,11 +2198,102 @@ function renderHistoryList() {
         const li = document.createElement('li');
         li.className = 'history-item';
         li.dataset.sessionId = session.id;
+        // 添加 is-pinned 类，如果会话已置顶
+        if (session.is_pinned) {
+            li.classList.add('is-pinned');
+        }
         li.innerHTML = `
-            <span class="history-title">${session.title}</span>
-            <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
+            <div class="history-info">
+                <span class="history-title">${session.title}</span>
+                <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
+            </div>
+            <div class="history-actions">
+                ${session.is_pinned ? '<span class="material-symbols-outlined pinned-icon">push_pin</span>' : ''}
+                <button class="material-symbols-outlined history-options-button">more_vert</button>
+                <div class="history-options-menu" style="display: none;">
+                    <button class="menu-item" data-action="toggle-pin">${session.is_pinned ? '取消置顶' : '置顶'}</button>
+                    <button class="menu-item" data-action="edit-title">编辑标题</button>
+                    <button class="menu-item" data-action="delete">删除</button>
+                </div>
+            </div>
         `;
-        li.addEventListener('click', () => loadSessionHistory(session.id));
+        // 为整个历史项添加点击事件，用于加载会话
+        li.addEventListener('click', (event) => {
+            // 阻止事件冒泡到操作按钮
+            if (!event.target.closest('.history-actions')) {
+                loadSessionHistory(session.id);
+            }
+        });
+
+        // 移动端长按事件，用于显示操作菜单
+        let longPressTimer;
+        const LONG_PRESS_DURATION = 500; // 500毫秒视为长按
+
+        li.addEventListener('touchstart', (event) => {
+            // 记录触摸开始时间
+            const touchStartTime = Date.now();
+            longPressTimer = setTimeout(() => {
+                // 只有在长按时间达到后才阻止默认行为，避免影响正常滚动
+                event.preventDefault(); // 阻止默认的触摸行为，如滚动和点击
+                // 触发菜单显示逻辑
+                optionsMenu.style.display = 'block';
+                // 阻止事件冒泡到 li，避免触发 loadSessionHistory
+                event.stopPropagation();
+                // 确保点击其他地方时菜单关闭
+                document.addEventListener('click', (e) => {
+                    if (!optionsMenu.contains(e.target) && !optionsButton.contains(e.target)) {
+                        optionsMenu.style.display = 'none';
+                    }
+                }, { once: true });
+            }, LONG_PRESS_DURATION);
+        }, { passive: false }); // 将 passive 设置为 false，以便在需要时调用 preventDefault()
+
+        li.addEventListener('touchend', () => {
+            clearTimeout(longPressTimer);
+        });
+
+        li.addEventListener('touchmove', () => {
+            clearTimeout(longPressTimer);
+        });
+
+        // 为操作按钮添加事件监听器
+        const optionsButton = li.querySelector('.history-options-button');
+        const optionsMenu = li.querySelector('.history-options-menu');
+
+        optionsButton.addEventListener('click', (event) => {
+            event.stopPropagation(); // 阻止事件冒泡到 li，避免触发 loadSessionHistory
+            // 切换菜单的显示状态
+            optionsMenu.style.display = optionsMenu.style.display === 'block' ? 'none' : 'block';
+            // 确保点击其他地方时菜单关闭
+            document.addEventListener('click', (e) => {
+                if (!optionsMenu.contains(e.target) && !optionsButton.contains(e.target)) {
+                    optionsMenu.style.display = 'none';
+                }
+            }, { once: true }); // 只监听一次
+        });
+
+        // 为菜单项添加事件监听器 (具体功能在后续任务中实现)
+        optionsMenu.querySelectorAll('.menu-item').forEach(menuItem => {
+            menuItem.addEventListener('click', (event) => {
+                event.stopPropagation(); // 阻止事件冒泡
+                optionsMenu.style.display = 'none'; // 关闭菜单
+                const action = menuItem.dataset.action;
+                switch (action) {
+                    case 'toggle-pin':
+                        togglePinSession(session.id, !session.is_pinned);
+                        break;
+                    case 'edit-title':
+                        editSessionTitle(session.id, session.title);
+                        break;
+                    case 'delete':
+                        deleteSession(session.id);
+                        break;
+                    default:
+                        console.warn(`未知操作: ${action}`);
+                }
+            });
+        });
+
         ul.appendChild(li);
     });
 
@@ -3653,5 +3753,134 @@ function updateSystemInstruction() {
         // (可选) 如果需要，也可以更新 CONFIG 对象，但这通常在连接时才需要
         // CONFIG.SYSTEM_INSTRUCTION.TEXT = selectedOption.prompt;
         logMessage(`指令模式已切换为: ${selectedOption.displayName}`, 'system');
+    }
+}
+
+/**
+ * @function togglePinSession
+ * @description 切换聊天会话的置顶状态。
+ * @param {string} sessionId - 要操作的会话ID。
+ * @param {boolean} isPinned - 目标置顶状态 (true 为置顶，false 为取消置顶)。
+ * @returns {Promise<void>}
+ */
+async function togglePinSession(sessionId, isPinned) {
+    showToast(`正在${isPinned ? '置顶' : '取消置顶'}会话...`);
+    try {
+        const response = await fetch(`/api/history/${sessionId}/pin`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_pinned: isPinned })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `无法${isPinned ? '置顶' : '取消置顶'}会话`);
+        }
+
+        // 更新本地元数据
+        let sessions = getChatSessionMeta();
+        const sessionToUpdate = sessions.find(s => s.id === sessionId);
+        if (sessionToUpdate) {
+            sessionToUpdate.is_pinned = isPinned;
+            sessionToUpdate.updatedAt = new Date().toISOString(); // 更新时间
+            // 将置顶的会话移到最前面，未置顶的会话按时间排序
+            sessions.sort((a, b) => {
+                if (a.is_pinned && !b.is_pinned) return -1;
+                if (!a.is_pinned && b.is_pinned) return 1;
+                return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+            });
+            saveChatSessionMeta(sessions);
+            renderHistoryList(); // 重新渲染列表
+            showToast(`会话已${isPinned ? '置顶' : '取消置顶'}！`);
+        }
+
+    } catch (error) {
+        console.error(`切换置顶状态失败:`, error);
+        showSystemMessage(`切换置顶状态失败: ${error.message}`);
+    }
+}
+
+/**
+ * @function editSessionTitle
+ * @description 编辑聊天会话的标题。
+ * @param {string} sessionId - 要编辑的会话ID。
+ * @param {string} currentTitle - 当前的会话标题。
+ * @returns {Promise<void>}
+ */
+async function editSessionTitle(sessionId, currentTitle) {
+    const newTitle = prompt('请输入新的会话标题:', currentTitle);
+    if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) {
+        showToast('标题未更改或已取消。');
+        return;
+    }
+
+    showToast('正在更新标题...');
+    try {
+        const response = await fetch(`/api/history/${sessionId}/title`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: newTitle.trim() })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || '无法更新标题');
+        }
+
+        // 更新本地元数据
+        let sessions = getChatSessionMeta();
+        const sessionToUpdate = sessions.find(s => s.id === sessionId);
+        if (sessionToUpdate) {
+            sessionToUpdate.title = newTitle.trim();
+            sessionToUpdate.updatedAt = new Date().toISOString(); // 更新时间
+            saveChatSessionMeta(sessions);
+            renderHistoryList(); // 重新渲染列表
+            showToast('会话标题已更新！');
+        }
+
+    } catch (error) {
+        console.error('编辑标题失败:', error);
+        showSystemMessage(`编辑标题失败: ${error.message}`);
+    }
+}
+
+/**
+ * @function deleteSession
+ * @description 删除一个聊天会话。
+ * @param {string} sessionId - 要删除的会话ID。
+ * @returns {Promise<void>}
+ */
+async function deleteSession(sessionId) {
+    if (!confirm('确定要删除此聊天会话吗？此操作不可撤销。')) {
+        showToast('删除已取消。');
+        return;
+    }
+
+    showToast('正在删除会话...');
+    try {
+        const response = await fetch(`/api/history/${sessionId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || '无法删除会话');
+        }
+
+        // 从本地元数据中移除
+        let sessions = getChatSessionMeta();
+        sessions = sessions.filter(s => s.id !== sessionId);
+        saveChatSessionMeta(sessions);
+        renderHistoryList(); // 重新渲染列表
+        showToast('会话已删除！');
+
+        // 如果删除的是当前正在查看的会话，则清空主聊天区域并开始新会话
+        if (currentSessionId === sessionId) {
+            generateNewSession();
+        }
+
+    } catch (error) {
+        console.error('删除会话失败:', error);
+        showSystemMessage(`删除会话失败: ${error.message}`);
     }
 }

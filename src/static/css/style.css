@@ -1759,3 +1759,149 @@ body.dark-mode .highlight-box {
     font-size: 12px;
     color: var(--text-secondary-color);
 }
+
+/* 历史记录列表项的布局 */
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    position: relative; /* 用于定位操作菜单 */
+}
+
+.history-item:hover {
+    background-color: var(--bg-color);
+}
+
+.history-info {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 确保标题和日期不会溢出 */
+}
+
+.history-title {
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 5px;
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-date {
+    font-size: 12px;
+    color: var(--text-secondary-color);
+}
+
+/* 历史记录操作区域 */
+.history-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px; /* 图标和按钮之间的间距 */
+    position: relative; /* 用于定位下拉菜单 */
+    flex-shrink: 0; /* 防止被压缩 */
+}
+
+/* 置顶图标 */
+.pinned-icon {
+    color: var(--primary-color); /* 置顶图标颜色 */
+    font-size: 20px;
+    margin-right: 5px;
+}
+
+/* 置顶的历史项的特殊样式 */
+.history-item.is-pinned {
+    background-color: rgba(var(--primary-color-rgb), 0.1); /* 浅色背景 */
+    border-left: 4px solid var(--primary-color); /* 左侧强调边框 */
+    padding-left: 11px; /* 调整内边距以适应边框 */
+}
+
+/* 历史记录操作按钮 (more_vert) */
+.history-options-button {
+    background: none;
+    border: none;
+    color: var(--text-secondary-color);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 50%;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.history-options-button:hover {
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    color: var(--primary-color);
+}
+
+/* 历史记录操作菜单 */
+.history-options-menu {
+    position: absolute;
+    top: 100%; /* 位于按钮下方 */
+    right: 0;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px var(--shadow-color);
+    min-width: 120px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 确保圆角 */
+}
+
+.history-options-menu .menu-item {
+    background: none;
+    border: none;
+    padding: 10px 15px;
+    text-align: left;
+    width: 100%;
+    cursor: pointer;
+    color: var(--text-color);
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.history-options-menu .menu-item:hover {
+    background-color: var(--bg-color);
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .history-item {
+        padding: 10px;
+    }
+
+    .history-title {
+        font-size: 14px;
+    }
+
+    .history-date {
+        font-size: 11px;
+    }
+
+    .history-options-button {
+        font-size: 18px;
+        padding: 3px;
+    }
+
+    .pinned-icon {
+        font-size: 18px;
+    }
+
+    .history-options-menu {
+        min-width: 100px;
+    }
+
+    .history-options-menu .menu-item {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+}

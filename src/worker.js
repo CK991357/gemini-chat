@@ -605,8 +605,13 @@ async function handleHistoryRequest(request, env) {
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
+      // 确保 sessionData 包含 is_pinned 字段，如果不存在则默认为 false
+      const dataToSave = {
+        ...sessionData,
+        is_pinned: sessionData.is_pinned === true // 确保是布尔值
+      };
       const key = `history:${sessionData.sessionId}`;
-      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(sessionData));
+      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(dataToSave));
       return new Response(JSON.stringify({ status: 'success' }), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
@@ -634,12 +639,118 @@ async function handleHistoryRequest(request, env) {
         });
       }
 
-      return new Response(sessionData, {
+      const parsedSessionData = JSON.parse(sessionData);
+      // 确保 is_pinned 字段存在，如果不存在则默认为 false
+      if (typeof parsedSessionData.is_pinned === 'undefined') {
+        parsedSessionData.is_pinned = false;
+      }
+      return new Response(JSON.stringify(parsedSessionData), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     } catch (error) {
       console.error('Failed to load history:', error);
       return new Response(JSON.stringify({ error: 'Failed to load history', details: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  // 路由: 置顶/取消置顶会话
+  const pinMatch = path.match(/^\/api\/history\/(.+)\/pin$/);
+  if (pinMatch && request.method === 'PATCH') {
+    try {
+      const sessionId = pinMatch[1];
+      const key = `history:${sessionId}`;
+      const existingData = await env.GEMINICHAT_HISTORY_KV.get(key);
+
+      if (existingData === null) {
+        return new Response(JSON.stringify({ error: 'Session not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      const sessionData = JSON.parse(existingData);
+      const { is_pinned } = await request.json();
+
+      if (typeof is_pinned !== 'boolean') {
+        return new Response(JSON.stringify({ error: 'Invalid value for is_pinned, must be boolean' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      sessionData.is_pinned = is_pinned;
+      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(sessionData));
+
+      return new Response(JSON.stringify({ status: 'success', is_pinned: sessionData.is_pinned }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (error) {
+      console.error('Failed to update pin status:', error);
+      return new Response(JSON.stringify({ error: 'Failed to update pin status', details: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  // 路由: 编辑会话标题
+  const titleMatch = path.match(/^\/api\/history\/(.+)\/title$/);
+  if (titleMatch && request.method === 'PATCH') {
+    try {
+      const sessionId = titleMatch[1];
+      const key = `history:${sessionId}`;
+      const existingData = await env.GEMINICHAT_HISTORY_KV.get(key);
+
+      if (existingData === null) {
+        return new Response(JSON.stringify({ error: 'Session not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      const sessionData = JSON.parse(existingData);
+      const { title } = await request.json();
+
+      if (typeof title !== 'string' || title.trim().length === 0 || title.length > 50) { // 标题长度限制
+        return new Response(JSON.stringify({ error: 'Invalid title provided. Title must be a non-empty string up to 50 characters.' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      sessionData.current_title = title.trim(); // 更新标题
+      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(sessionData));
+
+      return new Response(JSON.stringify({ status: 'success', new_title: sessionData.current_title }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (error) {
+      console.error('Failed to update title:', error);
+      return new Response(JSON.stringify({ error: 'Failed to update title', details: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  // 路由: 删除会话
+  const deleteMatch = path.match(/^\/api\/history\/(.+)$/);
+  if (deleteMatch && request.method === 'DELETE') {
+    try {
+      const sessionId = deleteMatch[1];
+      const key = `history:${sessionId}`;
+      await env.GEMINICHAT_HISTORY_KV.delete(key);
+
+      return new Response(null, {
+        status: 204, // No Content
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (error) {
+      console.error('Failed to delete history:', error);
+      return new Response(JSON.stringify({ error: 'Failed to delete history', details: error.message }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
