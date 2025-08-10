@@ -5,10 +5,10 @@ import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
+import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
-import { VideoManager } from './video/video-manager.js';
 
 /**
  * @fileoverview Main entry point for the application.
@@ -87,6 +87,9 @@ const visionInputText = document.getElementById('vision-input-text');
 const visionAttachmentButton = document.getElementById('vision-attachment-button');
 const visionFileInput = document.getElementById('vision-file-input');
 const visionSendButton = document.getElementById('vision-send-button');
+
+// T3: 确保 flipCameraButton 存在
+const flipCameraButton = document.getElementById('flip-camera');
 
 
 // Load saved values from localStorage
@@ -212,8 +215,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
             // 确保在切换模式时停止所有媒体流
-            if (videoManager) {
-                stopVideo();
+            if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+                videoHandler.stopVideo();
             }
             if (screenRecorder) {
                 stopScreenSharing();
@@ -310,6 +313,24 @@ document.addEventListener('DOMContentLoaded', () => {
    });
    historyManager.init(); // 初始化并渲染历史列表
 
+   // T3: 初始化 VideoHandler
+   videoHandler = new VideoHandler({
+       elements: {
+           cameraButton: cameraButton,
+           stopVideoButton: stopVideoButton,
+           flipCameraButton: flipCameraButton, // 确保传递翻转按钮
+           fpsInput: fpsInput,
+           mediaPreviewsContainer: mediaPreviewsContainer,
+           videoPreviewContainer: videoPreviewContainer,
+           videoPreviewElement: videoPreviewElement,
+       },
+       isConnected: () => isConnected, // 传递 isConnected 状态
+       client: client, // 传递 WebSocket 客户端实例
+       updateMediaPreviewsDisplay: updateMediaPreviewsDisplay, // 传递更新函数
+       logMessage: logMessage, // 传递日志函数
+       getSelectedModelConfig: () => selectedModelConfig, // 传递获取模型配置的函数
+   });
+
    // 初始化翻译功能
    initTranslation();
    // 初始化视觉功能
@@ -325,8 +346,6 @@ let audioCtx = null;
 let isConnected = false;
 let audioRecorder = null;
 let micStream = null; // 新增：用于保存麦克风流
-let isVideoActive = false;
-let videoManager = null;
 let isScreenSharing = false;
 let screenRecorder = null;
 let isUsingTool = false;
@@ -351,6 +370,7 @@ let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 let attachmentManager = null; // T2: 提升作用域
 let historyManager = null; // T10: 提升作用域
+let videoHandler = null; // T3: 新增 VideoHandler 实例
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -895,8 +915,8 @@ async function connectToWebsocket() {
         screenButton.disabled = true;
         updateConnectionStatus();
         
-        if (videoManager) {
-            stopVideo();
+        if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+            videoHandler.stopVideo();
         }
         
         if (screenRecorder) {
@@ -930,8 +950,8 @@ function disconnectFromWebsocket() {
     logMessage('已从服务器断开连接', 'system');
     updateConnectionStatus();
     
-    if (videoManager) {
-        stopVideo();
+    if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+        videoHandler.stopVideo();
     }
     
     if (screenRecorder) {
@@ -1683,8 +1703,8 @@ function resetUIForDisconnectedState() {
         isRecording = false;
         updateMicIcon();
     }
-    if (videoManager) {
-        stopVideo();
+    if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+        videoHandler.stopVideo();
     }
     if (screenRecorder) {
         stopScreenSharing();
@@ -1711,7 +1731,12 @@ function updateConnectionStatus() {
     const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
     mediaButtons.forEach(btn => {
         if (btn) {
-            btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
+            // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理，这里只处理其他按钮
+            if (btn === cameraButton) {
+                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
+            } else {
+                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
+            }
         }
     });
     
@@ -1727,9 +1752,12 @@ updateConnectionStatus(); // 初始更新连接状态
  * Updates the display of media preview containers.
  */
 function updateMediaPreviewsDisplay() {
-    if (isVideoActive || isScreenSharing) {
+    // 使用 videoHandler.getIsVideoActive() 获取摄像头状态
+    const isVideoActiveNow = videoHandler ? videoHandler.getIsVideoActive() : false;
+
+    if (isVideoActiveNow || isScreenSharing) {
         mediaPreviewsContainer.style.display = 'flex'; // 使用 flex 布局
-        if (isVideoActive) {
+        if (isVideoActiveNow) {
             videoPreviewContainer.style.display = 'block';
         } else {
             videoPreviewContainer.style.display = 'none';
@@ -1744,119 +1772,8 @@ function updateMediaPreviewsDisplay() {
     }
 }
 
-/**
- * Handles the video toggle. Starts or stops video streaming.
- * @returns {Promise<void>}
- */
-async function handleVideoToggle() {
-    if (!isVideoActive) {
-        // 开启摄像头逻辑...
-        Logger.info('Video toggle clicked, current state:', { isVideoActive, isConnected });
-        
-        localStorage.setItem('video_fps', fpsInput.value);
 
-        try {
-            // 显示预览容器
-            mediaPreviewsContainer.style.display = 'flex';
-            videoPreviewContainer.style.display = 'block';
 
-            Logger.info('Attempting to start video');
-            if (!videoManager) {
-                videoManager = new VideoManager(videoPreviewElement, { // 传入 videoPreviewElement
-                    width: 640,
-                    height: 480,
-                    facingMode: 'user' // 默认前置摄像头
-                });
-            }
-            
-            await videoManager.start(fpsInput.value,(frameData) => {
-                if (isConnected) {
-                    client.sendRealtimeInput([frameData]);
-                }
-            });
-
-            isVideoActive = true;
-            cameraButton.classList.add('active');
-            cameraButton.textContent = 'videocam_off'; // 直接修改按钮文本
-            updateMediaPreviewsDisplay(); // 更新预览显示
-            Logger.info('摄像头已启动');
-            logMessage('摄像头已启动', 'system');
-
-        } catch (error) {
-            Logger.error('摄像头错误:', error);
-            logMessage(`错误: ${error.message}`, 'system');
-            isVideoActive = false;
-            videoManager = null;
-            cameraButton.classList.remove('active');
-            cameraButton.textContent = 'videocam'; // 直接修改按钮文本
-            // 错误处理时隐藏预览
-            mediaPreviewsContainer.style.display = 'none';
-            videoPreviewContainer.style.display = 'none';
-            updateMediaPreviewsDisplay(); // 更新预览显示
-        }
-    } else {
-        // 修复：确保能通过控制台按钮关闭摄像头
-        stopVideo();
-    }
-}
-
-/**
- * Stops the video streaming.
- */
-function stopVideo() {
-    // 确保更新状态
-    isVideoActive = false;
-    // 修复：更新控制台按钮状态
-    cameraButton.textContent = 'videocam';
-    cameraButton.classList.remove('active');
-    
-    // 其余关闭逻辑保持不变...
-    Logger.info('Stopping video...');
-    if (videoManager) {
-        videoManager.stop(); // 调用 videoManager 自身的停止方法
-        // 关闭视频流
-        if (videoManager.stream) { // videoManager.stream 应该保存了 MediaStream 对象
-            videoManager.stream.getTracks().forEach(track => track.stop());
-        }
-        videoManager = null; // 清空 videoManager 引用
-    }
-    // 停止时隐藏预览
-    mediaPreviewsContainer.style.display = 'none';
-    videoPreviewContainer.style.display = 'none';
-    updateMediaPreviewsDisplay(); // 更新预览显示
-    logMessage('摄像头已停止', 'system');
-}
-
-cameraButton.addEventListener('click', () => {
-    if (isConnected) handleVideoToggle();
-});
-stopVideoButton.addEventListener('click', stopVideo); // 绑定新的停止视频按钮
-
-// 获取预览窗中的翻转按钮
-const flipCameraButton = document.getElementById('flip-camera');
-
-// 绑定翻转按钮事件（确保在DOM加载完成后执行）
-// 仅在非触屏设备上绑定 click 事件，避免与移动端 touchstart 冲突
-if (!('ontouchstart' in window)) {
-    flipCameraButton.addEventListener('click', async () => {
-        if (videoManager) {
-            flipCameraButton.disabled = true; // 禁用按钮防止重复点击
-            try {
-                await videoManager.flipCamera();
-                logMessage('摄像头已翻转', 'system');
-            } catch (error) {
-                logMessage(`翻转摄像头失败: ${error.message}`, 'error');
-                console.error('翻转摄像头失败:', error);
-            } finally {
-                flipCameraButton.disabled = false; // 重新启用按钮
-            }
-        } else {
-            logMessage('摄像头未激活，无法翻转', 'system');
-        }
-    });
-}
-
-cameraButton.disabled = true;
 
 /**
  * Handles the screen share toggle. Starts or stops screen sharing.
@@ -1957,12 +1874,6 @@ screenButton.disabled = true;
  * Initializes mobile-specific event handlers.
  */
 function initMobileHandlers() {
-    // 移动端摄像头按钮
-    document.getElementById('camera-button').addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        if (isConnected) handleVideoToggle();
-    });
-    
     // 移动端屏幕共享按钮
     document.getElementById('screen-button').addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -1973,26 +1884,6 @@ function initMobileHandlers() {
     document.getElementById('mic-button').addEventListener('touchstart', (e) => {
         e.preventDefault();
         if (isConnected) handleMicToggle();
-    });
-    
-    // 移动端翻转摄像头
-    document.getElementById('flip-camera').addEventListener('touchstart', async (e) => {
-        e.preventDefault();
-        if (videoManager) {
-            const flipCameraButton = document.getElementById('flip-camera');
-            flipCameraButton.disabled = true; // 禁用按钮防止重复点击
-            try {
-                await videoManager.flipCamera();
-                logMessage('摄像头已翻转', 'system');
-            } catch (error) {
-                logMessage(`翻转摄像头失败: ${error.message}`, 'error');
-                console.error('翻转摄像头失败:', error);
-            } finally {
-                flipCameraButton.disabled = false; // 重新启用按钮
-            }
-        } else {
-            logMessage('摄像头未激活，无法翻转', 'system');
-        }
     });
     
     /**
@@ -2250,8 +2141,8 @@ function initTranslation() {
     chatModeBtn.classList.remove('active');
     if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
     
-    // 确保停止所有媒体流
-    if (videoManager) stopVideo();
+    // 确保在切换模式时停止所有媒体流
+    if (videoHandler && videoHandler.getIsVideoActive()) videoHandler.stopVideo(); // T3: 使用 videoHandler 停止视频
     if (screenRecorder) stopScreenSharing();
     // 翻译模式下显示语音输入按钮
     if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'inline-flex'; // 使用 inline-flex 保持 Material Symbols 的对齐
@@ -2297,7 +2188,7 @@ function initTranslation() {
     chatModeBtn.classList.remove('active'); // 确保聊天按钮也取消激活
     if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
     // 媒体流停止
-    if (videoManager) stopVideo();
+    if (videoHandler && videoHandler.getIsVideoActive()) videoHandler.stopVideo(); // T3: 使用 videoHandler 停止视频
     if (screenRecorder) stopScreenSharing();
 
     // 日志模式下隐藏语音输入按钮
@@ -2325,7 +2216,7 @@ function initTranslation() {
       chatModeBtn.classList.remove('active');
 
       // 确保停止所有媒体流
-      if (videoManager) stopVideo();
+      if (videoHandler && videoHandler.getIsVideoActive()) videoHandler.stopVideo(); // T3: 使用 videoHandler 停止视频
       if (screenRecorder) stopScreenSharing();
     });
   }
@@ -3215,4 +3106,3 @@ async function handleTranslationOcr(event) {
         event.target.value = '';
     }
 }
-
