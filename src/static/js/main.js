@@ -1,3 +1,4 @@
+import { AttachmentManager } from './attachments/file-attachment.js'; // T2 新增
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
@@ -256,13 +257,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
    // 附件按钮事件监听 (只绑定一次)
-   attachmentButton.addEventListener('click', () => fileInput.click());
-   fileInput.addEventListener('change', handleFileAttachment);
+   // T2: 初始化附件管理器
+   const attachmentManager = new AttachmentManager({
+       chatPreviewsContainer: fileAttachmentPreviews,
+       visionPreviewsContainer: visionAttachmentPreviews,
+       showToast: showToast,
+       showSystemMessage: showSystemMessage
+   });
 
+   // 附件按钮事件监听 (只绑定一次)
+   attachmentButton.addEventListener('click', () => fileInput.click());
+   fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
+ 
    // 视觉模型附件按钮事件监听
    visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
-   visionFileInput.addEventListener('change', (event) => handleFileAttachment(event, 'vision'));
-   visionSendButton.addEventListener('click', handleSendVisionMessage);
+   visionFileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
+   visionSendButton.addEventListener('click', () => handleSendVisionMessage(attachmentManager)); // T2: 传入管理器
  
    // 初始化翻译功能
    initTranslation();
@@ -304,8 +314,6 @@ let chatAudioRecorder = null; // 聊天模式下的 AudioRecorder 实例
 let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
-let attachedFile = null; // 新增：用于存储待发送的附件信息
-let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
 let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 let activeOptionsMenu = null; // 新增：用于跟踪当前打开的历史记录操作菜单
 
@@ -899,8 +907,9 @@ function disconnectFromWebsocket() {
 /**
  * Handles sending a text message.
  */
-async function handleSendMessage() {
+async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     const message = messageInput.value.trim();
+    const attachedFile = attachmentManager.getAttachedFile(); // T2: 从管理器获取
     // 如果没有文本消息，但有附件，也允许发送
     if (!message && !attachedFile) return;
 
@@ -921,7 +930,7 @@ async function handleSendMessage() {
         // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
         if (attachedFile) {
             showSystemMessage('实时模式尚不支持文件上传。');
-            clearAttachedFile(); // 清除附件
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
             return;
         }
         client.send({ text: message });
@@ -953,7 +962,7 @@ async function handleSendMessage() {
             });
 
             // 清除附件（发送后）
-            clearAttachedFile();
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
 
             let requestBody = {
                 model: modelName,
@@ -1448,7 +1457,7 @@ client.on('message', (message) => {
     }
 });
 
-sendButton.addEventListener('click', handleSendMessage);
+sendButton.addEventListener('click', () => handleSendMessage(attachmentManager)); // T2: 传入管理器
 
 /**
  * @function handleInterruptPlayback
@@ -3140,179 +3149,11 @@ export function showSystemMessage(message) {
     scrollToBottom();
 }
 
-/**
- * ----------------------------------------------------------------
- * 附件处理相关函数
- * ----------------------------------------------------------------
- */
-
-async function handleFileAttachment(event, mode = 'chat') {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    const previewsContainer = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
-    const fileList = mode === 'vision' ? visionAttachedFiles : [attachedFile]; // a bit of a hack for single vs multi file
-
-    for (const file of files) {
-        // 检查文件类型和大小
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
-        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-            showSystemMessage(`不支持的文件类型: ${file.type}。`);
-            continue;
-        }
-        if (file.size > 20 * 1024 * 1024) { // 20MB 大小限制
-            showSystemMessage('文件大小不能超过 20MB。');
-            continue;
-        }
-
-        try {
-            const base64String = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-                reader.readAsDataURL(file);
-            });
-
-            const fileData = {
-                name: file.name,
-                type: file.type,
-                base64: base64String
-            };
-
-            if (mode === 'vision') {
-                visionAttachedFiles.push(fileData);
-                displayFilePreview({
-                    type: file.type.startsWith('image/') ? 'image' : 'video',
-                    src: base64String,
-                    name: file.name,
-                    mode: 'vision',
-                    index: visionAttachedFiles.length - 1
-                });
-            } else {
-                // Chat mode currently only supports one attachment
-                clearAttachedFile(); // Clear previous before adding new one
-                attachedFile = fileData;
-                displayFilePreview({
-                    type: file.type.startsWith('image/') ? 'image' : 'pdf',
-                    src: base64String,
-                    name: file.name,
-                    mode: 'chat'
-                });
-            }
-            showToast(`文件已附加: ${file.name}`);
-
-        } catch (error) {
-            console.error('处理文件时出错:', error);
-            showSystemMessage(`处理文件失败: ${error.message}`);
-        }
-    }
-
-    // 重置 file input 以便可以再次选择同一个文件
-    event.target.value = '';
-}
-
-/**
- * @function displayFilePreview
- * @description 在预览区域显示选定文件的预览。
- * @param {object} options - 预览选项。
- * @param {string} options.type - 预览类型 ('image' 或 'canvas')。
- * @param {string} [options.src] - 图像的 Base64 数据 URL (如果 type 是 'image')。
- * @param {HTMLCanvasElement} [options.canvas] - Canvas 元素 (如果 type 是 'canvas')。
- * @param {string} options.name - 文件名。
- */
-function displayFilePreview({ type, src, name, mode, index }) {
-    const container = mode === 'vision' ? visionAttachmentPreviews : fileAttachmentPreviews;
-    
-    // Clear previous preview in chat mode
-    if (mode === 'chat') {
-        container.innerHTML = '';
-    }
-
-    const previewCard = document.createElement('div');
-    previewCard.className = 'file-preview-card';
-    previewCard.title = name;
-    if (mode === 'vision') {
-        previewCard.dataset.index = index;
-    }
-
-    let previewElement;
-    if (type.startsWith('image')) {
-        previewElement = document.createElement('img');
-        previewElement.src = src;
-        previewElement.alt = name;
-    } else if (type.startsWith('video')) {
-        previewElement = document.createElement('video');
-        previewElement.src = src;
-        previewElement.alt = name;
-        previewElement.muted = true;
-        previewElement.autoplay = true;
-        previewElement.loop = true;
-        previewElement.playsInline = true;
-    } else { // PDF or other
-        previewElement = document.createElement('div');
-        previewElement.className = 'file-placeholder';
-        const icon = document.createElement('span');
-        icon.className = 'material-symbols-outlined';
-        icon.textContent = 'description'; // PDF icon
-        const text = document.createElement('p');
-        text.textContent = name;
-        previewElement.appendChild(icon);
-        previewElement.appendChild(text);
-    }
 
 
-    const closeButton = document.createElement('button');
-    closeButton.className = 'close-button material-symbols-outlined';
-    closeButton.textContent = 'close';
-    closeButton.onclick = (e) => {
-        e.stopPropagation();
-        if (mode === 'vision') {
-            removeVisionAttachment(index);
-        } else {
-            clearAttachedFile();
-        }
-    };
-
-    previewCard.appendChild(previewElement);
-    previewCard.appendChild(closeButton);
-    container.appendChild(previewCard);
-}
-
-/**
- * @function clearAttachedFile
- * @description 清除已附加的文件状态和预览。
- */
-function clearAttachedFile(mode = 'chat') {
-    if (mode === 'vision') {
-        visionAttachedFiles = [];
-        visionAttachmentPreviews.innerHTML = '';
-    } else {
-        attachedFile = null;
-        fileAttachmentPreviews.innerHTML = '';
-    }
-}
-
-
-
-
-function removeVisionAttachment(indexToRemove) {
-    visionAttachedFiles.splice(indexToRemove, 1);
-    // Re-render all previews to correctly update indices
-    visionAttachmentPreviews.innerHTML = '';
-    visionAttachedFiles.forEach((file, index) => {
-        displayFilePreview({
-            type: file.type,
-            src: file.base64,
-            name: file.name,
-            mode: 'vision',
-            index: index
-        });
-    });
-}
-
-
-async function handleSendVisionMessage() {
+async function handleSendVisionMessage(attachmentManager) { // T2: 传入管理器
     const text = visionInputText.value.trim();
+    const visionAttachedFiles = attachmentManager.getVisionAttachedFiles(); // T2: 从管理器获取
     if (!text && visionAttachedFiles.length === 0) {
         showToast('请输入文本或添加附件。');
         return;
@@ -3336,7 +3177,7 @@ async function handleSendVisionMessage() {
 
     // 清理输入
     visionInputText.value = '';
-    clearAttachedFile('vision');
+    attachmentManager.clearAttachedFile('vision'); // T2: 使用管理器清除附件
 
     // 显示加载状态
     visionSendButton.disabled = true;
