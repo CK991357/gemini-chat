@@ -4,6 +4,7 @@ import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
+import { HistoryManager } from './history/history-manager.js';
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { Logger } from './utils/logger.js';
 import { ScreenRecorder } from './video/screen-recorder.js';
@@ -205,7 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!chatModeBtn.classList.contains('active')) {
                      historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
                 } else {
-                    renderHistoryList();
+                    historyManager.renderHistoryList();
                 }
             }
 
@@ -274,15 +275,48 @@ document.addEventListener('DOMContentLoaded', () => {
    visionFileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
    visionSendButton.addEventListener('click', () => handleSendVisionMessage(attachmentManager)); // T2: 传入管理器
  
+   // T10: 初始化 HistoryManager
+   historyManager = new HistoryManager({
+       elements: {
+           historyContent: historyContent,
+       },
+       updateChatUI: (sessionData) => {
+           messageHistory.innerHTML = '';
+           sessionData.messages.forEach(message => {
+               if (message.role === 'user') {
+                   const textPart = message.content.find(p => p.type === 'text')?.text || '';
+                   const imagePart = message.content.find(p => p.type === 'image_url');
+                   const file = imagePart ? { base64: imagePart.image_url.url, name: 'Loaded Image' } : null;
+                   displayUserMessage(textPart, file);
+               } else if (message.role === 'assistant') {
+                   const aiMessage = createAIMessageElement();
+                   aiMessage.rawMarkdownBuffer = message.content;
+                   aiMessage.markdownContainer.innerHTML = marked.parse(message.content);
+                   if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                       MathJax.startup.promise.then(() => {
+                           MathJax.typeset([aiMessage.markdownContainer]);
+                       }).catch((err) => console.error('MathJax typesetting failed:', err));
+                   }
+               }
+           });
+       },
+       getChatHistory: () => chatHistory,
+       setChatHistory: (newHistory) => { chatHistory = newHistory; },
+       getCurrentSessionId: () => currentSessionId,
+       setCurrentSessionId: (newId) => { currentSessionId = newId; },
+       showToast: showToast,
+       showSystemMessage: showSystemMessage,
+       logMessage: logMessage,
+   });
+   historyManager.init(); // 初始化并渲染历史列表
+
    // 初始化翻译功能
    initTranslation();
    // 初始化视觉功能
    initVision();
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
-   // 初始化时渲染历史记录列表
-   renderHistoryList();
- });
+  });
 
 // State variables
 let isRecording = false;
@@ -315,8 +349,8 @@ let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
-let activeOptionsMenu = null; // 新增：用于跟踪当前打开的历史记录操作菜单
 let attachmentManager = null; // T2: 提升作用域
+let historyManager = null; // T10: 提升作用域
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -917,7 +951,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     // 确保在处理任何消息之前，会话已经存在
     // 这是修复“新会话第一条消息不显示”问题的关键
     if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
-        generateNewSession();
+        historyManager.generateNewSession();
     }
 
     // 使用新的函数显示用户消息
@@ -1205,7 +1239,7 @@ client.on('turncomplete', () => {
 
     // T15: 在WebSocket模式对话完成时保存历史
     if (isConnected && !selectedModelConfig.isWebSocket) {
-        saveHistory();
+        historyManager.saveHistory();
     }
 });
 
@@ -1431,7 +1465,7 @@ async function processHttpStream(requestBody, apiKey) {
             currentAIMessageContentDiv = null; // 重置
             logMessage('Turn complete (HTTP)', 'system');
             // T15: 在HTTP模式对话完成时保存历史
-            saveHistory();
+            historyManager.saveHistory();
         }
 
     } catch (error) {
@@ -2013,7 +2047,7 @@ document.addEventListener('DOMContentLoaded', () => {
     newChatButton.addEventListener('click', () => {
         // 仅在 HTTP 模式下启用历史记录功能
         if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
-            generateNewSession();
+            historyManager.generateNewSession();
         } else {
             // 对于 WebSocket 模式或未连接时，保持原有简单重置逻辑
             chatHistory = [];
@@ -2101,342 +2135,10 @@ function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-/**
- * @function getChatSessionMeta
- * @description 从 localStorage 获取聊天会话元数据列表。
- * @returns {Array<object>} 会话元数据数组，如果解析失败则返回空数组。
- */
-function getChatSessionMeta() {
-    try {
-        const meta = localStorage.getItem('chat_session_meta');
-        return meta ? JSON.parse(meta) : [];
-    } catch (e) {
-        console.error('Failed to parse chat session meta:', e);
-        return [];
-    }
-}
-
-/**
- * @function saveChatSessionMeta
- * @description 将聊天会话元数据列表保存到 localStorage。
- * @param {Array<object>} meta - 要保存的会话元数据数组。每个元素应包含 id, title, updatedAt 等。
- */
-function saveChatSessionMeta(meta) {
-    try {
-        localStorage.setItem('chat_session_meta', JSON.stringify(meta));
-    } catch (e) {
-        console.error('Failed to save chat session meta:', e);
-    }
-}
 
 
-/**
- * @function generateNewSession
- * @description 生成一个新的聊天会话，此函数会生成一个新的会话ID，清空聊天记录和UI，
- *              并更新localStorage中的会话元数据列表。
- * @returns {void}
- */
-function generateNewSession() {
-    chatHistory = []; // 清空内存中的聊天历史
-    currentSessionId = `session-${crypto.randomUUID()}`; // 使用 crypto.randomUUID() 生成新的会话ID
-    messageHistory.innerHTML = ''; // 清空聊天显示区域
-
-    // 更新或添加会话元数据
-    let sessions = getChatSessionMeta();
-    const now = new Date().toISOString();
-    const newSessionMeta = {
-        id: currentSessionId,
-        title: '新聊天', // 默认标题
-        updatedAt: now,
-        createdAt: now
-    };
-    sessions.unshift(newSessionMeta); // 将新会话添加到列表开头
-    saveChatSessionMeta(sessions);
-
-    logMessage(`新聊天已开始 (ID: ${currentSessionId})`, 'system');
-    renderHistoryList(); // 创建新会话后立即刷新历史列表
-}
-
-/**
- * @function renderHistoryList
- * @description 从localStorage读取会话元数据并将其渲染到历史记录面板中。
- *              同时为每个列表项添加点击事件以加载会话。
- */
-function renderHistoryList() {
-    let sessions = getChatSessionMeta();
-    historyContent.innerHTML = ''; // 清空现有列表
-
-    if (sessions.length === 0) {
-        historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
-        return;
-    }
-
-    // 优化排序：置顶的会话在前，然后按 updatedAt 倒序排列
-    sessions.sort((a, b) => {
-        // 置顶的会话排在前面
-        if (a.is_pinned && !b.is_pinned) return -1;
-        if (!a.is_pinned && b.is_pinned) return 1;
-        // 未置顶的会话或都置顶/都未置顶的会话，按 updatedAt 倒序排列
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-
-    const ul = document.createElement('ul');
-    ul.className = 'history-list';
-
-    sessions.forEach(session => {
-        const li = document.createElement('li');
-        li.className = 'history-item';
-        li.dataset.sessionId = session.id;
-        // 添加 is-pinned 类，如果会话已置顶
-        if (session.is_pinned) {
-            li.classList.add('is-pinned');
-        }
-        li.innerHTML = `
-            <div class="history-info">
-                <span class="history-title">${session.title}</span>
-                <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
-            </div>
-            <div class="history-actions">
-                ${session.is_pinned ? '<span class="material-symbols-outlined pinned-icon">push_pin</span>' : ''}
-                <button class="material-symbols-outlined history-options-button">more_vert</button>
-                <div class="history-options-menu" style="display: none;">
-                    <button class="menu-item" data-action="toggle-pin">${session.is_pinned ? '取消置顶' : '置顶'}</button>
-                    <button class="menu-item" data-action="edit-title">编辑标题</button>
-                    <button class="menu-item" data-action="delete">删除</button>
-                </div>
-            </div>
-        `;
-        // 为整个历史项添加点击事件，用于加载会话
-        li.addEventListener('click', (event) => {
-            // 阻止事件冒泡到操作按钮
-            if (!event.target.closest('.history-actions')) {
-                loadSessionHistory(session.id);
-            }
-        });
 
 
-        // 为操作按钮添加事件监听器
-        const optionsButton = li.querySelector('.history-options-button');
-        const optionsMenu = li.querySelector('.history-options-menu');
-
-        optionsButton.addEventListener('click', (event) => {
-            event.stopPropagation(); // 阻止事件冒泡到 li，避免触发 loadSessionHistory
-            // 如果有其他菜单是打开的，先关闭它
-            if (activeOptionsMenu && activeOptionsMenu !== optionsMenu) {
-                activeOptionsMenu.style.display = 'none';
-            }
-
-            // 切换当前菜单的显示状态
-            optionsMenu.style.display = optionsMenu.style.display === 'block' ? 'none' : 'block';
-
-            // 更新当前激活的菜单
-            activeOptionsMenu = optionsMenu.style.display === 'block' ? optionsMenu : null;
-
-            // 确保点击其他地方时菜单关闭 (全局监听器，只添加一次)
-            document.removeEventListener('click', handleGlobalMenuClose); // 移除旧的监听器
-            if (activeOptionsMenu) {
-                document.addEventListener('click', handleGlobalMenuClose);
-            }
-        });
-
-        // 为菜单项添加事件监听器 (具体功能在后续任务中实现)
-        optionsMenu.querySelectorAll('.menu-item').forEach(menuItem => {
-            menuItem.addEventListener('click', (event) => {
-                event.stopPropagation(); // 阻止事件冒泡
-                optionsMenu.style.display = 'none'; // 关闭菜单
-                const action = menuItem.dataset.action;
-                switch (action) {
-                    case 'toggle-pin':
-                        togglePinSession(session.id, !session.is_pinned);
-                        break;
-                    case 'edit-title':
-                        editSessionTitle(session.id, session.title);
-                        break;
-                    case 'delete':
-                        deleteSession(session.id);
-                        break;
-                    default:
-                        console.warn(`未知操作: ${action}`);
-                }
-            });
-        });
-
-        ul.appendChild(li);
-    });
-
-    // 全局菜单关闭处理函数
-    function handleGlobalMenuClose(e) {
-        if (activeOptionsMenu && !activeOptionsMenu.contains(e.target) && !e.target.closest('.history-options-button')) {
-            activeOptionsMenu.style.display = 'none';
-            activeOptionsMenu = null;
-            document.removeEventListener('click', handleGlobalMenuClose);
-        }
-    }
-
-    historyContent.appendChild(ul);
-}
-
-/**
- * @function loadSessionHistory
- * @description 根据会话ID从后端加载完整的聊天历史记录，并将其渲染到主聊天窗口。
- * @param {string} sessionId - 要加载的会话ID。
- */
-async function loadSessionHistory(sessionId) {
-    showToast(`正在加载会话: ${sessionId}`);
-    try {
-        const response = await fetch(`/api/history/load/${sessionId}`);
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `无法加载会话: ${response.statusText}`);
-        }
-        const sessionData = await response.json();
-
-        // 清理当前状态和UI
-        messageHistory.innerHTML = '';
-        
-        // 更新当前会话状态
-        currentSessionId = sessionData.sessionId;
-        chatHistory = sessionData.messages;
-
-        // 重新渲染聊天记录
-        chatHistory.forEach(message => {
-            if (message.role === 'user') {
-                // 用户消息可能包含文本和图片
-                const textPart = message.content.find(p => p.type === 'text')?.text || '';
-                const imagePart = message.content.find(p => p.type === 'image_url');
-                const file = imagePart ? { base64: imagePart.image_url.url, name: 'Loaded Image' } : null;
-                displayUserMessage(textPart, file);
-            } else if (message.role === 'assistant') {
-                // AI消息目前只处理文本
-                const aiMessage = createAIMessageElement();
-                aiMessage.rawMarkdownBuffer = message.content; // 假设 content 是字符串
-                aiMessage.markdownContainer.innerHTML = marked.parse(message.content);
-                 // 触发 MathJax 渲染
-                if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                    MathJax.startup.promise.then(() => {
-                        MathJax.typeset([aiMessage.markdownContainer]);
-                    }).catch((err) => console.error('MathJax typesetting failed:', err));
-                }
-            }
-        });
-
-        // 切换回聊天标签页
-        document.querySelector('.tab[data-mode="text"]').click();
-        showToast('会话加载成功！');
-
-    } catch (error) {
-        console.error('加载历史记录失败:', error);
-        showSystemMessage(`加载历史记录失败: ${error.message}`);
-    }
-}
-
-
-/**
- * @function saveHistory
- * @description 将当前会话的完整历史记录保存到后端，并在成功后更新本地元数据。
- *              同时，此函数还包含在适当时机（第二次对话后）自动生成标题的逻辑 (T16)。
- * @returns {Promise<void>}
- */
-async function saveHistory() {
-    // 在函数开始时进行严格检查，确保关键变量存在
-    if (!currentSessionId || chatHistory.length === 0) {
-        return;
-    }
-
-    try {
-        let sessions = getChatSessionMeta(); // 确保获取最新会话列表
-        const now = new Date().toISOString();
-
-        // 查找并移除旧的会话元数据（如果存在）
-        const existingIndex = sessions.findIndex(s => s.id === currentSessionId);
-        let currentSessionMeta;
-
-        if (existingIndex !== -1) {
-            currentSessionMeta = sessions.splice(existingIndex, 1)[0]; // 移除并获取
-            currentSessionMeta.updatedAt = now; // 更新时间
-        } else {
-            // 如果是新会话（例如，第一次保存），则创建一个新的元数据对象
-            currentSessionMeta = {
-                id: currentSessionId,
-                title: '新聊天', // 默认标题
-                createdAt: now,
-                updatedAt: now
-            };
-        }
-
-        // 1. 保存完整会话数据到后端
-        const response = await fetch('/api/history/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId: currentSessionId,
-                title: currentSessionMeta.title,
-                createdAt: currentSessionMeta.createdAt,
-                updatedAt: now,
-                messages: chatHistory
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || '保存历史记录失败');
-        }
-
-        // 2. 将更新后的会话元数据添加到列表最前面
-        sessions.unshift(currentSessionMeta);
-        saveChatSessionMeta(sessions);
-        renderHistoryList(); // 刷新列表以显示最新的更新时间
-
-        // 3. T16: 检查是否需要生成标题
-        // 条件：第二次对话完成时（历史记录中有2条消息：1用户+1助手），且标题是默认的“新聊天”
-        if (chatHistory.length === 2 && currentSessionMeta.title === '新聊天') {
-            generateTitleForSession(currentSessionId, chatHistory);
-        }
-
-    } catch (error) {
-        console.error('保存历史记录失败:', error);
-        showSystemMessage(`保存历史记录失败: ${error.message}`);
-    }
-}
-
-/**
- * @function generateTitleForSession
- * @description 为指定的会话异步生成标题，并更新本地元数据和UI。
- * @param {string} sessionId - 需要生成标题的会话ID。
- * @param {Array<object>} messages - 用于生成标题的消息列表。
- */
-async function generateTitleForSession(sessionId, messages) {
-    try {
-        const response = await fetch('/api/history/generate-title', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId, messages })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || '生成标题失败');
-        }
-
-        const { title } = await response.json();
-
-        if (title) {
-            // 更新 localStorage 中的元数据
-            const sessions = getChatSessionMeta();
-            const sessionToUpdate = sessions.find(s => s.id === sessionId);
-            if (sessionToUpdate) {
-                sessionToUpdate.title = title;
-                saveChatSessionMeta(sessions);
-                // 重新渲染历史列表以显示新标题
-                renderHistoryList();
-                showToast('会话标题已生成');
-            }
-        }
-    } catch (error) {
-        console.error('生成标题失败:', error);
-        // 此处失败不打扰用户，仅在控制台记录
-    }
-}
 
 
 /**
@@ -3514,129 +3216,3 @@ async function handleTranslationOcr(event) {
     }
 }
 
-/**
- * @function togglePinSession
- * @description 切换聊天会话的置顶状态。
- * @param {string} sessionId - 要操作的会话ID。
- * @param {boolean} isPinned - 目标置顶状态 (true 为置顶，false 为取消置顶)。
- * @returns {Promise<void>}
- */
-async function togglePinSession(sessionId, isPinned) {
-    showToast(`正在${isPinned ? '置顶' : '取消置顶'}会话...`);
-    try {
-        const response = await fetch(`/api/history/${sessionId}/pin`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ is_pinned: isPinned })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `无法${isPinned ? '置顶' : '取消置顶'}会话`);
-        }
-
-        // 更新本地元数据
-        let sessions = getChatSessionMeta();
-        const sessionToUpdate = sessions.find(s => s.id === sessionId);
-        if (sessionToUpdate) {
-            sessionToUpdate.is_pinned = isPinned;
-            // 将置顶的会话移到最前面，未置顶的会话按时间排序
-            sessions.sort((a, b) => {
-                if (a.is_pinned && !b.is_pinned) return -1;
-                if (!a.is_pinned && b.is_pinned) return 1;
-                return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-            });
-            saveChatSessionMeta(sessions);
-            renderHistoryList(); // 重新渲染列表
-            showToast(`会话已${isPinned ? '置顶' : '取消置顶'}！`);
-        }
-
-    } catch (error) {
-        console.error(`切换置顶状态失败:`, error);
-        showSystemMessage(`切换置顶状态失败: ${error.message}`);
-    }
-}
-
-/**
- * @function editSessionTitle
- * @description 编辑聊天会话的标题。
- * @param {string} sessionId - 要编辑的会话ID。
- * @param {string} currentTitle - 当前的会话标题。
- * @returns {Promise<void>}
- */
-async function editSessionTitle(sessionId, currentTitle) {
-    const newTitle = prompt('请输入新的会话标题:', currentTitle);
-    if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) {
-        showToast('标题未更改或已取消。');
-        return;
-    }
-
-    showToast('正在更新标题...');
-    try {
-        const response = await fetch(`/api/history/${sessionId}/title`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: newTitle.trim() })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || '无法更新标题');
-        }
-
-        // 更新本地元数据
-        let sessions = getChatSessionMeta();
-        const sessionToUpdate = sessions.find(s => s.id === sessionId);
-        if (sessionToUpdate) {
-            sessionToUpdate.title = newTitle.trim();
-            saveChatSessionMeta(sessions);
-            renderHistoryList(); // 重新渲染列表
-            showToast('会话标题已更新！');
-        }
-
-    } catch (error) {
-        console.error('编辑标题失败:', error);
-        showSystemMessage(`编辑标题失败: ${error.message}`);
-    }
-}
-
-/**
- * @function deleteSession
- * @description 删除一个聊天会话。
- * @param {string} sessionId - 要删除的会话ID。
- * @returns {Promise<void>}
- */
-async function deleteSession(sessionId) {
-    if (!confirm('确定要删除此聊天会话吗？此操作不可撤销。')) {
-        showToast('删除已取消。');
-        return;
-    }
-
-    showToast('正在删除会话...');
-    try {
-        const response = await fetch(`/api/history/${sessionId}`, {
-            method: 'DELETE'
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || '无法删除会话');
-        }
-
-        // 从本地元数据中移除
-        let sessions = getChatSessionMeta();
-        sessions = sessions.filter(s => s.id !== sessionId);
-        saveChatSessionMeta(sessions);
-        renderHistoryList(); // 重新渲染列表
-        showToast('会话已删除！');
-
-        // 如果删除的是当前正在查看的会话，则清空主聊天区域并开始新会话
-        if (currentSessionId === sessionId) {
-            generateNewSession();
-        }
-
-    } catch (error) {
-        console.error('删除会话失败:', error);
-        showSystemMessage(`删除会话失败: ${error.message}`);
-    }
-}
