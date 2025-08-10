@@ -3770,7 +3770,6 @@ async function togglePinSession(sessionId, isPinned) {
         const sessionToUpdate = sessions.find(s => s.id === sessionId);
         if (sessionToUpdate) {
             sessionToUpdate.is_pinned = isPinned;
-            sessionToUpdate.updatedAt = new Date().toISOString(); // 更新时间
             // 将置顶的会话移到最前面，未置顶的会话按时间排序
             sessions.sort((a, b) => {
                 if (a.is_pinned && !b.is_pinned) return -1;
@@ -3820,7 +3819,6 @@ async function editSessionTitle(sessionId, currentTitle) {
         const sessionToUpdate = sessions.find(s => s.id === sessionId);
         if (sessionToUpdate) {
             sessionToUpdate.title = newTitle.trim();
-            sessionToUpdate.updatedAt = new Date().toISOString(); // 更新时间
             saveChatSessionMeta(sessions);
             renderHistoryList(); // 重新渲染列表
             showToast('会话标题已更新！');
