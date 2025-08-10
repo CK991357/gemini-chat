@@ -329,6 +329,7 @@ let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let attachedFile = null; // 新增：用于存储待发送的附件信息
 let visionAttachedFiles = []; // 新增：用于存储视觉模型待发送的多个附件信息
 let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
+let activeOptionsMenu = null; // 新增：用于跟踪当前打开的历史记录操作菜单
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -2225,36 +2226,6 @@ function renderHistoryList() {
             }
         });
 
-        // 移动端长按事件，用于显示操作菜单
-        let longPressTimer;
-        const LONG_PRESS_DURATION = 500; // 500毫秒视为长按
-
-        li.addEventListener('touchstart', (event) => {
-            // 记录触摸开始时间
-            const touchStartTime = Date.now();
-            longPressTimer = setTimeout(() => {
-                // 只有在长按时间达到后才阻止默认行为，避免影响正常滚动
-                event.preventDefault(); // 阻止默认的触摸行为，如滚动和点击
-                // 触发菜单显示逻辑
-                optionsMenu.style.display = 'block';
-                // 阻止事件冒泡到 li，避免触发 loadSessionHistory
-                event.stopPropagation();
-                // 确保点击其他地方时菜单关闭
-                document.addEventListener('click', (e) => {
-                    if (!optionsMenu.contains(e.target) && !optionsButton.contains(e.target)) {
-                        optionsMenu.style.display = 'none';
-                    }
-                }, { once: true });
-            }, LONG_PRESS_DURATION);
-        }, { passive: false }); // 将 passive 设置为 false，以便在需要时调用 preventDefault()
-
-        li.addEventListener('touchend', () => {
-            clearTimeout(longPressTimer);
-        });
-
-        li.addEventListener('touchmove', () => {
-            clearTimeout(longPressTimer);
-        });
 
         // 为操作按钮添加事件监听器
         const optionsButton = li.querySelector('.history-options-button');
@@ -2262,14 +2233,22 @@ function renderHistoryList() {
 
         optionsButton.addEventListener('click', (event) => {
             event.stopPropagation(); // 阻止事件冒泡到 li，避免触发 loadSessionHistory
-            // 切换菜单的显示状态
+            // 如果有其他菜单是打开的，先关闭它
+            if (activeOptionsMenu && activeOptionsMenu !== optionsMenu) {
+                activeOptionsMenu.style.display = 'none';
+            }
+
+            // 切换当前菜单的显示状态
             optionsMenu.style.display = optionsMenu.style.display === 'block' ? 'none' : 'block';
-            // 确保点击其他地方时菜单关闭
-            document.addEventListener('click', (e) => {
-                if (!optionsMenu.contains(e.target) && !optionsButton.contains(e.target)) {
-                    optionsMenu.style.display = 'none';
-                }
-            }, { once: true }); // 只监听一次
+
+            // 更新当前激活的菜单
+            activeOptionsMenu = optionsMenu.style.display === 'block' ? optionsMenu : null;
+
+            // 确保点击其他地方时菜单关闭 (全局监听器，只添加一次)
+            document.removeEventListener('click', handleGlobalMenuClose); // 移除旧的监听器
+            if (activeOptionsMenu) {
+                document.addEventListener('click', handleGlobalMenuClose);
+            }
         });
 
         // 为菜单项添加事件监听器 (具体功能在后续任务中实现)
@@ -2296,6 +2275,15 @@ function renderHistoryList() {
 
         ul.appendChild(li);
     });
+
+    // 全局菜单关闭处理函数
+    function handleGlobalMenuClose(e) {
+        if (activeOptionsMenu && !activeOptionsMenu.contains(e.target) && !e.target.closest('.history-options-button')) {
+            activeOptionsMenu.style.display = 'none';
+            activeOptionsMenu = null;
+            document.removeEventListener('click', handleGlobalMenuClose);
+        }
+    }
 
     historyContent.appendChild(ul);
 }
