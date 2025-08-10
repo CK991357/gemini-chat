@@ -1,6 +1,7 @@
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
 import { CONFIG } from './config/config.js';
+import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { Logger } from './utils/logger.js';
@@ -291,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
    // 初始化视觉功能
    initVision();
    // 初始化指令模式选择
-   initializePromptSelect();
+   initializePromptSelect(promptSelect, systemInstructionInput);
    // 初始化时渲染历史记录列表
    renderHistoryList();
  });
@@ -3587,38 +3588,6 @@ function initVision() {
 }
 
 /**
- * @function initializePromptSelect
- * @description 初始化指令模式下拉菜单，填充选项并设置事件监听器。
- */
-function initializePromptSelect() {
-    if (!promptSelect) return;
-
-    // 1. 清空现有选项
-    promptSelect.innerHTML = '';
-
-    // 2. 从配置填充选项
-    CONFIG.PROMPT_OPTIONS.forEach(option => {
-        const optionElement = document.createElement('option');
-        optionElement.value = option.id;
-        optionElement.textContent = option.displayName;
-        promptSelect.appendChild(optionElement);
-    });
-
-    // 3. 设置默认值并更新文本域
-    const savedPromptId = localStorage.getItem('selected_prompt_id') || CONFIG.DEFAULT_PROMPT_ID;
-    promptSelect.value = savedPromptId;
-    updateSystemInstruction();
-
-
-    // 4. 添加事件监听器
-    promptSelect.addEventListener('change', () => {
-        updateSystemInstruction();
-        // 保存用户的选择
-        localStorage.setItem('selected_prompt_id', promptSelect.value);
-    });
-}
-
-/**
  * @function toggleOcrButtonVisibility
  * @description 根据当前选择的翻译模型，决定是否显示OCR（图片识别）按钮。
  *              仅当选择的模型是 Gemini 系列时显示该按钮。
@@ -3723,24 +3692,6 @@ async function handleTranslationOcr(event) {
         translationOcrButton.disabled = false;
         // 重置文件输入，以便可以再次选择同一个文件
         event.target.value = '';
-    }
-}
-
-/**
- * @function updateSystemInstruction
- * @description 根据下拉菜单的当前选择，更新隐藏的 system-instruction 文本域的值。
- */
-function updateSystemInstruction() {
-    if (!promptSelect || !systemInstructionInput) return;
-
-    const selectedId = promptSelect.value;
-    const selectedOption = CONFIG.PROMPT_OPTIONS.find(option => option.id === selectedId);
-
-    if (selectedOption) {
-        systemInstructionInput.value = selectedOption.prompt;
-        // (可选) 如果需要，也可以更新 CONFIG 对象，但这通常在连接时才需要
-        // CONFIG.SYSTEM_INSTRUCTION.TEXT = selectedOption.prompt;
-        logMessage(`指令模式已切换为: ${selectedOption.displayName}`, 'system');
     }
 }
 
