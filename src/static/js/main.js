@@ -258,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
    // 附件按钮事件监听 (只绑定一次)
    // T2: 初始化附件管理器
-   const attachmentManager = new AttachmentManager({
+   attachmentManager = new AttachmentManager({ // T2: 初始化全局变量
        chatPreviewsContainer: fileAttachmentPreviews,
        visionPreviewsContainer: visionAttachmentPreviews,
        showToast: showToast,
@@ -316,6 +316,7 @@ let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的�
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
 let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 let activeOptionsMenu = null; // 新增：用于跟踪当前打开的历史记录操作菜单
+let attachmentManager = null; // T2: 提升作用域
 
 // Multimodal Client
 const client = new MultimodalLiveClient();
@@ -1507,7 +1508,7 @@ messageInput.addEventListener('keydown', (event) => {
         // 在 Windows/Linux 上，通常是 Shift + Enter 或 Ctrl + Enter
         if (event.shiftKey || event.ctrlKey || event.metaKey) {
             event.preventDefault(); // 阻止默认的换行行为
-            handleSendMessage();
+            handleSendMessage(attachmentManager); // T2: 传入管理器
         } else {
             // 允许默认的换行行为
             // 对于 textarea，单独的 Enter 键默认就是换行，所以这里不需要额外处理
