@@ -387,6 +387,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initVision();
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
+
+   // 翻译OCR按钮事件监听器
+   translationOcrButton.addEventListener('click', () => translationOcrInput.click());
+   translationOcrInput.addEventListener('change', handleTranslationOcr);
   });
 
 // State variables

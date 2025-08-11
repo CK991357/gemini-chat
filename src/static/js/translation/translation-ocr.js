@@ -10,7 +10,14 @@ import { Logger } from '../utils/logger.js';
  * @param {HTMLSelectElement} modelSelect - The model selection dropdown element.
  * @param {HTMLButtonElement} ocrButton - The OCR button element.
  */
-export function toggleOcrButtonVisibility(modelSelect, ocrButton) {
+export function toggleOcrButtonVisibility() {
+    const modelSelect = document.getElementById('translation-model-select');
+    const ocrButton = document.getElementById('translation-ocr-button');
+    if (!modelSelect || !ocrButton) {
+        Logger.warn('OCR 按钮或模型选择元素未找到。');
+        return;
+    }
+
     const selectedModel = modelSelect.value;
     // Show OCR button only for Gemini models which support image input
     if (selectedModel.startsWith('gemini-')) {
@@ -29,12 +36,23 @@ export function toggleOcrButtonVisibility(modelSelect, ocrButton) {
  * @param {HTMLSelectElement} modelSelect - The model selection dropdown element.
  * @returns {Promise<void>}
  */
-export async function handleTranslationOcr(event, inputTextarea, outputElement, ocrButton, modelSelect) {
+export async function handleTranslationOcr(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
         showToast('请上传图片文件。');
+        return;
+    }
+
+    const inputTextarea = document.getElementById('translation-input-text');
+    const outputElement = document.getElementById('translation-output-text');
+    const ocrButton = document.getElementById('translation-ocr-button');
+    const modelSelect = document.getElementById('translation-model-select');
+
+    if (!inputTextarea || !outputElement || !ocrButton || !modelSelect) {
+        Logger.error('OCR 相关 DOM 元素未找到。');
+        showToast('OCR 功能初始化失败，请刷新页面。');
         return;
     }
 

@@ -89,8 +89,8 @@ function populateModelSelect() {
 function attachEventListeners(handlers, showToast) {
     elements.translateButton.addEventListener('click', handleTranslation);
     elements.translationOcrButton.addEventListener('click', () => elements.translationOcrInput.click());
-    elements.translationOcrInput.addEventListener('change', (event) => handleTranslationOcr(event, elements.translationInputTextarea, elements.translationOutputText, elements.translationOcrButton, elements.translationModelSelect, showToast));
-    elements.translationModelSelect.addEventListener('change', () => toggleOcrButtonVisibility(elements.translationModelSelect, elements.translationOcrButton));
+    elements.translationOcrInput.addEventListener('change', handleTranslationOcr);
+    elements.translationModelSelect.addEventListener('change', toggleOcrButtonVisibility);
 
     elements.copyButton.addEventListener('click', () => {
         navigator.clipboard.writeText(elements.outputText.textContent).then(() => {
