@@ -1,5 +1,5 @@
-import { Logger } from '../utils/logger.js';
 import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
+import { Logger } from '../utils/logger.js';
 
 /**
  * @fileoverview Implements a screen recorder for capturing and processing screen frames.
