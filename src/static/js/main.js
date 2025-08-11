@@ -10,8 +10,6 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
-import { showSystemMessage, showToast } from './utils/ui-helpers.js';
-import { initVision } from './vision/vision-core.js'; // T8: 重新导入视觉功能
 
 /**
  * @fileoverview Main entry point for the application.
@@ -80,18 +78,15 @@ const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
 const translationOcrButton = document.getElementById('translation-ocr-button');
 const translationOcrInput = document.getElementById('translation-ocr-input');
 
-
-// 视觉模式相关 DOM 元素
+// 视觉模型相关 DOM 元素
 const visionModeBtn = document.getElementById('vision-mode-button');
 const visionContainer = document.querySelector('.vision-container');
 const visionMessageHistory = document.getElementById('vision-message-history');
-const visionSendButton = document.getElementById('vision-send-button');
-const visionMessageInput = document.getElementById('vision-input-text');
-const visionModelSelect = document.getElementById('vision-model-select');
 const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
+const visionInputText = document.getElementById('vision-input-text');
 const visionAttachmentButton = document.getElementById('vision-attachment-button');
 const visionFileInput = document.getElementById('vision-file-input');
-
+const visionSendButton = document.getElementById('vision-send-button');
 
 // T3: 确保 flipCameraButton 存在
 const flipCameraButton = document.getElementById('flip-camera');
@@ -179,8 +174,60 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 2. 子页面切换逻辑 (由新的 updateUIVisibility 函数统一管理)
-    // [Kilo Code 注]：此块已被移动到 DOMContentLoaded 监听器的末尾，以确保安全执行。
+    // 2. 模式切换逻辑 (文字聊天/系统日志)
+    modeTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.dataset.mode;
+
+            // 修正：在切换子模式前，先隐藏视觉模式容器（如果它处于激活状态）
+            if (visionContainer && visionContainer.classList.contains('active')) {
+                visionContainer.classList.remove('active');
+                // 同时取消视觉主模式按钮的激活状态
+                visionModeBtn.classList.remove('active');
+            }
+
+            // 移除所有 tab 和 chat-container 的 active 类
+            modeTabs.forEach(t => t.classList.remove('active'));
+            chatContainers.forEach(c => c.classList.remove('active'));
+
+            // 添加当前点击 tab 和对应 chat-container 的 active 类
+            tab.classList.add('active');
+            const targetContainer = document.querySelector(`.chat-container.${mode}-mode`);
+            if (targetContainer) {
+                targetContainer.classList.add('active');
+            }
+
+            // 特别处理历史记录的占位符
+            if (mode === 'history') {
+                // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
+                // 但为了保险起见，我们保留一个明确的检查
+                // 此处假设：如果用户刚才在视觉模式，那么历史记录应该显示占位符
+                // 一个简单的判断方法是检查 visionModeBtn 是否还有 active class (虽然我们上面移除了，但可以作为逻辑标记)
+                // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
+                // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
+                // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
+                if (!chatModeBtn.classList.contains('active')) {
+                     historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+                } else {
+                    historyManager.renderHistoryList();
+                }
+            }
+
+
+            // 确保在切换模式时停止所有媒体流
+            if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+                videoHandler.stopVideo();
+            }
+            if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
+                screenHandler.stopScreenSharing();
+            }
+            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
+            updateMediaPreviewsDisplay();
+        });
+    });
+
+    // 默认激活文字聊天模式
+    document.querySelector('.tab[data-mode="text"]').click();
 
     // 3. 日志显示控制逻辑
     toggleLogBtn.addEventListener('click', () => {
@@ -226,11 +273,10 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
  
- 
-   // 视觉模式附件按钮事件监听
+   // 视觉模型附件按钮事件监听
    visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
    visionFileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
- 
+   visionSendButton.addEventListener('click', () => handleSendVisionMessage(attachmentManager)); // T2: 传入管理器
  
    // T10: 初始化 HistoryManager
    historyManager = new HistoryManager({
@@ -306,11 +352,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const translationElements = {
         translationModeBtn: document.getElementById('translation-mode-button'),
         chatModeBtn: document.getElementById('chat-mode-button'),
-        visionModeBtn: visionModeBtn,
+        visionModeBtn: document.getElementById('vision-mode-button'),
         toggleLogBtn: document.getElementById('toggle-log'),
         translationContainer: document.querySelector('.translation-container'),
         chatContainer: document.querySelector('.chat-container.text-mode'),
-        visionContainer: visionContainer,
+        visionContainer: document.querySelector('.vision-container'),
         logContainer: document.querySelector('.chat-container.log-mode'),
         inputArea: document.querySelector('.input-area'),
         mediaPreviewsContainer: document.getElementById('media-previews'),
@@ -337,174 +383,11 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelTranslationRecording,
         resetRecordingState
     }, showToast);
-   // T8: 重新初始化视觉功能，并传入所有依赖
-   const visionDependencies = {
-       attachmentManager: attachmentManager,
-       visionMessageHistory: visionMessageHistory,
-       visionSendButton: visionSendButton,
-       visionMessageInput: visionMessageInput,
-       visionModelSelect: visionModelSelect,
-   };
-   initVision(visionDependencies);
-  // 初始化指令模式选择
-  initializePromptSelect({
-      promptSelectEl: promptSelect,
-      systemInstructionInputEl: systemInstructionInput,
-      onPromptChange: logMessage // 将 logMessage 作为回调
-  });
+    // 初始化视觉功能
+    initVision();
+   // 初始化指令模式选择
+   initializePromptSelect(promptSelect, systemInstructionInput);
 
-   // T8: 全新的、统一的UI状态管理逻辑
-   const translationModeBtn = document.getElementById('translation-mode-button');
-   const modeTabsContainer = document.querySelector('.mode-tabs');
-   const textContainer = document.querySelector('.chat-container.text-mode');
-   const logContainer = document.querySelector('.chat-container.log-mode');
-   const historyContainer = document.querySelector('.chat-container.history-mode');
-   const inputArea = document.querySelector('.input-area');
-
-   let currentMainMode = 'chat';
-   let currentSubMode = 'text';
-
-   function updateUIVisibility() {
-       // 1. 全部隐藏 (Clean Slate)
-       const allMainContainers = [visionContainer, translationElements.translationContainer, textContainer, logContainer, historyContainer];
-       allMainContainers.forEach(c => c?.classList.remove('active'));
-       const allMainModeBtns = [visionModeBtn, translationModeBtn, chatModeBtn];
-       allMainModeBtns.forEach(b => b?.classList.remove('active'));
-       modeTabs.forEach(t => t.classList.remove('active'));
-       modeTabsContainer.style.display = 'none';
-       inputArea.style.display = 'none';
-
-       // 2. 根据主模式决定基础UI
-       switch (currentMainMode) {
-           case 'vision':
-               visionModeBtn.classList.add('active');
-               modeTabsContainer.style.display = 'flex'; // All modes have sub-tabs
-               break;
-           case 'translation':
-               translationModeBtn.classList.add('active');
-               modeTabsContainer.style.display = 'flex';
-               break;
-           case 'chat':
-               chatModeBtn.classList.add('active');
-               modeTabsContainer.style.display = 'flex';
-               break;
-       }
-
-       // 3. 根据子模式决定显示哪个容器
-       const activeSubTab = document.querySelector(`.tab[data-mode="${currentSubMode}"]`);
-       if (activeSubTab) activeSubTab.classList.add('active');
-
-       if (currentSubMode === 'log') {
-           logContainer.classList.add('active');
-       } else if (currentSubMode === 'history') {
-           historyContainer.classList.add('active');
-           if (currentMainMode === 'chat') {
-               historyManager.renderHistoryList();
-           } else {
-               historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
-           }
-       } else {
-           // 'text' or default sub-mode
-           if (currentMainMode === 'chat') {
-               textContainer.classList.add('active');
-               inputArea.style.display = 'flex';
-           } else if (currentMainMode === 'vision') {
-               visionContainer.classList.add('active');
-           } else if (currentMainMode === 'translation') {
-               translationElements.translationContainer.classList.add('active');
-           }
-       }
-   }
-
-   // Attach event listeners for mode switching
-   visionModeBtn.addEventListener('click', () => {
-       currentMainMode = 'vision';
-       currentSubMode = 'text'; // Default to main view
-       updateUIVisibility();
-   });
-   translationModeBtn.addEventListener('click', () => {
-       currentMainMode = 'translation';
-       currentSubMode = 'text'; // Default to main view
-       updateUIVisibility();
-   });
-   chatModeBtn.addEventListener('click', () => {
-       currentMainMode = 'chat';
-       currentSubMode = 'text';
-       updateUIVisibility();
-   });
-
-   // Initial UI setup - Set default modes and update UI
-   currentMainMode = 'chat';
-   currentSubMode = 'text';
-   updateUIVisibility();
-
-   // 重新启用子页面切换逻辑，现在可以安全执行
-   modeTabs.forEach(tab => {
-       tab.addEventListener('click', () => {
-           const tabMode = tab.dataset.mode;
-           currentSubMode = tabMode;
-           updateUIVisibility();
-       });
-   });
-
-    // --- Start of Merged Content ---
-    // 添加移动端事件处理
-    if ('ontouchstart' in window) {
-        initMobileHandlers();
-    }
-
-    newChatButton.addEventListener('click', () => {
-        if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
-            historyManager.generateNewSession();
-        } else {
-            chatHistory = [];
-            currentSessionId = null;
-            messageHistory.innerHTML = '';
-            logMessage('新聊天已开始', 'system');
-            showSystemMessage('实时模式不支持历史记录。');
-        }
-    });
-
-    document.addEventListener('touchmove', (e) => {
-        if (!e.target.closest('#message-history') && e.scale !== 1) {
-            e.preventDefault();
-        }
-    }, { passive: true });
-
-    if (!checkBrowserCompatibility()) {
-        return;
-    }
-
-    if (messageHistory) {
-        messageHistory.addEventListener('wheel', () => {
-            isUserScrolling = true;
-        }, { passive: true });
-
-        messageHistory.addEventListener('scroll', () => {
-            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
-                isUserScrolling = false;
-            }
-        });
-    }
-
-    if ('ontouchstart' in window) {
-        if (messageHistory) {
-            messageHistory.addEventListener('touchstart', () => {
-                isUserScrolling = true;
-            }, { passive: true });
-
-            messageHistory.addEventListener('touchend', () => {
-                isUserScrolling = false;
-                const threshold = 50;
-                const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <=
-                                    messageHistory.scrollTop + threshold;
-                if (isNearBottom) {
-                    scrollToBottom();
-                }
-            }, { passive: true });
-        }
-    }
-    // --- End of Merged Content ---
   });
 
 // State variables
@@ -527,6 +410,7 @@ let chatAudioRecorder = null; // 聊天模式下的 AudioRecorder 实例
 let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
+let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 let attachmentManager = null; // T2: 提升作用域
 let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
@@ -2132,6 +2016,112 @@ function initMobileHandlers() {
     }
 }
 
+// 在 DOMContentLoaded 中调用
+document.addEventListener('DOMContentLoaded', () => {
+    // ... 原有代码 ...
+    
+    // 添加移动端事件处理
+    if ('ontouchstart' in window) {
+        initMobileHandlers();
+    }
+
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+     * @returns {void}
+     */
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，根据当前激活的模式清空对应的聊天历史。
+     * @returns {void}
+     */
+    newChatButton.addEventListener('click', () => {
+        // 仅在 HTTP 模式下启用历史记录功能
+        if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
+            historyManager.generateNewSession();
+        } else {
+            // 对于 WebSocket 模式或未连接时，保持原有简单重置逻辑
+            chatHistory = [];
+            currentSessionId = null;
+            messageHistory.innerHTML = '';
+            logMessage('新聊天已开始', 'system');
+            showSystemMessage('实时模式不支持历史记录。');
+        }
+    });
+
+    /**
+     * @function
+     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+     * @returns {void}
+     */
+    // 添加视图缩放阻止
+    document.addEventListener('touchmove', (e) => {
+        // 仅在非 message-history 区域阻止缩放行为
+        if (!e.target.closest('#message-history') && e.scale !== 1) {
+            e.preventDefault();
+        }
+    }, { passive: true }); // 将 passive 设置为 true，提高滚动性能
+
+    // 添加浏览器兼容性检测
+    if (!checkBrowserCompatibility()) {
+        return; // 阻止后续初始化
+    }
+
+    const messageHistory = document.getElementById('message-history');
+    if (messageHistory) {
+        /**
+         * 监听鼠标滚轮事件，判断用户是否正在手动滚动。
+         * @param {WheelEvent} e - 滚轮事件对象。
+         */
+        messageHistory.addEventListener('wheel', () => {
+            isUserScrolling = true;
+        }, { passive: true }); // 使用 passive: true 提高滚动性能
+
+        /**
+         * 监听滚动事件，如果滚动条已经到底部，则重置 isUserScrolling。
+         * @param {Event} e - 滚动事件对象。
+         */
+        messageHistory.addEventListener('scroll', () => {
+            // 如果滚动条已经到底部，则重置 isUserScrolling
+            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
+                isUserScrolling = false;
+            }
+        });
+    }
+
+    // 移动端触摸事件支持
+    if ('ontouchstart' in window) {
+        if (messageHistory) {
+            /**
+             * 监听触摸开始事件，判断用户是否正在手动滚动。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            messageHistory.addEventListener('touchstart', () => {
+                isUserScrolling = true;
+            }, { passive: true });
+
+            /**
+             * 监听触摸结束事件，无论是否接近底部，都重置 isUserScrolling。
+             * @param {TouchEvent} e - 触摸事件对象。
+             */
+            messageHistory.addEventListener('touchend', () => {
+                isUserScrolling = false; // 无论是否接近底部，都重置为 false
+                // 如果用户在触摸结束时接近底部，可以尝试自动滚动
+                const threshold = 50; // 离底部50px视为"接近底部"
+                const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <=
+                                    messageHistory.scrollTop + threshold;
+                if (isNearBottom) {
+                    scrollToBottom(); // 尝试滚动到底部
+                }
+            }, { passive: true });
+        }
+    }
+});
+
+/**
+ * 检测当前设备是否为移动设备。
+ * @returns {boolean} 如果是移动设备则返回 true，否则返回 false。
+ */
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
@@ -2323,8 +2313,300 @@ function resetChatRecordingState() {
  * @param {string} message - 要显示的消息。
  * @param {number} [duration=3000] - 显示时长（毫秒）。
  */
+export function showToast(message, duration = 3000) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    // 触发显示动画
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+
+    // 在指定时长后移除
+    setTimeout(() => {
+        toast.classList.remove('show');
+        // 在动画结束后从 DOM 中移除
+        toast.addEventListener('transitionend', () => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        });
+    }, duration);
+}
 
 /**
  * 在聊天记录区显示一条系统消息。
  * @param {string} message - 要显示的消息。
  */
+export function showSystemMessage(message) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'system-info'); // 使用一个特殊的类
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+    contentDiv.textContent = message;
+
+    messageDiv.appendChild(contentDiv);
+    messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+}
+
+
+
+async function handleSendVisionMessage(attachmentManager) { // T2: 传入管理器
+    const text = visionInputText.value.trim();
+    const visionAttachedFiles = attachmentManager.getVisionAttachedFiles(); // T2: 从管理器获取
+    if (!text && visionAttachedFiles.length === 0) {
+        showToast('请输入文本或添加附件。');
+        return;
+    }
+
+    const visionModelSelect = document.getElementById('vision-model-select');
+    const selectedModel = visionModelSelect.value;
+
+    // 显示用户消息
+    displayVisionUserMessage(text, visionAttachedFiles);
+
+    // 将用户消息添加到历史记录
+    const userContent = [];
+    if (text) {
+        userContent.push({ type: 'text', text });
+    }
+    visionAttachedFiles.forEach(file => {
+        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+    });
+    visionChatHistory.push({ role: 'user', content: userContent });
+
+    // 清理输入
+    visionInputText.value = '';
+    attachmentManager.clearAttachedFile('vision'); // T2: 使用管理器清除附件
+
+    // 显示加载状态
+    visionSendButton.disabled = true;
+    visionSendButton.textContent = 'progress_activity';
+    const aiMessage = createVisionAIMessageElement();
+    const { markdownContainer, reasoningContainer } = aiMessage;
+    markdownContainer.innerHTML = '<p>正在请求模型...</p>';
+    logMessage(`正在请求视觉模型: ${selectedModel}`, 'system');
+
+    try {
+        // 统一使用流式请求
+        const response = await fetch('/api/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: selectedModel,
+                messages: [
+                    { role: 'system', content: CONFIG.VISION.SYSTEM_PROMPT },
+                    ...visionChatHistory
+                ],
+                stream: true, // 始终启用流式响应
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || 'API 请求失败');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let finalContent = ''; // 用于存储最终的 content 部分
+        let reasoningStarted = false;
+        let answerStarted = false; // 新增：用于标记最终答案是否开始
+
+        markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            chunk.split('\n\n').forEach(part => {
+                if (part.startsWith('data: ')) {
+                    const jsonStr = part.substring(6);
+                    if (jsonStr === '[DONE]') return;
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        const delta = data.choices?.[0]?.delta;
+                        if (delta) {
+                            // 处理思维链内容
+                            if (delta.reasoning_content) {
+                                if (!reasoningStarted) {
+                                    reasoningContainer.style.display = 'block'; // 显示思维链容器
+                                    reasoningStarted = true;
+                                }
+                                // 使用 innerHTML 追加，以便渲染 Markdown 换行等
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                            }
+                            // 处理主要内容
+                            if (delta.content) {
+                                // 当思维链存在且最终答案首次出现时，插入分隔符
+                                if (reasoningStarted && !answerStarted) {
+                                    const separator = document.createElement('hr');
+                                    separator.className = 'answer-separator';
+                                    // 将分隔符插入到 markdownContainer 之前，但在 reasoningContainer 之后
+                                    reasoningContainer.after(separator);
+                                    answerStarted = true;
+                                }
+                                finalContent += delta.content;
+                                markdownContainer.innerHTML = marked.parse(finalContent);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE chunk:', e, jsonStr);
+                    }
+                }
+            });
+            visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+        }
+
+        // 流结束后，对最终内容进行一次 MathJax 排版
+        if (typeof MathJax !== 'undefined' && MathJax.startup) {
+            MathJax.startup.promise.then(() => {
+                MathJax.typeset([markdownContainer, reasoningContainer]);
+            }).catch((err) => console.error('MathJax typesetting failed:', err));
+        }
+        
+        // 将最终的 AI content（不包含思维链）添加到历史记录
+        visionChatHistory.push({ role: 'assistant', content: finalContent });
+
+    } catch (error) {
+        console.error('Error sending vision message:', error);
+        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
+        logMessage(`视觉模型请求失败: ${error.message}`, 'system');
+    } finally {
+        visionSendButton.disabled = false;
+        visionSendButton.textContent = 'send';
+    }
+}
+
+function displayVisionUserMessage(text, files) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'user');
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '👤';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+
+    if (text) {
+        const textNode = document.createElement('p');
+        textNode.textContent = text;
+        contentDiv.appendChild(textNode);
+    }
+
+    if (files && files.length > 0) {
+        const attachmentsContainer = document.createElement('div');
+        attachmentsContainer.className = 'attachments-grid';
+        files.forEach(file => {
+            let attachmentElement;
+            if (file.type.startsWith('image/')) {
+                attachmentElement = document.createElement('img');
+                attachmentElement.src = file.base64;
+            } else if (file.type.startsWith('video/')) {
+                attachmentElement = document.createElement('video');
+                attachmentElement.src = file.base64;
+                attachmentElement.controls = true;
+            }
+            if (attachmentElement) {
+                attachmentElement.className = 'chat-attachment';
+                attachmentsContainer.appendChild(attachmentElement);
+            }
+        });
+        contentDiv.appendChild(attachmentsContainer);
+    }
+
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    visionMessageHistory.appendChild(messageDiv);
+    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+}
+
+function createVisionAIMessageElement() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai');
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '🤖';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+    
+    // 新增：思维链容器
+    const reasoningContainer = document.createElement('div');
+    reasoningContainer.className = 'reasoning-container';
+    reasoningContainer.style.display = 'none'; // 默认隐藏
+    const reasoningTitle = document.createElement('h4');
+    reasoningTitle.className = 'reasoning-title';
+    reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
+    const reasoningContent = document.createElement('div');
+    reasoningContent.className = 'reasoning-content';
+    reasoningContainer.appendChild(reasoningTitle);
+    reasoningContainer.appendChild(reasoningContent);
+    contentDiv.appendChild(reasoningContainer);
+
+    const markdownContainer = document.createElement('div');
+    markdownContainer.classList.add('markdown-container');
+    contentDiv.appendChild(markdownContainer);
+    
+    const copyButton = document.createElement('button');
+    copyButton.classList.add('copy-button', 'material-symbols-outlined');
+    copyButton.textContent = 'content_copy';
+    copyButton.addEventListener('click', async () => {
+        try {
+            // 合并思维链和主要内容进行复制
+            const reasoningText = reasoningContainer.style.display !== 'none'
+                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
+                : '';
+            const mainText = markdownContainer.innerText;
+            await navigator.clipboard.writeText(reasoningText + mainText);
+            copyButton.textContent = 'check';
+            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+        }
+    });
+
+    contentDiv.appendChild(copyButton);
+    
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    visionMessageHistory.appendChild(messageDiv);
+    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
+    
+    return {
+        container: messageDiv,
+        markdownContainer,
+        reasoningContainer, // 返回思维链容器
+        contentDiv,
+    };
+}
+
+/**
+ * @function initVision
+ * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
+ * @returns {void}
+ */
+function initVision() {
+    const visionModelSelect = document.getElementById('vision-model-select');
+    if (!visionModelSelect) return;
+
+    visionModelSelect.innerHTML = ''; // 清空现有选项
+    CONFIG.VISION.MODELS.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.name;
+        option.textContent = model.displayName;
+        if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
+            option.selected = true;
+        }
+        visionModelSelect.appendChild(option);
+    });
+}
