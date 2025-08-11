@@ -179,13 +179,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 2. 子页面切换逻辑 (文字聊天/系统日志/历史记录)
+    // 2. 子页面切换逻辑 (由新的 updateUIVisibility 函数统一管理)
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            const tabMode = tab.dataset.mode; // 'text', 'log', 'history'
-            
-            // 激活对应的子页面
-            activateSubTab(tabMode);
+            const tabMode = tab.dataset.mode;
+            currentSubMode = tabMode;
+            updateUIVisibility();
         });
     });
 
@@ -363,50 +362,28 @@ document.addEventListener('DOMContentLoaded', () => {
       onPromptChange: logMessage // 将 logMessage 作为回调
   });
 
-   // T8: 将视觉模式切换逻辑移回 main.js
-   // 统一的模式切换逻辑
+   // T8: 全新的、统一的UI状态管理逻辑
    const translationModeBtn = document.getElementById('translation-mode-button');
+   const modeTabsContainer = document.querySelector('.mode-tabs');
+   const textContainer = document.querySelector('.chat-container.text-mode');
+   const logContainer = document.querySelector('.chat-container.log-mode');
+   const historyContainer = document.querySelector('.chat-container.history-mode');
+   const inputArea = document.querySelector('.input-area');
+
    let currentMainMode = 'chat';
+   let currentSubMode = 'text';
 
-   function activateSubTab(tabMode) {
-       // 移除所有子标签和对应容器的 active 类
-       modeTabs.forEach(t => t.classList.remove('active'));
-       chatContainers.forEach(c => c.classList.remove('active'));
-
-       // 激活当前点击的子标签和容器
-       const activeTab = document.querySelector(`.tab[data-mode="${tabMode}"]`);
-       if (activeTab) activeTab.classList.add('active');
-       
-       const targetContainer = document.querySelector(`.chat-container.${tabMode}-mode`);
-       if (targetContainer) targetContainer.classList.add('active');
-
-       // 根据当前主模式，特殊处理历史记录标签页
-       if (tabMode === 'history') {
-           if (currentMainMode === 'chat') {
-               historyManager.renderHistoryList();
-           } else { // 对于 'vision' 或 'translation' 模式
-               historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
-           }
-       }
-   }
-
-   function switchToMode(mode) {
-       currentMainMode = mode;
-
-       // Deactivate all main containers and buttons first
-       [visionContainer, translationElements.translationContainer, translationElements.chatContainer].forEach(c => c?.classList.remove('active'));
+   function updateUIVisibility() {
+       // 1. 全部隐藏
+       [visionContainer, translationElements.translationContainer, textContainer, logContainer, historyContainer].forEach(c => c?.classList.remove('active'));
        [visionModeBtn, translationModeBtn, chatModeBtn].forEach(b => b?.classList.remove('active'));
-
-       // Hide chat-specific elements by default
-       if (translationElements.inputArea) translationElements.inputArea.style.display = 'none';
-       if (translationElements.mediaPreviewsContainer) translationElements.mediaPreviewsContainer.style.display = 'none';
+       modeTabs.forEach(t => t.classList.remove('active'));
        
-       // Stop media streams if they are active
-       if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
-       if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
+       modeTabsContainer.style.display = 'none';
+       inputArea.style.display = 'none';
 
-       // Activate the target mode
-       switch (mode) {
+       // 2. 根据主模式显示
+       switch (currentMainMode) {
            case 'vision':
                visionContainer.classList.add('active');
                visionModeBtn.classList.add('active');
@@ -414,25 +391,52 @@ document.addEventListener('DOMContentLoaded', () => {
            case 'translation':
                translationElements.translationContainer.classList.add('active');
                translationModeBtn.classList.add('active');
+               // 在翻译模式下，也显示子标签页
+               modeTabsContainer.style.display = 'flex';
                break;
            case 'chat':
-               // 聊天模式只激活 chatContainer，不直接激活 text-mode 子容器
                chatModeBtn.classList.add('active');
-               if (translationElements.inputArea) translationElements.inputArea.style.display = 'flex';
-               updateMediaPreviewsDisplay();
+               modeTabsContainer.style.display = 'flex';
+               inputArea.style.display = 'flex';
                break;
        }
-       // 切换主模式后，总是默认激活 "文字聊天" 子标签页
-       activateSubTab('text');
+
+       // 3. 根据子模式显示 (仅在聊天和翻译模式下)
+       if (currentMainMode === 'chat' || currentMainMode === 'translation') {
+           const activeSubTab = document.querySelector(`.tab[data-mode="${currentSubMode}"]`);
+           if (activeSubTab) activeSubTab.classList.add('active');
+
+           const activeSubContainer = document.querySelector(`.chat-container.${currentSubMode}-mode`);
+           if (activeSubContainer) activeSubContainer.classList.add('active');
+
+           if (currentSubMode === 'history') {
+               if (currentMainMode === 'chat') {
+                   historyManager.renderHistoryList();
+               } else { // 'translation'
+                   historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+               }
+           }
+       }
    }
 
    // Attach event listeners for mode switching
-   visionModeBtn.addEventListener('click', () => switchToMode('vision'));
-   translationModeBtn.addEventListener('click', () => switchToMode('translation'));
-   chatModeBtn.addEventListener('click', () => switchToMode('chat'));
+   visionModeBtn.addEventListener('click', () => {
+       currentMainMode = 'vision';
+       updateUIVisibility();
+   });
+   translationModeBtn.addEventListener('click', () => {
+       currentMainMode = 'translation';
+       currentSubMode = 'text'; // 切换到翻译模式时，默认显示翻译界面
+       updateUIVisibility();
+   });
+   chatModeBtn.addEventListener('click', () => {
+       currentMainMode = 'chat';
+       currentSubMode = 'text'; // 切换到聊天模式时，总是默认显示文字聊天
+       updateUIVisibility();
+   });
 
-   // Set default mode to chat
-   switchToMode('chat');
+   // Initial UI setup
+   updateUIVisibility();
   });
 
 // State variables
