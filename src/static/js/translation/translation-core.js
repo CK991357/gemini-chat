@@ -18,7 +18,7 @@ let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入�
  * @param {object} handlers - A collection of handler functions from other modules.
  * @param {object} audioFunctions - A collection of audio recording functions from main.js.
  */
-export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
+export function initializeTranslationCore(el, handlers, audioFunctions) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
 
@@ -28,7 +28,7 @@ export function initializeTranslationCore(el, handlers, audioFunctions, showToas
     populateModelSelect();
 
     // Attach event listeners
-    attachEventListeners(handlers, showToast);
+    attachEventListeners(handlers);
 
     // Set initial state for the OCR button
     toggleOcrButtonVisibility();
@@ -86,7 +86,7 @@ function populateModelSelect() {
  * @param {object} handlers - A collection of handler functions from other modules (e.g., videoHandler, screenHandler).
  * @returns {void}
  */
-function attachEventListeners(handlers, showToast) {
+function attachEventListeners(handlers) {
     elements.translateButton.addEventListener('click', handleTranslation);
     elements.translationOcrButton.addEventListener('click', () => elements.translationOcrInput.click());
     elements.translationOcrInput.addEventListener('change', handleTranslationOcr);
@@ -103,7 +103,6 @@ function attachEventListeners(handlers, showToast) {
     // Mode switching events
     elements.translationModeBtn.addEventListener('click', () => switchMode('translation', handlers));
     elements.chatModeBtn.addEventListener('click', () => switchMode('chat', handlers));
-    elements.visionModeBtn?.addEventListener('click', () => switchMode('vision', handlers));
     elements.toggleLogBtn.addEventListener('click', () => switchMode('log', handlers));
 
     // Voice input events (mousedown, mouseup, mouseleave, touchstart, touchend, touchmove)
@@ -232,8 +231,8 @@ function switchMode(mode, handlers) {
     const { videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
 
     // Deactivate all containers and buttons first
-    [elements.translationContainer, elements.chatContainer, elements.visionContainer, elements.logContainer].forEach(c => c?.classList.remove('active'));
-    [elements.translationModeBtn, elements.chatModeBtn, elements.visionModeBtn].forEach(b => b?.classList.remove('active'));
+    [elements.translationContainer, elements.chatContainer, elements.logContainer].forEach(c => c?.classList.remove('active'));
+    [elements.translationModeBtn, elements.chatModeBtn].forEach(b => b?.classList.remove('active'));
 
     // Hide chat-specific elements by default
     if (elements.mediaPreviewsContainer) elements.mediaPreviewsContainer.style.display = 'none';
@@ -258,10 +257,6 @@ function switchMode(mode, handlers) {
             if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'inline-flex';
             updateMediaPreviewsDisplay();
             document.querySelector('.tab[data-mode="text"]')?.click();
-            break;
-        case 'vision':
-            elements.visionContainer?.classList.add('active');
-            elements.visionModeBtn?.classList.add('active');
             break;
         case 'log':
             elements.logContainer.classList.add('active');

@@ -25,6 +25,13 @@ export class AttachmentManager {
 
         this.attachedFile = null; // For single-file chat mode
         this.visionAttachedFiles = []; // For multi-file vision mode
+
+        if (!this.chatPreviewsContainer) {
+            console.error("AttachmentManager: chatPreviewsContainer is not provided.");
+        }
+        if (!this.visionPreviewsContainer) {
+            console.warn("AttachmentManager: visionPreviewsContainer is not provided. Vision mode attachments will be disabled.");
+        }
     }
 
     /**
@@ -57,13 +64,7 @@ export class AttachmentManager {
         if (!files || files.length === 0) return;
 
         for (const file of files) {
-            const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
-            if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-                this.showSystemMessage(`不支持的文件类型: ${file.type}。`);
-                continue;
-            }
-            if (file.size > 20 * 1024 * 1024) { // 20MB size limit
-                this.showSystemMessage('文件大小不能超过 20MB。');
+            if (!this._validateFile(file)) {
                 continue;
             }
 
@@ -122,57 +123,13 @@ export class AttachmentManager {
      */
     displayFilePreview({ type, src, name, mode, index }) {
         const container = mode === 'vision' ? this.visionPreviewsContainer : this.chatPreviewsContainer;
-        
+        if (!container) return;
+
         if (mode === 'chat') {
             container.innerHTML = '';
         }
 
-        const previewCard = document.createElement('div');
-        previewCard.className = 'file-preview-card';
-        previewCard.title = name;
-        if (mode === 'vision') {
-            previewCard.dataset.index = index;
-        }
-
-        let previewElement;
-        if (type.startsWith('image/')) {
-            previewElement = document.createElement('img');
-            previewElement.src = src;
-            previewElement.alt = name;
-        } else if (type.startsWith('video/')) {
-            previewElement = document.createElement('video');
-            previewElement.src = src;
-            previewElement.alt = name;
-            previewElement.muted = true;
-            previewElement.autoplay = true;
-            previewElement.loop = true;
-            previewElement.playsInline = true;
-        } else { // PDF or other
-            previewElement = document.createElement('div');
-            previewElement.className = 'file-placeholder';
-            const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
-            icon.textContent = 'description';
-            const text = document.createElement('p');
-            text.textContent = name;
-            previewElement.appendChild(icon);
-            previewElement.appendChild(text);
-        }
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'close-button material-symbols-outlined';
-        closeButton.textContent = 'close';
-        closeButton.onclick = (e) => {
-            e.stopPropagation();
-            if (mode === 'vision') {
-                this.removeVisionAttachment(index);
-            } else {
-                this.clearAttachedFile('chat');
-            }
-        };
-
-        previewCard.appendChild(previewElement);
-        previewCard.appendChild(closeButton);
+        const previewCard = this._createPreviewCard({ type, src, name, mode, index });
         container.appendChild(previewCard);
     }
 
@@ -209,5 +166,83 @@ export class AttachmentManager {
                 index: index
             });
         });
+    }
+    /**
+     * @method _validateFile
+     * @private
+     * @description Validates a file based on type and size.
+     * @param {File} file - The file to validate.
+     * @returns {boolean} True if the file is valid, false otherwise.
+     */
+    _validateFile(file) {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
+        const maxSize = 20 * 1024 * 1024; // 20MB
+
+        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+            this.showSystemMessage(`不支持的文件类型: ${file.type}。`);
+            return false;
+        }
+        if (file.size > maxSize) {
+            this.showSystemMessage('文件大小不能超过 20MB。');
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @method _createPreviewCard
+     * @private
+     * @description Creates a DOM element for a file preview.
+     * @param {object} options - Preview options.
+     * @returns {HTMLElement} The preview card element.
+     */
+    _createPreviewCard({ type, src, name, mode, index }) {
+        const previewCard = document.createElement('div');
+        previewCard.className = 'file-preview-card';
+        previewCard.title = name;
+        if (mode === 'vision') {
+            previewCard.dataset.index = index;
+        }
+
+        let previewElement;
+        if (type.startsWith('image/')) {
+            previewElement = document.createElement('img');
+            previewElement.src = src;
+            previewElement.alt = name;
+        } else if (type.startsWith('video/')) {
+            previewElement = document.createElement('video');
+            previewElement.src = src;
+            previewElement.alt = name;
+            previewElement.muted = true;
+            previewElement.autoplay = true;
+            previewElement.loop = true;
+            previewElement.playsInline = true;
+        } else {
+            previewElement = document.createElement('div');
+            previewElement.className = 'file-placeholder';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined';
+            icon.textContent = 'description';
+            const text = document.createElement('p');
+            text.textContent = name;
+            previewElement.appendChild(icon);
+            previewElement.appendChild(text);
+        }
+
+        const closeButton = document.createElement('button');
+        closeButton.className = 'close-button material-symbols-outlined';
+        closeButton.textContent = 'close';
+        closeButton.onclick = (e) => {
+            e.stopPropagation();
+            if (mode === 'vision') {
+                this.removeVisionAttachment(index);
+            } else {
+                this.clearAttachedFile('chat');
+            }
+        };
+
+        previewCard.appendChild(previewElement);
+        previewCard.appendChild(closeButton);
+        return previewCard;
     }
 }
