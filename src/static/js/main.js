@@ -382,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
         stopTranslationRecording,
         cancelTranslationRecording,
         resetRecordingState
-    });
+    }, showToast);
     // 初始化视觉功能
     initVision();
    // 初始化指令模式选择

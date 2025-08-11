@@ -18,7 +18,7 @@ let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入�
  * @param {object} handlers - A collection of handler functions from other modules.
  * @param {object} audioFunctions - A collection of audio recording functions from main.js.
  */
-export function initializeTranslationCore(el, handlers, audioFunctions) {
+export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
 
@@ -28,7 +28,7 @@ export function initializeTranslationCore(el, handlers, audioFunctions) {
     populateModelSelect();
 
     // Attach event listeners
-    attachEventListeners(handlers);
+    attachEventListeners(handlers, showToast);
 
     // Set initial state for the OCR button
     toggleOcrButtonVisibility(elements.translationModelSelect, elements.translationOcrButton);
@@ -86,10 +86,10 @@ function populateModelSelect() {
  * @param {object} handlers - A collection of handler functions from other modules (e.g., videoHandler, screenHandler).
  * @returns {void}
  */
-function attachEventListeners(handlers) {
+function attachEventListeners(handlers, showToast) {
     elements.translateButton.addEventListener('click', handleTranslation);
     elements.translationOcrButton.addEventListener('click', () => elements.translationOcrInput.click());
-    elements.translationOcrInput.addEventListener('change', (event) => handleTranslationOcr(event, elements.translationInputTextarea, elements.translationOutputText, elements.translationOcrButton, elements.translationModelSelect));
+    elements.translationOcrInput.addEventListener('change', (event) => handleTranslationOcr(event, elements.translationInputTextarea, elements.translationOutputText, elements.translationOcrButton, elements.translationModelSelect, showToast));
     elements.translationModelSelect.addEventListener('change', () => toggleOcrButtonVisibility(elements.translationModelSelect, elements.translationOcrButton));
 
     elements.copyButton.addEventListener('click', () => {
