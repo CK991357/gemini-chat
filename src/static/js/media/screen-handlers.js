@@ -3,8 +3,8 @@
  * @description Manages screen sharing logic, including starting/stopping screen capture and updating UI.
  */
 
+import { showSystemMessage } from '../main.js'; // 导入必要的辅助函数
 import { Logger } from '../utils/logger.js';
-import { showSystemMessage } from '../utils/ui-helpers.js'; // 导入必要的辅助函数
 import { ScreenRecorder } from '../video/screen-recorder.js';
 
 /**

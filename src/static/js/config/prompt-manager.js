@@ -3,7 +3,6 @@ import { CONFIG } from './config.js';
 // DOM Elements (will be passed in)
 let promptSelect;
 let systemInstructionInput;
-let onPromptChangeCallback; // 通用回调函数
 
 /**
  * @function updateSystemInstruction
@@ -17,9 +16,9 @@ function updateSystemInstruction() {
 
     if (selectedOption) {
         systemInstructionInput.value = selectedOption.prompt;
-        // 调用回调，并传入消息和类型，以匹配 logMessage 函数签名
-        if (typeof onPromptChangeCallback === 'function') {
-            onPromptChangeCallback(`指令模式已切换为: ${selectedOption.displayName}`, 'system');
+        // 使用全局函数 logMessage (假设它在 main.js 中仍然可用)
+        if (typeof logMessage === 'function') {
+            logMessage(`指令模式已切换为: ${selectedOption.displayName}`, 'system');
         }
     }
 }
@@ -27,15 +26,12 @@ function updateSystemInstruction() {
 /**
  * @function initializePromptSelect
  * @description 初始化指令模式下拉菜单，填充选项并设置事件监听器。
- * @param {object} dependencies - 依赖项对象。
- * @param {HTMLSelectElement} dependencies.promptSelectEl - 指令模式的 select 元素。
- * @param {HTMLTextAreaElement} dependencies.systemInstructionInputEl - 系统指令的 textarea 元素。
- * @param {Function} dependencies.onPromptChange - 当指令变更时调用的回调函数。
+ * @param {HTMLSelectElement} promptSelectEl - 指令模式的 select 元素。
+ * @param {HTMLTextAreaElement} systemInstructionInputEl - 系统指令的 textarea 元素。
  */
-export function initializePromptSelect({ promptSelectEl, systemInstructionInputEl, onPromptChange }) {
+export function initializePromptSelect(promptSelectEl, systemInstructionInputEl) {
     promptSelect = promptSelectEl;
     systemInstructionInput = systemInstructionInputEl;
-    onPromptChangeCallback = onPromptChange;
 
     if (!promptSelect) return;
 
