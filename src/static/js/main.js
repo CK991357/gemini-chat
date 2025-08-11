@@ -374,48 +374,63 @@ document.addEventListener('DOMContentLoaded', () => {
    let currentSubMode = 'text';
 
    function updateUIVisibility() {
-       // 1. 全部隐藏
-       [visionContainer, translationElements.translationContainer, textContainer, logContainer, historyContainer].forEach(c => c?.classList.remove('active'));
-       [visionModeBtn, translationModeBtn, chatModeBtn].forEach(b => b?.classList.remove('active'));
+       // 1. 全部隐藏 (Clean Slate)
+       const allMainContainers = [visionContainer, translationElements.translationContainer, textContainer, logContainer, historyContainer];
+       allMainContainers.forEach(c => c?.classList.remove('active'));
+   
+       const allMainModeBtns = [visionModeBtn, translationModeBtn, chatModeBtn];
+       allMainModeBtns.forEach(b => b?.classList.remove('active'));
+   
        modeTabs.forEach(t => t.classList.remove('active'));
        
        modeTabsContainer.style.display = 'none';
        inputArea.style.display = 'none';
-
-       // 2. 根据主模式显示
+   
+       // 2. 根据主模式和子模式决定显示内容
        switch (currentMainMode) {
            case 'vision':
                visionContainer.classList.add('active');
                visionModeBtn.classList.add('active');
+               // Vision mode has no sub-tabs or main input area
                break;
+   
            case 'translation':
-               translationElements.translationContainer.classList.add('active');
                translationModeBtn.classList.add('active');
-               // 在翻译模式下，也显示子标签页
-               modeTabsContainer.style.display = 'flex';
+               modeTabsContainer.style.display = 'flex'; // Translation has sub-tabs
+   
+               // Activate the correct sub-tab, if any
+               document.querySelector(`.tab[data-mode="${currentSubMode}"]`)?.classList.add('active');
+   
+               if (currentSubMode === 'log') {
+                   logContainer.classList.add('active');
+               } else if (currentSubMode === 'history') {
+                   historyContainer.classList.add('active');
+                   // Show "not supported" message for translation history
+                   historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+               } else {
+                   // Default to showing the translation interface
+                   translationElements.translationContainer.classList.add('active');
+               }
                break;
+   
            case 'chat':
                chatModeBtn.classList.add('active');
-               modeTabsContainer.style.display = 'flex';
-               inputArea.style.display = 'flex';
-               break;
-       }
-
-       // 3. 根据子模式显示 (仅在聊天和翻译模式下)
-       if (currentMainMode === 'chat' || currentMainMode === 'translation') {
-           const activeSubTab = document.querySelector(`.tab[data-mode="${currentSubMode}"]`);
-           if (activeSubTab) activeSubTab.classList.add('active');
-
-           const activeSubContainer = document.querySelector(`.chat-container.${currentSubMode}-mode`);
-           if (activeSubContainer) activeSubContainer.classList.add('active');
-
-           if (currentSubMode === 'history') {
-               if (currentMainMode === 'chat') {
-                   historyManager.renderHistoryList();
-               } else { // 'translation'
-                   historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+               modeTabsContainer.style.display = 'flex'; // Chat has sub-tabs
+   
+               // Activate the correct sub-tab
+               document.querySelector(`.tab[data-mode="${currentSubMode}"]`)?.classList.add('active');
+   
+               if (currentSubMode === 'log') {
+                   logContainer.classList.add('active');
+               } else if (currentSubMode === 'history') {
+                   historyContainer.classList.add('active');
+                   historyManager.renderHistoryList(); // Render chat history
+               } else {
+                   // Default to showing the text chat interface
+                   textContainer.classList.add('active');
+                   inputArea.style.display = 'flex'; // Only show input area for text chat
                }
-           }
+               break;
        }
    }
 
@@ -426,7 +441,8 @@ document.addEventListener('DOMContentLoaded', () => {
    });
    translationModeBtn.addEventListener('click', () => {
        currentMainMode = 'translation';
-       currentSubMode = 'text'; // 切换到翻译模式时，默认显示翻译界面
+       // 切换到翻译模式时，默认显示主翻译界面，不激活任何子标签
+       currentSubMode = 'translation-main';
        updateUIVisibility();
    });
    chatModeBtn.addEventListener('click', () => {
