@@ -1,5 +1,5 @@
 import { CONFIG } from '../config/config.js';
-import { logMessage } from '../utils/logger.js';
+import { Logger } from '../utils/logger.js';
 import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-ocr.js';
 
 /**
@@ -94,9 +94,9 @@ function attachEventListeners(handlers) {
 
     elements.copyButton.addEventListener('click', () => {
         navigator.clipboard.writeText(elements.outputText.textContent).then(() => {
-            logMessage('翻译结果已复制', 'system');
+            Logger.info('翻译结果已复制', 'system');
         }).catch(err => {
-            logMessage('复制失败: ' + err, 'system');
+            Logger.info('复制失败: ' + err, 'system');
         });
     });
 
@@ -163,7 +163,7 @@ function attachVoiceInputListeners() {
 async function handleTranslation() {
     const inputText = elements.translationInputTextarea.value.trim();
     if (!inputText) {
-        logMessage('请输入要翻译的内容', 'system');
+        Logger.info('请输入要翻译的内容', 'system');
         return;
     }
 
@@ -200,9 +200,9 @@ async function handleTranslation() {
         const translatedText = data.choices[0].message.content;
 
         elements.outputText.textContent = translatedText;
-        logMessage('翻译完成', 'system');
+        Logger.info('翻译完成', 'system');
     } catch (error) {
-        logMessage(`翻译失败: ${error.message}`, 'system');
+        Logger.info(`翻译失败: ${error.message}`, 'system');
         elements.outputText.textContent = '翻译失败，请重试';
         console.error('翻译错误:', error);
     }

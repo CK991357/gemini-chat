@@ -1,4 +1,4 @@
-import { logMessage } from '../utils/logger.js';
+import { Logger } from '../utils/logger.js';
 import { showToast } from '../utils/utils.js';
 
 /**
@@ -92,7 +92,7 @@ export async function handleTranslationOcr(event, inputTextarea, outputElement, 
         }
 
     } catch (error) {
-        logMessage(`OCR 失败: ${error.message}`, 'system');
+        Logger.info(`OCR 失败: ${error.message}`, 'system');
         showToast('图片文字识别失败，请重试。');
         console.error('OCR Error:', error);
     } finally {
