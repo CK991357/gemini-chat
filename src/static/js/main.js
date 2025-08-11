@@ -377,82 +377,132 @@ document.addEventListener('DOMContentLoaded', () => {
        // 1. 全部隐藏 (Clean Slate)
        const allMainContainers = [visionContainer, translationElements.translationContainer, textContainer, logContainer, historyContainer];
        allMainContainers.forEach(c => c?.classList.remove('active'));
-   
        const allMainModeBtns = [visionModeBtn, translationModeBtn, chatModeBtn];
        allMainModeBtns.forEach(b => b?.classList.remove('active'));
-   
        modeTabs.forEach(t => t.classList.remove('active'));
-       
        modeTabsContainer.style.display = 'none';
        inputArea.style.display = 'none';
-   
-       // 2. 根据主模式和子模式决定显示内容
+
+       // 2. 根据主模式决定基础UI
        switch (currentMainMode) {
            case 'vision':
-               visionContainer.classList.add('active');
                visionModeBtn.classList.add('active');
-               // Vision mode has no sub-tabs or main input area
+               modeTabsContainer.style.display = 'flex'; // All modes have sub-tabs
                break;
-   
            case 'translation':
                translationModeBtn.classList.add('active');
-               modeTabsContainer.style.display = 'flex'; // Translation has sub-tabs
-   
-               // Activate the correct sub-tab, if any
-               document.querySelector(`.tab[data-mode="${currentSubMode}"]`)?.classList.add('active');
-   
-               if (currentSubMode === 'log') {
-                   logContainer.classList.add('active');
-               } else if (currentSubMode === 'history') {
-                   historyContainer.classList.add('active');
-                   // Show "not supported" message for translation history
-                   historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
-               } else {
-                   // Default to showing the translation interface
-                   translationElements.translationContainer.classList.add('active');
-               }
+               modeTabsContainer.style.display = 'flex';
                break;
-   
            case 'chat':
                chatModeBtn.classList.add('active');
-               modeTabsContainer.style.display = 'flex'; // Chat has sub-tabs
-   
-               // Activate the correct sub-tab
-               document.querySelector(`.tab[data-mode="${currentSubMode}"]`)?.classList.add('active');
-   
-               if (currentSubMode === 'log') {
-                   logContainer.classList.add('active');
-               } else if (currentSubMode === 'history') {
-                   historyContainer.classList.add('active');
-                   historyManager.renderHistoryList(); // Render chat history
-               } else {
-                   // Default to showing the text chat interface
-                   textContainer.classList.add('active');
-                   inputArea.style.display = 'flex'; // Only show input area for text chat
-               }
+               modeTabsContainer.style.display = 'flex';
                break;
+       }
+
+       // 3. 根据子模式决定显示哪个容器
+       const activeSubTab = document.querySelector(`.tab[data-mode="${currentSubMode}"]`);
+       if (activeSubTab) activeSubTab.classList.add('active');
+
+       if (currentSubMode === 'log') {
+           logContainer.classList.add('active');
+       } else if (currentSubMode === 'history') {
+           historyContainer.classList.add('active');
+           if (currentMainMode === 'chat') {
+               historyManager.renderHistoryList();
+           } else {
+               historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+           }
+       } else {
+           // 'text' or default sub-mode
+           if (currentMainMode === 'chat') {
+               textContainer.classList.add('active');
+               inputArea.style.display = 'flex';
+           } else if (currentMainMode === 'vision') {
+               visionContainer.classList.add('active');
+           } else if (currentMainMode === 'translation') {
+               translationElements.translationContainer.classList.add('active');
+           }
        }
    }
 
    // Attach event listeners for mode switching
    visionModeBtn.addEventListener('click', () => {
        currentMainMode = 'vision';
+       currentSubMode = 'text'; // Default to main view
        updateUIVisibility();
    });
    translationModeBtn.addEventListener('click', () => {
        currentMainMode = 'translation';
-       // 切换到翻译模式时，默认显示主翻译界面，不激活任何子标签
-       currentSubMode = 'translation-main';
+       currentSubMode = 'text'; // Default to main view
        updateUIVisibility();
    });
    chatModeBtn.addEventListener('click', () => {
        currentMainMode = 'chat';
-       currentSubMode = 'text'; // 切换到聊天模式时，总是默认显示文字聊天
+       currentSubMode = 'text';
        updateUIVisibility();
    });
 
    // Initial UI setup
    updateUIVisibility();
+
+    // --- Start of Merged Content ---
+    // 添加移动端事件处理
+    if ('ontouchstart' in window) {
+        initMobileHandlers();
+    }
+
+    newChatButton.addEventListener('click', () => {
+        if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
+            historyManager.generateNewSession();
+        } else {
+            chatHistory = [];
+            currentSessionId = null;
+            messageHistory.innerHTML = '';
+            logMessage('新聊天已开始', 'system');
+            showSystemMessage('实时模式不支持历史记录。');
+        }
+    });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!e.target.closest('#message-history') && e.scale !== 1) {
+            e.preventDefault();
+        }
+    }, { passive: true });
+
+    if (!checkBrowserCompatibility()) {
+        return;
+    }
+
+    if (messageHistory) {
+        messageHistory.addEventListener('wheel', () => {
+            isUserScrolling = true;
+        }, { passive: true });
+
+        messageHistory.addEventListener('scroll', () => {
+            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
+                isUserScrolling = false;
+            }
+        });
+    }
+
+    if ('ontouchstart' in window) {
+        if (messageHistory) {
+            messageHistory.addEventListener('touchstart', () => {
+                isUserScrolling = true;
+            }, { passive: true });
+
+            messageHistory.addEventListener('touchend', () => {
+                isUserScrolling = false;
+                const threshold = 50;
+                const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <=
+                                    messageHistory.scrollTop + threshold;
+                if (isNearBottom) {
+                    scrollToBottom();
+                }
+            }, { passive: true });
+        }
+    }
+    // --- End of Merged Content ---
   });
 
 // State variables
@@ -2081,106 +2131,6 @@ function initMobileHandlers() {
 }
 
 // 在 DOMContentLoaded 中调用
-document.addEventListener('DOMContentLoaded', () => {
-    // ... 原有代码 ...
-    
-    // 添加移动端事件处理
-    if ('ontouchstart' in window) {
-        initMobileHandlers();
-    }
-
-    /**
-     * @function
-     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
-     * @returns {void}
-     */
-    /**
-     * @function
-     * @description 处理“新建聊天”按钮点击事件，根据当前激活的模式清空对应的聊天历史。
-     * @returns {void}
-     */
-    newChatButton.addEventListener('click', () => {
-        // 仅在 HTTP 模式下启用历史记录功能
-        if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
-            historyManager.generateNewSession();
-        } else {
-            // 对于 WebSocket 模式或未连接时，保持原有简单重置逻辑
-            chatHistory = [];
-            currentSessionId = null;
-            messageHistory.innerHTML = '';
-            logMessage('新聊天已开始', 'system');
-            showSystemMessage('实时模式不支持历史记录。');
-        }
-    });
-
-    /**
-     * @function
-     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
-     * @returns {void}
-     */
-    // 添加视图缩放阻止
-    document.addEventListener('touchmove', (e) => {
-        // 仅在非 message-history 区域阻止缩放行为
-        if (!e.target.closest('#message-history') && e.scale !== 1) {
-            e.preventDefault();
-        }
-    }, { passive: true }); // 将 passive 设置为 true，提高滚动性能
-
-    // 添加浏览器兼容性检测
-    if (!checkBrowserCompatibility()) {
-        return; // 阻止后续初始化
-    }
-
-    const messageHistory = document.getElementById('message-history');
-    if (messageHistory) {
-        /**
-         * 监听鼠标滚轮事件，判断用户是否正在手动滚动。
-         * @param {WheelEvent} e - 滚轮事件对象。
-         */
-        messageHistory.addEventListener('wheel', () => {
-            isUserScrolling = true;
-        }, { passive: true }); // 使用 passive: true 提高滚动性能
-
-        /**
-         * 监听滚动事件，如果滚动条已经到底部，则重置 isUserScrolling。
-         * @param {Event} e - 滚动事件对象。
-         */
-        messageHistory.addEventListener('scroll', () => {
-            // 如果滚动条已经到底部，则重置 isUserScrolling
-            if (messageHistory.scrollHeight - messageHistory.clientHeight <= messageHistory.scrollTop + 1) {
-                isUserScrolling = false;
-            }
-        });
-    }
-
-    // 移动端触摸事件支持
-    if ('ontouchstart' in window) {
-        if (messageHistory) {
-            /**
-             * 监听触摸开始事件，判断用户是否正在手动滚动。
-             * @param {TouchEvent} e - 触摸事件对象。
-             */
-            messageHistory.addEventListener('touchstart', () => {
-                isUserScrolling = true;
-            }, { passive: true });
-
-            /**
-             * 监听触摸结束事件，无论是否接近底部，都重置 isUserScrolling。
-             * @param {TouchEvent} e - 触摸事件对象。
-             */
-            messageHistory.addEventListener('touchend', () => {
-                isUserScrolling = false; // 无论是否接近底部，都重置为 false
-                // 如果用户在触摸结束时接近底部，可以尝试自动滚动
-                const threshold = 50; // 离底部50px视为"接近底部"
-                const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <=
-                                    messageHistory.scrollTop + threshold;
-                if (isNearBottom) {
-                    scrollToBottom(); // 尝试滚动到底部
-                }
-            }, { passive: true });
-        }
-    }
-});
 
 /**
  * 检测当前设备是否为移动设备。

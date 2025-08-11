@@ -5,7 +5,7 @@
 
 import { CONFIG } from '../config/config.js';
 import { Logger } from '../utils/logger.js';
-import { showSystemMessage, showToast } from '../utils/ui-helpers.js';
+import { showToast } from '../utils/ui-helpers.js';
 
 // Module-level state and DOM element references, initialized via initVision
 let visionChatHistory = [];
