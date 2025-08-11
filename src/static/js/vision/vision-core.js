@@ -5,7 +5,7 @@
 
 import { CONFIG } from '../config/config.js';
 import { Logger } from '../utils/logger.js';
-import { showToast } from '../utils/ui-helpers.js';
+import { logMessage, showToast } from '../utils/ui-helpers.js';
 
 // Module-level state and DOM element references, initialized via initVision
 let visionChatHistory = [];
@@ -81,7 +81,7 @@ async function handleSendVisionMessage() {
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
     Logger.info(`正在请求视觉模型: ${selectedModel}`);
-    showSystemMessage(`正在请求视觉模型: ${selectedModel}`);
+    logMessage(`正在请求视觉模型: ${selectedModel}`, 'system');
 
     try {
         const response = await fetch('/api/chat/completions', {

@@ -180,16 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 2. 子页面切换逻辑 (由新的 updateUIVisibility 函数统一管理)
-    modeTabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const tabMode = tab.dataset.mode;
-            currentSubMode = tabMode;
-            updateUIVisibility();
-        });
-    });
-
-    // 默认激活文字聊天模式
-    document.querySelector('.tab[data-mode="text"]').click();
+    // [Kilo Code 注]：此块已被移动到 DOMContentLoaded 监听器的末尾，以确保安全执行。
 
     // 3. 日志显示控制逻辑
     toggleLogBtn.addEventListener('click', () => {
@@ -442,8 +433,19 @@ document.addEventListener('DOMContentLoaded', () => {
        updateUIVisibility();
    });
 
-   // Initial UI setup
+   // Initial UI setup - Set default modes and update UI
+   currentMainMode = 'chat';
+   currentSubMode = 'text';
    updateUIVisibility();
+
+   // 重新启用子页面切换逻辑，现在可以安全执行
+   modeTabs.forEach(tab => {
+       tab.addEventListener('click', () => {
+           const tabMode = tab.dataset.mode;
+           currentSubMode = tabMode;
+           updateUIVisibility();
+       });
+   });
 
     // --- Start of Merged Content ---
     // 添加移动端事件处理
@@ -2130,12 +2132,6 @@ function initMobileHandlers() {
     }
 }
 
-// 在 DOMContentLoaded 中调用
-
-/**
- * 检测当前设备是否为移动设备。
- * @returns {boolean} 如果是移动设备则返回 true，否则返回 false。
- */
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
