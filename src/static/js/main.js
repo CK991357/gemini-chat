@@ -179,49 +179,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 2. 模式切换逻辑 (文字聊天/系统日志)
+    // 2. 模式切换逻辑 (文字聊天/系统日志/历史记录)
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            const mode = tab.dataset.mode;
+            const tabMode = tab.dataset.mode; // 'text', 'log', 'history'
 
-
-            // 移除所有 tab 和 chat-container 的 active 类
+            // 移除所有子标签和对应容器的 active 类
             modeTabs.forEach(t => t.classList.remove('active'));
             chatContainers.forEach(c => c.classList.remove('active'));
 
-            // 添加当前点击 tab 和对应 chat-container 的 active 类
+            // 激活当前点击的子标签和容器
             tab.classList.add('active');
-            const targetContainer = document.querySelector(`.chat-container.${mode}-mode`);
+            const targetContainer = document.querySelector(`.chat-container.${tabMode}-mode`);
             if (targetContainer) {
                 targetContainer.classList.add('active');
             }
 
-            // 特别处理历史记录的占位符
-            if (mode === 'history') {
-                // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
-                // 但为了保险起见，我们保留一个明确的检查
-                // 此处假设：如果用户刚才在视觉模式，那么历史记录应该显示占位符
-                // 一个简单的判断方法是检查 visionModeBtn 是否还有 active class (虽然我们上面移除了，但可以作为逻辑标记)
-                // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
-                // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
-                // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
-                if (!chatModeBtn.classList.contains('active')) {
-                     historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
-                } else {
+            // 根据当前主模式，特殊处理历史记录标签页
+            if (tabMode === 'history') {
+                if (currentMainMode === 'chat') {
                     historyManager.renderHistoryList();
+                } else { // 对于 'vision' 或 'translation' 模式
+                    historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
                 }
             }
-
-
-            // 确保在切换模式时停止所有媒体流
-            if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
-                videoHandler.stopVideo();
-            }
-            if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
-                screenHandler.stopScreenSharing();
-            }
-            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
-            updateMediaPreviewsDisplay();
         });
     });
 
@@ -400,32 +381,53 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
    // T8: 将视觉模式切换逻辑移回 main.js
-   visionModeBtn.addEventListener('click', () => {
-       // 切换活动状态
-       visionModeBtn.classList.add('active');
-       visionContainer.classList.add('active');
+   // 统一的模式切换逻辑
+   const translationModeBtn = document.getElementById('translation-mode-button');
+   let currentMainMode = 'chat'; // 新增：用于跟踪当前的主模式
 
-       // 禁用其他主模式
-       translationElements.translationModeBtn.classList.remove('active');
-       translationElements.translationContainer.classList.remove('active');
-       chatModeBtn.classList.remove('active');
-       // 注意：聊天容器（text-mode）可能需要保持某种状态，取决于UI设计
-       // 这里我们假设完全切换，所以也移除 chatContainer 的 active 状态
-       translationElements.chatContainer.classList.remove('active');
+   function switchToMode(mode) {
+       currentMainMode = mode; // 更新当前主模式状态
 
+       // Deactivate all containers and buttons first
+       [visionContainer, translationElements.translationContainer, translationElements.chatContainer].forEach(c => c?.classList.remove('active'));
+       [visionModeBtn, translationModeBtn, chatModeBtn].forEach(b => b?.classList.remove('active'));
 
-       // 隐藏聊天输入区和媒体预览
-       translationElements.inputArea.style.display = 'none';
-       translationElements.mediaPreviewsContainer.style.display = 'none';
+       // Hide chat-specific elements by default
+       if (translationElements.inputArea) translationElements.inputArea.style.display = 'none';
+       if (translationElements.mediaPreviewsContainer) translationElements.mediaPreviewsContainer.style.display = 'none';
+       
+       // Stop media streams if they are active
+       if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
+       if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
 
-       // 停止任何活动的媒体流
-       if (videoHandler && videoHandler.getIsVideoActive()) {
-           videoHandler.stopVideo();
+       // Activate the target mode
+       switch (mode) {
+           case 'vision':
+               visionContainer.classList.add('active');
+               visionModeBtn.classList.add('active');
+               break;
+           case 'translation':
+               translationElements.translationContainer.classList.add('active');
+               translationModeBtn.classList.add('active');
+               break;
+           case 'chat':
+               translationElements.chatContainer.classList.add('active');
+               chatModeBtn.classList.add('active');
+               if (translationElements.inputArea) translationElements.inputArea.style.display = 'flex';
+               updateMediaPreviewsDisplay();
+               break;
        }
-       if (screenHandler && screenHandler.getIsScreenActive()) {
-           screenHandler.stopScreenSharing();
-       }
-   });
+       // 确保在切换主模式后，子标签页总是默认显示主功能区（即'text'标签页）
+       document.querySelector('.tab[data-mode="text"]')?.click();
+   }
+
+   // Attach event listeners for mode switching
+   visionModeBtn.addEventListener('click', () => switchToMode('vision'));
+   translationModeBtn.addEventListener('click', () => switchToMode('translation'));
+   chatModeBtn.addEventListener('click', () => switchToMode('chat'));
+
+   // Set default mode to chat
+   switchToMode('chat');
   });
 
 // State variables

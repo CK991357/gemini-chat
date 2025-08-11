@@ -100,11 +100,6 @@ function attachEventListeners(handlers) {
         });
     });
 
-    // Mode switching events
-    elements.translationModeBtn.addEventListener('click', () => switchMode('translation', handlers));
-    elements.chatModeBtn.addEventListener('click', () => switchMode('chat', handlers));
-    elements.toggleLogBtn.addEventListener('click', () => switchMode('log', handlers));
-
     // Voice input events (mousedown, mouseup, mouseleave, touchstart, touchend, touchmove)
     attachVoiceInputListeners();
 }
@@ -219,48 +214,3 @@ function getLanguageName(code) {
     return language ? language.name : code;
 }
 
-/**
- * Switches the application's UI mode.
- * @function switchMode
- * @description Manages the visibility of different UI containers (chat, translation, vision, log) and controls media streams.
- * @param {string} mode - The target mode ('translation', 'chat', 'vision', 'log').
- * @param {object} handlers - A collection of handler functions from other modules.
- * @returns {void}
- */
-function switchMode(mode, handlers) {
-    const { videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
-
-    // Deactivate all containers and buttons first
-    [elements.translationContainer, elements.chatContainer, elements.logContainer].forEach(c => c?.classList.remove('active'));
-    [elements.translationModeBtn, elements.chatModeBtn].forEach(b => b?.classList.remove('active'));
-
-    // Hide chat-specific elements by default
-    if (elements.mediaPreviewsContainer) elements.mediaPreviewsContainer.style.display = 'none';
-    if (elements.inputArea) elements.inputArea.style.display = 'none';
-    if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'none';
-
-    // Stop media streams if they are active
-    if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
-    if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
-
-    // Activate the target mode
-    switch (mode) {
-        case 'translation':
-            elements.translationContainer.classList.add('active');
-            elements.translationModeBtn.classList.add('active');
-            if (elements.translationVoiceInputButton) elements.translationVoiceInputButton.style.display = 'inline-flex';
-            break;
-        case 'chat':
-            elements.chatContainer.classList.add('active');
-            elements.chatModeBtn.classList.add('active');
-            if (elements.inputArea) elements.inputArea.style.display = 'flex';
-            if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'inline-flex';
-            updateMediaPreviewsDisplay();
-            document.querySelector('.tab[data-mode="text"]')?.click();
-            break;
-        case 'log':
-            elements.logContainer.classList.add('active');
-            document.querySelector('.tab[data-mode="log"]')?.click();
-            break;
-    }
-}
