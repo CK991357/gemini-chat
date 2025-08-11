@@ -8,6 +8,7 @@ import { HistoryManager } from './history/history-manager.js';
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
+import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 
 /**
@@ -347,10 +348,37 @@ document.addEventListener('DOMContentLoaded', () => {
        getSelectedModelConfig: () => selectedModelConfig, // 传递获取模型配置的函数
    });
 
-   // 初始化翻译功能
-   initTranslation();
-   // 初始化视觉功能
-   initVision();
+    // 初始化翻译功能
+    const translationElements = {
+        translationModeBtn: document.getElementById('translation-mode-button'),
+        chatModeBtn: document.getElementById('chat-mode-button'),
+        visionModeBtn: document.getElementById('vision-mode-button'),
+        toggleLogBtn: document.getElementById('toggle-log'),
+        translationContainer: document.querySelector('.translation-container'),
+        chatContainer: document.querySelector('.chat-container.text-mode'),
+        visionContainer: document.querySelector('.vision-container'),
+        logContainer: document.querySelector('.chat-container.log-mode'),
+        inputArea: document.querySelector('.input-area'),
+        mediaPreviewsContainer: document.getElementById('media-previews'),
+        inputLangSelect: document.getElementById('translation-input-language-select'),
+        outputLangSelect: document.getElementById('translation-output-language-select'),
+        translationModelSelect: document.getElementById('translation-model-select'),
+        translateButton: document.getElementById('translate-button'),
+        translationOcrButton: document.getElementById('translation-ocr-button'),
+        translationOcrInput: document.getElementById('translation-ocr-input'),
+        copyButton: document.getElementById('translation-copy-button'),
+        outputText: document.getElementById('translation-output-text'),
+        translationVoiceInputButton: document.getElementById('translation-voice-input-button'),
+        translationInputTextarea: document.getElementById('translation-input-text'),
+    };
+    const mediaHandlers = {
+        videoHandler,
+        screenHandler,
+        updateMediaPreviewsDisplay
+    };
+    initializeTranslationCore(translationElements, mediaHandlers);
+    // 初始化视觉功能
+    initVision();
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
   });
@@ -368,12 +396,6 @@ let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
-let isTranslationRecording = false; // 新增：翻译模式下是否正在录音
-let hasRequestedTranslationMicPermission = false; // 新增：标记是否已请求过翻译麦克风权限
-let translationAudioRecorder = null; // 新增：翻译模式下的 AudioRecorder 实例
-let translationAudioChunks = []; // 新增：翻译模式下录制的音频数据块
-let recordingTimeout = null; // 新增：用于处理长按录音的定时器
-let initialTouchY = 0; // 新增：用于判断手指上滑取消
 // 新增：聊天模式语音输入相关状态变量
 let isChatRecording = false; // 聊天模式下是否正在录音
 let hasRequestedChatMicPermission = false; // 标记是否已请求过聊天麦克风权限
@@ -1969,414 +1991,7 @@ function checkBrowserCompatibility() {
     return true;
 }
 
-/**
- * @function initTranslation
- * @description 初始化翻译功能，包括UI元素的获取、语言下拉菜单的填充、事件监听器的绑定以及模式切换逻辑。
- * @returns {void}
- */
-function initTranslation() {
-  const translationModeBtn = document.getElementById('translation-mode-button');
-  const translationContainer = document.querySelector('.translation-container');
-  const chatContainer = document.querySelector('.chat-container.text-mode'); // 确保是文字聊天容器
-  const logContainer = document.querySelector('.chat-container.log-mode'); // 获取日志容器
-  const inputArea = document.querySelector('.input-area'); // 获取输入区域
-  
-  // 语言列表从 CONFIG 中获取
-  const languages = CONFIG.TRANSLATION.LANGUAGES;
-  
-  // 初始化语言下拉菜单
-  const inputLangSelect = document.getElementById('translation-input-language-select');
-  const outputLangSelect = document.getElementById('translation-output-language-select');
-  
-  languages.forEach(lang => {
-    const inputOption = document.createElement('option');
-    inputOption.value = lang.code;
-    inputOption.textContent = lang.name;
-    inputLangSelect.appendChild(inputOption);
-    
-    // 输出语言不包括"自动检测"
-    if (lang.code !== 'auto') {
-      const outputOption = document.createElement('option');
-      outputOption.value = lang.code;
-      outputOption.textContent = lang.name;
-      outputLangSelect.appendChild(outputOption);
-    }
-  });
-  
-  // 设置默认语言从 CONFIG 中获取
-  inputLangSelect.value = CONFIG.TRANSLATION.DEFAULT_INPUT_LANG;
-  outputLangSelect.value = CONFIG.TRANSLATION.DEFAULT_OUTPUT_LANG;
 
-  // 填充翻译模型选择下拉菜单
-  const translationModelSelect = document.getElementById('translation-model-select');
-  translationModelSelect.innerHTML = ''; // 清空现有选项
-  CONFIG.TRANSLATION.MODELS.forEach(model => {
-    const option = document.createElement('option');
-    option.value = model.name;
-    option.textContent = model.displayName;
-    if (model.name === CONFIG.TRANSLATION.DEFAULT_MODEL) {
-      option.selected = true;
-    }
-    translationModelSelect.appendChild(option);
-  });
-  
-  // 翻译按钮事件
-  document.getElementById('translate-button').addEventListener('click', handleTranslation);
-
-  // 新增：OCR按钮事件
-  translationOcrButton.addEventListener('click', () => translationOcrInput.click());
-  translationOcrInput.addEventListener('change', handleTranslationOcr);
-
-  // 新增：监听翻译模型选择变化，以控制OCR按钮的显示
-  document.getElementById('translation-model-select').addEventListener('change', toggleOcrButtonVisibility);
-  // 初始加载时也调用一次，以设置正确的初始状态
-  toggleOcrButtonVisibility();
-  
-  // 复制按钮事件
-  document.getElementById('translation-copy-button').addEventListener('click', () => {
-    const outputText = document.getElementById('translation-output-text').textContent;
-    navigator.clipboard.writeText(outputText).then(() => {
-      logMessage('翻译结果已复制', 'system');
-    }).catch(err => {
-      logMessage('复制失败: ' + err, 'system');
-    });
-  });
-  
-  // 模式切换事件
-  translationModeBtn.addEventListener('click', () => {
-    translationContainer.classList.add('active');
-    chatContainer.classList.remove('active');
-    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
-    logContainer.classList.remove('active'); // 隐藏日志容器
-    
-    // 隐藏聊天模式特有的元素
-    if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
-    if (inputArea) inputArea.style.display = 'none';
-
-    translationModeBtn.classList.add('active');
-    chatModeBtn.classList.remove('active');
-    if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
-    
-    // 确保在切换模式时停止所有媒体流
-    if (videoHandler && videoHandler.getIsVideoActive()) videoHandler.stopVideo(); // T3: 使用 videoHandler 停止视频
-    if (screenHandler && screenHandler.getIsScreenActive()) screenHandler.stopScreenSharing(); // T4: 使用 screenHandler 停止屏幕共享
-    // 翻译模式下显示语音输入按钮
-    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'inline-flex'; // 使用 inline-flex 保持 Material Symbols 的对齐
-    // 翻译模式下隐藏聊天语音输入按钮
-    if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
-  });
-  
-  chatModeBtn.addEventListener('click', () => {
-    translationContainer.classList.remove('active');
-    chatContainer.classList.add('active');
-    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
-    logContainer.classList.remove('active'); // 确保日志容器在聊天模式下也隐藏
-    
-    // 恢复聊天模式特有的元素显示
-    updateMediaPreviewsDisplay(); // 根据视频/屏幕共享状态更新媒体预览显示
-    if (inputArea) inputArea.style.display = 'flex'; // 恢复输入区域显示
-
-    translationModeBtn.classList.remove('active');
-    chatModeBtn.classList.add('active');
-    if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
-    
-    // 激活文字聊天子标签页
-    document.querySelector('.tab[data-mode="text"]').click();
-
-    // 聊天模式下隐藏翻译语音输入按钮
-    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
-    // 聊天模式下显示聊天语音输入按钮
-    if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'inline-flex';
-  });
-
-  // 确保日志按钮也能正确切换模式
-  document.getElementById('toggle-log').addEventListener('click', () => {
-    translationContainer.classList.remove('active');
-    chatContainer.classList.remove('active');
-    if (visionContainer) visionContainer.classList.remove('active'); // 新增：隐藏视觉容器
-    logContainer.classList.add('active');
-    
-    // 隐藏聊天模式特有的元素
-    if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
-    if (inputArea) inputArea.style.display = 'none';
-
-    translationModeBtn.classList.remove('active');
-    chatModeBtn.classList.remove('active'); // 确保聊天按钮也取消激活
-    if (visionModeBtn) visionModeBtn.classList.remove('active'); // 新增：取消视觉按钮激活
-    // 媒体流停止
-    if (videoHandler && videoHandler.getIsVideoActive()) videoHandler.stopVideo(); // T3: 使用 videoHandler 停止视频
-    if (screenHandler && screenHandler.getIsScreenActive()) screenHandler.stopScreenSharing(); // T4: 使用 screenHandler 停止屏幕共享
-
-    // 日志模式下隐藏语音输入按钮
-    if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
-    // 日志模式下隐藏聊天语音输入按钮
-    if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
-  });
-
-  // 新增：视觉模式切换事件
-  if (visionModeBtn) {
-    visionModeBtn.addEventListener('click', () => {
-      if (visionContainer) visionContainer.classList.add('active');
-      translationContainer.classList.remove('active');
-      chatContainer.classList.remove('active');
-      logContainer.classList.remove('active');
-
-      // 隐藏其他模式的特定UI
-      if (mediaPreviewsContainer) mediaPreviewsContainer.style.display = 'none';
-      if (inputArea) inputArea.style.display = 'none';
-      if (translationVoiceInputButton) translationVoiceInputButton.style.display = 'none';
-      if (chatVoiceInputButton) chatVoiceInputButton.style.display = 'none';
-
-      visionModeBtn.classList.add('active');
-      translationModeBtn.classList.remove('active');
-      chatModeBtn.classList.remove('active');
-
-      // 确保停止所有媒体流
-      if (videoHandler && videoHandler.getIsVideoActive()) videoHandler.stopVideo(); // T3: 使用 videoHandler 停止视频
-      if (screenHandler && screenHandler.getIsScreenActive()) screenHandler.stopScreenSharing(); // T4: 使用 screenHandler 停止屏幕共享
-    });
-  }
-
-  // 翻译模式语音输入按钮事件监听
-  if (translationVoiceInputButton) {
-    // 鼠标事件
-    translationVoiceInputButton.addEventListener('mousedown', startTranslationRecording);
-    translationVoiceInputButton.addEventListener('mouseup', stopTranslationRecording);
-    translationVoiceInputButton.addEventListener('mouseleave', (e) => {
-      // 如果鼠标在按住时移出按钮区域，也视为取消
-      if (isTranslationRecording) {
-        cancelTranslationRecording();
-      }
-    });
-
-    // 触摸事件
-    translationVoiceInputButton.addEventListener('touchstart', (e) => {
-      e.preventDefault(); // 阻止默认的触摸行为，如滚动
-      initialTouchY = e.touches[0].clientY; // 记录初始Y坐标
-      startTranslationRecording();
-    });
-    translationVoiceInputButton.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      stopTranslationRecording();
-    });
-    translationVoiceInputButton.addEventListener('touchmove', (e) => {
-      if (isTranslationRecording) {
-        const currentTouchY = e.touches[0].clientY;
-        // 如果手指上滑超过一定距离，视为取消
-        if (initialTouchY - currentTouchY > 50) { // 50px 阈值
-          cancelTranslationRecording();
-        }
-      }
-    });
-  }
-
-  // 聊天模式语音输入按钮事件监听
-  if (chatVoiceInputButton) {
-    // 鼠标事件
-    chatVoiceInputButton.addEventListener('mousedown', startChatRecording);
-    chatVoiceInputButton.addEventListener('mouseup', stopChatRecording);
-    chatVoiceInputButton.addEventListener('mouseleave', (e) => {
-      // 如果鼠标在按住时移出按钮区域，也视为取消
-      if (isChatRecording) {
-        cancelChatRecording();
-      }
-    });
-
-    // 触摸事件
-    chatVoiceInputButton.addEventListener('touchstart', (e) => {
-      e.preventDefault(); // 阻止默认的触摸行为，如滚动
-      chatInitialTouchY = e.touches[0].clientY; // 记录初始Y坐标
-      startChatRecording();
-    });
-    chatVoiceInputButton.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      stopChatRecording();
-    });
-    chatVoiceInputButton.addEventListener('touchmove', (e) => {
-      if (isChatRecording) {
-        const currentTouchY = e.touches[0].clientY;
-        // 如果手指上滑超过一定距离，视为取消
-        if (chatInitialTouchY - currentTouchY > 50) { // 50px 阈值
-          cancelChatRecording();
-        }
-      }
-    });
-  }
-
-  // 监听 Esc 键取消录音
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isTranslationRecording) {
-      cancelTranslationRecording();
-    } else if (e.key === 'Escape' && isChatRecording) { // 新增：聊天模式下按 Esc 取消录音
-      cancelChatRecording();
-    }
-  });
-
-  // 初始设置聊天模式下语音输入按钮的显示状态
-  // 默认激活文字聊天模式，所以这里应该显示
-  if (chatVoiceInputButton) {
-    // 检查当前激活的模式，如果不是聊天模式，则隐藏
-    const currentActiveModeTab = document.querySelector('.mode-tabs .tab.active');
-    if (currentActiveModeTab && currentActiveModeTab.dataset.mode === 'text') {
-      chatVoiceInputButton.style.display = 'inline-flex';
-    } else {
-      chatVoiceInputButton.style.display = 'none';
-    }
-  }
-} // 闭合 initTranslation 函数
-
-/**
- * @function startTranslationRecording
- * @description 开始翻译模式下的语音录音。
- * @returns {Promise<void>}
- */
-async function startTranslationRecording() {
-  if (isTranslationRecording) return;
-
-  // 首次点击，只请求权限
-  if (!hasRequestedTranslationMicPermission) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // 成功获取权限后，立即停止流，因为我们只是为了请求权限
-      stream.getTracks().forEach(track => track.stop());
-      hasRequestedTranslationMicPermission = true;
-      logMessage('已请求并获取麦克风权限。请再次点击开始录音。', 'system');
-      translationVoiceInputButton.textContent = '点击开始录音'; // 提示用户再次点击
-      // 不开始录音，直接返回
-      return;
-    } catch (error) {
-      logMessage(`获取麦克风权限失败: ${error.message}`, 'system');
-      console.error('获取麦克风权限失败:', error);
-      alert('无法访问麦克风。请确保已授予麦克风权限。');
-      resetTranslationRecordingState(); // 权限失败时重置所有状态
-      hasRequestedTranslationMicPermission = false; // 确保权限请求状态也重置
-      return;
-    }
-  }
-
-  // 权限已请求过，现在开始录音
-  try {
-    logMessage('开始录音...', 'system');
-    translationVoiceInputButton.classList.add('recording-active'); // 添加录音激活类
-    translationInputTextarea.placeholder = '正在录音，请说话...';
-    translationInputTextarea.value = ''; // 清空输入区
-
-    translationAudioChunks = []; // 清空之前的音频数据
-    translationAudioRecorder = new AudioRecorder(); // 创建新的 AudioRecorder 实例
-
-    await translationAudioRecorder.start((chunk) => {
-      // AudioRecorder 现在应该返回 ArrayBuffer 或 Uint8Array
-      translationAudioChunks.push(chunk);
-    }, { returnRaw: true }); // 传递选项，让 AudioRecorder 返回原始 ArrayBuffer
-
-    isTranslationRecording = true;
-    translationVoiceInputButton.textContent = '录音中...'; // 更新按钮文本
-
-    // 设置一个超时，防止用户忘记松开按钮
-    recordingTimeout = setTimeout(() => {
-      if (isTranslationRecording) {
-        logMessage('录音超时，自动停止并发送', 'system');
-        stopTranslationRecording();
-      }
-    }, 60 * 1000); // 最长录音 60 秒
-
-  } catch (error) {
-    logMessage(`启动录音失败: ${error.message}`, 'system');
-    console.error('启动录音失败:', error);
-    alert('无法访问麦克风。请确保已授予麦克风权限。');
-    resetTranslationRecordingState(); // 录音失败时重置所有状态
-    hasRequestedTranslationMicPermission = false; // 确保权限请求状态也重置
-  }
-}
-
-/**
- * @function stopTranslationRecording
- * @description 停止翻译模式下的语音录音并发送进行转文字。
- * @returns {Promise<void>}
- */
-async function stopTranslationRecording() {
-  if (!isTranslationRecording) return;
-
-  clearTimeout(recordingTimeout); // 清除超时定时器
-  logMessage('停止录音，正在转文字...', 'system');
-  translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  translationInputTextarea.placeholder = '正在处理语音...';
-
-  try {
-    if (translationAudioRecorder) {
-      translationAudioRecorder.stop(); // 停止录音
-      translationAudioRecorder = null;
-    }
-
-    if (translationAudioChunks.length === 0) {
-      logMessage('没有录到音频，请重试', 'system');
-      resetTranslationRecordingState();
-      return;
-    }
-
-    // 将所有音频块合并成一个 Uint8Array
-    const totalLength = translationAudioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
-    const mergedAudioData = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of translationAudioChunks) {
-      mergedAudioData.set(new Uint8Array(chunk), offset);
-      offset += chunk.byteLength;
-    }
-    translationAudioChunks = []; // 清空缓冲区
-
-    // 将合并后的原始音频数据转换为 WAV Blob
-    const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE); // 使用 pcmToWavBlob 函数
-
-    // 发送转文字请求到 Worker
-    const response = await fetch('/api/transcribe-audio', {
-      method: 'POST',
-      headers: {
-        'Content-Type': audioBlob.type, // 使用 Blob 的 MIME 类型
-      },
-      body: audioBlob,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`转文字失败: ${errorData.error || response.statusText}`);
-    }
-
-    const result = await response.json();
-    const transcriptionText = result.text || '未获取到转录文本。';
-
-    translationInputTextarea.value = transcriptionText; // 打印到输入区
-    logMessage('语音转文字成功', 'system');
-
-  } catch (error) {
-    logMessage(`语音转文字失败: ${error.message}`, 'system');
-    console.error('语音转文字失败:', error);
-    translationInputTextarea.placeholder = '语音转文字失败，请重试。';
-  } finally {
-    resetTranslationRecordingState();
-    hasRequestedTranslationMicPermission = false; // 录音停止后，重置权限请求状态
-  }
-}
-
-/**
- * @function cancelTranslationRecording
- * @description 取消翻译模式下的语音录音。
- * @returns {void}
- */
-function cancelTranslationRecording() {
-  if (!isTranslationRecording) return;
-
-  clearTimeout(recordingTimeout); // 清除超时定时器
-  logMessage('录音已取消', 'system');
-  
-  if (translationAudioRecorder) {
-    translationAudioRecorder.stop(); // 停止录音
-    translationAudioRecorder = null;
-  }
-  translationAudioChunks = []; // 清空音频数据
-  resetTranslationRecordingState();
-  translationInputTextarea.placeholder = '输入要翻译的内容...';
-  hasRequestedTranslationMicPermission = false; // 录音取消后，重置权限请求状态
-}
 
 /**
  * @function startChatRecording
@@ -2529,88 +2144,7 @@ function resetChatRecordingState() {
   messageInput.placeholder = '输入消息...';
 }
 
-/**
- * @function resetTranslationRecordingState
- * @description 重置翻译模式录音相关的状态。
- * @returns {void}
- */
-function resetTranslationRecordingState() {
-  isTranslationRecording = false;
-  translationVoiceInputButton.classList.remove('recording-active'); // 移除录音激活类
-  translationVoiceInputButton.textContent = '语音输入'; // 恢复按钮文本
-}
 
-/**
- * @function handleTranslation
- * @description 处理翻译请求，获取输入内容、语言和模型，向后端发送翻译请求，并显示翻译结果。
- * @returns {Promise<void>}
- */
-async function handleTranslation() {
-  const inputText = document.getElementById('translation-input-text').value.trim();
-  if (!inputText) {
-    logMessage('请输入要翻译的内容', 'system');
-    return;
-  }
-  
-  const inputLang = document.getElementById('translation-input-language-select').value;
-  const outputLang = document.getElementById('translation-output-language-select').value;
-  const model = document.getElementById('translation-model-select').value;
-  
-  const outputElement = document.getElementById('translation-output-text');
-  outputElement.textContent = '翻译中...';
-  
-  try {
-    // 构建提示词
-    const prompt = inputLang === 'auto' ?
-      `请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
-      `请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
-    
-    const response = await fetch('/api/translate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Authorization 头部由后端 worker.js 在 handleTranslationRequest 中处理
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-            {
-                role: 'system',
-                content: CONFIG.TRANSLATION.SYSTEM_PROMPT
-            },
-            { role: 'user', content: prompt }
-        ],
-        stream: false // 翻译通常不需要流式响应
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`翻译请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-    }
-    
-    const data = await response.json();
-    const translatedText = data.choices[0].message.content;
-    
-    outputElement.textContent = translatedText;
-    logMessage('翻译完成', 'system');
-  } catch (error) {
-    logMessage(`翻译失败: ${error.message}`, 'system');
-    outputElement.textContent = '翻译失败，请重试';
-    console.error('翻译错误:', error);
-  }
-}
-
-/**
- * @function getLanguageName
- * @description 根据语言代码获取语言的中文名称。
- * @param {string} code - 语言代码（如 'en', 'zh', 'auto'）。
- * @returns {string} 语言的中文名称或原始代码（如果未找到）。
- */
-function getLanguageName(code) {
-  const language = CONFIG.TRANSLATION.LANGUAGES.find(lang => lang.code === code);
-  return language ? language.name : code;
-}
 
 /**
  * 显示一个 Toast 轻提示。
@@ -2915,110 +2449,3 @@ function initVision() {
     });
 }
 
-/**
- * @function toggleOcrButtonVisibility
- * @description 根据当前选择的翻译模型，决定是否显示OCR（图片识别）按钮。
- *              仅当选择的模型是 Gemini 系列时显示该按钮。
- * @returns {void}
- */
-function toggleOcrButtonVisibility() {
-    const selectedModel = document.getElementById('translation-model-select').value;
-    if (selectedModel.startsWith('gemini-')) {
-        translationOcrButton.style.display = 'inline-flex';
-    } else {
-        translationOcrButton.style.display = 'none';
-    }
-}
-
-/**
- * @function handleTranslationOcr
- * @description 处理用户通过OCR按钮上传的图片。它会读取图片，发送给Gemini模型进行文字识别，
- *              然后将识别出的文本填充到翻译输入框中。
- * @param {Event} event - 文件输入框的 change 事件对象。
- * @returns {Promise<void>}
- */
-async function handleTranslationOcr(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // 检查文件类型
-    if (!file.type.startsWith('image/')) {
-        showToast('请上传图片文件。');
-        return;
-    }
-
-    const outputElement = document.getElementById('translation-output-text');
-    const inputTextarea = document.getElementById('translation-input-text');
-    
-    // 显示处理中的提示
-    inputTextarea.value = ''; // 清空输入框
-    inputTextarea.placeholder = '正在识别图片中的文字...';
-    outputElement.textContent = ''; // 清空旧的翻译结果
-    translationOcrButton.disabled = true; // 禁用按钮防止重复点击
-
-    try {
-        const base64String = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = error => reject(error);
-            reader.readAsDataURL(file);
-        });
-
-        const model = document.getElementById('translation-model-select').value;
-
-        // 构建发送给模型的请求体
-        const requestBody = {
-            model: model,
-            messages: [
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: '请对图片进行OCR识别。提取所有文本，并严格保持其原始的布局和格式，包括表格、列、缩进和换行。请使用Markdown格式化输出，尤其是表格。' },
-                        {
-                            type: 'image_url',
-                            image_url: {
-                                url: base64String
-                            }
-                        }
-                    ]
-                }
-            ],
-            stream: false
-        };
-
-        // 使用与翻译相同的后端API端点
-        const response = await fetch('/api/translate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`图片文字识别失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-        }
-
-        const data = await response.json();
-        const extractedText = data.choices[0].message.content;
-
-        if (extractedText) {
-            inputTextarea.value = extractedText;
-            showToast('文字识别成功！');
-        } else {
-            showToast('图片中未识别到文字。');
-        }
-
-    } catch (error) {
-        logMessage(`OCR 失败: ${error.message}`, 'system');
-        showToast('图片文字识别失败，请重试。');
-        console.error('OCR Error:', error);
-    } finally {
-        // 重置状态
-        inputTextarea.placeholder = '输入要翻译的内容...';
-        translationOcrButton.disabled = false;
-        // 重置文件输入，以便可以再次选择同一个文件
-        event.target.value = '';
-    }
-}
