@@ -1,5 +1,5 @@
 import { logMessage } from '../utils/logger.js';
-import { showToast } from '../utils/ui-helpers.js';
+import { showToast } from '../utils/utils.js';
 
 /**
  * @fileoverview Handles OCR (Optical Character Recognition) for the translation feature.
