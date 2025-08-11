@@ -9,6 +9,7 @@ import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 Screen
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
+import { handleTranslationOcr } from './translation/translation-ocr.js'; // 新增导入
 import { Logger } from './utils/logger.js';
 
 /**

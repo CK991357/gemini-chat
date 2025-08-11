@@ -31,7 +31,7 @@ export function initializeTranslationCore(el, handlers, audioFunctions, showToas
     attachEventListeners(handlers, showToast);
 
     // Set initial state for the OCR button
-    toggleOcrButtonVisibility(elements.translationModelSelect, elements.translationOcrButton);
+    toggleOcrButtonVisibility();
 }
 
 /**
