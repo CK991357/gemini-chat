@@ -1,8 +1,7 @@
 import { AudioRecorder } from '../audio/audio-recorder.js';
 import { CONFIG } from '../config/config.js';
+import { pcmToWavBlob } from '../main.js';
 import { logMessage } from '../utils/logger.js';
-import { pcmToWavBlob } from '../utils/utils.js';
-
 /**
  * @fileoverview Manages audio recording for the translation feature.
  */
@@ -20,6 +19,7 @@ let hasRequestedMicPermission = false;
 export function isTranslationRecording() {
     return _isTranslationRecording;
 }
+
 
 /**
  * Starts the audio recording for translation.
