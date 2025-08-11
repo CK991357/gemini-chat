@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 // DOM Elements (will be passed in)
 let promptSelect;
 let systemInstructionInput;
-let showSystemMessageCallback; // 用于存储 showSystemMessage 函数的回调
+let onPromptChangeCallback; // 通用回调函数
 
 /**
  * @function updateSystemInstruction
@@ -17,8 +17,9 @@ function updateSystemInstruction() {
 
     if (selectedOption) {
         systemInstructionInput.value = selectedOption.prompt;
-        if (typeof showSystemMessageCallback === 'function') {
-            showSystemMessageCallback(`指令模式已切换为: ${selectedOption.displayName}`);
+        // 调用回调，并传入消息和类型，以匹配 logMessage 函数签名
+        if (typeof onPromptChangeCallback === 'function') {
+            onPromptChangeCallback(`指令模式已切换为: ${selectedOption.displayName}`, 'system');
         }
     }
 }
@@ -29,12 +30,12 @@ function updateSystemInstruction() {
  * @param {object} dependencies - 依赖项对象。
  * @param {HTMLSelectElement} dependencies.promptSelectEl - 指令模式的 select 元素。
  * @param {HTMLTextAreaElement} dependencies.systemInstructionInputEl - 系统指令的 textarea 元素。
- * @param {Function} dependencies.showSystemMessage - 用于显示系统消息的回调函数。
+ * @param {Function} dependencies.onPromptChange - 当指令变更时调用的回调函数。
  */
-export function initializePromptSelect({ promptSelectEl, systemInstructionInputEl, showSystemMessage }) {
+export function initializePromptSelect({ promptSelectEl, systemInstructionInputEl, onPromptChange }) {
     promptSelect = promptSelectEl;
     systemInstructionInput = systemInstructionInputEl;
-    showSystemMessageCallback = showSystemMessage;
+    onPromptChangeCallback = onPromptChange;
 
     if (!promptSelect) return;
 

@@ -179,30 +179,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 2. 模式切换逻辑 (文字聊天/系统日志/历史记录)
+    // 2. 子页面切换逻辑 (文字聊天/系统日志/历史记录)
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const tabMode = tab.dataset.mode; // 'text', 'log', 'history'
-
-            // 移除所有子标签和对应容器的 active 类
-            modeTabs.forEach(t => t.classList.remove('active'));
-            chatContainers.forEach(c => c.classList.remove('active'));
-
-            // 激活当前点击的子标签和容器
-            tab.classList.add('active');
-            const targetContainer = document.querySelector(`.chat-container.${tabMode}-mode`);
-            if (targetContainer) {
-                targetContainer.classList.add('active');
-            }
-
-            // 根据当前主模式，特殊处理历史记录标签页
-            if (tabMode === 'history') {
-                if (currentMainMode === 'chat') {
-                    historyManager.renderHistoryList();
-                } else { // 对于 'vision' 或 'translation' 模式
-                    historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
-                }
-            }
+            
+            // 激活对应的子页面
+            activateSubTab(tabMode);
         });
     });
 
@@ -377,18 +360,40 @@ document.addEventListener('DOMContentLoaded', () => {
   initializePromptSelect({
       promptSelectEl: promptSelect,
       systemInstructionInputEl: systemInstructionInput,
-      showSystemMessage: showSystemMessage
+      onPromptChange: logMessage // 将 logMessage 作为回调
   });
 
    // T8: 将视觉模式切换逻辑移回 main.js
    // 统一的模式切换逻辑
    const translationModeBtn = document.getElementById('translation-mode-button');
-   let currentMainMode = 'chat'; // 新增：用于跟踪当前的主模式
+   let currentMainMode = 'chat';
+
+   function activateSubTab(tabMode) {
+       // 移除所有子标签和对应容器的 active 类
+       modeTabs.forEach(t => t.classList.remove('active'));
+       chatContainers.forEach(c => c.classList.remove('active'));
+
+       // 激活当前点击的子标签和容器
+       const activeTab = document.querySelector(`.tab[data-mode="${tabMode}"]`);
+       if (activeTab) activeTab.classList.add('active');
+       
+       const targetContainer = document.querySelector(`.chat-container.${tabMode}-mode`);
+       if (targetContainer) targetContainer.classList.add('active');
+
+       // 根据当前主模式，特殊处理历史记录标签页
+       if (tabMode === 'history') {
+           if (currentMainMode === 'chat') {
+               historyManager.renderHistoryList();
+           } else { // 对于 'vision' 或 'translation' 模式
+               historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+           }
+       }
+   }
 
    function switchToMode(mode) {
-       currentMainMode = mode; // 更新当前主模式状态
+       currentMainMode = mode;
 
-       // Deactivate all containers and buttons first
+       // Deactivate all main containers and buttons first
        [visionContainer, translationElements.translationContainer, translationElements.chatContainer].forEach(c => c?.classList.remove('active'));
        [visionModeBtn, translationModeBtn, chatModeBtn].forEach(b => b?.classList.remove('active'));
 
@@ -411,14 +416,14 @@ document.addEventListener('DOMContentLoaded', () => {
                translationModeBtn.classList.add('active');
                break;
            case 'chat':
-               translationElements.chatContainer.classList.add('active');
+               // 聊天模式只激活 chatContainer，不直接激活 text-mode 子容器
                chatModeBtn.classList.add('active');
                if (translationElements.inputArea) translationElements.inputArea.style.display = 'flex';
                updateMediaPreviewsDisplay();
                break;
        }
-       // 确保在切换主模式后，子标签页总是默认显示主功能区（即'text'标签页）
-       document.querySelector('.tab[data-mode="text"]')?.click();
+       // 切换主模式后，总是默认激活 "文字聊天" 子标签页
+       activateSubTab('text');
    }
 
    // Attach event listeners for mode switching
