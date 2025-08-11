@@ -1,6 +1,6 @@
 import { AudioRecorder } from '../audio/audio-recorder.js';
 import { CONFIG } from '../config/config.js';
-import { logMessage } from '../utils/logger.js';
+import { showSystemMessage, showToast } from '../utils/ui-helpers.js'; // New import for UI helpers
 import { pcmToWavBlob } from '../utils/utils.js';
 
 /**
@@ -34,10 +34,10 @@ export async function startTranslationRecording(elements) {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             stream.getTracks().forEach(track => track.stop());
             hasRequestedMicPermission = true;
-            logMessage('已获取麦克风权限，请再次长按开始录音。', 'system');
+            showSystemMessage('已获取麦克风权限，请再次长按开始录音。'); // Use showSystemMessage
             return;
         } catch (error) {
-            logMessage(`获取麦克风权限失败: ${error.message}`, 'system');
+            showSystemMessage(`获取麦克风权限失败: ${error.message}`); // Use showSystemMessage
             console.error('获取麦克风权限失败:', error);
             resetRecordingState(elements);
             hasRequestedMicPermission = false;
@@ -68,7 +68,7 @@ export async function startTranslationRecording(elements) {
         }, 60000); // 60 seconds timeout
 
     } catch (error) {
-        logMessage(`启动录音失败: ${error.message}`, 'system');
+        showSystemMessage(`启动录音失败: ${error.message}`); // Use showSystemMessage
         console.error('启动录音失败:', error);
         resetRecordingState(elements);
         hasRequestedMicPermission = false;
@@ -123,10 +123,10 @@ export async function stopTranslationRecording(elements) {
 
         const result = await response.json();
         elements.inputTextarea.value = result.text || '未获取到转录文本。';
-        logMessage('语音转文字成功', 'system');
+        showToast('语音转文字成功'); // Use showToast
 
     } catch (error) {
-        logMessage(`语音转文字失败: ${error.message}`, 'system');
+        showSystemMessage(`语音转文字失败: ${error.message}`); // Use showSystemMessage
         console.error('语音转文字失败:', error);
         elements.inputTextarea.placeholder = '语音转文字失败，请重试。';
     } finally {

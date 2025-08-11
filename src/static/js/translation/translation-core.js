@@ -1,5 +1,4 @@
 import { CONFIG } from '../config/config.js';
-import { logMessage } from '../utils/logger.js';
 import { cancelTranslationRecording, isTranslationRecording, startTranslationRecording, stopTranslationRecording } from './translation-audio.js';
 import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-ocr.js';
 
