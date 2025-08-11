@@ -1,7 +1,7 @@
 import { AudioRecorder } from '../audio/audio-recorder.js';
 import { CONFIG } from '../config/config.js';
 import { pcmToWavBlob } from '../main.js';
-import { logMessage } from '../utils/logger.js';
+import { Logger } from '../utils/logger.js';
 /**
  * @fileoverview Manages audio recording for the translation feature.
  */
@@ -34,11 +34,10 @@ export async function startTranslationRecording(elements) {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             stream.getTracks().forEach(track => track.stop());
             hasRequestedMicPermission = true;
-            logMessage('已获取麦克风权限，请再次长按开始录音。', 'system');
+            Logger.info('已获取麦克风权限，请再次长按开始录音。');
             return;
         } catch (error) {
-            logMessage(`获取麦克风权限失败: ${error.message}`, 'system');
-            console.error('获取麦克风权限失败:', error);
+            Logger.error(`获取麦克风权限失败: ${error.message}`, error);
             resetRecordingState(elements);
             hasRequestedMicPermission = false;
             return;
@@ -46,7 +45,7 @@ export async function startTranslationRecording(elements) {
     }
 
     try {
-        logMessage('开始录音...', 'system');
+        Logger.info('开始录音...');
         elements.voiceInputButton.classList.add('recording-active');
         elements.inputTextarea.placeholder = '正在录音，请说话...';
         elements.inputTextarea.value = '';
@@ -62,13 +61,13 @@ export async function startTranslationRecording(elements) {
 
         recordingTimeout = setTimeout(() => {
             if (_isTranslationRecording) {
-                logMessage('录音超时，自动停止', 'system');
+                Logger.info('录音超时，自动停止');
                 stopTranslationRecording(elements);
             }
         }, 60000); // 60 seconds timeout
 
     } catch (error) {
-        logMessage(`启动录音失败: ${error.message}`, 'system');
+        Logger.error(`启动录音失败: ${error.message}`, error);
         console.error('启动录音失败:', error);
         resetRecordingState(elements);
         hasRequestedMicPermission = false;
@@ -84,7 +83,7 @@ export async function stopTranslationRecording(elements) {
     if (!_isTranslationRecording) return;
 
     clearTimeout(recordingTimeout);
-    logMessage('停止录音，正在处理...', 'system');
+    Logger.info('停止录音，正在处理...');
     elements.inputTextarea.placeholder = '正在处理语音...';
 
     try {
@@ -94,7 +93,7 @@ export async function stopTranslationRecording(elements) {
         }
 
         if (translationAudioChunks.length === 0) {
-            logMessage('没有录到音频', 'system');
+            Logger.info('没有录到音频');
             resetRecordingState(elements);
             return;
         }
@@ -123,11 +122,10 @@ export async function stopTranslationRecording(elements) {
 
         const result = await response.json();
         elements.inputTextarea.value = result.text || '未获取到转录文本。';
-        logMessage('语音转文字成功', 'system');
+        Logger.info('语音转文字成功');
 
     } catch (error) {
-        logMessage(`语音转文字失败: ${error.message}`, 'system');
-        console.error('语音转文字失败:', error);
+        Logger.error(`语音转文字失败: ${error.message}`, error);
         elements.inputTextarea.placeholder = '语音转文字失败，请重试。';
     } finally {
         resetRecordingState(elements);
@@ -142,7 +140,7 @@ export function cancelTranslationRecording(elements) {
     if (!_isTranslationRecording) return;
 
     clearTimeout(recordingTimeout);
-    logMessage('录音已取消', 'system');
+    Logger.info('录音已取消');
 
     if (translationAudioRecorder) {
         translationAudioRecorder.stop();
