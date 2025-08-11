@@ -393,7 +393,11 @@ document.addEventListener('DOMContentLoaded', () => {
    };
    initVision(visionDependencies);
   // 初始化指令模式选择
-  initializePromptSelect(promptSelect, systemInstructionInput);
+  initializePromptSelect({
+      promptSelectEl: promptSelect,
+      systemInstructionInputEl: systemInstructionInput,
+      showSystemMessage: showSystemMessage
+  });
 
    // T8: 将视觉模式切换逻辑移回 main.js
    visionModeBtn.addEventListener('click', () => {
