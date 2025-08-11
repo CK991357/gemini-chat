@@ -1,6 +1,5 @@
 import { CONFIG } from '../config/config.js';
 import { logMessage } from '../utils/logger.js';
-import { cancelTranslationRecording, isTranslationRecording, startTranslationRecording, stopTranslationRecording } from './translation-audio.js';
 import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-ocr.js';
 
 /**
@@ -11,14 +10,17 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 // Store references to DOM elements to avoid repeated lookups
 let elements = {};
 let initialTouchY = 0; // For swipe-to-cancel gesture
+let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
 
 /**
  * Initializes the translation feature.
  * @param {object} el - A collection of DOM elements required by the translation module.
  * @param {object} handlers - A collection of handler functions from other modules.
+ * @param {object} audioFunctions - A collection of audio recording functions from main.js.
  */
-export function initializeTranslationCore(el, handlers) {
+export function initializeTranslationCore(el, handlers, audioFunctions) {
     elements = el;
+    translationAudioFunctions = audioFunctions; // 保存传入的函数
 
     // Populate language dropdowns from config
     populateLanguageSelects();
@@ -124,11 +126,11 @@ function attachVoiceInputListeners() {
     };
 
     // Mouse events
-    button.addEventListener('mousedown', () => startTranslationRecording(audioElements));
-    button.addEventListener('mouseup', () => stopTranslationRecording(audioElements));
+    button.addEventListener('mousedown', () => translationAudioFunctions.startTranslationRecording(audioElements));
+    button.addEventListener('mouseup', () => translationAudioFunctions.stopTranslationRecording(audioElements));
     button.addEventListener('mouseleave', () => {
-        if (isTranslationRecording()) {
-            cancelTranslationRecording(audioElements);
+        if (translationAudioFunctions.isTranslationRecording()) {
+            translationAudioFunctions.cancelTranslationRecording(audioElements);
         }
     });
 
@@ -136,17 +138,17 @@ function attachVoiceInputListeners() {
     button.addEventListener('touchstart', (e) => {
         e.preventDefault();
         initialTouchY = e.touches[0].clientY;
-        startTranslationRecording(audioElements);
+        translationAudioFunctions.startTranslationRecording(audioElements);
     });
     button.addEventListener('touchend', (e) => {
         e.preventDefault();
-        stopTranslationRecording(audioElements);
+        translationAudioFunctions.stopTranslationRecording(audioElements);
     });
     button.addEventListener('touchmove', (e) => {
-        if (isTranslationRecording()) {
+        if (translationAudioFunctions.isTranslationRecording()) {
             const currentTouchY = e.touches[0].clientY;
             if (initialTouchY - currentTouchY > 50) { // 50px threshold for swipe up to cancel
-                cancelTranslationRecording(audioElements);
+                translationAudioFunctions.cancelTranslationRecording(audioElements);
             }
         }
     });
