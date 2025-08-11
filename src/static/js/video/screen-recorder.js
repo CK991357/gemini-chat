@@ -135,7 +135,10 @@ export class ScreenRecorder {
                     if (this.validateFrame(base64Data)) {
                         this.frameCount++;
                         Logger.debug(`Screen frame #${this.frameCount} captured`);
-                        this.onScreenData(base64Data);
+                        this.onScreenData({
+                            mimeType: 'image/jpeg',
+                            data: base64Data
+                        });
                     }
                 }
             } catch (error) {
