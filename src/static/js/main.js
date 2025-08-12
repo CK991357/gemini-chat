@@ -92,19 +92,6 @@ const visionSendButton = document.getElementById('vision-send-button');
 // T3: 确保 flipCameraButton 存在
 const flipCameraButton = document.getElementById('flip-camera');
 
-// 视觉模式下的子功能区元素
-const visionTabs = document.querySelectorAll('.vision-tabs .tab');
-const visionChatMode = document.querySelector('.vision-chat-mode');
-const visionLogMode = document.querySelector('.vision-container .vision-log-mode');
-const visionHistoryMode = document.querySelector('.vision-container .vision-history-mode');
-const clearVisionLogsBtn = document.getElementById('clear-vision-logs');
-const visionLogsContainer = document.getElementById('vision-logs-container');
-// 获取视觉聊天核心区域内的具体元素
-const visionMessageHistoryContainer = document.getElementById('vision-message-history');
-const visionAttachmentPreviewsContainer = document.getElementById('vision-attachment-previews');
-const visionControlsContainer = document.querySelector('.vision-controls');
-const visionInputAreaContainer = document.getElementById('vision-input-area');
-
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
@@ -192,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
-            const translationContainer = document.querySelector('.translation-container');
 
             // 修正：在切换子模式前，先隐藏视觉模式容器（如果它处于激活状态）
             if (visionContainer && visionContainer.classList.contains('active')) {
@@ -212,22 +198,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetContainer.classList.add('active');
             }
 
-            // 新增逻辑：根据子功能区切换，控制翻译功能区的显隐
-            if (mode === 'log' || mode === 'history') {
-                if (translationContainer) {
-                    translationContainer.style.display = 'none';
-                }
-            } else if (mode === 'text') {
-                // 仅当主模式为“翻译”时才显示翻译区
-                const translationModeBtn = document.getElementById('translation-mode-button');
-                if (translationContainer && translationModeBtn && translationModeBtn.classList.contains('active')) {
-                    translationContainer.style.display = 'flex';
-                } else if (translationContainer) {
-                    translationContainer.style.display = 'none';
-                }
-            }
-
-
             // 特别处理历史记录的占位符
             if (mode === 'history') {
                 // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
@@ -237,8 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
                 // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
                 // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
-                const translationModeBtn = document.getElementById('translation-mode-button');
-                if (!chatModeBtn.classList.contains('active') || (translationModeBtn && translationModeBtn.classList.contains('active'))) {
+                if (!chatModeBtn.classList.contains('active')) {
                      historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
                 } else {
                     historyManager.renderHistoryList();
@@ -258,31 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 新增：视觉模式内部的标签页切换逻辑（参照翻译区模式）
-    visionTabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const mode = tab.dataset.mode;
-
-            // 移除所有 vision 内部 tab 和 container 的 active 类
-            visionTabs.forEach(t => t.classList.remove('active'));
-            [visionChatMode, visionLogMode, visionHistoryMode].forEach(c => c.classList.remove('active'));
-
-            // 激活当前点击的 tab
-            tab.classList.add('active');
-
-            // 激活对应的容器
-            // 注意：我们让 visionChatMode 保持 active，以显示输入框等
-            visionChatMode.classList.add('active');
-            
-            if (mode === 'vision-log') {
-                visionLogMode.classList.add('active');
-            } else if (mode === 'vision-history') {
-                visionHistoryMode.classList.add('active');
-            }
-            // 如果是 vision-chat，则只有 visionChatMode 是 active
-        });
-    });
-
     // 默认激活文字聊天模式
     document.querySelector('.tab[data-mode="text"]').click();
 
@@ -295,15 +239,6 @@ document.addEventListener('DOMContentLoaded', () => {
     clearLogsBtn.addEventListener('click', () => {
         logsContainer.innerHTML = ''; // 清空日志内容
         logMessage('日志已清空', 'system');
-    });
-
-    // 新增：清空视觉模式日志的逻辑
-    clearVisionLogsBtn.addEventListener('click', () => {
-        if (visionLogsContainer) {
-            visionLogsContainer.innerHTML = '';
-        }
-        // 可以在这里添加一个独立的视觉日志函数，或者复用现有的 logMessage
-        // 为了简单起见，我们暂时不在这里添加日志条目
     });
 
     // 4. 配置面板切换逻辑 (现在通过顶部导航的齿轮图标控制)
