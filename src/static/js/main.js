@@ -99,6 +99,11 @@ const visionLogMode = document.querySelector('.vision-container .vision-log-mode
 const visionHistoryMode = document.querySelector('.vision-container .vision-history-mode');
 const clearVisionLogsBtn = document.getElementById('clear-vision-logs');
 const visionLogsContainer = document.getElementById('vision-logs-container');
+// 获取视觉聊天核心区域内的具体元素
+const visionMessageHistoryContainer = document.getElementById('vision-message-history');
+const visionAttachmentPreviewsContainer = document.getElementById('vision-attachment-previews');
+const visionControlsContainer = document.querySelector('.vision-controls');
+const visionInputAreaContainer = document.getElementById('vision-input-area');
 
 
 // Load saved values from localStorage
@@ -253,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 新增：视觉模式内部的标签页切换逻辑
+    // 新增：视觉模式内部的标签页切换逻辑（参照翻译区模式）
     visionTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
@@ -262,19 +267,19 @@ document.addEventListener('DOMContentLoaded', () => {
             visionTabs.forEach(t => t.classList.remove('active'));
             [visionChatMode, visionLogMode, visionHistoryMode].forEach(c => c.classList.remove('active'));
 
-            // 添加当前点击 tab 和对应 container 的 active 类
+            // 激活当前点击的 tab
             tab.classList.add('active');
-            switch (mode) {
-                case 'vision-chat':
-                    visionChatMode.classList.add('active');
-                    break;
-                case 'vision-log':
-                    visionLogMode.classList.add('active');
-                    break;
-                case 'vision-history':
-                    visionHistoryMode.classList.add('active');
-                    break;
+
+            // 激活对应的容器
+            // 注意：我们让 visionChatMode 保持 active，以显示输入框等
+            visionChatMode.classList.add('active');
+            
+            if (mode === 'vision-log') {
+                visionLogMode.classList.add('active');
+            } else if (mode === 'vision-history') {
+                visionHistoryMode.classList.add('active');
             }
+            // 如果是 vision-chat，则只有 visionChatMode 是 active
         });
     });
 

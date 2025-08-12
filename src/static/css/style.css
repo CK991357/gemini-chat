@@ -1564,7 +1564,24 @@ body.dark-mode {
 }
 
 .vision-container.active {
-    display: flex;
+    display: grid; /* 改为 grid 布局 */
+    grid-template-rows: auto 1fr; /* 顶部标签页，下方内容区自适应 */
+}
+
+.vision-chat-mode,
+.vision-log-mode,
+.vision-history-mode {
+    display: none; /* 默认隐藏所有视觉模式的内容区 */
+}
+
+.vision-chat-mode.active,
+.vision-log-mode.active,
+.vision-history-mode.active {
+    display: flex; /* 激活时显示 */
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 /* 视觉模式下的消息历史记录 */
