@@ -10,6 +10,7 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
+import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
 
 /**
  * @fileoverview Main entry point for the application.
@@ -276,7 +277,6 @@ document.addEventListener('DOMContentLoaded', () => {
    // 视觉模型附件按钮事件监听
    visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
    visionFileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
-   visionSendButton.addEventListener('click', () => handleSendVisionMessage(attachmentManager)); // T2: 传入管理器
  
    // T10: 初始化 HistoryManager
    historyManager = new HistoryManager({
@@ -383,8 +383,19 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelTranslationRecording,
         resetRecordingState
     }, showToast);
-    // 初始化视觉功能
-    initVision();
+    // T8: 初始化视觉功能
+    const visionElements = {
+        visionModelSelect: document.getElementById('vision-model-select'),
+        visionSendButton: document.getElementById('vision-send-button'),
+        visionAttachmentButton: document.getElementById('vision-attachment-button'),
+        visionFileInput: document.getElementById('vision-file-input'),
+        visionInputText: document.getElementById('vision-input-text'),
+        visionMessageHistory: document.getElementById('vision-message-history'),
+    };
+    const visionHandlers = {
+        showToast: showToast,
+    };
+    initializeVisionCore(visionElements, attachmentManager, visionHandlers);
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
 
@@ -410,7 +421,6 @@ let chatAudioRecorder = null; // 聊天模式下的 AudioRecorder 实例
 let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
 let chatInitialTouchY = 0; // 聊天模式下用于判断手指上滑取消
-let visionChatHistory = []; // 新增：用于存储视觉模式的聊天历史
 let attachmentManager = null; // T2: 提升作用域
 let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
@@ -2356,257 +2366,3 @@ export function showSystemMessage(message) {
 }
 
 
-
-async function handleSendVisionMessage(attachmentManager) { // T2: 传入管理器
-    const text = visionInputText.value.trim();
-    const visionAttachedFiles = attachmentManager.getVisionAttachedFiles(); // T2: 从管理器获取
-    if (!text && visionAttachedFiles.length === 0) {
-        showToast('请输入文本或添加附件。');
-        return;
-    }
-
-    const visionModelSelect = document.getElementById('vision-model-select');
-    const selectedModel = visionModelSelect.value;
-
-    // 显示用户消息
-    displayVisionUserMessage(text, visionAttachedFiles);
-
-    // 将用户消息添加到历史记录
-    const userContent = [];
-    if (text) {
-        userContent.push({ type: 'text', text });
-    }
-    visionAttachedFiles.forEach(file => {
-        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-    });
-    visionChatHistory.push({ role: 'user', content: userContent });
-
-    // 清理输入
-    visionInputText.value = '';
-    attachmentManager.clearAttachedFile('vision'); // T2: 使用管理器清除附件
-
-    // 显示加载状态
-    visionSendButton.disabled = true;
-    visionSendButton.textContent = 'progress_activity';
-    const aiMessage = createVisionAIMessageElement();
-    const { markdownContainer, reasoningContainer } = aiMessage;
-    markdownContainer.innerHTML = '<p>正在请求模型...</p>';
-    logMessage(`正在请求视觉模型: ${selectedModel}`, 'system');
-
-    try {
-        // 统一使用流式请求
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: selectedModel,
-                messages: [
-                    { role: 'system', content: CONFIG.VISION.SYSTEM_PROMPT },
-                    ...visionChatHistory
-                ],
-                stream: true, // 始终启用流式响应
-            }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'API 请求失败');
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let finalContent = ''; // 用于存储最终的 content 部分
-        let reasoningStarted = false;
-        let answerStarted = false; // 新增：用于标记最终答案是否开始
-
-        markdownContainer.innerHTML = ''; // 清空 "加载中" 消息
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') return;
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (delta) {
-                            // 处理思维链内容
-                            if (delta.reasoning_content) {
-                                if (!reasoningStarted) {
-                                    reasoningContainer.style.display = 'block'; // 显示思维链容器
-                                    reasoningStarted = true;
-                                }
-                                // 使用 innerHTML 追加，以便渲染 Markdown 换行等
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
-                            }
-                            // 处理主要内容
-                            if (delta.content) {
-                                // 当思维链存在且最终答案首次出现时，插入分隔符
-                                if (reasoningStarted && !answerStarted) {
-                                    const separator = document.createElement('hr');
-                                    separator.className = 'answer-separator';
-                                    // 将分隔符插入到 markdownContainer 之前，但在 reasoningContainer 之后
-                                    reasoningContainer.after(separator);
-                                    answerStarted = true;
-                                }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Error parsing SSE chunk:', e, jsonStr);
-                    }
-                }
-            });
-            visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-        }
-
-        // 流结束后，对最终内容进行一次 MathJax 排版
-        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-            MathJax.startup.promise.then(() => {
-                MathJax.typeset([markdownContainer, reasoningContainer]);
-            }).catch((err) => console.error('MathJax typesetting failed:', err));
-        }
-        
-        // 将最终的 AI content（不包含思维链）添加到历史记录
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
-
-    } catch (error) {
-        console.error('Error sending vision message:', error);
-        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
-        logMessage(`视觉模型请求失败: ${error.message}`, 'system');
-    } finally {
-        visionSendButton.disabled = false;
-        visionSendButton.textContent = 'send';
-    }
-}
-
-function displayVisionUserMessage(text, files) {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'user');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '👤';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-
-    if (text) {
-        const textNode = document.createElement('p');
-        textNode.textContent = text;
-        contentDiv.appendChild(textNode);
-    }
-
-    if (files && files.length > 0) {
-        const attachmentsContainer = document.createElement('div');
-        attachmentsContainer.className = 'attachments-grid';
-        files.forEach(file => {
-            let attachmentElement;
-            if (file.type.startsWith('image/')) {
-                attachmentElement = document.createElement('img');
-                attachmentElement.src = file.base64;
-            } else if (file.type.startsWith('video/')) {
-                attachmentElement = document.createElement('video');
-                attachmentElement.src = file.base64;
-                attachmentElement.controls = true;
-            }
-            if (attachmentElement) {
-                attachmentElement.className = 'chat-attachment';
-                attachmentsContainer.appendChild(attachmentElement);
-            }
-        });
-        contentDiv.appendChild(attachmentsContainer);
-    }
-
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    visionMessageHistory.appendChild(messageDiv);
-    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-}
-
-function createVisionAIMessageElement() {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'ai');
-
-    const avatarDiv = document.createElement('div');
-    avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '🤖';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('content');
-    
-    // 新增：思维链容器
-    const reasoningContainer = document.createElement('div');
-    reasoningContainer.className = 'reasoning-container';
-    reasoningContainer.style.display = 'none'; // 默认隐藏
-    const reasoningTitle = document.createElement('h4');
-    reasoningTitle.className = 'reasoning-title';
-    reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
-    const reasoningContent = document.createElement('div');
-    reasoningContent.className = 'reasoning-content';
-    reasoningContainer.appendChild(reasoningTitle);
-    reasoningContainer.appendChild(reasoningContent);
-    contentDiv.appendChild(reasoningContainer);
-
-    const markdownContainer = document.createElement('div');
-    markdownContainer.classList.add('markdown-container');
-    contentDiv.appendChild(markdownContainer);
-    
-    const copyButton = document.createElement('button');
-    copyButton.classList.add('copy-button', 'material-symbols-outlined');
-    copyButton.textContent = 'content_copy';
-    copyButton.addEventListener('click', async () => {
-        try {
-            // 合并思维链和主要内容进行复制
-            const reasoningText = reasoningContainer.style.display !== 'none'
-                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
-                : '';
-            const mainText = markdownContainer.innerText;
-            await navigator.clipboard.writeText(reasoningText + mainText);
-            copyButton.textContent = 'check';
-            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
-        } catch (err) {
-            console.error('Failed to copy text: ', err);
-        }
-    });
-
-    contentDiv.appendChild(copyButton);
-    
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-    visionMessageHistory.appendChild(messageDiv);
-    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-    
-    return {
-        container: messageDiv,
-        markdownContainer,
-        reasoningContainer, // 返回思维链容器
-        contentDiv,
-    };
-}
-
-/**
- * @function initVision
- * @description 初始化视觉功能，主要是填充模型选择下拉菜单。
- * @returns {void}
- */
-function initVision() {
-    const visionModelSelect = document.getElementById('vision-model-select');
-    if (!visionModelSelect) return;
-
-    visionModelSelect.innerHTML = ''; // 清空现有选项
-    CONFIG.VISION.MODELS.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.displayName;
-        if (model.name === CONFIG.VISION.DEFAULT_MODEL) {
-            option.selected = true;
-        }
-        visionModelSelect.appendChild(option);
-    });
-}

@@ -11,20 +11,17 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
-let resetChatTabsCallback = null; // 新增：用于重置聊天UI的回调
 
 /**
  * Initializes the Vision feature.
  * @param {object} el - A collection of DOM elements required by the vision module.
  * @param {object} manager - The global attachment manager instance.
  * @param {object} handlers - A collection of handler functions from other modules.
- * @param {function} resetChatTabsCb - Callback function to reset the chat UI.
  */
-export function initializeVisionCore(el, manager, handlers, resetChatTabsCb) {
+export function initializeVisionCore(el, manager, handlers) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
-    resetChatTabsCallback = resetChatTabsCb; // 保存回调
 
     populateModelSelect();
     attachEventListeners();
