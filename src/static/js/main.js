@@ -179,6 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
+            const translationContainer = document.querySelector('.translation-container');
 
             // 修正：在切换子模式前，先隐藏视觉模式容器（如果它处于激活状态）
             if (visionContainer && visionContainer.classList.contains('active')) {
@@ -198,6 +199,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetContainer.classList.add('active');
             }
 
+            // 新增逻辑：根据子功能区切换，控制翻译功能区的显隐
+            if (mode === 'log' || mode === 'history') {
+                if (translationContainer) {
+                    translationContainer.style.display = 'none';
+                }
+            } else if (mode === 'text') {
+                // 仅当主模式为“翻译”时才显示翻译区
+                const translationModeBtn = document.getElementById('translation-mode-button');
+                if (translationContainer && translationModeBtn && translationModeBtn.classList.contains('active')) {
+                    translationContainer.style.display = 'flex';
+                } else if (translationContainer) {
+                    translationContainer.style.display = 'none';
+                }
+            }
+
+
             // 特别处理历史记录的占位符
             if (mode === 'history') {
                 // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
@@ -207,7 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
                 // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
                 // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
-                if (!chatModeBtn.classList.contains('active')) {
+                const translationModeBtn = document.getElementById('translation-mode-button');
+                if (!chatModeBtn.classList.contains('active') || (translationModeBtn && translationModeBtn.classList.contains('active'))) {
                      historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
                 } else {
                     historyManager.renderHistoryList();
