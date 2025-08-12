@@ -180,8 +180,11 @@ document.addEventListener('DOMContentLoaded', () => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
 
-            // 修正：在切换子模式前，先隐藏视觉模式容器（如果它处于激活状态）
-            if (visionContainer && visionContainer.classList.contains('active')) {
+            // 只有当当前激活的顶层模式是聊天模式时，才移除视觉模式的激活状态
+            // 这样可以确保在视觉模式下切换子标签时不会丢失顶层激活状态
+            if (visionContainer && visionContainer.classList.contains('active') && 
+                (mode === 'log' || mode === 'history') && 
+                chatModeBtn.classList.contains('active')) {
                 visionContainer.classList.remove('active');
                 // 同时取消视觉主模式按钮的激活状态
                 visionModeBtn.classList.remove('active');
