@@ -730,6 +730,72 @@ function logMessage(message, type = 'system', messageType = 'text') {
 }
 
 /**
+ * 创建并添加一个新的 AI 消息元素到聊天历史。
+ * @returns {object} 包含对新创建元素的引用的对象。
+ */
+function createAIMessageElement() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai');
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '🤖';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+
+    const reasoningContainer = document.createElement('div');
+    reasoningContainer.className = 'reasoning-container';
+    reasoningContainer.style.display = 'none';
+    const reasoningTitle = document.createElement('h4');
+    reasoningTitle.className = 'reasoning-title';
+    reasoningTitle.innerHTML = '<span class="material-symbols-outlined">psychology</span> 思维链';
+    const reasoningContent = document.createElement('div');
+    reasoningContent.className = 'reasoning-content';
+    reasoningContainer.appendChild(reasoningTitle);
+    reasoningContainer.appendChild(reasoningContent);
+    contentDiv.appendChild(reasoningContainer);
+    
+    const markdownContainer = document.createElement('div');
+    markdownContainer.classList.add('markdown-container');
+    contentDiv.appendChild(markdownContainer);
+    
+    const copyButton = document.createElement('button');
+    copyButton.classList.add('copy-button', 'material-symbols-outlined');
+    copyButton.textContent = 'content_copy';
+
+    copyButton.addEventListener('click', async () => {
+        try {
+            const reasoningText = reasoningContainer.style.display !== 'none'
+                ? `[思维链]\n${reasoningContainer.querySelector('.reasoning-content').innerText}\n\n`
+                : '';
+            const mainText = markdownContainer.innerText;
+            await navigator.clipboard.writeText(reasoningText + mainText);
+            copyButton.textContent = 'check';
+            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
+            logMessage('文本已复制到剪贴板', 'system');
+        } catch (err) {
+            logMessage('复制失败: ' + err, 'system');
+            console.error('复制文本失败:', err);
+        }
+    });
+
+    contentDiv.appendChild(copyButton);
+    
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+    return {
+        container: messageDiv,
+        markdownContainer,
+        reasoningContainer,
+        contentDiv,
+        rawMarkdownBuffer: ''
+    };
+}
+
+/**
  * 在聊天历史中显示用户的多模态消息。
  * @param {string} text - 文本消息内容。
  * @param {object|null} file - 附加的文件对象，包含 base64 等信息。
