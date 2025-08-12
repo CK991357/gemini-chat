@@ -92,6 +92,14 @@ const visionSendButton = document.getElementById('vision-send-button');
 // T3: 确保 flipCameraButton 存在
 const flipCameraButton = document.getElementById('flip-camera');
 
+// 视觉模式下的子功能区元素
+const visionTabs = document.querySelectorAll('.vision-tabs .tab');
+const visionChatMode = document.querySelector('.vision-chat-mode');
+const visionLogMode = document.querySelector('.vision-container .vision-log-mode');
+const visionHistoryMode = document.querySelector('.vision-container .vision-history-mode');
+const clearVisionLogsBtn = document.getElementById('clear-vision-logs');
+const visionLogsContainer = document.getElementById('vision-logs-container');
+
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
@@ -245,6 +253,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // 新增：视觉模式内部的标签页切换逻辑
+    visionTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.dataset.mode;
+
+            // 移除所有 vision 内部 tab 和 container 的 active 类
+            visionTabs.forEach(t => t.classList.remove('active'));
+            [visionChatMode, visionLogMode, visionHistoryMode].forEach(c => c.classList.remove('active'));
+
+            // 添加当前点击 tab 和对应 container 的 active 类
+            tab.classList.add('active');
+            switch (mode) {
+                case 'vision-chat':
+                    visionChatMode.classList.add('active');
+                    break;
+                case 'vision-log':
+                    visionLogMode.classList.add('active');
+                    break;
+                case 'vision-history':
+                    visionHistoryMode.classList.add('active');
+                    break;
+            }
+        });
+    });
+
     // 默认激活文字聊天模式
     document.querySelector('.tab[data-mode="text"]').click();
 
@@ -257,6 +290,15 @@ document.addEventListener('DOMContentLoaded', () => {
     clearLogsBtn.addEventListener('click', () => {
         logsContainer.innerHTML = ''; // 清空日志内容
         logMessage('日志已清空', 'system');
+    });
+
+    // 新增：清空视觉模式日志的逻辑
+    clearVisionLogsBtn.addEventListener('click', () => {
+        if (visionLogsContainer) {
+            visionLogsContainer.innerHTML = '';
+        }
+        // 可以在这里添加一个独立的视觉日志函数，或者复用现有的 logMessage
+        // 为了简单起见，我们暂时不在这里添加日志条目
     });
 
     // 4. 配置面板切换逻辑 (现在通过顶部导航的齿轮图标控制)

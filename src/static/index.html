@@ -219,25 +219,53 @@
 
                 <!-- 视觉模型功能区 -->
                 <section class="vision-container">
-                    <!-- Replicate the structure of the main chat container -->
-                    <div class="message-history" id="vision-message-history">
-                        <!-- Vision chat messages will be dynamically inserted here -->
+                    <!-- Vision Mode Tabs -->
+                    <div class="mode-tabs vision-tabs">
+                        <button class="tab active" data-mode="vision-chat">🖼️ 视觉聊天</button>
+                        <button class="tab" data-mode="vision-log">📋 系统日志</button>
+                        <button class="tab" data-mode="vision-history">📜 历史记录</button>
                     </div>
 
-                    <div class="file-attachment-previews" id="vision-attachment-previews">
-                        <!-- Attachment previews for vision mode will be dynamically inserted here -->
+                    <!-- Vision Chat Container -->
+                    <div class="vision-chat-mode active">
+                        <div class="message-history" id="vision-message-history">
+                            <!-- Vision chat messages will be dynamically inserted here -->
+                        </div>
+                        <div class="file-attachment-previews" id="vision-attachment-previews">
+                            <!-- Attachment previews for vision mode will be dynamically inserted here -->
+                        </div>
+                        <div class="vision-controls">
+                            <label for="vision-model-select">模型:</label>
+                            <select id="vision-model-select"></select>
+                        </div>
+                        <div class="input-area" id="vision-input-area">
+                            <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
+                            <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                            <input type="file" id="vision-file-input" accept="image/*,video/*,application/pdf" style="display: none;" multiple>
+                            <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
+                        </div>
                     </div>
 
-                    <div class="vision-controls">
-                        <label for="vision-model-select">模型:</label>
-                        <select id="vision-model-select"></select>
-                    </div>
-                    <div class="input-area" id="vision-input-area">
-                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
-                        <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
-                        <input type="file" id="vision-file-input" accept="image/*,video/*,application/pdf" style="display: none;" multiple>
-                        <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
-                    </div>
+                    <!-- Vision System Log Container -->
+                    <section class="chat-container vision-log-mode">
+                        <div class="log-header">
+                            <h3>视觉模式 - 系统日志</h3>
+                            <button id="clear-vision-logs" class="action-button">清空</button>
+                        </div>
+                        <div class="log-content" id="vision-logs-container">
+                            <!-- Vision log content will be dynamically inserted here -->
+                        </div>
+                    </section>
+
+                    <!-- Vision History Container -->
+                    <section class="chat-container vision-history-mode">
+                        <div class="log-header">
+                            <h3>视觉模式 - 历史记录</h3>
+                        </div>
+                        <div class="history-list" id="vision-history-list-container">
+                            <p class="empty-history">当前模式暂不支持历史记录功能。</p>
+                        </div>
+                    </section>
                 </section>
 
             </div>

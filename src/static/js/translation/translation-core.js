@@ -232,7 +232,15 @@ function switchMode(mode, handlers) {
     const { videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
 
     // Deactivate all containers and buttons first
-    [elements.translationContainer, elements.chatContainer, elements.visionContainer, elements.logContainer].forEach(c => c?.classList.remove('active'));
+    [elements.translationContainer, elements.chatContainer, elements.visionContainer, elements.logContainer].forEach(c => {
+        if (c) {
+            c.classList.remove('active');
+            // Also hide translation container explicitly when switching modes
+            if (c === elements.translationContainer) {
+                c.style.display = 'none';
+            }
+        }
+    });
     [elements.translationModeBtn, elements.chatModeBtn, elements.visionModeBtn].forEach(b => b?.classList.remove('active'));
 
     // Hide chat-specific elements by default
@@ -263,6 +271,8 @@ function switchMode(mode, handlers) {
         case 'vision':
             elements.visionContainer?.classList.add('active');
             elements.visionModeBtn?.classList.add('active');
+            // 默认激活视觉模式下的第一个标签页（视觉聊天）
+            document.querySelector('.vision-tabs .tab[data-mode="vision-chat"]')?.click();
             break;
         case 'log':
             elements.logContainer.classList.add('active');
