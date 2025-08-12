@@ -17,108 +17,105 @@ import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
  */
 
-// DOM Elements
-// DOM Elements
-const chatModeBtn = document.getElementById('chat-mode-button');
-const translationModeBtn = document.getElementById('translation-mode-button');
-const visionModeBtn = document.getElementById('vision-mode-button');
-const themeToggleBtn = document.getElementById('theme-toggle');
-const toggleLogBtn = document.getElementById('toggle-log');
-const clearLogsBtn = document.getElementById('clear-logs');
-
-// 主功能区容器
-const chatSection = document.getElementById('chat-section');
-const translationSection = document.getElementById('translation-section');
-const visionSection = document.getElementById('vision-section');
-
-// 聊天模式相关 DOM 元素
-const messageHistory = document.getElementById('message-history');
-const messageInput = document.getElementById('message-input');
-const sendButton = document.getElementById('send-button');
-const micButton = document.getElementById('mic-button');
-const interruptButton = document.getElementById('interrupt-button');
-const newChatButton = document.getElementById('new-chat-button');
-const attachmentButton = document.getElementById('attachment-button');
-const fileInput = document.getElementById('file-input');
-const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
-const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
-
-// 翻译模式相关 DOM 元素
-const translationInputTextarea = document.getElementById('translation-input-text');
-const translationVoiceInputButton = document.getElementById('translation-voice-input-button');
-const translationOcrButton = document.getElementById('translation-ocr-button');
-const translationOcrInput = document.getElementById('translation-ocr-input');
-const translationInputLanguageSelect = document.getElementById('translation-input-language-select');
-const translationOutputLanguageSelect = document.getElementById('translation-output-language-select');
-const translationModelSelect = document.getElementById('translation-model-select');
-const translateButton = document.getElementById('translate-button');
-const translationCopyButton = document.getElementById('translation-copy-button');
-const translationOutputText = document.getElementById('translation-output-text');
-
-// 视觉模型相关 DOM 元素
-const visionMessageHistory = document.getElementById('vision-message-history');
-const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
-const visionInputText = document.getElementById('vision-input-text');
-const visionAttachmentButton = document.getElementById('vision-attachment-button');
-const visionFileInput = document.getElementById('vision-file-input');
-const visionSendButton = document.getElementById('vision-send-button');
-const visionModelSelect = document.getElementById('vision-model-select');
-
-// 全局日志容器 (所有模式共享)
-const logsContainer = document.getElementById('logs-container');
-
-// 历史记录容器 (聊天模式独有，其他模式显示占位符)
-const chatHistoryListContainer = document.getElementById('history-list-container');
-
-// 媒体预览相关 DOM 元素
-const mediaPreviewsContainer = document.getElementById('media-previews');
-const videoPreviewContainer = document.getElementById('video-container');
-const videoPreviewElement = document.getElementById('preview');
-const stopScreenButton = document.getElementById('stop-screen-button');
-const cameraButton = document.getElementById('camera-button');
-const stopVideoButton = document.getElementById('stop-video');
-const screenButton = document.getElementById('screen-button');
-const screenContainer = document.getElementById('screen-preview-container');
-const screenPreview = document.getElementById('screen-preview-element');
-const flipCameraButton = document.getElementById('flip-camera');
-
-// 设置面板相关 DOM 元素
-const configToggle = document.getElementById('toggle-config');
-const configContainer = document.querySelector('.control-panel');
-const apiKeyInput = document.getElementById('api-key');
-const voiceSelect = document.getElementById('voice-select');
-const fpsInput = document.getElementById('fps-input');
-const promptSelect = document.getElementById('prompt-select');
-const systemInstructionInput = document.getElementById('system-instruction');
-const applyConfigButton = document.getElementById('apply-config');
-const responseTypeSelect = document.getElementById('response-type-select');
-const mobileConnectButton = document.getElementById('mobile-connect');
-
-// 其他 DOM 元素 (保持不变或根据需要调整)
-const _audioVisualizer = document.getElementById('audio-visualizer');
-const _inputAudioVisualizer = document.getElementById('input-audio-visualizer');
-const connectButton = document.getElementById('connect-button');
-
 const toolManager = new ToolManager(); // 初始化 ToolManager
 
-
-// Load saved values from localStorage
-const savedApiKey = localStorage.getItem('gemini_api_key');
-const savedVoice = localStorage.getItem('gemini_voice');
-const savedFPS = localStorage.getItem('video_fps');
-
-if (savedApiKey) {
-    apiKeyInput.value = savedApiKey;
-}
-if (savedVoice) {
-    voiceSelect.value = savedVoice;
-}
-
-if (savedFPS) {
-    fpsInput.value = savedFPS;
-}
-
 document.addEventListener('DOMContentLoaded', () => {
+    // DOM Elements
+    const chatModeBtn = document.getElementById('chat-mode-button');
+    const translationModeBtn = document.getElementById('translation-mode-button');
+    const visionModeBtn = document.getElementById('vision-mode-button');
+    const themeToggleBtn = document.getElementById('theme-toggle');
+    const toggleLogBtn = document.getElementById('toggle-log');
+    const clearLogsBtn = document.getElementById('clear-logs');
+
+    // 主功能区容器
+    const chatSection = document.getElementById('chat-section');
+    const translationSection = document.getElementById('translation-section');
+    const visionSection = document.getElementById('vision-section');
+
+    // 聊天模式相关 DOM 元素
+    const messageHistory = document.getElementById('message-history');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-button');
+    const micButton = document.getElementById('mic-button');
+    const interruptButton = document.getElementById('interrupt-button');
+    const newChatButton = document.getElementById('new-chat-button');
+    const attachmentButton = document.getElementById('attachment-button');
+    const fileInput = document.getElementById('file-input');
+    const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
+    const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
+
+    // 翻译模式相关 DOM 元素
+    const translationInputTextarea = document.getElementById('translation-input-text');
+    const translationVoiceInputButton = document.getElementById('translation-voice-input-button');
+    const translationOcrButton = document.getElementById('translation-ocr-button');
+    const translationOcrInput = document.getElementById('translation-ocr-input');
+    const translationInputLanguageSelect = document.getElementById('translation-input-language-select');
+    const translationOutputLanguageSelect = document.getElementById('translation-output-language-select');
+    const translationModelSelect = document.getElementById('translation-model-select');
+    const translateButton = document.getElementById('translate-button');
+    const translationCopyButton = document.getElementById('translation-copy-button');
+    const translationOutputText = document.getElementById('translation-output-text');
+
+    // 视觉模型相关 DOM 元素
+    const visionMessageHistory = document.getElementById('vision-message-history');
+    const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
+    const visionInputText = document.getElementById('vision-input-text');
+    const visionAttachmentButton = document.getElementById('vision-attachment-button');
+    const visionFileInput = document.getElementById('vision-file-input');
+    const visionSendButton = document.getElementById('vision-send-button');
+    const visionModelSelect = document.getElementById('vision-model-select');
+
+    // 全局日志容器 (所有模式共享)
+    const logsContainer = document.getElementById('logs-container');
+
+    // 历史记录容器 (聊天模式独有，其他模式显示占位符)
+    const chatHistoryListContainer = document.getElementById('history-list-container');
+
+    // 媒体预览相关 DOM 元素
+    const mediaPreviewsContainer = document.getElementById('media-previews');
+    const videoPreviewContainer = document.getElementById('video-container');
+    const videoPreviewElement = document.getElementById('preview');
+    const stopScreenButton = document.getElementById('stop-screen-button');
+    const cameraButton = document.getElementById('camera-button');
+    const stopVideoButton = document.getElementById('stop-video');
+    const screenButton = document.getElementById('screen-button');
+    const screenContainer = document.getElementById('screen-preview-container');
+    const screenPreview = document.getElementById('screen-preview-element');
+    const flipCameraButton = document.getElementById('flip-camera');
+
+    // 设置面板相关 DOM 元素
+    const configToggle = document.getElementById('toggle-config');
+    const configContainer = document.querySelector('.control-panel');
+    const apiKeyInput = document.getElementById('api-key');
+    const voiceSelect = document.getElementById('voice-select');
+    const fpsInput = document.getElementById('fps-input');
+    const promptSelect = document.getElementById('prompt-select');
+    const systemInstructionInput = document.getElementById('system-instruction');
+    const applyConfigButton = document.getElementById('apply-config');
+    const responseTypeSelect = document.getElementById('response-type-select');
+    const mobileConnectButton = document.getElementById('mobile-connect');
+
+    // 其他 DOM 元素 (保持不变或根据需要调整)
+    const _audioVisualizer = document.getElementById('audio-visualizer');
+    const _inputAudioVisualizer = document.getElementById('input-audio-visualizer');
+    const connectButton = document.getElementById('connect-button');
+
+    // Load saved values from localStorage
+    const savedApiKey = localStorage.getItem('gemini_api_key');
+    const savedVoice = localStorage.getItem('gemini_voice');
+    const savedFPS = localStorage.getItem('video_fps');
+
+    if (savedApiKey) {
+        apiKeyInput.value = savedApiKey;
+    }
+    if (savedVoice) {
+        voiceSelect.value = savedVoice;
+    }
+
+    if (savedFPS) {
+        fpsInput.value = savedFPS;
+    }
     // 配置 marked.js
     marked.setOptions({
       breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持

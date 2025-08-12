@@ -775,6 +775,17 @@ body {
     color: white; /* 用户消息中的时长颜色 */
 }
 
+.tab-content[data-tab-id="chat-text"] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.tab-content[data-tab-id="chat-text"] .message-history {
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
 .text-mode .input-area {
     display: flex;
     align-items: center; /* 垂直居中对齐 */
@@ -784,9 +795,7 @@ body {
     background-color: var(--surface-color);
     padding: 15px 40px;
     box-sizing: border-box;
-    position: sticky;
-    bottom: 0;
-    z-index: 10;
+    flex-shrink: 0; /* 防止输入区域被压缩 */
 }
 
 .text-mode #message-input {
