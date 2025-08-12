@@ -17,105 +17,103 @@ import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
  */
 
+// DOM Elements
+const logsContainer = document.getElementById('logs-container'); // 用于原始日志输出
 const toolManager = new ToolManager(); // 初始化 ToolManager
+const messageHistory = document.getElementById('message-history'); // 用于聊天消息显示
+const messageInput = document.getElementById('message-input');
+const sendButton = document.getElementById('send-button');
+const micButton = document.getElementById('mic-button');
+const _audioVisualizer = document.getElementById('audio-visualizer'); // 保持，虽然音频模式删除，但可能用于其他音频可视化
+const connectButton = document.getElementById('connect-button');
+const cameraButton = document.getElementById('camera-button');
+const stopVideoButton = document.getElementById('stop-video'); // 使用正确的ID
+const screenButton = document.getElementById('screen-button');
+const screenContainer = document.getElementById('screen-preview-container'); // 更新 ID
+const screenPreview = document.getElementById('screen-preview-element'); // 更新 ID
+const _inputAudioVisualizer = document.getElementById('input-audio-visualizer'); // 保持，可能用于输入音频可视化
+const apiKeyInput = document.getElementById('api-key');
+const voiceSelect = document.getElementById('voice-select');
+const fpsInput = document.getElementById('fps-input');
+const configToggle = document.getElementById('toggle-config');
+const configContainer = document.querySelector('.control-panel');
+const promptSelect = document.getElementById('prompt-select');
+const systemInstructionInput = document.getElementById('system-instruction');
+const applyConfigButton = document.getElementById('apply-config');
+const responseTypeSelect = document.getElementById('response-type-select');
+const mobileConnectButton = document.getElementById('mobile-connect');
+const interruptButton = document.getElementById('interrupt-button'); // 新增
+const newChatButton = document.getElementById('new-chat-button'); // 新增
+
+// 新增的 DOM 元素
+const chatModeBtn = document.getElementById('chat-mode-button');
+const themeToggleBtn = document.getElementById('theme-toggle');
+const toggleLogBtn = document.getElementById('toggle-log');
+const _logPanel = document.querySelector('.chat-container.log-mode');
+const clearLogsBtn = document.getElementById('clear-logs');
+const modeTabs = document.querySelectorAll('.mode-tabs .tab');
+const chatContainers = document.querySelectorAll('.chat-container');
+const historyContent = document.getElementById('history-list-container'); // 新增：历史记录面板
+
+// 新增媒体预览相关 DOM 元素
+const mediaPreviewsContainer = document.getElementById('media-previews');
+const videoPreviewContainer = document.getElementById('video-container'); // 对应 video-manager.js 中的 video-container
+const videoPreviewElement = document.getElementById('preview'); // 对应 video-manager.js 中的 preview
+const stopScreenButton = document.getElementById('stop-screen-button'); // 确保 ID 正确
+
+// 附件相关 DOM 元素
+const attachmentButton = document.getElementById('attachment-button');
+const fileInput = document.getElementById('file-input');
+
+
+// 附件预览 DOM 元素
+const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
+
+// 翻译模式相关 DOM 元素
+const translationVoiceInputButton = document.getElementById('translation-voice-input-button'); // 新增
+const translationInputTextarea = document.getElementById('translation-input-text'); // 新增
+// 新增：聊天模式语音输入相关 DOM 元素
+const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
+
+// 新增：翻译OCR相关 DOM 元素
+const translationOcrButton = document.getElementById('translation-ocr-button');
+const translationOcrInput = document.getElementById('translation-ocr-input');
+
+// 视觉模型相关 DOM 元素
+const visionModeBtn = document.getElementById('vision-mode-button');
+const visionContainer = document.querySelector('.vision-container');
+const visionMessageHistory = document.getElementById('vision-message-history');
+const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
+const visionInputText = document.getElementById('vision-input-text');
+const visionAttachmentButton = document.getElementById('vision-attachment-button');
+const visionFileInput = document.getElementById('vision-file-input');
+const visionSendButton = document.getElementById('vision-send-button');
+
+// T3: 确保 flipCameraButton 存在
+const flipCameraButton = document.getElementById('flip-camera');
+
+
+// Load saved values from localStorage
+const savedApiKey = localStorage.getItem('gemini_api_key');
+const savedVoice = localStorage.getItem('gemini_voice');
+const savedFPS = localStorage.getItem('video_fps');
+const savedSystemInstruction = localStorage.getItem('system_instruction');
+
+
+if (savedApiKey) {
+    apiKeyInput.value = savedApiKey;
+}
+if (savedVoice) {
+    voiceSelect.value = savedVoice;
+}
+
+if (savedFPS) {
+    fpsInput.value = savedFPS;
+}
+// Note: The logic for loading saved system instructions is now handled by the prompt selection logic.
+// We will set the default prompt based on the new config structure.
 
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM Elements
-    const chatModeBtn = document.getElementById('chat-mode-button');
-    const translationModeBtn = document.getElementById('translation-mode-button');
-    const visionModeBtn = document.getElementById('vision-mode-button');
-    const themeToggleBtn = document.getElementById('theme-toggle');
-    const toggleLogBtn = document.getElementById('toggle-log');
-    const clearLogsBtn = document.getElementById('clear-logs');
-
-    // 主功能区容器
-    const chatSection = document.getElementById('chat-section');
-    const translationSection = document.getElementById('translation-section');
-    const visionSection = document.getElementById('vision-section');
-
-    // 聊天模式相关 DOM 元素
-    const messageHistory = document.getElementById('message-history');
-    const messageInput = document.getElementById('message-input');
-    const sendButton = document.getElementById('send-button');
-    const micButton = document.getElementById('mic-button');
-    const interruptButton = document.getElementById('interrupt-button');
-    const newChatButton = document.getElementById('new-chat-button');
-    const attachmentButton = document.getElementById('attachment-button');
-    const fileInput = document.getElementById('file-input');
-    const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
-    const chatVoiceInputButton = document.getElementById('chat-voice-input-button');
-
-    // 翻译模式相关 DOM 元素
-    const translationInputTextarea = document.getElementById('translation-input-text');
-    const translationVoiceInputButton = document.getElementById('translation-voice-input-button');
-    const translationOcrButton = document.getElementById('translation-ocr-button');
-    const translationOcrInput = document.getElementById('translation-ocr-input');
-    const translationInputLanguageSelect = document.getElementById('translation-input-language-select');
-    const translationOutputLanguageSelect = document.getElementById('translation-output-language-select');
-    const translationModelSelect = document.getElementById('translation-model-select');
-    const translateButton = document.getElementById('translate-button');
-    const translationCopyButton = document.getElementById('translation-copy-button');
-    const translationOutputText = document.getElementById('translation-output-text');
-
-    // 视觉模型相关 DOM 元素
-    const visionMessageHistory = document.getElementById('vision-message-history');
-    const visionAttachmentPreviews = document.getElementById('vision-attachment-previews');
-    const visionInputText = document.getElementById('vision-input-text');
-    const visionAttachmentButton = document.getElementById('vision-attachment-button');
-    const visionFileInput = document.getElementById('vision-file-input');
-    const visionSendButton = document.getElementById('vision-send-button');
-    const visionModelSelect = document.getElementById('vision-model-select');
-
-    // 全局日志容器 (所有模式共享)
-    const logsContainer = document.getElementById('logs-container');
-
-    // 历史记录容器 (聊天模式独有，其他模式显示占位符)
-    const chatHistoryListContainer = document.getElementById('history-list-container');
-
-    // 媒体预览相关 DOM 元素
-    const mediaPreviewsContainer = document.getElementById('media-previews');
-    const videoPreviewContainer = document.getElementById('video-container');
-    const videoPreviewElement = document.getElementById('preview');
-    const stopScreenButton = document.getElementById('stop-screen-button');
-    const cameraButton = document.getElementById('camera-button');
-    const stopVideoButton = document.getElementById('stop-video');
-    const screenButton = document.getElementById('screen-button');
-    const screenContainer = document.getElementById('screen-preview-container');
-    const screenPreview = document.getElementById('screen-preview-element');
-    const flipCameraButton = document.getElementById('flip-camera');
-
-    // 设置面板相关 DOM 元素
-    const configToggle = document.getElementById('toggle-config');
-    const configContainer = document.querySelector('.control-panel');
-    const apiKeyInput = document.getElementById('api-key');
-    const voiceSelect = document.getElementById('voice-select');
-    const fpsInput = document.getElementById('fps-input');
-    const promptSelect = document.getElementById('prompt-select');
-    const systemInstructionInput = document.getElementById('system-instruction');
-    const applyConfigButton = document.getElementById('apply-config');
-    const responseTypeSelect = document.getElementById('response-type-select');
-    const mobileConnectButton = document.getElementById('mobile-connect');
-
-    // 其他 DOM 元素 (保持不变或根据需要调整)
-    const _audioVisualizer = document.getElementById('audio-visualizer');
-    const _inputAudioVisualizer = document.getElementById('input-audio-visualizer');
-    const connectButton = document.getElementById('connect-button');
-
-    // Load saved values from localStorage
-    const savedApiKey = localStorage.getItem('gemini_api_key');
-    const savedVoice = localStorage.getItem('gemini_voice');
-    const savedFPS = localStorage.getItem('video_fps');
-
-    if (savedApiKey) {
-        apiKeyInput.value = savedApiKey;
-    }
-    if (savedVoice) {
-        voiceSelect.value = savedVoice;
-    }
-
-    if (savedFPS) {
-        fpsInput.value = savedFPS;
-    }
     // 配置 marked.js
     marked.setOptions({
       breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
@@ -131,6 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ignoreUnescapedHTML: true,
       throwUnescapedHTML: false
     });
+    // hljs.highlightAll(); // 不再需要在这里调用，因为 marked.js 会处理
 
     // 动态生成模型选择下拉菜单选项
     const modelSelect = document.getElementById('model-select');
@@ -176,127 +175,65 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    /**
-     * @function initializeTabSwitching
-     * @description 初始化指定容器内的标签页切换功能。
-     * @param {HTMLElement} containerElement - 包含标签页和内容的父容器元素。
-     * @param {string} tabSelector - 标签页按钮的选择器 (例如 '.mode-tabs .tab')。
-     * @param {string} contentSelector - 标签页内容区域的选择器 (例如 '.tab-content')。
-     * @param {Function} [onTabChangeCallback] - 标签页切换时执行的回调函数，接收当前激活的 data-mode 值。
-     * @returns {void}
-     */
-    function initializeTabSwitching(containerElement, tabSelector, contentSelector, onTabChangeCallback = () => {}) {
-        const tabs = containerElement.querySelectorAll(tabSelector);
-        const contents = containerElement.querySelectorAll(contentSelector);
+    // 2. 模式切换逻辑 (文字聊天/系统日志)
+    modeTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.dataset.mode;
 
-        tabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                const mode = tab.dataset.mode;
-
-                // 移除所有 tab 和 content 的 active 类
-                tabs.forEach(t => t.classList.remove('active'));
-                contents.forEach(c => c.classList.remove('active'));
-
-                // 添加当前点击 tab 和对应 content 的 active 类
-                tab.classList.add('active');
-                const targetContent = containerElement.querySelector(`${contentSelector}[data-tab-id="${mode}"]`);
-                if (targetContent) {
-                    targetContent.classList.add('active');
-                }
-
-                onTabChangeCallback(mode);
-            });
-        });
-
-        // 默认激活第一个标签页
-        if (tabs.length > 0) {
-            tabs[0].click();
-        }
-    }
-
-    // 2. 主模式切换逻辑 (聊天/翻译/视觉)
-    const mainModeButtons = document.querySelectorAll('.mode-switcher .mode-button');
-    const mainSections = {
-        'chat': chatSection,
-        'translate': translationSection,
-        'camera_enhance': visionSection
-    };
-
-    mainModeButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            const iconName = button.dataset.mode; // 使用 data-mode 属性
-
-            // 移除所有主模式按钮的 active 类
-            mainModeButtons.forEach(btn => btn.classList.remove('active'));
-            // 隐藏所有主功能区
-            Object.values(mainSections).forEach(section => {
-                if (section) section.classList.remove('active');
-            });
-
-            // 激活当前点击的按钮和对应的主功能区
-            button.classList.add('active');
-            if (mainSections[iconName]) {
-                mainSections[iconName].classList.add('active');
+            // 修正：在切换子模式前，先隐藏视觉模式容器（如果它处于激活状态）
+            if (visionContainer && visionContainer.classList.contains('active')) {
+                visionContainer.classList.remove('active');
+                // 同时取消视觉主模式按钮的激活状态
+                visionModeBtn.classList.remove('active');
             }
 
-            // 确保在切换主模式时停止所有媒体流
-            if (videoHandler && videoHandler.getIsVideoActive()) {
+            // 移除所有 tab 和 chat-container 的 active 类
+            modeTabs.forEach(t => t.classList.remove('active'));
+            chatContainers.forEach(c => c.classList.remove('active'));
+
+            // 添加当前点击 tab 和对应 chat-container 的 active 类
+            tab.classList.add('active');
+            const targetContainer = document.querySelector(`.chat-container.${mode}-mode`);
+            if (targetContainer) {
+                targetContainer.classList.add('active');
+            }
+
+            // 特别处理历史记录的占位符
+            if (mode === 'history') {
+                // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
+                // 但为了保险起见，我们保留一个明确的检查
+                // 此处假设：如果用户刚才在视觉模式，那么历史记录应该显示占位符
+                // 一个简单的判断方法是检查 visionModeBtn 是否还有 active class (虽然我们上面移除了，但可以作为逻辑标记)
+                // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
+                // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
+                // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
+                if (!chatModeBtn.classList.contains('active')) {
+                     historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+                } else {
+                    historyManager.renderHistoryList();
+                }
+            }
+
+
+            // 确保在切换模式时停止所有媒体流
+            if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
                 videoHandler.stopVideo();
             }
-            if (screenHandler && screenHandler.getIsScreenActive()) {
+            if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
                 screenHandler.stopScreenSharing();
             }
-            updateMediaPreviewsDisplay(); // 更新媒体预览显示
+            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
+            updateMediaPreviewsDisplay();
         });
     });
 
-    // 3. 子标签页初始化 (只在页面加载时执行一次)
-    // 聊天模式的子标签页初始化
-    if (chatSection) {
-        initializeTabSwitching(chatSection, '#chat-mode-tabs .tab', '.tab-content', (mode) => {
-            if (mode === 'chat-history') {
-                historyManager.renderHistoryList();
-            }
-        });
-    }
+    // 默认激活文字聊天模式
+    document.querySelector('.tab[data-mode="text"]').click();
 
-    // 翻译模式的子标签页初始化
-    if (translationSection) {
-        initializeTabSwitching(translationSection, '#translation-mode-tabs .tab', '.tab-content', (mode) => {
-            if (mode === 'translation-history') {
-                const historyPlaceholder = translationSection.querySelector('.tab-content[data-tab-id="translation-history"] .history-list');
-                if (historyPlaceholder) {
-                    historyPlaceholder.innerHTML = '<p style="text-align: center; padding: 20px;">当前模式暂不支持</p>';
-                }
-            }
-        });
-    }
-
-    // 视觉模式的子标签页初始化
-    if (visionSection) {
-        initializeTabSwitching(visionSection, '#vision-mode-tabs .tab', '.tab-content', (mode) => {
-            if (mode === 'vision-history') {
-                const historyPlaceholder = visionSection.querySelector('.tab-content[data-tab-id="vision-history"] .history-list');
-                if (historyPlaceholder) {
-                    historyPlaceholder.innerHTML = '<p style="text-align: center; padding: 20px;">当前模式暂不支持</p>';
-                }
-            }
-        });
-    }
-
-    // 默认激活聊天模式
-    if (chatModeBtn) {
-        chatModeBtn.click();
-    }
-
-    // 3. 日志显示控制逻辑 (现在通过顶部导航的齿轮图标控制)
+    // 3. 日志显示控制逻辑
     toggleLogBtn.addEventListener('click', () => {
-        // 切换到聊天模式下的日志标签页
-        chatModeBtn.click(); // 先切换到聊天主模式
-        setTimeout(() => {
-            const chatLogTab = document.querySelector('#main-mode-tabs .tab[data-mode="chat-log"]'); // 修正选择器
-            if (chatLogTab) chatLogTab.click();
-        }, 50); // 稍作延迟，确保主模式切换完成
+        // 切换到日志标签页
+        document.querySelector('.tab[data-mode="log"]').click();
     });
 
     clearLogsBtn.addEventListener('click', () => {
@@ -337,10 +274,14 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
  
+   // 视觉模型附件按钮事件监听
+   visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
+   visionFileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
+ 
    // T10: 初始化 HistoryManager
    historyManager = new HistoryManager({
        elements: {
-           historyContent: chatHistoryListContainer, // 指向聊天模式的历史记录容器
+           historyContent: historyContent,
        },
        updateChatUI: (sessionData) => {
            messageHistory.innerHTML = '';
@@ -409,18 +350,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始化翻译功能
     const translationElements = {
-        translationModeBtn: translationModeBtn,
-        translationContainer: translationSection,
-        inputLangSelect: translationInputLanguageSelect,
-        outputLangSelect: translationOutputLanguageSelect,
-        translationModelSelect: translationModelSelect,
-        translateButton: translateButton,
-        translationOcrButton: translationOcrButton,
-        translationOcrInput: translationOcrInput,
-        copyButton: translationCopyButton,
-        outputText: translationOutputText,
-        translationVoiceInputButton: translationVoiceInputButton,
-        translationInputTextarea: translationInputTextarea,
+        translationModeBtn: document.getElementById('translation-mode-button'),
+        chatModeBtn: document.getElementById('chat-mode-button'),
+        visionModeBtn: document.getElementById('vision-mode-button'),
+        toggleLogBtn: document.getElementById('toggle-log'),
+        translationContainer: document.querySelector('.translation-container'),
+        chatContainer: document.querySelector('.chat-container.text-mode'),
+        visionContainer: document.querySelector('.vision-container'),
+        logContainer: document.querySelector('.chat-container.log-mode'),
+        inputArea: document.querySelector('.input-area'),
+        mediaPreviewsContainer: document.getElementById('media-previews'),
+        inputLangSelect: document.getElementById('translation-input-language-select'),
+        outputLangSelect: document.getElementById('translation-output-language-select'),
+        translationModelSelect: document.getElementById('translation-model-select'),
+        translateButton: document.getElementById('translate-button'),
+        translationOcrButton: document.getElementById('translation-ocr-button'),
+        translationOcrInput: document.getElementById('translation-ocr-input'),
+        copyButton: document.getElementById('translation-copy-button'),
+        outputText: document.getElementById('translation-output-text'),
+        translationVoiceInputButton: document.getElementById('translation-voice-input-button'),
+        translationInputTextarea: document.getElementById('translation-input-text'),
     };
     const mediaHandlers = {
         videoHandler,
@@ -436,12 +385,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }, showToast);
     // T8: 初始化视觉功能
     const visionElements = {
-        visionModelSelect: visionModelSelect,
-        visionSendButton: visionSendButton,
-        visionAttachmentButton: visionAttachmentButton,
-        visionFileInput: visionFileInput,
-        visionInputText: visionInputText,
-        visionMessageHistory: visionMessageHistory,
+        visionModelSelect: document.getElementById('vision-model-select'),
+        visionSendButton: document.getElementById('vision-send-button'),
+        visionAttachmentButton: document.getElementById('vision-attachment-button'),
+        visionFileInput: document.getElementById('vision-file-input'),
+        visionInputText: document.getElementById('vision-input-text'),
+        visionMessageHistory: document.getElementById('vision-message-history'),
     };
     const visionHandlers = {
         showToast: showToast,
