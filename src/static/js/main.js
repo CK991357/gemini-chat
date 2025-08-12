@@ -274,9 +274,6 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
  
-   // 视觉模型附件按钮事件监听
-   visionAttachmentButton.addEventListener('click', () => visionFileInput.click());
-   visionFileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
  
    // T10: 初始化 HistoryManager
    historyManager = new HistoryManager({
