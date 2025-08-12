@@ -203,20 +203,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 特别处理历史记录的占位符
             if (mode === 'history') {
-                // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
-                // 但为了保险起见，我们保留一个明确的检查
-                // 此处假设：如果用户刚才在视觉模式，那么历史记录应该显示占位符
-                // 一个简单的判断方法是检查 visionModeBtn 是否还有 active class (虽然我们上面移除了，但可以作为逻辑标记)
-                // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
-                // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
-                // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
-                if (!chatModeBtn.classList.contains('active')) {
+                // 检查当前激活的顶层模式
+                const isChatMode = chatModeBtn.classList.contains('active');
+                const isTranslationMode = document.querySelector('.translation-container')?.classList.contains('active');
+                const isVisionMode = visionContainer?.classList.contains('active');
+                
+                // 只有在聊天模式下才显示历史记录，其他模式显示占位符
+                if (!isChatMode) {
                      historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
                 } else {
                     historyManager.renderHistoryList();
                 }
             }
 
+            // 处理系统日志或历史记录显示时隐藏其他模式的主功能区
+            if (mode === 'log' || mode === 'history') {
+                // 检查当前激活的顶层模式
+                const isTranslationMode = document.querySelector('.translation-container')?.classList.contains('active');
+                const isVisionMode = visionContainer?.classList.contains('active');
+                
+                // 在翻译或视觉模式下显示系统日志或历史记录时，隐藏对应的主功能区
+                if (isTranslationMode) {
+                    document.querySelector('.translation-container').style.display = 'none';
+                }
+                if (isVisionMode) {
+                    visionContainer.style.display = 'none';
+                }
+            } else {
+                // 切换到其他模式时，确保显示主功能区
+                const translationContainer = document.querySelector('.translation-container');
+                if (translationContainer) {
+                    translationContainer.style.display = '';
+                }
+                if (visionContainer) {
+                    visionContainer.style.display = '';
+                }
+            }
 
             // 确保在切换模式时停止所有媒体流
             if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
