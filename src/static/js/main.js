@@ -1172,7 +1172,14 @@ globalThis.addEventListener('error', (event) => {
     logMessage(`系统错误: ${event.message}`, 'system');
 });
 
-sendButton.addEventListener('click', () => chatApi.handleSendMessage(attachmentManager));
+sendButton.addEventListener('click', () => {
+    const text = messageInput.value.trim();
+    const attachedFile = attachmentManager.getAttachedFile('chat');
+    if (text || attachedFile) {
+        chatApi.sendMessage(text, attachedFile, attachmentManager);
+        messageInput.value = '';
+    }
+});
 
 /**
  * @function handleInterruptPlayback
@@ -1212,7 +1219,12 @@ messageInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
         if (event.shiftKey || event.ctrlKey || event.metaKey) {
             event.preventDefault();
-            chatApi.handleSendMessage(attachmentManager); // <--- 修改这里
+            const text = messageInput.value.trim();
+            const attachedFile = attachmentManager.getAttachedFile('chat');
+            if (text || attachedFile) {
+                chatApi.sendMessage(text, attachedFile, attachmentManager);
+                messageInput.value = '';
+            }
         }
     }
 });
@@ -1269,11 +1281,7 @@ modelSelect.addEventListener('change', () => {
  * 统一的连接函数。
  */
 async function connect() {
-    if (!apiKeyInput.value) {
-        logMessage('请输入 API Key', 'system');
-        return;
-    }
-    // 保存最新的配置到 localStorage
+    // 保存最新的配置到 localStorage，因为 ChatAPI 可能需要它
     localStorage.setItem('gemini_api_key', apiKeyInput.value);
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
@@ -1295,7 +1303,7 @@ function disconnect() {
  * 重置 UI 到未连接状态。
  */
 function resetUIForDisconnectedState() {
-    isConnected = false;
+    // isConnected 状态现在由 ChatAPI 管理
     connectButton.textContent = '连接';
     connectButton.classList.remove('connected');
     messageInput.disabled = true;
@@ -1303,7 +1311,7 @@ function resetUIForDisconnectedState() {
     micButton.disabled = true;
     cameraButton.disabled = true;
     screenButton.disabled = true;
-    updateConnectionStatus();
+    updateConnectionStatus(false, selectedModelConfig); // 传递 false 状态
 
     if (audioStreamer) {
         audioStreamer.stop();
@@ -1314,10 +1322,10 @@ function resetUIForDisconnectedState() {
         isRecording = false;
         updateMicIcon();
     }
-    if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+    if (videoHandler && videoHandler.getIsVideoActive()) {
         videoHandler.stopVideo();
     }
-    if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
+    if (screenHandler && screenHandler.getIsScreenActive()) {
         screenHandler.stopScreenSharing();
     }
 }
@@ -1325,7 +1333,10 @@ function resetUIForDisconnectedState() {
 /**
  * Updates the connection status display for all connection buttons.
  */
-function updateConnectionStatus() {
+function updateConnectionStatus(newIsConnected, newSelectedModelConfig) {
+    isConnected = newIsConnected; // 更新全局状态
+    selectedModelConfig = newSelectedModelConfig; // 更新全局状态
+
     const connectButtons = [
         document.getElementById('connect-button'),
         document.getElementById('mobile-connect')
@@ -1338,22 +1349,20 @@ function updateConnectionStatus() {
         }
     });
 
+    messageInput.disabled = !isConnected;
+    sendButton.disabled = !isConnected;
+
     // 根据连接状态和模型类型禁用/启用媒体按钮
     const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
     mediaButtons.forEach(btn => {
         if (btn) {
-            // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理，这里只处理其他按钮
-            if (btn === cameraButton) {
-                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            } else {
-                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            }
+            btn.disabled = !isConnected || (selectedModelConfig && !selectedModelConfig.isWebSocket);
         }
     });
     
     // 附件按钮仅在 HTTP 模式下可用
     if (attachmentButton) {
-        attachmentButton.disabled = !isConnected || selectedModelConfig.isWebSocket;
+        attachmentButton.disabled = !isConnected || (selectedModelConfig && selectedModelConfig.isWebSocket);
     }
 }
 

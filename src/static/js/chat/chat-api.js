@@ -144,6 +144,59 @@ export class ChatAPI {
     }
 
     /**
+     * 连接到后端，根据模型配置选择 WebSocket 或 HTTP 模式。
+     * @returns {Promise<void>}
+     */
+    async connect() {
+        const apiKey = this.stateGetters.getApiKey();
+        if (!apiKey) {
+            this.callbacks.showSystemMessage('请输入 API Key');
+            return;
+        }
+
+        const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
+
+        try {
+            if (selectedModelConfig.isWebSocket) {
+                await this.client.connect(
+                    apiKey,
+                    this.stateGetters.getSystemInstruction(),
+                    this.callbacks.getAudioSampleRate(),
+                    selectedModelConfig.name
+                );
+            }
+            // 对于 HTTP 模式，我们不在此处建立持久连接，
+            // 而是在发送消息时处理。我们只需更新状态。
+            this.stateUpdaters.setIsConnected(true);
+            this.callbacks.updateConnectionStatus(true, selectedModelConfig);
+
+            if (!selectedModelConfig.isWebSocket && !this.stateGetters.getCurrentSessionId()) {
+                this.callbacks.historyManager.generateNewSession();
+            }
+            this.callbacks.logMessage(`已连接到模型: ${selectedModelConfig.displayName}`, 'system');
+
+        } catch (error) {
+            this.callbacks.logMessage(`连接失败: ${error.message}`, 'system');
+            this.stateUpdaters.setIsConnected(false);
+            this.callbacks.updateConnectionStatus(false, selectedModelConfig);
+        }
+    }
+
+    /**
+     * 断开与后端的连接。
+     */
+    disconnect() {
+        const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
+        if (selectedModelConfig.isWebSocket) {
+            this.client.close();
+        }
+        this.stateUpdaters.setIsConnected(false);
+        this.callbacks.resetUIForDisconnectedState();
+        this.callbacks.logMessage('连接已断开', 'system');
+    }
+
+
+    /**
      * 处理 HTTP SSE 流。
      * @private
      * @param {object} requestBody - 发送给模型的请求体。
