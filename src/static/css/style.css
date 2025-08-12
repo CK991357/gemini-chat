@@ -245,20 +245,21 @@ body {
 
 /* 右侧主内容区 */
 .content-area {
-    display: grid;
-    grid-template-rows: auto 1fr; /* 顶部选项卡，下方聊天区自适应 */
+    display: flex; /* 使用 flex 布局 */
+    flex-direction: column; /* 垂直排列 */
     background-color: var(--surface-color);
     border-radius: 12px;
     box-shadow: 0 4px 16px var(--shadow-color);
     overflow: hidden;
 }
 
-/* 模式切换选项卡 */
+/* 模式切换选项卡 (主模式和子模式共享样式) */
 .mode-tabs {
     display: flex;
     border-bottom: 1px solid var(--border-color);
     padding: 0 20px;
     background-color: var(--surface-color);
+    flex-shrink: 0; /* 防止被压缩 */
 }
 
 .tab {
@@ -288,33 +289,39 @@ body {
     border-radius: 2px 2px 0 0;
 }
 
-/* 聊天容器 */
-.chat-container {
-    display: none; /* 默认隐藏 */
-    padding: 20px;
-    height: 100%;
+/* 主功能区容器 */
+.chat-container,
+.translation-container,
+.vision-container {
+    display: none; /* 默认隐藏所有主功能区 */
+    flex-direction: column;
+    flex-grow: 1; /* 占据剩余空间 */
     box-sizing: border-box;
-    flex-direction: column; /* 内部使用 flex 布局 */
+    padding: 20px;
     position: relative; /* 确保内部元素可以相对定位 */
     min-height: 0; /* 关键修复：允许内部内容滚动 */
-    /* display: flex;  移除重复且错误的样式 */
+    background-color: var(--surface-color); /* 统一背景色 */
+    /* 移除圆角和阴影，因为它们现在由 .content-area 统一管理 */
+    overflow: hidden; /* 统一隐藏溢出，内部内容通过各自的 overflow-y: auto 控制 */
 }
 
-/* 翻译功能区样式 */
-.translation-container {
-    display: none;
+.chat-container.active,
+.translation-container.active,
+.vision-container.active {
+    display: flex; /* 激活时显示为 flex 容器 */
+}
+
+/* 标签页内容区域 */
+.tab-content {
+    display: none; /* 默认隐藏所有标签页内容 */
     flex-direction: column;
-    height: 100%;
-    box-sizing: border-box;
-    padding: 20px;
-    background-color: var(--surface-color);
-    border-radius: 12px;
-    box-shadow: 0 4px 16px var(--shadow-color);
-    overflow: auto; /* 允许翻译容器内部滚动 */
+    flex-grow: 1; /* 占据剩余空间 */
+    min-height: 0; /* 允许内部内容滚动 */
+    overflow: hidden; /* 隐藏溢出，内部内容通过各自的 overflow-y: auto 控制 */
 }
 
-.translation-container.active {
-    display: flex;
+.tab-content.active {
+    display: flex; /* 激活时显示 */
 }
 
 .translation-input-area,
@@ -1009,44 +1016,8 @@ body {
 /* .audio-mode .audio-controls { ... } */
 /* .audio-mode #mic-button.active { ... } */
 
-/* 新增日志模式样式 */
-.log-mode {
-    display: none; /* 默认隐藏 */
-    flex-direction: column;
-    height: 100%;
-    box-sizing: border-box;
-    background-color: var(--surface-color);
-    border-radius: 12px;
-    box-shadow: 0 4px 16px var(--shadow-color);
-    overflow: hidden;
-}
-
-.log-mode.active {
-    display: flex; /* 激活时显示 */
-}
-
-.log-mode .log-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 15px;
-    background-color: var(--surface-color);
-    border-bottom: 1px solid var(--border-color);
-}
-
-.log-mode .log-header h3 {
-    margin: 0;
-    font-size: 18px;
-    color: var(--text-color);
-}
-
-.log-mode .log-header .action-button {
-    padding: 5px 10px;
-    font-size: 14px;
-    margin-left: 10px;
-}
-
-.log-mode .log-content {
+/* 全局日志内容样式 (所有模式共享) */
+.log-content {
     flex-grow: 1;
     padding: 15px;
     overflow-y: auto;
@@ -1055,6 +1026,28 @@ body {
     color: var(--text-color);
     white-space: pre-wrap;
     word-break: break-all;
+}
+
+/* 日志头部样式 (所有日志标签页共享) */
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: var(--surface-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.log-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: var(--text-color);
+}
+
+.log-header .action-button {
+    padding: 5px 10px;
+    font-size: 14px;
+    margin-left: 10px;
 }
 
 /* 响应式设计 */
@@ -1715,20 +1708,8 @@ body.dark-mode .highlight-box {
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
 }
 
-/* 历史记录区样式 */
-.history-mode {
-    display: none; /* 默认隐藏 */
-    flex-direction: column;
-    height: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
-}
-
-.history-mode.active {
-    display: flex; /* 激活时显示 */
-}
-
-.history-list-container {
+/* 历史记录列表样式 (所有历史记录标签页共享) */
+.history-list {
     flex-grow: 1;
     overflow-y: auto;
     padding: 10px 15px;
