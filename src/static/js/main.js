@@ -227,8 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     mainModeButtons.forEach(button => {
         button.addEventListener('click', () => {
-            const mode = button.id.replace('-mode-button', ''); // chat, translation, vision
-            const iconName = button.textContent.trim(); // chat, translate, camera_enhance
+            const iconName = button.dataset.mode; // 使用 data-mode 属性
 
             // 移除所有主模式按钮的 active 类
             mainModeButtons.forEach(btn => btn.classList.remove('active'));
@@ -239,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 激活当前点击的按钮和对应的主功能区
             button.classList.add('active');
-            if (mainSections[iconName]) { // 使用 iconName 来匹配 section
+            if (mainSections[iconName]) {
                 mainSections[iconName].classList.add('active');
             }
 
@@ -251,33 +250,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 screenHandler.stopScreenSharing();
             }
             updateMediaPreviewsDisplay(); // 更新媒体预览显示
-
-            // 根据主模式激活对应的子标签页
-            // 聊天模式的子标签页初始化
-            initializeTabSwitching(chatSection, '#main-mode-tabs .tab', '.tab-content', (mode) => {
-                if (mode === 'chat-history') {
-                    historyManager.renderHistoryList();
-                }
-            });
-
-            // 翻译模式的子标签页初始化
-            initializeTabSwitching(translationSection, '#translation-mode-tabs .tab', '.tab-content', (mode) => {
-                if (mode === 'translation-history') {
-                    translationSection.querySelector('.tab-content[data-tab-id="translation-history"] .history-list').innerHTML = '<p style="text-align: center; padding: 20px;">当前模式暂不支持</p>';
-                }
-            });
-
-            // 视觉模式的子标签页初始化
-            initializeTabSwitching(visionSection, '#vision-mode-tabs .tab', '.tab-content', (mode) => {
-                if (mode === 'vision-history') {
-                    visionSection.querySelector('.tab-content[data-tab-id="vision-history"] .history-list').innerHTML = '<p style="text-align: center; padding: 20px;">当前模式暂不支持</p>';
-                }
-            });
         });
     });
 
+    // 3. 子标签页初始化 (只在页面加载时执行一次)
+    // 聊天模式的子标签页初始化
+    if (chatSection) {
+        initializeTabSwitching(chatSection, '#chat-mode-tabs .tab', '.tab-content', (mode) => {
+            if (mode === 'chat-history') {
+                historyManager.renderHistoryList();
+            }
+        });
+    }
+
+    // 翻译模式的子标签页初始化
+    if (translationSection) {
+        initializeTabSwitching(translationSection, '#translation-mode-tabs .tab', '.tab-content', (mode) => {
+            if (mode === 'translation-history') {
+                const historyPlaceholder = translationSection.querySelector('.tab-content[data-tab-id="translation-history"] .history-list');
+                if (historyPlaceholder) {
+                    historyPlaceholder.innerHTML = '<p style="text-align: center; padding: 20px;">当前模式暂不支持</p>';
+                }
+            }
+        });
+    }
+
+    // 视觉模式的子标签页初始化
+    if (visionSection) {
+        initializeTabSwitching(visionSection, '#vision-mode-tabs .tab', '.tab-content', (mode) => {
+            if (mode === 'vision-history') {
+                const historyPlaceholder = visionSection.querySelector('.tab-content[data-tab-id="vision-history"] .history-list');
+                if (historyPlaceholder) {
+                    historyPlaceholder.innerHTML = '<p style="text-align: center; padding: 20px;">当前模式暂不支持</p>';
+                }
+            }
+        });
+    }
+
     // 默认激活聊天模式
-    chatModeBtn.click();
+    if (chatModeBtn) {
+        chatModeBtn.click();
+    }
 
     // 3. 日志显示控制逻辑 (现在通过顶部导航的齿轮图标控制)
     toggleLogBtn.addEventListener('click', () => {

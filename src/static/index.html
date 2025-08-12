@@ -44,9 +44,9 @@
         <nav class="app-nav">
             <div class="mode-switcher">
                 <h1 class="app-title">Gemini Chat</h1>
-                <button id="translation-mode-button" class="mode-button material-symbols-outlined">translate</button>
-                <button id="chat-mode-button" class="mode-button material-symbols-outlined">chat</button>
-                <button id="vision-mode-button" class="mode-button material-symbols-outlined">camera_enhance</button>
+                <button id="chat-mode-button" data-mode="chat" class="mode-button active">📝 文字聊天</button>
+                <button id="translation-mode-button" data-mode="translate" class="mode-button">🌐 多语言翻译</button>
+                <button id="vision-mode-button" data-mode="camera_enhance" class="mode-button">🖼️ 视觉分析</button>
             </div>
             <div class="nav-tools">
                 <button id="new-chat-button" class="material-symbols-outlined">add_box</button>
@@ -123,14 +123,14 @@
             <div class="content-area">
                 <!-- 模式切换选项卡 -->
                 <!-- 主内容区顶部的模式切换选项卡 -->
-                <div class="mode-tabs" id="main-mode-tabs">
-                    <button class="tab active" data-mode="chat">📝 文字聊天</button>
-                    <button class="tab" data-mode="translation">📝 多语言翻译</button>
-                    <button class="tab" data-mode="vision">🖼️ 视觉分析</button>
-                </div>
-
                 <!-- 聊天功能区 -->
                 <section class="chat-container active" id="chat-section">
+                    <!-- 聊天模式内部的子标签页 -->
+                    <div class="mode-tabs" id="chat-mode-tabs">
+                        <button class="tab active" data-mode="chat-text">📝 文字聊天</button>
+                        <button class="tab" data-mode="chat-log">📋 系统日志</button>
+                        <button class="tab" data-mode="chat-history">📜 历史记录</button>
+                    </div>
                     <div class="tab-content active" data-tab-id="chat-text">
                         <div class="media-previews" id="media-previews">
                             <div id="video-container" class="media-preview">
