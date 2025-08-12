@@ -179,50 +179,40 @@ document.addEventListener('DOMContentLoaded', () => {
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
-
-            // 修正：在切换子模式前，先隐藏视觉模式容器（如果它处于激活状态）
-            if (visionContainer && visionContainer.classList.contains('active')) {
-                visionContainer.classList.remove('active');
-                // 同时取消视觉主模式按钮的激活状态
-                visionModeBtn.classList.remove('active');
+    
+            // **核心修复**：只有在顶层模式为 'chat' 时，才允许切换子标签页
+            if (currentTopLevelMode !== 'chat') {
+                // 在视觉或翻译模式下，点击日志或历史记录等子标签不应产生任何效果
+                // 这样可以防止它们错误地影响顶层模式的状态
+                showToast('此功能仅在文字聊天模式下可用。');
+                return;
             }
-
+    
+            // --- 以下是原有的聊天模式内部的标签页切换逻辑 ---
+    
             // 移除所有 tab 和 chat-container 的 active 类
             modeTabs.forEach(t => t.classList.remove('active'));
             chatContainers.forEach(c => c.classList.remove('active'));
-
+    
             // 添加当前点击 tab 和对应 chat-container 的 active 类
             tab.classList.add('active');
             const targetContainer = document.querySelector(`.chat-container.${mode}-mode`);
             if (targetContainer) {
                 targetContainer.classList.add('active');
             }
-
-            // 特别处理历史记录的占位符
+    
+            // 历史记录的渲染逻辑现在是安全的，因为它只会在 chat 模式下被触发
             if (mode === 'history') {
-                // 这个判断逻辑现在可以简化，因为我们总是在切换前隐藏了视觉容器
-                // 但为了保险起见，我们保留一个明确的检查
-                // 此处假设：如果用户刚才在视觉模式，那么历史记录应该显示占位符
-                // 一个简单的判断方法是检查 visionModeBtn 是否还有 active class (虽然我们上面移除了，但可以作为逻辑标记)
-                // 更稳妥的方式是设置一个临时变量，但为了最小改动，我们直接修改内容
-                // 注意：此处的逻辑需要与 visionModeBtn 的点击事件配合
-                // 一个更简单的逻辑是：如果历史记录标签被点击，而文字聊天主按钮不是激活状态，则显示占位符
-                if (!chatModeBtn.classList.contains('active')) {
-                     historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
-                } else {
-                    historyManager.renderHistoryList();
-                }
+                historyManager.renderHistoryList();
             }
-
-
-            // 确保在切换模式时停止所有媒体流
-            if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+    
+            // 确保在切换模式时停止所有媒体流 (此逻辑在聊天模式内部切换时仍然有效)
+            if (videoHandler && videoHandler.getIsVideoActive()) {
                 videoHandler.stopVideo();
             }
-            if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
+            if (screenHandler && screenHandler.getIsScreenActive()) {
                 screenHandler.stopScreenSharing();
             }
-            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
             updateMediaPreviewsDisplay();
         });
     });
@@ -382,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         stopTranslationRecording,
         cancelTranslationRecording,
         resetRecordingState
-    }, showToast);
+    }, showToast, (newMode) => { currentTopLevelMode = newMode; }); // 传递模式更新回调
     // T8: 初始化视觉功能
     const visionElements = {
         visionModelSelect: document.getElementById('vision-model-select'),
@@ -395,9 +385,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const visionHandlers = {
         showToast: showToast,
     };
-    initializeVisionCore(visionElements, attachmentManager, visionHandlers);
+    initializeVisionCore(visionElements, attachmentManager, visionHandlers, (newMode) => { currentTopLevelMode = newMode; }); // T8: 传递模式更新回调
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
+   
+   // 由于 translation-core.js 现在处理顶层模式切换，
+   // 我们需要确保聊天按钮的点击也能触发该逻辑。
+   // translation-core 内部已经监听了 chatModeBtn, visionModeBtn, 和 translationModeBtn
+   // 所以我们只需要确保在 main.js 中不再有冲突的监听器即可。
+   // 此处无需添加新的监听器，因为 translation-core.js 已经处理了。
 
   });
 
@@ -414,6 +410,7 @@ let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
+let currentTopLevelMode = 'chat'; // 新增：用于跟踪顶层模式 ('chat', 'vision', 'translation')
 // 新增：聊天模式语音输入相关状态变量
 let isChatRecording = false; // 聊天模式下是否正在录音
 let hasRequestedChatMicPermission = false; // 标记是否已请求过聊天麦克风权限

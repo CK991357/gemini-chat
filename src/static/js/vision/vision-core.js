@@ -11,17 +11,20 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
+let updateModeCallback = null; // 新增：用于更新顶层模式状态的回调
 
 /**
  * Initializes the Vision feature.
  * @param {object} el - A collection of DOM elements required by the vision module.
  * @param {object} manager - The global attachment manager instance.
  * @param {object} handlers - A collection of handler functions from other modules.
+ * @param {function} updateModeCb - Callback function to update the main app's top-level mode.
  */
-export function initializeVisionCore(el, manager, handlers) {
+export function initializeVisionCore(el, manager, handlers, updateModeCb) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
+    updateModeCallback = updateModeCb; // 保存回调
 
     populateModelSelect();
     attachEventListeners();

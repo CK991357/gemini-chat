@@ -11,16 +11,20 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 let elements = {};
 let initialTouchY = 0; // For swipe-to-cancel gesture
 let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
+let updateModeCallback = null; // 新增：用于更新顶层模式状态的回调
 
 /**
  * Initializes the translation feature.
  * @param {object} el - A collection of DOM elements required by the translation module.
  * @param {object} handlers - A collection of handler functions from other modules.
  * @param {object} audioFunctions - A collection of audio recording functions from main.js.
+ * @param {function} showToast - Function to display toast notifications.
+ * @param {function} updateModeCb - Callback function to update the main app's top-level mode.
  */
-export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
+export function initializeTranslationCore(el, handlers, audioFunctions, showToast, updateModeCb) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
+    updateModeCallback = updateModeCb; // 保存回调
 
     // Populate language dropdowns from config
     populateLanguageSelects();
@@ -104,7 +108,8 @@ function attachEventListeners(handlers, showToast) {
     elements.translationModeBtn.addEventListener('click', () => switchMode('translation', handlers));
     elements.chatModeBtn.addEventListener('click', () => switchMode('chat', handlers));
     elements.visionModeBtn?.addEventListener('click', () => switchMode('vision', handlers));
-    elements.toggleLogBtn.addEventListener('click', () => switchMode('log', handlers));
+    // 移除日志按钮的事件监听，因为它现在由 main.js 统一处理
+    // elements.toggleLogBtn.addEventListener('click', () => switchMode('log', handlers));
 
     // Voice input events (mousedown, mouseup, mouseleave, touchstart, touchend, touchmove)
     attachVoiceInputListeners();
@@ -231,52 +236,44 @@ function getLanguageName(code) {
 function switchMode(mode, handlers) {
     const { videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
 
-    // Deactivate all containers and buttons first
-    [elements.translationContainer, elements.chatContainer, elements.visionContainer, elements.logContainer].forEach(c => {
-        if (c) {
-            c.classList.remove('active');
-            // Also hide translation container explicitly when switching modes
-            if (c === elements.translationContainer) {
-                c.style.display = 'none';
-            }
-        }
-    });
+    // **核心修复**：调用回调，将状态管理的责任交给 main.js
+    if (updateModeCallback) {
+        updateModeCallback(mode);
+    }
+
+    // --- UI 更新逻辑 ---
+
+    // 停用所有顶层按钮和容器
     [elements.translationModeBtn, elements.chatModeBtn, elements.visionModeBtn].forEach(b => b?.classList.remove('active'));
+    [elements.translationContainer, elements.chatContainer, elements.visionContainer].forEach(c => c?.classList.remove('active'));
 
-    // Hide chat-specific elements by default
-    if (elements.mediaPreviewsContainer) elements.mediaPreviewsContainer.style.display = 'none';
+    // 隐藏聊天模式特有的UI元素
     if (elements.inputArea) elements.inputArea.style.display = 'none';
-    if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'none';
+    if (elements.mediaPreviewsContainer) elements.mediaPreviewsContainer.style.display = 'none';
 
-    // Stop media streams if they are active
-    if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
-    if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
-
-    // Activate the target mode
+    // 激活目标模式的UI
     switch (mode) {
         case 'translation':
-            elements.translationContainer.classList.add('active');
-            elements.translationContainer.style.display = 'flex'; // 确保翻译区可见
             elements.translationModeBtn.classList.add('active');
-            if (elements.translationVoiceInputButton) elements.translationVoiceInputButton.style.display = 'inline-flex';
+            elements.translationContainer.classList.add('active');
             break;
         case 'chat':
-            elements.chatContainer.classList.add('active');
             elements.chatModeBtn.classList.add('active');
+            elements.chatContainer.classList.add('active');
             if (elements.inputArea) elements.inputArea.style.display = 'flex';
-            if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'inline-flex';
-            updateMediaPreviewsDisplay();
-            document.querySelector('.tab[data-mode="text"]')?.click();
+            if (updateMediaPreviewsDisplay) updateMediaPreviewsDisplay();
             break;
         case 'vision':
-            elements.visionContainer?.classList.add('active');
             elements.visionModeBtn?.classList.add('active');
-            // 默认激活视觉模式下的第一个标签页（视觉聊天）
-            document.querySelector('.vision-tabs .tab[data-mode="vision-chat"]')?.click();
+            elements.visionContainer?.classList.add('active');
             break;
-        case 'log':
-            elements.logContainer.classList.add('active');
-            document.querySelector('.tab[data-mode="log"]')?.click();
-            break;
+    }
+
+    // 切换模式时总是停止所有媒体流
+    if (videoHandler?.getIsVideoActive()) {
+        videoHandler.stopVideo();
+    }
+    if (screenHandler?.getIsScreenActive()) {
+        screenHandler.stopScreenSharing();
     }
 }
