@@ -11,7 +11,6 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 let elements = {};
 let initialTouchY = 0; // For swipe-to-cancel gesture
 let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
-let handleMainModeSwitch = null; // 新增：用于接收主模式切换函数
 
 /**
  * Initializes the translation feature.
@@ -22,7 +21,6 @@ let handleMainModeSwitch = null; // 新增：用于接收主模式切换函数
 export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
-    handleMainModeSwitch = handlers.handleMainModeSwitch; // 接收主模式切换函数
 
     // Populate language dropdowns from config
     populateLanguageSelects();
@@ -230,43 +228,44 @@ function getLanguageName(code) {
  * @param {object} handlers - A collection of handler functions from other modules.
  * @returns {void}
  */
-/**
- * @function switchMode
- * @description 此函数不再直接切换主模式，而是通过回调通知 main.js 进行主模式切换。
- *              它只负责处理翻译模式内部的UI元素显示/隐藏。
- * @param {string} mode - 目标模式的名称 ('translation', 'chat', 'vision', 'log')。
- * @param {object} handlers - 包含主模式切换回调函数和其他处理函数的集合。
- * @returns {void}
- */
 function switchMode(mode, handlers) {
-    const { handleMainModeSwitch, videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
+    const { videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
 
-    // 如果是主模式切换，则调用 main.js 中的 handleMainModeSwitch
-    if (['chat', 'translation', 'vision'].includes(mode)) {
-        handleMainModeSwitch(mode);
-        return; // 交由 main.js 处理主模式切换
-    }
-
-    // 以下是子模式切换逻辑，仅在当前主模式下有效
-    // 确保在切换模式时停止所有媒体流
-    if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
-    if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
-    updateMediaPreviewsDisplay(); // 更新媒体预览显示
-
-    // 隐藏所有主模式容器（这里仅用于确保，实际由 main.js 的 handleMainModeSwitch 管理）
+    // Deactivate all containers and buttons first
     [elements.translationContainer, elements.chatContainer, elements.visionContainer, elements.logContainer].forEach(c => c?.classList.remove('active'));
+    [elements.translationModeBtn, elements.chatModeBtn, elements.visionModeBtn].forEach(b => b?.classList.remove('active'));
 
-    // 隐藏聊天模式特有的元素
+    // Hide chat-specific elements by default
     if (elements.mediaPreviewsContainer) elements.mediaPreviewsContainer.style.display = 'none';
     if (elements.inputArea) elements.inputArea.style.display = 'none';
     if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'none';
 
-    // 根据子模式激活对应的容器
+    // Stop media streams if they are active
+    if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
+    if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
+
+    // Activate the target mode
     switch (mode) {
+        case 'translation':
+            elements.translationContainer.classList.add('active');
+            elements.translationModeBtn.classList.add('active');
+            if (elements.translationVoiceInputButton) elements.translationVoiceInputButton.style.display = 'inline-flex';
+            break;
+        case 'chat':
+            elements.chatContainer.classList.add('active');
+            elements.chatModeBtn.classList.add('active');
+            if (elements.inputArea) elements.inputArea.style.display = 'flex';
+            if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'inline-flex';
+            updateMediaPreviewsDisplay();
+            document.querySelector('.tab[data-mode="text"]')?.click();
+            break;
+        case 'vision':
+            elements.visionContainer?.classList.add('active');
+            elements.visionModeBtn?.classList.add('active');
+            break;
         case 'log':
             elements.logContainer.classList.add('active');
             document.querySelector('.tab[data-mode="log"]')?.click();
             break;
-        // 其他子模式（如视觉模式的子标签）可以在这里添加
     }
 }
