@@ -54,6 +54,34 @@ function attachEventListeners() {
     elements.visionSendButton?.addEventListener('click', () => handleSendVisionMessage());
     elements.visionAttachmentButton?.addEventListener('click', () => elements.visionFileInput.click());
     elements.visionFileInput?.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
+    
+    // 添加视觉模式内部子标签事件监听器
+    const visionTabs = document.querySelectorAll('.vision-tabs .tab');
+    if (visionTabs.length > 0) {
+        visionTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const mode = tab.dataset.mode;
+                
+                // 移除所有 vision tab 和 vision-container 子容器的 active 类
+                visionTabs.forEach(t => t.classList.remove('active'));
+                const visionSubContainers = document.querySelectorAll('.vision-container .sub-container');
+                visionSubContainers.forEach(c => c.classList.remove('active'));
+                
+                // 添加当前点击 tab 和对应子容器的 active 类
+                tab.classList.add('active');
+                const targetContainer = document.querySelector(`.vision-container .sub-container.${mode}-mode`);
+                if (targetContainer) {
+                    targetContainer.classList.add('active');
+                }
+            });
+        });
+        
+        // 默认激活视觉聊天子标签
+        const defaultVisionTab = document.querySelector('.vision-tabs .tab[data-mode="chat"]');
+        if (defaultVisionTab) {
+            defaultVisionTab.click();
+        }
+    }
 }
 
 /**
