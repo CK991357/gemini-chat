@@ -248,6 +248,7 @@ function switchMode(mode, handlers) {
     switch (mode) {
         case 'translation':
             elements.translationContainer.classList.add('active');
+            elements.translationContainer.style.display = 'flex'; // 确保翻译区可见
             elements.translationModeBtn.classList.add('active');
             if (elements.translationVoiceInputButton) elements.translationVoiceInputButton.style.display = 'inline-flex';
             break;
