@@ -11,7 +11,7 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 let elements = {};
 let initialTouchY = 0; // For swipe-to-cancel gesture
 let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
-let updateModeCallback = null; // 新增：用于更新顶层模式状态的回调
+let resetChatTabsCallback = null; // 新增：用于重置聊天UI的回调
 
 /**
  * Initializes the translation feature.
@@ -19,12 +19,12 @@ let updateModeCallback = null; // 新增：用于更新顶层模式状态的回�
  * @param {object} handlers - A collection of handler functions from other modules.
  * @param {object} audioFunctions - A collection of audio recording functions from main.js.
  * @param {function} showToast - Function to display toast notifications.
- * @param {function} updateModeCb - Callback function to update the main app's top-level mode.
+ * @param {function} resetChatTabsCb - Callback function to reset the chat UI.
  */
-export function initializeTranslationCore(el, handlers, audioFunctions, showToast, updateModeCb) {
+export function initializeTranslationCore(el, handlers, audioFunctions, showToast, resetChatTabsCb) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
-    updateModeCallback = updateModeCb; // 保存回调
+    resetChatTabsCallback = resetChatTabsCb; // 保存回调
 
     // Populate language dropdowns from config
     populateLanguageSelects();
@@ -104,12 +104,7 @@ function attachEventListeners(handlers, showToast) {
         });
     });
 
-    // Mode switching events
-    elements.translationModeBtn.addEventListener('click', () => switchMode('translation', handlers));
-    elements.chatModeBtn.addEventListener('click', () => switchMode('chat', handlers));
-    elements.visionModeBtn?.addEventListener('click', () => switchMode('vision', handlers));
-    // 移除日志按钮的事件监听，因为它现在由 main.js 统一处理
-    // elements.toggleLogBtn.addEventListener('click', () => switchMode('log', handlers));
+    // Mode switching is now handled in main.js
 
     // Voice input events (mousedown, mouseup, mouseleave, touchstart, touchend, touchmove)
     attachVoiceInputListeners();
@@ -225,55 +220,3 @@ function getLanguageName(code) {
     return language ? language.name : code;
 }
 
-/**
- * Switches the application's UI mode.
- * @function switchMode
- * @description Manages the visibility of different UI containers (chat, translation, vision, log) and controls media streams.
- * @param {string} mode - The target mode ('translation', 'chat', 'vision', 'log').
- * @param {object} handlers - A collection of handler functions from other modules.
- * @returns {void}
- */
-function switchMode(mode, handlers) {
-    const { videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
-
-    // **核心修复**：调用回调，将状态管理的责任交给 main.js
-    if (updateModeCallback) {
-        updateModeCallback(mode);
-    }
-
-    // --- UI 更新逻辑 ---
-
-    // 停用所有顶层按钮和容器
-    [elements.translationModeBtn, elements.chatModeBtn, elements.visionModeBtn].forEach(b => b?.classList.remove('active'));
-    [elements.translationContainer, elements.chatContainer, elements.visionContainer].forEach(c => c?.classList.remove('active'));
-
-    // 隐藏聊天模式特有的UI元素
-    if (elements.inputArea) elements.inputArea.style.display = 'none';
-    if (elements.mediaPreviewsContainer) elements.mediaPreviewsContainer.style.display = 'none';
-
-    // 激活目标模式的UI
-    switch (mode) {
-        case 'translation':
-            elements.translationModeBtn.classList.add('active');
-            elements.translationContainer.classList.add('active');
-            break;
-        case 'chat':
-            elements.chatModeBtn.classList.add('active');
-            elements.chatContainer.classList.add('active');
-            if (elements.inputArea) elements.inputArea.style.display = 'flex';
-            if (updateMediaPreviewsDisplay) updateMediaPreviewsDisplay();
-            break;
-        case 'vision':
-            elements.visionModeBtn?.classList.add('active');
-            elements.visionContainer?.classList.add('active');
-            break;
-    }
-
-    // 切换模式时总是停止所有媒体流
-    if (videoHandler?.getIsVideoActive()) {
-        videoHandler.stopVideo();
-    }
-    if (screenHandler?.getIsScreenActive()) {
-        screenHandler.stopScreenSharing();
-    }
-}

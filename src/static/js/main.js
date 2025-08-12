@@ -372,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         stopTranslationRecording,
         cancelTranslationRecording,
         resetRecordingState
-    }, showToast, (newMode) => { currentTopLevelMode = newMode; }); // 传递模式更新回调
+    }, showToast, resetChatTabs);
     // T8: 初始化视觉功能
     const visionElements = {
         visionModelSelect: document.getElementById('vision-model-select'),
@@ -385,15 +385,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const visionHandlers = {
         showToast: showToast,
     };
-    initializeVisionCore(visionElements, attachmentManager, visionHandlers, (newMode) => { currentTopLevelMode = newMode; }); // T8: 传递模式更新回调
+    initializeVisionCore(visionElements, attachmentManager, visionHandlers, resetChatTabs);
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
    
-   // 由于 translation-core.js 现在处理顶层模式切换，
-   // 我们需要确保聊天按钮的点击也能触发该逻辑。
-   // translation-core 内部已经监听了 chatModeBtn, visionModeBtn, 和 translationModeBtn
-   // 所以我们只需要确保在 main.js 中不再有冲突的监听器即可。
-   // 此处无需添加新的监听器，因为 translation-core.js 已经处理了。
+   // 初始化顶层模式切换
+   initializeTopLevelModeSwitcher();
 
   });
 
@@ -410,7 +407,6 @@ let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
-let currentTopLevelMode = 'chat'; // 新增：用于跟踪顶层模式 ('chat', 'vision', 'translation')
 // 新增：聊天模式语音输入相关状态变量
 let isChatRecording = false; // 聊天模式下是否正在录音
 let hasRequestedChatMicPermission = false; // 标记是否已请求过聊天麦克风权限
@@ -2343,6 +2339,71 @@ export function showToast(message, duration = 3000) {
             }
         });
     }, duration);
+}
+
+/**
+ * Resets the chat mode's sub-tabs to the default state.
+ * Hides all sub-containers and sets the 'text' tab as active.
+ */
+function resetChatTabs() {
+    const modeTabs = document.querySelectorAll('.mode-tabs .tab');
+    const chatContainers = document.querySelectorAll('.chat-container');
+
+    // Deactivate all tabs and containers
+    modeTabs.forEach(t => t.classList.remove('active'));
+    chatContainers.forEach(c => c.classList.remove('active'));
+
+    // Activate the default 'text' tab and its container
+    const textTab = document.querySelector('.mode-tabs .tab[data-mode="text"]');
+    const textContainer = document.querySelector('.chat-container.text-mode');
+    if (textTab) textTab.classList.add('active');
+    if (textContainer) textContainer.classList.add('active');
+}
+
+/**
+ * Initializes the top-level mode switcher.
+ */
+function initializeTopLevelModeSwitcher() {
+    const translationContainer = document.querySelector('.translation-container');
+    const chatContainer = document.querySelector('.chat-container.text-mode');
+    const visionContainer = document.querySelector('.vision-container');
+    const inputArea = document.querySelector('.input-area');
+
+    const switchers = [
+        { btn: chatModeBtn, container: chatContainer, mode: 'chat' },
+        { btn: visionModeBtn, container: visionContainer, mode: 'vision' },
+        { btn: document.getElementById('translation-mode-button'), container: translationContainer, mode: 'translation' }
+    ];
+
+    switchers.forEach(switcher => {
+        switcher.btn.addEventListener('click', () => {
+            currentTopLevelMode = switcher.mode;
+
+            // Deactivate all
+            switchers.forEach(s => {
+                s.btn.classList.remove('active');
+                s.container.classList.remove('active');
+            });
+
+            // Activate current
+            switcher.btn.classList.add('active');
+            switcher.container.classList.add('active');
+
+            // Handle chat-specific UI
+            if (switcher.mode === 'chat') {
+                inputArea.style.display = 'flex';
+                updateMediaPreviewsDisplay();
+            } else {
+                inputArea.style.display = 'none';
+                mediaPreviewsContainer.style.display = 'none';
+                resetChatTabs();
+            }
+
+            // Stop media on switch
+            if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
+            if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
+        });
+    });
 }
 
 /**
