@@ -11,20 +11,16 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 let elements = {};
 let initialTouchY = 0; // For swipe-to-cancel gesture
 let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
-let resetChatTabsCallback = null; // 新增：用于重置聊天UI的回调
 
 /**
  * Initializes the translation feature.
  * @param {object} el - A collection of DOM elements required by the translation module.
  * @param {object} handlers - A collection of handler functions from other modules.
  * @param {object} audioFunctions - A collection of audio recording functions from main.js.
- * @param {function} showToast - Function to display toast notifications.
- * @param {function} resetChatTabsCb - Callback function to reset the chat UI.
  */
-export function initializeTranslationCore(el, handlers, audioFunctions, showToast, resetChatTabsCb) {
+export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
-    resetChatTabsCallback = resetChatTabsCb; // 保存回调
 
     // Populate language dropdowns from config
     populateLanguageSelects();
@@ -104,7 +100,11 @@ function attachEventListeners(handlers, showToast) {
         });
     });
 
-    // Mode switching is now handled in main.js
+    // Mode switching events
+    elements.translationModeBtn.addEventListener('click', () => switchMode('translation', handlers));
+    elements.chatModeBtn.addEventListener('click', () => switchMode('chat', handlers));
+    elements.visionModeBtn?.addEventListener('click', () => switchMode('vision', handlers));
+    elements.toggleLogBtn.addEventListener('click', () => switchMode('log', handlers));
 
     // Voice input events (mousedown, mouseup, mouseleave, touchstart, touchend, touchmove)
     attachVoiceInputListeners();
@@ -220,3 +220,52 @@ function getLanguageName(code) {
     return language ? language.name : code;
 }
 
+/**
+ * Switches the application's UI mode.
+ * @function switchMode
+ * @description Manages the visibility of different UI containers (chat, translation, vision, log) and controls media streams.
+ * @param {string} mode - The target mode ('translation', 'chat', 'vision', 'log').
+ * @param {object} handlers - A collection of handler functions from other modules.
+ * @returns {void}
+ */
+function switchMode(mode, handlers) {
+    const { videoHandler, screenHandler, updateMediaPreviewsDisplay } = handlers;
+
+    // Deactivate all containers and buttons first
+    [elements.translationContainer, elements.chatContainer, elements.visionContainer, elements.logContainer].forEach(c => c?.classList.remove('active'));
+    [elements.translationModeBtn, elements.chatModeBtn, elements.visionModeBtn].forEach(b => b?.classList.remove('active'));
+
+    // Hide chat-specific elements by default
+    if (elements.mediaPreviewsContainer) elements.mediaPreviewsContainer.style.display = 'none';
+    if (elements.inputArea) elements.inputArea.style.display = 'none';
+    if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'none';
+
+    // Stop media streams if they are active
+    if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
+    if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
+
+    // Activate the target mode
+    switch (mode) {
+        case 'translation':
+            elements.translationContainer.classList.add('active');
+            elements.translationModeBtn.classList.add('active');
+            if (elements.translationVoiceInputButton) elements.translationVoiceInputButton.style.display = 'inline-flex';
+            break;
+        case 'chat':
+            elements.chatContainer.classList.add('active');
+            elements.chatModeBtn.classList.add('active');
+            if (elements.inputArea) elements.inputArea.style.display = 'flex';
+            if (elements.chatVoiceInputButton) elements.chatVoiceInputButton.style.display = 'inline-flex';
+            updateMediaPreviewsDisplay();
+            document.querySelector('.tab[data-mode="text"]')?.click();
+            break;
+        case 'vision':
+            elements.visionContainer?.classList.add('active');
+            elements.visionModeBtn?.classList.add('active');
+            break;
+        case 'log':
+            elements.logContainer.classList.add('active');
+            document.querySelector('.tab[data-mode="log"]')?.click();
+            break;
+    }
+}
