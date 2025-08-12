@@ -11,6 +11,7 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
+let handleMainModeSwitch = null; // 新增：用于接收主模式切换函数
 
 /**
  * Initializes the Vision feature.
@@ -22,6 +23,7 @@ export function initializeVisionCore(el, manager, handlers) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
+    handleMainModeSwitch = handlers.handleMainModeSwitch; // 接收主模式切换函数
 
     populateModelSelect();
     attachEventListeners();

@@ -11,6 +11,7 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 let elements = {};
 let initialTouchY = 0; // For swipe-to-cancel gesture
 let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
+let handleMainModeSwitch = null; // 新增：用于接收主模式切换函数
 
 /**
  * Initializes the translation feature.
@@ -21,6 +22,7 @@ let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入�
 export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
+    handleMainModeSwitch = handlers.handleMainModeSwitch; // 接收主模式切换函数
 
     // Populate language dropdowns from config
     populateLanguageSelects();

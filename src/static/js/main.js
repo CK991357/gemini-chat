@@ -51,9 +51,12 @@ const themeToggleBtn = document.getElementById('theme-toggle');
 const toggleLogBtn = document.getElementById('toggle-log');
 const _logPanel = document.querySelector('.chat-container.log-mode');
 const clearLogsBtn = document.getElementById('clear-logs');
-const modeTabs = document.querySelectorAll('.mode-tabs .tab, .mode-tabs .vision-tab');
+const modeTabs = document.querySelectorAll('.mode-tabs .tab');
 // const chatContainers = document.querySelectorAll('.chat-container'); // 已在上面声明
 const historyContent = document.getElementById('history-list-container'); // 新增：历史记录面板
+
+// 跟踪当前激活的主模式
+let currentMainMode = 'chat'; // 默认为聊天模式
 
 // 新增媒体预览相关 DOM 元素
 const mediaPreviewsContainer = document.getElementById('media-previews');
@@ -180,6 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const translationContainer = document.querySelector('.translation-container');
     const visionContainer = document.querySelector('.vision-container');
     const logContainer = document.querySelector('.chat-container.log-mode');
+    const historyContainer = document.querySelector('.chat-container.history-mode'); // 新增历史容器
 
     // 新增：主模式按钮
     const chatModeBtn = document.getElementById('chat-mode-button');
@@ -191,21 +195,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * @function handleMainModeSwitch
-     * @description 处理主模式（聊天、翻译、视觉）之间的切换。
-     * @param {string} targetMode - 目标模式的名称 ('chat', 'translation', 'vision')。
+     * @description 激活指定的主模式（聊天、翻译、视觉），并更新UI。
+     * @param {string} mode - 要激活的模式名称 ('chat', 'translation', 'vision')。
      * @returns {void}
      */
-    function handleMainModeSwitch(targetMode) {
+    function handleMainModeSwitch(mode) {
+        // 移除所有主模式按钮的 active 类
+        chatModeBtn.classList.remove('active');
+        translationModeBtn.classList.remove('active');
+        visionModeBtn.classList.remove('active');
+
         // 隐藏所有主模式容器
         chatContainer.classList.remove('active');
         translationContainer.classList.remove('active');
         visionContainer.classList.remove('active');
-        logContainer.classList.remove('active'); // 确保日志容器也被隐藏
+        logContainer.classList.remove('active'); // 确保日志容器也隐藏
+        historyContainer.classList.remove('active'); // 确保历史容器也隐藏
 
-        // 移除所有主模式按钮的激活状态
-        chatModeBtn.classList.remove('active');
-        translationModeBtn.classList.remove('active');
-        visionModeBtn.classList.remove('active');
+        // 获取输入区域元素
+        const inputArea = document.querySelector('.input-area');
 
         // 确保在切换模式时停止所有媒体流
         if (videoHandler && videoHandler.getIsVideoActive()) {
@@ -216,34 +224,106 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateMediaPreviewsDisplay(); // 更新媒体预览显示
 
-        // 根据目标模式激活对应的容器和按钮
-        switch (targetMode) {
-            case 'chat':
-                chatContainer.classList.add('active');
-                chatModeBtn.classList.add('active');
-                // 默认激活文字聊天模式的子标签
-                document.querySelector('.tab[data-mode="text"]').click();
-                break;
-            case 'translation':
-                translationContainer.classList.add('active');
-                translationModeBtn.classList.add('active');
-                // 翻译模式没有子标签，直接显示
-                break;
-            case 'vision':
-                visionContainer.classList.add('active');
-                visionModeBtn.classList.add('active');
-                // 默认激活视觉模式的子标签（如果存在，这里假设是主界面）
-                document.querySelector('.tab[data-mode="vision-main"]').click(); // 假设视觉模式的主界面子标签是 'vision-main'
-                break;
-            default:
-                Logger.warn(`未知的主模式: ${targetMode}`);
-                break;
+        // 根据模式激活对应的按钮和容器
+        if (mode === 'chat') {
+            chatModeBtn.classList.add('active');
+            chatContainer.classList.add('active');
+            if (inputArea) {
+                inputArea.style.display = 'flex'; // 聊天模式默认显示输入框
+            }
+            // 确保只有在切换到聊天模式时才激活文字聊天子标签
+            modeTabs.forEach(t => t.classList.remove('active')); // 移除所有子标签的 active 类
+            document.querySelector('.tab[data-mode="text"]').classList.add('active'); // 激活文字聊天子标签
+        } else if (mode === 'translation') {
+            translationModeBtn.classList.add('active');
+            translationContainer.classList.add('active');
+            if (inputArea) {
+                inputArea.style.display = 'flex'; // 翻译模式也有输入框
+            }
+            // 移除所有子标签的 active 类
+            modeTabs.forEach(t => t.classList.remove('active'));
+        } else if (mode === 'vision') {
+            visionModeBtn.classList.add('active');
+            visionContainer.classList.add('active');
+            if (inputArea) {
+                inputArea.style.display = 'flex'; // 视觉模式也有输入框
+            }
+            // 移除所有子标签的 active 类
+            modeTabs.forEach(t => t.classList.remove('active'));
+        } else {
+            Logger.warn(`未知的主模式: ${mode}`);
         }
-        currentActiveMainMode = targetMode;
-        Logger.info(`主模式已切换到: ${targetMode}`);
+
+        currentActiveMainMode = mode; // 更新当前激活的主模式
+        Logger.info(`主模式已切换到: ${mode}`);
     }
 
-    // 2. 模式切换逻辑 (子标签页：文字聊天/系统日志/历史记录/视觉主界面)
+    /**
+     * @function handleMainModeSwitch
+     * @description 激活指定的主模式（聊天、翻译、视觉），并更新UI。
+     * @param {string} mode - 要激活的模式名称 ('chat', 'translation', 'vision')。
+     * @returns {void}
+     */
+    function handleMainModeSwitch(mode) {
+        // 移除所有主模式按钮的 active 类
+        chatModeBtn.classList.remove('active');
+        translationModeBtn.classList.remove('active');
+        visionModeBtn.classList.remove('active');
+
+        // 隐藏所有主模式容器
+        document.querySelector('.chat-container.text-mode').classList.remove('active');
+        document.querySelector('.translation-container').classList.remove('active');
+        document.querySelector('.vision-container').classList.remove('active');
+        document.querySelector('.chat-container.log-mode').classList.remove('active'); // 确保日志容器也隐藏
+        document.querySelector('.chat-container.history-mode').classList.remove('active'); // 确保历史容器也隐藏
+
+        // 获取输入区域元素
+        const inputArea = document.querySelector('.input-area');
+
+        // 确保在切换模式时停止所有媒体流
+        if (videoHandler && videoHandler.getIsVideoActive()) {
+            videoHandler.stopVideo();
+        }
+        if (screenHandler && screenHandler.getIsScreenActive()) {
+            screenHandler.stopScreenSharing();
+        }
+        updateMediaPreviewsDisplay(); // 更新媒体预览显示
+
+        // 根据模式激活对应的按钮和容器
+        if (mode === 'chat') {
+            chatModeBtn.classList.add('active');
+            document.querySelector('.chat-container.text-mode').classList.add('active');
+            if (inputArea) {
+                inputArea.style.display = 'flex'; // 聊天模式默认显示输入框
+            }
+            // 确保只有在切换到聊天模式时才激活文字聊天子标签
+            modeTabs.forEach(t => t.classList.remove('active')); // 移除所有子标签的 active 类
+            document.querySelector('.tab[data-mode="text"]').classList.add('active'); // 激活文字聊天子标签
+        } else if (mode === 'translation') {
+            translationModeBtn.classList.add('active');
+            document.querySelector('.translation-container').classList.add('active');
+            if (inputArea) {
+                inputArea.style.display = 'flex'; // 翻译模式也有输入框
+            }
+            // 移除所有子标签的 active 类
+            modeTabs.forEach(t => t.classList.remove('active'));
+        } else if (mode === 'vision') {
+            visionModeBtn.classList.add('active');
+            document.querySelector('.vision-container').classList.add('active');
+            if (inputArea) {
+                inputArea.style.display = 'flex'; // 视觉模式也有输入框
+            }
+            // 移除所有子标签的 active 类
+            modeTabs.forEach(t => t.classList.remove('active'));
+        } else {
+            Logger.warn(`未知的主模式: ${mode}`);
+        }
+
+        currentActiveMainMode = mode; // 更新当前激活的主模式
+        Logger.info(`主模式已切换到: ${mode}`);
+    }
+
+    // 2. 模式切换逻辑 (子标签页：文字聊天/系统日志/历史记录)
     modeTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const mode = tab.dataset.mode;
@@ -256,33 +336,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 根据当前激活的主模式和子标签模式显示对应的容器
             if (currentActiveMainMode === 'chat') {
-                // 隐藏所有聊天容器（包括主模式容器和子模式容器）
-                document.querySelectorAll('.chat-container').forEach(c => c.classList.remove('active'));
-                translationContainer.classList.remove('active');
-                visionContainer.classList.remove('active');
+                // 隐藏所有聊天容器的子模式容器
+                document.querySelector('.chat-container.text-mode').classList.remove('active');
+                document.querySelector('.chat-container.log-mode').classList.remove('active');
+                document.querySelector('.chat-container.history-mode').classList.remove('active');
 
                 const targetContainer = document.querySelector(`.chat-container.${mode}-mode`);
                 if (targetContainer) {
                     targetContainer.classList.add('active');
                 }
-                chatContainer.classList.add('active'); // 确保主聊天容器在子标签切换时保持激活
-
-                // 特别处理历史记录的占位符
-                if (mode === 'history') {
-                    historyManager.renderHistoryList();
-                }
+                // 确保主聊天容器在子标签切换时保持激活
+                chatContainer.classList.add('active'); 
             } else if (currentActiveMainMode === 'vision') {
-                // 隐藏所有聊天容器（包括主模式容器和子模式容器）
-                document.querySelectorAll('.chat-container').forEach(c => c.classList.remove('active'));
-                translationContainer.classList.remove('active');
-                visionContainer.classList.remove('active');
+                // 视觉模式下，子标签切换不影响主容器的 active 状态
+                // 视觉模式的子标签页（系统日志和历史记录）应该显示在视觉模式的主界面内
+                // 隐藏视觉模式的聊天历史，显示对应的子标签内容
+                visionMessageHistory.style.display = 'none'; // 默认隐藏视觉聊天历史
 
-                // 视觉模式的子标签页逻辑
-                if (mode === 'vision-main') {
-                    visionContainer.classList.add('active');
+                // 隐藏日志和历史容器
+                logContainer.classList.remove('active');
+                historyContent.classList.remove('active');
+
+                if (mode === 'log') {
+                    logContainer.classList.add('active');
+                } else if (mode === 'history') {
+                    historyContent.classList.add('active');
+                    // 视觉模式下历史记录显示占位符，符合用户“不引入新功能”的反馈
+                    historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+                } else if (mode === 'text') { // 当点击“文字聊天”子标签时，显示视觉模式的聊天历史
+                    visionMessageHistory.style.display = 'block';
                 }
-                // 如果未来有其他视觉模式的子标签页，可以在这里添加逻辑
+            } else if (currentActiveMainMode === 'translation') {
+                // 翻译模式下，子标签切换不影响主容器的 active 状态
+                // 翻译模式没有子标签页，所以这里不需要额外处理
             }
+
             // 确保在切换模式时停止所有媒体流
             if (videoHandler && videoHandler.getIsVideoActive()) {
                 videoHandler.stopVideo();
@@ -290,13 +378,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (screenHandler && screenHandler.getIsScreenActive()) {
                 screenHandler.stopScreenSharing();
             }
-            updateMediaPreviewsDisplay(); // 更新媒体预览显示
+            // 媒体预览容器的显示由 isVideoActive 或 isScreenSharing 状态控制
+            updateMediaPreviewsDisplay();
         });
     });
 
     // 主模式按钮事件监听
     chatModeBtn.addEventListener('click', () => handleMainModeSwitch('chat'));
     translationModeBtn.addEventListener('click', () => handleMainModeSwitch('translation'));
+    visionModeBtn.addEventListener('click', () => handleMainModeSwitch('vision'));
     visionModeBtn.addEventListener('click', () => handleMainModeSwitch('vision'));
 
     // 默认激活文字聊天模式
@@ -507,9 +597,6 @@ let translationAudioChunks = [];
 let recordingTimeout = null;
 let _isTranslationRecording = false;
 let hasRequestedMicPermission = false;
-
-// 新增：用于跟踪当前激活的主模式（聊天、翻译、视觉）
-let currentActiveMainMode = 'chat'; // 默认激活聊天模式
 
 /**
  * Checks if translation recording is currently active.
