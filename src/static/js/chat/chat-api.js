@@ -164,18 +164,22 @@ export class ChatAPI {
                     this.callbacks.getAudioSampleRate(),
                     selectedModelConfig.name
                 );
-            }
-            // 对于 HTTP 模式，我们不在此处建立持久连接，
-            // 而是在发送消息时处理。我们只需更新状态。
-            this.stateUpdaters.setIsConnected(true);
-            this.callbacks.updateConnectionStatus(true, selectedModelConfig);
+                // 确保 WebSocket 连接成功后更新状态
+                this.stateUpdaters.setIsConnected(true);
+                this.callbacks.updateConnectionStatus(true, selectedModelConfig);
+                this.callbacks.logMessage(`已连接到模型: ${selectedModelConfig.displayName}`, 'system');
+            } else {
+                // HTTP 模式直接更新状态
+                this.stateUpdaters.setIsConnected(true);
+                this.callbacks.updateConnectionStatus(true, selectedModelConfig);
+                this.callbacks.logMessage(`已切换到 HTTP 模式: ${selectedModelConfig.displayName}`, 'system');
 
-            if (!selectedModelConfig.isWebSocket && !this.stateGetters.getCurrentSessionId()) {
-                this.callbacks.historyManager.generateNewSession();
+                if (!this.stateGetters.getCurrentSessionId()) {
+                    this.callbacks.historyManager.generateNewSession();
+                }
             }
-            this.callbacks.logMessage(`已连接到模型: ${selectedModelConfig.displayName}`, 'system');
-
         } catch (error) {
+            this.callbacks.showSystemMessage(`连接失败: ${error.message}`);
             this.callbacks.logMessage(`连接失败: ${error.message}`, 'system');
             this.stateUpdaters.setIsConnected(false);
             this.callbacks.updateConnectionStatus(false, selectedModelConfig);
