@@ -77,7 +77,7 @@ export class ChatAPI extends APIHandler {
                 const wsConfig = {
                     model: selectedModelConfig.name,
                     generationConfig: {
-                        responseModalities: ["audio", "text"],
+                        responseModalities: this.stateGetters.getResponseType() === 'audio' ? ['audio', 'text'] : ['text'],
                         speechConfig: {
                             voiceConfig: {
                                 prebuiltVoiceConfig: {
@@ -171,9 +171,8 @@ export class ChatAPI extends APIHandler {
         }
         
         // 如果历史记录中有工具调用，则添加工具声明
-        if (this.stateGetters.getChatHistory().some(msg => msg.role === 'tool' || (msg.role === 'assistant' && msg.parts?.some(p => p.functionCall)))) {
-            requestBody.tools = this.toolManager.getToolDeclarations();
-        }
+        // Always include tools so the model knows what's available.
+        requestBody.tools = this.toolManager.getToolDeclarations();
 
 
         return requestBody;
@@ -207,7 +206,9 @@ export class ChatAPI extends APIHandler {
         let currentFunctionCall = null;
         let fullResponseText = "";
 
-        this.callbacks.createAIMessageElement(); // 创建一个空的AI消息容器
+        // The AI message container is already created by the onMessageStart callback.
+        // This call is redundant and causes the duplicate avatar issue.
+        // this.callbacks.createAIMessageElement();
 
         while (true) {
             const { done, value } = await reader.read();
@@ -226,7 +227,11 @@ export class ChatAPI extends APIHandler {
                         if (!delta) continue;
 
                         const functionCallPart = delta.parts?.find(p => p.functionCall);
-                        if (functionCallPart) {
+                        const toolCodePart = delta.parts?.find(p => p.tool_code);
+
+                        if (toolCodePart) {
+                            this.callbacks.onToolCode(toolCodePart.tool_code);
+                        } else if (functionCallPart) {
                             functionCallDetected = true;
                             currentFunctionCall = functionCallPart.functionCall;
                             this.callbacks.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
