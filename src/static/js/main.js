@@ -1,6 +1,7 @@
 import { AttachmentManager } from './attachments/file-attachment.js'; // T2 新增
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
+import { ChatApi } from './chat/chat-api.js'; // T12.3: 导入聊天 API 模块
 import * as chatUI from './chat/chat-ui.js'; // T11: 导入聊天UI模块
 import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
@@ -405,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         stopTranslationRecording,
         cancelTranslationRecording,
         resetRecordingState
-    }, showToast);
+    }, showToast, () => apiKeyInput.value); // T12.2: 注入 API Key 获取函数
     // T8: 初始化视觉功能
     const visionElements = {
         visionModelSelect: document.getElementById('vision-model-select'),
@@ -418,7 +419,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const visionHandlers = {
         showToast: showToast,
     };
-    initializeVisionCore(visionElements, attachmentManager, visionHandlers);
+    initializeVisionCore(visionElements, attachmentManager, visionHandlers, () => apiKeyInput.value); // T12.2: 注入 API Key 获取函数
+    
+    // T12.4: 初始化 ChatApi 模块
+    chatApi = new ChatApi({
+        getApiKey: () => apiKeyInput.value,
+        callbacks: {
+            logMessage: chatUI.logMessage,
+            createAIMessageElement: chatUI.createAIMessageElement,
+            scrollToBottom: chatUI.scrollToBottom,
+            handleToolCall: (toolCall) => toolManager.handleToolCall(toolCall)
+        }
+    });
+
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
 
@@ -497,6 +510,7 @@ let attachmentManager = null; // T2: 提升作用域
 let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
+let chatApi = null; // T12.3: 新增 ChatApi 实例
 
 /**
  * @fileoverview Manages audio recording for the translation feature.
@@ -1035,63 +1049,22 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
         }
         client.send({ text: message });
     } else {
-        // HTTP 模式下发送消息
+        // T12.4: 使用 ChatApi 处理 HTTP 消息发送
         try {
-            const apiKey = apiKeyInput.value;
-            const modelName = selectedModelConfig.name;
-            const systemInstruction = systemInstructionInput.value;
-
-            // 构建消息内容，参考 OCR 项目的成功实践
-            const userContent = [];
-            if (message) {
-                userContent.push({ type: 'text', text: message });
-            }
-            if (attachedFile) {
-                // 参考项目使用 image_url 并传递完整的 Data URL
-                userContent.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: attachedFile.base64
-                    }
-                });
-            }
-
-            chatHistory.push({
-                role: 'user',
-                content: userContent // 保持为数组，因为可能包含文本和图片
+            const updatedHistory = await chatApi.sendMessage({
+                message,
+                attachedFile,
+                chatHistory,
+                modelName: selectedModelConfig.name,
+                systemInstruction: systemInstructionInput.value,
+                currentSessionId
             });
-
-            // 清除附件（发送后）
-            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
-
-            let requestBody = {
-                model: modelName,
-                messages: chatHistory,
-                generationConfig: {
-                    responseModalities: ['text']
-                },
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
-                ],
-                enableGoogleSearch: true,
-                stream: true,
-                sessionId: currentSessionId
-            };
-
-            if (systemInstruction) {
-                requestBody.systemInstruction = {
-                    parts: [{ text: systemInstruction }]
-                };
-            }
-
-            await processHttpStream(requestBody, apiKey);
-
+            chatHistory = updatedHistory; // 更新主聊天历史
+            attachmentManager.clearAttachedFile('chat');
+            historyManager.saveHistory(); // 保存历史
         } catch (error) {
-            Logger.error('发送 HTTP 消息失败:', error);
-            chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
+            // 错误已在 chat-api 中记录，这里可以根据需要执行额外的UI操作
+            console.error("An error occurred during message sending:", error);
         }
         }
         }
@@ -1244,232 +1217,6 @@ client.on('error', (error) => {
 });
 
 // ... (新增 processHttpStream 辅助函数)
-
-/**
- * 处理 HTTP SSE 流，包括文本累积和工具调用。
- * @param {Object} requestBody - 发送给模型的请求体。
- * @param {string} apiKey - API Key。
- * @returns {Promise<void>}
- */
-async function processHttpStream(requestBody, apiKey) {
-    // let accumulatedText = ''; // 不再需要累积文本，直接追加
-    let currentMessages = requestBody.messages;
-
-    try {
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`HTTP API 请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let functionCallDetected = false;
-        let currentFunctionCall = null;
-        let reasoningStarted = false;
-        let answerStarted = false; // 新增：用于标记最终答案是否开始
-
-        // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
-        // 只有当不是工具响应的后续文本时才创建新消息块
-        const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-        if (!isToolResponseFollowUp) {
-            currentAIMessageContentDiv = chatUI.createAIMessageElement();
-        }
-
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                Logger.info('HTTP Stream finished.');
-                break;
-            }
-
-            const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') {
-                        return;
-                    }
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        if (data.choices && data.choices.length > 0) {
-                            const choice = data.choices[0];
-                            if (choice.delta) {
-                                const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
-
-                                // 1. 处理思维链
-                                if (choice.delta.reasoning_content) {
-                                    if (!currentAIMessageContentDiv) currentAIMessageContentDiv = chatUI.createAIMessageElement();
-                                    if (!reasoningStarted) {
-                                        currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                        reasoningStarted = true;
-                                    }
-                                    currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
-                                }
-                                
-                                // 2. 处理工具调用
-                                if (functionCallPart) {
-                                    functionCallDetected = true;
-                                    currentFunctionCall = functionCallPart.functionCall;
-                                    Logger.info('Function call detected:', currentFunctionCall);
-                                    chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    if (currentAIMessageContentDiv) currentAIMessageContentDiv = null;
-                                }
-                                // 3. 处理最终答案
-                                else if (choice.delta.content) {
-                                    if (!functionCallDetected) {
-                                        if (!currentAIMessageContentDiv) currentAIMessageContentDiv = chatUI.createAIMessageElement();
-                                        
-                                        // 当思维链存在且最终答案首次出现时，插入分隔符
-                                        if (reasoningStarted && !answerStarted) {
-                                            const separator = document.createElement('hr');
-                                            separator.className = 'answer-separator';
-                                            currentAIMessageContentDiv.markdownContainer.before(separator);
-                                            answerStarted = true;
-                                        }
-
-                                        currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                        currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
-                                        
-                                        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                            MathJax.startup.promise.then(() => {
-                                                MathJax.typeset([currentAIMessageContentDiv.markdownContainer, currentAIMessageContentDiv.reasoningContainer]);
-                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                        }
-                                        chatUI.scrollToBottom();
-                                    }
-                                }
-                            }
-                        }
-                        if (data.usage) {
-                            Logger.info('Usage:', data.usage);
-                        }
-                    } catch (e) {
-                        Logger.error('Error parsing SSE chunk:', e, jsonStr);
-                    }
-                }
-            });
-        }
-
-        // 处理工具调用
-        if (functionCallDetected && currentFunctionCall) {
-            // 确保在处理工具调用前，当前 AI 消息已完成并添加到聊天历史
-            if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                chatHistory.push({
-                    role: 'assistant',
-                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-                });
-            }
-            currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
-
-            try {
-                isUsingTool = true;
-                chatUI.logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
-                const toolResult = await toolManager.handleToolCall(currentFunctionCall);
- 
-                const toolResponsePart = toolResult.functionResponses[0].response.output;
-
-                // 将模型调用工具添加到 chatHistory
-                chatHistory.push({
-                    role: 'assistant', // 模型角色
-                    // 恢复使用 parts 数组以匹配参考代码
-                    parts: [{
-                        functionCall: {
-                            name: currentFunctionCall.name,
-                            args: currentFunctionCall.args
-                        }
-                    }]
-                });
-
-                // 将工具响应添加到 chatHistory
-                chatHistory.push({
-                    role: 'tool', // 工具角色
-                    // 恢复使用 parts 数组
-                    parts: [{
-                        functionResponse: {
-                            name: currentFunctionCall.name,
-                            response: toolResponsePart
-                        }
-                    }]
-                });
-
-                // 递归调用，将工具结果发送回模型
-                await processHttpStream({
-                    ...requestBody,
-                    messages: chatHistory, // 直接使用更新后的 chatHistory
-                    tools: toolManager.getToolDeclarations(),
-                    sessionId: currentSessionId // 确保传递会话ID
-                }, apiKey);
-
-            } catch (toolError) {
-                Logger.error('工具执行失败:', toolError);
-                chatUI.logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                
-                // 将模型调用工具添加到 chatHistory (即使失败也要记录)
-                chatHistory.push({
-                    role: 'assistant',
-                    parts: [{
-                        functionCall: {
-                            name: currentFunctionCall.name,
-                            args: currentFunctionCall.args
-                        }
-                    }]
-                });
-
-                // 将工具错误响应添加到 chatHistory
-                chatHistory.push({
-                    role: 'tool',
-                    parts: [{
-                        functionResponse: {
-                            name: currentFunctionCall.name,
-                            response: { error: toolError.message }
-                        }
-                    }]
-                });
-
-                await processHttpStream({
-                    ...requestBody,
-                    messages: chatHistory, // 直接使用更新后的 chatHistory
-                    tools: toolManager.getToolDeclarations(),
-                    sessionId: currentSessionId // 确保传递会话ID
-                }, apiKey);
-            } finally {
-                isUsingTool = false;
-            }
-        } else {
-            // 如果没有工具调用，且流已完成，将完整的 AI 响应添加到 chatHistory
-            if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                chatHistory.push({
-                    role: 'assistant',
-                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-                });
-            }
-            currentAIMessageContentDiv = null; // 重置
-            chatUI.logMessage('Turn complete (HTTP)', 'system');
-            // T15: 在HTTP模式对话完成时保存历史
-            historyManager.saveHistory();
-        }
- 
-    } catch (error) {
-        Logger.error('处理 HTTP 流失败:', error);
-        chatUI.logMessage(`处理流失败: ${error.message}`, 'system');
-        // 错误发生时，确保AI消息容器存在再更新内容，否则直接重置
-        if (currentAIMessageContentDiv && currentAIMessageContentDiv.markdownContainer) {
-            currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
-        }
-        currentAIMessageContentDiv = null; // 最终重置
-    }
-}
-
 
 // 添加全局错误处理
 globalThis.addEventListener('error', (event) => {
