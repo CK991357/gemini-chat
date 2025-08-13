@@ -65,6 +65,9 @@ export class ChatApi {
                                 if (choice.delta) {
                                     const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
 
+                                    // 提取文本内容，兼容不同模型的返回格式
+                                    const textContent = this._extractContent(choice.delta);
+
                                     if (choice.delta.reasoning_content) {
                                         if (!currentAIMessageContentDiv) currentAIMessageContentDiv = this.callbacks.createAIMessageElement();
                                         if (!reasoningStarted) {
@@ -80,7 +83,7 @@ export class ChatApi {
                                         Logger.info('Function call detected:', currentFunctionCall);
                                         this.callbacks.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
                                         if (currentAIMessageContentDiv) currentAIMessageContentDiv = null;
-                                    } else if (choice.delta.content) {
+                                    } else if (textContent) {
                                         if (!functionCallDetected) {
                                             if (!currentAIMessageContentDiv) currentAIMessageContentDiv = this.callbacks.createAIMessageElement();
                                             
@@ -91,7 +94,8 @@ export class ChatApi {
                                                 answerStarted = true;
                                             }
 
-                                            currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
+                                            currentAIMessageContentDiv.rawMarkdownBuffer += textContent;
+                                            // Qwen "Thinking" 模型可能会返回包含特殊标记的内容，这里先简单渲染
                                             currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
                                             
                                             if (typeof MathJax !== 'undefined' && MathJax.startup) {
@@ -152,7 +156,27 @@ export class ChatApi {
                 }
             } else {
                 if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                    chatHistory.push({ role: 'assistant', content: currentAIMessageContentDiv.rawMarkdownBuffer });
+                   // Qwen "Thinking" 模型内容处理
+                   const rawText = currentAIMessageContentDiv.rawMarkdownBuffer;
+                   const thinkEndTag = '</think>';
+                   const thinkStartIndex = rawText.indexOf('<think>');
+                   const thinkEndIndex = rawText.lastIndexOf(thinkEndTag);
+
+                   let thinkingContent = '';
+                   let finalContent = rawText;
+
+                   if (thinkEndIndex !== -1) {
+                       // 提取思考过程和最终内容
+                       thinkingContent = rawText.substring(thinkStartIndex + '<think>'.length, thinkEndIndex).trim();
+                       finalContent = rawText.substring(thinkEndIndex + thinkEndTag.length).trim();
+                       
+                       // 更新UI以分别显示思考过程和最终答案
+                       currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML = marked.parse(thinkingContent);
+                       currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
+                       currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(finalContent);
+                   }
+                   
+                   chatHistory.push({ role: 'assistant', content: finalContent });
                 }
                 currentAIMessageContentDiv = null;
                 this.callbacks.logMessage('Turn complete (HTTP)', 'system');
@@ -225,5 +249,37 @@ export class ChatApi {
             this.callbacks.logMessage(`发送消息失败: ${error.message}`, 'system');
             throw error; // 将错误向上抛出，以便 main.js 可以处理
         }
+    }
+
+    /**
+     * 从 SSE delta 对象中提取文本内容，兼容多种格式。
+     * @param {object} delta - 从 SSE 流中解析出的 delta 对象.
+     * @returns {string} - 提取出的文本内容，如果不存在则返回空字符串.
+     * @private
+     */
+    _extractContent(delta) {
+        if (!delta) return '';
+        
+        // 1. 优先检查 content 字段 (Gemini, etc.)
+        if (delta.content) {
+            return delta.content;
+        }
+
+        // 2. 检查 text 字段 (某些开源模型)
+        if (delta.text) {
+            return delta.text;
+        }
+        
+        // 3. 检查 message 对象 (兼容类 OpenAI 格式)
+        if (delta.message && delta.message.content) {
+            return delta.message.content;
+        }
+
+        // 4. 记录未知格式以备调试
+        if (Object.keys(delta).length > 0) {
+            console.warn('Unknown SSE delta format:', delta);
+        }
+
+        return '';
     }
 }
