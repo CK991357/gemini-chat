@@ -8,7 +8,6 @@
 let elements = {};
 let handlers = {};
 let libraries = {};
-let currentAIMessage = null; // Module-level state to track the current AI message element being updated
 
 /**
  * Initializes the Chat UI module with necessary dependencies.
@@ -229,63 +228,13 @@ export function createAIMessageElement() {
     elements.messageHistory.appendChild(messageDiv);
     scrollToBottom();
 
-    currentAIMessage = {
+    return {
         container: messageDiv,
         markdownContainer,
         reasoningContainer,
         contentDiv,
         rawMarkdownBuffer: ''
     };
-    return currentAIMessage;
-}
-
-/**
- * Updates the content of the current AI message bubble.
- * Handles streaming text, reasoning, and errors.
- * @param {object} data - The data for the update.
- * @param {string} data.type - The type of update ('content', 'reasoning', 'error').
- * @param {string} data.content - The text content to append.
- * @param {boolean} [data.isStream=false] - If true, appends content; otherwise, replaces.
- */
-export function updateAIMessage(data) {
-    if (!currentAIMessage) {
-        console.warn("updateAIMessage called but no current AI message element exists.");
-        return;
-    }
-
-    const { type, content, isStream } = data;
-
-    if (type === 'content') {
-        if (isStream) {
-            currentAIMessage.rawMarkdownBuffer += content;
-        } else {
-            currentAIMessage.rawMarkdownBuffer = content;
-        }
-        currentAIMessage.markdownContainer.innerHTML = libraries.marked.parse(currentAIMessage.rawMarkdownBuffer);
-        if (libraries.MathJax && libraries.MathJax.startup) {
-            libraries.MathJax.startup.promise.then(() => {
-                libraries.MathJax.typeset([currentAIMessage.markdownContainer]);
-            }).catch((err) => console.error('MathJax typesetting failed:', err));
-        }
-    } else if (type === 'reasoning') {
-        // Similar logic for reasoning container can be added here
-    } else if (type === 'error') {
-        currentAIMessage.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${content}</p>`;
-    }
-    
-    scrollToBottom();
-}
-
-/**
- * Finalizes the current AI message, typically after a stream ends.
- * This function resets the module-level state for the current message.
- */
-export function finalizeAIMessage() {
-    if (currentAIMessage && currentAIMessage.rawMarkdownBuffer) {
-        // Potentially add the complete message to history here if needed,
-        // though it's better handled by the state manager.
-    }
-    currentAIMessage = null; // Reset for the next message
 }
 
 /**
