@@ -6,6 +6,7 @@
 
 import { APIHandler } from '../core/api-handler.js';
 import { Logger } from '../utils/logger.js';
+import { HttpToolManager } from './http-tool-manager.js';
 
 /**
  * @class ChatAPI
@@ -25,7 +26,7 @@ export class ChatAPI extends APIHandler {
     constructor(dependencies) {
         super(dependencies.stateGetters.getApiKey());
         this.client = dependencies.client;
-        this.toolManager = dependencies.toolManager;
+        this.toolManager = new HttpToolManager(); // Use the new HTTP-specific tool manager
         this.callbacks = dependencies.callbacks;
         this.stateGetters = dependencies.stateGetters;
         this.stateUpdaters = dependencies.stateUpdaters;
@@ -171,8 +172,15 @@ export class ChatAPI extends APIHandler {
         }
         
         // 如果历史记录中有工具调用，则添加工具声明
-        // Always include tools so the model knows what's available.
-        requestBody.tools = this.toolManager.getToolDeclarations();
+        // Conditionally add tools based on the model provider
+        const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
+        if (!selectedModelConfig.isQwen) {
+            const toolDeclarations = this.toolManager.getToolDeclarations();
+            if (toolDeclarations && toolDeclarations.length > 0) {
+                requestBody.tools = toolDeclarations;
+            }
+        }
+        // For Qwen models, do not add the 'tools' field to avoid API errors.
 
 
         return requestBody;

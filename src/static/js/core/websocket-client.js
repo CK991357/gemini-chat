@@ -57,13 +57,10 @@ export class MultimodalLiveClient extends EventEmitter {
      * @throws {ApplicationError} - Throws an error if the connection fails.
      */
     connect(config,apiKey) {
-        this.config = {
-            ...config,
-            tools: [
-                ...this.toolManager.getToolDeclarations(),
-                ...(config.tools || [])
-            ]
-        };
+        // 移除了对 this.toolManager.getToolDeclarations() 的错误依赖
+        // WebSocket 的配置应该保持纯净，只包含其自身需要的参数
+        this.config = config;
+
         const ws = new WebSocket(`${this.baseUrl}?key=${apiKey}`);
 
         ws.addEventListener('message', async (evt) => {
