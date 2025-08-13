@@ -1,4 +1,5 @@
 import { CONFIG } from '../config/config.js';
+import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -11,6 +12,7 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
+const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
 
 /**
  * Initializes the Vision feature.
@@ -123,25 +125,17 @@ async function handleSendVisionMessage() {
     Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
 
     try {
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: selectedModel,
-                messages: [
-                    { role: 'system', content: CONFIG.VISION.SYSTEM_PROMPT },
-                    ...visionChatHistory
-                ],
-                stream: true,
-            }),
-        });
+        const requestBody = {
+            model: selectedModel,
+            messages: [
+                { role: 'system', content: CONFIG.VISION.SYSTEM_PROMPT },
+                ...visionChatHistory
+            ],
+            stream: true,
+        };
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'API 请求失败');
-        }
-
-        const reader = response.body.getReader();
+        // 使用升级后的 ApiHandler 发送流式请求
+        const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
         const decoder = new TextDecoder('utf-8');
         let finalContent = '';
         let reasoningStarted = false;

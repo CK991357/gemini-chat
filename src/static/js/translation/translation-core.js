@@ -1,4 +1,5 @@
 import { CONFIG } from '../config/config.js';
+import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
 import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-ocr.js';
 
@@ -10,7 +11,7 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 // Store references to DOM elements to avoid repeated lookups
 let elements = {};
 let initialTouchY = 0; // For swipe-to-cancel gesture
-let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
+const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
 
 /**
  * Initializes the translation feature.
@@ -18,9 +19,8 @@ let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入�
  * @param {object} handlers - A collection of handler functions from other modules.
  * @param {object} audioFunctions - A collection of audio recording functions from main.js.
  */
-export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
+export function initializeTranslationCore(el, handlers, showToast) {
     elements = el;
-    translationAudioFunctions = audioFunctions; // 保存传入的函数
 
     // Populate language dropdowns from config
     populateLanguageSelects();
@@ -126,11 +126,11 @@ function attachVoiceInputListeners() {
     };
 
     // Mouse events
-    button.addEventListener('mousedown', () => translationAudioFunctions.startTranslationRecording(audioElements));
-    button.addEventListener('mouseup', () => translationAudioFunctions.stopTranslationRecording(audioElements));
+    button.addEventListener('mousedown', () => startTranslationRecording(audioElements));
+    button.addEventListener('mouseup', () => stopTranslationRecording(audioElements));
     button.addEventListener('mouseleave', () => {
-        if (translationAudioFunctions.isTranslationRecording()) {
-            translationAudioFunctions.cancelTranslationRecording(audioElements);
+        if (isTranslationRecording()) {
+            cancelTranslationRecording(audioElements);
         }
     });
 
@@ -138,17 +138,17 @@ function attachVoiceInputListeners() {
     button.addEventListener('touchstart', (e) => {
         e.preventDefault();
         initialTouchY = e.touches[0].clientY;
-        translationAudioFunctions.startTranslationRecording(audioElements);
+        startTranslationRecording(audioElements);
     });
     button.addEventListener('touchend', (e) => {
         e.preventDefault();
-        translationAudioFunctions.stopTranslationRecording(audioElements);
+        stopTranslationRecording(audioElements);
     });
     button.addEventListener('touchmove', (e) => {
-        if (translationAudioFunctions.isTranslationRecording()) {
+        if (isTranslationRecording()) {
             const currentTouchY = e.touches[0].clientY;
             if (initialTouchY - currentTouchY > 50) { // 50px threshold for swipe up to cancel
-                translationAudioFunctions.cancelTranslationRecording(audioElements);
+                cancelTranslationRecording(audioElements);
             }
         }
     });
@@ -178,25 +178,17 @@ async function handleTranslation() {
             `请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
             `请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
 
-        const response = await fetch('/api/translate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'system', content: CONFIG.TRANSLATION.SYSTEM_PROMPT },
-                    { role: 'user', content: prompt }
-                ],
-                stream: false
-            })
-        });
+        const requestBody = {
+            model: model,
+            messages: [
+                { role: 'system', content: CONFIG.TRANSLATION.SYSTEM_PROMPT },
+                { role: 'user', content: prompt }
+            ],
+            stream: false
+        };
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`翻译请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-        }
-
-        const data = await response.json();
+        // 使用 ApiHandler 发送请求
+        const data = await apiHandler.fetchJson('/api/translate', requestBody);
         const translatedText = data.choices[0].message.content;
 
         elements.outputText.textContent = translatedText;
@@ -267,5 +259,197 @@ function switchMode(mode, handlers) {
             elements.logContainer.classList.add('active');
             document.querySelector('.tab[data-mode="log"]')?.click();
             break;
+    }
+    
+    // --- 从 main.js 迁移过来的翻译语音输入相关函数 ---
+    
+    let translationAudioRecorder = null;
+    let translationAudioChunks = [];
+    let recordingTimeout = null;
+    let _isTranslationRecording = false;
+    let hasRequestedMicPermission = false;
+    
+    /**
+     * Checks if translation recording is currently active.
+     * @returns {boolean} True if recording is active, false otherwise.
+     */
+    function isTranslationRecording() {
+        return _isTranslationRecording;
+    }
+    
+    /**
+     * Starts the audio recording for translation.
+     * @param {object} elements - DOM elements required for audio recording UI feedback.
+     * @returns {Promise<void>}
+     */
+    async function startTranslationRecording(elements) {
+        if (_isTranslationRecording) return;
+    
+        if (!hasRequestedMicPermission) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+                hasRequestedMicPermission = true;
+                Logger.info('已获取麦克风权限，请再次长按开始录音。', 'system');
+                return;
+            } catch (error) {
+                Logger.info(`获取麦克风权限失败: ${error.message}`, 'system');
+                console.error('获取麦克风权限失败:', error);
+                resetRecordingState(elements);
+                hasRequestedMicPermission = false;
+                return;
+            }
+        }
+     
+        try {
+            Logger.info('开始录音...', 'system');
+            elements.voiceInputButton.classList.add('recording-active');
+            elements.inputTextarea.placeholder = '正在录音，请说话...';
+            elements.inputTextarea.value = '';
+    
+            translationAudioChunks = [];
+            translationAudioRecorder = new AudioRecorder();
+    
+            await translationAudioRecorder.start((chunk) => {
+                translationAudioChunks.push(chunk);
+            }, { returnRaw: true });
+    
+            _isTranslationRecording = true;
+    
+            recordingTimeout = setTimeout(() => {
+                if (_isTranslationRecording) {
+                    Logger.info('录音超时，自动停止', 'system');
+                    stopTranslationRecording(elements);
+                }
+            }, 60000); // 60 seconds timeout
+     
+        } catch (error) {
+            Logger.info(`启动录音失败: ${error.message}`, 'system');
+            console.error('启动录音失败:', error);
+            resetRecordingState(elements);
+            hasRequestedMicPermission = false;
+        }
+    }
+    
+    /**
+     * Stops the audio recording and processes the audio data.
+     * @param {object} elements - DOM elements required for audio recording UI feedback.
+     * @returns {Promise<void>}
+     */
+    async function stopTranslationRecording(elements) {
+        if (!_isTranslationRecording) return;
+    
+        clearTimeout(recordingTimeout);
+        Logger.info('停止录音，正在处理...', 'system');
+        elements.inputTextarea.placeholder = '正在处理语音...';
+     
+        try {
+            if (translationAudioRecorder) {
+                translationAudioRecorder.stop();
+                translationAudioRecorder = null;
+            }
+     
+            if (translationAudioChunks.length === 0) {
+                Logger.info('没有录到音频', 'system');
+                resetRecordingState(elements);
+                return;
+            }
+    
+            const totalLength = translationAudioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+            const mergedAudioData = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of translationAudioChunks) {
+                mergedAudioData.set(new Uint8Array(chunk), offset);
+                offset += chunk.byteLength;
+            }
+            translationAudioChunks = [];
+    
+            const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE);
+    
+            const result = await apiHandler.fetchJson('/api/transcribe-audio', audioBlob);
+            elements.inputTextarea.value = result.text || '未获取到转录文本。';
+            Logger.info('语音转文字成功', 'system');
+     
+        } catch (error) {
+            Logger.info(`语音转文字失败: ${error.message}`, 'system');
+            console.error('语音转文字失败:', error);
+            elements.inputTextarea.placeholder = '语音转文字失败，请重试。';
+        } finally {
+            resetRecordingState(elements);
+        }
+    }
+    
+    /**
+     * Cancels the current audio recording.
+     * @param {object} elements - DOM elements required for audio recording UI feedback.
+     */
+    function cancelTranslationRecording(elements) {
+        if (!_isTranslationRecording) return;
+    
+        clearTimeout(recordingTimeout);
+        Logger.info('录音已取消', 'system');
+     
+        if (translationAudioRecorder) {
+            translationAudioRecorder.stop();
+            translationAudioRecorder = null;
+        }
+        translationAudioChunks = [];
+        resetRecordingState(elements);
+        elements.inputTextarea.placeholder = '输入要翻译的内容...';
+    }
+    
+    /**
+     * Resets the recording state and UI elements.
+     * @param {object} elements - DOM elements to reset.
+     */
+    function resetRecordingState(elements) {
+        _isTranslationRecording = false;
+        elements.voiceInputButton.classList.remove('recording-active');
+    }
+    
+    /**
+     * 将PCM数据转换为WAV Blob。
+     * @param {Uint8Array[]} pcmDataBuffers - 包含PCM数据的Uint8Array数组。
+     * @param {number} sampleRate - 采样率 (例如 24000)。
+     * @returns {Blob} WAV格式的Blob。
+     */
+    function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.OUTPUT_SAMPLE_RATE) {
+        let dataLength = 0;
+        for (const buffer of pcmDataBuffers) {
+            dataLength += buffer.length;
+        }
+    
+        const buffer = new ArrayBuffer(44 + dataLength);
+        const view = new DataView(buffer);
+    
+        const writeString = (view, offset, string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
+    
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + dataLength, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(view, 36, 'data');
+        view.setUint32(40, dataLength, true);
+    
+        let offset = 44;
+        for (const pcmBuffer of pcmDataBuffers) {
+            for (let i = 0; i < pcmBuffer.length; i++) {
+                view.setUint8(offset + i, pcmBuffer[i]);
+            }
+            offset += pcmBuffer.length;
+        }
+    
+        return new Blob([view], { type: 'audio/wav' });
     }
 }
