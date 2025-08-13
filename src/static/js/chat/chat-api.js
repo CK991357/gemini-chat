@@ -4,147 +4,64 @@
  * 状态获取器与主应用程序（main.js）解耦。
  */
 
+import { APIHandler } from '../core/api-handler.js';
+import { Logger } from '../utils/logger.js';
 
-export class ChatAPI {
+/**
+ * @class ChatAPI
+ * @extends APIHandler
+ * @description 处理所有与聊天相关的后端通信，支持 WebSocket 和 HTTP 模式的动态切换。
+ */
+export class ChatAPI extends APIHandler {
     /**
      * ChatAPI 构造函数。
      * @param {object} dependencies - 依赖项对象。
      * @param {MultimodalLiveClient} dependencies.client - WebSocket 客户端实例。
      * @param {ToolManager} dependencies.toolManager - 工具管理器实例。
-     * @param {object} dependencies.callbacks - 用于与UI交互的回调函数。
-     * @param {function} dependencies.callbacks.logMessage - 记录消息的回调。
-     * @param {function} dependencies.callbacks.createAIMessageElement - 创建AI消息UI元素的回调。
-     * @param {function} dependencies.callbacks.displayAudioMessage - 显示音频消息的回调。
-     * @param {function} dependencies.callbacks.pcmToWavBlob - PCM转WAV的回调。
-     * @param {function} dependencies.callbacks.scrollToBottom - 滚动到底部的回调。
-     * @param {object} dependencies.stateGetters - 用于获取当前应用状态的函数。
-     * @param {function} dependencies.stateGetters.getChatHistory - 获取聊天历史的函数。
-     * @param {function} dependencies.stateGetters.getCurrentSessionId - 获取当前会话ID的函数。
-     * @param {function} dependencies.stateGetters.getSelectedModelConfig - 获取所选模型配置的函数。
-     * @param {function} dependencies.stateGetters.getSystemInstruction - 获取系统指令的函数。
-     * @param {function} dependencies.stateGetters.getApiKey - 获取API密钥的函数。
-     * @param {object} dependencies.stateUpdaters - 用于更新状态的函数。
-     * @param {function} dependencies.stateUpdaters.updateChatHistory - 更新聊天历史的函数。
-     * @param {function} dependencies.stateUpdaters.resetCurrentAIMessage - 重置当前AI消息元素的回调。
+     * @param {object} dependencies.callbacks - 用于与UI和状态管理器交互的回调函数。
+     * @param {object} dependencies.stateGetters - 用于获取当前应用状态的函数集合。
+     * @param {object} dependencies.stateUpdaters - 用于更新应用状态的函数集合。
      */
     constructor(dependencies) {
+        super(dependencies.stateGetters.getApiKey());
         this.client = dependencies.client;
         this.toolManager = dependencies.toolManager;
         this.callbacks = dependencies.callbacks;
         this.stateGetters = dependencies.stateGetters;
         this.stateUpdaters = dependencies.stateUpdaters;
 
-        // 内部状态
-        this.isUsingTool = false;
         this.audioDataBuffer = [];
-        this.currentAIMessageContentDiv = null; // 用于跟踪当前AI消息的UI元素
-
         this._registerSocketHandlers();
     }
 
     /**
-     * 注册 WebSocket 客户端的事件监听器。
+     * 注册 WebSocket 客户端的核心事件监听器。
      * @private
      */
     _registerSocketHandlers() {
-        this.client.on('content', this._handleContent.bind(this));
-        this.client.on('audio', this._handleAudio.bind(this));
-        this.client.on('turncomplete', this._handleTurnComplete.bind(this));
-        this.client.on('interrupted', this._handleInterrupted.bind(this));
-        this.client.on('error', this._handleError.bind(this));
+        this.client.on('open', () => {
+            const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
+            this.callbacks.logMessage(`WebSocket 连接成功: ${selectedModelConfig.displayName}`, 'system');
+            this.stateUpdaters.setIsConnected(true);
+            this.callbacks.updateConnectionStatus(true, selectedModelConfig);
+        });
 
-        // 这些事件只记录日志，可以直接处理
-        this.client.on('open', () => this.callbacks.logMessage('WebSocket connection opened', 'system'));
-        this.client.on('log', (log) => this.callbacks.logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system'));
-        this.client.on('setupcomplete', () => this.callbacks.logMessage('Setup complete', 'system'));
         this.client.on('close', (event) => {
             this.callbacks.logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
-            // 重连逻辑可以保留在 main.js 或移至此处
+            // 不需要在这里更新状态，disconnect 方法会统一处理
         });
+        
+        this.client.on('content', this._handleWsContent.bind(this));
+        this.client.on('audio', this._handleWsAudio.bind(this));
+        this.client.on('turncomplete', this._handleWsTurnComplete.bind(this));
+        this.client.on('interrupted', this._handleWsInterrupted.bind(this));
+        this.client.on('error', (error) => this.callbacks.logMessage(`WebSocket Error: ${error.message || 'Unknown error'}`, 'system'));
+        this.client.on('log', (log) => this.callbacks.logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system'));
     }
 
     /**
-     * 发送消息，根据模型配置自动选择 WebSocket 或 HTTP。
-     * @param {string} text - 用户输入的文本。
-     * @param {object|null} attachedFile - 附加的文件对象。
-     * @param {object} attachmentManager - 附件管理器实例。
-     * @returns {Promise<void>}
-     */
-    async sendMessage(text, attachedFile, attachmentManager) {
-        const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
-        const currentSessionId = this.stateGetters.getCurrentSessionId();
-        let chatHistory = this.stateGetters.getChatHistory();
-
-        // 确保在处理任何消息之前，会话已经存在
-        if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
-            this.callbacks.historyManager.generateNewSession();
-        }
-
-        this.callbacks.displayUserMessage(text, attachedFile);
-        this.stateUpdaters.resetCurrentAIMessage();
-
-        if (selectedModelConfig.isWebSocket) {
-            if (attachedFile) {
-                this.callbacks.showSystemMessage('实时模式尚不支持文件上传。');
-                attachmentManager.clearAttachedFile('chat');
-                return;
-            }
-            this.client.send({ text: text });
-        } else {
-            try {
-                const apiKey = this.stateGetters.getApiKey();
-                const modelName = selectedModelConfig.name;
-                const systemInstruction = this.stateGetters.getSystemInstruction();
-
-                const userContent = [];
-                if (text) {
-                    userContent.push({ type: 'text', text: text });
-                }
-                if (attachedFile) {
-                    userContent.push({
-                        type: 'image_url',
-                        image_url: { url: attachedFile.base64 }
-                    });
-                }
-
-                const newHistory = [...chatHistory, { role: 'user', content: userContent }];
-                this.stateUpdaters.updateChatHistory(newHistory);
-                chatHistory = newHistory; // 更新本地副本
-
-                attachmentManager.clearAttachedFile('chat');
-
-                let requestBody = {
-                    model: modelName,
-                    messages: chatHistory,
-                    generationConfig: { responseModalities: ['text'] },
-                    safetySettings: [
-                        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
-                    ],
-                    enableGoogleSearch: true,
-                    stream: true,
-                    sessionId: this.stateGetters.getCurrentSessionId()
-                };
-
-                if (systemInstruction) {
-                    requestBody.systemInstruction = {
-                        parts: [{ text: systemInstruction }]
-                    };
-                }
-
-                await this._processHttpStream(requestBody, apiKey);
-
-            } catch (error) {
-                Logger.error('发送 HTTP 消息失败:', error);
-                this.callbacks.logMessage(`发送消息失败: ${error.message}`, 'system');
-            }
-        }
-    }
-
-    /**
-     * 连接到后端，根据模型配置选择 WebSocket 或 HTTP 模式。
+     * 连接到后端。此方法是所有连接和模型切换的唯一入口。
+     * 它会根据当前选择的模型，动态地选择 WebSocket 或 HTTP 模式。
      * @returns {Promise<void>}
      */
     async connect() {
@@ -153,27 +70,28 @@ export class ChatAPI {
             this.callbacks.showSystemMessage('请输入 API Key');
             return;
         }
+        this.setApiKey(apiKey); // 确保基类的 key 是最新的
 
         const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
 
+        // 在建立新连接前，先彻底断开旧连接，确保状态干净
+        this.disconnect();
+
         try {
             if (selectedModelConfig.isWebSocket) {
+                // WebSocket 路径：发起连接，成功状态由 'open' 事件回调处理
+                this.callbacks.logMessage(`正在连接到 WebSocket 模型: ${selectedModelConfig.displayName}...`, 'system');
                 await this.client.connect(
                     apiKey,
                     this.stateGetters.getSystemInstruction(),
                     this.callbacks.getAudioSampleRate(),
                     selectedModelConfig.name
                 );
-                // 确保 WebSocket 连接成功后更新状态
-                this.stateUpdaters.setIsConnected(true);
-                this.callbacks.updateConnectionStatus(true, selectedModelConfig);
-                this.callbacks.logMessage(`已连接到模型: ${selectedModelConfig.displayName}`, 'system');
             } else {
-                // HTTP 模式直接更新状态
+                // HTTP 路径：无状态连接，直接更新UI和内部状态
+                this.callbacks.logMessage(`已切换到 HTTP 模式: ${selectedModelConfig.displayName}`, 'system');
                 this.stateUpdaters.setIsConnected(true);
                 this.callbacks.updateConnectionStatus(true, selectedModelConfig);
-                this.callbacks.logMessage(`已切换到 HTTP 模式: ${selectedModelConfig.displayName}`, 'system');
-
                 if (!this.stateGetters.getCurrentSessionId()) {
                     this.callbacks.historyManager.generateNewSession();
                 }
@@ -188,228 +106,195 @@ export class ChatAPI {
 
     /**
      * 断开与后端的连接。
+     * 负责清理 WebSocket 连接和重置应用状态。
      */
     disconnect() {
-        const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
-        if (selectedModelConfig.isWebSocket) {
+        if (this.client && this.client.isConnected()) {
             this.client.close();
         }
+        // 统一重置应用的状态和UI
         this.stateUpdaters.setIsConnected(false);
         this.callbacks.resetUIForDisconnectedState();
-        this.callbacks.logMessage('连接已断开', 'system');
     }
 
+    /**
+     * 发送消息。根据当前模型配置，动态路由到 WebSocket 或 HTTP 方法。
+     * @param {string} text - 用户输入的文本。
+     * @param {object|null} attachedFile - 附加的文件对象。
+     */
+    async sendMessage(text, attachedFile) {
+        const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
+
+        this.callbacks.displayUserMessage(text, attachedFile);
+        this.stateUpdaters.resetCurrentAIMessage();
+
+        if (selectedModelConfig.isWebSocket) {
+            if (attachedFile) {
+                this.callbacks.showSystemMessage('实时模式尚不支持文件上传。');
+                this.callbacks.attachmentManager.clearAttachedFile('chat');
+                return;
+            }
+            this.client.send({ text });
+        } else {
+            const requestBody = this._buildHttpRequestBody(text, attachedFile);
+            this.stateUpdaters.updateChatHistory([...this.stateGetters.getChatHistory(), { role: 'user', content: requestBody.messages.slice(-1)[0].content }]);
+            this.callbacks.attachmentManager.clearAttachedFile('chat');
+            await this._sendHttpRequest(requestBody);
+        }
+    }
+
+    /**
+     * 构建 HTTP 请求体。
+     * @private
+     */
+    _buildHttpRequestBody(text, attachedFile) {
+        const userContent = [];
+        if (text) {
+            userContent.push({ type: 'text', text });
+        }
+        if (attachedFile) {
+            userContent.push({ type: 'image_url', image_url: { url: attachedFile.base64 } });
+        }
+
+        const systemInstruction = this.stateGetters.getSystemInstruction();
+        const requestBody = {
+            model: this.stateGetters.getSelectedModelConfig().name,
+            messages: [...this.stateGetters.getChatHistory(), { role: 'user', content: userContent }],
+            stream: true,
+            sessionId: this.stateGetters.getCurrentSessionId(),
+            // ... 其他配置如 safetySettings, generationConfig 等
+        };
+
+        if (systemInstruction) {
+            requestBody.systemInstruction = { parts: [{ text: systemInstruction }] };
+        }
+        
+        // 如果历史记录中有工具调用，则添加工具声明
+        if (this.stateGetters.getChatHistory().some(msg => msg.role === 'tool' || (msg.role === 'assistant' && msg.parts?.some(p => p.functionCall)))) {
+            requestBody.tools = this.toolManager.getToolDeclarations();
+        }
+
+
+        return requestBody;
+    }
+
+    /**
+     * 发送 HTTP 请求并处理返回的流。
+     * @private
+     */
+    async _sendHttpRequest(requestBody) {
+        try {
+            const response = await this._fetch('/api/chat/completions', {
+                method: 'POST',
+                body: JSON.stringify(requestBody),
+            });
+            await this._processHttpStream(response.body.getReader(), requestBody);
+        } catch (error) {
+            Logger.error('HTTP 请求或流处理失败:', error);
+            this.callbacks.logMessage(`请求失败: ${error.message}`, 'system');
+            this.callbacks.updateAIMessage({ type: 'error', content: error.message });
+        }
+    }
 
     /**
      * 处理 HTTP SSE 流。
      * @private
-     * @param {object} requestBody - 发送给模型的请求体。
-     * @param {string} apiKey - API Key。
-     * @returns {Promise<void>}
      */
-    async _processHttpStream(requestBody, apiKey) {
-        let currentMessages = requestBody.messages;
+    async _processHttpStream(reader, originalRequestBody) {
+        const decoder = new TextDecoder('utf-8');
+        let functionCallDetected = false;
+        let currentFunctionCall = null;
+        let fullResponseText = "";
 
-        try {
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(requestBody)
-            });
+        this.callbacks.createAIMessageElement(); // 创建一个空的AI消息容器
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`HTTP API 请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-            }
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let functionCallDetected = false;
-            let currentFunctionCall = null;
-            let reasoningStarted = false;
-            let answerStarted = false;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n\n');
 
-            const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-            if (!isToolResponseFollowUp) {
-                this.currentAIMessageContentDiv = this.callbacks.createAIMessageElement();
-            }
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
+                    if (jsonStr === '[DONE]') continue;
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        const delta = data.choices?.[0]?.delta;
+                        if (!delta) continue;
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    Logger.info('HTTP Stream finished.');
-                    break;
-                }
-
-                const chunk = decoder.decode(value, { stream: true });
-                chunk.split('\n\n').forEach(part => {
-                    if (part.startsWith('data: ')) {
-                        const jsonStr = part.substring(6);
-                        if (jsonStr === '[DONE]') return;
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            if (data.choices && data.choices.length > 0) {
-                                const choice = data.choices[0];
-                                if (choice.delta) {
-                                    const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
-
-                                    if (choice.delta.reasoning_content) {
-                                        if (!this.currentAIMessageContentDiv) this.currentAIMessageContentDiv = this.callbacks.createAIMessageElement();
-                                        if (!reasoningStarted) {
-                                            this.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                            reasoningStarted = true;
-                                        }
-                                        this.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
-                                    }
-                                    
-                                    if (functionCallPart) {
-                                        functionCallDetected = true;
-                                        currentFunctionCall = functionCallPart.functionCall;
-                                        Logger.info('Function call detected:', currentFunctionCall);
-                                        this.callbacks.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                        if (this.currentAIMessageContentDiv) this.currentAIMessageContentDiv = null;
-                                    }
-                                    else if (choice.delta.content) {
-                                        if (!functionCallDetected) {
-                                            if (!this.currentAIMessageContentDiv) this.currentAIMessageContentDiv = this.callbacks.createAIMessageElement();
-                                            
-                                            if (reasoningStarted && !answerStarted) {
-                                                const separator = document.createElement('hr');
-                                                separator.className = 'answer-separator';
-                                                this.currentAIMessageContentDiv.markdownContainer.before(separator);
-                                                answerStarted = true;
-                                            }
-
-                                            this.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                            this.currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(this.currentAIMessageContentDiv.rawMarkdownBuffer);
-                                            
-                                            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                                MathJax.startup.promise.then(() => {
-                                                    MathJax.typeset([this.currentAIMessageContentDiv.markdownContainer, this.currentAIMessageContentDiv.reasoningContainer]);
-                                                }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                            }
-                                            this.callbacks.scrollToBottom();
-                                        }
-                                    }
-                                }
-                            }
-                            if (data.usage) {
-                                Logger.info('Usage:', data.usage);
-                            }
-                        } catch (e) {
-                            Logger.error('Error parsing SSE chunk:', e, jsonStr);
+                        const functionCallPart = delta.parts?.find(p => p.functionCall);
+                        if (functionCallPart) {
+                            functionCallDetected = true;
+                            currentFunctionCall = functionCallPart.functionCall;
+                            this.callbacks.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
+                        } else if (delta.content) {
+                            fullResponseText += delta.content;
+                            this.callbacks.updateAIMessage({ type: 'content', content: delta.content, isStream: true });
                         }
+                    } catch (e) {
+                        Logger.error('Error parsing SSE chunk:', e, jsonStr);
                     }
-                });
-            }
-
-            if (functionCallDetected && currentFunctionCall) {
-                if (this.currentAIMessageContentDiv && this.currentAIMessageContentDiv.rawMarkdownBuffer) {
-                    const newHistory = [...this.stateGetters.getChatHistory(), { role: 'assistant', content: this.currentAIMessageContentDiv.rawMarkdownBuffer }];
-                    this.stateUpdaters.updateChatHistory(newHistory);
                 }
-                this.currentAIMessageContentDiv = null;
-
-                try {
-                    this.isUsingTool = true;
-                    this.callbacks.logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
-                    const toolResult = await this.toolManager.handleToolCall(currentFunctionCall);
-                    const toolResponsePart = toolResult.functionResponses[0].response.output;
-
-                    let historyAfterToolCall = [...this.stateGetters.getChatHistory(),
-                        { role: 'assistant', parts: [{ functionCall: { name: currentFunctionCall.name, args: currentFunctionCall.args } }] },
-                        { role: 'tool', parts: [{ functionResponse: { name: currentFunctionCall.name, response: toolResponsePart } }] }
-                    ];
-                    this.stateUpdaters.updateChatHistory(historyAfterToolCall);
-
-                    await this._processHttpStream({
-                        ...requestBody,
-                        messages: historyAfterToolCall,
-                        tools: this.toolManager.getToolDeclarations(),
-                        sessionId: this.stateGetters.getCurrentSessionId()
-                    }, apiKey);
-
-                } catch (toolError) {
-                    Logger.error('工具执行失败:', toolError);
-                    this.callbacks.logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                    
-                    let historyAfterToolError = [...this.stateGetters.getChatHistory(),
-                        { role: 'assistant', parts: [{ functionCall: { name: currentFunctionCall.name, args: currentFunctionCall.args } }] },
-                        { role: 'tool', parts: [{ functionResponse: { name: currentFunctionCall.name, response: { error: toolError.message } } }] }
-                    ];
-                    this.stateUpdaters.updateChatHistory(historyAfterToolError);
-
-                    await this._processHttpStream({
-                        ...requestBody,
-                        messages: historyAfterToolError,
-                        tools: this.toolManager.getToolDeclarations(),
-                        sessionId: this.stateGetters.getCurrentSessionId()
-                    }, apiKey);
-                } finally {
-                    this.isUsingTool = false;
-                }
-            } else {
-                if (this.currentAIMessageContentDiv && this.currentAIMessageContentDiv.rawMarkdownBuffer) {
-                     const newHistory = [...this.stateGetters.getChatHistory(), { role: 'assistant', content: this.currentAIMessageContentDiv.rawMarkdownBuffer }];
-                     this.stateUpdaters.updateChatHistory(newHistory);
-                }
-                this.currentAIMessageContentDiv = null;
-                this.callbacks.logMessage('Turn complete (HTTP)', 'system');
-                this.callbacks.historyManager.saveHistory();
             }
+        }
 
-        } catch (error) {
-            Logger.error('处理 HTTP 流失败:', error);
-            this.callbacks.logMessage(`处理流失败: ${error.message}`, 'system');
-            if (this.currentAIMessageContentDiv && this.currentAIMessageContentDiv.markdownContainer) {
-                this.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
-            }
-            this.currentAIMessageContentDiv = null;
+        // 流结束后的处理
+        this.stateUpdaters.updateChatHistory([...this.stateGetters.getChatHistory(), { role: 'assistant', content: fullResponseText }]);
+
+        if (functionCallDetected && currentFunctionCall) {
+            await this._handleHttpToolCall(currentFunctionCall, originalRequestBody);
+        } else {
+            this.callbacks.logMessage('Turn complete (HTTP)', 'system');
+            this.callbacks.historyManager.saveHistory();
         }
     }
+    
+    /**
+     * 处理 HTTP 模式下的工具调用。
+     * @private
+     */
+    async _handleHttpToolCall(functionCall, originalRequestBody) {
+        try {
+            this.callbacks.logMessage(`执行工具: ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
+            const toolResult = await this.toolManager.handleToolCall(functionCall);
+            const toolResponsePart = toolResult.functionResponses[0].response.output;
+
+            const historyAfterToolCall = [
+                ...this.stateGetters.getChatHistory(),
+                { role: 'assistant', parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }] },
+                { role: 'tool', parts: [{ functionResponse: { name: functionCall.name, response: toolResponsePart } }] }
+            ];
+            this.stateUpdaters.updateChatHistory(historyAfterToolCall);
+
+            const nextRequestBody = {
+                ...originalRequestBody,
+                messages: historyAfterToolCall,
+                tools: this.toolManager.getToolDeclarations(),
+            };
+            await this._sendHttpRequest(nextRequestBody);
+
+        } catch (toolError) {
+            Logger.error('工具执行失败:', toolError);
+            this.callbacks.logMessage(`工具执行失败: ${toolError.message}`, 'system');
+            // 可以选择将错误信息发回给模型
+        }
+    }
+
 
     // --- WebSocket 事件处理回调 ---
 
-    _handleContent(data) {
-        if (data.modelTurn) {
-            if (data.modelTurn.parts.some(part => part.functionCall)) {
-                this.isUsingTool = true;
-                Logger.info('Model is using a tool');
-                if (this.currentAIMessageContentDiv) {
-                    this.currentAIMessageContentDiv = null;
-                }
-            } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
-                this.isUsingTool = false;
-                Logger.info('Tool usage completed');
-                if (!this.currentAIMessageContentDiv) {
-                    this.currentAIMessageContentDiv = this.callbacks.createAIMessageElement();
-                }
-            }
-
+    _handleWsContent(data) {
+        if (data.modelTurn?.parts) {
             const text = data.modelTurn.parts.map(part => part.text).join('');
-            
             if (text) {
-                if (!this.currentAIMessageContentDiv) {
-                    this.currentAIMessageContentDiv = this.callbacks.createAIMessageElement();
-                }
-                
-                this.currentAIMessageContentDiv.rawMarkdownBuffer += text;
-                this.currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(this.currentAIMessageContentDiv.rawMarkdownBuffer);
-                
-                if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                    MathJax.startup.promise.then(() => {
-                        MathJax.typeset([this.currentAIMessageContentDiv.markdownContainer]);
-                    }).catch((err) => console.error('MathJax typesetting failed:', err));
-                }
-                this.callbacks.scrollToBottom();
+                this.callbacks.updateAIMessage({ type: 'content', content: text, isStream: true });
             }
         }
     }
 
-    async _handleAudio(data) {
+    async _handleWsAudio(data) {
         try {
             const streamer = await this.callbacks.ensureAudioInitialized();
             streamer.addPCM16(new Uint8Array(data));
@@ -419,15 +304,10 @@ export class ChatAPI {
         }
     }
 
-    _handleTurnComplete() {
-        this.isUsingTool = false;
-        this.callbacks.logMessage('Turn complete', 'system');
-        if (this.currentAIMessageContentDiv && this.currentAIMessageContentDiv.rawMarkdownBuffer) {
-            const newHistory = [...this.stateGetters.getChatHistory(), { role: 'assistant', content: this.currentAIMessageContentDiv.rawMarkdownBuffer }];
-            this.stateUpdaters.updateChatHistory(newHistory);
-        }
-        this.currentAIMessageContentDiv = null;
-        
+    _handleWsTurnComplete() {
+        this.callbacks.logMessage('Turn complete (WebSocket)', 'system');
+        this.callbacks.finalizeAIMessage(); // 通知UI，流结束了
+
         if (this.audioDataBuffer.length > 0) {
             const audioBlob = this.callbacks.pcmToWavBlob(this.audioDataBuffer);
             const audioUrl = URL.createObjectURL(audioBlob);
@@ -435,23 +315,12 @@ export class ChatAPI {
             this.callbacks.displayAudioMessage(audioUrl, duration, 'ai');
             this.audioDataBuffer = [];
         }
-
-        if (this.stateGetters.isConnected() && !this.stateGetters.getSelectedModelConfig().isWebSocket) {
-            this.callbacks.historyManager.saveHistory();
-        }
     }
 
-    _handleInterrupted() {
+    _handleWsInterrupted() {
         this.callbacks.audioStreamer?.stop();
-        this.isUsingTool = false;
-        Logger.info('Model interrupted');
         this.callbacks.logMessage('Model interrupted', 'system');
-        
-        if (this.currentAIMessageContentDiv && this.currentAIMessageContentDiv.rawMarkdownBuffer) {
-            const newHistory = [...this.stateGetters.getChatHistory(), { role: 'assistant', content: this.currentAIMessageContentDiv.rawMarkdownBuffer }];
-            this.stateUpdaters.updateChatHistory(newHistory);
-        }
-        this.currentAIMessageContentDiv = null;
+        this.callbacks.finalizeAIMessage();
         
         if (this.audioDataBuffer.length > 0) {
             const audioBlob = this.callbacks.pcmToWavBlob(this.audioDataBuffer);
@@ -460,15 +329,5 @@ export class ChatAPI {
             this.callbacks.displayAudioMessage(audioUrl, duration, 'ai');
             this.audioDataBuffer = [];
         }
-    }
-
-    _handleError(error) {
-        // 'ApplicationError' is not defined in this scope, so we check for error.message
-        if (error && error.message) {
-            Logger.error(`Application error: ${error.message}`, error);
-        } else {
-            Logger.error('Unexpected error', error);
-        }
-        this.callbacks.logMessage(`Error: ${error.message || 'Unknown error'}`, 'system');
     }
 }

@@ -1,6 +1,7 @@
 import { AttachmentManager } from './attachments/file-attachment.js'; // T2 新增
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
+import { ChatAPI } from './chat/chat-api.js'; // T12: 导入新的 ChatAPI 模块
 import * as chatUI from './chat/chat-ui.js'; // T11: 导入聊天UI模块
 import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
@@ -473,6 +474,41 @@ document.addEventListener('DOMContentLoaded', () => {
    );
   });
 
+  // T12: 初始化 ChatAPI 模块
+  chatApi = new ChatAPI({
+      client,
+      toolManager,
+      callbacks: {
+          logMessage: chatUI.logMessage,
+          createAIMessageElement: chatUI.createAIMessageElement,
+          updateAIMessage: chatUI.updateAIMessage,
+          finalizeAIMessage: chatUI.finalizeAIMessage,
+          displayAudioMessage: chatUI.displayAudioMessage,
+          pcmToWavBlob: pcmToWavBlob,
+          scrollToBottom: chatUI.scrollToBottom,
+          showSystemMessage: showSystemMessage,
+          updateConnectionStatus: updateConnectionStatus,
+          resetUIForDisconnectedState: resetUIForDisconnectedState,
+          getAudioSampleRate: () => CONFIG.AUDIO.OUTPUT_SAMPLE_RATE,
+          ensureAudioInitialized: ensureAudioInitialized,
+          historyManager: historyManager,
+          attachmentManager: attachmentManager,
+      },
+      stateGetters: {
+          getApiKey: () => apiKeyInput.value,
+          getChatHistory: () => chatHistory,
+          getCurrentSessionId: () => currentSessionId,
+          getSelectedModelConfig: () => selectedModelConfig,
+          getSystemInstruction: () => systemInstructionInput.value,
+          isConnected: () => isConnected,
+      },
+      stateUpdaters: {
+          updateChatHistory: (newHistory) => { chatHistory = newHistory; },
+          setIsConnected: (status) => { isConnected = status; },
+          resetCurrentAIMessage: () => { /* No longer needed here, handled by chat-ui */ }
+      }
+  });
+
 // State variables
 let isRecording = false;
 let audioStreamer = null;
@@ -480,9 +516,7 @@ let audioCtx = null;
 let isConnected = false;
 let audioRecorder = null;
 let micStream = null; // 新增：用于保存麦克风流
-let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
-let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
@@ -497,6 +531,7 @@ let attachmentManager = null; // T2: 提升作用域
 let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
+let chatApi = null; // T12: 新增 ChatAPI 实例
 
 /**
  * @fileoverview Manages audio recording for the translation feature.
@@ -879,608 +914,33 @@ async function resumeAudioContext() {
     }
 }
 
-/**
- * Connects to the WebSocket server.
- * @returns {Promise<void>}
- */
-async function connectToWebsocket() {
-    if (!apiKeyInput.value) {
-        chatUI.logMessage('Please input API Key', 'system');
-        return;
-    }
-
-    // Save values to localStorage
-    localStorage.setItem('gemini_api_key', apiKeyInput.value);
-    localStorage.setItem('gemini_voice', voiceSelect.value);
-    localStorage.setItem('system_instruction', systemInstructionInput.value);
-
-        /**
-         * @description 根据用户选择的响应类型构建模型生成配置。
-         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
-         * @returns {string[]} 响应模态数组。
-         */
-        /**
-         * @description 根据用户选择的响应类型构建模型生成配置。
-         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
-         * @returns {string[]} 响应模态数组。
-         */
-        function getResponseModalities(selectedResponseType) {
-            if (selectedResponseType === 'audio') {
-                return ['audio'];
-            } else {
-                return ['text'];
-            }
-        }
-
-        const config = {
-            model: CONFIG.API.MODEL_NAME,
-            generationConfig: {
-                responseModalities: getResponseModalities(responseTypeSelect.value),
-                speechConfig: {
-                    voiceConfig: {
-                        prebuiltVoiceConfig: {
-                            voiceName: voiceSelect.value
-                        }
-                    },
-                }
-            },
-
-            systemInstruction: {
-                parts: [{
-                    text: systemInstructionInput.value     // You can change system instruction in the config.js file
-                }],
-            }
-        };  
-
-    try {
-        await client.connect(config,apiKeyInput.value);
-        isConnected = true;
-        await resumeAudioContext();
-        connectButton.textContent = '断开连接';
-        connectButton.classList.add('connected');
-        messageInput.disabled = false;
-        sendButton.disabled = false;
-        // 启用媒体按钮
-        micButton.disabled = false;
-        cameraButton.disabled = false;
-        screenButton.disabled = false;
-        chatUI.logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
-        updateConnectionStatus();
-    } catch (error) {
-        const errorMessage = error.message || '未知错误';
-        Logger.error('连接错误:', error);
-        chatUI.logMessage(`连接错误: ${errorMessage}`, 'system');
-        isConnected = false;
-        connectButton.textContent = '连接';
-        connectButton.classList.remove('connected');
-        messageInput.disabled = true;
-        sendButton.disabled = true;
-        micButton.disabled = true;
-        cameraButton.disabled = true;
-        screenButton.disabled = true;
-        updateConnectionStatus();
-        
-        if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
-            videoHandler.stopVideo();
-        }
-        
-        if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
-            screenHandler.stopScreenSharing();
-        }
-    }
-}
-
-/**
- * Disconnects from the WebSocket server.
- */
-function disconnectFromWebsocket() {
-    client.disconnect();
-    isConnected = false;
-    if (audioStreamer) {
-        audioStreamer.stop();
-        if (audioRecorder) {
-            audioRecorder.stop();
-            audioRecorder = null;
-        }
-        isRecording = false;
-        updateMicIcon();
-    }
-    connectButton.textContent = '连接';
-    connectButton.classList.remove('connected');
-    messageInput.disabled = true;
-    sendButton.disabled = true;
-    if (micButton) micButton.disabled = true;
-    if (cameraButton) cameraButton.disabled = true;
-    if (screenButton) screenButton.disabled = true;
-    chatUI.logMessage('已从服务器断开连接', 'system');
-    updateConnectionStatus();
-    
-    if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
-        videoHandler.stopVideo();
-    }
-    
-    if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
-        screenHandler.stopScreenSharing();
-    }
-}
+// T12: The functions connectToWebsocket, disconnectFromWebsocket, and connectToHttp are now obsolete.
+// Their logic is fully encapsulated within the ChatAPI module.
+// They can be safely removed.
 
 /**
  * Handles sending a text message.
  */
-async function handleSendMessage(attachmentManager) { // T2: 传入管理器
+async function handleSendMessage(attachmentManager) {
     const message = messageInput.value.trim();
-    const attachedFile = attachmentManager.getAttachedFile(); // T2: 从管理器获取
-    // 如果没有文本消息，但有附件，也允许发送
+    const attachedFile = attachmentManager.getAttachedFile();
+
     if (!message && !attachedFile) return;
 
-    // 确保在处理任何消息之前，会话已经存在
-    // 这是修复“新会话第一条消息不显示”问题的关键
-    if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
-        historyManager.generateNewSession();
+    // T12: 将消息发送逻辑委托给 ChatAPI 模块
+    if (chatApi) {
+        await chatApi.sendMessage(message, attachedFile);
     }
 
-    // 使用新的函数显示用户消息
-    chatUI.displayUserMessage(message, attachedFile);
     messageInput.value = ''; // 清空输入框
- 
-    // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
-    currentAIMessageContentDiv = null;
-
-    if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
-        if (attachedFile) {
-            showSystemMessage('实时模式尚不支持文件上传。');
-            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
-            return;
-        }
-        client.send({ text: message });
-    } else {
-        // HTTP 模式下发送消息
-        try {
-            const apiKey = apiKeyInput.value;
-            const modelName = selectedModelConfig.name;
-            const systemInstruction = systemInstructionInput.value;
-
-            // 构建消息内容，参考 OCR 项目的成功实践
-            const userContent = [];
-            if (message) {
-                userContent.push({ type: 'text', text: message });
-            }
-            if (attachedFile) {
-                // 参考项目使用 image_url 并传递完整的 Data URL
-                userContent.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: attachedFile.base64
-                    }
-                });
-            }
-
-            chatHistory.push({
-                role: 'user',
-                content: userContent // 保持为数组，因为可能包含文本和图片
-            });
-
-            // 清除附件（发送后）
-            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
-
-            let requestBody = {
-                model: modelName,
-                messages: chatHistory,
-                generationConfig: {
-                    responseModalities: ['text']
-                },
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
-                ],
-                enableGoogleSearch: true,
-                stream: true,
-                sessionId: currentSessionId
-            };
-
-            if (systemInstruction) {
-                requestBody.systemInstruction = {
-                    parts: [{ text: systemInstruction }]
-                };
-            }
-
-            await processHttpStream(requestBody, apiKey);
-
-        } catch (error) {
-            Logger.error('发送 HTTP 消息失败:', error);
-            chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
-        }
-        }
-        }
-        
-        // Event Listeners
-        client.on('open', () => {
-            chatUI.logMessage('WebSocket connection opened', 'system');
-        });
-        
-        client.on('log', (log) => {
-            chatUI.logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system');
-        });
-        
-        let reconnectAttempts = 0;
-        const MAX_RECONNECT = 3;
-        
-        client.on('close', (event) => {
-            chatUI.logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
-            if (event.code === 1006 && reconnectAttempts < MAX_RECONNECT) {
-                setTimeout(() => {
-                    reconnectAttempts++;
-                    connectToWebsocket();
-                }, 2000);
-            }
-        });
-        
-        client.on('audio', async (data) => {
-            try {
-                await resumeAudioContext();
-                const streamer = await ensureAudioInitialized();
-                streamer.addPCM16(new Uint8Array(data));
-                // 同时将音频数据累积到缓冲区
-                audioDataBuffer.push(new Uint8Array(data));
-            } catch (error) {
-                chatUI.logMessage(`处理音频时出错: ${error.message}`, 'system');
-            }
-        });
-        
-        // 声明一个全局变量来跟踪当前 AI 消息的内容 div
-        let currentAIMessageContentDiv = null;
-
-client.on('content', (data) => {
-    if (data.modelTurn) {
-        if (data.modelTurn.parts.some(part => part.functionCall)) {
-            isUsingTool = true;
-            Logger.info('Model is using a tool');
-            // 在工具调用前，确保当前 AI 消息完成
-            if (currentAIMessageContentDiv) {
-                currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
-            }
-        } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
-            isUsingTool = false;
-            Logger.info('Tool usage completed');
-            // 工具响应后，如果需要，可以立即创建一个新的 AI 消息块来显示后续文本
-            if (!currentAIMessageContentDiv) {
-                currentAIMessageContentDiv = chatUI.createAIMessageElement();
-            }
-        }
- 
-        const text = data.modelTurn.parts.map(part => part.text).join('');
-        
-        if (text) {
-            if (!currentAIMessageContentDiv) {
-                currentAIMessageContentDiv = chatUI.createAIMessageElement();
-            }
-            
-            // 追加文本到原始Markdown缓冲区
-            currentAIMessageContentDiv.rawMarkdownBuffer += text;
-            
-            // 渲染Markdown并高亮代码
-            // 注意：marked.js 已经集成了 highlight.js，所以不需要单独调用 hljs.highlightElement
-            // 立即更新 innerHTML，确保实时渲染
-            currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
-            
-            // 触发 MathJax 渲染
-            if (typeof MathJax !== 'undefined') {
-                if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                    MathJax.startup.promise.then(() => {
-                        MathJax.typeset([currentAIMessageContentDiv.markdownContainer]);
-                    }).catch((err) => console.error('MathJax typesetting failed:', err));
-                }
-            }
-            chatUI.scrollToBottom();
-        }
-    }
-});
-
-client.on('interrupted', () => {
-    audioStreamer?.stop();
-    isUsingTool = false;
-    Logger.info('Model interrupted');
-    chatUI.logMessage('Model interrupted', 'system');
-    // 确保在中断时完成当前文本消息并添加到聊天历史
-    if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-        chatHistory.push({
-            role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-        });
-    }
-    currentAIMessageContentDiv = null; // 重置，以便下次创建新消息
-    // 处理累积的音频数据 (保持不变)
-    if (audioDataBuffer.length > 0) {
-        const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2);
-        const audioBlobForDisplay = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-        chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlobForDisplay);
-        audioDataBuffer = [];
-    }
-});
-
-client.on('setupcomplete', () => {
-    chatUI.logMessage('Setup complete', 'system');
-});
-
-client.on('turncomplete', () => {
-    isUsingTool = false;
-    chatUI.logMessage('Turn complete', 'system');
-    // 在对话结束时刷新文本缓冲区并添加到聊天历史
-    if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-        chatHistory.push({
-            role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-        });
-    }
-    currentAIMessageContentDiv = null; // 重置
-    // 处理累积的音频数据
-    if (audioDataBuffer.length > 0) {
-        const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
-        const audioBlobForDisplay = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-        chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlobForDisplay);
-        audioDataBuffer = []; // 清空缓冲区
-    }
-
-    // T15: 在WebSocket模式对话完成时保存历史
-    if (isConnected && !selectedModelConfig.isWebSocket) {
-        historyManager.saveHistory();
-    }
-});
-
-client.on('error', (error) => {
-    if (error instanceof ApplicationError) {
-        Logger.error(`Application error: ${error.message}`, error);
-    } else {
-        Logger.error('Unexpected error', error);
-    }
-    chatUI.logMessage(`Error: ${error.message}`, 'system');
-});
-
-// ... (新增 processHttpStream 辅助函数)
-
-/**
- * 处理 HTTP SSE 流，包括文本累积和工具调用。
- * @param {Object} requestBody - 发送给模型的请求体。
- * @param {string} apiKey - API Key。
- * @returns {Promise<void>}
- */
-async function processHttpStream(requestBody, apiKey) {
-    // let accumulatedText = ''; // 不再需要累积文本，直接追加
-    let currentMessages = requestBody.messages;
-
-    try {
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`HTTP API 请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let functionCallDetected = false;
-        let currentFunctionCall = null;
-        let reasoningStarted = false;
-        let answerStarted = false; // 新增：用于标记最终答案是否开始
-
-        // 在 HTTP 流开始时，为新的 AI 响应创建一个新的消息块
-        // 只有当不是工具响应的后续文本时才创建新消息块
-        const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-        if (!isToolResponseFollowUp) {
-            currentAIMessageContentDiv = chatUI.createAIMessageElement();
-        }
-
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                Logger.info('HTTP Stream finished.');
-                break;
-            }
-
-            const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') {
-                        return;
-                    }
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        if (data.choices && data.choices.length > 0) {
-                            const choice = data.choices[0];
-                            if (choice.delta) {
-                                const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
-
-                                // 1. 处理思维链
-                                if (choice.delta.reasoning_content) {
-                                    if (!currentAIMessageContentDiv) currentAIMessageContentDiv = chatUI.createAIMessageElement();
-                                    if (!reasoningStarted) {
-                                        currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                        reasoningStarted = true;
-                                    }
-                                    currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
-                                }
-                                
-                                // 2. 处理工具调用
-                                if (functionCallPart) {
-                                    functionCallDetected = true;
-                                    currentFunctionCall = functionCallPart.functionCall;
-                                    Logger.info('Function call detected:', currentFunctionCall);
-                                    chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    if (currentAIMessageContentDiv) currentAIMessageContentDiv = null;
-                                }
-                                // 3. 处理最终答案
-                                else if (choice.delta.content) {
-                                    if (!functionCallDetected) {
-                                        if (!currentAIMessageContentDiv) currentAIMessageContentDiv = chatUI.createAIMessageElement();
-                                        
-                                        // 当思维链存在且最终答案首次出现时，插入分隔符
-                                        if (reasoningStarted && !answerStarted) {
-                                            const separator = document.createElement('hr');
-                                            separator.className = 'answer-separator';
-                                            currentAIMessageContentDiv.markdownContainer.before(separator);
-                                            answerStarted = true;
-                                        }
-
-                                        currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                        currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
-                                        
-                                        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                            MathJax.startup.promise.then(() => {
-                                                MathJax.typeset([currentAIMessageContentDiv.markdownContainer, currentAIMessageContentDiv.reasoningContainer]);
-                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                        }
-                                        chatUI.scrollToBottom();
-                                    }
-                                }
-                            }
-                        }
-                        if (data.usage) {
-                            Logger.info('Usage:', data.usage);
-                        }
-                    } catch (e) {
-                        Logger.error('Error parsing SSE chunk:', e, jsonStr);
-                    }
-                }
-            });
-        }
-
-        // 处理工具调用
-        if (functionCallDetected && currentFunctionCall) {
-            // 确保在处理工具调用前，当前 AI 消息已完成并添加到聊天历史
-            if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                chatHistory.push({
-                    role: 'assistant',
-                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-                });
-            }
-            currentAIMessageContentDiv = null; // 重置，以便工具响应后创建新消息
-
-            try {
-                isUsingTool = true;
-                chatUI.logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
-                const toolResult = await toolManager.handleToolCall(currentFunctionCall);
- 
-                const toolResponsePart = toolResult.functionResponses[0].response.output;
-
-                // 将模型调用工具添加到 chatHistory
-                chatHistory.push({
-                    role: 'assistant', // 模型角色
-                    // 恢复使用 parts 数组以匹配参考代码
-                    parts: [{
-                        functionCall: {
-                            name: currentFunctionCall.name,
-                            args: currentFunctionCall.args
-                        }
-                    }]
-                });
-
-                // 将工具响应添加到 chatHistory
-                chatHistory.push({
-                    role: 'tool', // 工具角色
-                    // 恢复使用 parts 数组
-                    parts: [{
-                        functionResponse: {
-                            name: currentFunctionCall.name,
-                            response: toolResponsePart
-                        }
-                    }]
-                });
-
-                // 递归调用，将工具结果发送回模型
-                await processHttpStream({
-                    ...requestBody,
-                    messages: chatHistory, // 直接使用更新后的 chatHistory
-                    tools: toolManager.getToolDeclarations(),
-                    sessionId: currentSessionId // 确保传递会话ID
-                }, apiKey);
-
-            } catch (toolError) {
-                Logger.error('工具执行失败:', toolError);
-                chatUI.logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                
-                // 将模型调用工具添加到 chatHistory (即使失败也要记录)
-                chatHistory.push({
-                    role: 'assistant',
-                    parts: [{
-                        functionCall: {
-                            name: currentFunctionCall.name,
-                            args: currentFunctionCall.args
-                        }
-                    }]
-                });
-
-                // 将工具错误响应添加到 chatHistory
-                chatHistory.push({
-                    role: 'tool',
-                    parts: [{
-                        functionResponse: {
-                            name: currentFunctionCall.name,
-                            response: { error: toolError.message }
-                        }
-                    }]
-                });
-
-                await processHttpStream({
-                    ...requestBody,
-                    messages: chatHistory, // 直接使用更新后的 chatHistory
-                    tools: toolManager.getToolDeclarations(),
-                    sessionId: currentSessionId // 确保传递会话ID
-                }, apiKey);
-            } finally {
-                isUsingTool = false;
-            }
-        } else {
-            // 如果没有工具调用，且流已完成，将完整的 AI 响应添加到 chatHistory
-            if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                chatHistory.push({
-                    role: 'assistant',
-                    content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-                });
-            }
-            currentAIMessageContentDiv = null; // 重置
-            chatUI.logMessage('Turn complete (HTTP)', 'system');
-            // T15: 在HTTP模式对话完成时保存历史
-            historyManager.saveHistory();
-        }
- 
-    } catch (error) {
-        Logger.error('处理 HTTP 流失败:', error);
-        chatUI.logMessage(`处理流失败: ${error.message}`, 'system');
-        // 错误发生时，确保AI消息容器存在再更新内容，否则直接重置
-        if (currentAIMessageContentDiv && currentAIMessageContentDiv.markdownContainer) {
-            currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
-        }
-        currentAIMessageContentDiv = null; // 最终重置
-    }
 }
-
+        
+// T12: All client.on() event listeners and the processHttpStream function
+// have been moved into the ChatAPI module and are now obsolete here.
 
 // 添加全局错误处理
 globalThis.addEventListener('error', (event) => {
     chatUI.logMessage(`系统错误: ${event.message}`, 'system');
-});
-
-client.on('message', (message) => {
-    if (message.error) {
-        Logger.error('Server error:', message.error);
-        chatUI.logMessage(`Server error: ${message.error}`, 'system');
-    }
 });
 
 sendButton.addEventListener('click', () => handleSendMessage(attachmentManager)); // T2: 传入管理器
@@ -1495,28 +955,13 @@ function handleInterruptPlayback() {
         audioStreamer.stop();
         Logger.info('Audio playback interrupted by user.');
         chatUI.logMessage('语音播放已中断', 'system');
-        // 确保在中断时也刷新文本缓冲区并添加到聊天历史
-        if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-            chatHistory.push({
-                role: 'assistant',
-                content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
-            });
-        }
-        currentAIMessageContentDiv = null; // 重置
-        // 处理累积的音频数据
-        if (audioDataBuffer.length > 0) {
-            const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
-            const audioBlobForDisplay = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-            chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlobForDisplay);
-            audioDataBuffer = []; // 清空缓冲区
-        }
+        // The logic for handling message buffers is now within ChatAPI and chat-ui.
+        // This function now only needs to stop the audio.
     } else {
         Logger.warn('Attempted to interrupt playback, but audioStreamer is not initialized.');
         chatUI.logMessage('当前没有语音播放可中断', 'system');
     }
-    }
+}
 
 interruptButton.addEventListener('click', handleInterruptPlayback); // 新增事件监听器
 
@@ -1594,22 +1039,9 @@ modelSelect.addEventListener('change', () => {
  * 统一的连接函数，根据模型类型选择 WebSocket 或 HTTP。
  */
 async function connect() {
-    if (!apiKeyInput.value) {
-        chatUI.logMessage('请输入 API Key', 'system');
-        return;
-    }
-
-    // 保存值到 localStorage
-    localStorage.setItem('gemini_api_key', apiKeyInput.value);
-    localStorage.setItem('gemini_voice', voiceSelect.value);
-    localStorage.setItem('system_instruction', systemInstructionInput.value);
-    localStorage.setItem('video_fps', fpsInput.value); // 保存 FPS
-
-    // 根据选定的模型配置决定连接方式
-    if (selectedModelConfig.isWebSocket) {
-        await connectToWebsocket();
-    } else {
-        await connectToHttp();
+    // T12: 将连接逻辑委托给 ChatAPI 模块
+    if (chatApi) {
+        await chatApi.connect();
     }
 }
 
@@ -1617,40 +1049,12 @@ async function connect() {
  * 统一的断开连接函数。
  */
 function disconnect() {
-    if (selectedModelConfig.isWebSocket) {
-        disconnectFromWebsocket();
-    } else {
-        // 对于 HTTP 模式，没有“断开连接”的概念，但需要重置 UI 状态
-        resetUIForDisconnectedState();
-        chatUI.logMessage('已断开连接 (HTTP 模式)', 'system');
+    // T12: 将断开连接逻辑委托给 ChatAPI 模块
+    if (chatApi) {
+        chatApi.disconnect();
     }
 }
 
-/**
- * 连接到 HTTP API。
- * @returns {Promise<void>}
- */
-async function connectToHttp() {
-    try {
-        // 模拟连接成功状态
-        isConnected = true;
-        connectButton.textContent = '断开连接';
-        connectButton.classList.add('connected');
-        messageInput.disabled = false;
-        sendButton.disabled = false;
-        // 在 HTTP 模式下禁用麦克风、摄像头和屏幕共享按钮
-        micButton.disabled = true;
-        cameraButton.disabled = true;
-        screenButton.disabled = true;
-        chatUI.logMessage(`已连接到 Gemini HTTP API (${selectedModelConfig.displayName})`, 'system');
-        updateConnectionStatus();
-    } catch (error) {
-        const errorMessage = error.message || '未知错误';
-        Logger.error('HTTP 连接错误:', error);
-        chatUI.logMessage(`HTTP 连接错误: ${errorMessage}`, 'system');
-        resetUIForDisconnectedState();
-    }
-}
 
 /**
  * 重置 UI 到未连接状态。
