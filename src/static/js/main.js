@@ -328,18 +328,8 @@ document.addEventListener('DOMContentLoaded', () => {
             onInterrupted: () => {
                 if (audioStreamer) audioStreamer.stop();
             },
-            logMessage: chatUI.logMessage // Correctly placed inside callbacks
-        },
-        stateGetters: {
-            getApiKey: () => apiKeyInput.value,
-            getVoice: () => voiceSelect.value,
-            getSystemInstruction: () => systemInstructionInput.value,
-            getResponseType: () => responseTypeSelect.value,
-            getChatHistory: () => chatHistory,
-            getSelectedModelConfig: () => selectedModelConfig,
-            getIsConnected: () => isConnected,
-        },
-        stateUpdaters: {
+            logMessage: chatUI.logMessage,
+            // Merged from stateUpdaters for consistency
             setChatHistory: (newHistory) => { chatHistory = newHistory; },
             setCurrentSessionId: (newId) => { currentSessionId = newId; },
             setIsConnected: (status) => { isConnected = status; },
@@ -353,6 +343,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 historyManager.setChatHistory(newHistory);
                 historyManager.saveHistory();
             }
+        },
+        stateGetters: {
+            getApiKey: () => apiKeyInput.value,
+            getVoice: () => voiceSelect.value,
+            getSystemInstruction: () => systemInstructionInput.value,
+            getResponseType: () => responseTypeSelect.value,
+            getChatHistory: () => chatHistory,
+            getSelectedModelConfig: () => selectedModelConfig,
+            getIsConnected: () => isConnected,
         }
     });
 

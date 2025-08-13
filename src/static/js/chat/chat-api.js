@@ -86,10 +86,15 @@ export class ChatAPI extends APIHandler {
                             }
                         }
                     },
-                    systemInstruction: {
-                        parts: [{ text: this.stateGetters.getSystemInstruction() }]
-                    }
                 };
+
+                const systemInstruction = this.stateGetters.getSystemInstruction();
+                if (systemInstruction) {
+                    wsConfig.systemInstruction = {
+                        parts: [{ text: systemInstruction }]
+                    };
+                }
+
                 await this.client.connect(wsConfig, apiKey);
             } else {
                 // HTTP 路径：无状态连接，直接更新UI和内部状态
