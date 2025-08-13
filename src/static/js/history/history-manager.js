@@ -272,7 +272,12 @@ export class HistoryManager {
             this.saveChatSessionMeta(sessions);
             this.renderHistoryList();
 
+            // 在第一轮交互后，如果标题仍为默认值，则生成标题
             if (chatHistory.length === 2 && currentSessionMeta.title === '新聊天') {
+                this.generateTitleForSession(sessionId, chatHistory);
+            }
+            // 在第二轮交互后，再次生成标题以获得更精确的结果，并覆盖旧标题
+            else if (chatHistory.length === 4) {
                 this.generateTitleForSession(sessionId, chatHistory);
             }
         } catch (error) {
