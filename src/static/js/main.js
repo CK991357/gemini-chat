@@ -323,7 +323,22 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             onInterrupted: () => {
                 if (audioStreamer) audioStreamer.stop();
-            }
+            },
+            // 将 main.js 中的函数注入，以便 ChatAPI 回调
+            resetUIForDisconnectedState: resetUIForDisconnectedState,
+            updateConnectionStatus: updateConnectionStatus,
+            logMessage: chatUI.logMessage,
+            showSystemMessage: showSystemMessage,
+            displayUserMessage: chatUI.displayUserMessage,
+            createAIMessageElement: chatUI.createAIMessageElement,
+            updateAIMessage: chatUI.updateAIMessage,
+            finalizeAIMessage: chatUI.finalizeAIMessage,
+            displayAudioMessage: chatUI.displayAudioMessage,
+            pcmToWavBlob: pcmToWavBlob,
+            ensureAudioInitialized: ensureAudioInitialized,
+            getAudioSampleRate: () => CONFIG.AUDIO.OUTPUT_SAMPLE_RATE, // 示例，实际应从配置获取
+            historyManager: historyManager, // 注入 historyManager 实例
+            attachmentManager: attachmentManager // 注入 attachmentManager 实例
         },
         stateGetters: {
             getApiKey: () => apiKeyInput.value,

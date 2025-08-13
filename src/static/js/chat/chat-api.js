@@ -39,19 +39,10 @@ export class ChatAPI extends APIHandler {
      * @private
      */
     _registerSocketHandlers() {
-        this.client.on('open', () => {
-            const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
-            this.callbacks.logMessage(`WebSocket 连接成功: ${selectedModelConfig.displayName}`, 'system');
-            this.stateUpdaters.setIsConnected(true);
-            this.callbacks.updateConnectionStatus(true, selectedModelConfig);
-        });
-
-        this.client.on('close', (event) => {
-            this.callbacks.logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
-            // 不需要在这里更新状态，disconnect 方法会统一处理
-        });
-        
-        this.client.on('content', this._handleWsContent.bind(this));
+        this.client.on('open', this.callbacks.onConnectionOpen);
+        this.client.on('close', this.callbacks.onConnectionClose);
+        this.client.on('error', this.callbacks.onConnectionError);
+        this.client.on('content', this.callbacks.onMessageStream);
         this.client.on('audio', this._handleWsAudio.bind(this));
         this.client.on('turncomplete', this._handleWsTurnComplete.bind(this));
         this.client.on('interrupted', this._handleWsInterrupted.bind(this));
@@ -101,17 +92,10 @@ export class ChatAPI extends APIHandler {
             } else {
                 // HTTP 路径：无状态连接，直接更新UI和内部状态
                 this.callbacks.logMessage(`已切换到 HTTP 模式: ${selectedModelConfig.displayName}`, 'system');
-                this.stateUpdaters.setIsConnected(true);
-                this.callbacks.updateConnectionStatus(true, selectedModelConfig);
-                if (!this.stateGetters.getCurrentSessionId()) {
-                    this.callbacks.historyManager.generateNewSession();
-                }
+                this.callbacks.onConnectionOpen(); // 直接调用 onConnectionOpen 回调来统一处理状态
             }
         } catch (error) {
-            this.callbacks.showSystemMessage(`连接失败: ${error.message}`);
-            this.callbacks.logMessage(`连接失败: ${error.message}`, 'system');
-            this.stateUpdaters.setIsConnected(false);
-            this.callbacks.updateConnectionStatus(false, selectedModelConfig);
+            this.callbacks.onConnectionError(error);
         }
     }
 
@@ -120,12 +104,12 @@ export class ChatAPI extends APIHandler {
      * 负责清理 WebSocket 连接和重置应用状态。
      */
     disconnect() {
-        if (this.client && this.client.ws) { // 检查 ws 实例是否存在，而不是调用 isConnected()
-            this.client.disconnect(); // 调用 client 的 disconnect 方法
+        if (this.client && this.client.ws) {
+            this.client.disconnect();
+        } else {
+            // 对于HTTP模式或未连接状态，确保UI被重置
+            this.callbacks.onConnectionClose({ reason: 'User disconnected' });
         }
-        // 统一重置应用的状态和UI
-        this.stateUpdaters.setIsConnected(false);
-        this.callbacks.resetUIForDisconnectedState();
     }
 
     /**
@@ -136,8 +120,8 @@ export class ChatAPI extends APIHandler {
     async sendMessage(text, attachedFile) {
         const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
 
-        this.callbacks.displayUserMessage(text, attachedFile);
-        this.stateUpdaters.resetCurrentAIMessage();
+        this.callbacks.addUserMessageToUI(text, attachedFile);
+        this.callbacks.onMessageStart();
 
         if (selectedModelConfig.isWebSocket) {
             if (attachedFile) {
@@ -148,7 +132,6 @@ export class ChatAPI extends APIHandler {
             this.client.send({ text });
         } else {
             const requestBody = this._buildHttpRequestBody(text, attachedFile);
-            this.stateUpdaters.updateChatHistory([...this.stateGetters.getChatHistory(), { role: 'user', content: requestBody.messages.slice(-1)[0].content }]);
             this.callbacks.attachmentManager.clearAttachedFile('chat');
             await this._sendHttpRequest(requestBody);
         }
