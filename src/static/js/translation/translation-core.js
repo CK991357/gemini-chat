@@ -1,5 +1,4 @@
 import { CONFIG } from '../config/config.js';
-import { HttpApiHandler } from '../core/api-handler.js'; // T12.2: 导入新的 API 处理器
 import { Logger } from '../utils/logger.js';
 import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-ocr.js';
 
@@ -8,9 +7,8 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
  * Handles UI initialization, API calls, and mode switching.
  */
 
-// Store references to DOM elements and handlers
+// Store references to DOM elements to avoid repeated lookups
 let elements = {};
-let apiHandler = null; // T12.2: 新增 API 处理器实例
 let initialTouchY = 0; // For swipe-to-cancel gesture
 let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入的翻译音频相关函数
 
@@ -19,13 +17,10 @@ let translationAudioFunctions = {}; // 新增：用于存储从 main.js 传入�
  * @param {object} el - A collection of DOM elements required by the translation module.
  * @param {object} handlers - A collection of handler functions from other modules.
  * @param {object} audioFunctions - A collection of audio recording functions from main.js.
- * @param {function} showToast - Function to display toast messages.
- * @param {() => string} getApiKey - Function to get the current API key.
  */
-export function initializeTranslationCore(el, handlers, audioFunctions, showToast, getApiKey) {
+export function initializeTranslationCore(el, handlers, audioFunctions, showToast) {
     elements = el;
     translationAudioFunctions = audioFunctions; // 保存传入的函数
-    apiHandler = new HttpApiHandler({ getApiKey }); // T12.2: 初始化 API 处理器
 
     // Populate language dropdowns from config
     populateLanguageSelects();
@@ -183,16 +178,25 @@ async function handleTranslation() {
             `请将以下内容翻译成${getLanguageName(outputLang)}：\n\n${inputText}` :
             `请将以下内容从${getLanguageName(inputLang)}翻译成${getLanguageName(outputLang)}：\n\n${inputText}`;
 
-        const requestBody = {
-            model: model,
-            messages: [
-                { role: 'system', content: CONFIG.TRANSLATION.SYSTEM_PROMPT },
-                { role: 'user', content: prompt }
-            ],
-            stream: false
-        };
+        const response = await fetch('/api/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: model,
+                messages: [
+                    { role: 'system', content: CONFIG.TRANSLATION.SYSTEM_PROMPT },
+                    { role: 'user', content: prompt }
+                ],
+                stream: false
+            })
+        });
 
-        const data = await apiHandler.fetchJson('/api/translate', requestBody); // T12.2: 使用新的 API 处理器
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`翻译请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
+        }
+
+        const data = await response.json();
         const translatedText = data.choices[0].message.content;
 
         elements.outputText.textContent = translatedText;

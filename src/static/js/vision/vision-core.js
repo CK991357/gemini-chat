@@ -1,5 +1,4 @@
 import { CONFIG } from '../config/config.js';
-import { HttpApiHandler } from '../core/api-handler.js'; // T12.2: 导入新的 API 处理器
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -12,20 +11,17 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
-let apiHandler = null; // T12.2: 新增 API 处理器实例
 
 /**
  * Initializes the Vision feature.
  * @param {object} el - A collection of DOM elements required by the vision module.
  * @param {object} manager - The global attachment manager instance.
  * @param {object} handlers - A collection of handler functions from other modules.
- * @param {() => string} getApiKey - Function to get the current API key.
  */
-export function initializeVisionCore(el, manager, handlers, getApiKey) {
+export function initializeVisionCore(el, manager, handlers) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
-    apiHandler = new HttpApiHandler({ getApiKey }); // T12.2: 初始化 API 处理器
 
     populateModelSelect();
     attachEventListeners();
@@ -127,16 +123,25 @@ async function handleSendVisionMessage() {
     Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
 
     try {
-        const requestBody = {
-            model: selectedModel,
-            messages: [
-                { role: 'system', content: CONFIG.VISION.SYSTEM_PROMPT },
-                ...visionChatHistory
-            ],
-            stream: true,
-        };
+        const response = await fetch('/api/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: selectedModel,
+                messages: [
+                    { role: 'system', content: CONFIG.VISION.SYSTEM_PROMPT },
+                    ...visionChatHistory
+                ],
+                stream: true,
+            }),
+        });
 
-        const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody); // T12.2: 使用新的 API 处理器
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || 'API 请求失败');
+        }
+
+        const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let finalContent = '';
         let reasoningStarted = false;
