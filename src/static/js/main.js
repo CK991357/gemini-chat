@@ -300,8 +300,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 chatUI.logMessage(`连接关闭: ${event.reason || '未知原因'}`, 'system');
                 resetUIForDisconnectedState();
             },
-            onConnectionError: () => {
-                chatUI.logMessage('连接错误', 'system');
+            onConnectionError: (error) => {
+                const errorMessage = error ? error.message : '未知错误';
+                chatUI.logMessage(`连接错误: ${errorMessage}`, 'system');
+                console.error('Connection Error:', error); // 在控制台打印详细错误
                 resetUIForDisconnectedState();
             },
             onMessageStart: () => {
@@ -312,7 +314,9 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             onMessageComplete: (finalMessage) => {
                 chatUI.finalizeAIMessage(finalMessage);
-                historyManager.addMessageToHistory('assistant', finalMessage);
+                const newHistory = [...chatHistory, { role: 'assistant', content: finalMessage }];
+                historyManager.setChatHistory(newHistory);
+                historyManager.saveHistory();
             },
             onToolCode: (code) => {
                 toolManager.displayToolCode(code);
@@ -324,7 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
             onInterrupted: () => {
                 if (audioStreamer) audioStreamer.stop();
             },
-            // 移除冗余的回调注入，ChatAPI 通过 on... 事件来通信
         },
         stateGetters: {
             getApiKey: () => apiKeyInput.value,
@@ -339,14 +342,15 @@ document.addEventListener('DOMContentLoaded', () => {
             setChatHistory: (newHistory) => { chatHistory = newHistory; },
             setCurrentSessionId: (newId) => { currentSessionId = newId; },
             setIsConnected: (status) => { isConnected = status; },
-            // 这个回调是 ChatAPI 真正需要的，用于将用户消息添加到UI和历史记录
             addUserMessageToUI: (text, file) => {
                 chatUI.displayUserMessage(text, file);
-                // 正确地将消息添加到 historyManager 管理的 chatHistory 中
-                const currentUserHistory = historyManager.getChatHistory();
-                const newUserHistory = [...currentUserHistory, { role: 'user', content: text }]; // 简化处理，实际应更复杂
-                historyManager.setChatHistory(newUserHistory);
-                historyManager.saveHistory(); // 保存更新
+                const userContent = [];
+                if (text) userContent.push({ type: 'text', text });
+                if (file) userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+
+                const newHistory = [...historyManager.getChatHistory(), { role: 'user', content: userContent }];
+                historyManager.setChatHistory(newHistory);
+                historyManager.saveHistory();
             }
         }
     });
