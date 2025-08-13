@@ -294,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 messageInput.disabled = false;
                 sendButton.disabled = false;
                 chatUI.logMessage('连接成功', 'system');
-                historyManager.init(); // 使用 init() 替代不存在的 loadLastSession()
+                historyManager.init();
             },
             onConnectionClose: (event) => {
                 chatUI.logMessage(`连接关闭: ${event.reason || '未知原因'}`, 'system');
@@ -303,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
             onConnectionError: (error) => {
                 const errorMessage = error ? error.message : '未知错误';
                 chatUI.logMessage(`连接错误: ${errorMessage}`, 'system');
-                console.error('Connection Error:', error); // 在控制台打印详细错误
+                console.error('Connection Error:', error);
                 resetUIForDisconnectedState();
             },
             onMessageStart: () => {
@@ -328,6 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
             onInterrupted: () => {
                 if (audioStreamer) audioStreamer.stop();
             },
+            logMessage: chatUI.logMessage // Correctly placed inside callbacks
         },
         stateGetters: {
             getApiKey: () => apiKeyInput.value,
