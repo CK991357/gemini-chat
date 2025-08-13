@@ -1884,7 +1884,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isNearBottom = messageHistory.scrollHeight - messageHistory.clientHeight <=
                                     messageHistory.scrollTop + threshold;
                 if (isNearBottom) {
-                    scrollToBottom(); // 尝试滚动到底部
+                    chatUI.scrollToBottom(); // 尝试滚动到底部
                 }
             }, { passive: true });
         }
@@ -2125,5 +2125,5 @@ export function showSystemMessage(message) {
 
     messageDiv.appendChild(contentDiv);
     messageHistory.appendChild(messageDiv);
-    scrollToBottom();
+    chatUI.scrollToBottom();
 }
