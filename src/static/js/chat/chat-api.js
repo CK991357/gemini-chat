@@ -156,26 +156,8 @@ export class ChatApi {
                 }
             } else {
                 if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
-                   // Qwen "Thinking" 模型内容处理
-                   const rawText = currentAIMessageContentDiv.rawMarkdownBuffer;
-                   const thinkEndTag = '</think>';
-                   const thinkStartIndex = rawText.indexOf('<think>');
-                   const thinkEndIndex = rawText.lastIndexOf(thinkEndTag);
-
-                   let thinkingContent = '';
-                   let finalContent = rawText;
-
-                   if (thinkEndIndex !== -1) {
-                       // 提取思考过程和最终内容
-                       thinkingContent = rawText.substring(thinkStartIndex + '<think>'.length, thinkEndIndex).trim();
-                       finalContent = rawText.substring(thinkEndIndex + thinkEndTag.length).trim();
-                       
-                       // 更新UI以分别显示思考过程和最终答案
-                       currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML = marked.parse(thinkingContent);
-                       currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                       currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(finalContent);
-                   }
-                   
+                   // 移除 Qwen "Thinking" 模型的特殊处理逻辑，使用通用方式
+                   const finalContent = currentAIMessageContentDiv.rawMarkdownBuffer;
                    chatHistory.push({ role: 'assistant', content: finalContent });
                 }
                 currentAIMessageContentDiv = null;

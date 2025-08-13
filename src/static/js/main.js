@@ -1062,7 +1062,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             chatHistory = updatedHistory; // 更新主聊天历史
             historyManager.setChatHistory(updatedHistory); // 修复：将最新的历史记录同步给 historyManager
             attachmentManager.clearAttachedFile('chat');
-            historyManager.saveHistory(); // 现在 saveHistory 将使用最新的、完整的历史记录
+            await historyManager.saveHistory(); // 现在 saveHistory 将使用最新的、完整的历史记录
         } catch (error) {
             // 错误已在 chat-api 中记录，这里可以根据需要执行额外的UI操作
             console.error("An error occurred during message sending:", error);
