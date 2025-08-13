@@ -127,7 +127,7 @@ export class ChatAPI extends APIHandler {
     async sendMessage(text, attachedFile) {
         const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
 
-        this.callbacks.addUserMessageToUI(text, attachedFile);
+        this.stateUpdaters.addUserMessageToUI(text, attachedFile); // FIX: Use stateUpdaters
         this.callbacks.onMessageStart();
 
         if (selectedModelConfig.isWebSocket) {

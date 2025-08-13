@@ -329,7 +329,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (audioStreamer) audioStreamer.stop();
             },
             logMessage: chatUI.logMessage,
-            // Merged from stateUpdaters for consistency
+            // Pass other necessary callbacks
+            showSystemMessage: showSystemMessage,
+            updateAIMessage: chatUI.updateAIMessage,
+            createAIMessageElement: chatUI.createAIMessageElement,
+            finalizeAIMessage: chatUI.finalizeAIMessage,
+            displayAudioMessage: () => {}, // Placeholder, should be implemented if needed
+            pcmToWavBlob: pcmToWavBlob,
+            ensureAudioInitialized: ensureAudioInitialized,
+            attachmentManager: attachmentManager,
+            historyManager: historyManager
+        },
+        stateGetters: {
+            getApiKey: () => apiKeyInput.value,
+            getVoice: () => voiceSelect.value,
+            getSystemInstruction: () => systemInstructionInput.value,
+            getResponseType: () => responseTypeSelect.value,
+            getChatHistory: () => chatHistory,
+            getSelectedModelConfig: () => selectedModelConfig,
+            getIsConnected: () => isConnected,
+            getCurrentSessionId: () => currentSessionId, // <-- FIX: Add missing getter
+            getAudioSampleRate: () => audioCtx ? audioCtx.sampleRate : 16000
+        },
+        stateUpdaters: {
             setChatHistory: (newHistory) => { chatHistory = newHistory; },
             setCurrentSessionId: (newId) => { currentSessionId = newId; },
             setIsConnected: (status) => { isConnected = status; },
@@ -342,16 +364,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newHistory = [...historyManager.getChatHistory(), { role: 'user', content: userContent }];
                 historyManager.setChatHistory(newHistory);
                 historyManager.saveHistory();
-            }
-        },
-        stateGetters: {
-            getApiKey: () => apiKeyInput.value,
-            getVoice: () => voiceSelect.value,
-            getSystemInstruction: () => systemInstructionInput.value,
-            getResponseType: () => responseTypeSelect.value,
-            getChatHistory: () => chatHistory,
-            getSelectedModelConfig: () => selectedModelConfig,
-            getIsConnected: () => isConnected,
+            },
+            updateChatHistory: (newHistory) => { chatHistory = newHistory; }
         }
     });
 
