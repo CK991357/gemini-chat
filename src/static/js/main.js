@@ -294,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 messageInput.disabled = false;
                 sendButton.disabled = false;
                 chatUI.logMessage('连接成功', 'system');
-                historyManager.loadLastSession();
+                historyManager.init(); // 使用 init() 替代不存在的 loadLastSession()
             },
             onConnectionClose: (event) => {
                 chatUI.logMessage(`连接关闭: ${event.reason || '未知原因'}`, 'system');
@@ -324,21 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
             onInterrupted: () => {
                 if (audioStreamer) audioStreamer.stop();
             },
-            // 将 main.js 中的函数注入，以便 ChatAPI 回调
-            resetUIForDisconnectedState: resetUIForDisconnectedState,
-            updateConnectionStatus: updateConnectionStatus,
-            logMessage: chatUI.logMessage,
-            showSystemMessage: showSystemMessage,
-            displayUserMessage: chatUI.displayUserMessage,
-            createAIMessageElement: chatUI.createAIMessageElement,
-            updateAIMessage: chatUI.updateAIMessage,
-            finalizeAIMessage: chatUI.finalizeAIMessage,
-            displayAudioMessage: chatUI.displayAudioMessage,
-            pcmToWavBlob: pcmToWavBlob,
-            ensureAudioInitialized: ensureAudioInitialized,
-            getAudioSampleRate: () => CONFIG.AUDIO.OUTPUT_SAMPLE_RATE, // 示例，实际应从配置获取
-            historyManager: historyManager, // 注入 historyManager 实例
-            attachmentManager: attachmentManager // 注入 attachmentManager 实例
+            // 移除冗余的回调注入，ChatAPI 通过 on... 事件来通信
         },
         stateGetters: {
             getApiKey: () => apiKeyInput.value,
@@ -353,9 +339,14 @@ document.addEventListener('DOMContentLoaded', () => {
             setChatHistory: (newHistory) => { chatHistory = newHistory; },
             setCurrentSessionId: (newId) => { currentSessionId = newId; },
             setIsConnected: (status) => { isConnected = status; },
+            // 这个回调是 ChatAPI 真正需要的，用于将用户消息添加到UI和历史记录
             addUserMessageToUI: (text, file) => {
                 chatUI.displayUserMessage(text, file);
-                historyManager.addMessageToHistory('user', text, file);
+                // 正确地将消息添加到 historyManager 管理的 chatHistory 中
+                const currentUserHistory = historyManager.getChatHistory();
+                const newUserHistory = [...currentUserHistory, { role: 'user', content: text }]; // 简化处理，实际应更复杂
+                historyManager.setChatHistory(newUserHistory);
+                historyManager.saveHistory(); // 保存更新
             }
         }
     });

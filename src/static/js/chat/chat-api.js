@@ -66,7 +66,9 @@ export class ChatAPI extends APIHandler {
         const selectedModelConfig = this.stateGetters.getSelectedModelConfig();
 
         // 在建立新连接前，先彻底断开旧连接，确保状态干净
-        this.disconnect();
+        if (this.stateGetters.getIsConnected()) {
+            this.disconnect();
+        }
 
         try {
             if (selectedModelConfig.isWebSocket) {
