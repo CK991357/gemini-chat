@@ -81,12 +81,23 @@ export class ChatAPI extends APIHandler {
             if (selectedModelConfig.isWebSocket) {
                 // WebSocket 路径：发起连接，成功状态由 'open' 事件回调处理
                 this.callbacks.logMessage(`正在连接到 WebSocket 模型: ${selectedModelConfig.displayName}...`, 'system');
-                await this.client.connect(
-                    apiKey,
-                    this.stateGetters.getSystemInstruction(),
-                    this.callbacks.getAudioSampleRate(),
-                    selectedModelConfig.name
-                );
+                const wsConfig = {
+                    model: selectedModelConfig.name,
+                    generationConfig: {
+                        responseModalities: ["audio", "text"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: {
+                                    voiceName: this.stateGetters.getVoice()
+                                }
+                            }
+                        }
+                    },
+                    systemInstruction: {
+                        parts: [{ text: this.stateGetters.getSystemInstruction() }]
+                    }
+                };
+                await this.client.connect(wsConfig, apiKey);
             } else {
                 // HTTP 路径：无状态连接，直接更新UI和内部状态
                 this.callbacks.logMessage(`已切换到 HTTP 模式: ${selectedModelConfig.displayName}`, 'system');
@@ -109,8 +120,8 @@ export class ChatAPI extends APIHandler {
      * 负责清理 WebSocket 连接和重置应用状态。
      */
     disconnect() {
-        if (this.client && this.client.isConnected()) {
-            this.client.close();
+        if (this.client && this.client.ws) { // 检查 ws 实例是否存在，而不是调用 isConnected()
+            this.client.disconnect(); // 调用 client 的 disconnect 方法
         }
         // 统一重置应用的状态和UI
         this.stateUpdaters.setIsConnected(false);
