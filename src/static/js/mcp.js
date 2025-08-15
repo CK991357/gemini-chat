@@ -3,8 +3,8 @@
  * 负责协调模型、外部工具（如Tavily搜索）和UI之间的通信。
  */
 
-// McpFactory 将从 index.html 中挂载的 window 对象获取
-const { McpClient } = window.McpFactory;
+// 直接从CDN导入ESM版本的McpClient，不再依赖全局变量
+import { McpClient } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/sdk@latest/dist/mcp.mjs';
 
 /**
  * QwenMcpClient 类
