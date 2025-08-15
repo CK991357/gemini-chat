@@ -1,10 +1,8 @@
 /**
  * @fileoverview 模块，用于处理与Qwen模型的MCP（模型上下文协议）交互。
  * 负责协调模型、外部工具（如Tavily搜索）和UI之间的通信。
+ * 最终修复：移除对外部SDK的依赖，使用原生fetch实现MCP客户端逻辑。
  */
-
-// 直接从CDN导入ESM版本的McpClient，不再依赖全局变量
-import { McpClient } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/sdk@latest/dist/index.js';
 
 /**
  * QwenMcpClient 类
@@ -21,36 +19,17 @@ export class QwenMcpClient {
     constructor({ tavilyServerUrl, callbacks }) {
         this.tavilyServerUrl = tavilyServerUrl;
         this.callbacks = callbacks;
-        this.mcpClient = null;
+        // 初始化时不再需要复杂的McpClient实例
+        console.log('QwenMcpClient initialized for server:', this.tavilyServerUrl);
     }
 
     /**
-     * 初始化MCP客户端
-     * @async
-     * @description 实例化并配置McpClient，连接到Tavily服务器。
+     * 初始化MCP客户端 (现在是一个空操作，为了保持接口一致性)
      * @returns {Promise<void>}
      */
     async initialize() {
-        try {
-            this.mcpClient = new McpClient({
-                servers: {
-                    // 定义一个名为 'tavily' 的MCP服务器
-                    'tavily': {
-                        // 指定服务器的URL，使用您设置的自定义域名
-                        url: this.tavilyServerUrl,
-                        // 可以在此添加其他服务器特定配置，例如认证头
-                        // headers: { 'Authorization': 'Bearer YOUR_SERVER_API_KEY' }
-                    }
-                }
-            });
-            console.log('QwenMcpClient initialized successfully, connected to:', this.tavilyServerUrl);
-        } catch (error) {
-            console.error('Failed to initialize McpClient:', error);
-            // 可以在此处通过回调通知UI初始化失败
-            if (this.callbacks.onError) {
-                this.callbacks.onError('MCP客户端初始化失败: ' + error.message);
-            }
-        }
+        // 不需要执行任何操作，因为我们直接使用fetch
+        return Promise.resolve();
     }
 
     /**
@@ -60,13 +39,6 @@ export class QwenMcpClient {
      * @returns {Promise<void>}
      */
     async sendMessage(requestBody) {
-        if (!this.mcpClient) {
-            const errorMsg = 'MCP client is not initialized.';
-            console.error(errorMsg);
-            if (this.callbacks.onError) this.callbacks.onError(errorMsg);
-            return;
-        }
-
         // 1. 定义Tavily搜索工具的schema
         const tools = [{
             type: "function",
@@ -97,43 +69,67 @@ export class QwenMcpClient {
         let currentAIMessageElement = null;
 
         try {
-            // 3. 使用mcpClient.chat处理整个流程
-            const stream = await this.mcpClient.chat(finalRequestBody);
+            // 3. 使用 fetch API 发送请求到我们的 MCP Worker
+            const response = await fetch(this.tavilyServerUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(finalRequestBody)
+            });
 
-            for await (const chunk of stream) {
-                switch (chunk.type) {
-                    case 'tool-start':
-                        console.log('Tool call started:', chunk.toolCall);
-                        // 任务T7的UI回调：显示工具使用状态
-                        if (this.callbacks.onToolStart) {
-                           currentAIMessageElement = this.callbacks.onToolStart(chunk.toolCall);
-                        }
-                        break;
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
 
-                    case 'tool-end':
-                        console.log('Tool call finished:', chunk.toolResult);
-                        // 任务T7的UI回调：更新工具使用状态为完成
-                        if (this.callbacks.onToolEnd && currentAIMessageElement) {
-                            this.callbacks.onToolEnd(currentAIMessageElement, chunk.toolResult);
-                        }
-                        break;
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-                    case 'text':
-                        // 这是模型的最终文本响应
-                        if (!currentAIMessageElement) {
-                            // 如果没有工具调用，则创建一个新的AI消息元素
-                            currentAIMessageElement = this.callbacks.createAIMessageElement();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // 保留不完整的行
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    try {
+                        const chunk = JSON.parse(line);
+                        
+                        switch (chunk.type) {
+                            case 'tool-start':
+                                console.log('Tool call started:', chunk.toolCall);
+                                if (this.callbacks.onToolStart) {
+                                   currentAIMessageElement = this.callbacks.onToolStart(chunk.toolCall);
+                                }
+                                break;
+
+                            case 'tool-end':
+                                console.log('Tool call finished:', chunk.toolResult);
+                                if (this.callbacks.onToolEnd && currentAIMessageElement) {
+                                    this.callbacks.onToolEnd(currentAIMessageElement, chunk.toolResult);
+                                }
+                                break;
+
+                            case 'text':
+                                if (!currentAIMessageElement) {
+                                    currentAIMessageElement = this.callbacks.createAIMessageElement();
+                                }
+                                finalContent += chunk.content;
+                                if (this.callbacks.onUpdateContent && currentAIMessageElement) {
+                                    this.callbacks.onUpdateContent(currentAIMessageElement, finalContent);
+                                }
+                                break;
                         }
-                        finalContent += chunk.content;
-                        // 通过回调流式更新UI
-                        if (this.callbacks.onUpdateContent && currentAIMessageElement) {
-                            this.callbacks.onUpdateContent(currentAIMessageElement, finalContent);
-                        }
-                        break;
+                    } catch (e) {
+                        console.warn('Failed to parse JSON chunk:', line, e);
+                    }
                 }
             }
-            
-            // 整个流程完成后的回调
+
             if (this.callbacks.onComplete) {
                 this.callbacks.onComplete(finalContent);
             }
