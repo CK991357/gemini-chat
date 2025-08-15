@@ -4,7 +4,7 @@
  */
 
 // 直接从CDN导入ESM版本的McpClient，不再依赖全局变量
-import { McpClient } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/sdk@latest/dist/mcp.mjs';
+import { McpClient } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/sdk@latest/dist/index.js';
 
 /**
  * QwenMcpClient 类
