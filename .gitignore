@@ -185,3 +185,5 @@ deno.lock
 CLAUDE.md
 /.claude
 bmain.js
+
+/mcp

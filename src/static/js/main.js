@@ -7,6 +7,7 @@ import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
+import { QwenMcpClient } from './mcp.js'; // 任务T5: 导入QwenMcpClient
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
@@ -485,6 +486,42 @@ document.addEventListener('DOMContentLoaded', () => {
            MathJax: window.MathJax
        }
    });
+
+   // 任务T5: 初始化QwenMcpClient
+   qwenMcpClient = new QwenMcpClient({
+       tavilyServerUrl: 'https://tavilymcp.10110531.xyz',
+       callbacks: {
+           logMessage: chatUI.logMessage,
+           createAIMessageElement: chatUI.createAIMessageElement,
+           scrollToBottom: chatUI.scrollToBottom,
+           // 任务T7的UI回调实现
+           onToolStart: (toolCall) => {
+               const el = chatUI.createAIMessageElement();
+               el.contentDiv.innerHTML = `<div class="tool-call-status">正在使用工具: <strong>${toolCall.name}</strong>...</div>`;
+               return el;
+           },
+           onToolEnd: (element, toolResult) => {
+               element.contentDiv.innerHTML = `<div class="tool-call-status">✅ 工具 <strong>${toolResult.name}</strong> 调用完成。</div>`;
+           },
+           onUpdateContent: (element, content) => {
+               element.markdownContainer.innerHTML = marked.parse(content);
+               if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                   MathJax.startup.promise.then(() => {
+                       MathJax.typeset([element.markdownContainer]);
+                   }).catch((err) => console.error('MathJax typesetting failed:', err));
+               }
+               chatUI.scrollToBottom();
+           },
+           onComplete: (finalContent) => {
+               chatHistory.push({ role: 'assistant', content: finalContent });
+               historyManager.saveHistory(); // 保存历史
+           },
+           onError: (errorMessage) => {
+               chatUI.logMessage(errorMessage, 'system');
+           }
+       }
+   });
+   qwenMcpClient.initialize();
   });
 
 // State variables
@@ -512,6 +549,7 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
+let qwenMcpClient = null; // 任务T5: 声明qwenMcpClient变量
 
 
 /**
@@ -882,50 +920,47 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
     currentAIMessageContentDiv = null;
 
-    if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
+    // 构建通用的用户消息部分
+    const userContent = [];
+    if (message) {
+        userContent.push({ type: 'text', text: message });
+    }
+    if (attachedFile) {
+        userContent.push({ type: 'image_url', image_url: { url: attachedFile.base64 } });
+    }
+    chatHistory.push({ role: 'user', content: userContent });
+    attachmentManager.clearAttachedFile('chat');
+
+    // 任务T5: 路由逻辑
+    if (selectedModelConfig.isQwen) {
+        // 任务T8: 实现系统指令的动态合并
+        let finalSystemInstruction = systemInstructionInput.value;
+        if (CONFIG.MCP && CONFIG.MCP.QWEN_SYSTEM_PROMPT) {
+            finalSystemInstruction += CONFIG.MCP.QWEN_SYSTEM_PROMPT;
+        }
+
+        // Qwen模型使用MCP客户端
+        const requestBody = {
+            model: selectedModelConfig.name,
+            messages: chatHistory,
+            systemInstruction: { parts: [{ text: finalSystemInstruction }] },
+        };
+        await qwenMcpClient.sendMessage(requestBody);
+    } else if (selectedModelConfig.isWebSocket) {
+        // WebSocket 模式
         if (attachedFile) {
             showSystemMessage('实时模式尚不支持文件上传。');
-            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
             return;
         }
         client.send({ text: message });
     } else {
-        // HTTP 模式下发送消息
+        // 其他 HTTP 模式
         try {
             const apiKey = apiKeyInput.value;
-            const modelName = selectedModelConfig.name;
-            const systemInstruction = systemInstructionInput.value;
-
-            // 构建消息内容，参考 OCR 项目的成功实践
-            const userContent = [];
-            if (message) {
-                userContent.push({ type: 'text', text: message });
-            }
-            if (attachedFile) {
-                // 参考项目使用 image_url 并传递完整的 Data URL
-                userContent.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: attachedFile.base64
-                    }
-                });
-            }
-
-            chatHistory.push({
-                role: 'user',
-                content: userContent // 保持为数组，因为可能包含文本和图片
-            });
-
-            // 清除附件（发送后）
-            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
-
             let requestBody = {
-                model: modelName,
+                model: selectedModelConfig.name,
                 messages: chatHistory,
-                generationConfig: {
-                    responseModalities: ['text']
-                },
+                generationConfig: { responseModalities: ['text'] },
                 safetySettings: [
                     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
@@ -936,20 +971,15 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 stream: true,
                 sessionId: currentSessionId
             };
-
-            if (systemInstruction) {
-                requestBody.systemInstruction = {
-                    parts: [{ text: systemInstruction }]
-                };
+            if (systemInstructionInput.value) {
+                requestBody.systemInstruction = { parts: [{ text: systemInstructionInput.value }] };
             }
-
             await chatApiHandler.streamChatCompletion(requestBody, apiKey);
-
         } catch (error) {
             Logger.error('发送 HTTP 消息失败:', error);
             chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
         }
-        }
+    }
         }
         
         // Event Listeners

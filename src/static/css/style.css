@@ -1905,3 +1905,18 @@ body.dark-mode .highlight-box {
         font-size: 13px;
     }
 }
+
+/* 任务T7: 工具调用状态UI样式 */
+.tool-call-status {
+    background-color: var(--bg-color);
+    padding: 12px 18px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    font-family: var(--font-family);
+    color: var(--text-secondary-color);
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--border-color);
+}

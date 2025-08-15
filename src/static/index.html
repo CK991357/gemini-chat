@@ -36,6 +36,13 @@
         // 设置 pdf.js worker 的路径
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
     </script>
+    <!-- 任务 T1: 引入MCP SDK -->
+    <script type="module">
+        // 使用jsdelivr CDN引入SDK的ESM模块
+        import { McpFactory } from 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/sdk@latest/dist/mcp.mjs';
+        // 将工厂函数挂载到window对象，以便其他非模块脚本(如此项目的main.js)可以访问
+        window.McpFactory = McpFactory;
+    </script>
 </head>
 <body>
     <div id="toast-container"></div>
@@ -244,6 +251,7 @@
         </div>
 
     </div>
+    <script src="js/mcp.js" type="module"></script>
     <script src="js/main.js" type="module"></script>
 </body>
 </html>
