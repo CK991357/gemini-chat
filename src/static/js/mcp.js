@@ -39,106 +39,130 @@ export class QwenMcpClient {
      * @returns {Promise<void>}
      */
     async sendMessage(requestBody) {
-        // 1. 定义Tavily搜索工具的schema
-        const tools = [{
-            type: "function",
-            function: {
-                name: "tavily::search", // 格式: server_name::tool_name
-                description: "当需要回答有关时事、近期事件或需要实时网络信息的任何问题时，请使用此工具。",
-                parameters: {
-                    type: "object",
-                    required: ["query"],
-                    properties: {
-                        query: {
-                            type: "string",
-                            description: "要执行的搜索查询。例如：'最新的AI技术进展是什么？'"
-                        }
-                    },
-                }
-            }
-        }];
-
-        // 2. 将工具定义合并到请求体中
-        const finalRequestBody = {
-            ...requestBody,
-            tools: tools,
-            stream: true // 确保启用了流式响应
-        };
-
-        let finalContent = '';
-        let currentAIMessageElement = null;
-
-        try {
-            // 3. 使用 fetch API 发送请求到我们的 MCP Worker
-            const response = await fetch(this.tavilyServerUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(finalRequestBody)
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); // 保留不完整的行
-
-                for (const line of lines) {
-                    if (line.trim() === '') continue;
-                    try {
-                        const chunk = JSON.parse(line);
-                        
-                        switch (chunk.type) {
-                            case 'tool-start':
-                                console.log('Tool call started:', chunk.toolCall);
-                                if (this.callbacks.onToolStart) {
-                                   currentAIMessageElement = this.callbacks.onToolStart(chunk.toolCall);
-                                }
-                                break;
-
-                            case 'tool-end':
-                                console.log('Tool call finished:', chunk.toolResult);
-                                if (this.callbacks.onToolEnd && currentAIMessageElement) {
-                                    this.callbacks.onToolEnd(currentAIMessageElement, chunk.toolResult);
-                                }
-                                break;
-
-                            case 'text':
-                                if (!currentAIMessageElement) {
-                                    currentAIMessageElement = this.callbacks.createAIMessageElement();
-                                }
-                                finalContent += chunk.content;
-                                if (this.callbacks.onUpdateContent && currentAIMessageElement) {
-                                    this.callbacks.onUpdateContent(currentAIMessageElement, finalContent);
-                                }
-                                break;
-                        }
-                    } catch (e) {
-                        console.warn('Failed to parse JSON chunk:', line, e);
-                    }
-                }
-            }
-
-            if (this.callbacks.onComplete) {
-                this.callbacks.onComplete(finalContent);
-            }
-
-        } catch (error) {
-            console.error('MCP chat flow failed:', error);
-            if (this.callbacks.onError) {
-                this.callbacks.onError('MCP 聊天流程失败: ' + error.message);
-            }
-        }
-    }
+           // 修复后的MCP流程
+           // 流程概述:
+           // 1. 将用户问题和工具定义发送到主后端 (`/chat`)，让模型决定是否调用工具。
+           // 2. 如果模型决定调用工具，主后端会返回一个 `tool_code` 类型的响应。
+           // 3. 解析 `tool_code`，构造一个符合MCP规范的请求体。
+           // 4. 将此规范的请求体发送到Tavily MCP Worker (`this.tavilyServerUrl`)。
+           // 5. 接收工具的执行结果。
+           // 6. 将工具结果连同上下文一起发回主后端，让模型生成最终答案。
+           // 7. 显示最终答案。
+   
+           let finalContent = '';
+           let currentAIMessageElement = null;
+           let toolCallInfo = null;
+   
+           try {
+               // --- 步骤 1 & 2: 调用模型并等待工具调用指令 ---
+               const initialResponse = await fetch('/chat', {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+                       ...requestBody,
+                       stream: true // 确保启用流式响应
+                   })
+               });
+   
+               if (!initialResponse.ok) {
+                   throw new Error(`Initial model call failed! status: ${initialResponse.status}`);
+               }
+   
+               // 处理来自主后端的流式响应
+               const reader = initialResponse.body.getReader();
+               const decoder = new TextDecoder();
+               let buffer = '';
+   
+               while (true) {
+                   const { done, value } = await reader.read();
+                   if (done) break;
+   
+                   buffer += decoder.decode(value, { stream: true });
+                   const lines = buffer.split('\n');
+                   buffer = lines.pop();
+   
+                   for (const line of lines) {
+                       if (line.trim().startsWith('data:')) {
+                           const dataStr = line.substring(5).trim();
+                           if (dataStr === '[DONE]') break;
+                           
+                           try {
+                               const chunk = JSON.parse(dataStr);
+                               if (chunk.tool_code) {
+                                   // 收到工具调用指令
+                                   const toolCode = JSON.parse(chunk.tool_code);
+                                   toolCallInfo = toolCode.tool_calls[0]; // 假设只有一个工具调用
+                                   console.log("Model requested tool call:", toolCallInfo);
+                                   if (this.callbacks.onToolStart) {
+                                       currentAIMessageElement = this.callbacks.onToolStart(toolCallInfo);
+                                   }
+                                   // 停止读取初始响应流，因为我们现在需要调用工具
+                                   break;
+                               } else if (chunk.text) {
+                                   // 如果模型没有调用工具，直接输出文本
+                                   if (!currentAIMessageElement) {
+                                       currentAIMessageElement = this.callbacks.createAIMessageElement();
+                                   }
+                                   finalContent += chunk.text;
+                                   if (this.callbacks.onUpdateContent) {
+                                       this.callbacks.onUpdateContent(currentAIMessageElement, finalContent);
+                                   }
+                               }
+                           } catch (e) {
+                               console.warn('Failed to parse JSON chunk from main backend:', dataStr, e);
+                           }
+                       }
+                   }
+                   if (toolCallInfo) break; // 如果已收到工具调用，则跳出while循环
+               }
+               
+               // --- 步骤 3 & 4 & 5: 如果需要，执行工具调用 ---
+               if (toolCallInfo) {
+                   const { tool_name, parameters } = toolCallInfo;
+   
+                   // 构造符合MCP规范的请求体
+                   const mcpRequestBody = {
+                       type: "tool_use",
+                       tool_name: tool_name.split('::')[1], // 从 "tavily::search" 中提取 "search"
+                       arguments: parameters
+                   };
+   
+                   console.log("Sending to MCP Worker:", mcpRequestBody);
+   
+                   const toolResponse = await fetch(this.tavilyServerUrl, {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify(mcpRequestBody)
+                   });
+   
+                   if (!toolResponse.ok) {
+                       throw new Error(`Tool execution failed! status: ${toolResponse.status}`);
+                   }
+   
+                   const toolResult = await toolResponse.json();
+                   console.log("Received tool result:", toolResult);
+                   
+                   if (this.callbacks.onToolEnd && currentAIMessageElement) {
+                       this.callbacks.onToolEnd(currentAIMessageElement, toolResult);
+                   }
+   
+                   // TODO: 步骤 6 & 7 - 将工具结果发回模型以获得最终答案
+                   // 这是一个简化的实现，我们暂时只显示工具结果
+                   finalContent = `Tool Result:\n\`\`\`json\n${JSON.stringify(toolResult, null, 2)}\n\`\`\``;
+                   if (this.callbacks.onUpdateContent) {
+                       this.callbacks.onUpdateContent(currentAIMessageElement, finalContent);
+                   }
+               }
+   
+               if (this.callbacks.onComplete) {
+                   this.callbacks.onComplete(finalContent);
+               }
+   
+           } catch (error) {
+               console.error('MCP chat flow failed:', error);
+               if (this.callbacks.onError) {
+                   this.callbacks.onError('MCP 聊天流程失败: ' + error.message);
+               }
+           }
+       }
 }

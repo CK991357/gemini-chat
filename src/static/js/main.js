@@ -487,41 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
        }
    });
 
-   // 任务T5: 初始化QwenMcpClient
-   qwenMcpClient = new QwenMcpClient({
-       tavilyServerUrl: 'https://tavilymcp.10110531.xyz',
-       callbacks: {
-           logMessage: chatUI.logMessage,
-           createAIMessageElement: chatUI.createAIMessageElement,
-           scrollToBottom: chatUI.scrollToBottom,
-           // 任务T7的UI回调实现
-           onToolStart: (toolCall) => {
-               const el = chatUI.createAIMessageElement();
-               el.contentDiv.innerHTML = `<div class="tool-call-status">正在使用工具: <strong>${toolCall.name}</strong>...</div>`;
-               return el;
-           },
-           onToolEnd: (element, toolResult) => {
-               element.contentDiv.innerHTML = `<div class="tool-call-status">✅ 工具 <strong>${toolResult.name}</strong> 调用完成。</div>`;
-           },
-           onUpdateContent: (element, content) => {
-               element.markdownContainer.innerHTML = marked.parse(content);
-               if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                   MathJax.startup.promise.then(() => {
-                       MathJax.typeset([element.markdownContainer]);
-                   }).catch((err) => console.error('MathJax typesetting failed:', err));
-               }
-               chatUI.scrollToBottom();
-           },
-           onComplete: (finalContent) => {
-               chatHistory.push({ role: 'assistant', content: finalContent });
-               historyManager.saveHistory(); // 保存历史
-           },
-           onError: (errorMessage) => {
-               chatUI.logMessage(errorMessage, 'system');
-           }
-       }
-   });
-   qwenMcpClient.initialize();
+   // 任务T5: QwenMcpClient 将在 handleSendMessage 中按需初始化
   });
 
 // State variables
@@ -933,6 +899,44 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
 
     // 任务T5: 路由逻辑
     if (selectedModelConfig.isQwen) {
+       // 架构优化：按需初始化 QwenMcpClient
+       if (!qwenMcpClient) {
+           chatUI.logMessage('首次使用Qwen，正在初始化MCP客户端...', 'system');
+           qwenMcpClient = new QwenMcpClient({
+               tavilyServerUrl: 'https://tavilymcp.10110531.xyz',
+               callbacks: {
+                   logMessage: chatUI.logMessage,
+                   createAIMessageElement: chatUI.createAIMessageElement,
+                   scrollToBottom: chatUI.scrollToBottom,
+                   onToolStart: (toolCall) => {
+                       const el = chatUI.createAIMessageElement();
+                       el.contentDiv.innerHTML = `<div class="tool-call-status">正在使用工具: <strong>${toolCall.name}</strong>...</div>`;
+                       return el;
+                   },
+                   onToolEnd: (element, toolResult) => {
+                       element.contentDiv.innerHTML = `<div class="tool-call-status">✅ 工具 <strong>${toolResult.name}</strong> 调用完成。</div>`;
+                   },
+                   onUpdateContent: (element, content) => {
+                       element.markdownContainer.innerHTML = marked.parse(content);
+                       if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                           MathJax.startup.promise.then(() => {
+                               MathJax.typeset([element.markdownContainer]);
+                           }).catch((err) => console.error('MathJax typesetting failed:', err));
+                       }
+                       chatUI.scrollToBottom();
+                   },
+                   onComplete: (finalContent) => {
+                       chatHistory.push({ role: 'assistant', content: finalContent });
+                       historyManager.saveHistory();
+                   },
+                   onError: (errorMessage) => {
+                       chatUI.logMessage(errorMessage, 'system');
+                   }
+               }
+           });
+           await qwenMcpClient.initialize();
+       }
+
         // 任务T8: 实现系统指令的动态合并
         let finalSystemInstruction = systemInstructionInput.value;
         if (CONFIG.MCP && CONFIG.MCP.QWEN_SYSTEM_PROMPT) {
