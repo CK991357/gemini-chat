@@ -916,8 +916,8 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 model: selectedModelConfig.name,
                 messages: chatHistory,
                 // CRITICAL FIX: Add the tool declarations to ALL HTTP requests.
-                // The backend adapter will use this to decide whether to inject the tool prompt.
-                tools: toolManager.getToolDeclarations(),
+                // Pass the selected model config to format the tools correctly.
+                tools: toolManager.getToolDeclarations(selectedModelConfig),
                 generationConfig: { responseModalities: ['text'] },
                 safetySettings: [
                     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },

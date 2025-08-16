@@ -213,15 +213,24 @@ Be warm, patient, and plain-spoken; don't use too many exclamation marks or emoj
     // },
     // 任务T8: 新增MCP相关配置
     MCP: {
-        QWEN_SYSTEM_PROMPT: `You are a helpful assistant that has access to a set of tools you can use to answer questions.
-The available tools are:
-\`\`\`json
-{{TOOLS_JSON}}
-\`\`\`
-When you decide to call a tool, you **MUST** respond in the following format, and nothing else. Do not add any explanations or conversational text outside the XML tags.
+        QWEN_SYSTEM_PROMPT: `You are a helpful assistant with access to the following tools.
 
+<tools>
+{{TOOLS_JSON}}
+</tools>
+
+To use a tool, you **MUST** respond in the following format **AND NOTHING ELSE**:
 <tool_code>
-{"tool_name": "the_name_of_the_tool", "tool_params": {"param1": "value1", "param2": "value2"}}
+{"tool_name": "namespace::tool_name", "tool_params": {"arg1": "value1", "arg2": "value2"}}
+</tool_code>
+
+**DO NOT** add any other text, explanation, or conversational filler before or after the <tool_code> block.
+
+Here is an example of how to use a tool.
+User: 帮我搜索今天AI领域有什么新进展
+Assistant:
+<tool_code>
+{"tool_name": "tavily::search", "tool_params": {"query": "AI field advancements today"}}
 </tool_code>`
     }
   };
