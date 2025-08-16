@@ -33,6 +33,7 @@ export const CONFIG = {
                 displayName: 'Qwen3-Coder-480B-A35B-Instruct (HTTP)',
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
+                mcp_server_url: "https://mcp.tavily.com/mcp/?tavilyApiKey=<your-api-key>",
                 tools: [
                    {
                        "type": "function",
@@ -74,6 +75,7 @@ export const CONFIG = {
                 displayName: 'Qwen3-235B-A22B-Thinking-2507 (HTTP)',
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
+                mcp_server_url: "https://mcp.tavily.com/mcp/?tavilyApiKey=<your-api-key>",
                 tools: [
                    {
                        "type": "function",

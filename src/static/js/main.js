@@ -483,7 +483,8 @@ document.addEventListener('DOMContentLoaded', () => {
        libs: {
            marked: window.marked,
            MathJax: window.MathJax
-       }
+       },
+       config: CONFIG // 注入完整的配置对象
    });
   });
 

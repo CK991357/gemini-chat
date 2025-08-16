@@ -21,11 +21,12 @@ export class ChatApiHandler {
      * @param {object} dependencies.libs.marked - The marked.js library instance.
      * @param {object} dependencies.libs.MathJax - The MathJax library instance.
      */
-    constructor({ toolManager, historyManager, state, libs }) {
+    constructor({ toolManager, historyManager, state, libs, config }) {
         this.toolManager = toolManager;
         this.historyManager = historyManager;
         this.state = state;
         this.libs = libs;
+        this.config = config; // 存储配置对象
     }
 
     /**
@@ -253,11 +254,26 @@ export class ChatApiHandler {
             chatUI.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
             chatUI.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
 
+            // 从配置中动态查找当前模型的 MCP 服务器 URL
+            const modelName = requestBody.model;
+            const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+
+            if (!modelConfig || !modelConfig.mcp_server_url) {
+                throw new Error(`在 config.js 中未找到模型 '${modelName}' 的 mcp_server_url 配置。`);
+            }
+            const server_url = modelConfig.mcp_server_url;
+
+            // 构建包含 server_url 的请求体
+            const proxyRequestBody = {
+                ...toolCode,
+                server_url: server_url
+            };
+
             // 调用后端代理
             const proxyResponse = await fetch('/api/mcp-proxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(toolCode)
+                body: JSON.stringify(proxyRequestBody)
             });
 
             if (!proxyResponse.ok) {
