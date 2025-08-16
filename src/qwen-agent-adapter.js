@@ -99,6 +99,10 @@ export async function handleQwenRequest(request, env) {
         max_tokens: 65536
     };
       
+    // --- DIAGNOSTIC LOGGING START ---
+    console.log("Qwen Adapter: Sending final request body to ModelScope:", JSON.stringify(modelScopeBody, null, 2));
+    // --- DIAGNOSTIC LOGGING END ---
+
     // Forward the modified request to ModelScope API
     const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
       method: 'POST',
@@ -108,6 +112,14 @@ export async function handleQwenRequest(request, env) {
       },
       body: JSON.stringify(modelScopeBody)
     });
+
+    // --- DIAGNOSTIC LOGGING START ---
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`Qwen Adapter: ModelScope API returned an error. Status: ${response.status}, Body: ${errorBody}`);
+    }
+    console.log(`Qwen Adapter: Received response from ModelScope with status: ${response.status}`);
+    // --- DIAGNOSTIC LOGGING END ---
       
     // Intercept, parse the stream, and format the response
     let toolCall = null;
@@ -115,7 +127,13 @@ export async function handleQwenRequest(request, env) {
     const transformStream = new TransformStream({
       transform(chunk, controller) {
         const decoder = new TextDecoder();
-        buffer += decoder.decode(chunk, { stream: true });
+        const rawText = decoder.decode(chunk, { stream: true });
+        
+        // --- DIAGNOSTIC LOGGING START ---
+        console.log("Qwen Adapter: Received raw chunk from ModelScope:", rawText);
+        // --- DIAGNOSTIC LOGGING END ---
+
+        buffer += rawText;
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep the last partial line in the buffer
 
