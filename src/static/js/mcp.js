@@ -90,8 +90,14 @@ export class QwenMcpClient {
                                const chunk = JSON.parse(dataStr);
                                if (chunk.tool_code) {
                                    // 收到工具调用指令
-                                   const toolCode = JSON.parse(chunk.tool_code);
-                                   toolCallInfo = toolCode.tool_calls[0]; // 假设只有一个工具调用
+                                   // 修复1：后端适配器返回的 tool_code 已经是 JSON 对象，无需再次解析
+                                   const toolCode = chunk.tool_code;
+                                   // 修复2：直接使用 toolCode 对象，其结构为 { tool_name, tool_params }
+                                   // 并将其适配到前端期望的 { tool_name, parameters } 结构
+                                   toolCallInfo = {
+                                       tool_name: toolCode.tool_name,
+                                       parameters: toolCode.tool_params
+                                   };
                                    console.log("Model requested tool call:", toolCallInfo);
                                    if (this.callbacks.onToolStart) {
                                        currentAIMessageElement = this.callbacks.onToolStart(toolCallInfo);

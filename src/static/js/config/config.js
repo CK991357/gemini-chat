@@ -213,7 +213,16 @@ Be warm, patient, and plain-spoken; don't use too many exclamation marks or emoj
     // },
     // 任务T8: 新增MCP相关配置
     MCP: {
-        QWEN_SYSTEM_PROMPT: `\n\n## 工具使用指南\n你是一个强大的AI助手，具备调用外部工具的能力。当用户的问题需要实时信息（例如新闻、天气、近期事件）或进行网络搜索才能回答时，你必须使用 "tavily::search" 工具来查找答案。在调用工具时，请确保 "query" 参数内容尽可能详细和具体。`
+        QWEN_SYSTEM_PROMPT: `You are a helpful assistant that has access to a set of tools you can use to answer questions.
+The available tools are:
+\`\`\`json
+{{TOOLS_JSON}}
+\`\`\`
+When you decide to call a tool, you **MUST** respond in the following format, and nothing else. Do not add any explanations or conversational text outside the XML tags.
+
+<tool_code>
+{"tool_name": "the_name_of_the_tool", "tool_params": {"param1": "value1", "param2": "value2"}}
+</tool_code>`
     }
   };
   
