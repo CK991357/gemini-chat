@@ -83,10 +83,13 @@ export async function handleQwenRequest(request, env) {
     const formattedPrompt = applyQwenChatTemplate(finalMessages, systemInstruction);
 
     // Construct the new request body for ModelScope
-    // Note: The entire formatted prompt goes into a single user message.
+    // The entire formatted prompt must be placed inside the 'content' of a single user message.
     const modelScopeBody = {
         model: body.model,
-        prompt: formattedPrompt,
+        messages: [{
+            role: "user",
+            content: formattedPrompt
+        }],
         stream: true,
         // Parameters from the official documentation to improve quality
         temperature: 0.7,
