@@ -908,8 +908,8 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
         client.send({ text: message });
     } else {
         // 所有 HTTP 模式 (包括 Gemini, Qwen 等)
-        if (selectedModelConfig.isQwen) {
-            // 如果是 Qwen 模型，使用 MCP 客户端
+        if (selectedModelConfig.name === 'Qwen/Qwen3-Coder-480B-A35B-Instruct') {
+            // 如果是 Qwen Coder 模型，使用 MCP 客户端处理工具调用
             // 按需初始化 QwenMcpClient
             if (!qwenMcpClient) {
                 chatUI.logMessage('首次使用Qwen，正在初始化MCP客户端...', 'system');
