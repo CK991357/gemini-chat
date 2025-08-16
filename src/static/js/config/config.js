@@ -34,14 +34,40 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
                 tools: [
-                    {
-                        "type": "mcp",
-                        "server_label": "tavily",
-                        // API Key 只是一个占位符，实际的密钥将在后端代理中安全地处理
-                        "server_url": "https://mcp.tavily.com/mcp/?tavilyApiKey=<your-api-key>",
-                        "require_approval": "never",
-                    },
-                ]
+                   {
+                       "type": "function",
+                       "function": {
+                           "name": "tavily.search",
+                           "description": "A tool to search the web for real-time information. Use this when the user asks for current events, facts, or information that is not in your knowledge base.",
+                           "parameters": {
+                               "type": "object",
+                               "required": ["query"],
+                               "properties": {
+                                   "query": {
+                                       "type": "string",
+                                       "description": "The search query."
+                                   },
+                                   "searchDepth": {
+                                       "type": "string",
+                                       "description": "The depth of the search. Can be 'basic' (faster) or 'advanced' (more thorough)."
+                                   },
+                                   "includeImages": {
+                                       "type": "boolean",
+                                       "description": "Whether to include images in the response."
+                                   },
+                                   "includeAnswers": {
+                                       "type": "boolean",
+                                       "description": "Whether to include suggested answers."
+                                   },
+                                   "maxResults": {
+                                       "type": "number",
+                                       "description": "The maximum number of results to return (1-20)."
+                                   }
+                               }
+                           }
+                       }
+                   }
+               ]
             },
             {
                 name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
@@ -49,14 +75,40 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
                 tools: [
-                    {
-                        "type": "mcp",
-                        "server_label": "tavily",
-                        // API Key 只是一个占位符，实际的密钥将在后端代理中安全地处理
-                        "server_url": "https://mcp.tavily.com/mcp/?tavilyApiKey=<your-api-key>",
-                        "require_approval": "never",
-                    },
-                ]
+                   {
+                       "type": "function",
+                       "function": {
+                           "name": "tavily.search",
+                           "description": "A tool to search the web for real-time information. Use this when the user asks for current events, facts, or information that is not in your knowledge base.",
+                           "parameters": {
+                               "type": "object",
+                               "required": ["query"],
+                               "properties": {
+                                   "query": {
+                                       "type": "string",
+                                       "description": "The search query."
+                                   },
+                                   "searchDepth": {
+                                       "type": "string",
+                                       "description": "The depth of the search. Can be 'basic' (faster) or 'advanced' (more thorough)."
+                                   },
+                                   "includeImages": {
+                                       "type": "boolean",
+                                       "description": "Whether to include images in the response."
+                                   },
+                                   "includeAnswers": {
+                                       "type": "boolean",
+                                       "description": "Whether to include suggested answers."
+                                   },
+                                   "maxResults": {
+                                       "type": "number",
+                                       "description": "The maximum number of results to return (1-20)."
+                                   }
+                               }
+                           }
+                       }
+                   }
+               ]
             },
         ]
     },
