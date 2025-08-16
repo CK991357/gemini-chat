@@ -186,7 +186,9 @@ export async function handleQwenRequest(request, env) {
           console.log('Adapter flushing tool call event:', toolCallEvent);
           controller.enqueue(new TextEncoder().encode(toolCallEvent));
         }
-        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        // The upstream already sends a [DONE] message, so we don't need to send another one.
+        // Sending a duplicate [DONE] can cause the client to close the connection prematurely.
+        // controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
       }
     });
 
