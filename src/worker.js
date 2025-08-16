@@ -1,23 +1,8 @@
-
-import { handleQwenRequest } from './qwen-agent-adapter.js';
-
 const assetManifest = {};
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-
-    // 全局处理 OPTIONS 预检请求
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          'Access-Control-Max-Age': '86400',
-        },
-      });
-    }
 
     // 处理 WebSocket 连接
     if (request.headers.get('Upgrade') === 'websocket') {
@@ -117,8 +102,7 @@ export default {
       return handleTranslationRequest(request, env);
     }
 
-    if (url.pathname === '/chat' || // 将 /chat 路由到 API 处理器
-        url.pathname.endsWith("/chat/completions") ||
+    if (url.pathname.endsWith("/chat/completions") ||
         url.pathname.endsWith("/embeddings") ||
         url.pathname.endsWith("/models") ||
         url.pathname === '/api/request') {
@@ -152,6 +136,11 @@ export default {
     }
 
 
+
+        // 添加文生图API路由
+        if (url.pathname === '/api/generate-image') {
+            return handleImageGenerationRequest(request, env);
+        }
 
         // ... 其他路由 ...
 
@@ -392,9 +381,33 @@ async function handleAPIRequest(request, env) {
                     }
                 });
             } else if (model === 'Qwen/Qwen3-Coder-480B-A35B-Instruct') {
-                // 任务 T7: 精确路由到 Qwen 适配器以处理工具调用
-                console.log(`DEBUG: Routing to Qwen Agent Adapter for model: ${model}`);
-                return handleQwenRequest(request, env);
+                console.log(`DEBUG: Routing to ModelScope chat proxy for model: ${model}`);
+                const targetUrl = 'https://api-inference.modelscope.cn/v1/chat/completions';
+                const apiKey = env.QWEN_API_KEY;
+
+                if (!apiKey) {
+                    throw new Error('QWEN_API_KEY is not configured in environment variables.');
+                }
+
+                // 直接将请求体转发到中转端点
+                const proxyResponse = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                // 将中转端点的响应（包括流）直接返回给客户端
+                return new Response(proxyResponse.body, {
+                    status: proxyResponse.status,
+                    statusText: proxyResponse.statusText,
+                    headers: {
+                        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                    }
+                });
             } else if (model === 'Qwen/Qwen3-235B-A22B-Thinking-2507') {
                 console.log(`DEBUG: Routing to ModelScope chat proxy for model: ${model}`);
                 const targetUrl = 'https://api-inference.modelscope.cn/v1/chat/completions';
@@ -519,6 +532,54 @@ async function handleTranslationRequest(request, env) {
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*'
             },
+        });
+    }
+}
+
+// 添加文生图API处理函数
+async function handleImageGenerationRequest(request, env) {
+    try {
+        const body = await request.json();
+        const siliconFlowApiToken = env.SF_API_TOKEN; // 从环境变量获取 SiliconFlow API 令牌
+        const siliconFlowApiUrl = "https://api.siliconflow.cn/v1/images/generations";
+
+        if (!siliconFlowApiToken) {
+            throw new Error('SF_API_TOKEN is not configured in environment variables.');
+        }
+
+        const response = await fetch(siliconFlowApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${siliconFlowApiToken}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`SiliconFlow 图像生成API请求失败: ${response.status} - ${JSON.stringify(errorData)}`);
+        }
+
+        const result = await response.json();
+        return new Response(JSON.stringify(result), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*' // 确保CORS头部
+            }
+        });
+
+    } catch (error) {
+        console.error('图像生成API错误:', error);
+        return new Response(JSON.stringify({
+            error: error.message || '图像生成失败',
+            details: error.stack || '无堆栈信息'
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
         });
     }
 }
