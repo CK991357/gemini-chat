@@ -129,7 +129,8 @@ export async function handleQwenRequest(request, env) {
             
             try {
               const data = JSON.parse(dataStr);
-              const textContent = data.choices?.[0]?.delta?.content || data.choices?.[0]?.message?.content || '';
+              // 修正：严格只从 delta.content 中获取流式文本，以避免错误解析初始元数据块。
+              const textContent = data.choices?.[0]?.delta?.content || '';
 
               const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
               const match = textContent.match(toolCodeRegex);
