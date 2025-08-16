@@ -48,22 +48,16 @@ export async function handleQwenRequest(request, env) {
       body.messages = [systemMessage, ...body.messages];
       
       // Task T4: Forward the modified request to ModelScope API
-      const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
+      const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${env.QWEN_API_KEY}`,
-          'X-DashScope-SSE': 'enable'
         },
         body: JSON.stringify({
           model: body.model,
-          input: {
-            messages: body.messages
-          },
-          parameters: {
-            ...body.parameters,
-            stream: true,
-          }
+          messages: body.messages,
+          stream: true,
         })
       });
       
@@ -115,22 +109,16 @@ export async function handleQwenRequest(request, env) {
     }
 
     // If not a tool use request, forward the original request directly
-    const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
+    const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${env.QWEN_API_KEY}`,
-          'X-DashScope-SSE': 'enable'
         },
         body: JSON.stringify({
             model: body.model,
-            input: {
-              messages: body.messages
-            },
-            parameters: {
-              ...body.parameters,
-              stream: true,
-            }
+            messages: body.messages,
+            stream: true,
         })
     });
 
