@@ -43,49 +43,26 @@ export class ToolManager {
     }
 
     /**
-     * Returns the tool declarations for all registered tools, formatted for the specified model.
-     * @param {object} [modelConfig={}] - The configuration of the currently selected model.
-     * @param {boolean} [modelConfig.isQwen=false] - Flag indicating if the model is a Qwen model.
-     * @returns {Object[]} An array of tool declarations formatted for the specified model.
+     * Returns the tool declarations for all registered tools.
+     * These declarations are used by the Gemini API to understand what tools are available.
+     *
+     * @returns {Object[]} An array of tool declarations.
      */
-    getToolDeclarations(modelConfig = {}) {
+    getToolDeclarations() {
         const allDeclarations = [];
         
         this.tools.forEach((tool, name) => {
             if (tool.getDeclaration) {
-                const declaration = tool.getDeclaration();
-                
-                if (modelConfig.isQwen) {
-                    // Qwen expects a simple array of tool objects.
-                    // We also need to adapt the name to include the namespace.
-                    // Assuming 'tavily' for googleSearch and a generic one for weather.
-                    let qwenName = declaration.name;
-                    if (name === 'googleSearch') {
-                        qwenName = `tavily::search`; // Hardcoding namespace for now
-                    }
-                    
+                if (name === 'weather') {
                     allDeclarations.push({
-                        ...declaration,
-                        name: qwenName,
+                        functionDeclarations: tool.getDeclaration()
                     });
-
                 } else {
-                    // Gemini expects a specific nested structure.
-                    if (name === 'weather') {
-                        allDeclarations.push({
-                            functionDeclarations: declaration
-                        });
-                    } else {
-                        // This format seems unusual for Gemini, but preserving original logic.
-                        // A more standard Gemini format would be a flat array of functionDeclarations.
-                        allDeclarations.push({ [name]: declaration });
-                    }
+                    allDeclarations.push({ [name]: tool.getDeclaration() });
                 }
             }
         });
 
-        // For Qwen, we need to ensure it's a flat array of objects, which it is.
-        // For Gemini, the structure is more complex.
         return allDeclarations;
     }
 

@@ -485,8 +485,6 @@ document.addEventListener('DOMContentLoaded', () => {
            MathJax: window.MathJax
        }
    });
-
-   // 任务T5: QwenMcpClient 将在 handleSendMessage 中按需初始化
   });
 
 // State variables
@@ -514,7 +512,6 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
-let qwenMcpClient = null; // 任务T5: 声明qwenMcpClient变量
 
 
 /**
@@ -885,62 +882,74 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
     currentAIMessageContentDiv = null;
 
-    // 构建通用的用户消息部分
-    const userContent = [];
-    if (message) {
-        userContent.push({ type: 'text', text: message });
-    }
-    if (attachedFile) {
-        userContent.push({ type: 'image_url', image_url: { url: attachedFile.base64 } });
-    }
-    chatHistory.push({ role: 'user', content: userContent });
-    attachmentManager.clearAttachedFile('chat');
-
-    // 任务T5: 路由逻辑
-    // 架构修复：统一处理所有 HTTP 模型，包括 Qwen
     if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式 (保持不变)
+        // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
         if (attachedFile) {
             showSystemMessage('实时模式尚不支持文件上传。');
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
             return;
         }
         client.send({ text: message });
     } else {
-        // 所有 HTTP 模式 (包括 Gemini, Qwen 等)
-        // 架构统一：所有HTTP模型（包括Gemini和Qwen）都通过同一个chatApiHandler发送请求。
-        // 不再有特殊的、基于模型名称的前端路由。
-        // Qwen的工具调用逻辑将完全由后端的qwen-agent-adapter.js和前端的chat-api.js在接收到tool_code事件时处理。
+        // HTTP 模式下发送消息
         try {
             const apiKey = apiKeyInput.value;
+            const modelName = selectedModelConfig.name;
+            const systemInstruction = systemInstructionInput.value;
+
+            // 构建消息内容，参考 OCR 项目的成功实践
+            const userContent = [];
+            if (message) {
+                userContent.push({ type: 'text', text: message });
+            }
+            if (attachedFile) {
+                // 参考项目使用 image_url 并传递完整的 Data URL
+                userContent.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: attachedFile.base64
+                    }
+                });
+            }
+
+            chatHistory.push({
+                role: 'user',
+                content: userContent // 保持为数组，因为可能包含文本和图片
+            });
+
+            // 清除附件（发送后）
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
+
             let requestBody = {
-                model: selectedModelConfig.name,
+                model: modelName,
                 messages: chatHistory,
-                // CRITICAL FIX: Add the tool declarations to ALL HTTP requests.
-                // Pass the selected model config to format the tools correctly.
-                tools: toolManager.getToolDeclarations(selectedModelConfig),
-                generationConfig: { responseModalities: ['text'] },
+                generationConfig: {
+                    responseModalities: ['text']
+                },
                 safetySettings: [
                     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
                     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
                 ],
-                enableGoogleSearch: true, // Note: This is a Gemini-specific flag, Qwen adapter will ignore it.
+                enableGoogleSearch: true,
                 stream: true,
                 sessionId: currentSessionId
             };
-            if (systemInstructionInput.value) {
-                requestBody.systemInstruction = { parts: [{ text: systemInstructionInput.value }] };
+
+            if (systemInstruction) {
+                requestBody.systemInstruction = {
+                    parts: [{ text: systemInstruction }]
+                };
             }
-            
-            // 统一调用 chatApiHandler，它会处理所有HTTP模型的SSE流
+
             await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 
         } catch (error) {
             Logger.error('发送 HTTP 消息失败:', error);
             chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
         }
-    }
+        }
         }
         
         // Event Listeners
