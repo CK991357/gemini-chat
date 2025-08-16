@@ -63,41 +63,64 @@ export async function handleQwenRequest(request, env) {
       
       // Task T5 & T6: Intercept, parse the stream, and format the response
       let toolCall = null;
+      let buffer = '';
       const transformStream = new TransformStream({
         transform(chunk, controller) {
           const decoder = new TextDecoder();
-          const text = decoder.decode(chunk);
-          
-          // Simple buffer and regex to find the tool code block
-          // A more robust solution might handle streaming XML parsing
-          const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
-          const match = text.match(toolCodeRegex);
+          buffer += decoder.decode(chunk, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // Keep the last partial line in the buffer
 
-          if (match && match[1]) {
-            try {
-              toolCall = JSON.parse(match[1].trim());
-              // Remove the tool code from the output stream so it's not displayed
-              const cleanedText = text.replace(toolCodeRegex, '');
-              if (cleanedText) {
-                controller.enqueue(new TextEncoder().encode(cleanedText));
+          for (const line of lines) {
+            if (line.trim().startsWith('data:')) {
+              const dataStr = line.substring(5).trim();
+              if (dataStr === '[DONE]') {
+                // Pass [DONE] message through
+                controller.enqueue(new TextEncoder().encode(line + '\n'));
+                continue;
               }
-            } catch (e) {
-              console.error("Failed to parse tool code JSON:", e);
-              // If parsing fails, pass the original text through
-              controller.enqueue(chunk);
+              
+              try {
+                const data = JSON.parse(dataStr);
+                // ModelScope streams text content in `data.choices[0].delta.content`
+                const textContent = data.choices?.[0]?.delta?.content || '';
+
+                const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
+                const match = textContent.match(toolCodeRegex);
+
+                if (match && match[1]) {
+                  // Found a tool call within the text content
+                  toolCall = JSON.parse(match[1].trim());
+                  console.log('Adapter found and parsed tool call:', toolCall);
+                  // Do not enqueue this chunk, as we will send a single tool_code event on flush
+                  // We can stop processing further text chunks from the model
+                  return; // Exit the transform function early
+                } else {
+                  // No tool call found, pass the original SSE event through
+                  controller.enqueue(new TextEncoder().encode(line + '\n'));
+                }
+              } catch (e) {
+                console.warn('Adapter failed to parse SSE chunk, passing through:', dataStr, e);
+                // Pass through malformed or non-JSON data lines
+                controller.enqueue(new TextEncoder().encode(line + '\n'));
+              }
+            } else if (line.trim()) {
+              // Pass through other non-empty lines (like comments or empty data lines)
+              controller.enqueue(new TextEncoder().encode(line + '\n'));
             }
-          } else {
-            // If no tool code found, just pass the chunk through
-            controller.enqueue(chunk);
           }
         },
         flush(controller) {
           // After the stream is finished, if we found a tool call,
-          // we send a special SSE event to the client.
+          // we send a single, well-formatted SSE event to the client.
           if (toolCall) {
-            const toolCallEvent = `event: tool_code\ndata: ${JSON.stringify({ tool_code: toolCall })}\n\n`;
+            const toolCallPayload = { tool_code: toolCall };
+            const toolCallEvent = `data: ${JSON.stringify(toolCallPayload)}\n\n`;
+            console.log('Adapter flushing tool call event:', toolCallEvent);
             controller.enqueue(new TextEncoder().encode(toolCallEvent));
           }
+          // Always send the [DONE] message to properly close the client-side stream
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
         }
       });
 
