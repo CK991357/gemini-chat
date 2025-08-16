@@ -99,10 +99,6 @@ export async function handleQwenRequest(request, env) {
         max_tokens: 65536
     };
       
-    // --- DIAGNOSTIC LOGGING START ---
-    console.log("Qwen Adapter: Sending final request body to ModelScope:", JSON.stringify(modelScopeBody, null, 2));
-    // --- DIAGNOSTIC LOGGING END ---
-
     // Forward the modified request to ModelScope API
     const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
       method: 'POST',
@@ -113,82 +109,58 @@ export async function handleQwenRequest(request, env) {
       body: JSON.stringify(modelScopeBody)
     });
 
-    // --- DIAGNOSTIC LOGGING START ---
     if (!response.ok) {
         const errorBody = await response.text();
         console.error(`Qwen Adapter: ModelScope API returned an error. Status: ${response.status}, Body: ${errorBody}`);
+        // Pass the error response to the client
+        return new Response(errorBody, {
+            status: response.status,
+            headers: { 'Access-Control-Allow-Origin': '*' }
+        });
     }
-    console.log(`Qwen Adapter: Received response from ModelScope with status: ${response.status}`);
-    // --- DIAGNOSTIC LOGGING END ---
       
-    // Intercept, parse the stream, and format the response
+    // Simplified TransformStream for binary decision: tool call or passthrough.
     let toolCall = null;
-    let buffer = '';
+    let fullResponseText = '';
+    let passthrough = true; // Assume passthrough until a tool call is definitively found.
+
     const transformStream = new TransformStream({
-      transform(chunk, controller) {
+      async transform(chunk, controller) {
         const decoder = new TextDecoder();
-        const rawText = decoder.decode(chunk, { stream: true });
-        
-        // --- DIAGNOSTIC LOGGING START ---
-        console.log("Qwen Adapter: Received raw chunk from ModelScope:", rawText);
-        // --- DIAGNOSTIC LOGGING END ---
+        const text = decoder.decode(chunk);
+        fullResponseText += text;
 
-        buffer += rawText;
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // Keep the last partial line in the buffer
-
-        for (const line of lines) {
-          if (line.trim().startsWith('data:')) {
-            const dataStr = line.substring(5).trim();
-            if (dataStr === '[DONE]') {
-              controller.enqueue(new TextEncoder().encode(line + '\n'));
-              continue;
-            }
-            
-            try {
-              const data = JSON.parse(dataStr);
-              // 修正：严格只从 delta.content 中获取流式文本，以避免错误解析初始元数据块。
-              const textContent = data.choices?.[0]?.delta?.content || '';
-
-              const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
-              const match = textContent.match(toolCodeRegex);
-
-              if (match && match[1]) {
-                toolCall = JSON.parse(match[1].trim());
-                console.log('Adapter found and parsed tool call:', toolCall);
-                // Clean the text content by removing the tool code block
-                const cleanedText = textContent.replace(toolCodeRegex, '').trim();
-                if (cleanedText) {
-                    // If there's text besides the tool call, send it
-                    const cleanedData = { ...data };
-                    if (cleanedData.choices[0].delta) cleanedData.choices[0].delta.content = cleanedText;
-                    if (cleanedData.choices[0].message) cleanedData.choices[0].message.content = cleanedText;
-                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(cleanedData)}\n`));
-                }
-                return;
-              } else {
-                // No tool call found, pass the original SSE event through
-                controller.enqueue(new TextEncoder().encode(line + '\n'));
-              }
-            } catch (e) {
-              console.warn('Adapter failed to parse SSE chunk, passing through:', dataStr, e);
-              controller.enqueue(new TextEncoder().encode(line + '\n'));
-            }
-          } else if (line.trim()) {
-            controller.enqueue(new TextEncoder().encode(line + '\n'));
-          }
+        // Check for tool code in the accumulated text
+        const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
+        if (toolCodeRegex.test(fullResponseText)) {
+          // Tool call detected. Stop forwarding chunks and prepare for flush.
+          passthrough = false;
+        } else if (passthrough) {
+          // If no tool call has been detected yet, forward the original chunk.
+          controller.enqueue(chunk);
         }
       },
       flush(controller) {
-        if (toolCall) {
-          const toolCallPayload = { tool_code: toolCall };
-          const toolCallEvent = `data: ${JSON.stringify(toolCallPayload)}\n\n`;
-          console.log('Adapter flushing tool call event:', toolCallEvent);
-          controller.enqueue(new TextEncoder().encode(toolCallEvent));
+        if (!passthrough) {
+          // A tool call was detected during the stream. Extract it now from the full text.
+          const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
+          const match = fullResponseText.match(toolCodeRegex);
+          if (match && match[1]) {
+            try {
+              toolCall = JSON.parse(match[1].trim());
+              const toolCallPayload = { tool_code: toolCall };
+              const toolCallEvent = `data: ${JSON.stringify(toolCallPayload)}\n\n`;
+              controller.enqueue(new TextEncoder().encode(toolCallEvent));
+            } catch (e) {
+              console.error("Adapter failed to parse tool code JSON on flush:", e);
+              // Fallback: if parsing fails, send an error message
+              const errorPayload = { error: "Failed to parse tool code from model response." };
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorPayload)}\n\n`));
+            }
+          }
         }
-        // The upstream already sends a [DONE] message, so we don't need to send another one.
-        // Sending a duplicate [DONE] can cause the client to close the connection prematurely.
-        // controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        // Always send [DONE] at the very end.
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
       }
     });
 
