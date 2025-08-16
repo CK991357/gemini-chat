@@ -895,7 +895,12 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
         try {
             const apiKey = apiKeyInput.value;
             const modelName = selectedModelConfig.name;
-            const systemInstruction = systemInstructionInput.value;
+            let systemInstruction = systemInstructionInput.value;
+
+            // 如果是 Qwen 模型，则自动附加工具提示词
+            if (selectedModelConfig.isQwen) {
+                systemInstruction = CONFIG.QWEN_TOOL_PROMPT + '\n\n' + systemInstruction;
+            }
 
             // 构建消息内容，参考 OCR 项目的成功实践
             const userContent = [];
@@ -941,6 +946,11 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 requestBody.systemInstruction = {
                     parts: [{ text: systemInstruction }]
                 };
+            }
+
+            // 动态添加工具定义，统一处理所有 Qwen 模型
+            if (selectedModelConfig && selectedModelConfig.isQwen && selectedModelConfig.tools) {
+                requestBody.tools = selectedModelConfig.tools;
             }
 
             await chatApiHandler.streamChatCompletion(requestBody, apiKey);

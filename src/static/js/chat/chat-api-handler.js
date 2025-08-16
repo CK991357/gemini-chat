@@ -83,7 +83,14 @@ export class ChatApiHandler {
                             const data = JSON.parse(jsonStr);
                             if (data.choices && data.choices.length > 0) {
                                 const choice = data.choices[0];
-                                if (choice.delta) {
+                                if (data.tool_code) {
+                                    // Qwen MCP Tool Call Detected
+                                    functionCallDetected = true;
+                                    currentFunctionCall = data.tool_code; // Store the tool_code object
+                                    Logger.info('Qwen MCP tool call detected:', currentFunctionCall);
+                                    chatUI.logMessage(`模型请求 MCP 工具: ${currentFunctionCall.tool_name}`, 'system');
+                                    if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
+                                } else if (choice.delta) {
                                     const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
 
                                     if (choice.delta.reasoning_content) {
@@ -137,6 +144,7 @@ export class ChatApiHandler {
             }
 
             if (functionCallDetected && currentFunctionCall) {
+                // 将最终的文本部分（如果有）保存到历史记录
                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
                     this.state.chatHistory.push({
                         role: 'assistant',
@@ -145,72 +153,15 @@ export class ChatApiHandler {
                 }
                 this.state.currentAIMessageContentDiv = null;
 
-                try {
-                    this.state.isUsingTool = true;
-                    chatUI.logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
-                    const toolResult = await this.toolManager.handleToolCall(currentFunctionCall);
-                    const toolResponsePart = toolResult.functionResponses[0].response.output;
-
-                    this.state.chatHistory.push({
-                        role: 'assistant',
-                        parts: [{
-                            functionCall: {
-                                name: currentFunctionCall.name,
-                                args: currentFunctionCall.args
-                            }
-                        }]
-                    });
-
-                    this.state.chatHistory.push({
-                        role: 'tool',
-                        parts: [{
-                            functionResponse: {
-                                name: currentFunctionCall.name,
-                                response: toolResponsePart
-                            }
-                        }]
-                    });
-
-                    await this.streamChatCompletion({
-                        ...requestBody,
-                        messages: this.state.chatHistory,
-                        tools: this.toolManager.getToolDeclarations(),
-                        sessionId: this.state.currentSessionId
-                    }, apiKey);
-
-                } catch (toolError) {
-                    Logger.error('工具执行失败:', toolError);
-                    chatUI.logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                    
-                    this.state.chatHistory.push({
-                        role: 'assistant',
-                        parts: [{
-                            functionCall: {
-                                name: currentFunctionCall.name,
-                                args: currentFunctionCall.args
-                            }
-                        }]
-                    });
-
-                    this.state.chatHistory.push({
-                        role: 'tool',
-                        parts: [{
-                            functionResponse: {
-                                name: currentFunctionCall.name,
-                                response: { error: toolError.message }
-                            }
-                        }]
-                    });
-
-                    await this.streamChatCompletion({
-                        ...requestBody,
-                        messages: this.state.chatHistory,
-                        tools: this.toolManager.getToolDeclarations(),
-                        sessionId: this.state.currentSessionId
-                    }, apiKey);
-                } finally {
-                    this.state.isUsingTool = false;
+                // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
+                if (currentFunctionCall.tool_name) {
+                    // Qwen MCP Tool Call
+                    await this._handleMcpToolCall(currentFunctionCall, requestBody, apiKey);
+                } else {
+                    // Gemini Function Call
+                    await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey);
                 }
+
             } else {
                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
                     this.state.chatHistory.push({
@@ -230,6 +181,131 @@ export class ChatApiHandler {
                 this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
             }
             this.state.currentAIMessageContentDiv = null;
+        }
+    }
+
+    /**
+     * @private
+     * @description Handles the execution of a Gemini tool call.
+     * @param {object} functionCall - The Gemini function call object.
+     * @param {object} requestBody - The original request body.
+     * @param {string} apiKey - The API key.
+     * @returns {Promise<void>}
+     */
+    _handleGeminiToolCall = async (functionCall, requestBody, apiKey) => {
+        try {
+            this.state.isUsingTool = true;
+            chatUI.logMessage(`执行 Gemini 工具: ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
+            const toolResult = await this.toolManager.handleToolCall(functionCall);
+            const toolResponsePart = toolResult.functionResponses[0].response.output;
+
+            this.state.chatHistory.push({
+                role: 'assistant',
+                parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
+            });
+
+            this.state.chatHistory.push({
+                role: 'tool',
+                parts: [{ functionResponse: { name: functionCall.name, response: toolResponsePart } }]
+            });
+
+            await this.streamChatCompletion({
+                ...requestBody,
+                messages: this.state.chatHistory,
+                tools: this.toolManager.getToolDeclarations(),
+                sessionId: this.state.currentSessionId
+            }, apiKey);
+
+        } catch (toolError) {
+            Logger.error('Gemini 工具执行失败:', toolError);
+            chatUI.logMessage(`Gemini 工具执行失败: ${toolError.message}`, 'system');
+            this.state.chatHistory.push({
+                role: 'assistant',
+                parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
+            });
+            this.state.chatHistory.push({
+                role: 'tool',
+                parts: [{ functionResponse: { name: functionCall.name, response: { error: toolError.message } } }]
+            });
+            await this.streamChatCompletion({
+                ...requestBody,
+                messages: this.state.chatHistory,
+                tools: this.toolManager.getToolDeclarations(),
+                sessionId: this.state.currentSessionId
+            }, apiKey);
+        } finally {
+            this.state.isUsingTool = false;
+        }
+    }
+
+    /**
+     * @private
+     * @description Handles the execution of a Qwen MCP tool call via the backend proxy.
+     * @param {object} toolCode - The tool_code object from the Qwen model.
+     * @param {object} requestBody - The original request body.
+     * @param {string} apiKey - The API key.
+     * @returns {Promise<void>}
+     */
+    _handleMcpToolCall = async (toolCode, requestBody, apiKey) => {
+        try {
+            this.state.isUsingTool = true;
+            // 显示工具调用状态UI
+            chatUI.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
+            chatUI.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
+
+            // 调用后端代理
+            const proxyResponse = await fetch('/api/mcp-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(toolCode)
+            });
+
+            if (!proxyResponse.ok) {
+                const errorData = await proxyResponse.json();
+                throw new Error(`MCP 代理请求失败: ${errorData.details || proxyResponse.statusText}`);
+            }
+
+            const toolResult = await proxyResponse.json();
+            
+            // 将模型思考过程（即 tool_code 本身）和工具结果添加到历史记录
+            this.state.chatHistory.push({
+                role: 'assistant',
+                content: `<tool_code>${JSON.stringify(toolCode, null, 2)}</tool_code>`
+            });
+
+            this.state.chatHistory.push({
+                role: 'tool',
+                content: JSON.stringify(toolResult)
+            });
+
+            // 再次调用模型以获得最终答案
+            await this.streamChatCompletion({
+                ...requestBody,
+                messages: this.state.chatHistory,
+                // 确保再次传递工具定义，以防需要连续调用
+                tools: requestBody.tools
+            }, apiKey);
+
+        } catch (toolError) {
+            Logger.error('MCP 工具执行失败:', toolError);
+            chatUI.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
+            // 即使失败，也要将失败信息加入历史记录
+            this.state.chatHistory.push({
+                role: 'assistant',
+                content: `<tool_code>${JSON.stringify(toolCode, null, 2)}</tool_code>`
+            });
+            this.state.chatHistory.push({
+                role: 'tool',
+                content: JSON.stringify({ error: toolError.message })
+            });
+            // 再次调用模型，让它知道工具失败了
+            await this.streamChatCompletion({
+                ...requestBody,
+                messages: this.state.chatHistory,
+                tools: requestBody.tools
+            }, apiKey);
+        } finally {
+            this.state.isUsingTool = false;
         }
     }
 }

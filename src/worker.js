@@ -1,3 +1,5 @@
+import { handleMcpProxyRequest } from './static/js/agent/qwen-agent-adapter.js';
+
 const assetManifest = {};
 
 export default {
@@ -112,6 +114,11 @@ export default {
     // 处理历史记录API请求
     if (url.pathname.startsWith('/api/history/')) {
       return handleHistoryRequest(request, env);
+    }
+
+    // 新增：处理 MCP 工具调用代理请求
+    if (url.pathname === '/api/mcp-proxy') {
+      return handleMcpProxyRequest(request, env);
     }
  
     // 处理静态资源

@@ -247,3 +247,30 @@ export function scrollToBottom() {
         elements.messageHistory.scrollTop = elements.messageHistory.scrollHeight;
     });
 }
+
+/**
+ * @function displayToolCallStatus
+ * @description 在聊天记录中显示一个工具调用状态的UI提示。
+ * @param {string} toolName - 正在调用的工具名称。
+ * @param {object} args - 传递给工具的参数。
+ * @returns {void}
+ */
+export function displayToolCallStatus(toolName, args) {
+    if (!elements.messageHistory) return;
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'tool-call-status';
+
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined';
+    icon.textContent = 'settings'; // 使用一个合适的图标
+
+    const text = document.createElement('span');
+    // 为了UI简洁，只显示工具名
+    text.textContent = `正在调用工具: ${toolName}...`;
+
+    statusDiv.appendChild(icon);
+    statusDiv.appendChild(text);
+
+    elements.messageHistory.appendChild(statusDiv);
+    scrollToBottom();
+}
