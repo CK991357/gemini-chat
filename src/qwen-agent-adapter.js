@@ -102,9 +102,12 @@ export async function handleQwenRequest(request, env) {
       });
 
       const newBody = response.body.pipeThrough(transformStream);
+      const newHeaders = new Headers(response.headers);
+      newHeaders.set('Access-Control-Allow-Origin', '*');
+
       return new Response(newBody, {
         status: response.status,
-        headers: response.headers,
+        headers: newHeaders,
       });
     }
 
@@ -122,7 +125,12 @@ export async function handleQwenRequest(request, env) {
         })
     });
 
-    return response;
+    const newHeaders = new Headers(response.headers);
+    newHeaders.set('Access-Control-Allow-Origin', '*');
+    return new Response(response.body, {
+        status: response.status,
+        headers: newHeaders
+    });
 
   } catch (error) {
     console.error('Error in Qwen Agent Adapter:', error);
