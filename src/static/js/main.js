@@ -7,7 +7,6 @@ import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
-import { QwenMcpClient } from './mcp.js'; // 任务T5: 导入QwenMcpClient
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
@@ -908,85 +907,35 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
         client.send({ text: message });
     } else {
         // 所有 HTTP 模式 (包括 Gemini, Qwen 等)
-        if (selectedModelConfig.name === 'Qwen/Qwen3-Coder-480B-A35B-Instruct') {
-            // 如果是 Qwen Coder 模型，使用 MCP 客户端处理工具调用
-            // 按需初始化 QwenMcpClient
-            if (!qwenMcpClient) {
-                chatUI.logMessage('首次使用Qwen，正在初始化MCP客户端...', 'system');
-                qwenMcpClient = new QwenMcpClient({
-                    tavilyServerUrl: 'https://tavilymcp.10110531.xyz',
-                    callbacks: {
-                        logMessage: chatUI.logMessage,
-                        createAIMessageElement: chatUI.createAIMessageElement,
-                        scrollToBottom: chatUI.scrollToBottom,
-                        onToolStart: (toolCall) => {
-                            const el = chatUI.createAIMessageElement();
-                            // 安全地访问 tool_name
-                            const toolName = toolCall && toolCall.tool_name ? toolCall.tool_name.split('::')[1] || toolCall.tool_name : '未知工具';
-                            el.contentDiv.innerHTML = `<div class="tool-call-status">正在使用工具: <strong>${toolName}</strong>...</div>`;
-                            return el;
-                        },
-                        onToolEnd: (element, toolResult) => {
-                             // 安全地访问 tool_name
-                            const toolName = toolResult && toolResult.tool_name ? toolResult.tool_name.split('::')[1] || toolResult.tool_name : '未知工具';
-                            element.contentDiv.innerHTML = `<div class="tool-call-status">✅ 工具 <strong>${toolName}</strong> 调用完成。</div>`;
-                        },
-                        onUpdateContent: (element, content) => {
-                            element.markdownContainer.innerHTML = marked.parse(content);
-                            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                MathJax.startup.promise.then(() => {
-                                    MathJax.typeset([element.markdownContainer]);
-                                }).catch((err) => console.error('MathJax typesetting failed:', err));
-                            }
-                            chatUI.scrollToBottom();
-                        },
-                        onComplete: (finalContent) => {
-                            chatHistory.push({ role: 'assistant', content: finalContent });
-                            historyManager.saveHistory();
-                        },
-                        onError: (errorMessage) => {
-                            chatUI.logMessage(errorMessage, 'system');
-                        }
-                    }
-                });
-                await qwenMcpClient.initialize();
-            }
-
-            // 准备 Qwen 请求体
-            const requestBody = {
+        // 架构统一：所有HTTP模型（包括Gemini和Qwen）都通过同一个chatApiHandler发送请求。
+        // 不再有特殊的、基于模型名称的前端路由。
+        // Qwen的工具调用逻辑将完全由后端的qwen-agent-adapter.js和前端的chat-api.js在接收到tool_code事件时处理。
+        try {
+            const apiKey = apiKeyInput.value;
+            let requestBody = {
                 model: selectedModelConfig.name,
                 messages: chatHistory,
-                systemInstruction: { parts: [{ text: systemInstructionInput.value }] },
+                generationConfig: { responseModalities: ['text'] },
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
+                ],
+                enableGoogleSearch: true, // Note: This is a Gemini-specific flag, Qwen adapter will ignore it.
+                stream: true,
+                sessionId: currentSessionId
             };
-            // 调用 MCP 客户端，它内部会处理工具调用流程
-            await qwenMcpClient.sendMessage(requestBody);
-
-        } else {
-            // 其他 HTTP 模型 (例如 Gemini)，使用旧的 chatApiHandler
-            try {
-                const apiKey = apiKeyInput.value;
-                let requestBody = {
-                    model: selectedModelConfig.name,
-                    messages: chatHistory,
-                    generationConfig: { responseModalities: ['text'] },
-                    safetySettings: [
-                        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
-                    ],
-                    enableGoogleSearch: true,
-                    stream: true,
-                    sessionId: currentSessionId
-                };
-                if (systemInstructionInput.value) {
-                    requestBody.systemInstruction = { parts: [{ text: systemInstructionInput.value }] };
-                }
-                await chatApiHandler.streamChatCompletion(requestBody, apiKey);
-            } catch (error) {
-                Logger.error('发送 HTTP 消息失败:', error);
-                chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
+            if (systemInstructionInput.value) {
+                requestBody.systemInstruction = { parts: [{ text: systemInstructionInput.value }] };
             }
+            
+            // 统一调用 chatApiHandler，它会处理所有HTTP模型的SSE流
+            await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+
+        } catch (error) {
+            Logger.error('发送 HTTP 消息失败:', error);
+            chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
         }
     }
         }

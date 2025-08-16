@@ -118,19 +118,59 @@ export async function handleQwenRequest(request, env) {
             headers: { 'Access-Control-Allow-Origin': '*' }
         });
     }
+      
+    // Simplified TransformStream for binary decision: tool call or passthrough.
+    let toolCall = null;
+    let fullResponseText = '';
+    let passthrough = true; // Assume passthrough until a tool call is definitively found.
 
-    // Per user feedback, temporarily removing all tool-use logic to establish a stable baseline for chat.
-    // We will now act as a pure proxy for the response stream, only adding the necessary CORS header.
-    
-    // Create a new Headers object from the original response to make it mutable.
-    const headers = new Headers(response.headers);
-    headers.set('Access-Control-Allow-Origin', '*');
+    const transformStream = new TransformStream({
+      async transform(chunk, controller) {
+        const decoder = new TextDecoder();
+        const text = decoder.decode(chunk);
+        fullResponseText += text;
 
-    // Return a new response, passing the original stream directly through, but with our modified headers.
-    return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: headers
+        // Check for tool code in the accumulated text
+        const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
+        if (toolCodeRegex.test(fullResponseText)) {
+          // Tool call detected. Stop forwarding chunks and prepare for flush.
+          passthrough = false;
+        } else if (passthrough) {
+          // If no tool call has been detected yet, forward the original chunk.
+          controller.enqueue(chunk);
+        }
+      },
+      flush(controller) {
+        if (!passthrough) {
+          // A tool call was detected during the stream. Extract it now from the full text.
+          const toolCodeRegex = /<tool_code>([\s\S]*?)<\/tool_code>/;
+          const match = fullResponseText.match(toolCodeRegex);
+          if (match && match[1]) {
+            try {
+              toolCall = JSON.parse(match[1].trim());
+              const toolCallPayload = { tool_code: toolCall };
+              const toolCallEvent = `data: ${JSON.stringify(toolCallPayload)}\n\n`;
+              controller.enqueue(new TextEncoder().encode(toolCallEvent));
+            } catch (e) {
+              console.error("Adapter failed to parse tool code JSON on flush:", e);
+              // Fallback: if parsing fails, send an error message
+              const errorPayload = { error: "Failed to parse tool code from model response." };
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorPayload)}\n\n`));
+            }
+          }
+        }
+        // Always send [DONE] at the very end.
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+      }
+    });
+
+    const newBody = response.body.pipeThrough(transformStream);
+    const newHeaders = new Headers(response.headers);
+    newHeaders.set('Access-Control-Allow-Origin', '*');
+
+    return new Response(newBody, {
+      status: response.status,
+      headers: newHeaders,
     });
 
   } catch (error) {

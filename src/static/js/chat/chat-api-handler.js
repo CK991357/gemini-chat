@@ -1,45 +1,29 @@
+import { QwenMcpClient } from '../mcp.js'; // Import Qwen MCP Client
 import { Logger } from '../utils/logger.js';
 import * as chatUI from './chat-ui.js';
 
 /**
  * @class ChatApiHandler
  * @description Handles the business logic for chat API interactions,
- * including processing streaming responses and managing tool calls.
+ * including processing streaming responses and managing tool calls for both Gemini and Qwen.
  */
 export class ChatApiHandler {
-    /**
-     * @constructor
-     * @param {object} dependencies - The dependencies required by the handler.
-     * @param {ToolManager} dependencies.toolManager - The tool manager instance.
-     * @param {HistoryManager} dependencies.historyManager - The history manager instance.
-     * @param {object} dependencies.state - A state object containing shared variables.
-     * @param {Array} dependencies.state.chatHistory - The chat history array.
-     * @param {string|null} dependencies.state.currentSessionId - The current session ID.
-     * @param {HTMLElement|null} dependencies.state.currentAIMessageContentDiv - The current AI message container.
-     * @param {boolean} dependencies.state.isUsingTool - Flag indicating if a tool is in use.
-     * @param {object} dependencies.libs - External libraries.
-     * @param {object} dependencies.libs.marked - The marked.js library instance.
-     * @param {object} dependencies.libs.MathJax - The MathJax library instance.
-     */
     constructor({ toolManager, historyManager, state, libs }) {
         this.toolManager = toolManager;
         this.historyManager = historyManager;
         this.state = state;
         this.libs = libs;
+        this.qwenMcpClient = null; // To be initialized on demand for Qwen tool calls
     }
 
-    /**
-     * Processes an HTTP Server-Sent Events (SSE) stream from the chat completions API.
-     * It handles text accumulation, UI updates, and tool calls.
-     * @param {object} requestBody - The request body to be sent to the model.
-     * @param {string} apiKey - The API key for authorization.
-     * @returns {Promise<void>}
-     */
     async streamChatCompletion(requestBody, apiKey) {
-        let currentMessages = requestBody.messages;
+        // Reset state for the new message
+        this.state.currentAIMessageContentDiv = null;
+        let isToolResponseFollowUp = requestBody.messages.some(msg => msg.role === 'tool');
 
         try {
-            const response = await fetch('/api/chat/completions', {
+            // Use the correct endpoint. The worker will route based on the model name.
+            const response = await fetch('/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -49,21 +33,14 @@ export class ChatApiHandler {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`HTTP API 请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
+                const errorText = await response.text();
+                throw new Error(`API request failed: ${response.status} - ${errorText}`);
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
-            let functionCallDetected = false;
-            let currentFunctionCall = null;
-            let reasoningStarted = false;
-            let answerStarted = false;
-
-            const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-            if (!isToolResponseFollowUp) {
-                this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
-            }
+            let buffer = '';
+            let geminiFunctionCall = null;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -72,164 +49,173 @@ export class ChatApiHandler {
                     break;
                 }
 
-                const chunk = decoder.decode(value, { stream: true });
-                chunk.split('\n\n').forEach(part => {
-                    if (part.startsWith('data: ')) {
-                        const jsonStr = part.substring(6);
-                        if (jsonStr === '[DONE]') {
-                            return;
-                        }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (line.trim().startsWith('data:')) {
+                        const jsonStr = line.substring(5).trim();
+                        if (jsonStr === '[DONE]') continue;
+
                         try {
                             const data = JSON.parse(jsonStr);
-                            if (data.choices && data.choices.length > 0) {
-                                const choice = data.choices[0];
-                                if (choice.delta) {
-                                    const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
 
-                                    if (choice.delta.reasoning_content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
-                                        if (!reasoningStarted) {
-                                            this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                            reasoningStarted = true;
-                                        }
-                                        this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
-                                    }
-                                    
-                                    if (functionCallPart) {
-                                        functionCallDetected = true;
-                                        currentFunctionCall = functionCallPart.functionCall;
-                                        Logger.info('Function call detected:', currentFunctionCall);
-                                        chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                        if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
-                                    }
-                                    else if (choice.delta.content) {
-                                        if (!functionCallDetected) {
-                                            if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
-                                            
-                                            if (reasoningStarted && !answerStarted) {
-                                                const separator = document.createElement('hr');
-                                                separator.className = 'answer-separator';
-                                                this.state.currentAIMessageContentDiv.markdownContainer.before(separator);
-                                                answerStarted = true;
-                                            }
+                            // --- DECISION POINT ---
+                            // 1. Check for Qwen Tool Call
+                            if (data.tool_code) {
+                                await this.handleQwenToolCall(data.tool_code, requestBody);
+                                return; // Qwen MCP client handles the rest of the flow
+                            }
 
-                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                            this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(this.state.currentAIMessageContentDiv.rawMarkdownBuffer);
-                                            
-                                            if (typeof this.libs.MathJax !== 'undefined' && this.libs.MathJax.startup) {
-                                                this.libs.MathJax.startup.promise.then(() => {
-                                                    this.libs.MathJax.typeset([this.state.currentAIMessageContentDiv.markdownContainer, this.state.currentAIMessageContentDiv.reasoningContainer]);
-                                                }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                            }
-                                            chatUI.scrollToBottom();
-                                        }
-                                    }
+                            // 2. Check for Gemini Tool Call (existing logic)
+                            const choice = data.choices?.[0];
+                            const functionCallPart = choice?.delta?.parts?.find(p => p.functionCall);
+                            if (functionCallPart) {
+                                geminiFunctionCall = functionCallPart.functionCall;
+                                continue; // Accumulate function call parts if necessary
+                            }
+
+                            // 3. Process as regular text content
+                            const textContent = choice?.delta?.content || '';
+                            if (textContent) {
+                                if (!this.state.currentAIMessageContentDiv) {
+                                    this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
                                 }
+                                this.state.currentAIMessageContentDiv.rawMarkdownBuffer += textContent;
+                                this.renderMarkdown();
                             }
-                            if (data.usage) {
-                                Logger.info('Usage:', data.usage);
-                            }
+
                         } catch (e) {
                             Logger.error('Error parsing SSE chunk:', e, jsonStr);
                         }
                     }
-                });
+                }
             }
 
-            if (functionCallDetected && currentFunctionCall) {
-                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
-                    this.state.chatHistory.push({
-                        role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
-                    });
-                }
-                this.state.currentAIMessageContentDiv = null;
-
-                try {
-                    this.state.isUsingTool = true;
-                    chatUI.logMessage(`执行工具: ${currentFunctionCall.name} with args: ${JSON.stringify(currentFunctionCall.args)}`, 'system');
-                    const toolResult = await this.toolManager.handleToolCall(currentFunctionCall);
-                    const toolResponsePart = toolResult.functionResponses[0].response.output;
-
-                    this.state.chatHistory.push({
-                        role: 'assistant',
-                        parts: [{
-                            functionCall: {
-                                name: currentFunctionCall.name,
-                                args: currentFunctionCall.args
-                            }
-                        }]
-                    });
-
-                    this.state.chatHistory.push({
-                        role: 'tool',
-                        parts: [{
-                            functionResponse: {
-                                name: currentFunctionCall.name,
-                                response: toolResponsePart
-                            }
-                        }]
-                    });
-
-                    await this.streamChatCompletion({
-                        ...requestBody,
-                        messages: this.state.chatHistory,
-                        tools: this.toolManager.getToolDeclarations(),
-                        sessionId: this.state.currentSessionId
-                    }, apiKey);
-
-                } catch (toolError) {
-                    Logger.error('工具执行失败:', toolError);
-                    chatUI.logMessage(`工具执行失败: ${toolError.message}`, 'system');
-                    
-                    this.state.chatHistory.push({
-                        role: 'assistant',
-                        parts: [{
-                            functionCall: {
-                                name: currentFunctionCall.name,
-                                args: currentFunctionCall.args
-                            }
-                        }]
-                    });
-
-                    this.state.chatHistory.push({
-                        role: 'tool',
-                        parts: [{
-                            functionResponse: {
-                                name: currentFunctionCall.name,
-                                response: { error: toolError.message }
-                            }
-                        }]
-                    });
-
-                    await this.streamChatCompletion({
-                        ...requestBody,
-                        messages: this.state.chatHistory,
-                        tools: this.toolManager.getToolDeclarations(),
-                        sessionId: this.state.currentSessionId
-                    }, apiKey);
-                } finally {
-                    this.state.isUsingTool = false;
-                }
+            // --- POST-STREAM PROCESSING ---
+            // Handle Gemini tool call if detected
+            if (geminiFunctionCall) {
+                await this.handleGeminiToolCall(geminiFunctionCall, requestBody, apiKey);
             } else {
-                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
-                    this.state.chatHistory.push({
-                        role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
-                    });
-                }
-                this.state.currentAIMessageContentDiv = null;
-                chatUI.logMessage('Turn complete (HTTP)', 'system');
-                this.historyManager.saveHistory();
+                // Finalize regular text message
+                this.finalizeMessage();
             }
-     
+
         } catch (error) {
             Logger.error('处理 HTTP 流失败:', error);
             chatUI.logMessage(`处理流失败: ${error.message}`, 'system');
-            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
+            if (this.state.currentAIMessageContentDiv?.markdownContainer) {
                 this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
             }
             this.state.currentAIMessageContentDiv = null;
         }
+    }
+    
+    async handleQwenToolCall(toolCall, originalRequestBody) {
+        if (!this.qwenMcpClient) {
+            chatUI.logMessage('检测到Qwen工具调用，正在初始化MCP客户端...', 'system');
+            this.qwenMcpClient = new QwenMcpClient({
+                // Assuming CONFIG is available or passed differently
+                tavilyServerUrl: 'https://tavilymcp.10110531.xyz',
+                callbacks: {
+                    logMessage: chatUI.logMessage,
+                    createAIMessageElement: chatUI.createAIMessageElement,
+                    scrollToBottom: chatUI.scrollToBottom,
+                    onToolStart: (tc) => {
+                        const el = chatUI.createAIMessageElement();
+                        const toolName = tc?.tool_name?.split('::')[1] || tc?.tool_name || '未知工具';
+                        el.contentDiv.innerHTML = `<div class="tool-call-status">正在使用工具: <strong>${toolName}</strong>...</div>`;
+                        return el;
+                    },
+                    onToolEnd: (element, toolResult) => {
+                        const toolName = toolResult?.tool_name?.split('::')[1] || toolResult?.tool_name || '未知工具';
+                        element.contentDiv.innerHTML = `<div class="tool-call-status">✅ 工具 <strong>${toolName}</strong> 调用完成。</div>`;
+                    },
+                    onUpdateContent: (element, content) => {
+                        element.markdownContainer.innerHTML = this.libs.marked.parse(content);
+                        if (this.libs.MathJax?.startup) {
+                            this.libs.MathJax.startup.promise.then(() => {
+                                this.libs.MathJax.typeset([element.markdownContainer]);
+                            });
+                        }
+                        chatUI.scrollToBottom();
+                    },
+                    onComplete: (finalContent) => {
+                        this.state.chatHistory.push({ role: 'assistant', content: finalContent });
+                        this.historyManager.saveHistory();
+                    },
+                    onError: (errorMessage) => chatUI.logMessage(errorMessage, 'system'),
+                }
+            });
+            await this.qwenMcpClient.initialize();
+        }
+        
+        // The sendMessage in QwenMcpClient will now handle the full loop
+        await this.qwenMcpClient.sendMessage(originalRequestBody, toolCall);
+    }
+
+    async handleGeminiToolCall(functionCall, requestBody, apiKey) {
+        // This logic is extracted from the old implementation
+        if (this.state.currentAIMessageContentDiv?.rawMarkdownBuffer) {
+            this.state.chatHistory.push({
+                role: 'assistant',
+                content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+            });
+        }
+        this.state.currentAIMessageContentDiv = null;
+
+        try {
+            this.state.isUsingTool = true;
+            chatUI.logMessage(`执行工具: ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
+            const toolResult = await this.toolManager.handleToolCall(functionCall);
+            const toolResponsePart = toolResult.functionResponses[0].response.output;
+
+            this.state.chatHistory.push({
+                role: 'assistant',
+                parts: [{ functionCall }]
+            });
+            this.state.chatHistory.push({
+                role: 'tool',
+                parts: [{ functionResponse: { name: functionCall.name, response: toolResponsePart } }]
+            });
+
+            // Recurse with updated history
+            await this.streamChatCompletion({
+                ...requestBody,
+                messages: this.state.chatHistory,
+            }, apiKey);
+
+        } catch (toolError) {
+            Logger.error('工具执行失败:', toolError);
+            chatUI.logMessage(`工具执行失败: ${toolError.message}`, 'system');
+            // Handle tool error response if necessary
+        } finally {
+            this.state.isUsingTool = false;
+        }
+    }
+
+    renderMarkdown() {
+        if (this.state.currentAIMessageContentDiv) {
+            this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(this.state.currentAIMessageContentDiv.rawMarkdownBuffer);
+            if (this.libs.MathJax?.startup) {
+                this.libs.MathJax.startup.promise.then(() => {
+                    this.libs.MathJax.typeset([this.state.currentAIMessageContentDiv.markdownContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+            chatUI.scrollToBottom();
+        }
+    }
+
+    finalizeMessage() {
+        if (this.state.currentAIMessageContentDiv?.rawMarkdownBuffer?.trim()) {
+            this.state.chatHistory.push({
+                role: 'assistant',
+                content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+            });
+            this.historyManager.saveHistory();
+        }
+        this.state.currentAIMessageContentDiv = null;
+        chatUI.logMessage('Turn complete (HTTP)', 'system');
     }
 }
