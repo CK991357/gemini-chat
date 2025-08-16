@@ -105,7 +105,8 @@ export default {
       return handleTranslationRequest(request, env);
     }
 
-    if (url.pathname.endsWith("/chat/completions") ||
+    if (url.pathname === '/chat' || // 将 /chat 路由到 API 处理器
+        url.pathname.endsWith("/chat/completions") ||
         url.pathname.endsWith("/embeddings") ||
         url.pathname.endsWith("/models") ||
         url.pathname === '/api/request') {

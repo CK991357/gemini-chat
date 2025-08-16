@@ -52,7 +52,7 @@ export async function handleQwenRequest(request, env) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.DASHSCOPE_API_KEY}`,
+          'Authorization': `Bearer ${env.QWEN_API_KEY}`,
           'X-DashScope-SSE': 'enable'
         },
         body: JSON.stringify({
@@ -119,7 +119,7 @@ export async function handleQwenRequest(request, env) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.DASHSCOPE_API_KEY}`,
+          'Authorization': `Bearer ${env.QWEN_API_KEY}`,
           'X-DashScope-SSE': 'enable'
         },
         body: JSON.stringify({
