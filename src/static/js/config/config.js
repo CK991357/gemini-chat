@@ -33,84 +33,70 @@ export const CONFIG = {
                 displayName: 'Qwen3-Coder-480B-A35B-Instruct (HTTP)',
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
-                mcp_server_url: "https://mcp.tavily.com/mcp/?tavilyApiKey=<your-api-key>",
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
                 tools: [
-                   {
-                       "type": "function",
-                       "function": {
-                           "name": "tavily.search",
-                           "description": "A tool to search the web for real-time information. Use this when the user asks for current events, facts, or information that is not in your knowledge base.",
-                           "parameters": {
-                               "type": "object",
-                               "required": ["query"],
-                               "properties": {
-                                   "query": {
-                                       "type": "string",
-                                       "description": "The search query."
-                                   },
-                                   "searchDepth": {
-                                       "type": "string",
-                                       "description": "The depth of the search. Can be 'basic' (faster) or 'advanced' (more thorough)."
-                                   },
-                                   "includeImages": {
-                                       "type": "boolean",
-                                       "description": "Whether to include images in the response."
-                                   },
-                                   "includeAnswers": {
-                                       "type": "boolean",
-                                       "description": "Whether to include suggested answers."
-                                   },
-                                   "maxResults": {
-                                       "type": "number",
-                                       "description": "The maximum number of results to return (1-20)."
-                                   }
-                               }
-                           }
-                       }
-                   }
-               ]
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "glm4v.analyze_image",
+                            "description": "Analyze image using GLM-4V model",
+                            "parameters": {
+                                "type": "object",
+                                "required": ["model", "image_url", "prompt"],
+                                "properties": {
+                                    "model": {
+                                        "type": "string",
+                                        "enum": ["glm-4v-flash"],
+                                        "description": "Model to use"
+                                    },
+                                    "image_url": {
+                                        "type": "string",
+                                        "description": "Image URL to analyze"
+                                    },
+                                    "prompt": {
+                                        "type": "string",
+                                        "description": "Question or instruction about the image"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
             },
             {
                 name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
                 displayName: 'Qwen3-235B-A22B-Thinking-2507 (HTTP)',
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
-                mcp_server_url: "https://mcp.tavily.com/mcp/?tavilyApiKey=<your-api-key>",
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
                 tools: [
-                   {
-                       "type": "function",
-                       "function": {
-                           "name": "tavily.search",
-                           "description": "A tool to search the web for real-time information. Use this when the user asks for current events, facts, or information that is not in your knowledge base.",
-                           "parameters": {
-                               "type": "object",
-                               "required": ["query"],
-                               "properties": {
-                                   "query": {
-                                       "type": "string",
-                                       "description": "The search query."
-                                   },
-                                   "searchDepth": {
-                                       "type": "string",
-                                       "description": "The depth of the search. Can be 'basic' (faster) or 'advanced' (more thorough)."
-                                   },
-                                   "includeImages": {
-                                       "type": "boolean",
-                                       "description": "Whether to include images in the response."
-                                   },
-                                   "includeAnswers": {
-                                       "type": "boolean",
-                                       "description": "Whether to include suggested answers."
-                                   },
-                                   "maxResults": {
-                                       "type": "number",
-                                       "description": "The maximum number of results to return (1-20)."
-                                   }
-                               }
-                           }
-                       }
-                   }
-               ]
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "glm4v.analyze_image",
+                            "description": "Analyze image using GLM-4V model",
+                            "parameters": {
+                                "type": "object",
+                                "required": ["model", "image_url", "prompt"],
+                                "properties": {
+                                    "model": {
+                                        "type": "string",
+                                        "enum": ["glm-4v-flash"],
+                                        "description": "Model to use"
+                                    },
+                                    "image_url": {
+                                        "type": "string",
+                                        "description": "Image URL to analyze"
+                                    },
+                                    "prompt": {
+                                        "type": "string",
+                                        "description": "Question or instruction about the image"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
             },
         ]
     },

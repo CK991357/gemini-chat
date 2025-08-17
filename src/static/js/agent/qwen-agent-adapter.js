@@ -1,18 +1,20 @@
 /**
- * @file Qwen Agent Adapter & MCP Proxy
- * @description This module handles proxying MCP tool calls to remote servers like Tavily.
- * It ensures that API keys are handled securely on the backend.
+ * @file Qwen Agent & MCP Proxy
+ * @description This module serves as a universal proxy for MCP tool calls initiated by Qwen models.
+ * It currently handles the 'glm4v.analyze_image' tool by routing it to the ZhipuAI API.
  */
+
+const ZHIPU_API_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
 
 /**
  * @function handleMcpProxyRequest
- * @description Handles MCP tool call requests from the front-end, and securely proxies them to the Tavily remote server.
- * @param {Request} request - The incoming request object, which should contain tool_name, server_url, and arguments.
- * @param {object} env - The environment object, which must contain the TAVILY_API_KEY.
- * @returns {Promise<Response>} - A promise that resolves to the response from the Tavily server.
+ * @description Handles MCP tool call requests from the front-end. It validates the request
+ * and routes it to the appropriate handler based on the tool_name.
+ * @param {Request} request - The incoming request object from the frontend.
+ * @param {object} env - The environment object, must contain necessary API keys (e.g., ZHIPUAI_API_KEY).
+ * @returns {Promise<Response>} - A promise that resolves to the response from the backend service.
  */
 export async function handleMcpProxyRequest(request, env) {
-  // Ensure the request method is POST
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
       status: 405,
@@ -21,70 +23,100 @@ export async function handleMcpProxyRequest(request, env) {
   }
 
   try {
-    // Parse the necessary details from the incoming request body
-    const { server_url, tool_name, arguments: tool_args } = await request.json();
-    const tavilyApiKey = env.TAVILY_API_KEY;
+    const { tool_name, arguments: tool_args } = await request.json();
 
-    // Validate the presence of the API key in the environment variables
-    if (!tavilyApiKey) {
-      throw new Error('TAVILY_API_KEY is not configured in the worker environment.');
-    }
+    // Route the request based on the tool name
+    switch (tool_name) {
+      case 'glm4v.analyze_image':
+        return await handleZhipuImageAnalysis(tool_args, env);
+      
+      // Future tools can be added here, for example:
+      // case 'tavily.search':
+      //   return await handleTavilySearch(tool_args, env);
 
-    // Validate the necessary parameters from the request
-    if (!server_url || !tool_name || !tool_args) {
-        return new Response(JSON.stringify({ error: 'Missing required parameters in proxy request' }), {
+      default:
+        return new Response(JSON.stringify({ error: `Unsupported tool: ${tool_name}` }), {
             status: 400,
             headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
     }
-
-    // Securely replace the placeholder API key with the actual key
-    const targetUrl = server_url.replace('<your-api-key>', tavilyApiKey);
-
-    // Construct a standard MCP `use_mcp_tool` request body.
-    // This is the standardized format that remote MCP servers expect.
-    // NOTE: Based on successful calls from other clients (e.g., Cline),
-    // the Tavily remote server appears to expect the arguments object directly as the body,
-    // not wrapped in a standard `use_mcp_tool` request.
-    const proxyRequestBody = tool_args;
-
-    console.log(`[MCP PROXY] Forwarding to: ${targetUrl}`);
-    console.log(`[MCP PROXY] Request Body: ${JSON.stringify(proxyRequestBody, null, 2)}`);
-
-    // --- FIX: Forward User-Agent to mimic a legitimate client ---
-    // Some servers (like Tavily's) might reject requests without a valid User-Agent.
-    // We'll forward the User-Agent from the original client request to appear more legitimate.
-    const userAgent = request.headers.get('User-Agent') || 'MCP-Proxy-Client/1.0';
-
-    // Fetch the response from the Tavily server
-    const proxyResponse = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': userAgent,
-      },
-      body: JSON.stringify(proxyRequestBody),
-    });
-
-    // Stream the response from the Tavily server directly back to the client
-    return new Response(proxyResponse.body, {
-      status: proxyResponse.status,
-      statusText: proxyResponse.statusText,
-      headers: {
-        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
-        'Access-Control-Allow-Origin': '*', // Ensure CORS headers are set
-      },
-    });
-
   } catch (error) {
-    // Log any errors that occur during the proxy process
-    console.error('MCP Proxy Error:', error);
+    console.error('[QWEN MCP PROXY] General Error:', error);
     return new Response(JSON.stringify({
-      error: 'MCP Proxy failed',
+      error: 'Qwen MCP Proxy failed',
       details: error.message,
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
+}
+
+/**
+ * Handles tool calls for 'glm4v.analyze_image' by proxying to the ZhipuAI API.
+ * @param {object} tool_args - The arguments for the tool call.
+ * @param {object} env - The environment object containing ZHIPUAI_API_KEY.
+ * @returns {Promise<Response>} - The response from the ZhipuAI server, formatted for the tool.
+ */
+async function handleZhipuImageAnalysis(tool_args, env) {
+    const zhipuApiKey = env.ZHIPUAI_API_KEY;
+    if (!zhipuApiKey) {
+        throw new Error('ZHIPUAI_API_KEY is not configured in the worker environment.');
+    }
+
+    if (!tool_args || !tool_args.model || !tool_args.image_url || !tool_args.prompt) {
+        return new Response(JSON.stringify({ error: 'Missing required arguments for analyze_image: model, image_url, prompt' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+    }
+
+    const zhipuRequestBody = {
+        model: tool_args.model,
+        messages: [{
+            role: 'user',
+            content: [
+                { type: 'image_url', image_url: { url: tool_args.image_url } },
+                { type: 'text', text: tool_args.prompt }
+            ]
+        }],
+        stream: false
+    };
+
+    const targetUrl = `${ZHIPU_API_BASE_URL}/chat/completions`;
+    console.log(`[QWEN MCP PROXY] Forwarding to ZhipuAI: ${targetUrl}`);
+    console.log(`[QWEN MCP PROXY] Request Body: ${JSON.stringify(zhipuRequestBody, null, 2)}`);
+
+    const zhipuResponse = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${zhipuApiKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(zhipuRequestBody),
+    });
+
+    const responseData = await zhipuResponse.json();
+
+    if (!zhipuResponse.ok) {
+        console.error('ZhipuAI API Error:', responseData);
+        throw new Error(`ZhipuAI API request failed with status ${zhipuResponse.status}: ${JSON.stringify(responseData)}`);
+    }
+    
+    // The tool call expects a specific JSON structure in response.
+    // We simulate the MCP server's response format which is what the frontend expects.
+    const toolResult = {
+        content: [{
+            type: 'text',
+            text: JSON.stringify(responseData, null, 2)
+        }]
+    };
+
+    return new Response(JSON.stringify(toolResult), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
 }
