@@ -248,19 +248,30 @@ export class ChatApiHandler {
      * @returns {Promise<void>}
      */
     _handleMcpToolCall = async (toolCode, requestBody, apiKey) => {
+        const timestamp = () => new Date().toISOString();
+        console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
+
         try {
             this.state.isUsingTool = true;
+            console.log(`[${timestamp()}] [MCP] State isUsingTool set to true.`);
+
             // 显示工具调用状态UI
+            console.log(`[${timestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
             chatUI.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
             chatUI.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
+            console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
 
             // 从配置中动态查找当前模型的 MCP 服务器 URL
             const modelName = requestBody.model;
+            console.log(`[${timestamp()}] [MCP] Searching for model config for: '${modelName}'`);
             const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === modelName);
 
             if (!modelConfig || !modelConfig.mcp_server_url) {
-                throw new Error(`在 config.js 中未找到模型 '${modelName}' 的 mcp_server_url 配置。`);
+                const errorMsg = `在 config.js 中未找到模型 '${modelName}' 的 mcp_server_url 配置。`;
+                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`);
+                throw new Error(errorMsg);
             }
+            console.log(`[${timestamp()}] [MCP] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
             const server_url = modelConfig.mcp_server_url;
 
             // 构建包含 server_url 的请求体
@@ -268,60 +279,79 @@ export class ChatApiHandler {
                 ...toolCode,
                 server_url: server_url
             };
+            console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
 
             // 调用后端代理
+            console.log(`[${timestamp()}] [MCP] Sending fetch request to /api/mcp-proxy...`);
             const proxyResponse = await fetch('/api/mcp-proxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(proxyRequestBody)
             });
+            console.log(`[${timestamp()}] [MCP] Fetch request to /api/mcp-proxy FINISHED. Response status: ${proxyResponse.status}`);
 
             if (!proxyResponse.ok) {
                 const errorData = await proxyResponse.json();
-                throw new Error(`MCP 代理请求失败: ${errorData.details || proxyResponse.statusText}`);
+                const errorMsg = `MCP 代理请求失败: ${errorData.details || proxyResponse.statusText}`;
+                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`);
+                throw new Error(errorMsg);
             }
 
             const toolResult = await proxyResponse.json();
+            console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolResult);
             
             // 将模型思考过程（即 tool_code 本身）和工具结果添加到历史记录
+            console.log(`[${timestamp()}] [MCP] Pushing assistant tool_code to history...`);
             this.state.chatHistory.push({
                 role: 'assistant',
                 content: `<tool_code>${JSON.stringify(toolCode, null, 2)}</tool_code>`
             });
 
+            console.log(`[${timestamp()}] [MCP] Pushing tool result to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
                 content: JSON.stringify(toolResult)
             });
 
             // 再次调用模型以获得最终答案
+            console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool result...`);
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
                 // 确保再次传递工具定义，以防需要连续调用
                 tools: requestBody.tools
             }, apiKey);
+            console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
 
         } catch (toolError) {
+            console.error(`[${timestamp()}] [MCP] --- CATCH BLOCK ERROR ---`, toolError);
             Logger.error('MCP 工具执行失败:', toolError);
             chatUI.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
+            
             // 即使失败，也要将失败信息加入历史记录
+            console.log(`[${timestamp()}] [MCP] Pushing assistant tool_code to history on error...`);
             this.state.chatHistory.push({
                 role: 'assistant',
                 content: `<tool_code>${JSON.stringify(toolCode, null, 2)}</tool_code>`
             });
+            console.log(`[${timestamp()}] [MCP] Pushing tool error result to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
                 content: JSON.stringify({ error: toolError.message })
             });
+            
             // 再次调用模型，让它知道工具失败了
+            console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool error...`);
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
                 tools: requestBody.tools
             }, apiKey);
+            console.log(`[${timestamp()}] [MCP] Chat completion stream after error finished.`);
         } finally {
             this.state.isUsingTool = false;
+            console.log(`[${timestamp()}] [MCP] State isUsingTool set to false.`);
+            console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall END ---`);
         }
     }
 }
