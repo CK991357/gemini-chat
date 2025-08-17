@@ -1,3 +1,4 @@
+console.log("--- ChatApiHandler v3 Loaded ---");
 import { Logger } from '../utils/logger.js';
 import * as chatUI from './chat-ui.js';
 
@@ -313,17 +314,30 @@ export class ChatApiHandler {
             const toolResult = await proxyResponse.json();
             console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolResult);
             
-            // 将模型思考过程（即 tool_code 本身）和工具结果添加到历史记录
-            console.log(`[${timestamp()}] [MCP] Pushing assistant tool_code to history...`);
+            // --- Refactored History Logging based on AliCloud Docs ---
+            // 1. Push the assistant's decision to call the tool.
+            // This must be an object with a `tool_calls` array.
+            console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history...`);
             this.state.chatHistory.push({
                 role: 'assistant',
-                content: `<tool_code>${JSON.stringify(toolCode, null, 2)}</tool_code>`
+                content: null, // Qwen expects content to be null when tool_calls are present
+                tool_calls: [{
+                    id: `call_${Date.now()}`, // Generate a unique ID for the call
+                    type: 'function',
+                    function: {
+                        name: toolCode.tool_name,
+                        arguments: JSON.stringify(toolCode.arguments)
+                    }
+                }]
             });
 
-            console.log(`[${timestamp()}] [MCP] Pushing tool result to history...`);
+            // 2. Push the result from the tool execution.
+            // This must be an object with `role: 'tool'`.
+            console.log(`[${timestamp()}] [MCP] Pushing 'tool' result message to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify(toolResult)
+                content: JSON.stringify(toolResult),
+                tool_call_id: `call_${Date.now()}` // Should match the ID from the assistant message
             });
 
             // 再次调用模型以获得最终答案
