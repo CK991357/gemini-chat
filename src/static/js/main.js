@@ -883,59 +883,28 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
     currentAIMessageContentDiv = null;
 
-    // --- NEW: Intelligent Tool Call Workflow for Qwen Vision Tools ---
-    if (selectedModelConfig.isQwen && attachedFile) {
-        console.log("Qwen model with attachment detected. Bypassing main model, directly calling vision tool.");
-        
-        // Manually construct the tool call object
-        const toolCode = {
-            tool_name: 'glm4v.analyze_image',
-            arguments: JSON.stringify({
-                model: 'glm-4v-flash', // Or dynamically select if needed
-                image_url: attachedFile.base64, // Correctly use the base64 data
-                prompt: message || '请详细分析这张图片。' // Use user message or a default prompt
-            })
-        };
-
-        // Create a dummy request body for history and logging purposes
-        const dummyRequestBody = {
-            model: selectedModelConfig.name,
-            messages: [...chatHistory, {
-                role: 'user',
-                content: [{ type: 'text', text: message || '请详细分析这张图片。' }]
-            }],
-            tools: selectedModelConfig.tools
-        };
-
-        const apiKey = apiKeyInput.value;
-        
-        // Directly invoke the MCP handler
-        // This bypasses the normal chat completion stream and goes straight to the tool call
-        await chatApiHandler._handleMcpToolCall(toolCode, dummyRequestBody, apiKey);
-        
-        // Clear the attachment after the tool call is initiated
-        attachmentManager.clearAttachedFile('chat');
-
-    } else if (selectedModelConfig.isWebSocket) {
+    if (selectedModelConfig.isWebSocket) {
         // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
         if (attachedFile) {
             showSystemMessage('实时模式尚不支持文件上传。');
-            attachmentManager.clearAttachedFile('chat');
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
             return;
         }
         client.send({ text: message });
     } else {
-        // --- Standard HTTP Message Sending Workflow ---
+        // HTTP 模式下发送消息
         try {
             const apiKey = apiKeyInput.value;
             const modelName = selectedModelConfig.name;
             let systemInstruction = systemInstructionInput.value;
 
+            // 构建消息内容，参考 OCR 项目的成功实践
             const userContent = [];
             if (message) {
                 userContent.push({ type: 'text', text: message });
             }
             if (attachedFile) {
+                // 参考项目使用 image_url 并传递完整的 Data URL
                 userContent.push({
                     type: 'image_url',
                     image_url: {
@@ -946,10 +915,11 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
 
             chatHistory.push({
                 role: 'user',
-                content: userContent
+                content: userContent // 保持为数组，因为可能包含文本和图片
             });
 
-            attachmentManager.clearAttachedFile('chat');
+            // 清除附件（发送后）
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
 
             let requestBody = {
                 model: modelName,
@@ -974,6 +944,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 };
             }
 
+            // 动态添加工具定义，统一处理所有 Qwen 模型
             if (selectedModelConfig && selectedModelConfig.isQwen && selectedModelConfig.tools) {
                 requestBody.tools = selectedModelConfig.tools;
             }
@@ -984,7 +955,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             Logger.error('发送 HTTP 消息失败:', error);
             chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
         }
-    }
+        }
         }
         
         // Event Listeners
