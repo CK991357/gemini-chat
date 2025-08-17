@@ -128,7 +128,7 @@ export class ChatApiHandler {
             let reasoningStarted = false;
             let answerStarted = false;
 
-            const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
+            const isToolResponseFollowUp = this.state.chatHistory.some(msg => msg.role === 'tool');
             if (!isToolResponseFollowUp) {
                 this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
             }
