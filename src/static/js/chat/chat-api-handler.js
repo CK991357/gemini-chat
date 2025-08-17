@@ -311,9 +311,22 @@ export class ChatApiHandler {
             console.log(`[${timestamp()}] [MCP] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
             const server_url = modelConfig.mcp_server_url;
 
+            // --- FIX: Prevent Double JSON Stringification ---
+            // The `toolCode.arguments` is already a JSON string from the model.
+            // We must parse it into an object before the entire body is stringified again.
+            let parsedArguments;
+            try {
+                parsedArguments = JSON.parse(toolCode.arguments);
+            } catch (e) {
+                const errorMsg = `无法解析来自模型的工具参数，它不是一个有效的JSON字符串: ${toolCode.arguments}`;
+                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`, e);
+                throw new Error(errorMsg);
+            }
+
             // 构建包含 server_url 的请求体
             const proxyRequestBody = {
-                ...toolCode,
+                tool_name: toolCode.tool_name,
+                arguments: parsedArguments, // Now an object
                 server_url: server_url
             };
             console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
