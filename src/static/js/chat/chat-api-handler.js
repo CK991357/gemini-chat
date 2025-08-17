@@ -84,6 +84,13 @@ export class ChatApiHandler {
                             const data = JSON.parse(jsonStr);
                             if (data.choices && data.choices.length > 0) {
                                 const choice = data.choices[0];
+                                // --- Logic Refactor: Prioritize Tool Calls ---
+                                // 1. Check for Qwen tool_code first.
+                                // 2. Then check for Gemini functionCall parts.
+                                // 3. Only if no tool calls are detected, process regular content.
+                                
+                                const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
+
                                 if (data.tool_code) {
                                     // Qwen MCP Tool Call Detected
                                     functionCallDetected = true;
@@ -91,9 +98,17 @@ export class ChatApiHandler {
                                     Logger.info('Qwen MCP tool call detected:', currentFunctionCall);
                                     chatUI.logMessage(`模型请求 MCP 工具: ${currentFunctionCall.tool_name}`, 'system');
                                     if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
-                                } else if (choice.delta) {
-                                    const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
+                                
+                                } else if (functionCallPart) {
+                                    // Gemini Function Call Detected
+                                    functionCallDetected = true;
+                                    currentFunctionCall = functionCallPart.functionCall;
+                                    Logger.info('Function call detected:', currentFunctionCall);
+                                    chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
+                                    if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
 
+                                } else if (choice.delta && !functionCallDetected) {
+                                    // Process reasoning and content only if no tool call is active
                                     if (choice.delta.reasoning_content) {
                                         if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
                                         if (!reasoningStarted) {
@@ -103,34 +118,25 @@ export class ChatApiHandler {
                                         this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
                                     }
                                     
-                                    if (functionCallPart) {
-                                        functionCallDetected = true;
-                                        currentFunctionCall = functionCallPart.functionCall;
-                                        Logger.info('Function call detected:', currentFunctionCall);
-                                        chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                        if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
-                                    }
-                                    else if (choice.delta.content) {
-                                        if (!functionCallDetected) {
-                                            if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
-                                            
-                                            if (reasoningStarted && !answerStarted) {
-                                                const separator = document.createElement('hr');
-                                                separator.className = 'answer-separator';
-                                                this.state.currentAIMessageContentDiv.markdownContainer.before(separator);
-                                                answerStarted = true;
-                                            }
-
-                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                            this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(this.state.currentAIMessageContentDiv.rawMarkdownBuffer);
-                                            
-                                            if (typeof this.libs.MathJax !== 'undefined' && this.libs.MathJax.startup) {
-                                                this.libs.MathJax.startup.promise.then(() => {
-                                                    this.libs.MathJax.typeset([this.state.currentAIMessageContentDiv.markdownContainer, this.state.currentAIMessageContentDiv.reasoningContainer]);
-                                                }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                            }
-                                            chatUI.scrollToBottom();
+                                    if (choice.delta.content) {
+                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
+                                        
+                                        if (reasoningStarted && !answerStarted) {
+                                            const separator = document.createElement('hr');
+                                            separator.className = 'answer-separator';
+                                            this.state.currentAIMessageContentDiv.markdownContainer.before(separator);
+                                            answerStarted = true;
                                         }
+
+                                        this.state.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
+                                        this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(this.state.currentAIMessageContentDiv.rawMarkdownBuffer);
+                                        
+                                        if (typeof this.libs.MathJax !== 'undefined' && this.libs.MathJax.startup) {
+                                            this.libs.MathJax.startup.promise.then(() => {
+                                                this.libs.MathJax.typeset([this.state.currentAIMessageContentDiv.markdownContainer, this.state.currentAIMessageContentDiv.reasoningContainer]);
+                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
+                                        }
+                                        chatUI.scrollToBottom();
                                     }
                                 }
                             }
