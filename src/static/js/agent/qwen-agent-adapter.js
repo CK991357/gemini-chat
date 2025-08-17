@@ -71,12 +71,20 @@ async function handleZhipuImageAnalysis(tool_args, env) {
         });
     }
 
+    // Auto-format the image URL if it appears to be a Base64 string.
+    // ZhipuAI API (and OpenAI compatibility) requires Base64 to be in Data URI format.
+    let formattedImageUrl = tool_args.image_url;
+    if (formattedImageUrl && !formattedImageUrl.startsWith('http') && !formattedImageUrl.startsWith('data:image')) {
+        // Assume it's a raw Base64 string. Defaulting to jpeg.
+        formattedImageUrl = `data:image/jpeg;base64,${formattedImageUrl}`;
+    }
+
     const zhipuRequestBody = {
         model: tool_args.model,
         messages: [{
             role: 'user',
             content: [
-                { type: 'image_url', image_url: { url: tool_args.image_url } },
+                { type: 'image_url', image_url: { url: formattedImageUrl } },
                 { type: 'text', text: tool_args.prompt }
             ]
         }],
