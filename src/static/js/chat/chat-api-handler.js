@@ -61,9 +61,8 @@ export class ChatApiHandler {
             let currentFunctionCall = null;
             let reasoningStarted = false;
             let answerStarted = false;
-            
+
             // --- Qwen Tool Call Stream Assembler ---
-            // Based on official docs, tool call arguments arrive in chunks and must be assembled.
             let qwenToolCallAssembler = null;
             // ---
 
@@ -90,29 +89,20 @@ export class ChatApiHandler {
                             const data = JSON.parse(jsonStr);
                             if (data.choices && data.choices.length > 0) {
                                 const choice = data.choices[0];
-                                // --- Logic Refactor: Prioritize Tool Calls ---
-                                // 1. Check for Qwen tool_code first.
-                                // 2. Then check for Gemini functionCall parts.
-                                // 3. Only if no tool calls are detected, process regular content.
-                                
                                 const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
                                 const qwenToolCallParts = choice.delta.tool_calls;
 
                                 if (qwenToolCallParts && Array.isArray(qwenToolCallParts)) {
-                                    // --- Qwen Tool Call Assembly Logic (NEW: Aligned with official stream format) ---
+                                    // --- Qwen Tool Call Assembly Logic ---
                                     qwenToolCallParts.forEach(toolCallChunk => {
                                         const func = toolCallChunk.function;
-                                        if (func && func.name) { // First chunk identifies the tool name
+                                        if (func && func.name) { // First chunk
                                             if (!qwenToolCallAssembler) {
-                                                qwenToolCallAssembler = {
-                                                    tool_name: func.name,
-                                                    arguments: func.arguments || ''
-                                                };
+                                                qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
                                                 Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
                                                 chatUI.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
                                                 if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
                                             } else {
-                                                // This case should ideally not happen if name is only in the first chunk, but as a safeguard:
                                                 qwenToolCallAssembler.arguments += func.arguments || '';
                                             }
                                         } else if (qwenToolCallAssembler && func && func.arguments) { // Subsequent chunks
@@ -129,7 +119,7 @@ export class ChatApiHandler {
                                     chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
                                     if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
 
-                                } else if (choice.delta && !qwenToolCallAssembler && !functionCallDetected) {
+                                } else if (choice.delta && !functionCallDetected && !qwenToolCallAssembler) {
                                     // Process reasoning and content only if no tool call is active
                                     if (choice.delta.reasoning_content) {
                                         if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
@@ -173,17 +163,13 @@ export class ChatApiHandler {
             }
 
             // --- Post-Stream Processing ---
-            // If a Qwen tool call was assembled, finalize it.
             if (qwenToolCallAssembler) {
                 functionCallDetected = true;
                 currentFunctionCall = qwenToolCallAssembler;
                 try {
-                    // Attempt to parse arguments to validate JSON structure
                     JSON.parse(currentFunctionCall.arguments);
                 } catch (e) {
-                    console.error("Failed to parse assembled tool call arguments. The stream might have been incomplete.", e);
-                    // Decide how to handle malformed JSON, maybe by showing an error.
-                    // For now, we'll proceed and let the tool handler potentially fail, which gives more debug info.
+                    console.error("Failed to parse assembled tool call arguments.", e);
                 }
             }
 
@@ -232,6 +218,7 @@ export class ChatApiHandler {
                 this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
             }
             this.state.currentAIMessageContentDiv = null;
+            this.historyManager.saveHistory(); // Ensure history is saved even on failure
         }
     }
 
@@ -391,16 +378,26 @@ export class ChatApiHandler {
             Logger.error('MCP 工具执行失败:', toolError);
             chatUI.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
             
-            // 即使失败，也要将失败信息加入历史记录
-            console.log(`[${timestamp()}] [MCP] Pushing assistant tool_code to history on error...`);
+            // 即使失败，也要将失败信息以正确的格式加入历史记录
+            const toolCallId = `call_${Date.now()}`;
+            console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history on error...`);
             this.state.chatHistory.push({
                 role: 'assistant',
-                content: `<tool_code>${JSON.stringify(toolCode, null, 2)}</tool_code>`
+                content: null,
+                tool_calls: [{
+                    id: toolCallId,
+                    type: 'function',
+                    function: {
+                        name: toolCode.tool_name,
+                        arguments: JSON.stringify(toolCode.arguments)
+                    }
+                }]
             });
-            console.log(`[${timestamp()}] [MCP] Pushing tool error result to history...`);
+            console.log(`[${timestamp()}] [MCP] Pushing 'tool' error result to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify({ error: toolError.message })
+                content: JSON.stringify({ error: toolError.message }),
+                tool_call_id: toolCallId
             });
             
             // 再次调用模型，让它知道工具失败了
