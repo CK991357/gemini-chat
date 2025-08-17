@@ -127,6 +127,11 @@ export class ChatApiHandler {
             let currentFunctionCall = null;
             let reasoningStarted = false;
             let answerStarted = false;
+            
+            // --- Qwen Tool Call Stream Assembler ---
+            // Based on official docs, tool call arguments arrive in chunks and must be assembled.
+            let qwenToolCallAssembler = null;
+            // ---
 
             const isToolResponseFollowUp = this.state.chatHistory.some(msg => msg.role === 'tool');
             if (!isToolResponseFollowUp) {
@@ -151,20 +156,24 @@ export class ChatApiHandler {
                             const data = JSON.parse(jsonStr);
                             if (data.choices && data.choices.length > 0) {
                                 const choice = data.choices[0];
-                                // --- Logic Refactor: Prioritize Tool Calls ---
-                                // 1. Check for Qwen tool_code first.
-                                // 2. Then check for Gemini functionCall parts.
-                                // 3. Only if no tool calls are detected, process regular content.
                                 
                                 const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
 
                                 if (data.tool_code) {
-                                    // Qwen MCP Tool Call Detected
-                                    functionCallDetected = true;
-                                    currentFunctionCall = data.tool_code; // Store the tool_code object
-                                    Logger.info('Qwen MCP tool call detected:', currentFunctionCall);
-                                    chatUI.logMessage(`模型请求 MCP 工具: ${currentFunctionCall.tool_name}`, 'system');
-                                    if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
+                                    // --- Qwen Tool Call Assembly Logic ---
+                                    const toolCodeChunk = data.tool_code;
+                                    if (toolCodeChunk.tool_name) { // First chunk
+                                        qwenToolCallAssembler = {
+                                            tool_name: toolCodeChunk.tool_name,
+                                            arguments: toolCodeChunk.arguments || ''
+                                        };
+                                        Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
+                                        chatUI.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
+                                        if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
+                                    } else if (qwenToolCallAssembler && toolCodeChunk.arguments) { // Subsequent chunks
+                                        qwenToolCallAssembler.arguments += toolCodeChunk.arguments;
+                                    }
+                                    // --- End Assembly Logic ---
                                 
                                 } else if (functionCallPart) {
                                     // Gemini Function Call Detected
@@ -217,10 +226,24 @@ export class ChatApiHandler {
                 });
             }
 
+            // --- Post-Stream Processing ---
+            // If a Qwen tool call was assembled, finalize it.
+            if (qwenToolCallAssembler) {
+                functionCallDetected = true;
+                currentFunctionCall = qwenToolCallAssembler;
+                try {
+                    // Attempt to parse arguments to validate JSON structure
+                    JSON.parse(currentFunctionCall.arguments);
+                } catch (e) {
+                    console.error("Failed to parse assembled tool call arguments. The stream might have been incomplete.", e);
+                    // Decide how to handle malformed JSON, maybe by showing an error.
+                    // For now, we'll proceed and let the tool handler potentially fail, which gives more debug info.
+                }
+            }
+
             const timestamp = () => new Date().toISOString();
 
             // --- CRITICAL DEBUG LOG ---
-            // 检查在流结束后，我们是否正确地保留了工具调用的状态。
             console.log(`[${timestamp()}] [DISPATCH] Stream loop finished. Final check before dispatching:`);
             console.log(`[${timestamp()}] [DISPATCH] -> functionCallDetected: ${functionCallDetected}`);
             console.log(`[${timestamp()}] [DISPATCH] -> currentFunctionCall:`, JSON.stringify(currentFunctionCall, null, 2));
