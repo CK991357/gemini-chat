@@ -471,7 +471,8 @@ document.addEventListener('DOMContentLoaded', () => {
        toolManager: toolManager,
        historyManager: historyManager,
        state: {
-           // chatHistory is now managed internally by ChatApiHandler
+           get chatHistory() { return chatHistory; },
+           set chatHistory(value) { chatHistory = value; },
            get currentSessionId() { return currentSessionId; },
            set currentSessionId(value) { currentSessionId = value; },
            get currentAIMessageContentDiv() { return currentAIMessageContentDiv; },
@@ -863,56 +864,99 @@ function disconnectFromWebsocket() {
 /**
  * Handles sending a text message.
  */
-async function handleSendMessage(attachmentManager) {
+async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     const message = messageInput.value.trim();
-    const attachedFile = attachmentManager.getAttachedFile();
+    const attachedFile = attachmentManager.getAttachedFile(); // T2: 从管理器获取
+    // 如果没有文本消息，但有附件，也允许发送
     if (!message && !attachedFile) return;
 
+    // 确保在处理任何消息之前，会话已经存在
+    // 这是修复“新会话第一条消息不显示”问题的关键
     if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
         historyManager.generateNewSession();
     }
 
+    // 使用新的函数显示用户消息
     chatUI.displayUserMessage(message, attachedFile);
-    messageInput.value = '';
+    messageInput.value = ''; // 清空输入框
+ 
+    // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
     currentAIMessageContentDiv = null;
 
     if (selectedModelConfig.isWebSocket) {
+        // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
         if (attachedFile) {
             showSystemMessage('实时模式尚不支持文件上传。');
-            attachmentManager.clearAttachedFile('chat');
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
             return;
         }
         client.send({ text: message });
     } else {
-        // --- Refactor Start: Delegate to ChatApiHandler ---
+        // HTTP 模式下发送消息
         try {
             const apiKey = apiKeyInput.value;
+            const modelName = selectedModelConfig.name;
             let systemInstruction = systemInstructionInput.value;
 
-            if (selectedModelConfig.isQwen) {
-                systemInstruction = CONFIG.QWEN_TOOL_PROMPT + '\n\n' + systemInstruction;
+            // 构建消息内容，参考 OCR 项目的成功实践
+            const userContent = [];
+            if (message) {
+                userContent.push({ type: 'text', text: message });
+            }
+            if (attachedFile) {
+                // 参考项目使用 image_url 并传递完整的 Data URL
+                userContent.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: attachedFile.base64
+                    }
+                });
             }
 
-            // Delegate the entire message handling logic to the handler
-            await chatApiHandler.sendMessage({
-                message,
-                attachedFile,
-                selectedModelConfig,
-                systemInstruction,
-                apiKey,
-                sessionId: currentSessionId
+            chatHistory.push({
+                role: 'user',
+                content: userContent // 保持为数组，因为可能包含文本和图片
             });
 
-            // Clear attachment after successful delegation
-            attachmentManager.clearAttachedFile('chat');
+            // 清除附件（发送后）
+            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
+
+            let requestBody = {
+                model: modelName,
+                messages: chatHistory,
+                generationConfig: {
+                    responseModalities: ['text']
+                },
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
+                ],
+                enableGoogleSearch: true,
+                stream: true,
+                sessionId: currentSessionId
+            };
+
+            if (systemInstruction) {
+                requestBody.systemInstruction = {
+                    parts: [{ text: systemInstruction }]
+                };
+            }
+
+            // 动态添加工具定义，统一处理所有 Qwen 模型
+            if (selectedModelConfig && selectedModelConfig.isQwen && selectedModelConfig.tools) {
+                requestBody.tools = selectedModelConfig.tools;
+            }
+
+            await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 
         } catch (error) {
             Logger.error('发送 HTTP 消息失败:', error);
             chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
         }
-        // --- Refactor End ---
-    }
-}
+        }
+        }
         
         // Event Listeners
         client.on('open', () => {

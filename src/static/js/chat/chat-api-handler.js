@@ -25,15 +25,9 @@ export class ChatApiHandler {
     constructor({ toolManager, historyManager, state, libs, config }) {
         this.toolManager = toolManager;
         this.historyManager = historyManager;
-        // --- Refactor Start: Centralize State ---
-        // The handler now owns the chat history to prevent race conditions.
-        this.state = {
-            ...state, // Keep other states like isUsingTool, etc.
-            chatHistory: []
-        };
-        // --- Refactor End ---
+        this.state = state;
         this.libs = libs;
-        this.config = config;
+        this.config = config; // 存储配置对象
     }
 
     /**
@@ -43,68 +37,8 @@ export class ChatApiHandler {
      * @param {string} apiKey - The API key for authorization.
      * @returns {Promise<void>}
      */
-    /**
-     * A new unified method to handle sending messages for HTTP models.
-     * It now manages the chat history internally.
-     * @param {object} messageData - The data for the message to be sent.
-     * @param {string} messageData.message - The user's text message.
-     * @param {object|null} messageData.attachedFile - The attached file object.
-     * @param {object} messageData.selectedModelConfig - The configuration of the selected model.
-     * @param {string} messageData.systemInstruction - The system instruction.
-     * @param {string} messageData.apiKey - The user's API key.
-     * @param {string} messageData.sessionId - The current session ID.
-     */
-    async sendMessage({ message, attachedFile, selectedModelConfig, systemInstruction, apiKey, sessionId }) {
-        // Build user message and add to internal history
-        const userContent = [];
-        if (message) {
-            userContent.push({ type: 'text', text: message });
-        }
-        if (attachedFile) {
-            userContent.push({
-                type: 'image_url',
-                image_url: { url: attachedFile.base64 }
-            });
-        }
-        this.state.chatHistory.push({
-            role: 'user',
-            content: userContent
-        });
-
-        // Build the request body using internal history
-        let requestBody = {
-            model: selectedModelConfig.name,
-            messages: this.state.chatHistory,
-            // ... (rest of the request body construction)
-            generationConfig: { responseModalities: ['text'] },
-            safetySettings: [
-                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
-            ],
-            enableGoogleSearch: true,
-            stream: true,
-            sessionId: sessionId
-        };
-
-        if (systemInstruction) {
-            requestBody.systemInstruction = {
-                parts: [{ text: systemInstruction }]
-            };
-        }
-
-        if (selectedModelConfig && selectedModelConfig.isQwen && selectedModelConfig.tools) {
-            requestBody.tools = selectedModelConfig.tools;
-        }
-
-        // Call the stream completion method
-        await this.streamChatCompletion(requestBody, apiKey);
-    }
-
     async streamChatCompletion(requestBody, apiKey) {
-        // --- Refactor: This function now ALWAYS uses its internal chat history ---
-        requestBody.messages = this.state.chatHistory;
+        let currentMessages = requestBody.messages;
 
         try {
             const response = await fetch('/api/chat/completions', {
@@ -133,7 +67,7 @@ export class ChatApiHandler {
             let qwenToolCallAssembler = null;
             // ---
 
-            const isToolResponseFollowUp = this.state.chatHistory.some(msg => msg.role === 'tool');
+            const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
             if (!isToolResponseFollowUp) {
                 this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
             }
@@ -156,25 +90,37 @@ export class ChatApiHandler {
                             const data = JSON.parse(jsonStr);
                             if (data.choices && data.choices.length > 0) {
                                 const choice = data.choices[0];
+                                // --- Logic Refactor: Prioritize Tool Calls ---
+                                // 1. Check for Qwen tool_code first.
+                                // 2. Then check for Gemini functionCall parts.
+                                // 3. Only if no tool calls are detected, process regular content.
                                 
                                 const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
+                                const qwenToolCallParts = choice.delta.tool_calls;
 
-                                if (data.tool_code) {
-                                    // --- Qwen Tool Call Assembly Logic ---
-                                    const toolCodeChunk = data.tool_code;
-                                    if (toolCodeChunk.tool_name) { // First chunk
-                                        qwenToolCallAssembler = {
-                                            tool_name: toolCodeChunk.tool_name,
-                                            arguments: toolCodeChunk.arguments || ''
-                                        };
-                                        Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
-                                        chatUI.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
-                                        if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
-                                    } else if (qwenToolCallAssembler && toolCodeChunk.arguments) { // Subsequent chunks
-                                        qwenToolCallAssembler.arguments += toolCodeChunk.arguments;
-                                    }
+                                if (qwenToolCallParts && Array.isArray(qwenToolCallParts)) {
+                                    // --- Qwen Tool Call Assembly Logic (NEW: Aligned with official stream format) ---
+                                    qwenToolCallParts.forEach(toolCallChunk => {
+                                        const func = toolCallChunk.function;
+                                        if (func && func.name) { // First chunk identifies the tool name
+                                            if (!qwenToolCallAssembler) {
+                                                qwenToolCallAssembler = {
+                                                    tool_name: func.name,
+                                                    arguments: func.arguments || ''
+                                                };
+                                                Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
+                                                chatUI.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
+                                                if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
+                                            } else {
+                                                // This case should ideally not happen if name is only in the first chunk, but as a safeguard:
+                                                qwenToolCallAssembler.arguments += func.arguments || '';
+                                            }
+                                        } else if (qwenToolCallAssembler && func && func.arguments) { // Subsequent chunks
+                                            qwenToolCallAssembler.arguments += func.arguments;
+                                        }
+                                    });
                                     // --- End Assembly Logic ---
-                                
+
                                 } else if (functionCallPart) {
                                     // Gemini Function Call Detected
                                     functionCallDetected = true;
@@ -183,7 +129,7 @@ export class ChatApiHandler {
                                     chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
                                     if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
 
-                                } else if (choice.delta && !functionCallDetected) {
+                                } else if (choice.delta && !qwenToolCallAssembler && !functionCallDetected) {
                                     // Process reasoning and content only if no tool call is active
                                     if (choice.delta.reasoning_content) {
                                         if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
@@ -242,13 +188,6 @@ export class ChatApiHandler {
             }
 
             const timestamp = () => new Date().toISOString();
-
-            // --- CRITICAL DEBUG LOG ---
-            console.log(`[${timestamp()}] [DISPATCH] Stream loop finished. Final check before dispatching:`);
-            console.log(`[${timestamp()}] [DISPATCH] -> functionCallDetected: ${functionCallDetected}`);
-            console.log(`[${timestamp()}] [DISPATCH] -> currentFunctionCall:`, JSON.stringify(currentFunctionCall, null, 2));
-            // --- END CRITICAL DEBUG LOG ---
-
             if (functionCallDetected && currentFunctionCall) {
                 console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
                 // 将最终的文本部分（如果有）保存到历史记录
@@ -439,16 +378,12 @@ export class ChatApiHandler {
 
             // 再次调用模型以获得最终答案
             console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool result...`);
-            console.log(`[${timestamp()}] [MCP] History before second call:`, JSON.stringify(this.state.chatHistory, null, 2));
-            
-            // 注意：重构后，requestBody不再需要手动传递messages，streamChatCompletion会使用内部的this.state.chatHistory
-            const secondRequestBody = {
+            await this.streamChatCompletion({
                 ...requestBody,
-                tools: requestBody.tools // 确保再次传递工具定义
-            };
-            console.log(`[${timestamp()}] [MCP] Request body for second call:`, JSON.stringify(secondRequestBody, null, 2));
-
-            await this.streamChatCompletion(secondRequestBody, apiKey);
+                messages: this.state.chatHistory,
+                // 确保再次传递工具定义，以防需要连续调用
+                tools: requestBody.tools
+            }, apiKey);
             console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
 
         } catch (toolError) {
