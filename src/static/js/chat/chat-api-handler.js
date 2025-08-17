@@ -218,6 +218,14 @@ export class ChatApiHandler {
             }
 
             const timestamp = () => new Date().toISOString();
+
+            // --- CRITICAL DEBUG LOG ---
+            // 检查在流结束后，我们是否正确地保留了工具调用的状态。
+            console.log(`[${timestamp()}] [DISPATCH] Stream loop finished. Final check before dispatching:`);
+            console.log(`[${timestamp()}] [DISPATCH] -> functionCallDetected: ${functionCallDetected}`);
+            console.log(`[${timestamp()}] [DISPATCH] -> currentFunctionCall:`, JSON.stringify(currentFunctionCall, null, 2));
+            // --- END CRITICAL DEBUG LOG ---
+
             if (functionCallDetected && currentFunctionCall) {
                 console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
                 // 将最终的文本部分（如果有）保存到历史记录
