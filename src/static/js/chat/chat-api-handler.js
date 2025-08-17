@@ -144,9 +144,12 @@ export class ChatApiHandler {
                 });
             }
 
+            const timestamp = () => new Date().toISOString();
             if (functionCallDetected && currentFunctionCall) {
+                console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
                 // 将最终的文本部分（如果有）保存到历史记录
                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
+                    console.log(`[${timestamp()}] [DISPATCH] Saving final text part to history.`);
                     this.state.chatHistory.push({
                         role: 'assistant',
                         content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
@@ -155,13 +158,17 @@ export class ChatApiHandler {
                 this.state.currentAIMessageContentDiv = null;
 
                 // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
+                console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call structure:`, currentFunctionCall);
                 if (currentFunctionCall.tool_name) {
                     // Qwen MCP Tool Call
+                    console.log(`[${timestamp()}] [DISPATCH] Detected Qwen MCP tool call. Routing to _handleMcpToolCall...`);
                     await this._handleMcpToolCall(currentFunctionCall, requestBody, apiKey);
                 } else {
                     // Gemini Function Call
+                    console.log(`[${timestamp()}] [DISPATCH] Detected Gemini function call. Routing to _handleGeminiToolCall...`);
                     await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey);
                 }
+                console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
 
             } else {
                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
