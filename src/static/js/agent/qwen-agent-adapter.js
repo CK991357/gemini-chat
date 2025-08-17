@@ -51,11 +51,17 @@ export async function handleMcpProxyRequest(request, env) {
     console.log(`[MCP PROXY] Forwarding to: ${targetUrl}`);
     console.log(`[MCP PROXY] Request Body: ${JSON.stringify(proxyRequestBody, null, 2)}`);
 
+    // --- FIX: Forward User-Agent to mimic a legitimate client ---
+    // Some servers (like Tavily's) might reject requests without a valid User-Agent.
+    // We'll forward the User-Agent from the original client request to appear more legitimate.
+    const userAgent = request.headers.get('User-Agent') || 'MCP-Proxy-Client/1.0';
+
     // Fetch the response from the Tavily server
     const proxyResponse = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': userAgent,
       },
       body: JSON.stringify(proxyRequestBody),
     });
