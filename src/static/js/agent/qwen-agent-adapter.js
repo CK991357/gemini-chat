@@ -41,12 +41,16 @@ export async function handleMcpProxyRequest(request, env) {
     // Securely replace the placeholder API key with the actual key
     const targetUrl = server_url.replace('<your-api-key>', tavilyApiKey);
 
-    // Construct the request body to be sent to the Tavily MCP server
-    // Note: The remote MCP server expects a slightly different format.
+    // Construct a standard MCP `use_mcp_tool` request body.
+    // This is the standardized format that remote MCP servers expect.
     const proxyRequestBody = {
-      tool: tool_name,
-      input: tool_args,
+      server_name: "tavily", // It's good practice to specify the server name
+      tool_name: tool_name,
+      arguments: tool_args,
     };
+
+    console.log(`[MCP PROXY] Forwarding to: ${targetUrl}`);
+    console.log(`[MCP PROXY] Request Body: ${JSON.stringify(proxyRequestBody, null, 2)}`);
 
     // Fetch the response from the Tavily server
     const proxyResponse = await fetch(targetUrl, {
