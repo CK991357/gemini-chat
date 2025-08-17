@@ -43,12 +43,10 @@ export async function handleMcpProxyRequest(request, env) {
 
     // Construct a standard MCP `use_mcp_tool` request body.
     // This is the standardized format that remote MCP servers expect.
-    // Construct a standard MCP `use_mcp_tool` request body.
-    // This is the standardized format that remote MCP servers expect.
-    const proxyRequestBody = {
-        tool_name: tool_name,
-        arguments: tool_args,
-    };
+    // NOTE: Based on successful calls from other clients (e.g., Cline),
+    // the Tavily remote server appears to expect the arguments object directly as the body,
+    // not wrapped in a standard `use_mcp_tool` request.
+    const proxyRequestBody = tool_args;
 
     console.log(`[MCP PROXY] Forwarding to: ${targetUrl}`);
     console.log(`[MCP PROXY] Request Body: ${JSON.stringify(proxyRequestBody, null, 2)}`);

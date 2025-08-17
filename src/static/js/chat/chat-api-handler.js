@@ -311,9 +311,9 @@ export class ChatApiHandler {
             console.log(`[${timestamp()}] [MCP] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
             const server_url = modelConfig.mcp_server_url;
 
-            // --- FIX: Prevent Double JSON Stringification ---
-            // The `toolCode.arguments` is already a JSON string from the model.
-            // We must parse it into an object before the entire body is stringified again.
+            // --- FIX: Match Tavily's Non-Standard Request Format ---
+            // Based on successful calls from Cline and analysis of Tavily's MCP server source,
+            // the remote server expects a raw arguments object containing ONLY the 'query' parameter.
             let parsedArguments;
             try {
                 parsedArguments = JSON.parse(toolCode.arguments);
@@ -323,10 +323,21 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
+            // Sanitize the arguments to only include 'query', matching the successful request format.
+            const sanitizedArguments = {
+                query: parsedArguments.query
+            };
+
+            if (!sanitizedArguments.query) {
+                 const errorMsg = `从模型工具参数中未能提取到 'query' 字段: ${toolCode.arguments}`;
+                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`);
+                throw new Error(errorMsg);
+            }
+
             // 构建包含 server_url 的请求体
             const proxyRequestBody = {
                 tool_name: toolCode.tool_name,
-                arguments: parsedArguments, // Now an object
+                arguments: sanitizedArguments, // Send only the sanitized arguments
                 server_url: server_url
             };
             console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
