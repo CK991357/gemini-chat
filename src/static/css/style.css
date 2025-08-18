@@ -1769,10 +1769,9 @@ body.dark-mode .highlight-box {
     align-items: center;
     padding: 15px;
     border-bottom: 1px solid var(--border-color);
-    flex-wrap: wrap; /* 允许内容换行 */
-    position: sticky;
-    top: 0;
-    z-index: 10;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    position: relative; /* 用于定位操作菜单 */
 }
 
 .history-item:hover {
@@ -1805,31 +1804,10 @@ body.dark-mode .highlight-box {
 .history-actions {
     display: flex;
     align-items: center;
-    gap: 10px; /* 调整按钮间距 */
-    position: relative;
-    flex-shrink: 0;
+    gap: 5px; /* 图标和按钮之间的间距 */
+    position: relative; /* 用于定位下拉菜单 */
+    flex-shrink: 0; /* 防止被压缩 */
 }
-
-.history-actions .button {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 8px 15px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.history-actions .button:hover {
-    background-color: var(--secondary-color);
-    transform: translateY(-1px);
-}
-
 
 /* 置顶图标 */
 .pinned-icon {
@@ -1875,7 +1853,7 @@ body.dark-mode .highlight-box {
     border-radius: 8px;
     box-shadow: 0 4px 12px var(--shadow-color);
     min-width: 120px;
-    z-index: 100; /* 提高 z-index */
+    z-index: 10;
     display: flex;
     flex-direction: column;
     /* overflow: hidden; */ /* 暂时移除，排查底部选项显示不全的问题 */
@@ -1895,62 +1873,6 @@ body.dark-mode .highlight-box {
 
 .history-options-menu .menu-item:hover {
     background-color: var(--bg-color);
-}
-
-/* 批量模式下隐藏更多选项按钮 */
-body.batch-mode .history-options-button {
-    display: none;
-}
-
-/* 批量模式下显示删除按钮和复选框 */
-body.batch-mode .history-item .batch-delete-button {
-    display: flex; /* 在批量模式下显示 */
-}
-
-body.batch-mode .history-item .session-checkbox {
-    display: block; /* 在批量模式下显示 */
-}
-
-/* 调整历史记录项在批量模式下的布局 */
-body.batch-mode .history-item {
-    justify-content: flex-start; /* 左对齐，为复选框留出空间 */
-    gap: 10px; /* 复选框与内容之间的间距 */
-}
-
-/* 批量模式下，历史记录操作区域的样式调整 */
-body.batch-mode .history-actions {
-    display: flex;
-    align-items: center;
-    gap: 5px; /* 调整删除按钮与复选框的间距 */
-}
-
-/* 批量模式下的删除按钮样式 */
-.batch-delete-button {
-    background: none;
-    border: none;
-    color: var(--danger-color); /* 使用危险色 */
-    font-size: 20px;
-    cursor: pointer;
-    padding: 5px;
-    border-radius: 50%;
-    transition: background-color 0.3s ease, color 0.3s ease;
-    display: none; /* 默认隐藏 */
-    align-items: center;
-    justify-content: center;
-}
-
-.batch-delete-button:hover {
-    background-color: rgba(var(--danger-color-rgb), 0.1);
-    color: var(--danger-color);
-}
-
-/* 复选框样式 */
-.session-checkbox {
-    display: none; /* 默认隐藏 */
-    width: 20px;
-    height: 20px;
-    cursor: pointer;
-    flex-shrink: 0; /* 防止被压缩 */
 }
 
 /* 移动端适配 */
