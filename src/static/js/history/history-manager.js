@@ -160,26 +160,6 @@ export class HistoryManager {
                 }
                 optionsMenu.style.display = optionsMenu.style.display === 'block' ? 'none' : 'block';
                 this.activeOptionsMenu = optionsMenu.style.display === 'block' ? optionsMenu : null;
-
-                // 动态调整菜单位置，防止超出屏幕底部
-                if (optionsMenu.style.display === 'block') {
-                    const menuRect = optionsMenu.getBoundingClientRect();
-                    const viewportHeight = window.innerHeight;
-                    const buttonRect = optionsButton.getBoundingClientRect();
-
-                    // 如果菜单底部超出视口，则向上弹出
-                    if (menuRect.bottom > viewportHeight) {
-                        optionsMenu.style.top = `${buttonRect.height - menuRect.height - 5}px`; // 向上偏移，-5px 额外间距
-                        optionsMenu.style.left = 'auto';
-                        optionsMenu.style.right = '0';
-                    } else {
-                        // 恢复默认位置（向下弹出）
-                        optionsMenu.style.top = '100%';
-                        optionsMenu.style.left = 'auto';
-                        optionsMenu.style.right = '0';
-                    }
-                }
-
                 document.removeEventListener('click', this.boundHandleGlobalMenuClose);
                 if (this.activeOptionsMenu) {
                     document.addEventListener('click', this.boundHandleGlobalMenuClose);
