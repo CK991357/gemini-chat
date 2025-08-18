@@ -599,6 +599,8 @@ body {
 .message .content {
     position: relative; /* 确保复制按钮可以相对定位 */
     padding-right: 18px; /* 恢复默认内边距，因为复制按钮移到外部 */
+    overflow-wrap: break-word; /* 允许长单词或URL内部换行 */
+    word-break: break-word; /* 备用属性，增强兼容性 */
 }
 
 .copy-button {
