@@ -39,14 +39,18 @@ export class HistoryManager {
         this.activeOptionsMenu = null; // Track the currently open options menu
         this.boundHandleGlobalMenuClose = this.handleGlobalMenuClose.bind(this); // Bind the method once
 
+        this.isBatchMode = false; // 新增：批量模式状态
+        this.selectedSessions = new Set(); // 新增：存储选中的会话ID
+
         console.log("HistoryManager initialized");
     }
 
     /**
-     * @description Initializes the history manager, renders the history list.
+     * @description Initializes the history manager, renders the history list and sets up event listeners for batch operations.
      */
     init() {
         this.renderHistoryList();
+        this.setupBatchEventListeners(); // 新增：设置批量操作事件监听器
     }
 
     /**
@@ -61,6 +65,106 @@ export class HistoryManager {
         } catch (e) {
             console.error('Failed to parse chat session meta:', e);
             return [];
+        }
+    }
+
+    /**
+     * @description Sets up event listeners for batch operation buttons.
+     * @private
+     */
+    setupBatchEventListeners() {
+        this.elements.batchModeBtn.addEventListener('click', () => this.toggleBatchMode());
+        this.elements.deleteSelectedBtn.addEventListener('click', () => this.deleteSelectedSessions());
+        this.elements.cancelBatchBtn.addEventListener('click', () => this.toggleBatchMode(false)); // 取消批量模式
+    }
+
+    /**
+     * @description Toggles the batch mode on/off.
+     * @param {boolean} [forceState] - Optional. If provided, forces the batch mode to this state.
+     */
+    toggleBatchMode(forceState) {
+        this.isBatchMode = forceState !== undefined ? forceState : !this.isBatchMode;
+        this.selectedSessions.clear(); // 清空选中项
+
+        // 切换 body 上的 class 以控制 CSS 样式
+        document.body.classList.toggle('batch-mode', this.isBatchMode);
+
+        this.renderHistoryList(); // 重新渲染列表以显示/隐藏复选框
+        this.showToast(this.isBatchMode ? '已进入批量操作模式' : '已退出批量操作模式');
+    }
+
+    /**
+     * @description Toggles the selection state of a session in batch mode.
+     * @param {string} sessionId - The ID of the session to toggle.
+     */
+    toggleSessionSelection(sessionId) {
+        if (this.selectedSessions.has(sessionId)) {
+            this.selectedSessions.delete(sessionId);
+        } else {
+            this.selectedSessions.add(sessionId);
+        }
+        // 更新删除按钮的文本，显示选中数量
+        this.elements.deleteSelectedBtn.textContent = `删除选中 (${this.selectedSessions.size})`;
+        if (this.selectedSessions.size === 0) {
+            this.elements.deleteSelectedBtn.textContent = '删除选中';
+        }
+    }
+
+    /**
+     * @description Deletes all selected sessions.
+     */
+    async deleteSelectedSessions() {
+        if (this.selectedSessions.size === 0) {
+            this.showToast('请选择要删除的会话。');
+            return;
+        }
+
+        if (!confirm(`确定要删除选中的 ${this.selectedSessions.size} 个聊天会话吗？此操作不可撤销。`)) {
+            this.showToast('删除已取消。');
+            return;
+        }
+
+        this.showToast('正在批量删除会话...');
+        try {
+            const sessionIdsToDelete = Array.from(this.selectedSessions);
+            const deletePromises = sessionIdsToDelete.map(sessionId => 
+                fetch(`/api/history/${sessionId}`, { method: 'DELETE' })
+            );
+
+            const results = await Promise.allSettled(deletePromises);
+            let successfulDeletions = 0;
+            let failedDeletions = 0;
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled' && result.value.ok) {
+                    successfulDeletions++;
+                } else {
+                    failedDeletions++;
+                    console.error(`删除会话 ${sessionIdsToDelete[index]} 失败:`, result.reason || result.value.statusText);
+                }
+            });
+
+            let sessions = this.getChatSessionMeta();
+            sessions = sessions.filter(s => !this.selectedSessions.has(s.id));
+            this.saveChatSessionMeta(sessions);
+            
+            this.toggleBatchMode(false); // 退出批量模式并清空选中项
+            this.renderHistoryList(); // 重新渲染列表
+
+            if (successfulDeletions > 0) {
+                this.showToast(`成功删除 ${successfulDeletions} 个会话！`);
+            }
+            if (failedDeletions > 0) {
+                this.showSystemMessage(`有 ${failedDeletions} 个会话删除失败，请检查控制台。`);
+            }
+
+            // 如果当前会话被删除，则生成新会话
+            if (sessionIdsToDelete.includes(this.getCurrentSessionId())) {
+                this.generateNewSession();
+            }
+        } catch (error) {
+            console.error('批量删除会话失败:', error);
+            this.showSystemMessage(`批量删除会话失败: ${error.message}`);
         }
     }
 
@@ -129,14 +233,20 @@ export class HistoryManager {
             if (session.is_pinned) {
                 li.classList.add('is-pinned');
             }
+
+            // 根据是否在批量模式添加复选框
+            const checkboxHtml = this.isBatchMode ? 
+                `<input type="checkbox" class="session-checkbox" data-session-id="${session.id}" ${this.selectedSessions.has(session.id) ? 'checked' : ''}>` : '';
+
             li.innerHTML = `
+                ${checkboxHtml}
                 <div class="history-info">
                     <span class="history-title">${session.title}</span>
                     <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
                 </div>
                 <div class="history-actions">
                     ${session.is_pinned ? '<span class="material-symbols-outlined pinned-icon">push_pin</span>' : ''}
-                    <button class="material-symbols-outlined history-options-button">more_vert</button>
+                    ${!this.isBatchMode ? '<button class="material-symbols-outlined history-options-button">more_vert</button>' : ''}
                     <div class="history-options-menu" style="display: none;">
                         <button class="menu-item" data-action="toggle-pin">${session.is_pinned ? '取消置顶' : '置顶'}</button>
                         <button class="menu-item" data-action="edit-title">编辑标题</button>
@@ -144,11 +254,28 @@ export class HistoryManager {
                     </div>
                 </div>
             `;
+            
+            // 批量模式下点击整个li切换选中状态，非批量模式下加载会话
             li.addEventListener('click', (event) => {
-                if (!event.target.closest('.history-actions')) {
+                if (this.isBatchMode) {
+                    const checkbox = li.querySelector('.session-checkbox');
+                    if (checkbox && event.target !== checkbox) { // 避免重复处理点击复选框的事件
+                        checkbox.checked = !checkbox.checked;
+                    }
+                    this.toggleSessionSelection(session.id);
+                } else if (!event.target.closest('.history-actions')) {
                     this.loadSessionHistory(session.id);
                 }
             });
+
+            // 监听复选框的change事件
+            const checkbox = li.querySelector('.session-checkbox');
+            if (checkbox) {
+                checkbox.addEventListener('change', (event) => {
+                    event.stopPropagation(); // 阻止事件冒泡到li的点击事件
+                    this.toggleSessionSelection(session.id);
+                });
+            }
 
             const optionsButton = li.querySelector('.history-options-button');
             const optionsMenu = li.querySelector('.history-options-menu');

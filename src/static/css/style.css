@@ -1769,9 +1769,10 @@ body.dark-mode .highlight-box {
     align-items: center;
     padding: 15px;
     border-bottom: 1px solid var(--border-color);
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    position: relative; /* 用于定位操作菜单 */
+    flex-wrap: wrap; /* 允许内容换行 */
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
 .history-item:hover {
@@ -1804,9 +1805,42 @@ body.dark-mode .highlight-box {
 .history-actions {
     display: flex;
     align-items: center;
-    gap: 5px; /* 图标和按钮之间的间距 */
-    position: relative; /* 用于定位下拉菜单 */
-    flex-shrink: 0; /* 防止被压缩 */
+    gap: 10px; /* 调整按钮间距 */
+    position: relative;
+    flex-shrink: 0;
+}
+
+.history-actions .button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.history-actions .button:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-1px);
+}
+
+#batch-actions-container {
+    display: none; /* 默认隐藏 */
+    gap: 10px;
+}
+
+body.batch-mode #batch-actions-container {
+    display: flex; /* 批量模式下显示 */
+}
+
+body.batch-mode #batch-mode-btn {
+    display: none; /* 批量模式下隐藏“批量操作”按钮 */
 }
 
 /* 置顶图标 */

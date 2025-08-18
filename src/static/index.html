@@ -182,9 +182,16 @@
                 <!-- 历史记录区 -->
                 <section class="chat-container history-mode">
                     <div class="log-header">
-                        <h3>历史记录</h3>
+                <h3>历史记录</h3>
+                <div class="history-actions">
+                    <button id="batch-mode-btn" class="button">批量操作</button>
+                    <div id="batch-actions-container" style="display: none;">
+                        <button id="delete-selected-btn" class="button">删除选中</button>
+                        <button id="cancel-batch-btn" class="button">取消</button>
                     </div>
-                    <div class="history-list" id="history-list-container">
+                </div>
+            </div>
+            <div class="history-list" id="history-list-container">
                         <!-- 历史记录列表将动态插入此处 -->
                     </div>
                 </section>
