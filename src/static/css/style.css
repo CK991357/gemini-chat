@@ -1723,7 +1723,7 @@ body.dark-mode .highlight-box {
     flex-direction: column;
     height: 100%;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow-y: auto; /* 允许垂直滚动 */
 }
 
 .history-mode.active {
