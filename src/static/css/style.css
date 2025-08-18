@@ -1875,7 +1875,7 @@ body.dark-mode .highlight-box {
     border-radius: 8px;
     box-shadow: 0 4px 12px var(--shadow-color);
     min-width: 120px;
-    z-index: 10;
+    z-index: 100; /* 提高 z-index */
     display: flex;
     flex-direction: column;
     /* overflow: hidden; */ /* 暂时移除，排查底部选项显示不全的问题 */
