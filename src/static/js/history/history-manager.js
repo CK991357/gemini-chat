@@ -46,11 +46,10 @@ export class HistoryManager {
     }
 
     /**
-     * @description Initializes the history manager, renders the history list and sets up event listeners for batch operations.
+     * @description Initializes the history manager, renders the history list.
      */
     init() {
         this.renderHistoryList();
-        this.setupBatchEventListeners(); // 新增：设置批量操作事件监听器
     }
 
     /**
@@ -69,16 +68,6 @@ export class HistoryManager {
     }
 
     /**
-     * @description Sets up event listeners for batch operation buttons.
-     * @private
-     */
-    setupBatchEventListeners() {
-        this.elements.batchModeBtn.addEventListener('click', () => this.toggleBatchMode());
-        this.elements.deleteSelectedBtn.addEventListener('click', () => this.deleteSelectedSessions());
-        this.elements.cancelBatchBtn.addEventListener('click', () => this.toggleBatchMode(false)); // 取消批量模式
-    }
-
-    /**
      * @description Toggles the batch mode on/off.
      * @param {boolean} [forceState] - Optional. If provided, forces the batch mode to this state.
      */
@@ -89,8 +78,37 @@ export class HistoryManager {
         // 切换 body 上的 class 以控制 CSS 样式
         document.body.classList.toggle('batch-mode', this.isBatchMode);
 
+        // 更新顶部批量删除按钮的显示状态和文本
+        const historyActionsDiv = this.elements.historyActions; // 获取 history-actions 容器
+        if (historyActionsDiv) {
+            let batchDeleteBtn = historyActionsDiv.querySelector('.top-batch-delete-btn');
+            if (!batchDeleteBtn) {
+                batchDeleteBtn = document.createElement('button');
+                batchDeleteBtn.className = 'top-batch-delete-btn';
+                batchDeleteBtn.textContent = '删除选中';
+                batchDeleteBtn.style.display = 'none'; // 默认隐藏
+                batchDeleteBtn.addEventListener('click', () => this.deleteSelectedSessions());
+                historyActionsDiv.appendChild(batchDeleteBtn);
+            }
+            batchDeleteBtn.style.display = this.isBatchMode ? 'block' : 'none';
+            this.updateTopBatchDeleteButtonText(); // 更新按钮文本
+        }
+
         this.renderHistoryList(); // 重新渲染列表以显示/隐藏复选框
         this.showToast(this.isBatchMode ? '已进入批量操作模式' : '已退出批量操作模式');
+    }
+
+    /**
+     * @description Updates the text of the top batch delete button to show selected count.
+     */
+    updateTopBatchDeleteButtonText() {
+        const batchDeleteBtn = this.elements.historyActions.querySelector('.top-batch-delete-btn');
+        if (batchDeleteBtn) {
+            batchDeleteBtn.textContent = `删除选中 (${this.selectedSessions.size})`;
+            if (this.selectedSessions.size === 0) {
+                batchDeleteBtn.textContent = '删除选中';
+            }
+        }
     }
 
     /**
@@ -103,10 +121,42 @@ export class HistoryManager {
         } else {
             this.selectedSessions.add(sessionId);
         }
-        // 更新删除按钮的文本，显示选中数量
-        this.elements.deleteSelectedBtn.textContent = `删除选中 (${this.selectedSessions.size})`;
-        if (this.selectedSessions.size === 0) {
-            this.elements.deleteSelectedBtn.textContent = '删除选中';
+        this.updateTopBatchDeleteButtonText(); // 更新顶部按钮文本
+    }
+
+    /**
+     * @description Deletes a single session.
+     * @param {string} sessionId - The ID of the session to delete.
+     */
+    async deleteSingleSession(sessionId) {
+        if (!confirm('确定要删除此聊天会话吗？此操作不可撤销。')) {
+            this.showToast('删除已取消。');
+            return;
+        }
+
+        this.showToast('正在删除会话...');
+        try {
+            const response = await fetch(`/api/history/${sessionId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || '无法删除会话');
+            }
+
+            let sessions = this.getChatSessionMeta();
+            sessions = sessions.filter(s => s.id !== sessionId);
+            this.saveChatSessionMeta(sessions);
+            this.renderHistoryList();
+            this.showToast('会话已删除！');
+
+            if (this.getCurrentSessionId() === sessionId) {
+                this.generateNewSession();
+            }
+        } catch (error) {
+            console.error('删除会话失败:', error);
+            this.showSystemMessage(`删除会话失败: ${error.message}`);
         }
     }
 
@@ -127,7 +177,7 @@ export class HistoryManager {
         this.showToast('正在批量删除会话...');
         try {
             const sessionIdsToDelete = Array.from(this.selectedSessions);
-            const deletePromises = sessionIdsToDelete.map(sessionId => 
+            const deletePromises = sessionIdsToDelete.map(sessionId =>
                 fetch(`/api/history/${sessionId}`, { method: 'DELETE' })
             );
 
@@ -239,37 +289,40 @@ export class HistoryManager {
                 `<input type="checkbox" class="session-checkbox" data-session-id="${session.id}" ${this.selectedSessions.has(session.id) ? 'checked' : ''}>` : '';
 
             li.innerHTML = `
-                ${checkboxHtml}
                 <div class="history-info">
                     <span class="history-title">${session.title}</span>
                     <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
                 </div>
                 <div class="history-actions">
                     ${session.is_pinned ? '<span class="material-symbols-outlined pinned-icon">push_pin</span>' : ''}
-                    ${!this.isBatchMode ? '<button class="material-symbols-outlined history-options-button">more_vert</button>' : ''}
+                    <button class="material-symbols-outlined history-options-button" style="${this.isBatchMode ? 'display: none;' : ''}">more_vert</button>
+                    <input type="checkbox" class="session-checkbox" data-session-id="${session.id}" ${this.selectedSessions.has(session.id) ? 'checked' : ''} style="${this.isBatchMode ? 'display: block;' : 'display: none;'}">
+                    <button class="material-symbols-outlined batch-delete-button" style="${this.isBatchMode ? 'display: flex;' : 'display: none;'}" data-session-id="${session.id}">delete</button>
                     <div class="history-options-menu" style="display: none;">
                         <button class="menu-item" data-action="toggle-pin">${session.is_pinned ? '取消置顶' : '置顶'}</button>
                         <button class="menu-item" data-action="edit-title">编辑标题</button>
                         <button class="menu-item" data-action="delete">删除</button>
+                        <button class="menu-item" data-action="batch-mode">批量操作</button>
                     </div>
                 </div>
             `;
             
-            // 批量模式下点击整个li切换选中状态，非批量模式下加载会话
-            li.addEventListener('click', (event) => {
-                if (this.isBatchMode) {
-                    const checkbox = li.querySelector('.session-checkbox');
-                    if (checkbox && event.target !== checkbox) { // 避免重复处理点击复选框的事件
-                        checkbox.checked = !checkbox.checked;
-                    }
-                    this.toggleSessionSelection(session.id);
-                } else if (!event.target.closest('.history-actions')) {
-                    this.loadSessionHistory(session.id);
-                }
-            });
-
-            // 监听复选框的change事件
+            // 获取新创建的元素
             const checkbox = li.querySelector('.session-checkbox');
+            const singleDeleteButton = li.querySelector('.batch-delete-button');
+            const optionsButton = li.querySelector('.history-options-button');
+            const optionsMenu = li.querySelector('.history-options-menu');
+
+            // 非批量模式下点击整个li加载会话
+            if (!this.isBatchMode) {
+                li.addEventListener('click', (event) => {
+                    if (!event.target.closest('.history-actions')) {
+                        this.loadSessionHistory(session.id);
+                    }
+                });
+            }
+
+            // 监听复选框的change事件 (无论是否在批量模式，复选框都存在于DOM中，只是显示/隐藏)
             if (checkbox) {
                 checkbox.addEventListener('change', (event) => {
                     event.stopPropagation(); // 阻止事件冒泡到li的点击事件
@@ -277,22 +330,31 @@ export class HistoryManager {
                 });
             }
 
-            const optionsButton = li.querySelector('.history-options-button');
-            const optionsMenu = li.querySelector('.history-options-menu');
+            // 监听单个删除按钮的点击事件
+            if (singleDeleteButton) {
+                singleDeleteButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    this.deleteSingleSession(session.id);
+                });
+            }
 
-            optionsButton.addEventListener('click', (event) => {
-                event.stopPropagation();
-                if (this.activeOptionsMenu && this.activeOptionsMenu !== optionsMenu) {
-                    this.activeOptionsMenu.style.display = 'none';
-                }
-                optionsMenu.style.display = optionsMenu.style.display === 'block' ? 'none' : 'block';
-                this.activeOptionsMenu = optionsMenu.style.display === 'block' ? optionsMenu : null;
-                document.removeEventListener('click', this.boundHandleGlobalMenuClose);
-                if (this.activeOptionsMenu) {
-                    document.addEventListener('click', this.boundHandleGlobalMenuClose);
-                }
-            });
+            // 更多选项按钮的点击事件
+            if (optionsButton) {
+                optionsButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    if (this.activeOptionsMenu && this.activeOptionsMenu !== optionsMenu) {
+                        this.activeOptionsMenu.style.display = 'none';
+                    }
+                    optionsMenu.style.display = optionsMenu.style.display === 'block' ? 'none' : 'block';
+                    this.activeOptionsMenu = optionsMenu.style.display === 'block' ? optionsMenu : null;
+                    document.removeEventListener('click', this.boundHandleGlobalMenuClose);
+                    if (this.activeOptionsMenu) {
+                        document.addEventListener('click', this.boundHandleGlobalMenuClose);
+                    }
+                });
+            }
 
+            // 更多选项菜单项的点击事件
             optionsMenu.querySelectorAll('.menu-item').forEach(menuItem => {
                 menuItem.addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -306,7 +368,16 @@ export class HistoryManager {
                             this.editSessionTitle(session.id, session.title);
                             break;
                         case 'delete':
-                            this.deleteSession(session.id);
+                            this.deleteSingleSession(session.id); // 使用新的单个删除方法
+                            break;
+                        case 'batch-mode':
+                            this.toggleBatchMode(true); // 进入批量模式
+                            // 选中当前会话
+                            const currentCheckbox = li.querySelector('.session-checkbox');
+                            if (currentCheckbox) {
+                                currentCheckbox.checked = true;
+                                this.toggleSessionSelection(session.id);
+                            }
                             break;
                     }
                 });

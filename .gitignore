@@ -173,7 +173,7 @@ dist
 .wrangler/
 deno.lock
 
-/项目信息
+/项目信息_非实现
 .vscode/launch.json
 
 /docs
