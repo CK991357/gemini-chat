@@ -20,7 +20,7 @@ let pcmToWavBlob;
 
 // State variables for floating mic
 let isFloatingMicRecording = false;
-let hasRequestedFloatingMicPermission = false;
+let hasRequestedMicPermission; // 从 deps 接收统一的权限状态
 let floatingMicAudioRecorder = null;
 let floatingMicAudioChunks = [];
 let floatingMicInitialTouchY = 0;
@@ -41,9 +41,11 @@ let floatingMicRecordingTimeout = null;
  * @param {object} deps.chatUI - Chat UI module.
  * @param {Function} deps.pcmToWavBlob - Function to convert PCM data to WAV Blob.
  * @param {object} deps.CONFIG - Global configuration object.
+ * @param {Function} deps.hasRequestedMicPermission - Function to get the unified microphone permission status.
+ * @param {Function} deps.updateMicButtonStates - Function to update the state of microphone buttons.
  */
 export function initFloatingMicButton(deps) {
-    ({ client, isConnected, selectedModelConfig, messageInput, sendButton, showToast, showSystemMessage, chatUI, pcmToWavBlob, CONFIG } = deps);
+    ({ client, isConnected, selectedModelConfig, messageInput, sendButton, showToast, showSystemMessage, chatUI, pcmToWavBlob, CONFIG, hasRequestedMicPermission, updateMicButtonStates } = deps);
 
     floatingMicButton = document.getElementById('floating-mic-button');
 
@@ -71,19 +73,19 @@ async function checkMicPermissionAndSetVisibility() {
         const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
         if (permissionStatus.state === 'granted') {
             floatingMicButton.style.display = 'flex'; // Show button if permission is granted
-            hasRequestedFloatingMicPermission = true;
+            // hasRequestedMicPermission = true; // 不再在此处直接设置，而是通过 deps 传递
         } else {
             floatingMicButton.style.display = 'none'; // Hide button if permission is not granted
-            hasRequestedFloatingMicPermission = false;
+            // hasRequestedMicPermission = false; // 不再在此处直接设置
         }
         // Listen for changes in permission status
         permissionStatus.onchange = () => {
             if (permissionStatus.state === 'granted') {
                 floatingMicButton.style.display = 'flex';
-                hasRequestedFloatingMicPermission = true;
+                // hasRequestedMicPermission = true; // 不再在此处直接设置
             } else {
                 floatingMicButton.style.display = 'none';
-                hasRequestedFloatingMicPermission = false;
+                // hasRequestedMicPermission = false; // 不再在此处直接设置
             }
         };
     } catch (error) {
@@ -110,18 +112,18 @@ async function handleFloatingMicTouchStart(e) {
     if (isFloatingMicRecording) return;
 
     // 首次触摸，只请求权限
-    if (!hasRequestedFloatingMicPermission) {
+    if (!hasRequestedMicPermission()) { // 使用统一的权限状态
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             stream.getTracks().forEach(track => track.stop()); // Stop the stream immediately after getting permission
-            hasRequestedFloatingMicPermission = true;
+            // hasRequestedMicPermission = true; // 不再在此处直接设置
             showToast('已获取麦克风权限，请再次按住按钮开始录音');
             return;
         } catch (error) {
             showSystemMessage(`获取麦克风权限失败: ${error.message}`);
             console.error('获取麦克风权限失败:', error);
             resetFloatingMicState();
-            hasRequestedFloatingMicPermission = false;
+            // hasRequestedMicPermission = false; // Reset permission state on error
             return;
         }
     }
@@ -134,6 +136,7 @@ async function handleFloatingMicTouchStart(e) {
         messageInput.value = '';
         messageInput.disabled = true;
         sendButton.disabled = true;
+        updateMicButtonStates(false, true); // 启动浮动麦克风，禁用主麦克风
 
         floatingMicAudioChunks = [];
         floatingMicAudioRecorder = new AudioRecorder();
@@ -157,7 +160,7 @@ async function handleFloatingMicTouchStart(e) {
         showSystemMessage(`启动录音失败: ${error.message}`);
         console.error('启动录音失败:', error);
         resetFloatingMicState();
-        hasRequestedFloatingMicPermission = false; // Reset permission state on error
+        // hasRequestedMicPermission = false; // Reset permission state on error
     }
 }
 
@@ -257,6 +260,7 @@ async function handleFloatingMicTouchEnd() {
         console.error('语音转文字失败:', error);
     } finally {
         resetFloatingMicState();
+        updateMicButtonStates(false, false); // 停止浮动麦克风，启用所有麦克风按钮
     }
 }
 
@@ -276,7 +280,7 @@ function cancelFloatingMicRecording() {
         floatingMicAudioRecorder = null;
     }
     floatingMicAudioChunks = [];
-    // Do not reset hasRequestedFloatingMicPermission here
+    // Do not reset hasRequestedMicPermission here
 }
 
 /**
@@ -291,4 +295,5 @@ function resetFloatingMicState() {
     messageInput.placeholder = '输入消息...';
     messageInput.disabled = false;
     sendButton.disabled = false;
+    updateMicButtonStates(false, false); // 重置浮动麦克风状态，启用所有麦克风按钮
 }

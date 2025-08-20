@@ -504,7 +504,7 @@ let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
 // 新增：聊天模式语音输入相关状态变量
 let isChatRecording = false; // 聊天模式下是否正在录音
-let hasRequestedChatMicPermission = false; // 标记是否已请求过聊天麦克风权限
+let hasRequestedMicPermission = false; // 标记是否已请求过麦克风权限
 let chatAudioRecorder = null; // 聊天模式下的 AudioRecorder 实例
 let chatAudioChunks = []; // 聊天模式下录制的音频数据块
 let chatRecordingTimeout = null; // 聊天模式下用于处理长按录音的定时器
@@ -565,7 +565,7 @@ function pcmToWavBlob(pcmDataBuffers, sampleRate = CONFIG.AUDIO.OUTPUT_SAMPLE_RA
 }
 
 // Multimodal Client
-const client = new MultimodalLiveClient();
+let client = new MultimodalLiveClient();
 
 // State variables
 let selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === CONFIG.API.MODEL_NAME); // 初始选中默认模型
@@ -592,6 +592,26 @@ function updateMicIcon() {
         // 修复：直接更新按钮图标
         micButton.textContent = isRecording ? 'mic_off' : 'mic';
         micButton.classList.toggle('active', isRecording);
+    }
+}
+
+/**
+ * @function updateMicButtonStates
+ * @description 更新麦克风按钮（micButton）和浮动麦克风按钮（floatingMicButton）的启用/禁用状态，确保它们互斥。
+ * @param {boolean} isChatRecordingActive - 指示聊天模式录音是否激活。
+ * @param {boolean} isFloatingMicActive - 指示浮动麦克风是否激活。
+ * @returns {void}
+ */
+function updateMicButtonStates(isChatRecordingActive, isFloatingMicActive) {
+    const floatingMicButton = document.getElementById('floating-mic-button'); // 获取浮动麦克风按钮
+
+    if (micButton) {
+        micButton.disabled = isFloatingMicActive; // 如果浮动麦克风激活，禁用主麦克风
+        micButton.classList.toggle('active', isChatRecordingActive); // 根据聊天录音状态更新激活样式
+    }
+    if (floatingMicButton) {
+        floatingMicButton.disabled = isChatRecordingActive; // 如果主麦克风激活，禁用浮动麦克风
+        floatingMicButton.classList.toggle('active', isFloatingMicActive); // 根据浮动麦克风状态更新激活样式
     }
 }
 
@@ -698,11 +718,13 @@ async function handleMicToggle() {
             Logger.info('Microphone started');
             chatUI.logMessage('Microphone started', 'system');
             updateMicIcon();
+            updateMicButtonStates(isRecording, false); // 启动主麦克风，禁用浮动麦克风
         } catch (error) {
             Logger.error('Microphone error:', error);
             chatUI.logMessage(`Error: ${error.message}`, 'system');
             isRecording = false;
             updateMicIcon();
+            updateMicButtonStates(isRecording, false); // 即使出错也要更新状态
         }
     } else {
         try {
@@ -718,11 +740,13 @@ async function handleMicToggle() {
             isRecording = false;
             chatUI.logMessage('Microphone stopped', 'system');
             updateMicIcon();
+            updateMicButtonStates(isRecording, false); // 停止主麦克风，启用浮动麦克风
         } catch (error) {
             Logger.error('Microphone stop error:', error);
             chatUI.logMessage(`Error stopping microphone: ${error.message}`, 'system');
             isRecording = false; // 即使出错也要尝试重置状态
             updateMicIcon();
+            updateMicButtonStates(isRecording, false); // 即使出错也要更新状态
         }
     }
 }
@@ -1453,7 +1477,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showSystemMessage,
             chatUI,
             pcmToWavBlob, // 传入 pcmToWavBlob 函数
-            CONFIG
+            CONFIG,
+            hasRequestedMicPermission: () => hasRequestedMicPermission, // 传递统一的权限状态
+            updateMicButtonStates: updateMicButtonStates // 传递统一的麦克风按钮状态更新函数
         });
     }
 
@@ -1736,6 +1762,7 @@ function resetChatRecordingState() {
   isChatRecording = false;
   chatVoiceInputButton.classList.remove('recording');
   messageInput.placeholder = '输入消息...';
+  updateMicButtonStates(false, false); // 重置聊天录音状态，启用所有麦克风按钮
 }
 
 
