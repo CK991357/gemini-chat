@@ -1925,8 +1925,8 @@ body.dark-mode .highlight-box {
 
 /* Audio Input Status */
 .audio-input-status {
-    position: absolute;
-    top: -30px; /* Position above the input area */
+    position: fixed; /* Change to fixed for consistent positioning */
+    bottom: calc(80px + env(safe-area-inset-bottom) + 10px); /* Position above the input area, considering safe area and some margin */
     left: 50%;
     transform: translateX(-50%);
     background-color: var(--system-message-color);
@@ -1936,7 +1936,7 @@ body.dark-mode .highlight-box {
     font-size: 0.85rem;
     white-space: nowrap;
     display: none; /* Hidden by default */
-    z-index: 10; /* Ensure it's above other elements */
+    z-index: 1001; /* Ensure it's above most other elements, higher than input-area's z-index */
     transition: background-color 0.3s, color 0.3s;
 }
 
