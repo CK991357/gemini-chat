@@ -1039,6 +1039,9 @@ client.on('content', (data) => {
             chatUI.scrollToBottom();
         }
     }
+    if (selectedModelConfig.isWebSocket) { // 仅在WebSocket模式下移除UI状态
+        chatUI.removeAudioInputStatus();
+    }
 });
 
 client.on('interrupted', () => {
@@ -1094,6 +1097,9 @@ client.on('turncomplete', () => {
     if (isConnected && !selectedModelConfig.isWebSocket) {
         historyManager.saveHistory();
     }
+    if (selectedModelConfig.isWebSocket) { // 仅在WebSocket模式下移除UI状态
+        chatUI.removeAudioInputStatus();
+    }
 });
 
 client.on('error', (error) => {
@@ -1103,6 +1109,9 @@ client.on('error', (error) => {
         Logger.error('Unexpected error', error);
     }
     chatUI.logMessage(`Error: ${error.message}`, 'system');
+    if (selectedModelConfig.isWebSocket) { // 仅在WebSocket模式下移除UI状态
+        chatUI.removeAudioInputStatus();
+    }
 });
 
 // ... (新增 processHttpStream 辅助函数)
@@ -1600,6 +1609,9 @@ async function startChatRecording() {
 
   // 权限已请求过，现在开始录音
   try {
+    if (selectedModelConfig.isWebSocket) { // 仅在WebSocket模式下显示UI状态
+        chatUI.displayAudioInputStatus('正在录音...', 'recording');
+    }
     showToast('录音已开始...');
     chatVoiceInputButton.classList.add('recording'); // 使用新的 CSS 类
     messageInput.placeholder = '正在录音，请说话...';
@@ -1640,6 +1652,10 @@ async function stopChatRecording() {
   clearTimeout(chatRecordingTimeout);
   showToast('正在处理语音...');
   
+  if (selectedModelConfig.isWebSocket) { // 仅在WebSocket模式下显示UI状态
+      chatUI.displayAudioInputStatus('正在发送语音...', 'sending');
+  }
+
   try {
     if (chatAudioRecorder) {
       chatAudioRecorder.stop();
@@ -1711,6 +1727,9 @@ function cancelChatRecording() {
   }
   chatAudioChunks = [];
   resetChatRecordingState();
+  if (selectedModelConfig.isWebSocket) { // 仅在WebSocket模式下移除UI状态
+      chatUI.removeAudioInputStatus();
+  }
 }
 
 /**
