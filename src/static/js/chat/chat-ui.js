@@ -249,46 +249,6 @@ export function scrollToBottom() {
 }
 
 /**
- * @function displayAudioInputStatus
- * @description 在UI中显示语音输入状态消息。
- * @param {string} message - 要显示的状态文本。
- * @param {string} [statusType=''] - 状态类型，可以是 'recording' 或 'sending'，用于应用不同的样式。
- * @returns {void}
- */
-export function displayAudioInputStatus(message, statusType = '') {
-    if (!elements.audioInputStatus) {
-        elements.audioInputStatus = document.getElementById('audio-input-status');
-    }
-    if (elements.audioInputStatus) {
-        elements.audioInputStatus.textContent = message;
-        elements.audioInputStatus.style.display = 'block';
-        elements.audioInputStatus.className = 'audio-input-status'; // Reset classes
-        if (statusType) {
-            elements.audioInputStatus.classList.add(statusType);
-        }
-        // 确保在显示状态时，输入区域的其他元素不会被遮挡或布局混乱
-        // 可以考虑调整 input-area 的布局，例如使用 flex-direction: column
-        // 或者在 CSS 中为 .audio-input-status 设置绝对定位
-    }
-}
-
-/**
- * @function removeAudioInputStatus
- * @description 隐藏语音输入状态消息。
- * @returns {void}
- */
-export function removeAudioInputStatus() {
-    if (!elements.audioInputStatus) {
-        elements.audioInputStatus = document.getElementById('audio-input-status');
-    }
-    if (elements.audioInputStatus) {
-        elements.audioInputStatus.style.display = 'none';
-        elements.audioInputStatus.textContent = '';
-        elements.audioInputStatus.className = 'audio-input-status'; // Reset classes
-    }
-}
-
-/**
  * @function displayToolCallStatus
  * @description 在聊天记录中显示一个工具调用状态的UI提示。
  * @param {string} toolName - 正在调用的工具名称。

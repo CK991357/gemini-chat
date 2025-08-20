@@ -1922,29 +1922,3 @@ body.dark-mode .highlight-box {
     gap: 10px;
     border: 1px solid var(--border-color);
 }
-
-/* Audio Input Status */
-.audio-input-status {
-    position: fixed; /* Change to fixed for consistent positioning */
-    bottom: calc(80px + env(safe-area-inset-bottom) + 10px); /* Position above the input area, considering safe area and some margin */
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: var(--system-message-color);
-    color: var(--toast-text-color);
-    padding: 5px 10px;
-    border-radius: 5px;
-    font-size: 0.85rem;
-    white-space: nowrap;
-    display: none; /* Hidden by default */
-    z-index: 1001; /* Ensure it's above most other elements, higher than input-area's z-index */
-    transition: background-color 0.3s, color 0.3s;
-}
-
-.audio-input-status.recording {
-    background-color: #28a745; /* Green for recording */
-}
-
-.audio-input-status.sending {
-    background-color: #ffc107; /* Yellow for sending */
-    color: #333; /* Darker text for better contrast on yellow */
-}
