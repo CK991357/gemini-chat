@@ -1,5 +1,5 @@
 import { CONFIG } from '../config/config.js';
-import { showSystemMessage, showToast } from '../utils/logger.js'; // 假设 showToast 和 showSystemMessage 在这里
+import { showSystemMessage, showToast } from '../main.js';
 import { AudioRecorder } from './audio-recorder.js';
 
 /**
