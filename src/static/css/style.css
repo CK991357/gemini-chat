@@ -1940,6 +1940,7 @@ body.dark-mode .highlight-box {
         cursor: grab;
         transition: all 0.2s ease-in-out;
         z-index: 1000; /* 确保在最上层 */
+        touch-action: none; /* 防止默认的触摸行为 */
     }
 
     #voiceInputFloatButton.recording {

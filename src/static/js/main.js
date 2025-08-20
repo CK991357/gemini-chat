@@ -26,7 +26,7 @@ const messageHistory = document.getElementById('message-history'); // 用于聊�
 const messageInput = document.getElementById('message-input');
 const sendButton = document.getElementById('send-button');
 const micButton = document.getElementById('mic-button'); // 保留，但其功能将被浮窗按钮取代
-const voiceInputFloatButton = document.getElementById('voice-input-float-button'); // 新增：浮窗语音输入按钮
+const voiceInputFloatButton = document.getElementById('voiceInputFloatButton'); // 新增：浮窗语音输入按钮
 const _audioVisualizer = document.getElementById('audio-visualizer'); // 保持，虽然音频模式删除，但可能用于其他音频可视化
 const connectButton = document.getElementById('connect-button');
 const cameraButton = document.getElementById('camera-button');
@@ -1426,6 +1426,7 @@ function updateMediaPreviewsDisplay() {
  */
 function initMobileHandlers() {
     let longPressTimer;
+    let startX, startY; // 用于记录按钮初始位置
     const LONG_PRESS_THRESHOLD = 500; // 毫秒
 
     /**
@@ -1440,8 +1441,13 @@ function initMobileHandlers() {
             return;
         }
 
+        // 记录按钮初始位置和触摸起始位置
+        const touch = e.touches[0];
+        startX = touch.clientX - voiceInputFloatButton.getBoundingClientRect().left;
+        startY = touch.clientY - voiceInputFloatButton.getBoundingClientRect().top;
+        
         // 记录初始触摸位置，用于判断是否上滑取消
-        chatInitialTouchY = e.touches[0].clientY;
+        chatInitialTouchY = touch.clientY;
 
         // 启动长按定时器
         longPressTimer = setTimeout(() => {
@@ -1461,8 +1467,21 @@ function initMobileHandlers() {
      * @returns {void}
      */
     voiceInputFloatButton.addEventListener('touchmove', (e) => {
-        if (isRecording) {
-            const currentTouchY = e.touches[0].clientY;
+        e.preventDefault(); // 阻止页面滚动
+        
+        const touch = e.touches[0];
+        
+        if (!isRecording) {
+            // 按钮未处于录音状态时，允许拖动
+            const x = touch.clientX - startX;
+            const y = touch.clientY - startY;
+            
+            // 更新按钮位置
+            voiceInputFloatButton.style.left = `${x}px`;
+            voiceInputFloatButton.style.top = `${y}px`;
+        } else {
+            // 按钮处于录音状态时，处理上滑取消逻辑
+            const currentTouchY = touch.clientY;
             const deltaY = chatInitialTouchY - currentTouchY; // 计算垂直移动距离
 
             // 如果向上滑动超过一定阈值，则显示取消状态
@@ -1479,7 +1498,8 @@ function initMobileHandlers() {
      * @param {TouchEvent} e - 触摸事件对象。
      * @returns {void}
      */
-    voiceInputFloatButton.addEventListener('touchend', () => {
+    voiceInputFloatButton.addEventListener('touchend', (e) => {
+        e.preventDefault();
         clearTimeout(longPressTimer); // 清除长按定时器
         voiceInputFloatButton.classList.remove('active'); // 移除激活状态
 
