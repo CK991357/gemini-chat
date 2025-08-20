@@ -25,7 +25,8 @@ const toolManager = new ToolManager(); // 初始化 ToolManager
 const messageHistory = document.getElementById('message-history'); // 用于聊天消息显示
 const messageInput = document.getElementById('message-input');
 const sendButton = document.getElementById('send-button');
-const micButton = document.getElementById('mic-button');
+const micButton = document.getElementById('mic-button'); // 保留，但其功能将被浮窗按钮取代
+const voiceInputFloatButton = document.getElementById('voice-input-float-button'); // 新增：浮窗语音输入按钮
 const _audioVisualizer = document.getElementById('audio-visualizer'); // 保持，虽然音频模式删除，但可能用于其他音频可视化
 const connectButton = document.getElementById('connect-button');
 const cameraButton = document.getElementById('camera-button');
@@ -648,16 +649,24 @@ async function ensureAudioInitialized() {
 }
 
 /**
- * Handles the microphone toggle. Starts or stops audio recording.
+ * @function toggleMicrophoneStream
+ * @description 控制麦克风流的启动和停止。
+ * @param {boolean} start - 如果为 true，则启动麦克风流；如果为 false，则停止麦克风流。
  * @returns {Promise<void>}
  */
-async function handleMicToggle() {
-    if (!isRecording) {
+async function toggleMicrophoneStream(start) {
+    if (start && !isRecording) {
         try {
-            // 增加权限状态检查
+            /**
+             * @description 查询麦克风权限状态。
+             * @param {Object} options - 权限查询选项。
+             * @param {string} options.name - 权限名称，例如 'microphone'。
+             * @returns {Promise<PermissionStatus>} 权限状态对象。
+             */
             const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
             if (permissionStatus.state === 'denied') {
                 chatUI.logMessage('麦克风权限被拒绝，请在浏览器设置中启用', 'system');
+                showToast('麦克风权限被拒绝');
                 return;
             }
             await ensureAudioInitialized();
@@ -665,14 +674,19 @@ async function handleMicToggle() {
             
             const inputAnalyser = audioCtx.createAnalyser();
             inputAnalyser.fftSize = 256;
-            const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount); // 重命名为 _inputDataArray
+            const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount);
             
+            /**
+             * @description 启动音频录制。
+             * @param {function(string): void} callback - 每当有新的音频数据可用时调用的回调函数，接收 base64 编码的音频数据。
+             * @returns {Promise<void>}
+             */
             await audioRecorder.start((base64Data) => {
                 if (isUsingTool) {
                     client.sendRealtimeInput([{
                         mimeType: "audio/pcm;rate=16000",
                         data: base64Data,
-                        interrupt: true     // Model isn't interruptable when using tools, so we do it manually
+                        interrupt: true
                     }]);
                 } else {
                     client.sendRealtimeInput([{
@@ -680,48 +694,51 @@ async function handleMicToggle() {
                         data: base64Data
                     }]);
                 }
-                
-                // 移除输入音频可视化
-                // inputAnalyser.getByteFrequencyData(_inputDataArray); // 使用重命名后的变量
-                // const inputVolume = Math.max(..._inputDataArray) / 255;
-                // updateAudioVisualizer(inputVolume, true);
             });
 
+            /**
+             * @description 获取用户媒体（麦克风）流。
+             * @param {Object} constraints - 媒体约束，例如 { audio: true }。
+             * @returns {Promise<MediaStream>} 媒体流对象。
+             */
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            micStream = stream; // 保存流引用
+            micStream = stream;
             const source = audioCtx.createMediaStreamSource(stream);
             source.connect(inputAnalyser);
             
             await audioStreamer.resume();
             isRecording = true;
+            updateMicIcon(); // 更新麦克风图标状态
             Logger.info('Microphone started');
-            chatUI.logMessage('Microphone started', 'system');
-            updateMicIcon();
+            chatUI.logMessage('麦克风已启动', 'system');
+            showToast('麦克风已启动');
         } catch (error) {
-            Logger.error('Microphone error:', error);
-            chatUI.logMessage(`Error: ${error.message}`, 'system');
+            Logger.error('麦克风启动错误:', error);
+            chatUI.logMessage(`错误: ${error.message}`, 'system');
+            showToast(`麦克风启动失败: ${error.message}`);
             isRecording = false;
-            updateMicIcon();
+            updateMicIcon(); // 确保在错误时也更新图标
         }
-    } else {
+    } else if (!start && isRecording) {
         try {
-            // 修复：确保正确关闭麦克风
-            if (audioRecorder && isRecording) {
+            if (audioRecorder) {
                 audioRecorder.stop();
-                // 确保关闭音频流
-                if (micStream) {
-                    micStream.getTracks().forEach(track => track.stop());
-                    micStream = null;
-                }
+                audioRecorder = null;
+            }
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
             }
             isRecording = false;
-            chatUI.logMessage('Microphone stopped', 'system');
-            updateMicIcon();
+            updateMicIcon(); // 更新麦克风图标状态
+            chatUI.logMessage('麦克风已停止', 'system');
+            showToast('麦克风已停止');
         } catch (error) {
-            Logger.error('Microphone stop error:', error);
-            chatUI.logMessage(`Error stopping microphone: ${error.message}`, 'system');
-            isRecording = false; // 即使出错也要尝试重置状态
-            updateMicIcon();
+            Logger.error('麦克风停止错误:', error);
+            chatUI.logMessage(`停止麦克风错误: ${error.message}`, 'system');
+            showToast(`停止麦克风失败: ${error.message}`);
+            isRecording = false;
+            updateMicIcon(); // 确保在错误时也更新图标
         }
     }
 }
@@ -1187,9 +1204,6 @@ messageInput.addEventListener('keydown', (event) => {
     }
 });
 
-micButton.addEventListener('click', () => {
-    if (isConnected) handleMicToggle();
-});
 
 connectButton.addEventListener('click', () => {
     if (isConnected) {
@@ -1345,7 +1359,7 @@ function updateConnectionStatus() {
     });
 
     // 根据连接状态和模型类型禁用/启用媒体按钮
-    const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
+    const mediaButtons = [cameraButton, screenButton, chatVoiceInputButton]; // 移除 micButton
     mediaButtons.forEach(btn => {
         if (btn) {
             // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理，这里只处理其他按钮
@@ -1356,6 +1370,18 @@ function updateConnectionStatus() {
             }
         }
     });
+
+    // 浮窗语音输入按钮的显示和启用逻辑
+    if (voiceInputFloatButton) { // 直接使用 voiceInputFloatButton 变量
+        const shouldShowFloatButton = isMobileDevice() && isConnected && selectedModelConfig.isWebSocket;
+        voiceInputFloatButton.style.display = shouldShowFloatButton ? 'flex' : 'none';
+        voiceInputFloatButton.disabled = !shouldShowFloatButton;
+    }
+
+    // 确保 micButton 在 WebSocket 模式下始终处于禁用状态
+    if (micButton) {
+        micButton.disabled = true; // 始终禁用
+    }
     
     // 附件按钮仅在 HTTP 模式下可用
     if (attachmentButton) {
@@ -1394,19 +1420,85 @@ function updateMediaPreviewsDisplay() {
 
 
 /**
- * Initializes mobile-specific event handlers.
+ * @function initMobileHandlers
+ * @description 初始化移动端特有的事件处理器，包括浮窗语音输入按钮的触摸事件。
+ * @returns {void}
  */
 function initMobileHandlers() {
+    let longPressTimer;
+    const LONG_PRESS_THRESHOLD = 500; // 毫秒
 
-    // 新增：移动端麦克风按钮
-    document.getElementById('mic-button').addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        if (isConnected) handleMicToggle();
-    });
-    
     /**
-     * 检查音频播放状态。
+     * @description 浮窗语音输入按钮的 touchstart 事件处理。
+     * @param {TouchEvent} e - 触摸事件对象。
+     * @returns {void}
      */
+    voiceInputFloatButton.addEventListener('touchstart', (e) => {
+        e.preventDefault(); // 阻止默认的滚动行为
+        if (!isConnected || !selectedModelConfig.isWebSocket) {
+            showToast('请先连接到实时模型');
+            return;
+        }
+
+        // 记录初始触摸位置，用于判断是否上滑取消
+        chatInitialTouchY = e.touches[0].clientY;
+
+        // 启动长按定时器
+        longPressTimer = setTimeout(() => {
+            if (!isRecording) {
+                toggleMicrophoneStream(true);
+                voiceInputFloatButton.classList.add('recording'); // 添加 recording 类
+                showToast('开始录音...');
+            }
+        }, LONG_PRESS_THRESHOLD);
+
+        voiceInputFloatButton.classList.add('active'); // 触摸时添加激活状态
+    }, { passive: false }); // passive: false 允许 preventDefault
+
+    /**
+     * @description 浮窗语音输入按钮的 touchmove 事件处理。
+     * @param {TouchEvent} e - 触摸事件对象。
+     * @returns {void}
+     */
+    voiceInputFloatButton.addEventListener('touchmove', (e) => {
+        if (isRecording) {
+            const currentTouchY = e.touches[0].clientY;
+            const deltaY = chatInitialTouchY - currentTouchY; // 计算垂直移动距离
+
+            // 如果向上滑动超过一定阈值，则显示取消状态
+            if (deltaY > 50) { // 向上滑动 50px 视为取消
+                voiceInputFloatButton.classList.add('cancelling');
+            } else {
+                voiceInputFloatButton.classList.remove('cancelling');
+            }
+        }
+    });
+
+    /**
+     * @description 浮窗语音输入按钮的 touchend 事件处理。
+     * @param {TouchEvent} e - 触摸事件对象。
+     * @returns {void}
+     */
+    voiceInputFloatButton.addEventListener('touchend', () => {
+        clearTimeout(longPressTimer); // 清除长按定时器
+        voiceInputFloatButton.classList.remove('active'); // 移除激活状态
+
+        if (isRecording) {
+            if (voiceInputFloatButton.classList.contains('cancelling')) {
+                toggleMicrophoneStream(false); // 停止麦克风流
+                showToast('录音已取消');
+            } else {
+                toggleMicrophoneStream(false); // 停止麦克风流
+                showToast('录音已结束');
+            }
+            voiceInputFloatButton.classList.remove('recording', 'cancelling'); // 移除录音和取消状态
+        } else {
+            // 如果没有开始录音（即只是短按），则提示
+            showToast('按住按钮开始语音输入');
+        }
+    });
+
+    // 检查音频播放状态。
     function checkAudioPlayback() {
         if (audioStreamer && audioStreamer.isPlaying) {
             chatUI.logMessage('音频正在播放中...', 'system');

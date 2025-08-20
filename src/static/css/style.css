@@ -1922,3 +1922,85 @@ body.dark-mode .highlight-box {
     gap: 10px;
     border: 1px solid var(--border-color);
 }
+
+/* 语音输入浮窗按钮样式 */
+@media (max-width: 768px) {
+    #voiceInputFloatButton {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background-color: var(--primary-color); /* 使用主题色 */
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: grab;
+        transition: all 0.2s ease-in-out;
+        z-index: 1000; /* 确保在最上层 */
+    }
+
+    #voiceInputFloatButton.recording {
+        width: 120px; /* 录音时放大 */
+        height: 120px;
+        background-color: var(--secondary-color); /* 绿色效果 */
+        border-radius: 10px; /* 变为矩形 */
+    }
+
+    #voiceInputFloatButton.cancelling {
+        background-color: var(--danger-color); /* 红色效果 */
+    }
+
+    #recordButton {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 30px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column; /* 垂直排列图标和文本 */
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+    }
+
+    #recordButton .material-icons {
+        font-size: 30px;
+    }
+
+    .recording-text {
+        display: block; /* 默认显示 */
+        font-size: 12px;
+        margin-top: 5px;
+    }
+
+    #voiceInputFloatButton.recording .recording-text {
+        font-size: 16px; /* 录音时字体变大 */
+    }
+
+    #voiceInputFloatButton.recording #recordButton .material-icons {
+        display: none; /* 录音时隐藏麦克风图标 */
+    }
+
+    .cancel-area {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: none; /* 默认隐藏 */
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-size: 24px;
+        z-index: 999; /* 在浮窗按钮之下 */
+    }
+
+    #voiceInputFloatButton.recording + .cancel-area {
+        display: flex; /* 录音时显示取消区域 */
+    }
+}
