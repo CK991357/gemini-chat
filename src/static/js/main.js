@@ -1,6 +1,7 @@
 import { AttachmentManager } from './attachments/file-attachment.js'; // T2 新增
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
+import { initFloatingMicButton } from './audio/floating-mic-handler.js'; // 新增
 import { ChatApiHandler } from './chat/chat-api-handler.js';
 import * as chatUI from './chat/chat-ui.js'; // T11: 导入聊天UI模块
 import { CONFIG } from './config/config.js';
@@ -1441,6 +1442,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // 添加移动端事件处理
     if ('ontouchstart' in window) {
         initMobileHandlers();
+        // 初始化浮窗麦克风按钮
+        initFloatingMicButton({
+            client,
+            isConnected: () => isConnected,
+            selectedModelConfig: selectedModelConfig,
+            messageInput,
+            sendButton,
+            showToast,
+            showSystemMessage,
+            chatUI,
+            pcmToWavBlob, // 传入 pcmToWavBlob 函数
+            CONFIG
+        });
     }
 
     /**
