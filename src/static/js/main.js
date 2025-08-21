@@ -491,9 +491,8 @@ document.addEventListener('DOMContentLoaded', () => {
    // 移动端音频输入优化：检测是否为移动设备并初始化悬浮按钮
    isMobile = isMobileDevice();
    if (isMobile && 'ontouchstart' in window) {
-       // 初始化悬浮音频按钮
-       const mobileAudioRecorder = new AudioRecorder();
-       floatingAudioButton = new FloatingAudioButton(mobileAudioRecorder);
+       // 初始化悬浮音频按钮，传递一个函数来获取当前的audioRecorder实例
+       floatingAudioButton = new FloatingAudioButton(() => audioRecorder);
        
        // 默认隐藏，只在WebSocket连接时显示
        floatingAudioButton.hide();

@@ -1958,27 +1958,48 @@ body.dark-mode .highlight-box {
 }
 
 .floating-audio-button.recording {
-    background-color: var(--danger-color);
+    background-color: var(--secondary-color); /* 绿色表示录音状态 */
     animation: pulse 1.5s infinite;
 }
 
 .floating-audio-button.canceling {
-    background-color: #ff9800; /* 橙色表示取消状态 */
+    background-color: var(--danger-color); /* 红色表示取消状态 */
 }
 
 .floating-audio-button.dragging {
     transform: scale(1.1);
 }
 
+/* 悬浮按钮状态提示样式 */
+.floating-audio-status {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.floating-audio-status.show {
+    opacity: 1;
+}
+
 @keyframes pulse {
     0% {
-        box-shadow: 0 0 0 0 rgba(var(--danger-color-rgb), 0.7);
+        box-shadow: 0 0 0 0 rgba(var(--secondary-color-rgb, 52, 168, 83), 0.7);
     }
     70% {
-        box-shadow: 0 0 0 10px rgba(var(--danger-color-rgb), 0);
+        box-shadow: 0 0 0 10px rgba(var(--secondary-color-rgb, 52, 168, 83), 0);
     }
     100% {
-        box-shadow: 0 0 0 0 rgba(var(--danger-color-rgb), 0);
+        box-shadow: 0 0 0 0 rgba(var(--secondary-color-rgb, 52, 168, 83), 0);
     }
 }
 

@@ -7,11 +7,11 @@ import { Logger } from '../utils/logger.js';
 export class FloatingAudioButton {
     /**
      * @constructor
-     * @param {AudioRecorder} audioRecorder - The audio recorder instance to control
+     * @param {Function} getAudioRecorder - Function that returns the current audio recorder instance
      * @param {Object} options - Configuration options
      */
-    constructor(audioRecorder, options = {}) {
-        this.audioRecorder = audioRecorder;
+    constructor(getAudioRecorder, options = {}) {
+        this.getAudioRecorder = getAudioRecorder;
         this.options = {
             cancelButtonThreshold: 100, // pixels to slide up to enter cancel state
             ...options
@@ -39,6 +39,7 @@ export class FloatingAudioButton {
         // DOM elements
         this.button = null;
         this.container = null;
+        this.statusIndicator = null;
         
         // Initialize the button
         this.init();
@@ -59,8 +60,14 @@ export class FloatingAudioButton {
         this.button.textContent = 'mic'; // 使用textContent避免XSS风险
         this.button.setAttribute('aria-label', this.escapeHtml('录音按钮'));
         
+        // Create status indicator
+        this.statusIndicator = document.createElement('div');
+        this.statusIndicator.className = 'floating-audio-status';
+        this.statusIndicator.textContent = '';
+        
         // Add to container
         this.container.appendChild(this.button);
+        this.container.appendChild(this.statusIndicator);
         
         // 安全地添加到body
         document.body.appendChild(this.container);
@@ -239,16 +246,28 @@ export class FloatingAudioButton {
             this.button.classList.add('recording');
             this.button.textContent = 'mic'; // Update icon
             
+            // Show recording status
+            this.showStatus('录音中...');
+            
+            // Get current audio recorder instance
+            const audioRecorder = this.getAudioRecorder();
+            if (!audioRecorder) {
+                throw new Error('No audio recorder available');
+            }
+            
+            Logger.info('Starting audio recording with floating button');
+            
             // Start recording through audio recorder
-            await this.audioRecorder.start((data) => {
+            await audioRecorder.start((data) => {
                 // Handle audio data if needed
-                Logger.info('Audio data received');
+                Logger.info('Audio data received from floating button');
             });
             
-            Logger.info('Audio recording started');
+            Logger.info('Audio recording started via floating button');
         } catch (error) {
-            Logger.error('Failed to start recording', error);
+            Logger.error('Failed to start recording via floating button', error);
             this.resetState();
+            this.hideStatus();
         }
     }
     
@@ -258,17 +277,37 @@ export class FloatingAudioButton {
      */
     async stopRecording(shouldSend) {
         try {
+            // Get current audio recorder instance
+            const audioRecorder = this.getAudioRecorder();
+            if (!audioRecorder) {
+                throw new Error('No audio recorder available');
+            }
+            
+            Logger.info(`Stopping audio recording via floating button, shouldSend: ${shouldSend}`);
+            
+            // 传递shouldSend参数给audioRecorder.stop()
+            audioRecorder.stop(shouldSend);
             if (shouldSend) {
-                // Stop and send recording
-                this.audioRecorder.stop();
-                Logger.info('Audio recording stopped and will be sent');
+                Logger.info('Audio recording stopped and will be sent via floating button');
+                // Show sent status briefly
+                this.showStatus('已发送');
+                setTimeout(() => {
+                    this.hideStatus();
+                }, 1000);
             } else {
-                // Cancel recording
-                this.audioRecorder.stop(); // We'll handle not sending in the caller
-                Logger.info('Audio recording canceled');
+                Logger.info('Audio recording canceled via floating button');
+                // Show canceled status briefly
+                this.showStatus('已取消');
+                setTimeout(() => {
+                    this.hideStatus();
+                }, 1000);
             }
         } catch (error) {
-            Logger.error('Failed to stop recording', error);
+            Logger.error('Failed to stop recording via floating button', error);
+            this.showStatus('错误');
+            setTimeout(() => {
+                this.hideStatus();
+            }, 1000);
         } finally {
             this.resetState();
         }
@@ -282,7 +321,9 @@ export class FloatingAudioButton {
             this.currentState = this.states.CANCELING;
             this.button.classList.add('canceling');
             this.button.textContent = 'delete'; // Update icon to indicate cancel
-            Logger.info('Entered cancel state');
+            Logger.info('Entered cancel state via floating button');
+            // Show cancel status
+            this.showStatus('松开取消录音');
         }
     }
     
@@ -294,7 +335,27 @@ export class FloatingAudioButton {
             this.currentState = this.states.RECORDING;
             this.button.classList.remove('canceling');
             this.button.textContent = 'mic'; // Restore recording icon
-            Logger.info('Exited cancel state');
+            Logger.info('Exited cancel state via floating button');
+        }
+    }
+    
+    /**
+     * Show status message
+     * @param {string} message - Status message to display
+     */
+    showStatus(message) {
+        if (this.statusIndicator) {
+            this.statusIndicator.textContent = message;
+            this.statusIndicator.classList.add('show');
+        }
+    }
+    
+    /**
+     * Hide status message
+     */
+    hideStatus() {
+        if (this.statusIndicator) {
+            this.statusIndicator.classList.remove('show');
         }
     }
     
