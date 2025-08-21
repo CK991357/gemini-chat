@@ -5,7 +5,7 @@
 
 import { showSystemMessage } from '../main.js'; // 导入必要的辅助函数
 import { Logger } from '../utils/logger.js';
-import { VideoManager } from '../websocket/video/video-manager.js';
+import { VideoManager } from '../video/video-manager.js';
 
 /**
  * @class VideoHandler

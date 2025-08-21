@@ -5,14 +5,14 @@ import { ChatApiHandler } from './chat/chat-api-handler.js';
 import * as chatUI from './chat/chat-ui.js'; // T11: 导入聊天UI模块
 import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
+import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
+import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
-import { MultimodalLiveClient } from './websocket/core/websocket-client.js';
-import { ToolManager } from './websocket/tools/tool-manager.js'; // 确保导入 ToolManager
 
 /**
  * @fileoverview Main entry point for the application.

@@ -1,5 +1,5 @@
-import { ApiHandler } from '../api/api-handler.js'; // 引入 ApiHandler
 import { CONFIG } from '../config/config.js';
+import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
 import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-ocr.js';
 
