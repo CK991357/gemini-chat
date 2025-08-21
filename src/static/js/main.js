@@ -666,50 +666,51 @@ async function ensureAudioInitialized() {
  * Handles the microphone toggle. Starts or stops audio recording.
  * @returns {Promise<void>}
  */
-async function handleMicToggle() {
-    // 检查是否已经初始化
+/**
+ * @function requestMicPermissionAndInitRecorder
+ * @description 处理一次性的麦克风权限请求并初始化共享的 AudioRecorder 实例。
+ * 该函数由UI中的主麦克风按钮触发。
+ * @returns {Promise<void>}
+ */
+async function requestMicPermissionAndInitRecorder() {
+    // 如果录音器已经初始化，则通知用户并直接返回。
     if (audioRecorder) {
         showToast('录音器已准备就绪，请使用悬浮按钮进行操作。');
         return;
     }
 
     try {
-        // 1. 请求权限并初始化 AudioRecorder
-        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-        if (permissionStatus.state === 'denied') {
-            showSystemMessage('麦克风权限被拒绝，请在浏览器设置中启用。');
-            return;
-        }
+        // 确保共享的 AudioContext 已创建并激活。
+        await ensureAudioInitialized();
 
-        // 尝试获取一次麦克风权限，如果成功，立即释放
+        // 通过获取媒体流然后立即停止它的方式来请求麦克风权限。
+        // 这是一个仅用于触发权限提示的常用模式。
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach(track => track.stop());
 
-        // 2. 实例化 AudioRecorder
-        // 这个实例将在整个会话中共享
-        // Pass the shared AudioContext to the recorder
+        // 实例化会话中唯一的、共享的 AudioRecorder。
         audioRecorder = new AudioRecorder(audioCtx);
         
         showToast('麦克风权限已获取，录音器准备就绪。');
         Logger.info('AudioRecorder initialized and ready.');
 
-        // 3. 更新UI状态
-        // 禁用旧的桌面麦克风按钮，因为它现在只用于一次性授权
+        // 更新UI以反映新状态。
+        // 主麦克风按钮现在被禁用，因为它只用于一次性授权。
         micButton.disabled = true;
-        micButton.textContent = 'done'; // 图标变为“完成”
-        micButton.classList.add('disabled');
+        micButton.textContent = 'done';
+        micButton.title = '麦克风已授权';
+        micButton.style.cursor = 'default';
 
-        // 如果是移动设备，并且悬浮按钮已初始化，则显示它
-        if (isMobile && floatingAudioButton) {
+        // 如果在移动设备上且已连接，则显示悬浮音频按钮。
+        if (isMobile && floatingAudioButton && isConnected) {
             floatingAudioButton.show();
         }
 
     } catch (error) {
-        Logger.error('Failed to initialize AudioRecorder:', error);
+        Logger.error('初始化 AudioRecorder 失败:', error);
         showSystemMessage(`麦克风初始化失败: ${error.message}`);
-        // Ensure state is reset on failure
+        // 失败时重置状态，允许用户重试。
         audioRecorder = null;
-        micButton.disabled = false;
     }
 }
 
@@ -1174,14 +1175,7 @@ messageInput.addEventListener('keydown', (event) => {
     }
 });
 
-micButton.addEventListener('click', () => {
-    // 仅在 WebSocket 连接时才允许进行权限请求和初始化
-    if (isConnected && selectedModelConfig.isWebSocket) {
-        handleMicToggle();
-    } else {
-        showToast('请先连接到 WebSocket 服务器。');
-    }
-});
+micButton.addEventListener('click', requestMicPermissionAndInitRecorder);
 
 connectButton.addEventListener('click', () => {
     if (isConnected) {
@@ -1249,8 +1243,8 @@ async function connect() {
         await connectToHttp();
     }
     
-    // 移动端音频输入优化：WebSocket连接成功后，如果录音器已就绪，则显示悬浮按钮
-    if (isMobile && floatingAudioButton && audioRecorder && selectedModelConfig.isWebSocket) {
+    // Show the floating button on mobile if the recorder is already initialized
+    if (isMobile && floatingAudioButton && audioRecorder) {
         floatingAudioButton.show();
     }
 }
@@ -1400,11 +1394,9 @@ function updateMediaPreviewsDisplay() {
  */
 function initMobileHandlers() {
 
-    // 新增：移动端麦克风按钮
-    document.getElementById('mic-button').addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        if (isConnected) handleMicToggle();
-    });
+    // 'mic-button' 现在只用于一次性权限请求，
+    // 因此不再需要此处的移动端特定触摸处理程序。
+    // 在移动设备上，所有录音交互都将由悬浮按钮处理。
     
     /**
      * 检查音频播放状态。

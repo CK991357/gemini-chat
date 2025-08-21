@@ -2,424 +2,263 @@ import { Logger } from '../utils/logger.js';
 
 /**
  * @class FloatingAudioButton
- * @description A draggable floating button for mobile audio recording with slide-up to cancel functionality
+ * @description A draggable floating button for mobile audio recording with slide-up to cancel functionality.
+ * It manages the recording state and interacts with the AudioRecorder and WebSocket client.
  */
 export class FloatingAudioButton {
     /**
      * @constructor
-     * @param {Function} getAudioRecorder - Function that returns the current audio recorder instance
-     * @param {Object} options - Configuration options
+     * @param {Function} getAudioRecorder - A function that returns the singleton AudioRecorder instance.
+     * @param {object} client - The WebSocket client instance for sending audio data.
+     * @param {object} [options={}] - Configuration options for the button's behavior.
      */
     constructor(getAudioRecorder, client, options = {}) {
         this.getAudioRecorder = getAudioRecorder;
-        this.client = client; // Store the client instance
+        this.client = client;
         this.options = {
-            cancelButtonThreshold: 100, // pixels to slide up to enter cancel state
-            ...options
+            cancelThreshold: 80, // Pixels to slide up to enter the cancel state.
+            ...options,
         };
-        
-        // State management
-        this.states = {
-            IDLE: 'idle',
-            RECORDING: 'recording',
-            CANCELING: 'canceling'
-        };
-        this.currentState = this.states.IDLE;
-        
-        // Position tracking
-        this.startX = 0;
-        this.startY = 0;
-        this.currentX = 0;
-        this.currentY = 0;
-        this.lastX = 0;
-        this.lastY = 0;
-        
-        // Throttling for touch events
-        this.throttleTimer = null;
-        
-        // DOM elements
-        this.button = null;
-        this.container = null;
-        this.statusIndicator = null;
-        
-        // Initialize the button
-        this.init();
+
+        this.state = 'IDLE'; // Possible states: IDLE, RECORDING, CANCELING
+        this.touchData = { startX: 0, startY: 0, currentY: 0 };
+        this.isDragging = false;
+
+        this.initUI();
+        this.bindEvents();
     }
-    
+
     /**
-     * Initialize the floating button
+     * @method initUI
+     * @description Creates and appends the necessary DOM elements for the button to the document body.
      */
-    init() {
-        // Create container
+    initUI() {
         this.container = document.createElement('div');
         this.container.className = 'floating-audio-button-container';
-        
-        // Create button
+
         this.button = document.createElement('button');
         this.button.className = 'floating-audio-button';
         this.button.type = 'button';
-        this.button.textContent = 'mic'; // 使用textContent避免XSS风险
-        this.button.setAttribute('aria-label', this.escapeHtml('录音按钮'));
+        this.button.setAttribute('aria-label', 'Hold to record, release to send, slide up to cancel');
         
-        // Create status indicator
+        const icon = document.createElement('span');
+        icon.className = 'material-icons';
+        icon.textContent = 'mic';
+        this.button.appendChild(icon);
+
         this.statusIndicator = document.createElement('div');
         this.statusIndicator.className = 'floating-audio-status';
-        this.statusIndicator.textContent = '';
-        
-        // Add to container
-        this.container.appendChild(this.button);
-        this.container.appendChild(this.statusIndicator);
-        
-        // 安全地添加到body
+
+        this.container.append(this.button, this.statusIndicator);
         document.body.appendChild(this.container);
-        
-        // Bind events
-        this.bindEvents();
-        
-        Logger.info('FloatingAudioButton initialized');
     }
-    
+
     /**
-     * Bind touch events for dragging and recording
+     * @method bindEvents
+     * @description Binds touch and mouse events to the button for recording and dragging.
      */
     bindEvents() {
-        // Touch events for mobile with proper options
-        this.button.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
-        this.button.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
-        this.button.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
-        
-        // Mouse events for desktop testing
-        this.button.addEventListener('mousedown', this.handleMouseDown.bind(this));
-        document.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        this.button.addEventListener('touchstart', this.handlePress.bind(this), { passive: false });
+        this.button.addEventListener('touchmove', this.handleMove.bind(this), { passive: false });
+        this.button.addEventListener('touchend', this.handleRelease.bind(this));
+        this.button.addEventListener('touchcancel', this.handleRelease.bind(this));
+
+        // Fallback for desktop testing
+        this.button.addEventListener('mousedown', this.handlePress.bind(this));
+        document.addEventListener('mousemove', this.handleMove.bind(this));
+        document.addEventListener('mouseup', this.handleRelease.bind(this));
     }
-    
+
     /**
-     * Handle touch start event
-     * @param {TouchEvent} e - Touch event
+     * @method handlePress
+     * @description Handles the start of a touch or mouse press, initiating the recording process.
+     * @param {Event} e - The touch or mouse event.
      */
-    handleTouchStart(e) {
+    handlePress(e) {
         e.preventDefault();
-        e.stopPropagation();
-        const touch = e.touches[0];
-        this.startDrag(touch.clientX, touch.clientY);
+        this.isDragging = true;
+        const touch = e.touches ? e.touches[0] : e;
+        this.touchData.startX = touch.clientX;
+        this.touchData.startY = touch.clientY;
+
+        this.startRecording();
     }
-    
+
     /**
-     * Handle mouse down event
-     * @param {MouseEvent} e - Mouse event
+     * @method handleMove
+     * @description Handles the movement during a touch or mouse drag, checking for the cancel gesture.
+     * @param {Event} e - The touch or mouse event.
      */
-    handleMouseDown(e) {
+    handleMove(e) {
+        if (!this.isDragging || this.state !== 'RECORDING') return;
         e.preventDefault();
-        e.stopPropagation();
-        this.startDrag(e.clientX, e.clientY);
-    }
-    
-    /**
-     * Start drag operation
-     * @param {number} x - X coordinate
-     * @param {number} y - Y coordinate
-     */
-    startDrag(x, y) {
-        this.startX = x;
-        this.startY = y;
-        this.currentX = x;
-        this.currentY = y;
-        this.lastX = x;
-        this.lastY = y;
-        
-        // Add dragging class
-        this.button.classList.add('dragging');
-        
-        // If in idle state, start recording
-        if (this.currentState === this.states.IDLE) {
-            this.startRecording();
-        }
-    }
-    
-    /**
-     * Handle touch move event with throttling
-     * @param {TouchEvent} e - Touch event
-     */
-    handleTouchMove(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        // 节流处理，避免频繁更新
-        if (this.throttleTimer) return;
-        this.throttleTimer = setTimeout(() => {
-            this.throttleTimer = null;
-        }, 16); // 约60fps
-        
-        const touch = e.touches[0];
-        this.updatePosition(touch.clientX, touch.clientY);
-    }
-    
-    /**
-     * Handle mouse move event
-     * @param {MouseEvent} e - Mouse event
-     */
-    handleMouseMove(e) {
-        if (this.button.classList.contains('dragging')) {
-            this.updatePosition(e.clientX, e.clientY);
-        }
-    }
-    
-    /**
-     * Update button position during drag
-     * @param {number} x - X coordinate
-     * @param {number} y - Y coordinate
-     */
-    updatePosition(x, y) {
-        this.currentX = x;
-        this.currentY = y;
-        
-        // Calculate distance from start position
-        const deltaX = x - this.startX;
-        const deltaY = y - this.startY;
-        
-        // Update button position
-        this.button.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
-        
-        // Check if we should enter cancel state
-        if (this.currentState === this.states.RECORDING && deltaY < -this.options.cancelButtonThreshold) {
+        const touch = e.touches ? e.touches[0] : e;
+        this.touchData.currentY = touch.clientY;
+
+        const deltaY = this.touchData.startY - this.touchData.currentY;
+        if (deltaY > this.options.cancelThreshold) {
             this.enterCancelState();
-        } else if (this.currentState === this.states.CANCELING && deltaY > -this.options.cancelButtonThreshold) {
+        } else {
             this.exitCancelState();
         }
-        
-        this.lastX = x;
-        this.lastY = y;
     }
-    
+
     /**
-     * Handle touch end event
-     * @param {TouchEvent} e - Touch event
+     * @method handleRelease
+     * @description Handles the end of a touch or mouse press, stopping or canceling the recording.
      */
-    handleTouchEnd(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.endDrag();
-    }
-    
-    /**
-     * Handle mouse up event
-     * @param {MouseEvent} e - Mouse event
-     */
-    handleMouseUp(e) {
-        if (this.button.classList.contains('dragging')) {
-            this.endDrag();
+    handleRelease() {
+        if (!this.isDragging) return;
+        this.isDragging = false;
+
+        if (this.state === 'RECORDING') {
+            this.stopRecording(true); // Send the recording
+        } else if (this.state === 'CANCELING') {
+            this.stopRecording(false); // Cancel the recording
         }
     }
-    
+
     /**
-     * End drag operation
-     */
-    endDrag() {
-        // Remove dragging class
-        this.button.classList.remove('dragging');
-        
-        // Reset button position
-        this.button.style.transform = '';
-        
-        // Handle recording based on state
-        if (this.currentState === this.states.RECORDING) {
-            this.stopRecording(true); // Send recording
-        } else if (this.currentState === this.states.CANCELING) {
-            this.stopRecording(false); // Cancel recording
-        }
-        
-        // Reset positions
-        this.startX = 0;
-        this.startY = 0;
-        this.currentX = 0;
-        this.currentY = 0;
-        this.lastX = 0;
-        this.lastY = 0;
-    }
-    
-    /**
-     * Start audio recording
+     * @method startRecording
+     * @description Transitions to the RECORDING state and starts the audio recorder.
+     * @returns {Promise<void>}
      */
     async startRecording() {
+        const audioRecorder = this.getAudioRecorder();
+        if (!audioRecorder || this.state !== 'IDLE') {
+            Logger.warn('Cannot start recording. Recorder not available or already recording.');
+            return;
+        }
+
+        this.state = 'RECORDING';
+        this.updateAppearance('recording');
+        this.showStatus('Recording...');
+
         try {
-            this.currentState = this.states.RECORDING;
-            this.button.classList.add('recording');
-            this.button.textContent = 'mic'; // Update icon
-            
-            // Show recording status
-            this.showStatus('录音中...');
-            
-            // Get current audio recorder instance
-            const audioRecorder = this.getAudioRecorder();
-            if (!audioRecorder) {
-                throw new Error('No audio recorder available');
-            }
-            
-            Logger.info('Starting audio recording with floating button');
-            
-            // Start recording through audio recorder
             await audioRecorder.start((base64Data) => {
-                // Check if the WebSocket client exists and its `ws` property is not null
                 if (this.client && this.client.ws) {
                     this.client.sendRealtimeInput([{
-                        mimeType: "audio/pcm;rate=16000",
-                        data: base64Data
+                        mimeType: `audio/pcm;rate=${CONFIG.AUDIO.SAMPLE_RATE}`,
+                        data: base64Data,
                     }]);
                 }
             });
-            
-            Logger.info('Audio recording started via floating button');
+            Logger.info('Floating button started recording.');
         } catch (error) {
-            Logger.error('Failed to start recording via floating button', error);
+            Logger.error('Floating button failed to start recording:', error);
+            this.showStatus('Error starting.', 2000);
             this.resetState();
-            this.hideStatus();
         }
     }
-    
+
     /**
-     * Stop audio recording
-     * @param {boolean} shouldSend - Whether to send the recording or cancel it
+     * @method stopRecording
+     * @description Stops the audio recorder and handles sending or canceling the data.
+     * @param {boolean} shouldSend - Whether to send the recorded data.
      */
-    async stopRecording(shouldSend) {
-        try {
-            // Get current audio recorder instance
-            const audioRecorder = this.getAudioRecorder();
-            if (!audioRecorder) {
-                throw new Error('No audio recorder available');
-            }
-            
-            Logger.info(`Stopping audio recording via floating button, shouldSend: ${shouldSend}`);
-            
-            // 传递shouldSend参数给audioRecorder.stop()
-            audioRecorder.stop(shouldSend);
-            if (shouldSend) {
-                Logger.info('Audio recording stopped and will be sent via floating button');
-                // Show sent status briefly
-                this.showStatus('已发送');
-                setTimeout(() => {
-                    this.hideStatus();
-                }, 1000);
-            } else {
-                Logger.info('Audio recording canceled via floating button');
-                // Show canceled status briefly
-                this.showStatus('已取消');
-                setTimeout(() => {
-                    this.hideStatus();
-                }, 1000);
-            }
-        } catch (error) {
-            Logger.error('Failed to stop recording via floating button', error);
-            this.showStatus('错误');
-            setTimeout(() => {
-                this.hideStatus();
-            }, 1000);
-        } finally {
-            this.resetState();
+    stopRecording(shouldSend) {
+        const audioRecorder = this.getAudioRecorder();
+        if (!audioRecorder || this.state === 'IDLE') return;
+
+        audioRecorder.stop();
+        Logger.info(`Floating button stopped recording. Should send: ${shouldSend}`);
+        
+        if (shouldSend) {
+            this.showStatus('Sent!', 1000);
+        } else {
+            this.showStatus('Canceled', 1000);
         }
+        
+        this.resetState();
     }
-    
+
     /**
-     * Enter cancel state
+     * @method enterCancelState
+     * @description Transitions to the CANCELING state.
      */
     enterCancelState() {
-        if (this.currentState === this.states.RECORDING) {
-            this.currentState = this.states.CANCELING;
-            this.button.classList.add('canceling');
-            this.button.textContent = 'delete'; // Update icon to indicate cancel
-            Logger.info('Entered cancel state via floating button');
-            // Show cancel status
-            this.showStatus('松开取消录音');
-        }
+        if (this.state !== 'RECORDING') return;
+        this.state = 'CANCELING';
+        this.updateAppearance('canceling');
+        this.showStatus('Release to cancel');
     }
-    
+
     /**
-     * Exit cancel state
+     * @method exitCancelState
+     * @description Transitions back to the RECORDING state from CANCELING.
      */
     exitCancelState() {
-        if (this.currentState === this.states.CANCELING) {
-            this.currentState = this.states.RECORDING;
-            this.button.classList.remove('canceling');
-            this.button.textContent = 'mic'; // Restore recording icon
-            Logger.info('Exited cancel state via floating button');
-        }
+        if (this.state !== 'CANCELING') return;
+        this.state = 'RECORDING';
+        this.updateAppearance('recording');
+        this.showStatus('Recording...');
     }
-    
+
     /**
-     * Show status message
-     * @param {string} message - Status message to display
-     */
-    showStatus(message) {
-        if (this.statusIndicator) {
-            this.statusIndicator.textContent = message;
-            this.statusIndicator.classList.add('show');
-        }
-    }
-    
-    /**
-     * Hide status message
-     */
-    hideStatus() {
-        if (this.statusIndicator) {
-            this.statusIndicator.classList.remove('show');
-        }
-    }
-    
-    /**
-     * Reset button state
+     * @method resetState
+     * @description Resets the button to its initial IDLE state.
      */
     resetState() {
-        this.currentState = this.states.IDLE;
-        this.button.classList.remove('recording', 'canceling');
-        this.button.textContent = 'mic'; // Reset icon
+        this.state = 'IDLE';
+        this.isDragging = false;
+        this.touchData = { startX: 0, startY: 0, currentY: 0 };
+        this.updateAppearance('idle');
     }
-    
+
     /**
-     * Escape HTML to prevent XSS
-     * @param {string} text - Text to escape
-     * @returns {string} Escaped text
+     * @method updateAppearance
+     * @description Updates the button's visual style based on its current state.
+     * @param {'idle'|'recording'|'canceling'} appearance - The visual state to apply.
      */
-    escapeHtml(text) {
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-        return text.replace(/[&<>"']/g, m => map[m]);
+    updateAppearance(appearance) {
+        this.button.classList.remove('recording', 'canceling');
+        const icon = this.button.querySelector('.material-icons');
+        if (appearance === 'recording') {
+            this.button.classList.add('recording');
+            icon.textContent = 'mic';
+        } else if (appearance === 'canceling') {
+            this.button.classList.add('canceling');
+            icon.textContent = 'delete';
+        } else {
+            icon.textContent = 'mic';
+        }
     }
-    
+
     /**
-     * Show the floating button
+     * @method showStatus
+     * @description Displays a status message near the button.
+     * @param {string} message - The message to display.
+     * @param {number|null} [duration=null] - How long to show the message in ms. If null, it persists.
+     */
+    showStatus(message, duration = null) {
+        this.statusIndicator.textContent = message;
+        this.statusIndicator.classList.add('show');
+        if (duration) {
+            setTimeout(() => this.hideStatus(), duration);
+        }
+    }
+
+    /**
+     * @method hideStatus
+     * @description Hides the status message.
+     */
+    hideStatus() {
+        this.statusIndicator.classList.remove('show');
+    }
+
+    /**
+     * @method show
+     * @description Makes the button container visible.
      */
     show() {
-        if (this.container) {
-            this.container.style.display = 'block';
-        }
+        this.container.style.display = 'block';
     }
-    
+
     /**
-     * Hide the floating button
+     * @method hide
+     * @description Hides the button container.
      */
     hide() {
-        if (this.container) {
-            this.container.style.display = 'none';
-        }
-    }
-    
-    /**
-     * Destroy the floating button and clean up
-     */
-    destroy() {
-        if (this.container && this.container.parentNode) {
-            this.container.parentNode.removeChild(this.container);
-        }
-        
-        // Remove event listeners
-        document.removeEventListener('mousemove', this.handleMouseMove);
-        document.removeEventListener('mouseup', this.handleMouseUp);
-        
-        Logger.info('FloatingAudioButton destroyed');
+        this.container.style.display = 'none';
     }
 }
