@@ -13,6 +13,7 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
+import { FloatingAudioButton } from './ui/floating-audio-button.js'; // 移动端音频输入优化
 
 /**
  * @fileoverview Main entry point for the application.
@@ -486,6 +487,19 @@ document.addEventListener('DOMContentLoaded', () => {
        },
        config: CONFIG // 注入完整的配置对象
    });
+   
+   // 移动端音频输入优化：检测是否为移动设备并初始化悬浮按钮
+   isMobile = isMobileDevice();
+   if (isMobile && 'ontouchstart' in window) {
+       // 初始化悬浮音频按钮
+       const mobileAudioRecorder = new AudioRecorder();
+       floatingAudioButton = new FloatingAudioButton(mobileAudioRecorder);
+       
+       // 默认隐藏，只在WebSocket连接时显示
+       floatingAudioButton.hide();
+       
+       Logger.info('移动端环境检测到，悬浮音频按钮已初始化');
+   }
   });
 
 // State variables
@@ -513,6 +527,8 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
+let floatingAudioButton = null; // 移动端悬浮音频按钮实例
+let isMobile = false; // 是否为移动设备
 
 
 /**
@@ -1256,6 +1272,11 @@ async function connect() {
     } else {
         await connectToHttp();
     }
+    
+    // 移动端音频输入优化：WebSocket连接成功后显示悬浮按钮
+    if (isMobile && floatingAudioButton && selectedModelConfig.isWebSocket) {
+        floatingAudioButton.show();
+    }
 }
 
 /**
@@ -1268,6 +1289,11 @@ function disconnect() {
         // 对于 HTTP 模式，没有“断开连接”的概念，但需要重置 UI 状态
         resetUIForDisconnectedState();
         chatUI.logMessage('已断开连接 (HTTP 模式)', 'system');
+    }
+    
+    // 移动端音频输入优化：断开连接后隐藏悬浮按钮
+    if (isMobile && floatingAudioButton) {
+        floatingAudioButton.hide();
     }
 }
 

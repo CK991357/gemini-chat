@@ -1922,3 +1922,76 @@ body.dark-mode .highlight-box {
     gap: 10px;
     border: 1px solid var(--border-color);
 }
+
+/* 移动端音频输入优化：悬浮音频按钮样式 */
+.floating-audio-button-container {
+    position: fixed;
+    bottom: 100px;
+    right: 30px;
+    z-index: 1000;
+    width: 60px;
+    height: 60px;
+}
+
+.floating-audio-button {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    font-family: 'Material Symbols Outlined';
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    touch-action: none;
+}
+
+.floating-audio-button:hover {
+    background-color: var(--secondary-color);
+    transform: scale(1.05);
+}
+
+.floating-audio-button.recording {
+    background-color: var(--danger-color);
+    animation: pulse 1.5s infinite;
+}
+
+.floating-audio-button.canceling {
+    background-color: #ff9800; /* 橙色表示取消状态 */
+}
+
+.floating-audio-button.dragging {
+    transform: scale(1.1);
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--danger-color-rgb), 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(var(--danger-color-rgb), 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(var(--danger-color-rgb), 0);
+    }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .floating-audio-button-container {
+        bottom: 120px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+    }
+    
+    .floating-audio-button {
+        font-size: 20px;
+    }
+}

@@ -83,9 +83,10 @@ export class AudioRecorder {
     /**
      * @method stop
      * @description Stops the current recording session and cleans up resources.
+     * @param {boolean} shouldSend - Whether to send the recorded audio or cancel it.
      * @throws {ApplicationError} If an error occurs during stopping the recording.
      */
-    stop() {
+    stop(shouldSend = true) {
         try {
             if (!this.isRecording) {
                 Logger.warn('Attempting to stop recording when not recording');
@@ -113,7 +114,12 @@ export class AudioRecorder {
             }
 
             this.isRecording = false;
-            Logger.info('Audio recording stopped successfully');
+            
+            if (shouldSend) {
+                Logger.info('Audio recording stopped and will be sent');
+            } else {
+                Logger.info('Audio recording canceled');
+            }
         } catch (error) {
             Logger.error('Error stopping audio recording', error);
             throw new ApplicationError(
