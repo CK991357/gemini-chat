@@ -10,8 +10,9 @@ export class FloatingAudioButton {
      * @param {Function} getAudioRecorder - Function that returns the current audio recorder instance
      * @param {Object} options - Configuration options
      */
-    constructor(getAudioRecorder, options = {}) {
+    constructor(getAudioRecorder, client, options = {}) {
         this.getAudioRecorder = getAudioRecorder;
+        this.client = client; // Store the client instance
         this.options = {
             cancelButtonThreshold: 100, // pixels to slide up to enter cancel state
             ...options
@@ -258,9 +259,13 @@ export class FloatingAudioButton {
             Logger.info('Starting audio recording with floating button');
             
             // Start recording through audio recorder
-            await audioRecorder.start((data) => {
-                // Handle audio data if needed
-                Logger.info('Audio data received from floating button');
+            await audioRecorder.start((base64Data) => {
+                if (this.client && this.client.isConnected()) {
+                    this.client.sendRealtimeInput([{
+                        mimeType: "audio/pcm;rate=16000",
+                        data: base64Data
+                    }]);
+                }
             });
             
             Logger.info('Audio recording started via floating button');

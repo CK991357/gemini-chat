@@ -11,9 +11,9 @@ import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 Screen
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
+import { FloatingAudioButton } from './ui/floating-audio-button.js'; // 移动端音频输入优化
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
-import { FloatingAudioButton } from './ui/floating-audio-button.js'; // 移动端音频输入优化
 
 /**
  * @fileoverview Main entry point for the application.
@@ -492,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
    isMobile = isMobileDevice();
    if (isMobile && 'ontouchstart' in window) {
        // 初始化悬浮音频按钮，传递一个函数来获取当前的audioRecorder实例
-       floatingAudioButton = new FloatingAudioButton(() => audioRecorder);
+       floatingAudioButton = new FloatingAudioButton(() => audioRecorder, client);
        
        // 默认隐藏，只在WebSocket连接时显示
        floatingAudioButton.hide();
@@ -667,77 +667,48 @@ async function ensureAudioInitialized() {
  * @returns {Promise<void>}
  */
 async function handleMicToggle() {
-    if (!isRecording) {
-        try {
-            // 增加权限状态检查
-            const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-            if (permissionStatus.state === 'denied') {
-                chatUI.logMessage('麦克风权限被拒绝，请在浏览器设置中启用', 'system');
-                return;
-            }
-            await ensureAudioInitialized();
-            audioRecorder = new AudioRecorder();
-            
-            const inputAnalyser = audioCtx.createAnalyser();
-            inputAnalyser.fftSize = 256;
-            const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount); // 重命名为 _inputDataArray
-            
-            await audioRecorder.start((base64Data) => {
-                if (isUsingTool) {
-                    client.sendRealtimeInput([{
-                        mimeType: "audio/pcm;rate=16000",
-                        data: base64Data,
-                        interrupt: true     // Model isn't interruptable when using tools, so we do it manually
-                    }]);
-                } else {
-                    client.sendRealtimeInput([{
-                        mimeType: "audio/pcm;rate=16000",
-                        data: base64Data
-                    }]);
-                }
-                
-                // 移除输入音频可视化
-                // inputAnalyser.getByteFrequencyData(_inputDataArray); // 使用重命名后的变量
-                // const inputVolume = Math.max(..._inputDataArray) / 255;
-                // updateAudioVisualizer(inputVolume, true);
-            });
+    // 检查是否已经初始化
+    if (audioRecorder) {
+        showToast('录音器已准备就绪，请使用悬浮按钮进行操作。');
+        return;
+    }
 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            micStream = stream; // 保存流引用
-            const source = audioCtx.createMediaStreamSource(stream);
-            source.connect(inputAnalyser);
-            
-            await audioStreamer.resume();
-            isRecording = true;
-            Logger.info('Microphone started');
-            chatUI.logMessage('Microphone started', 'system');
-            updateMicIcon();
-        } catch (error) {
-            Logger.error('Microphone error:', error);
-            chatUI.logMessage(`Error: ${error.message}`, 'system');
-            isRecording = false;
-            updateMicIcon();
+    try {
+        // 1. 请求权限并初始化 AudioRecorder
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        if (permissionStatus.state === 'denied') {
+            showSystemMessage('麦克风权限被拒绝，请在浏览器设置中启用。');
+            return;
         }
-    } else {
-        try {
-            // 修复：确保正确关闭麦克风
-            if (audioRecorder && isRecording) {
-                audioRecorder.stop();
-                // 确保关闭音频流
-                if (micStream) {
-                    micStream.getTracks().forEach(track => track.stop());
-                    micStream = null;
-                }
-            }
-            isRecording = false;
-            chatUI.logMessage('Microphone stopped', 'system');
-            updateMicIcon();
-        } catch (error) {
-            Logger.error('Microphone stop error:', error);
-            chatUI.logMessage(`Error stopping microphone: ${error.message}`, 'system');
-            isRecording = false; // 即使出错也要尝试重置状态
-            updateMicIcon();
+
+        // 尝试获取一次麦克风权限，如果成功，立即释放
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+
+        // 2. 实例化 AudioRecorder
+        // 这个实例将在整个会话中共享
+        audioRecorder = new AudioRecorder();
+        
+        showToast('麦克风权限已获取，录音器准备就绪。');
+        Logger.info('AudioRecorder initialized and ready.');
+
+        // 3. 更新UI状态
+        // 禁用旧的桌面麦克风按钮，因为它现在只用于一次性授权
+        micButton.disabled = true;
+        micButton.textContent = 'done'; // 图标变为“完成”
+        micButton.classList.add('disabled');
+
+        // 如果是移动设备，并且悬浮按钮已初始化，则显示它
+        if (isMobile && floatingAudioButton) {
+            floatingAudioButton.show();
         }
+
+    } catch (error) {
+        Logger.error('Failed to initialize AudioRecorder:', error);
+        showSystemMessage(`麦克风初始化失败: ${error.message}`);
+        // 确保在失败时重置状态
+        audioRecorder = null;
+        micButton.disabled = false;
     }
 }
 
@@ -1203,7 +1174,12 @@ messageInput.addEventListener('keydown', (event) => {
 });
 
 micButton.addEventListener('click', () => {
-    if (isConnected) handleMicToggle();
+    // 仅在 WebSocket 连接时才允许进行权限请求和初始化
+    if (isConnected && selectedModelConfig.isWebSocket) {
+        handleMicToggle();
+    } else {
+        showToast('请先连接到 WebSocket 服务器。');
+    }
 });
 
 connectButton.addEventListener('click', () => {
@@ -1272,8 +1248,8 @@ async function connect() {
         await connectToHttp();
     }
     
-    // 移动端音频输入优化：WebSocket连接成功后显示悬浮按钮
-    if (isMobile && floatingAudioButton && selectedModelConfig.isWebSocket) {
+    // 移动端音频输入优化：WebSocket连接成功后，如果录音器已就绪，则显示悬浮按钮
+    if (isMobile && floatingAudioButton && audioRecorder && selectedModelConfig.isWebSocket) {
         floatingAudioButton.show();
     }
 }
