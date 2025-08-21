@@ -16,15 +16,17 @@ export class AudioHandler {
      * @param {object} options.client - The MultimodalLiveClient instance.
      * @param {Function} options.getSelectedModelConfig - Function to get the currently selected model configuration.
      * @param {Function} options.getIsUsingTool - Function to get the current tool usage status.
-     * @param {Function} options.ensureAudioInitialized - Function to ensure audio context and streamer are initialized.
+     * @param {AudioContext} options.audioCtx - The global audio context.
+     * @param {AudioStreamer} options.audioStreamer - The global audio streamer.
      */
-    constructor({ elements, isConnected, client, getSelectedModelConfig, getIsUsingTool, ensureAudioInitialized }) {
+    constructor({ elements, isConnected, client, getSelectedModelConfig, getIsUsingTool, audioCtx, audioStreamer }) {
         this.elements = elements;
         this.isConnected = isConnected;
         this.client = client;
         this.getSelectedModelConfig = getSelectedModelConfig;
         this.getIsUsingTool = getIsUsingTool;
-        this.ensureAudioInitialized = ensureAudioInitialized; // 新增
+        this.audioCtx = audioCtx;
+        this.audioStreamer = audioStreamer;
 
         this.isRecording = false;
         this.audioRecorder = null;
@@ -62,12 +64,14 @@ export class AudioHandler {
                     return;
                 }
 
-                // 在开始录音前，确保音频上下文和流媒体器已初始化
-                const { audioCtx, audioStreamer } = await this.ensureAudioInitialized(); // 调用传入的初始化函数
+                if (!this.audioCtx || !this.audioStreamer) {
+                    chatUI.logMessage('音频组件尚未初始化', 'system');
+                    return;
+                }
                 
                 this.audioRecorder = new AudioRecorder();
                 
-                const inputAnalyser = audioCtx.createAnalyser(); // 使用返回的 audioCtx
+                const inputAnalyser = this.audioCtx.createAnalyser();
                 inputAnalyser.fftSize = 256;
                 
                 await this.audioRecorder.start((base64Data) => {
@@ -87,10 +91,10 @@ export class AudioHandler {
 
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 this.micStream = stream;
-                const source = audioCtx.createMediaStreamSource(stream); // 使用返回的 audioCtx
+                const source = this.audioCtx.createMediaStreamSource(stream);
                 source.connect(inputAnalyser);
                 
-                await audioStreamer.resume(); // 使用返回的 audioStreamer
+                await this.audioStreamer.resume();
                 this.isRecording = true;
                 Logger.info('Microphone started');
                 chatUI.logMessage('Microphone started', 'system');

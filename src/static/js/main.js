@@ -116,6 +116,22 @@ if (savedFPS) {
 // We will set the default prompt based on the new config structure.
 
 document.addEventListener('DOMContentLoaded', () => {
+    // T9: 初始化音频上下文和流处理器
+    const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
+    audioCtx = new AudioContext();
+    audioStreamer = new AudioStreamer(audioCtx);
+
+    // 确保在用户交互后恢复音频上下文
+    if (audioCtx.state === 'suspended') {
+        const resumeHandler = async () => {
+            await audioCtx.resume();
+            document.removeEventListener('click', resumeHandler);
+            document.removeEventListener('touchstart', resumeHandler);
+        };
+        document.addEventListener('click', resumeHandler);
+        document.addEventListener('touchstart', resumeHandler);
+    }
+
     // 配置 marked.js
     marked.setOptions({
       breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
@@ -373,7 +389,6 @@ document.addEventListener('DOMContentLoaded', () => {
    });
 
    // T9: 初始化 AudioHandler
-   // 注意：audioCtx 和 audioStreamer 在此时可能为 null
    audioHandler = new AudioHandler({
        elements: {
            micButton: micButton,
@@ -382,7 +397,8 @@ document.addEventListener('DOMContentLoaded', () => {
        client: client,
        getSelectedModelConfig: () => selectedModelConfig,
        getIsUsingTool: () => isUsingTool,
-       ensureAudioInitialized: ensureAudioInitialized, // 传递初始化函数
+       audioCtx: audioCtx,
+       audioStreamer: audioStreamer,
    });
 
     // 初始化翻译功能
@@ -502,6 +518,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 // State variables
+let audioStreamer = null;
+let audioCtx = null;
 let isConnected = false;
 let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
@@ -592,26 +610,14 @@ function formatTime(seconds) {
 
 // T11: All UI functions previously here have been successfully moved to src/static/js/chat/chat-ui.js
 
-let _audioCtxInstance = null;
-let _audioStreamerInstance = null;
-
 /**
- * @function ensureAudioInitialized
- * @description 确保 AudioContext 和 AudioStreamer 已初始化并处于活动状态。
- *              此函数采用单例模式，只会在首次调用时创建实例。
- * @returns {Promise<{audioCtx: AudioContext, audioStreamer: AudioStreamer}>} 包含 AudioContext 和 AudioStreamer 实例的 Promise。
+ * Resumes the audio context if it's suspended.
+ * @returns {Promise<void>}
  */
-async function ensureAudioInitialized() {
-    if (!_audioCtxInstance) {
-        _audioCtxInstance = new (window.AudioContext || window.webkitAudioContext)();
-        _audioStreamerInstance = new AudioStreamer(_audioCtxInstance);
-        chatUI.logMessage('音频上下文和流媒体器已初始化', 'system');
+async function resumeAudioContext() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        await audioCtx.resume();
     }
-    if (_audioCtxInstance.state === 'suspended') {
-        await _audioCtxInstance.resume();
-        chatUI.logMessage('音频上下文已恢复', 'system');
-    }
-    return { audioCtx: _audioCtxInstance, audioStreamer: _audioStreamerInstance };
 }
 
 /**
@@ -669,8 +675,8 @@ async function connectToWebsocket() {
 
     try {
         await client.connect(config,apiKeyInput.value);
-        await ensureAudioInitialized(); // 确保音频上下文在连接后初始化
         isConnected = true;
+        await resumeAudioContext();
         connectButton.textContent = '断开连接';
         connectButton.classList.add('connected');
         messageInput.disabled = false;
@@ -711,8 +717,8 @@ async function connectToWebsocket() {
 function disconnectFromWebsocket() {
     client.disconnect();
     isConnected = false;
-    if (_audioStreamerInstance) { // 使用单例实例
-        _audioStreamerInstance.stop();
+    if (audioStreamer) {
+        audioStreamer.stop();
     }
     if (audioHandler && audioHandler.getIsRecording()) {
         audioHandler.handleMicToggle(); // This will stop the recording and update the UI
@@ -857,7 +863,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
         
         client.on('audio', async (data) => {
             try {
-                const { audioStreamer } = await ensureAudioInitialized(); // 确保音频已初始化并获取 streamer
+                await resumeAudioContext();
                 if (audioStreamer) {
                     audioStreamer.addPCM16(new Uint8Array(data));
                 }
@@ -918,7 +924,7 @@ client.on('content', (data) => {
 });
 
 client.on('interrupted', () => {
-    _audioStreamerInstance?.stop(); // 使用单例实例
+    audioStreamer?.stop();
     isUsingTool = false;
     Logger.info('Model interrupted');
     chatUI.logMessage('Model interrupted', 'system');
@@ -1012,8 +1018,8 @@ sendButton.addEventListener('click', () => handleSendMessage(attachmentManager))
  * @returns {void}
  */
 function handleInterruptPlayback() {
-    if (_audioStreamerInstance) { // 使用单例实例
-        _audioStreamerInstance.stop();
+    if (audioStreamer) {
+        audioStreamer.stop();
         Logger.info('Audio playback interrupted by user.');
         chatUI.logMessage('语音播放已中断', 'system');
         // 确保在中断时也刷新文本缓冲区并添加到聊天历史
@@ -1037,7 +1043,7 @@ function handleInterruptPlayback() {
         Logger.warn('Attempted to interrupt playback, but audioStreamer is not initialized.');
         chatUI.logMessage('当前没有语音播放可中断', 'system');
     }
-}
+    }
 
 interruptButton.addEventListener('click', handleInterruptPlayback); // 新增事件监听器
 
@@ -1187,8 +1193,8 @@ function resetUIForDisconnectedState() {
     screenButton.disabled = true;
     updateConnectionStatus();
 
-    if (_audioStreamerInstance) { // 使用单例实例
-        _audioStreamerInstance.stop();
+    if (audioStreamer) {
+        audioStreamer.stop();
     }
     if (audioHandler && audioHandler.getIsRecording()) {
         audioHandler.handleMicToggle(); // This will stop the recording and update the UI
@@ -1270,16 +1276,41 @@ function updateMediaPreviewsDisplay() {
  * Initializes mobile-specific event handlers.
  */
 function initMobileHandlers() {
+
     // 新增：移动端麦克风按钮
-    document.getElementById('mic-button').addEventListener('touchstart', async (e) => {
+    document.getElementById('mic-button').addEventListener('touchstart', (e) => {
         e.preventDefault();
-        // 确保 audioHandler 已初始化且当前模型支持 WebSocket
-        if (isConnected && audioHandler && selectedModelConfig.isWebSocket) {
-            await audioHandler.handleMicToggle(); // 直接调用 audioHandler 的方法
-        } else if (!selectedModelConfig.isWebSocket) {
-            showSystemMessage('当前模型不支持麦克风功能。');
-        }
+        if (isConnected) handleMicToggle();
     });
+    
+    /**
+     * 检查音频播放状态。
+     */
+    function checkAudioPlayback() {
+        if (audioStreamer && audioStreamer.isPlaying) {
+            chatUI.logMessage('音频正在播放中...', 'system');
+        } else {
+            chatUI.logMessage('音频未播放', 'system');
+        }
+    }
+    
+    // 在连接成功后添加检查
+    client.on('setupcomplete', () => {
+        chatUI.logMessage('Setup complete', 'system');
+        setTimeout(checkAudioPlayback, 1000); // 1秒后检查音频状态
+    });
+    
+    /**
+     * 添加权限检查。
+     */
+    async function checkAudioPermissions() {
+        try {
+            const permission = await navigator.permissions.query({ name: 'speaker' });
+            chatUI.logMessage(`扬声器权限状态: ${permission.state}`, 'system');
+        } catch (error) {
+            chatUI.logMessage(`扬声器权限检查失败: ${error.message}`, 'system');
+        }
+    }
 }
 
 // 在 DOMContentLoaded 中调用
