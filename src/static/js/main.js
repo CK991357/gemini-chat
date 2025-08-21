@@ -687,7 +687,8 @@ async function handleMicToggle() {
 
         // 2. 实例化 AudioRecorder
         // 这个实例将在整个会话中共享
-        audioRecorder = new AudioRecorder();
+        // Pass the shared AudioContext to the recorder
+        audioRecorder = new AudioRecorder(audioCtx);
         
         showToast('麦克风权限已获取，录音器准备就绪。');
         Logger.info('AudioRecorder initialized and ready.');
@@ -706,7 +707,7 @@ async function handleMicToggle() {
     } catch (error) {
         Logger.error('Failed to initialize AudioRecorder:', error);
         showSystemMessage(`麦克风初始化失败: ${error.message}`);
-        // 确保在失败时重置状态
+        // Ensure state is reset on failure
         audioRecorder = null;
         micButton.disabled = false;
     }

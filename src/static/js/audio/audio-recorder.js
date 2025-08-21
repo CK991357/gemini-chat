@@ -12,11 +12,10 @@ export class AudioRecorder {
      * @constructor
      * @param {number} sampleRate - The sample rate for audio recording (default: 16000)
      */
-    constructor(sampleRate = CONFIG.AUDIO.SAMPLE_RATE) {
+    constructor(audioContext, sampleRate = CONFIG.AUDIO.SAMPLE_RATE) {
+        this.audioContext = audioContext; // Use provided AudioContext
         this.sampleRate = sampleRate;
         this.stream = null;
-        this.mediaRecorder = null;
-        this.audioContext = null;
         this.source = null;
         this.processor = null;
         this.onAudioData = null;
@@ -24,7 +23,7 @@ export class AudioRecorder {
         // Bind methods to preserve context
         this.start = this.start.bind(this);
         this.stop = this.stop.bind(this);
-
+    
         // Add state tracking
         this.isRecording = false;
     }
@@ -51,11 +50,13 @@ export class AudioRecorder {
                 }
             });
             
-            this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
             this.source = this.audioContext.createMediaStreamSource(this.stream);
-
+            
             // Load and initialize audio worklet
-            await this.audioContext.audioWorklet.addModule('js/audio/worklets/audio-processing.js');
+            // The worklet should be added only once per AudioContext
+            if (!this.audioContext.audioWorklet.get('audio-recorder-worklet')) {
+                await this.audioContext.audioWorklet.addModule('js/audio/worklets/audio-processing.js');
+            }
             this.processor = new AudioWorkletNode(this.audioContext, 'audio-recorder-worklet');
             
             // Handle processed audio data
@@ -108,10 +109,7 @@ export class AudioRecorder {
                 this.processor.disconnect();
                 this.processor = null;
             }
-            if (this.audioContext) {
-                this.audioContext.close(); // 显式关闭 AudioContext
-                this.audioContext = null;
-            }
+            // Do not close the audio context, as it is now shared.
 
             this.isRecording = false;
             
