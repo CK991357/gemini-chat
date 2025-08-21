@@ -58,6 +58,12 @@ export class AudioHandler {
     async handleMicToggle() {
         if (!this.isRecording) {
             try {
+                // 确保在用户交互后恢复音频上下文
+                if (this.audioCtx.state === 'suspended') {
+                    await this.audioCtx.resume();
+                    Logger.info('AudioContext resumed by user gesture.');
+                }
+
                 const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
                 if (permissionStatus.state === 'denied') {
                     chatUI.logMessage('麦克风权限被拒绝，请在浏览器设置中启用', 'system');
