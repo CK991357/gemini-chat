@@ -1,8 +1,8 @@
 import { EventEmitter } from 'https://cdn.skypack.dev/eventemitter3';
-import { ToolManager } from '../tools/tool-manager.js';
 import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { Logger } from '../utils/logger.js';
 import { base64ToArrayBuffer, blobToJSON } from '../utils/utils.js';
+import { ToolManager } from '../websocket/tools/tool-manager.js';
 
 /**
  * Client for interacting with the Gemini 2.0 Flash Multimodal Live API via WebSockets.

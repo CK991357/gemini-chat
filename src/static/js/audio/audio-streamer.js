@@ -1,5 +1,5 @@
-import { registeredWorklets } from '../core/worklet-registry.js';
 import { CONFIG } from '../config/config.js';
+import { registeredWorklets } from '../websocket/core/worklet-registry.js';
 
 /**
  * @class AudioStreamer
