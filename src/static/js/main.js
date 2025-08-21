@@ -381,8 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
        client: client,
        getSelectedModelConfig: () => selectedModelConfig,
        getIsUsingTool: () => isUsingTool,
-       audioCtx: () => audioCtx, // 传递一个函数来动态获取
-       audioStreamer: () => audioStreamer, // 传递一个函数来动态获取
+       ensureAudioInitialized: ensureAudioInitialized, // 传递初始化函数
    });
 
     // 初始化翻译功能
@@ -669,6 +668,7 @@ async function connectToWebsocket() {
 
     try {
         await client.connect(config,apiKeyInput.value);
+        await ensureAudioInitialized(); // 确保音频上下文在连接后初始化
         isConnected = true;
         connectButton.textContent = '断开连接';
         connectButton.classList.add('connected');
@@ -1269,11 +1269,15 @@ function updateMediaPreviewsDisplay() {
  * Initializes mobile-specific event handlers.
  */
 function initMobileHandlers() {
-
     // 新增：移动端麦克风按钮
-    document.getElementById('mic-button').addEventListener('touchstart', (e) => {
+    document.getElementById('mic-button').addEventListener('touchstart', async (e) => {
         e.preventDefault();
-        if (isConnected) audioHandler.handleMicToggle(); // 直接调用 audioHandler 的方法
+        // 确保 audioHandler 已初始化且当前模型支持 WebSocket
+        if (isConnected && audioHandler && selectedModelConfig.isWebSocket) {
+            await audioHandler.handleMicToggle(); // 直接调用 audioHandler 的方法
+        } else if (!selectedModelConfig.isWebSocket) {
+            showSystemMessage('当前模型不支持麦克风功能。');
+        }
     });
 }
 
