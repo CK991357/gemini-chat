@@ -146,7 +146,9 @@ export class FloatingAudioButton {
             Logger.info('Floating button started recording.');
         } catch (error) {
             Logger.error('Floating button failed to start recording:', error);
-            this.showStatus('Error starting.', 2000);
+            // 将详细错误信息展示给用户，便于调试
+            const errorMessage = error.message || 'Unknown error';
+            this.showStatus(`Error: ${errorMessage}`, 4000);
             this.resetState();
         }
     }
