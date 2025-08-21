@@ -1,5 +1,6 @@
 import { AttachmentManager } from './attachments/file-attachment.js'; // T2 新增
 import { AudioRecorder } from './audio/audio-recorder.js';
+import { AudioStreamer } from './audio/audio-streamer.js';
 import { ChatApiHandler } from './chat/chat-api-handler.js';
 import * as chatUI from './chat/chat-ui.js'; // T11: 导入聊天UI模块
 import { CONFIG } from './config/config.js';
