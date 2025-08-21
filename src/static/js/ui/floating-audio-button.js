@@ -1,3 +1,4 @@
+import { CONFIG } from '../config/config.js';
 import { Logger } from '../utils/logger.js';
 
 /**
