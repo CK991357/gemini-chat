@@ -12,8 +12,8 @@ export class AudioRecorder {
      * @constructor
      * @param {number} sampleRate - The sample rate for audio recording (default: 16000)
      */
-    constructor(audioContext, sampleRate = CONFIG.AUDIO.SAMPLE_RATE) {
-        this.audioContext = audioContext; // Use provided AudioContext
+    constructor(sampleRate = CONFIG.AUDIO.SAMPLE_RATE) {
+        this.audioContext = null; // Will be initialized on first start
         this.sampleRate = sampleRate;
         this.stream = null;
         this.source = null;
@@ -37,29 +37,72 @@ export class AudioRecorder {
      * @throws {Error} If unable to access microphone or set up audio processing.
      * @async
      */
+    async initialize() {
+        if (!this.audioContext) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) {
+                throw new ApplicationError(
+                    'AudioContext is not supported in this browser.',
+                    ErrorCodes.AUDIO_NOT_SUPPORTED
+                );
+            }
+            this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
+        }
+
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+        }
+    }
+
+    /**
+     * @method start
+     * @description Starts audio recording with the specified callback for audio data.
+     * @param {Function} onAudioData - Callback function for processed audio data.
+     * @param {Object} [options={}] - Optional configuration for recording.
+     * @param {boolean} [options.returnRaw=false] - If true, onAudioData receives raw ArrayBuffer; otherwise, Base64 string.
+     * @throws {Error} If unable to access microphone or set up audio processing.
+     * @async
+     */
     async start(onAudioData, options = {}) {
+        if (this.isRecording) {
+            Logger.warn('Recording is already in progress.');
+            return;
+        }
+
         this.onAudioData = onAudioData;
-        const { returnRaw = false } = options; // 解构 options，默认 returnRaw 为 false
+        const { returnRaw = false } = options;
 
         try {
-            // Request microphone access
+            await this.initialize(); // Ensure AudioContext is ready
+
             this.stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     channelCount: 1,
-                    sampleRate: this.sampleRate
-                }
+                    sampleRate: this.sampleRate,
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                },
             });
-            
+
             this.source = this.audioContext.createMediaStreamSource(this.stream);
             
-            // Load and initialize audio worklet
-            // The worklet should be added only once per AudioContext
-            if (!this.audioContext.audioWorklet.get('audio-recorder-worklet')) {
-                await this.audioContext.audioWorklet.addModule('js/audio/worklets/audio-processing.js');
+            // Ensure the worklet path is correct
+            const workletURL = new URL('./worklets/audio-processing.js', import.meta.url).href;
+            
+            // Check if the worklet has already been added
+            // Note: AudioWorklet does not provide a direct way to check for a registered processor.
+            // We'll add it every time, modern browsers handle this gracefully.
+            try {
+                await this.audioContext.audioWorklet.addModule(workletURL);
+            } catch (e) {
+                // Ignore errors if the module is already registered.
+                if (!e.message.includes('already been registered')) {
+                    throw e;
+                }
             }
+
             this.processor = new AudioWorkletNode(this.audioContext, 'audio-recorder-worklet');
             
-            // Handle processed audio data
             this.processor.port.onmessage = (event) => {
                 if (event.data.event === 'chunk' && this.onAudioData && this.isRecording) {
                     if (returnRaw) {

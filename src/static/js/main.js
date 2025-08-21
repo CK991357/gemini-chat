@@ -689,7 +689,8 @@ async function requestMicPermissionAndInitRecorder() {
         stream.getTracks().forEach(track => track.stop());
 
         // 实例化会话中唯一的、共享的 AudioRecorder。
-        audioRecorder = new AudioRecorder(audioCtx);
+        // 新的 AudioRecorder 会在内部自行管理 AudioContext。
+        audioRecorder = new AudioRecorder();
         
         showToast('麦克风权限已获取，录音器准备就绪。');
         Logger.info('AudioRecorder initialized and ready.');
