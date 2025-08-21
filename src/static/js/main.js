@@ -7,7 +7,6 @@ import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
-import { AudioHandler } from './media/audio-handlers.js'; // T9: 导入 AudioHandler
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
@@ -117,22 +116,6 @@ if (savedFPS) {
 // We will set the default prompt based on the new config structure.
 
 document.addEventListener('DOMContentLoaded', () => {
-    // T9: 初始化音频上下文和流处理器
-    const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
-    audioCtx = new AudioContext();
-    audioStreamer = new AudioStreamer(audioCtx);
-
-    // 确保在用户交互后恢复音频上下文
-    if (audioCtx.state === 'suspended') {
-        const resumeHandler = async () => {
-            await audioCtx.resume();
-            document.removeEventListener('click', resumeHandler);
-            document.removeEventListener('touchstart', resumeHandler);
-        };
-        document.addEventListener('click', resumeHandler);
-        document.addEventListener('touchstart', resumeHandler);
-    }
-
     // 配置 marked.js
     marked.setOptions({
       breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
@@ -389,19 +372,6 @@ document.addEventListener('DOMContentLoaded', () => {
        getSelectedModelConfig: () => selectedModelConfig, // 传递获取模型配置的函数
    });
 
-   // T9: 初始化 AudioHandler
-   audioHandler = new AudioHandler({
-       elements: {
-           micButton: micButton,
-       },
-       isConnected: () => isConnected,
-       client: client,
-       getSelectedModelConfig: () => selectedModelConfig,
-       getIsUsingTool: () => isUsingTool,
-       audioCtx: audioCtx,
-       audioStreamer: audioStreamer,
-   });
-
     // 初始化翻译功能
     const translationElements = {
         translationModeBtn: document.getElementById('translation-mode-button'),
@@ -519,9 +489,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 // State variables
+let isRecording = false;
 let audioStreamer = null;
 let audioCtx = null;
 let isConnected = false;
+let audioRecorder = null;
+let micStream = null; // 新增：用于保存麦克风流
 let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
@@ -539,7 +512,6 @@ let attachmentManager = null; // T2: 提升作用域
 let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
-let audioHandler = null; // T9: 新增 AudioHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
 
 
@@ -610,6 +582,149 @@ function formatTime(seconds) {
 }
 
 // T11: All UI functions previously here have been successfully moved to src/static/js/chat/chat-ui.js
+
+/**
+ * Updates the microphone icon based on the recording state.
+ */
+function updateMicIcon() {
+    if (micButton) {
+        // 修复：直接更新按钮图标
+        micButton.textContent = isRecording ? 'mic_off' : 'mic';
+        micButton.classList.toggle('active', isRecording);
+    }
+}
+
+/**
+ * Updates the audio visualizer based on the audio volume.
+ * @param {number} volume - The audio volume (0.0 to 1.0).
+ * @param {boolean} [isInput=false] - Whether the visualizer is for input audio.
+ */
+// function updateAudioVisualizer(volume, isInput = false) {
+//     // 移除音频可视化，因为音频模式已删除，且在文字模式下不需要实时显示音频波形
+//     // 如果未来需要，可以考虑在其他地方重新引入
+//     // const visualizer = isInput ? inputAudioVisualizer : audioVisualizer;
+//     // const audioBar = visualizer.querySelector('.audio-bar') || document.createElement('div');
+//
+//     // if (!visualizer.contains(audioBar)) {
+//     //     audioBar.classList.add('audio-bar');
+//     //     visualizer.appendChild(audioBar);
+//     // }
+//
+//     // audioBar.style.width = `${volume * 100}%`;
+//     // if (volume > 0) {
+//     //     audioBar.classList.add('active');
+//     // } else {
+//     //     audioBar.classList.remove('active');
+//     // }
+// }
+
+/**
+ * Initializes the audio context and streamer if not already initialized.
+ * @returns {Promise<AudioStreamer>} The audio streamer instance.
+ */
+async function ensureAudioInitialized() {
+    if (!audioCtx) {
+        const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
+        audioCtx = new AudioContext();
+        
+        // 确保在用户交互后恢复音频上下文
+        if (audioCtx.state === 'suspended') {
+            const resumeHandler = async () => {
+                await audioCtx.resume();
+                document.removeEventListener('click', resumeHandler);
+                document.removeEventListener('touchstart', resumeHandler);
+            };
+            
+            document.addEventListener('click', resumeHandler);
+            document.addEventListener('touchstart', resumeHandler);
+        }
+    }
+    
+    if (!audioStreamer) {
+        audioStreamer = new AudioStreamer(audioCtx);
+    }
+    
+    return audioStreamer;
+}
+
+/**
+ * Handles the microphone toggle. Starts or stops audio recording.
+ * @returns {Promise<void>}
+ */
+async function handleMicToggle() {
+    if (!isRecording) {
+        try {
+            // 增加权限状态检查
+            const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+            if (permissionStatus.state === 'denied') {
+                chatUI.logMessage('麦克风权限被拒绝，请在浏览器设置中启用', 'system');
+                return;
+            }
+            await ensureAudioInitialized();
+            audioRecorder = new AudioRecorder();
+            
+            const inputAnalyser = audioCtx.createAnalyser();
+            inputAnalyser.fftSize = 256;
+            const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount); // 重命名为 _inputDataArray
+            
+            await audioRecorder.start((base64Data) => {
+                if (isUsingTool) {
+                    client.sendRealtimeInput([{
+                        mimeType: "audio/pcm;rate=16000",
+                        data: base64Data,
+                        interrupt: true     // Model isn't interruptable when using tools, so we do it manually
+                    }]);
+                } else {
+                    client.sendRealtimeInput([{
+                        mimeType: "audio/pcm;rate=16000",
+                        data: base64Data
+                    }]);
+                }
+                
+                // 移除输入音频可视化
+                // inputAnalyser.getByteFrequencyData(_inputDataArray); // 使用重命名后的变量
+                // const inputVolume = Math.max(..._inputDataArray) / 255;
+                // updateAudioVisualizer(inputVolume, true);
+            });
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            micStream = stream; // 保存流引用
+            const source = audioCtx.createMediaStreamSource(stream);
+            source.connect(inputAnalyser);
+            
+            await audioStreamer.resume();
+            isRecording = true;
+            Logger.info('Microphone started');
+            chatUI.logMessage('Microphone started', 'system');
+            updateMicIcon();
+        } catch (error) {
+            Logger.error('Microphone error:', error);
+            chatUI.logMessage(`Error: ${error.message}`, 'system');
+            isRecording = false;
+            updateMicIcon();
+        }
+    } else {
+        try {
+            // 修复：确保正确关闭麦克风
+            if (audioRecorder && isRecording) {
+                audioRecorder.stop();
+                // 确保关闭音频流
+                if (micStream) {
+                    micStream.getTracks().forEach(track => track.stop());
+                    micStream = null;
+                }
+            }
+            isRecording = false;
+            chatUI.logMessage('Microphone stopped', 'system');
+            updateMicIcon();
+        } catch (error) {
+            Logger.error('Microphone stop error:', error);
+            chatUI.logMessage(`Error stopping microphone: ${error.message}`, 'system');
+            isRecording = false; // 即使出错也要尝试重置状态
+            updateMicIcon();
+        }
+    }
+}
 
 /**
  * Resumes the audio context if it's suspended.
@@ -720,9 +835,12 @@ function disconnectFromWebsocket() {
     isConnected = false;
     if (audioStreamer) {
         audioStreamer.stop();
-    }
-    if (audioHandler && audioHandler.getIsRecording()) {
-        audioHandler.handleMicToggle(); // This will stop the recording and update the UI
+        if (audioRecorder) {
+            audioRecorder.stop();
+            audioRecorder = null;
+        }
+        isRecording = false;
+        updateMicIcon();
     }
     connectButton.textContent = '连接';
     connectButton.classList.remove('connected');
@@ -865,9 +983,8 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
         client.on('audio', async (data) => {
             try {
                 await resumeAudioContext();
-                if (audioStreamer) {
-                    audioStreamer.addPCM16(new Uint8Array(data));
-                }
+                const streamer = await ensureAudioInitialized();
+                streamer.addPCM16(new Uint8Array(data));
                 // 同时将音频数据累积到缓冲区
                 audioDataBuffer.push(new Uint8Array(data));
             } catch (error) {
@@ -1071,7 +1188,7 @@ messageInput.addEventListener('keydown', (event) => {
 });
 
 micButton.addEventListener('click', () => {
-    // This is now handled by the AudioHandler's constructor
+    if (isConnected) handleMicToggle();
 });
 
 connectButton.addEventListener('click', () => {
@@ -1196,9 +1313,12 @@ function resetUIForDisconnectedState() {
 
     if (audioStreamer) {
         audioStreamer.stop();
-    }
-    if (audioHandler && audioHandler.getIsRecording()) {
-        audioHandler.handleMicToggle(); // This will stop the recording and update the UI
+        if (audioRecorder) {
+            audioRecorder.stop();
+            audioRecorder = null;
+        }
+        isRecording = false;
+        updateMicIcon();
     }
     if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
         videoHandler.stopVideo();
@@ -1281,7 +1401,7 @@ function initMobileHandlers() {
     // 新增：移动端麦克风按钮
     document.getElementById('mic-button').addEventListener('touchstart', (e) => {
         e.preventDefault();
-        if (isConnected) audioHandler.handleMicToggle();
+        if (isConnected) handleMicToggle();
     });
     
     /**
