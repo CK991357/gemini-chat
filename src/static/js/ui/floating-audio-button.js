@@ -260,7 +260,8 @@ export class FloatingAudioButton {
             
             // Start recording through audio recorder
             await audioRecorder.start((base64Data) => {
-                if (this.client && this.client.isConnected()) {
+                // Check if the WebSocket client exists and its `ws` property is not null
+                if (this.client && this.client.ws) {
                     this.client.sendRealtimeInput([{
                         mimeType: "audio/pcm;rate=16000",
                         data: base64Data
