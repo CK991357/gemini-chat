@@ -6,6 +6,7 @@ import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
+import { AudioHandler } from './media/audio-handlers.js'; // T9: 导入 AudioHandler
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
