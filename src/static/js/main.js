@@ -1281,7 +1281,7 @@ function initMobileHandlers() {
     // 新增：移动端麦克风按钮
     document.getElementById('mic-button').addEventListener('touchstart', (e) => {
         e.preventDefault();
-        if (isConnected) handleMicToggle();
+        if (isConnected) audioHandler.handleMicToggle();
     });
     
     /**
