@@ -190,6 +190,29 @@ export class FloatingAudioButton {
     }
 
     /**
+     * @function show
+     * @description Shows the floating audio button.
+     */
+    show() {
+        if (this.buttonElement) {
+            this.buttonElement.style.display = 'flex';
+        }
+    }
+
+    /**
+     * @function hide
+     * @description Hides the floating audio button.
+     */
+    hide() {
+        if (this.buttonElement) {
+            this.buttonElement.style.display = 'none';
+        }
+        if (this.tooltipElement) {
+            this.tooltipElement.style.display = 'none';
+        }
+    }
+
+    /**
      * @function destroy
      * @description Removes the button and its event listeners from the DOM.
      */

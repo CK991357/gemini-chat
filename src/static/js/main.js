@@ -1610,6 +1610,10 @@ function initFloatingAudioButton() {
                 onCancel: handleFloatingAudioCancel,
                 showToast: showToast
             });
+            // 确保按钮在初始化后立即显示，因为CSS不再控制其默认显示
+            if (floatingAudioButton.buttonElement) {
+                floatingAudioButton.buttonElement.style.display = 'flex';
+            }
             chatUI.logMessage('悬浮音频按钮已初始化', 'system');
         }).catch(error => {
             console.error('加载悬浮音频按钮模块失败:', error);

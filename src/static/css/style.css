@@ -1941,7 +1941,7 @@ body.dark-mode .highlight-box {
     user-select: none; /* Prevent text selection on hold */
     -webkit-user-select: none; /* Safari */
     -ms-user-select: none; /* IE 10+ */
-    /* 默认隐藏，仅在移动端WebSocket连接时显示 */
+    /* 默认隐藏，由JavaScript控制显示 */
     display: none;
 }
 
@@ -1975,17 +1975,6 @@ body.dark-mode .highlight-box {
     z-index: 1001;
     pointer-events: none; /* Allow clicks to pass through */
     display: none; /* 默认隐藏 */
-}
-
-/* 在移动端显示悬浮按钮 */
-@media (max-width: 768px) {
-    .floating-audio-button {
-        display: flex;
-    }
-    
-    .floating-audio-tooltip {
-        display: block;
-    }
 }
 
 @keyframes pulse {
