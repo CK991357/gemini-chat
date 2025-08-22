@@ -12,7 +12,6 @@
   --primary-color: #4285f4; /* Google Blue */
   --secondary-color: #34a853; /* Google Green */
   --danger-color: #ea4335; /* Google Red */
-  --secondary-color-rgb: 52, 168, 83;
 }
 
 body.dark-mode {
@@ -26,7 +25,6 @@ body.dark-mode {
   --primary-color: #6366f1; /* 紫色系 */
   --secondary-color: #8b5cf6; /* 浅紫色系 */
   --danger-color: #ef4444;
-  --secondary-color-rgb: 139, 92, 246;
 }
 
 /* 通用样式 */
@@ -1923,92 +1921,4 @@ body.dark-mode .highlight-box {
     align-items: center;
     gap: 10px;
     border: 1px solid var(--border-color);
-}
-/* Floating Audio Button Styles */
-.floating-audio-button-container {
-    position: fixed;
-    bottom: 30px; /* Increased bottom margin for better reachability */
-    right: 20px;
-    z-index: 1000;
-    display: none; /* Initially hidden, enabled via JS for mobile */
-    -webkit-tap-highlight-color: transparent; /* Disable tap highlight on iOS */
-}
-
-.floating-audio-button {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    -webkit-user-select: none; /* Safari */
-    user-select: none; /* Prevent text selection during drag */
-}
-
-.floating-audio-button:hover {
-    background-color: var(--secondary-color); /* Use secondary color for hover */
-}
-
-.floating-audio-button .material-icons {
-    font-size: 28px;
-    transition: transform 0.2s ease;
-}
-
-/* Recording State */
-.floating-audio-button.recording {
-    background-color: var(--secondary-color); /* Green for recording */
-    transform: scale(1.1);
-    animation: pulse-green 1.5s infinite;
-}
-
-/* Canceling State */
-.floating-audio-button.canceling {
-    background-color: var(--danger-color); /* Red for canceling */
-    transform: scale(1.1);
-}
-
-.floating-audio-button.canceling .material-icons {
-    transform: rotate(-45deg); /* Add a small rotation for delete icon */
-}
-
-.floating-audio-status {
-    position: absolute;
-    bottom: 120%; /* Position above the button */
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: rgba(0, 0, 0, 0.75);
-    color: white;
-    padding: 8px 12px;
-    border-radius: 8px;
-    font-size: 14px;
-    white-space: nowrap;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
-    transform-origin: bottom center;
-}
-
-.floating-audio-status.show {
-    opacity: 1;
-    visibility: visible;
-    transform: translateX(-50%) translateY(-10px); /* Add a slide-up effect */
-}
-
-/* Green pulse animation for recording state */
-@keyframes pulse-green {
-    0% {
-        box-shadow: 0 0 0 0 rgba(var(--secondary-color-rgb), 0.7);
-    }
-    70% {
-        box-shadow: 0 0 0 15px rgba(var(--secondary-color-rgb), 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(var(--secondary-color-rgb), 0);
-    }
 }
