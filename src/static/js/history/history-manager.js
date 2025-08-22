@@ -44,14 +44,8 @@ export class HistoryManager {
 
     /**
      * @description Initializes the history manager, renders the history list.
-     *              If localStorage meta is missing, it attempts to recover from backend.
      */
-    async init() {
-        let sessions = this.getChatSessionMeta();
-        if (!sessions || sessions.length === 0) {
-            this.logMessage('localStorage中的会话元数据丢失或为空，尝试从后端恢复...', 'system');
-            await this.recoverSessionMetaFromBackend();
-        }
+    init() {
         this.renderHistoryList();
     }
 
@@ -63,13 +57,7 @@ export class HistoryManager {
     getChatSessionMeta() {
         try {
             const meta = localStorage.getItem('chat_session_meta');
-            const parsedMeta = meta ? JSON.parse(meta) : [];
-            // 验证解析后的数据是否为数组
-            if (!Array.isArray(parsedMeta)) {
-                console.error('chat_session_meta in localStorage is not an array, resetting.');
-                return [];
-            }
-            return parsedMeta;
+            return meta ? JSON.parse(meta) : [];
         } catch (e) {
             console.error('Failed to parse chat session meta:', e);
             return [];
@@ -437,32 +425,6 @@ export class HistoryManager {
         } catch (error) {
             console.error('删除会话失败:', error);
             this.showSystemMessage(`删除会话失败: ${error.message}`);
-        }
-    }
-
-    /**
-     * @description Recovers chat session metadata from the backend if localStorage is empty or invalid.
-     * @returns {Promise<void>}
-     * @private
-     */
-    async recoverSessionMetaFromBackend() {
-        try {
-            const response = await fetch('/api/history/list-all-meta');
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `无法从后端恢复会话元数据: ${response.statusText}`);
-            }
-            const sessionMetas = await response.json();
-
-            if (sessionMetas && sessionMetas.length > 0) {
-                this.saveChatSessionMeta(sessionMetas);
-                this.logMessage(`已从后端恢复 ${sessionMetas.length} 个会话元数据。`, 'system');
-            } else {
-                this.logMessage('后端没有可恢复的会话元数据。', 'system');
-            }
-        } catch (error) {
-            console.error('从后端恢复会话元数据失败:', error);
-            this.showSystemMessage(`从后端恢复会话元数据失败: ${error.message}`);
         }
     }
 }
