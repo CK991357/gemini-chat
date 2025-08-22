@@ -824,6 +824,36 @@ async function handleHistoryRequest(request, env) {
     }
   }
 
+  // 路由: 列出所有会话元数据
+  if (path === '/api/history/list-all-meta' && request.method === 'GET') {
+    try {
+      const { keys } = await env.GEMINICHAT_HISTORY_KV.list({ prefix: 'history:' });
+      const sessionMetas = [];
+      for (const keyInfo of keys) {
+        const sessionData = await env.GEMINICHAT_HISTORY_KV.get(keyInfo.name);
+        if (sessionData) {
+          const parsedSessionData = JSON.parse(sessionData);
+          sessionMetas.push({
+            id: parsedSessionData.sessionId,
+            title: parsedSessionData.title || '无标题聊天',
+            createdAt: parsedSessionData.createdAt,
+            updatedAt: parsedSessionData.updatedAt,
+            is_pinned: parsedSessionData.is_pinned === true, // 确保是布尔值
+          });
+        }
+      }
+      return new Response(JSON.stringify(sessionMetas), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (error) {
+      console.error('Failed to list all history meta:', error);
+      return new Response(JSON.stringify({ error: 'Failed to list all history meta', details: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
   return new Response(JSON.stringify({ error: 'History API route not found' }), {
     status: 404,
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
