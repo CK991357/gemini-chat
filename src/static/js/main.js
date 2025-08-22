@@ -516,6 +516,7 @@ let chatApiHandler = null; // 新增 ChatApiHandler 实例
 // 新增：悬浮音频按钮相关状态
 let floatingAudioButton = null; // 悬浮音频按钮实例
 let isMobileWebSocketMode = false; // 是否为移动端WebSocket模式
+let isMicStreamInitialized = false; // 新增：麦克风媒体流是否已初始化
 
 
 /**
@@ -810,6 +811,20 @@ async function connectToWebsocket() {
             micButton.title = '请使用悬浮麦克风按钮进行语音输入';
             initFloatingAudioButton();
             showToast('已启用悬浮语音输入功能');
+
+            // 预获取麦克风流
+            if (!isMicStreamInitialized) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    micStream = stream;
+                    isMicStreamInitialized = true;
+                    chatUI.logMessage('麦克风媒体流已预获取', 'system');
+                } catch (error) {
+                    Logger.error('预获取麦克风媒体流失败:', error);
+                    chatUI.logMessage(`预获取麦克风媒体流失败: ${error.message}`, 'system');
+                    isMicStreamInitialized = false;
+                }
+            }
         } else {
             // 非移动端或非WebSocket模式：正常启用原有按钮
             micButton.disabled = false;
@@ -817,6 +832,13 @@ async function connectToWebsocket() {
             if (floatingAudioButton) {
                 floatingAudioButton.destroy();
                 floatingAudioButton = null;
+            }
+            // 如果不是移动端WebSocket模式，确保释放预获取的流
+            if (micStream && isMicStreamInitialized) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+                isMicStreamInitialized = false;
+                chatUI.logMessage('非移动端WebSocket模式，已释放麦克风媒体流', 'system');
             }
         }
         
@@ -864,6 +886,14 @@ function disconnectFromWebsocket() {
         }
         isRecording = false;
         updateMicIcon();
+    }
+
+    // 在断开连接时彻底停止并释放 micStream
+    if (micStream && isMicStreamInitialized) {
+        micStream.getTracks().forEach(track => track.stop());
+        micStream = null;
+        isMicStreamInitialized = false;
+        chatUI.logMessage('WebSocket断开连接，已释放麦克风媒体流', 'system');
     }
     
     // 清理悬浮音频按钮
@@ -1642,6 +1672,15 @@ async function handleFloatingAudioStart() {
         inputAnalyser.fftSize = 256;
         const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount);
         
+        // 确保 micStream 已经存在，如果不存在，则在 connectToWebsocket 中预获取
+        if (!micStream || !isMicStreamInitialized) {
+            Logger.error('micStream 未初始化或未激活，无法开始录音。');
+            showToast('麦克风未准备好，请稍后再试。');
+            isRecording = false;
+            updateMicIcon();
+            return;
+        }
+
         await audioRecorder.start((base64Data) => {
             if (isUsingTool) {
                 client.sendRealtimeInput([{
@@ -1655,11 +1694,9 @@ async function handleFloatingAudioStart() {
                     data: base64Data
                 }]);
             }
-        });
+        }, { mediaStream: micStream }); // 将 micStream 传递给 AudioRecorder
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        micStream = stream;
-        const source = audioCtx.createMediaStreamSource(stream);
+        const source = audioCtx.createMediaStreamSource(micStream);
         source.connect(inputAnalyser);
         
         await audioStreamer.resume();
@@ -1685,10 +1722,10 @@ function handleFloatingAudioStop() {
         if (audioRecorder) {
             audioRecorder.stop();
         }
-        if (micStream) {
-            micStream.getTracks().forEach(track => track.stop());
-            micStream = null;
+        if (audioRecorder) {
+            audioRecorder.stop();
         }
+        // 不停止 micStream，保持其活跃状态
         isRecording = false;
         chatUI.logMessage('悬浮麦克风停止录音', 'system');
         updateMicIcon();
@@ -1710,10 +1747,10 @@ function handleFloatingAudioCancel() {
         if (audioRecorder) {
             audioRecorder.stop();
         }
-        if (micStream) {
-            micStream.getTracks().forEach(track => track.stop());
-            micStream = null;
+        if (audioRecorder) {
+            audioRecorder.stop();
         }
+        // 不停止 micStream，保持其活跃状态
         isRecording = false;
         chatUI.logMessage('悬浮麦克风录音已取消', 'system');
         updateMicIcon();
