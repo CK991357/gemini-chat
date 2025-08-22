@@ -434,20 +434,11 @@ document.addEventListener('DOMContentLoaded', () => {
            },
            onCancel: () => {
                if (isConnected && isRecording) {
-                   // Only stop recording without sending data
-                   try {
-                       if (audioRecorder) {
-                           audioRecorder.stop();
-                       }
-                       isRecording = false;
-                       chatUI.logMessage('Microphone recording cancelled', 'system');
-                       updateMicIcon();
-                   } catch (error) {
-                       Logger.error('Microphone cancel error:', error);
-                       chatUI.logMessage(`Error cancelling microphone: ${error.message}`, 'system');
-                       isRecording = false;
-                       updateMicIcon();
-                   }
+                   // By simply calling handleMicToggle, we ensure that all resources
+                   // (micStream, audioRecorder) are properly cleaned up, just like a normal stop.
+                   // The AudioRecorder's stop() method itself doesn't send any final data,
+                   // so this correctly implements the "cancel" behavior.
+                   handleMicToggle();
                }
            }
        });
