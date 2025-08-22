@@ -693,6 +693,10 @@ async function handleMicToggle() {
             await ensureAudioInitialized();
             audioRecorder = new AudioRecorder();
             
+            const inputAnalyser = audioCtx.createAnalyser();
+            inputAnalyser.fftSize = 256;
+            const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount); // 重命名为 _inputDataArray
+            
             await audioRecorder.start((base64Data) => {
                 if (isUsingTool) {
                     client.sendRealtimeInput([{
@@ -706,10 +710,17 @@ async function handleMicToggle() {
                         data: base64Data
                     }]);
                 }
+                
+                // 移除输入音频可视化
+                // inputAnalyser.getByteFrequencyData(_inputDataArray); // 使用重命名后的变量
+                // const inputVolume = Math.max(..._inputDataArray) / 255;
+                // updateAudioVisualizer(inputVolume, true);
             });
 
-            // The AudioRecorder now manages its own stream. We just need to keep a reference to it for stopping.
-            micStream = audioRecorder.stream;
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            micStream = stream; // 保存流引用
+            const source = audioCtx.createMediaStreamSource(stream);
+            source.connect(inputAnalyser);
             
             await audioStreamer.resume();
             isRecording = true;
