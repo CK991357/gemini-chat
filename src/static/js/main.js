@@ -513,6 +513,7 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
+let isSendingAudio = false; // 新增：用于跟踪是否正在发送音频数据
 
 
 /**
@@ -667,7 +668,12 @@ async function handleMicToggle() {
             inputAnalyser.fftSize = 256;
             const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount); // 重命名为 _inputDataArray
             
+            showToast('录音中...'); // 显示录音中浮窗
             await audioRecorder.start((base64Data) => {
+                if (!isSendingAudio) { // 首次发送音频数据时显示“发送中”浮窗
+                    showToast('发送中...');
+                    isSendingAudio = true;
+                }
                 if (isUsingTool) {
                     client.sendRealtimeInput([{
                         mimeType: "audio/pcm;rate=16000",
@@ -1063,6 +1069,8 @@ client.on('interrupted', () => {
         chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlobForDisplay);
         audioDataBuffer = [];
     }
+    isSendingAudio = false; // 中断时重置发送音频状态
+    hideToast(); // 隐藏所有浮窗
 });
 
 client.on('setupcomplete', () => {
@@ -1094,6 +1102,8 @@ client.on('turncomplete', () => {
     if (isConnected && !selectedModelConfig.isWebSocket) {
         historyManager.saveHistory();
     }
+    isSendingAudio = false; // 回合完成时重置发送音频状态
+    hideToast(); // 隐藏所有浮窗
 });
 
 client.on('error', (error) => {
@@ -1754,6 +1764,21 @@ export function showToast(message, duration = 3000) {
             }
         });
     }, duration);
+}
+
+/**
+ * @function hideToast
+ * @description 隐藏所有当前显示的 Toast 轻提示。
+ * @returns {void}
+ */
+export function hideToast() {
+    const container = document.getElementById('toast-container');
+    if (container) {
+        // 移除所有 toast-message 元素
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+    }
 }
 
 /**
