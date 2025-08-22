@@ -27,7 +27,9 @@ export class FloatingAudioButton {
 
         this.state = 'idle'; // 'idle', 'recording', 'cancelling'
         this.touchStartY = 0;
-        this.cancelThreshold = 50; // Pixels to slide up to cancel
+        this.cancelThreshold = 80; // 上滑取消的阈值（像素）
+        this.minRecordingTime = 500; // 最小录音时间（毫秒）
+        this.recordingStartTime = 0;
 
         this.buttonElement = null;
         this.iconElement = null;
@@ -44,15 +46,20 @@ export class FloatingAudioButton {
     init() {
         this.buttonElement = document.createElement('div');
         this.buttonElement.className = 'floating-audio-button';
+        this.buttonElement.style.cssText = 'display: none;';
         
         this.iconElement = document.createElement('span');
         this.iconElement.className = 'material-icons';
         this.iconElement.textContent = 'mic';
+        this.iconElement.style.cssText = `
+            color: white;
+            font-size: 28px;
+        `;
         
         this.tooltipElement = document.createElement('div');
         this.tooltipElement.className = 'floating-audio-tooltip';
         this.tooltipElement.textContent = '按住说话';
-        this.tooltipElement.style.display = 'none';
+        this.tooltipElement.style.cssText = 'display: none;';
 
         this.buttonElement.appendChild(this.iconElement);
         this.container.appendChild(this.buttonElement);
@@ -82,6 +89,7 @@ export class FloatingAudioButton {
     handleTouchStart(e) {
         e.preventDefault();
         this.touchStartY = e.touches[0].clientY;
+        this.recordingStartTime = Date.now();
         this.setState('recording');
         if (this.onStart) {
             this.onStart();
@@ -116,11 +124,25 @@ export class FloatingAudioButton {
      */
     handleTouchEnd(e) {
         e.preventDefault();
-        if (this.state === 'recording') {
+        
+        // 检查录音时间是否过短
+        const recordingDuration = Date.now() - this.recordingStartTime;
+        
+        if (this.state === 'recording' && recordingDuration < this.minRecordingTime) {
+            // 录音时间过短，自动取消
+            if (this.onCancel) {
+                this.onCancel();
+            }
+            if (this.showToast) {
+                this.showToast('录音时间太短，已取消');
+            }
+        } else if (this.state === 'recording') {
+            // 正常停止录音
             if (this.onStop) {
                 this.onStop();
             }
         } else if (this.state === 'cancelling') {
+            // 用户手动取消
             if (this.onCancel) {
                 this.onCancel();
             }
@@ -128,6 +150,7 @@ export class FloatingAudioButton {
                 this.showToast('录音已取消');
             }
         }
+        
         this.setState('idle');
     }
 
@@ -141,21 +164,24 @@ export class FloatingAudioButton {
         if (this.state === newState) return;
         this.state = newState;
 
+        // 移除所有状态类
         this.buttonElement.classList.remove('recording', 'cancelling');
+        this.iconElement.textContent = 'mic';
         
         switch (newState) {
             case 'idle':
-                this.iconElement.textContent = 'mic';
+                this.buttonElement.classList.remove('recording', 'cancelling');
                 this.tooltipElement.style.display = 'none';
                 break;
             case 'recording':
                 this.buttonElement.classList.add('recording');
-                this.iconElement.textContent = 'mic';
+                this.buttonElement.classList.remove('cancelling');
                 this.tooltipElement.textContent = '松开 发送';
                 this.tooltipElement.style.display = 'block';
                 break;
             case 'cancelling':
                 this.buttonElement.classList.add('cancelling');
+                this.buttonElement.classList.remove('recording');
                 this.iconElement.textContent = 'close';
                 this.tooltipElement.textContent = '松开 取消';
                 this.tooltipElement.style.display = 'block';

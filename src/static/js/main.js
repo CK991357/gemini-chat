@@ -513,6 +513,9 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
+// 新增：悬浮音频按钮相关状态
+let floatingAudioButton = null; // 悬浮音频按钮实例
+let isMobileWebSocketMode = false; // 是否为移动端WebSocket模式
 
 
 /**
@@ -797,8 +800,26 @@ async function connectToWebsocket() {
         connectButton.classList.add('connected');
         messageInput.disabled = false;
         sendButton.disabled = false;
-        // 启用媒体按钮
-        micButton.disabled = false;
+        
+        // 检测是否为移动端WebSocket模式
+        isMobileWebSocketMode = isMobileDevice() && selectedModelConfig.isWebSocket;
+        
+        if (isMobileWebSocketMode) {
+            // 移动端WebSocket模式：禁用原有麦克风按钮，显示悬浮按钮
+            micButton.disabled = true;
+            micButton.title = '请使用悬浮麦克风按钮进行语音输入';
+            initFloatingAudioButton();
+            showToast('已启用悬浮语音输入功能');
+        } else {
+            // 非移动端或非WebSocket模式：正常启用原有按钮
+            micButton.disabled = false;
+            micButton.title = '';
+            if (floatingAudioButton) {
+                floatingAudioButton.destroy();
+                floatingAudioButton = null;
+            }
+        }
+        
         cameraButton.disabled = false;
         screenButton.disabled = false;
         chatUI.logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
@@ -833,6 +854,8 @@ async function connectToWebsocket() {
 function disconnectFromWebsocket() {
     client.disconnect();
     isConnected = false;
+    isMobileWebSocketMode = false;
+    
     if (audioStreamer) {
         audioStreamer.stop();
         if (audioRecorder) {
@@ -842,11 +865,21 @@ function disconnectFromWebsocket() {
         isRecording = false;
         updateMicIcon();
     }
+    
+    // 清理悬浮音频按钮
+    if (floatingAudioButton) {
+        floatingAudioButton.destroy();
+        floatingAudioButton = null;
+    }
+    
     connectButton.textContent = '连接';
     connectButton.classList.remove('connected');
     messageInput.disabled = true;
     sendButton.disabled = true;
-    if (micButton) micButton.disabled = true;
+    if (micButton) {
+        micButton.disabled = true;
+        micButton.title = '';
+    }
     if (cameraButton) cameraButton.disabled = true;
     if (screenButton) screenButton.disabled = true;
     chatUI.logMessage('已从服务器断开连接', 'system');
@@ -1187,7 +1220,13 @@ messageInput.addEventListener('keydown', (event) => {
     }
 });
 
-micButton.addEventListener('click', () => {
+micButton.addEventListener('click', (e) => {
+    if (isMobileWebSocketMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        showToast('请使用悬浮麦克风按钮进行语音输入');
+        return;
+    }
     if (isConnected) handleMicToggle();
 });
 
@@ -1348,8 +1387,12 @@ function updateConnectionStatus() {
     const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
     mediaButtons.forEach(btn => {
         if (btn) {
-            // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理，这里只处理其他按钮
-            if (btn === cameraButton) {
+            if (btn === micButton && isMobileWebSocketMode) {
+                // 移动端WebSocket模式下，原有麦克风按钮保持禁用状态
+                btn.disabled = true;
+                btn.title = '请使用悬浮麦克风按钮进行语音输入';
+            } else if (btn === cameraButton) {
+                // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理
                 btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
             } else {
                 btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
@@ -1401,6 +1444,11 @@ function initMobileHandlers() {
     // 新增：移动端麦克风按钮
     document.getElementById('mic-button').addEventListener('touchstart', (e) => {
         e.preventDefault();
+        if (isMobileWebSocketMode) {
+            e.stopPropagation();
+            showToast('请使用悬浮麦克风按钮进行语音输入');
+            return;
+        }
         if (isConnected) handleMicToggle();
     });
     
@@ -1542,6 +1590,134 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+/**
+ * 初始化悬浮音频按钮
+ */
+function initFloatingAudioButton() {
+    if (floatingAudioButton) {
+        floatingAudioButton.destroy();
+    }
+    
+    try {
+        // 动态导入 FloatingAudioButton 类
+        import('./ui/floating-audio-button.js').then(module => {
+            floatingAudioButton = new module.FloatingAudioButton({
+                container: document.body,
+                onStart: handleFloatingAudioStart,
+                onStop: handleFloatingAudioStop,
+                onCancel: handleFloatingAudioCancel,
+                showToast: showToast
+            });
+            chatUI.logMessage('悬浮音频按钮已初始化', 'system');
+        }).catch(error => {
+            console.error('加载悬浮音频按钮模块失败:', error);
+            chatUI.logMessage('悬浮音频按钮加载失败，请刷新页面重试', 'system');
+        });
+    } catch (error) {
+        console.error('初始化悬浮音频按钮失败:', error);
+        chatUI.logMessage('悬浮音频按钮初始化失败', 'system');
+    }
+}
+
+/**
+ * 处理悬浮音频按钮开始录音
+ */
+async function handleFloatingAudioStart() {
+    if (isRecording) {
+        showToast('录音正在进行中');
+        return;
+    }
+    
+    try {
+        await ensureAudioInitialized();
+        audioRecorder = new AudioRecorder();
+        
+        const inputAnalyser = audioCtx.createAnalyser();
+        inputAnalyser.fftSize = 256;
+        const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount);
+        
+        await audioRecorder.start((base64Data) => {
+            if (isUsingTool) {
+                client.sendRealtimeInput([{
+                    mimeType: "audio/pcm;rate=16000",
+                    data: base64Data,
+                    interrupt: true
+                }]);
+            } else {
+                client.sendRealtimeInput([{
+                    mimeType: "audio/pcm;rate=16000",
+                    data: base64Data
+                }]);
+            }
+        });
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micStream = stream;
+        const source = audioCtx.createMediaStreamSource(stream);
+        source.connect(inputAnalyser);
+        
+        await audioStreamer.resume();
+        isRecording = true;
+        Logger.info('悬浮麦克风开始录音');
+        chatUI.logMessage('悬浮麦克风开始录音', 'system');
+        updateMicIcon();
+    } catch (error) {
+        Logger.error('悬浮麦克风启动失败:', error);
+        showToast(`启动失败: ${error.message}`);
+        isRecording = false;
+        updateMicIcon();
+    }
+}
+
+/**
+ * 处理悬浮音频按钮停止录音
+ */
+function handleFloatingAudioStop() {
+    if (!isRecording) return;
+    
+    try {
+        if (audioRecorder) {
+            audioRecorder.stop();
+        }
+        if (micStream) {
+            micStream.getTracks().forEach(track => track.stop());
+            micStream = null;
+        }
+        isRecording = false;
+        chatUI.logMessage('悬浮麦克风停止录音', 'system');
+        updateMicIcon();
+    } catch (error) {
+        Logger.error('悬浮麦克风停止失败:', error);
+        showToast(`停止失败: ${error.message}`);
+        isRecording = false;
+        updateMicIcon();
+    }
+}
+
+/**
+ * 处理悬浮音频按钮取消录音
+ */
+function handleFloatingAudioCancel() {
+    if (!isRecording) return;
+    
+    try {
+        if (audioRecorder) {
+            audioRecorder.stop();
+        }
+        if (micStream) {
+            micStream.getTracks().forEach(track => track.stop());
+            micStream = null;
+        }
+        isRecording = false;
+        chatUI.logMessage('悬浮麦克风录音已取消', 'system');
+        updateMicIcon();
+    } catch (error) {
+        Logger.error('悬浮麦克风取消失败:', error);
+        isRecording = false;
+        updateMicIcon();
+    }
 }
 
 
