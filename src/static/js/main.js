@@ -11,6 +11,7 @@ import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 Screen
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
+import { FloatingAudioButton } from './ui/floating-audio-button.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
 
@@ -417,6 +418,20 @@ document.addEventListener('DOMContentLoaded', () => {
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
 
+   // Mobile device specific logic
+   isMobile = isMobileDevice();
+   if (isMobile) {
+       floatingAudioButton = new FloatingAudioButton(client);
+       floatingAudioButton.hide(); // Initially hidden
+
+       if (micButton) {
+           // Per user request, change icon and disable the old button
+           micButton.innerHTML = `✓`;
+           micButton.classList.add('disabled');
+           micButton.disabled = true;
+       }
+   }
+
    // T11: 初始化聊天UI模块并注入依赖
    const transcribeAudioHandler = async (audioBlob, buttonElement) => {
        buttonElement.disabled = true;
@@ -513,6 +528,8 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
+let isMobile = false;
+let floatingAudioButton = null;
 
 
 /**
@@ -798,11 +815,15 @@ async function connectToWebsocket() {
         messageInput.disabled = false;
         sendButton.disabled = false;
         // 启用媒体按钮
-        micButton.disabled = false;
+        micButton.disabled = isMobile; // Disable on mobile, enable on desktop
         cameraButton.disabled = false;
         screenButton.disabled = false;
         chatUI.logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
         updateConnectionStatus();
+
+        if (isMobile && floatingAudioButton) {
+            floatingAudioButton.show();
+        }
     } catch (error) {
         const errorMessage = error.message || '未知错误';
         Logger.error('连接错误:', error);
@@ -847,6 +868,9 @@ function disconnectFromWebsocket() {
     messageInput.disabled = true;
     sendButton.disabled = true;
     if (micButton) micButton.disabled = true;
+    if (isMobile && floatingAudioButton) {
+        floatingAudioButton.hide();
+    }
     if (cameraButton) cameraButton.disabled = true;
     if (screenButton) screenButton.disabled = true;
     chatUI.logMessage('已从服务器断开连接', 'system');
@@ -1187,9 +1211,11 @@ messageInput.addEventListener('keydown', (event) => {
     }
 });
 
-micButton.addEventListener('click', () => {
-    if (isConnected) handleMicToggle();
-});
+if (!isMobile) {
+    micButton.addEventListener('click', () => {
+        if (isConnected) handleMicToggle();
+    });
+}
 
 connectButton.addEventListener('click', () => {
     if (isConnected) {
