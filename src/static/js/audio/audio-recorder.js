@@ -35,26 +35,21 @@ export class AudioRecorder {
      * @param {Function} onAudioData - Callback function for processed audio data.
      * @param {Object} [options={}] - Optional configuration for recording.
      * @param {boolean} [options.returnRaw=false] - If true, onAudioData receives raw ArrayBuffer; otherwise, Base64 string.
-     * @param {MediaStream} [options.mediaStream=null] - Optional pre-acquired MediaStream to use.
      * @throws {Error} If unable to access microphone or set up audio processing.
      * @async
      */
     async start(onAudioData, options = {}) {
         this.onAudioData = onAudioData;
-        const { returnRaw = false, mediaStream = null } = options; // 解构 options，默认 returnRaw 为 false
+        const { returnRaw = false } = options; // 解构 options，默认 returnRaw 为 false
 
         try {
-            // Use pre-acquired stream if provided, otherwise request microphone access
-            if (mediaStream) {
-                this.stream = mediaStream;
-            } else {
-                this.stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        channelCount: 1,
-                        sampleRate: this.sampleRate
-                    }
-                });
-            }
+            // Request microphone access
+            this.stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    channelCount: 1,
+                    sampleRate: this.sampleRate
+                }
+            });
             
             this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
             this.source = this.audioContext.createMediaStreamSource(this.stream);
@@ -169,4 +164,4 @@ export class AudioRecorder {
             );
         }
     }
-}
+} 
