@@ -542,6 +542,7 @@ let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
 let isMobile = false;
 let floatingAudioButton = null;
+let hasMicPermission = false; // Add a flag to track microphone permission
 
 
 /**
@@ -685,17 +686,41 @@ async function ensureAudioInitialized() {
  * Handles the microphone toggle. Starts or stops audio recording.
  * @returns {Promise<void>}
  */
+async function requestMicrophonePermission() {
+    try {
+        // Request permission and immediately stop the stream.
+        // This is only to trigger the browser's permission prompt.
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        hasMicPermission = true;
+        Logger.info('Microphone permission granted.');
+        // Per user request, log success message to chat UI
+        chatUI.logMessage('麦克风授权成功', 'system');
+        return true;
+    } catch (error) {
+        Logger.error('Microphone permission denied:', error);
+        chatUI.logMessage(`麦克风授权失败: ${error.message}`, 'system');
+        hasMicPermission = false;
+        return false;
+    }
+}
+
 async function handleMicToggle() {
-    // Ensure all audio components are initialized, including the singleton audioRecorder
+    // Step 1: Check for permission first. This is crucial for browser security.
+    if (!hasMicPermission) {
+        const permissionGranted = await requestMicrophonePermission();
+        if (!permissionGranted) {
+            return; // Stop if permission is not granted.
+        }
+    }
+
+    // Step 2: Ensure audio components are initialized.
     await ensureAudioInitialized();
 
+    // Step 3: Proceed with recording logic.
     if (!isRecording) {
         try {
-            // The permission check is now implicitly handled by audioRecorder.start(),
-            // which will throw an error if permission is denied.
-            
             await audioRecorder.start((base64Data) => {
-                // This callback remains the same, sending data through the websocket.
                 if (isUsingTool) {
                     client.sendRealtimeInput([{
                         mimeType: "audio/pcm;rate=16000",
@@ -710,7 +735,6 @@ async function handleMicToggle() {
                 }
             });
 
-            // No need to resume audioStreamer here, it's for playback.
             isRecording = true;
             Logger.info('Microphone started');
             chatUI.logMessage('Microphone started', 'system');
@@ -718,7 +742,6 @@ async function handleMicToggle() {
 
         } catch (error) {
             Logger.error('Microphone start error:', error);
-            // The error from getUserMedia inside audioRecorder will be caught here.
             chatUI.logMessage(`麦克风启动失败: ${error.message}`, 'system');
             isRecording = false;
             updateMicIcon();
@@ -729,13 +752,13 @@ async function handleMicToggle() {
                 audioRecorder.stop();
             }
             isRecording = false;
-            Logger.info('Microphone stopped'); // More accurate log message
+            Logger.info('Microphone stopped');
             chatUI.logMessage('Microphone stopped', 'system');
             updateMicIcon();
         } catch (error) {
             Logger.error('Microphone stop error:', error);
             chatUI.logMessage(`麦克风停止时出错: ${error.message}`, 'system');
-            isRecording = false; // Reset state even on error
+            isRecording = false;
             updateMicIcon();
         }
     }
@@ -1208,13 +1231,16 @@ messageInput.addEventListener('keydown', (event) => {
 
 micButton.addEventListener('click', () => {
     if (isMobile) {
+        // Per user request, show a toast message instead of doing nothing.
         showToast('请使用屏幕下方的悬浮按钮进行语音输入');
-        return; // Explicitly return to prevent any further action
+        return;
     }
-    if (isConnected) { // Check isConnected for desktop
+    if (isConnected) {
         handleMicToggle();
     }
 });
+// Add the class to disable tap highlight on mobile
+micButton.classList.add('no-tap-highlight');
 
 connectButton.addEventListener('click', () => {
     if (isConnected) {
