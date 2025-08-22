@@ -2026,7 +2026,3 @@ body.dark-mode .highlight-box {
     cursor: not-allowed;
     color: #ccc;
 }
-/* Disable tap highlight on mobile for specific buttons to improve UX */
-.no-tap-highlight {
-    -webkit-tap-highlight-color: transparent;
-}
