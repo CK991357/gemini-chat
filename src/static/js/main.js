@@ -13,7 +13,6 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
-import { FloatingAudioButton } from './ui/floating-audio-button.js'; // 新增：静态导入悬浮按钮
 
 /**
  * @fileoverview Main entry point for the application.
@@ -514,9 +513,6 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
-// 新增：悬浮音频按钮相关状态
-let floatingAudioButton = null; // 悬浮音频按钮实例
-let isMobileWebSocketMode = false; // 是否为移动端WebSocket模式
 
 
 /**
@@ -797,40 +793,12 @@ async function connectToWebsocket() {
         await client.connect(config,apiKeyInput.value);
         isConnected = true;
         await resumeAudioContext();
-        
-        // 预初始化音频设备以减少悬浮按钮的首次响应延迟
-        if (isMobileDevice() && selectedModelConfig.isWebSocket) {
-            try {
-                await ensureAudioInitialized();
-                Logger.info('音频设备预初始化完成');
-            } catch (error) {
-                Logger.warn('音频预初始化失败，将在首次使用时初始化:', error);
-            }
-        }
         connectButton.textContent = '断开连接';
         connectButton.classList.add('connected');
         messageInput.disabled = false;
         sendButton.disabled = false;
-        
-        // 检测是否为移动端WebSocket模式
-        isMobileWebSocketMode = isMobileDevice() && selectedModelConfig.isWebSocket;
-        
-        if (isMobileWebSocketMode) {
-            // 移动端WebSocket模式：禁用原有麦克风按钮，显示悬浮按钮
-            micButton.disabled = true;
-            micButton.title = '请使用悬浮麦克风按钮进行语音输入';
-            initFloatingAudioButton();
-            showToast('已启用悬浮语音输入功能');
-        } else {
-            // 非移动端或非WebSocket模式：正常启用原有按钮
-            micButton.disabled = false;
-            micButton.title = '';
-            if (floatingAudioButton) {
-                floatingAudioButton.destroy();
-                floatingAudioButton = null;
-            }
-        }
-        
+        // 启用媒体按钮
+        micButton.disabled = false;
         cameraButton.disabled = false;
         screenButton.disabled = false;
         chatUI.logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
@@ -865,8 +833,6 @@ async function connectToWebsocket() {
 function disconnectFromWebsocket() {
     client.disconnect();
     isConnected = false;
-    isMobileWebSocketMode = false;
-    
     if (audioStreamer) {
         audioStreamer.stop();
         if (audioRecorder) {
@@ -876,21 +842,11 @@ function disconnectFromWebsocket() {
         isRecording = false;
         updateMicIcon();
     }
-    
-    // 清理悬浮音频按钮
-    if (floatingAudioButton) {
-        floatingAudioButton.destroy();
-        floatingAudioButton = null;
-    }
-    
     connectButton.textContent = '连接';
     connectButton.classList.remove('connected');
     messageInput.disabled = true;
     sendButton.disabled = true;
-    if (micButton) {
-        micButton.disabled = true;
-        micButton.title = '';
-    }
+    if (micButton) micButton.disabled = true;
     if (cameraButton) cameraButton.disabled = true;
     if (screenButton) screenButton.disabled = true;
     chatUI.logMessage('已从服务器断开连接', 'system');
@@ -1231,13 +1187,7 @@ messageInput.addEventListener('keydown', (event) => {
     }
 });
 
-micButton.addEventListener('click', (e) => {
-    if (isMobileWebSocketMode) {
-        e.preventDefault();
-        e.stopPropagation();
-        showToast('请使用悬浮麦克风按钮进行语音输入');
-        return;
-    }
+micButton.addEventListener('click', () => {
     if (isConnected) handleMicToggle();
 });
 
@@ -1398,12 +1348,8 @@ function updateConnectionStatus() {
     const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
     mediaButtons.forEach(btn => {
         if (btn) {
-            if (btn === micButton && isMobileWebSocketMode) {
-                // 移动端WebSocket模式下，原有麦克风按钮保持禁用状态
-                btn.disabled = true;
-                btn.title = '请使用悬浮麦克风按钮进行语音输入';
-            } else if (btn === cameraButton) {
-                // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理
+            // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理，这里只处理其他按钮
+            if (btn === cameraButton) {
                 btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
             } else {
                 btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
@@ -1455,11 +1401,6 @@ function initMobileHandlers() {
     // 新增：移动端麦克风按钮
     document.getElementById('mic-button').addEventListener('touchstart', (e) => {
         e.preventDefault();
-        if (isMobileWebSocketMode) {
-            e.stopPropagation();
-            showToast('请使用悬浮麦克风按钮进行语音输入');
-            return;
-        }
         if (isConnected) handleMicToggle();
     });
     
@@ -1601,75 +1542,6 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-}
-
-/**
- * 初始化悬浮音频按钮
- */
-function initFloatingAudioButton() {
-    if (floatingAudioButton) {
-        floatingAudioButton.destroy();
-    }
-    
-    try {
-        // 静态初始化 FloatingAudioButton 类
-        floatingAudioButton = new FloatingAudioButton({
-            container: document.body,
-            onStart: handleFloatingAudioStart,
-            onStop: handleFloatingAudioStop,
-            onCancel: handleFloatingAudioCancel,
-            showToast: showToast
-        });
-        // 确保按钮在初始化后立即显示，因为CSS不再控制其默认显示
-        if (floatingAudioButton.buttonElement) {
-            floatingAudioButton.buttonElement.style.display = 'flex';
-        }
-        chatUI.logMessage('悬浮音频按钮已初始化', 'system');
-    } catch (error) {
-        console.error('初始化悬浮音频按钮失败:', error);
-        chatUI.logMessage('悬浮音频按钮初始化失败', 'system');
-    }
-}
-
-/**
- * 处理悬浮音频按钮开始录音
- */
-async function handleFloatingAudioStart() {
-    // 重用现有的 handleMicToggle 函数开始录音
-    if (isConnected && !isRecording) handleMicToggle();
-}
-
-/**
- * 处理悬浮音频按钮停止录音
- */
-function handleFloatingAudioStop() {
-    // 重用现有的 handleMicToggle 函数停止录音
-    if (isConnected && isRecording) handleMicToggle();
-}
-
-/**
- * 处理悬浮音频按钮取消录音
- */
-function handleFloatingAudioCancel() {
-    if (!isRecording) return;
-    
-    try {
-        // 复用现有的停止逻辑
-        if (audioRecorder) {
-            audioRecorder.stop();
-        }
-        if (micStream) {
-            micStream.getTracks().forEach(track => track.stop());
-            micStream = null;
-        }
-        isRecording = false;
-        chatUI.logMessage('悬浮麦克风录音已取消', 'system');
-        updateMicIcon();
-    } catch (error) {
-        Logger.error('悬浮麦克风取消失败:', error);
-        isRecording = false;
-        updateMicIcon();
-    }
 }
 
 
