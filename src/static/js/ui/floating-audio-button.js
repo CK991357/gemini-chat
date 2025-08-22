@@ -1,91 +1,40 @@
-import { AudioRecorder } from '../audio/audio-recorder.js';
-
 /**
  * @class FloatingAudioButton
- * @description Manages a draggable floating audio button for mobile devices.
- * This component handles its own UI, state, and audio recording logic,
- * buffering audio chunks from AudioRecorder for send-on-release functionality.
+ * @description A UI component that acts as a state controller for audio recording.
+ * It triggers start/stop callbacks and manages UI states for "press-to-record"
+ * and "slide-up-to-cancel" without handling audio data directly.
  */
 export class FloatingAudioButton {
     /**
      * @constructor
-     * @param {object} client - The WebSocket client instance for sending data.
+     * @param {object} callbacks - Callbacks for recording events.
+     * @param {Function} callbacks.onStart - Called when recording should start.
+     * @param {Function} callbacks.onStop - Called when recording should stop and send.
+     * @param {Function} callbacks.onCancel - Called when recording should be cancelled.
      */
-    constructor(client) {
-        /**
-         * The WebSocket client instance.
-         * @type {object}
-         */
-        this.client = client;
-        /**
-         * The AudioRecorder instance, initialized on first use.
-         * @type {AudioRecorder|null}
-         */
-        this.audioRecorder = null;
-        /**
-         * The main floating button element.
-         * @type {HTMLElement|null}
-         */
-        this.button = null;
-        /**
-         * The cancel zone element that appears on drag.
-         * @type {HTMLElement|null}
-         */
-        this.cancelZone = null;
-        /**
-         * The recording indicator element.
-         * @type {HTMLElement|null}
-         */
-        this.recordingIndicator = null;
+    constructor({ onStart, onStop, onCancel }) {
+        this.onStart = onStart;
+        this.onStop = onStop;
+        this.onCancel = onCancel;
 
-        /**
-         * The current recording state.
-         * @type {'idle' | 'recording' | 'cancelling'}
-         */
+        this.button = null;
+        this.cancelZone = null;
+        this.recordingIndicator = null;
         this.state = 'idle';
-        /**
-         * Flag to track if the button is being dragged.
-         * @type {boolean}
-         */
-        this.isDragging = false;
-        /**
-         * The initial X coordinate on touch start.
-         * @type {number}
-         */
-        this.startX = 0;
-        /**
-         * The initial Y coordinate on touch start.
-         * @type {number}
-         */
         this.startY = 0;
-        /**
-         * The initial X offset of the button on touch start.
-         * @type {number}
-         */
-        this.initialButtonX = 0;
-        /**
-         * The initial Y offset of the button on touch start.
-         * @type {number}
-         */
-        this.initialButtonY = 0;
-        /**
-         * Buffer to store audio chunks (as Base64 strings) during recording.
-         * @type {string[]}
-         */
-        this.audioBuffer = [];
 
         this.createButton();
     }
 
     /**
      * @function createButton
-     * @description Creates the DOM elements for the button and appends them to the body.
+     * @description Creates the DOM elements for the button.
      * @returns {void}
      */
     createButton() {
         this.button = document.createElement('div');
         this.button.className = 'floating-audio-button';
-        this.button.innerHTML = `<i class="fas fa-microphone"></i>`;
+        this.button.innerHTML = `<span class="material-icons">mic</span>`;
 
         this.recordingIndicator = document.createElement('div');
         this.recordingIndicator.className = 'recording-indicator';
@@ -93,7 +42,7 @@ export class FloatingAudioButton {
 
         this.cancelZone = document.createElement('div');
         this.cancelZone.className = 'cancel-zone';
-        this.cancelZone.innerHTML = `<i class="fas fa-trash-alt"></i><span>Release to cancel</span>`;
+        this.cancelZone.innerHTML = `<i class="fas fa-trash-alt"></i><span>Slide up to cancel</span>`;
 
         document.body.appendChild(this.button);
         document.body.appendChild(this.cancelZone);
@@ -103,7 +52,7 @@ export class FloatingAudioButton {
 
     /**
      * @function addEventListeners
-     * @description Adds touch event listeners to the button for interaction.
+     * @description Adds touch event listeners to the button.
      * @returns {void}
      */
     addEventListeners() {
@@ -114,68 +63,34 @@ export class FloatingAudioButton {
 
     /**
      * @function handleTouchStart
-     * @description Handles the touchstart event to begin recording or dragging.
-     * @param {TouchEvent} e - The touch event object.
-     * @returns {Promise<void>}
+     * @description Handles touchstart to begin recording.
+     * @param {TouchEvent} e - The touch event.
+     * @returns {void}
      */
-    async handleTouchStart(e) {
+    handleTouchStart(e) {
         e.preventDefault();
-        this.isDragging = false;
-        const touch = e.touches[0];
-        this.startX = touch.clientX;
-        this.startY = touch.clientY;
-        this.initialButtonX = this.button.offsetLeft;
-        this.initialButtonY = this.button.offsetTop;
-
         this.state = 'recording';
         this.button.classList.add('recording');
         this.cancelZone.classList.add('visible');
-        
-        const audioReady = await this.ensureAudioRecorder();
-        if (audioReady) {
-            this.audioBuffer = []; // Clear buffer before starting
-            this.audioRecorder.start((base64Data) => {
-                // Buffer data while recording is active
-                if (this.state === 'recording' || this.state === 'cancelling') {
-                    this.audioBuffer.push(base64Data);
-                }
-            });
-        }
+        const touch = e.touches[0];
+        this.startY = touch.clientY;
+        this.onStart();
     }
 
     /**
      * @function handleTouchMove
-     * @description Handles the touchmove event to drag the button or enter the cancel state.
-     * @param {TouchEvent} e - The touch event object.
+     * @description Handles touchmove for slide-up-to-cancel gesture.
+     * @param {TouchEvent} e - The touch event.
      * @returns {void}
      */
     handleTouchMove(e) {
         e.preventDefault();
-        if (e.touches.length === 0) return;
+        if (this.state === 'idle' || e.touches.length === 0) return;
+
         const touch = e.touches[0];
-        const deltaX = touch.clientX - this.startX;
-        const deltaY = touch.clientY - this.startY;
+        const deltaY = this.startY - touch.clientY;
 
-        if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
-            this.isDragging = true;
-        }
-
-        if (this.isDragging) {
-            const newX = this.initialButtonX + deltaX;
-            const newY = this.initialButtonY + deltaY;
-            this.button.style.left = `${newX}px`;
-            this.button.style.top = `${newY}px`;
-        }
-
-        const buttonRect = this.button.getBoundingClientRect();
-        const cancelRect = this.cancelZone.getBoundingClientRect();
-
-        if (
-            buttonRect.left < cancelRect.right &&
-            buttonRect.right > cancelRect.left &&
-            buttonRect.top < cancelRect.bottom &&
-            buttonRect.bottom > cancelRect.top
-        ) {
+        if (deltaY > 50) { // 50px threshold
             if (this.state !== 'cancelling') {
                 this.state = 'cancelling';
                 this.button.classList.add('cancelling');
@@ -192,51 +107,22 @@ export class FloatingAudioButton {
 
     /**
      * @function handleTouchEnd
-     * @description Handles the touchend event to stop recording and either send or discard the audio.
+     * @description Handles touchend to stop or cancel recording.
      * @returns {void}
      */
     handleTouchEnd() {
+        if (this.state === 'idle') return;
+
         this.button.classList.remove('recording', 'cancelling');
         this.cancelZone.classList.remove('visible', 'active');
 
-        if (this.audioRecorder) {
-            this.audioRecorder.stop();
+        if (this.state === 'recording') {
+            this.onStop();
+        } else if (this.state === 'cancelling') {
+            this.onCancel();
         }
 
-        if (this.state === 'recording' && this.audioBuffer.length > 0) {
-            const parts = this.audioBuffer.map(data => ({
-                mimeType: "audio/pcm;rate=16000",
-                data: data
-            }));
-            this.client.sendRealtimeInput(parts);
-        }
-        
-        this.audioBuffer = []; // Always clear buffer after operation
         this.state = 'idle';
-        this.isDragging = false;
-    }
-
-    /**
-     * @function ensureAudioRecorder
-     * @description Ensures an AudioRecorder instance is ready to be used.
-     * @returns {Promise<boolean>} - True if the recorder is ready, false otherwise.
-     */
-    async ensureAudioRecorder() {
-        if (this.audioRecorder) {
-            if (this.audioRecorder.isRecording) {
-                this.audioRecorder.stop();
-            }
-        }
-        try {
-            // The AudioRecorder's start() method handles permissions.
-            // We just need a fresh instance to ensure a clean state.
-            this.audioRecorder = new AudioRecorder();
-            return true;
-        } catch (error) {
-            console.error('Error creating AudioRecorder instance:', error);
-            alert('Could not create audio recorder.');
-            return false;
-        }
     }
 
     /**

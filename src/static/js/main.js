@@ -421,15 +421,37 @@ document.addEventListener('DOMContentLoaded', () => {
    // Mobile device specific logic
    isMobile = isMobileDevice();
    if (isMobile) {
-       floatingAudioButton = new FloatingAudioButton(client);
+       floatingAudioButton = new FloatingAudioButton({
+           onStart: () => {
+               if (isConnected && !isRecording) {
+                   handleMicToggle();
+               }
+           },
+           onStop: () => {
+               if (isConnected && isRecording) {
+                   handleMicToggle();
+               }
+           },
+           onCancel: () => {
+               if (isConnected && isRecording) {
+                   // Only stop recording without sending data
+                   try {
+                       if (audioRecorder) {
+                           audioRecorder.stop();
+                       }
+                       isRecording = false;
+                       chatUI.logMessage('Microphone recording cancelled', 'system');
+                       updateMicIcon();
+                   } catch (error) {
+                       Logger.error('Microphone cancel error:', error);
+                       chatUI.logMessage(`Error cancelling microphone: ${error.message}`, 'system');
+                       isRecording = false;
+                       updateMicIcon();
+                   }
+               }
+           }
+       });
        floatingAudioButton.hide(); // Initially hidden
-
-       if (micButton) {
-           // Per user request, change icon and disable the old button
-           micButton.innerHTML = `✓`;
-           micButton.classList.add('disabled');
-           micButton.disabled = true;
-       }
    }
 
    // T11: 初始化聊天UI模块并注入依赖
@@ -1211,11 +1233,13 @@ messageInput.addEventListener('keydown', (event) => {
     }
 });
 
-if (!isMobile) {
-    micButton.addEventListener('click', () => {
-        if (isConnected) handleMicToggle();
-    });
-}
+micButton.addEventListener('click', () => {
+    if (isMobile) {
+        showToast('请使用屏幕下方的悬浮按钮进行语音输入');
+    } else if (isConnected) {
+        handleMicToggle();
+    }
+});
 
 connectButton.addEventListener('click', () => {
     if (isConnected) {
