@@ -492,7 +492,8 @@ document.addEventListener('DOMContentLoaded', () => {
    isMobile = isMobileDevice();
    if (isMobile && 'ontouchstart' in window) {
        // 初始化悬浮音频按钮，传递一个函数来获取当前的audioRecorder实例
-       floatingAudioButton = new FloatingAudioButton(() => audioRecorder, client);
+       // 移动端音频输入优化：现在 FloatingAudioButton 将自我管理 AudioRecorder 实例
+       floatingAudioButton = new FloatingAudioButton(client);
        
        // 默认隐藏，只在WebSocket连接时显示
        floatingAudioButton.hide();
@@ -673,46 +674,41 @@ async function ensureAudioInitialized() {
  * @returns {Promise<void>}
  */
 async function requestMicPermissionAndInitRecorder() {
-    // 如果录音器已经初始化，则通知用户并直接返回。
-    if (audioRecorder) {
-        showToast('录音器已准备就绪，请使用悬浮按钮进行操作。');
-        return;
-    }
-
-    try {
-        // 确保共享的 AudioContext 已创建并激活。
-        await ensureAudioInitialized();
-
-        // 通过获取媒体流然后立即停止它的方式来请求麦克风权限。
-        // 这是一个仅用于触发权限提示的常用模式。
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
-
-        // 实例化会话中唯一的、共享的 AudioRecorder。
-        // 新的 AudioRecorder 会在内部自行管理 AudioContext。
-        audioRecorder = new AudioRecorder();
-        
-        showToast('麦克风权限已获取，录音器准备就绪。');
-        Logger.info('AudioRecorder initialized and ready.');
-
-        // 更新UI以反映新状态。
-        // 主麦克风按钮现在被禁用，因为它只用于一次性授权。
-        micButton.disabled = true;
-        micButton.textContent = 'done';
-        micButton.title = '麦克风已授权';
-        micButton.style.cursor = 'default';
-
-        // 如果在移动设备上且已连接，则显示悬浮音频按钮。
-        if (isMobile && floatingAudioButton && isConnected) {
-            floatingAudioButton.show();
+    // 此函数现在仅作为桌面端的备用或测试功能，
+    // 移动端的核心逻辑已移至 FloatingAudioButton。
+    if (isRecording) {
+        if (audioRecorder) {
+            audioRecorder.stop();
         }
-
-    } catch (error) {
-        Logger.error('初始化 AudioRecorder 失败:', error);
-        showSystemMessage(`麦克风初始化失败: ${error.message}`);
-        // 失败时重置状态，允许用户重试。
-        audioRecorder = null;
+        isRecording = false;
+    } else {
+        if (!audioRecorder) {
+            try {
+                await ensureAudioInitialized();
+                audioRecorder = new AudioRecorder();
+            } catch (error) {
+                Logger.error('初始化 AudioRecorder 失败:', error);
+                showSystemMessage(`麦克风初始化失败: ${error.message}`);
+                return;
+            }
+        }
+        try {
+            await audioRecorder.start((base64Data) => {
+                if (client && client.ws) {
+                    client.sendRealtimeInput([{
+                        mimeType: `audio/pcm;rate=${CONFIG.AUDIO.SAMPLE_RATE}`,
+                        data: base64Data,
+                    }]);
+                }
+            });
+            isRecording = true;
+        } catch (error) {
+            Logger.error('启动录音失败:', error);
+            showSystemMessage(`启动录音失败: ${error.message}`);
+            isRecording = false;
+        }
     }
+    updateMicIcon();
 }
 
 /**

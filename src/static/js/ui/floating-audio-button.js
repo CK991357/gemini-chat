@@ -1,3 +1,4 @@
+import { AudioRecorder } from '../audio/audio-recorder.js'; // 引入 AudioRecorder
 import { CONFIG } from '../config/config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -9,13 +10,12 @@ import { Logger } from '../utils/logger.js';
 export class FloatingAudioButton {
     /**
      * @constructor
-     * @param {Function} getAudioRecorder - A function that returns the singleton AudioRecorder instance.
      * @param {object} client - The WebSocket client instance for sending audio data.
      * @param {object} [options={}] - Configuration options for the button's behavior.
      */
-    constructor(getAudioRecorder, client, options = {}) {
-        this.getAudioRecorder = getAudioRecorder;
+    constructor(client, options = {}) {
         this.client = client;
+        this.audioRecorder = null; // 内部管理 AudioRecorder 实例
         this.options = {
             cancelThreshold: 80, // Pixels to slide up to enter the cancel state.
             ...options,
@@ -120,14 +120,45 @@ export class FloatingAudioButton {
     }
 
     /**
+     * @method ensureAudioRecorder
+     * @description Ensures that the AudioRecorder is initialized, requesting permissions if necessary.
+     * @returns {Promise<boolean>} - True if the recorder is ready, false otherwise.
+     * @private
+     */
+    async ensureAudioRecorder() {
+        if (this.audioRecorder) {
+            return true;
+        }
+        try {
+            // 首次使用时请求权限并实例化
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop()); // 仅用于触发权限提示
+            
+            this.audioRecorder = new AudioRecorder();
+            Logger.info('AudioRecorder initialized by floating button.');
+            return true;
+        } catch (error) {
+            Logger.error('Failed to initialize AudioRecorder:', error);
+            const errorMessage = error.message || 'Microphone access denied.';
+            this.showStatus(`Error: ${errorMessage}`, 4000);
+            this.resetState();
+            return false;
+        }
+    }
+
+    /**
      * @method startRecording
      * @description Transitions to the RECORDING state and starts the audio recorder.
      * @returns {Promise<void>}
      */
     async startRecording() {
-        const audioRecorder = this.getAudioRecorder();
-        if (!audioRecorder || this.state !== 'IDLE') {
-            Logger.warn('Cannot start recording. Recorder not available or already recording.');
+        if (this.state !== 'IDLE') {
+            Logger.warn('Cannot start recording, state is not IDLE.');
+            return;
+        }
+
+        const recorderReady = await this.ensureAudioRecorder();
+        if (!recorderReady) {
             return;
         }
 
@@ -136,7 +167,7 @@ export class FloatingAudioButton {
         this.showStatus('Recording...');
 
         try {
-            await audioRecorder.start((base64Data) => {
+            await this.audioRecorder.start((base64Data) => {
                 if (this.client && this.client.ws) {
                     this.client.sendRealtimeInput([{
                         mimeType: `audio/pcm;rate=${CONFIG.AUDIO.SAMPLE_RATE}`,
@@ -147,7 +178,6 @@ export class FloatingAudioButton {
             Logger.info('Floating button started recording.');
         } catch (error) {
             Logger.error('Floating button failed to start recording:', error);
-            // 将详细错误信息展示给用户，便于调试
             const errorMessage = error.message || 'Unknown error';
             this.showStatus(`Error: ${errorMessage}`, 4000);
             this.resetState();
@@ -160,10 +190,9 @@ export class FloatingAudioButton {
      * @param {boolean} shouldSend - Whether to send the recorded data.
      */
     stopRecording(shouldSend) {
-        const audioRecorder = this.getAudioRecorder();
-        if (!audioRecorder || this.state === 'IDLE') return;
+        if (!this.audioRecorder || this.state === 'IDLE') return;
 
-        audioRecorder.stop();
+        this.audioRecorder.stop();
         Logger.info(`Floating button stopped recording. Should send: ${shouldSend}`);
         
         if (shouldSend) {
