@@ -521,8 +521,7 @@ let isRecording = false;
 let audioStreamer = null;
 let audioCtx = null;
 let isConnected = false;
-let audioRecorder = null;
-let micStream = null; // 新增：用于保存麦克风流
+let audioRecorder = null; // This will be our singleton instance
 let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
@@ -673,6 +672,11 @@ async function ensureAudioInitialized() {
     if (!audioStreamer) {
         audioStreamer = new AudioStreamer(audioCtx);
     }
+
+    // Initialize the singleton AudioRecorder here, passing the single AudioContext
+    if (!audioRecorder) {
+        audioRecorder = new AudioRecorder(audioCtx);
+    }
     
     return audioStreamer;
 }
@@ -682,27 +686,21 @@ async function ensureAudioInitialized() {
  * @returns {Promise<void>}
  */
 async function handleMicToggle() {
+    // Ensure all audio components are initialized, including the singleton audioRecorder
+    await ensureAudioInitialized();
+
     if (!isRecording) {
         try {
-            // 增加权限状态检查
-            const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-            if (permissionStatus.state === 'denied') {
-                chatUI.logMessage('麦克风权限被拒绝，请在浏览器设置中启用', 'system');
-                return;
-            }
-            await ensureAudioInitialized();
-            audioRecorder = new AudioRecorder();
-            
-            const inputAnalyser = audioCtx.createAnalyser();
-            inputAnalyser.fftSize = 256;
-            const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount); // 重命名为 _inputDataArray
+            // The permission check is now implicitly handled by audioRecorder.start(),
+            // which will throw an error if permission is denied.
             
             await audioRecorder.start((base64Data) => {
+                // This callback remains the same, sending data through the websocket.
                 if (isUsingTool) {
                     client.sendRealtimeInput([{
                         mimeType: "audio/pcm;rate=16000",
                         data: base64Data,
-                        interrupt: true     // Model isn't interruptable when using tools, so we do it manually
+                        interrupt: true
                     }]);
                 } else {
                     client.sendRealtimeInput([{
@@ -710,47 +708,34 @@ async function handleMicToggle() {
                         data: base64Data
                     }]);
                 }
-                
-                // 移除输入音频可视化
-                // inputAnalyser.getByteFrequencyData(_inputDataArray); // 使用重命名后的变量
-                // const inputVolume = Math.max(..._inputDataArray) / 255;
-                // updateAudioVisualizer(inputVolume, true);
             });
 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            micStream = stream; // 保存流引用
-            const source = audioCtx.createMediaStreamSource(stream);
-            source.connect(inputAnalyser);
-            
-            await audioStreamer.resume();
+            // No need to resume audioStreamer here, it's for playback.
             isRecording = true;
             Logger.info('Microphone started');
             chatUI.logMessage('Microphone started', 'system');
             updateMicIcon();
+
         } catch (error) {
-            Logger.error('Microphone error:', error);
-            chatUI.logMessage(`Error: ${error.message}`, 'system');
+            Logger.error('Microphone start error:', error);
+            // The error from getUserMedia inside audioRecorder will be caught here.
+            chatUI.logMessage(`麦克风启动失败: ${error.message}`, 'system');
             isRecording = false;
             updateMicIcon();
         }
     } else {
         try {
-            // 修复：确保正确关闭麦克风
-            if (audioRecorder && isRecording) {
+            if (audioRecorder) {
                 audioRecorder.stop();
-                // 确保关闭音频流
-                if (micStream) {
-                    micStream.getTracks().forEach(track => track.stop());
-                    micStream = null;
-                }
             }
             isRecording = false;
+            Logger.info('Microphone stopped'); // More accurate log message
             chatUI.logMessage('Microphone stopped', 'system');
             updateMicIcon();
         } catch (error) {
             Logger.error('Microphone stop error:', error);
-            chatUI.logMessage(`Error stopping microphone: ${error.message}`, 'system');
-            isRecording = false; // 即使出错也要尝试重置状态
+            chatUI.logMessage(`麦克风停止时出错: ${error.message}`, 'system');
+            isRecording = false; // Reset state even on error
             updateMicIcon();
         }
     }
@@ -827,10 +812,7 @@ async function connectToWebsocket() {
         connectButton.classList.add('connected');
         messageInput.disabled = false;
         sendButton.disabled = false;
-        // 启用媒体按钮
-        micButton.disabled = isMobile; // Disable on mobile, enable on desktop
-        cameraButton.disabled = false;
-        screenButton.disabled = false;
+        // 启用媒体按钮 (逻辑已由 updateConnectionStatus 统一处理)
         chatUI.logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
         updateConnectionStatus();
 
@@ -1227,7 +1209,9 @@ messageInput.addEventListener('keydown', (event) => {
 micButton.addEventListener('click', () => {
     if (isMobile) {
         showToast('请使用屏幕下方的悬浮按钮进行语音输入');
-    } else if (isConnected) {
+        return; // Explicitly return to prevent any further action
+    }
+    if (isConnected) { // Check isConnected for desktop
         handleMicToggle();
     }
 });
@@ -1386,17 +1370,17 @@ function updateConnectionStatus() {
     });
 
     // 根据连接状态和模型类型禁用/启用媒体按钮
-    const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
-    mediaButtons.forEach(btn => {
+    const otherMediaButtons = [cameraButton, screenButton, chatVoiceInputButton];
+    otherMediaButtons.forEach(btn => {
         if (btn) {
-            // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理，这里只处理其他按钮
-            if (btn === cameraButton) {
-                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            } else {
-                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            }
+            btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
         }
     });
+
+    // 对顶部的麦克风按钮应用特殊逻辑：在移动端也禁用
+    if (micButton) {
+        micButton.disabled = !isConnected || !selectedModelConfig.isWebSocket || isMobile;
+    }
     
     // 附件按钮仅在 HTTP 模式下可用
     if (attachmentButton) {
@@ -1439,11 +1423,8 @@ function updateMediaPreviewsDisplay() {
  */
 function initMobileHandlers() {
 
-    // 新增：移动端麦克风按钮
-    document.getElementById('mic-button').addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        if (isConnected) handleMicToggle();
-    });
+    // The incorrect touchstart listener for the main mic button is now removed.
+    // The click listener at line ~1227 handles all logic correctly.
     
     /**
      * 检查音频播放状态。

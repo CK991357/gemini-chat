@@ -10,13 +10,14 @@ import { Logger } from '../utils/logger.js';
 export class AudioRecorder {
     /**
      * @constructor
+     * @param {AudioContext} audioContext - An existing AudioContext instance.
      * @param {number} sampleRate - The sample rate for audio recording (default: 16000)
      */
-    constructor(sampleRate = CONFIG.AUDIO.SAMPLE_RATE) {
+    constructor(audioContext, sampleRate = CONFIG.AUDIO.SAMPLE_RATE) {
         this.sampleRate = sampleRate;
         this.stream = null;
         this.mediaRecorder = null;
-        this.audioContext = null;
+        this.audioContext = audioContext; // Use the provided AudioContext
         this.source = null;
         this.processor = null;
         this.onAudioData = null;
@@ -51,7 +52,6 @@ export class AudioRecorder {
                 }
             });
             
-            this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
             this.source = this.audioContext.createMediaStreamSource(this.stream);
 
             // Load and initialize audio worklet
@@ -107,10 +107,7 @@ export class AudioRecorder {
                 this.processor.disconnect();
                 this.processor = null;
             }
-            if (this.audioContext) {
-                this.audioContext.close(); // 显式关闭 AudioContext
-                this.audioContext = null;
-            }
+            // The AudioContext is now managed externally and should not be closed here.
 
             this.isRecording = false;
             Logger.info('Audio recording stopped successfully');
