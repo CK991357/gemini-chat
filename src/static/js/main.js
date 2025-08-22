@@ -13,7 +13,6 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
-import { FloatingAudioButton } from './ui/floating-audio-button.js'; // 新增导入
 
 /**
  * @fileoverview Main entry point for the application.
@@ -514,7 +513,6 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
-let floatingAudioButton = null; // 新增：悬浮音频按钮实例
 
 
 /**
@@ -1069,11 +1067,6 @@ client.on('interrupted', () => {
 
 client.on('setupcomplete', () => {
     chatUI.logMessage('Setup complete', 'system');
-    
-    // 初始化悬浮音频按钮（仅在移动端且WebSocket连接成功时）
-    if (isMobileDevice() && selectedModelConfig.isWebSocket) {
-        initializeFloatingAudioButton();
-    }
 });
 
 client.on('turncomplete', () => {
@@ -1271,21 +1264,6 @@ async function connect() {
 function disconnect() {
     if (selectedModelConfig.isWebSocket) {
         disconnectFromWebsocket();
-        
-        // 销毁悬浮音频按钮实例
-        if (floatingAudioButton) {
-            floatingAudioButton.destroy();
-            floatingAudioButton = null;
-        }
-        
-        // 重新启用原有的麦克风按钮
-        if (micButton) {
-            micButton.disabled = false;
-            micButton.title = "";
-            micButton.onclick = () => {
-                if (isConnected) handleMicToggle();
-            };
-        }
     } else {
         // 对于 HTTP 模式，没有“断开连接”的概念，但需要重置 UI 状态
         resetUIForDisconnectedState();
@@ -1566,39 +1544,6 @@ function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-/**
- * 初始化悬浮音频按钮。
- */
-function initializeFloatingAudioButton() {
-    // 如果已存在实例，先销毁
-    if (floatingAudioButton) {
-        floatingAudioButton.destroy();
-        floatingAudioButton = null;
-    }
-    
-    // 创建新的悬浮音频按钮实例
-    floatingAudioButton = new FloatingAudioButton({
-        container: document.body,
-        onStart: () => startFloatingAudioRecording(),
-        onStop: () => stopFloatingAudioRecording(),
-        onCancel: () => cancelFloatingAudioRecording(),
-        showToast: (message) => showToast(message)
-    });
-    
-    // 禁用原有的麦克风按钮并添加提示
-    if (micButton) {
-        micButton.disabled = true;
-        micButton.title = "请使用底部悬浮按钮进行语音输入";
-        
-        // 添加点击事件提示用户
-        const originalMicClickHandler = micButton.onclick;
-        micButton.onclick = (e) => {
-            e.preventDefault();
-            showToast("请使用底部悬浮按钮进行语音输入");
-        };
-    }
-}
-
 
 
 
@@ -1685,60 +1630,6 @@ async function startChatRecording() {
 }
 
 /**
- * @function startFloatingAudioRecording
- * @description 开始悬浮按钮的音频录音。
- * @returns {Promise<void>}
- */
-async function startFloatingAudioRecording() {
-    // 复用现有的 handleMicToggle 函数的开始录音逻辑
-    if (!isRecording) {
-        try {
-            // 增加权限状态检查
-            const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-            if (permissionStatus.state === 'denied') {
-                showToast('麦克风权限被拒绝，请在浏览器设置中启用');
-                return;
-            }
-            await ensureAudioInitialized();
-            audioRecorder = new AudioRecorder();
-            
-            const inputAnalyser = audioCtx.createAnalyser();
-            inputAnalyser.fftSize = 256;
-            const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount); // 重命名为 _inputDataArray
-            
-            await audioRecorder.start((base64Data) => {
-                if (isUsingTool) {
-                    client.sendRealtimeInput([{
-                        mimeType: "audio/pcm;rate=16000",
-                        data: base64Data,
-                        interrupt: true     // Model isn't interruptable when using tools, so we do it manually
-                    }]);
-                } else {
-                    client.sendRealtimeInput([{
-                        mimeType: "audio/pcm;rate=16000",
-                        data: base64Data
-                    }]);
-                }
-            });
-
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            micStream = stream; // 保存流引用
-            const source = audioCtx.createMediaStreamSource(stream);
-            source.connect(inputAnalyser);
-            
-            await audioStreamer.resume();
-            isRecording = true;
-            Logger.info('Microphone started via floating button');
-            showToast('录音已开始...');
-        } catch (error) {
-            Logger.error('Microphone error:', error);
-            showToast(`录音启动失败: ${error.message}`);
-            isRecording = false;
-        }
-    }
-}
-
-/**
  * @function stopChatRecording
  * @description 停止聊天模式下的语音录音并发送进行转文字。
  * @returns {Promise<void>}
@@ -1804,34 +1695,6 @@ async function stopChatRecording() {
 }
 
 /**
- * @function stopFloatingAudioRecording
- * @description 停止悬浮按钮的音频录音。
- * @returns {Promise<void>}
- */
-async function stopFloatingAudioRecording() {
-    // 复用现有的 handleMicToggle 函数的停止录音逻辑
-    if (isRecording) {
-        try {
-            // 修复：确保正确关闭麦克风
-            if (audioRecorder && isRecording) {
-                audioRecorder.stop();
-                // 确保关闭音频流
-                if (micStream) {
-                    micStream.getTracks().forEach(track => track.stop());
-                    micStream = null;
-                }
-            }
-            isRecording = false;
-            showToast('录音已停止');
-        } catch (error) {
-            Logger.error('Microphone stop error:', error);
-            showToast(`停止录音失败: ${error.message}`);
-            isRecording = false; // 即使出错也要尝试重置状态
-        }
-    }
-}
-
-/**
  * @function cancelChatRecording
  * @description 取消聊天模式下的语音录音。
  * @returns {void}
@@ -1848,17 +1711,6 @@ function cancelChatRecording() {
   }
   chatAudioChunks = [];
   resetChatRecordingState();
-}
-
-/**
- * @function cancelFloatingAudioRecording
- * @description 取消悬浮按钮的音频录音。
- * @returns {void}
- */
-function cancelFloatingAudioRecording() {
-    // 复用 stopFloatingAudioRecording 的逻辑，因为它已经处理了停止和清理
-    stopFloatingAudioRecording();
-    showToast('录音已取消');
 }
 
 /**
