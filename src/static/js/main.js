@@ -13,6 +13,7 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
+import { FloatingAudioButton } from './ui/floating-audio-button.js'; // 新增：静态导入悬浮按钮
 
 /**
  * @fileoverview Main entry point for the application.
@@ -796,6 +797,16 @@ async function connectToWebsocket() {
         await client.connect(config,apiKeyInput.value);
         isConnected = true;
         await resumeAudioContext();
+        
+        // 预初始化音频设备以减少悬浮按钮的首次响应延迟
+        if (isMobileDevice() && selectedModelConfig.isWebSocket) {
+            try {
+                await ensureAudioInitialized();
+                Logger.info('音频设备预初始化完成');
+            } catch (error) {
+                Logger.warn('音频预初始化失败，将在首次使用时初始化:', error);
+            }
+        }
         connectButton.textContent = '断开连接';
         connectButton.classList.add('connected');
         messageInput.disabled = false;
@@ -1601,24 +1612,19 @@ function initFloatingAudioButton() {
     }
     
     try {
-        // 动态导入 FloatingAudioButton 类
-        import('./ui/floating-audio-button.js').then(module => {
-            floatingAudioButton = new module.FloatingAudioButton({
-                container: document.body,
-                onStart: handleFloatingAudioStart,
-                onStop: handleFloatingAudioStop,
-                onCancel: handleFloatingAudioCancel,
-                showToast: showToast
-            });
-            // 确保按钮在初始化后立即显示，因为CSS不再控制其默认显示
-            if (floatingAudioButton.buttonElement) {
-                floatingAudioButton.buttonElement.style.display = 'flex';
-            }
-            chatUI.logMessage('悬浮音频按钮已初始化', 'system');
-        }).catch(error => {
-            console.error('加载悬浮音频按钮模块失败:', error);
-            chatUI.logMessage('悬浮音频按钮加载失败，请刷新页面重试', 'system');
+        // 静态初始化 FloatingAudioButton 类
+        floatingAudioButton = new FloatingAudioButton({
+            container: document.body,
+            onStart: handleFloatingAudioStart,
+            onStop: handleFloatingAudioStop,
+            onCancel: handleFloatingAudioCancel,
+            showToast: showToast
         });
+        // 确保按钮在初始化后立即显示，因为CSS不再控制其默认显示
+        if (floatingAudioButton.buttonElement) {
+            floatingAudioButton.buttonElement.style.display = 'flex';
+        }
+        chatUI.logMessage('悬浮音频按钮已初始化', 'system');
     } catch (error) {
         console.error('初始化悬浮音频按钮失败:', error);
         chatUI.logMessage('悬浮音频按钮初始化失败', 'system');
@@ -1629,75 +1635,16 @@ function initFloatingAudioButton() {
  * 处理悬浮音频按钮开始录音
  */
 async function handleFloatingAudioStart() {
-    if (isRecording) {
-        showToast('录音正在进行中');
-        return;
-    }
-    
-    try {
-        await ensureAudioInitialized();
-        audioRecorder = new AudioRecorder();
-        
-        const inputAnalyser = audioCtx.createAnalyser();
-        inputAnalyser.fftSize = 256;
-        const _inputDataArray = new Uint8Array(inputAnalyser.frequencyBinCount);
-        
-        await audioRecorder.start((base64Data) => {
-            if (isUsingTool) {
-                client.sendRealtimeInput([{
-                    mimeType: "audio/pcm;rate=16000",
-                    data: base64Data,
-                    interrupt: true
-                }]);
-            } else {
-                client.sendRealtimeInput([{
-                    mimeType: "audio/pcm;rate=16000",
-                    data: base64Data
-                }]);
-            }
-        });
-
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        micStream = stream;
-        const source = audioCtx.createMediaStreamSource(stream);
-        source.connect(inputAnalyser);
-        
-        await audioStreamer.resume();
-        isRecording = true;
-        Logger.info('悬浮麦克风开始录音');
-        chatUI.logMessage('悬浮麦克风开始录音', 'system');
-        updateMicIcon();
-    } catch (error) {
-        Logger.error('悬浮麦克风启动失败:', error);
-        showToast(`启动失败: ${error.message}`);
-        isRecording = false;
-        updateMicIcon();
-    }
+    // 重用现有的 handleMicToggle 函数开始录音
+    if (isConnected && !isRecording) handleMicToggle();
 }
 
 /**
  * 处理悬浮音频按钮停止录音
  */
 function handleFloatingAudioStop() {
-    if (!isRecording) return;
-    
-    try {
-        if (audioRecorder) {
-            audioRecorder.stop();
-        }
-        if (micStream) {
-            micStream.getTracks().forEach(track => track.stop());
-            micStream = null;
-        }
-        isRecording = false;
-        chatUI.logMessage('悬浮麦克风停止录音', 'system');
-        updateMicIcon();
-    } catch (error) {
-        Logger.error('悬浮麦克风停止失败:', error);
-        showToast(`停止失败: ${error.message}`);
-        isRecording = false;
-        updateMicIcon();
-    }
+    // 重用现有的 handleMicToggle 函数停止录音
+    if (isConnected && isRecording) handleMicToggle();
 }
 
 /**
@@ -1707,6 +1654,7 @@ function handleFloatingAudioCancel() {
     if (!isRecording) return;
     
     try {
+        // 复用现有的停止逻辑
         if (audioRecorder) {
             audioRecorder.stop();
         }
