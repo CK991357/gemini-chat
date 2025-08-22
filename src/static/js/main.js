@@ -500,6 +500,7 @@ document.addEventListener('DOMContentLoaded', () => {
        
        Logger.info('移动端环境检测到，悬浮音频按钮已初始化');
    }
+
   });
 
 // State variables
