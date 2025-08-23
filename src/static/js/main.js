@@ -1034,6 +1034,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 requestBody.tools = selectedModelConfig.tools;
             }
 
+            Logger.info('发送到后端的请求体:', JSON.stringify(requestBody, null, 2)); // 添加日志
             await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 
         } catch (error) {
