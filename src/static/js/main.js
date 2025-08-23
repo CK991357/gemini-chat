@@ -996,9 +996,11 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 }
             }
 
+            // 将用户消息添加到历史记录
+            // T4: 修复 - 直接将 parts 数组作为 content
             chatHistory.push({
                 role: 'user',
-                content: parts // T4: 将构建好的 parts 数组作为 content
+                content: parts
             });
 
             // 清除附件（发送后）
@@ -1019,8 +1021,6 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 enableGoogleSearch: true,
                 stream: true,
                 sessionId: currentSessionId,
-                // T4: 将构建好的 parts 数组传递给 chat-api.js
-                parts: parts
             };
 
             if (systemInstruction) {
