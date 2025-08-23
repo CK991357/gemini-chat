@@ -116,6 +116,23 @@ if (savedFPS) {
 // We will set the default prompt based on the new config structure.
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 配置 marked.js
+    marked.setOptions({
+      breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
+      highlight: function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        return hljs.highlight(code, { language }).value;
+      },
+      langPrefix: 'hljs language-' // highlight.js css expects a language prefix
+    });
+
+    // 初始化highlight.js
+    hljs.configure({
+      ignoreUnescapedHTML: true,
+      throwUnescapedHTML: false
+    });
+    // hljs.highlightAll(); // 不再需要在这里调用，因为 marked.js 会处理
+
     // 动态生成模型选择下拉菜单选项
     const modelSelect = document.getElementById('model-select');
     modelSelect.innerHTML = ''; // 清空现有选项
@@ -478,23 +495,6 @@ document.addEventListener('DOMContentLoaded', () => {
            buttonElement.textContent = 'text_fields';
        }
    };
-
-    // 配置 marked.js
-    marked.setOptions({
-      breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
-      highlight: function(code, lang) {
-        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-        return hljs.highlight(code, { language }).value;
-      },
-      langPrefix: 'hljs language-' // highlight.js css expects a language prefix
-    });
-
-    // 初始化highlight.js
-    hljs.configure({
-      ignoreUnescapedHTML: true,
-      throwUnescapedHTML: false
-    });
-    // hljs.highlightAll(); // 不再需要在这里调用，因为 marked.js 会处理
 
    chatUI.initChatUI(
        { // 注入 DOM 元素
@@ -943,37 +943,24 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             const modelName = selectedModelConfig.name;
             let systemInstruction = systemInstructionInput.value;
 
-            // 构建消息内容，以支持多模态附件
-            const parts = [];
+            // 构建消息内容，参考 OCR 项目的成功实践
+            const userContent = [];
             if (message) {
-                parts.push({ text: message });
+                userContent.push({ type: 'text', text: message });
             }
-
-            // 遍历所有附件，构建符合 Gemini API 规范的 parts 数组
-            const allAttachments = attachmentManager.getAllAttachments('chat');
-            for (const attachment of allAttachments) {
-                if (attachment.type === 'file') {
-                    // 对于 Base64 编码的文件
-                    parts.push({
-                        inline_data: {
-                            mime_type: attachment.mimeType,
-                            data: attachment.data // attachment.data 已经是 Base64 字符串
-                        }
-                    });
-                } else if (attachment.type === 'url') {
-                    // 对于 URL 附件
-                    parts.push({
-                        file_data: {
-                            file_uri: attachment.source, // attachment.source 是 URL 字符串
-                            mime_type: attachment.mimeType // URL 附件也需要 mimeType
-                        }
-                    });
-                }
+            if (attachedFile) {
+                // 参考项目使用 image_url 并传递完整的 Data URL
+                userContent.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: attachedFile.base64
+                    }
+                });
             }
 
             chatHistory.push({
                 role: 'user',
-                content: parts // 现在 content 是 parts 数组
+                content: userContent // 保持为数组，因为可能包含文本和图片
             });
 
             // 清除附件（发送后）
@@ -981,7 +968,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
 
             let requestBody = {
                 model: modelName,
-                contents: chatHistory, // Gemini API 使用 'contents' 而不是 'messages'
+                messages: chatHistory,
                 generationConfig: {
                     responseModalities: ['text']
                 },
