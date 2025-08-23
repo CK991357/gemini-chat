@@ -298,53 +298,8 @@ document.addEventListener('DOMContentLoaded', () => {
    });
 
    // 附件按钮事件监听 (只绑定一次)
-   attachmentButton.addEventListener('click', () => {
-       // 检查当前是否为 HTTP 模式且已连接
-       if (isConnected && !selectedModelConfig.isWebSocket) {
-           // 弹出选项让用户选择文件上传或从 URL 添加
-           showAttachmentOptions();
-       } else {
-           showSystemMessage('当前模式不支持附件功能。');
-       }
-   });
+   attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
-
-    /**
-     * @function showAttachmentOptions
-     * @description 显示附件选项（文件上传或从 URL 添加）。
-     * @returns {void}
-     */
-    function showAttachmentOptions() {
-        const options = [
-            { text: '上传文件', action: () => fileInput.click() },
-            { text: '从 URL 添加', action: () => promptForUrlAttachment() }
-        ];
-        // 假设有一个通用的函数来显示带选项的模态框或对话框
-        // 这里我们简化为直接调用
-        const choice = prompt('请选择附件方式：\n1. 上传文件\n2. 从 URL 添加\n\n请输入数字 (1或2):');
-        if (choice === '1') {
-            fileInput.click();
-        } else if (choice === '2') {
-            promptForUrlAttachment();
-        } else {
-            showSystemMessage('无效的选择。');
-        }
-    }
-
-    /**
-     * @function promptForUrlAttachment
-     * @description 提示用户输入 URL 并添加为附件。
-     * @returns {void}
-     */
-    function promptForUrlAttachment() {
-        const url = prompt('请输入附件的 URL:');
-        if (url) {
-            attachmentManager.addUrlAttachment(url, 'chat');
-            showToast('URL 附件已添加');
-        } else {
-            showSystemMessage('未输入 URL。');
-        }
-    }
  
  
    // T10: 初始化 HistoryManager

@@ -29,7 +29,7 @@ export class ChatApi {
      * @throws {Error} 如果处理流失败.
      */
     async processHttpStream(requestBody, chatHistory) {
-        let currentMessages = requestBody.contents;
+        let currentMessages = requestBody.messages;
         let functionCallDetected = false;
         let currentFunctionCall = null;
         let reasoningStarted = false;
@@ -137,7 +137,7 @@ export class ChatApi {
                         parts: [{ functionResponse: { name: currentFunctionCall.name, response: toolResponsePart } }]
                     });
 
-                    return await this.processHttpStream({ ...requestBody, contents: chatHistory }, chatHistory);
+                    return await this.processHttpStream({ ...requestBody, messages: chatHistory }, chatHistory);
 
                 } catch (toolError) {
                     Logger.error('工具执行失败:', toolError);
@@ -152,7 +152,7 @@ export class ChatApi {
                         parts: [{ functionResponse: { name: currentFunctionCall.name, response: { error: toolError.message } } }]
                     });
 
-                    return await this.processHttpStream({ ...requestBody, contents: chatHistory }, chatHistory);
+                    return await this.processHttpStream({ ...requestBody, messages: chatHistory }, chatHistory);
                 }
             } else {
                 if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
@@ -178,21 +178,32 @@ export class ChatApi {
     /**
      * 发送聊天消息 (HTTP 模式).
      * @param {object} params - 参数对象.
-     * @param {Array} params.parts - 消息内容数组，支持多模态.
+     * @param {string} params.message - 用户输入的文本消息.
+     * @param {object} params.attachedFile - 附加的文件.
      * @param {Array} params.chatHistory - 当前的聊天历史.
      * @param {string} params.modelName - 当前选择的模型名称.
      * @param {string} params.systemInstruction - 当前的系统指令.
      * @param {string} params.currentSessionId - 当前的会话 ID.
      * @returns {Promise<Array>} - 返回更新后的聊天历史记录.
      */
-    async sendMessage({ parts, chatHistory, modelName, systemInstruction, currentSessionId }) {
+    async sendMessage({ message, attachedFile, chatHistory, modelName, systemInstruction, currentSessionId }) {
         try {
-            // 将新的 parts 数组添加到聊天历史中
-            const newHistory = [...chatHistory, { role: 'user', parts: parts }];
+            const userContent = [];
+            if (message) {
+                userContent.push({ type: 'text', text: message });
+            }
+            if (attachedFile) {
+                userContent.push({
+                    type: 'image_url',
+                    image_url: { url: attachedFile.base64 }
+                });
+            }
+
+            const newHistory = [...chatHistory, { role: 'user', content: userContent }];
 
             let requestBody = {
                 model: modelName,
-                contents: newHistory,
+                messages: newHistory,
                 generationConfig: {
                     responseModalities: ['text']
                 },
