@@ -29,7 +29,7 @@ export class ChatApi {
      * @throws {Error} 如果处理流失败.
      */
     async processHttpStream(requestBody, chatHistory) {
-        let currentMessages = requestBody.messages;
+        let currentMessages = requestBody.contents;
         let functionCallDetected = false;
         let currentFunctionCall = null;
         let reasoningStarted = false;
@@ -137,7 +137,7 @@ export class ChatApi {
                         parts: [{ functionResponse: { name: currentFunctionCall.name, response: toolResponsePart } }]
                     });
 
-                    return await this.processHttpStream({ ...requestBody, messages: chatHistory }, chatHistory);
+                    return await this.processHttpStream({ ...requestBody, contents: chatHistory }, chatHistory);
 
                 } catch (toolError) {
                     Logger.error('工具执行失败:', toolError);
@@ -152,7 +152,7 @@ export class ChatApi {
                         parts: [{ functionResponse: { name: currentFunctionCall.name, response: { error: toolError.message } } }]
                     });
 
-                    return await this.processHttpStream({ ...requestBody, messages: chatHistory }, chatHistory);
+                    return await this.processHttpStream({ ...requestBody, contents: chatHistory }, chatHistory);
                 }
             } else {
                 if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
@@ -192,7 +192,7 @@ export class ChatApi {
 
             let requestBody = {
                 model: modelName,
-                messages: newHistory,
+                contents: newHistory,
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -212,9 +212,6 @@ export class ChatApi {
                     parts: [{ text: systemInstruction }]
                 };
             }
-
-            // 将 parts 数组直接作为请求体的一部分发送
-            requestBody.parts = parts;
 
             return await this.processHttpStream(requestBody, newHistory);
 

@@ -116,23 +116,6 @@ if (savedFPS) {
 // We will set the default prompt based on the new config structure.
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 配置 marked.js
-    marked.setOptions({
-      breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
-      highlight: function(code, lang) {
-        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-        return hljs.highlight(code, { language }).value;
-      },
-      langPrefix: 'hljs language-' // highlight.js css expects a language prefix
-    });
-
-    // 初始化highlight.js
-    hljs.configure({
-      ignoreUnescapedHTML: true,
-      throwUnescapedHTML: false
-    });
-    // hljs.highlightAll(); // 不再需要在这里调用，因为 marked.js 会处理
-
     // 动态生成模型选择下拉菜单选项
     const modelSelect = document.getElementById('model-select');
     modelSelect.innerHTML = ''; // 清空现有选项
@@ -495,6 +478,23 @@ document.addEventListener('DOMContentLoaded', () => {
            buttonElement.textContent = 'text_fields';
        }
    };
+
+    // 配置 marked.js
+    marked.setOptions({
+      breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持
+      highlight: function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        return hljs.highlight(code, { language }).value;
+      },
+      langPrefix: 'hljs language-' // highlight.js css expects a language prefix
+    });
+
+    // 初始化highlight.js
+    hljs.configure({
+      ignoreUnescapedHTML: true,
+      throwUnescapedHTML: false
+    });
+    // hljs.highlightAll(); // 不再需要在这里调用，因为 marked.js 会处理
 
    chatUI.initChatUI(
        { // 注入 DOM 元素
