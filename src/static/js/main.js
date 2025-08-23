@@ -299,46 +299,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
    // 附件按钮事件监听 (只绑定一次)
    attachmentButton.addEventListener('click', () => {
-       // 创建一个简单的弹出菜单或模态框
-       const menu = document.createElement('div');
-       menu.className = 'attachment-menu';
-       menu.innerHTML = `
-           <button id="attach-file-btn" class="menu-item">从文件添加</button>
-           <button id="attach-url-btn" class="menu-item">从 URL 添加</button>
-       `;
-       document.body.appendChild(menu);
-
-       // 定位菜单到按钮下方
-       const rect = attachmentButton.getBoundingClientRect();
-       menu.style.top = `${rect.bottom + 5}px`;
-       menu.style.left = `${rect.left}px`;
-       menu.style.position = 'absolute';
-       menu.style.zIndex = '1000'; // 确保在最上层
-
-       // 点击外部关闭菜单
-       const dismissMenu = (e) => {
-           if (!menu.contains(e.target) && e.target !== attachmentButton) {
-               menu.remove();
-               document.removeEventListener('click', dismissMenu);
-           }
-       };
-       setTimeout(() => document.addEventListener('click', dismissMenu), 0);
-
-
-       document.getElementById('attach-file-btn').addEventListener('click', () => {
-           fileInput.click();
-           menu.remove();
-       });
-
-       document.getElementById('attach-url-btn').addEventListener('click', () => {
-           menu.remove();
-           const url = prompt('请输入 URL:');
-           if (url) {
-               attachmentManager.addUrlAttachment(url);
-           }
-       });
+       // 检查当前是否为 HTTP 模式且已连接
+       if (isConnected && !selectedModelConfig.isWebSocket) {
+           // 弹出选项让用户选择文件上传或从 URL 添加
+           showAttachmentOptions();
+       } else {
+           showSystemMessage('当前模式不支持附件功能。');
+       }
    });
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
+
+    /**
+     * @function showAttachmentOptions
+     * @description 显示附件选项（文件上传或从 URL 添加）。
+     * @returns {void}
+     */
+    function showAttachmentOptions() {
+        const options = [
+            { text: '上传文件', action: () => fileInput.click() },
+            { text: '从 URL 添加', action: () => promptForUrlAttachment() }
+        ];
+        // 假设有一个通用的函数来显示带选项的模态框或对话框
+        // 这里我们简化为直接调用
+        const choice = prompt('请选择附件方式：\n1. 上传文件\n2. 从 URL 添加\n\n请输入数字 (1或2):');
+        if (choice === '1') {
+            fileInput.click();
+        } else if (choice === '2') {
+            promptForUrlAttachment();
+        } else {
+            showSystemMessage('无效的选择。');
+        }
+    }
+
+    /**
+     * @function promptForUrlAttachment
+     * @description 提示用户输入 URL 并添加为附件。
+     * @returns {void}
+     */
+    function promptForUrlAttachment() {
+        const url = prompt('请输入附件的 URL:');
+        if (url) {
+            attachmentManager.addUrlAttachment(url, 'chat');
+            showToast('URL 附件已添加');
+        } else {
+            showSystemMessage('未输入 URL。');
+        }
+    }
  
  
    // T10: 初始化 HistoryManager
@@ -937,70 +943,37 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             const modelName = selectedModelConfig.name;
             let systemInstruction = systemInstructionInput.value;
 
-            // 构建消息内容，参考 OCR 项目的成功实践
-            // 构建消息内容，参考 OCR 项目的成功实践
-            const userContent = [];
-            if (message) {
-                userContent.push({ type: 'text', text: message });
-            }
-
-            // T4: 遍历所有附件，构建符合后端规范的 `parts` 数组
-            const allAttachments = attachmentManager.getAttachedFile(); // 获取当前附件 (chat 模式下只有一个)
+            // 构建消息内容，以支持多模态附件
             const parts = [];
-
             if (message) {
                 parts.push({ text: message });
             }
 
-            if (allAttachments) {
-                if (allAttachments.type === 'file') {
-                    // 对于文件附件，根据 mimeType 构建
-                    if (allAttachments.mimeType.startsWith('image/')) {
-                        parts.push({
-                            inlineData: {
-                                mimeType: allAttachments.mimeType,
-                                data: allAttachments.data.split(',')[1] // 移除 Data URL 的前缀
-                            }
-                        });
-                    } else if (allAttachments.mimeType.startsWith('audio/')) {
-                        parts.push({
-                            inlineData: {
-                                mimeType: allAttachments.mimeType,
-                                data: allAttachments.data.split(',')[1]
-                            }
-                        });
-                    } else if (allAttachments.mimeType === 'application/pdf') {
-                        parts.push({
-                            inlineData: {
-                                mimeType: allAttachments.mimeType,
-                                data: allAttachments.data.split(',')[1]
-                            }
-                        });
-                    } else {
-                        // 对于其他文件类型，可以作为通用二进制数据处理，或者根据后端支持情况进行调整
-                        parts.push({
-                            inlineData: {
-                                mimeType: allAttachments.mimeType,
-                                data: allAttachments.data.split(',')[1]
-                            }
-                        });
-                    }
-                } else if (allAttachments.type === 'url') {
-                    // 对于 URL 附件，构建 fileData 结构
+            // 遍历所有附件，构建符合 Gemini API 规范的 parts 数组
+            const allAttachments = attachmentManager.getAllAttachments('chat');
+            for (const attachment of allAttachments) {
+                if (attachment.type === 'file') {
+                    // 对于 Base64 编码的文件
                     parts.push({
-                        fileData: {
-                            mimeType: allAttachments.mimeType, // 占位符，后端会实际检测
-                            fileUri: allAttachments.data // URL 本身
+                        inline_data: {
+                            mime_type: attachment.mimeType,
+                            data: attachment.data // attachment.data 已经是 Base64 字符串
+                        }
+                    });
+                } else if (attachment.type === 'url') {
+                    // 对于 URL 附件
+                    parts.push({
+                        file_data: {
+                            file_uri: attachment.source, // attachment.source 是 URL 字符串
+                            mime_type: attachment.mimeType // URL 附件也需要 mimeType
                         }
                     });
                 }
             }
 
-            // 将用户消息添加到历史记录
-            // T4: 修复 - 直接将 parts 数组作为 content
             chatHistory.push({
                 role: 'user',
-                content: parts
+                content: parts // 现在 content 是 parts 数组
             });
 
             // 清除附件（发送后）
@@ -1008,7 +981,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
 
             let requestBody = {
                 model: modelName,
-                messages: chatHistory,
+                contents: chatHistory, // Gemini API 使用 'contents' 而不是 'messages'
                 generationConfig: {
                     responseModalities: ['text']
                 },
@@ -1020,7 +993,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 ],
                 enableGoogleSearch: true,
                 stream: true,
-                sessionId: currentSessionId,
+                sessionId: currentSessionId
             };
 
             if (systemInstruction) {
@@ -1033,10 +1006,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             if (selectedModelConfig && selectedModelConfig.isQwen && selectedModelConfig.tools) {
                 requestBody.tools = selectedModelConfig.tools;
             }
-            
-            // 将日志提前，确保在发送请求前捕获到请求体
-            Logger.info('发送到后端的请求体:', JSON.stringify(requestBody, null, 2));
-            console.log('发送到后端的请求体 (console.log):', JSON.stringify(requestBody, null, 2)); // 添加 console.log
+
             await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 
         } catch (error) {
