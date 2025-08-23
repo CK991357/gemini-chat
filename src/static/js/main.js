@@ -1036,6 +1036,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             
             // 将日志提前，确保在发送请求前捕获到请求体
             Logger.info('发送到后端的请求体:', JSON.stringify(requestBody, null, 2));
+            console.log('发送到后端的请求体 (console.log):', JSON.stringify(requestBody, null, 2)); // 添加 console.log
             await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 
         } catch (error) {
