@@ -17,11 +17,12 @@ export class AttachmentManager {
      * @param {function(string, number=): void} config.showToast - Function to display a toast message.
      * @param {function(string): void} config.showSystemMessage - Function to display a system message.
      */
-    constructor({ chatPreviewsContainer, visionPreviewsContainer, showToast, showSystemMessage }) {
+    constructor({ chatPreviewsContainer, visionPreviewsContainer, showToast, showSystemMessage, mode = 'chat' }) {
         this.chatPreviewsContainer = chatPreviewsContainer;
         this.visionPreviewsContainer = visionPreviewsContainer;
         this.showToast = showToast;
         this.showSystemMessage = showSystemMessage;
+        this.mode = mode; // 'chat' or 'vision'
 
         this.attachedFile = null; // For single-file chat mode
         this.visionAttachedFiles = []; // For multi-file vision mode
@@ -77,13 +78,21 @@ export class AttachmentManager {
                 });
 
                 const fileData = {
-                    name: file.name,
-                    type: file.type,
-                    base64: base64String
+                    id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'file',
+                    source: file,
+                    data: base64String,
+                    mimeType: file.type,
+                    name: file.name
                 };
 
                 if (mode === 'vision') {
-                    this.visionAttachedFiles.push(fileData);
+                    // Vision mode keeps its simpler structure for now
+                    this.visionAttachedFiles.push({
+                        name: file.name,
+                        type: file.type,
+                        base64: base64String
+                    });
                     this.displayFilePreview({
                         type: file.type,
                         src: base64String,
@@ -167,6 +176,53 @@ export class AttachmentManager {
             });
         });
     }
+
+    /**
+     * @method addUrlAttachment
+     * @description Handles adding an attachment from a URL string.
+     * @param {string} url - The URL of the media to attach.
+     * @returns {Promise<void>}
+     */
+    async addUrlAttachment(url) {
+        if (this.mode !== 'chat') {
+            this.showSystemMessage('URL attachments are only supported in chat mode.');
+            return;
+        }
+
+        try {
+            // A basic URL validation
+            new URL(url);
+        } catch (_) {
+            this.showSystemMessage('请输入有效的 URL。');
+            return;
+        }
+
+        // For URL attachments, we don't have a real MIME type until fetched,
+        // so we'll use a generic placeholder or try to infer from extension.
+        // The backend worker is responsible for handling the actual fetching and MIME type detection.
+        const fileData = {
+            id: `url-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            type: 'url',
+            source: url,
+            data: url, // For URL type, data is the URL itself
+            mimeType: 'application/octet-stream', // Placeholder MIME type
+            name: url.substring(url.lastIndexOf('/') + 1) || url,
+        };
+
+        this.clearAttachedFile('chat'); // Clear previous before adding new one
+        this.attachedFile = fileData;
+
+        // We need a generic preview for URLs as we don't have the content yet.
+        this.displayFilePreview({
+            type: 'url', // Special type for preview logic
+            src: url,
+            name: fileData.name,
+            mode: 'chat'
+        });
+
+        this.showToast(`URL 已附加: ${fileData.name}`);
+    }
+
     /**
      * @method _validateFile
      * @private
@@ -175,13 +231,25 @@ export class AttachmentManager {
      * @returns {boolean} True if the file is valid, false otherwise.
      */
     _validateFile(file) {
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
+        let allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
         const maxSize = 20 * 1024 * 1024; // 20MB
 
-        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+        // Conditionally add more types for chat mode
+        if (this.mode === 'chat') {
+            allowedTypes.push('application/pdf', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4');
+        }
+
+        // A more robust check for generic types
+        const isAllowed = allowedTypes.includes(file.type) ||
+                          file.type.startsWith('image/') ||
+                          file.type.startsWith('video/') ||
+                          (this.mode === 'chat' && file.type.startsWith('audio/'));
+
+        if (!isAllowed) {
             this.showSystemMessage(`不支持的文件类型: ${file.type}。`);
             return false;
         }
+
         if (file.size > maxSize) {
             this.showSystemMessage('文件大小不能超过 20MB。');
             return false;
@@ -217,7 +285,18 @@ export class AttachmentManager {
             previewElement.autoplay = true;
             previewElement.loop = true;
             previewElement.playsInline = true;
-        } else {
+        } else if (type === 'url') {
+            previewElement = document.createElement('div');
+            previewElement.className = 'file-placeholder url-placeholder';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined';
+            icon.textContent = 'link'; // 使用链接图标
+            const text = document.createElement('p');
+            text.textContent = name;
+            previewElement.appendChild(icon);
+            previewElement.appendChild(text);
+        }
+        else {
             previewElement = document.createElement('div');
             previewElement.className = 'file-placeholder';
             const icon = document.createElement('span');

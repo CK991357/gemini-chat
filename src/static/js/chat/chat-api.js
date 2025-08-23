@@ -178,28 +178,17 @@ export class ChatApi {
     /**
      * 发送聊天消息 (HTTP 模式).
      * @param {object} params - 参数对象.
-     * @param {string} params.message - 用户输入的文本消息.
-     * @param {object} params.attachedFile - 附加的文件.
+     * @param {Array} params.parts - 消息内容数组，支持多模态.
      * @param {Array} params.chatHistory - 当前的聊天历史.
      * @param {string} params.modelName - 当前选择的模型名称.
      * @param {string} params.systemInstruction - 当前的系统指令.
      * @param {string} params.currentSessionId - 当前的会话 ID.
      * @returns {Promise<Array>} - 返回更新后的聊天历史记录.
      */
-    async sendMessage({ message, attachedFile, chatHistory, modelName, systemInstruction, currentSessionId }) {
+    async sendMessage({ parts, chatHistory, modelName, systemInstruction, currentSessionId }) {
         try {
-            const userContent = [];
-            if (message) {
-                userContent.push({ type: 'text', text: message });
-            }
-            if (attachedFile) {
-                userContent.push({
-                    type: 'image_url',
-                    image_url: { url: attachedFile.base64 }
-                });
-            }
-
-            const newHistory = [...chatHistory, { role: 'user', content: userContent }];
+            // 将新的 parts 数组添加到聊天历史中
+            const newHistory = [...chatHistory, { role: 'user', parts: parts }];
 
             let requestBody = {
                 model: modelName,
@@ -223,6 +212,9 @@ export class ChatApi {
                     parts: [{ text: systemInstruction }]
                 };
             }
+
+            // 将 parts 数组直接作为请求体的一部分发送
+            requestBody.parts = parts;
 
             return await this.processHttpStream(requestBody, newHistory);
 

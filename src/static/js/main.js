@@ -298,7 +298,46 @@ document.addEventListener('DOMContentLoaded', () => {
    });
 
    // 附件按钮事件监听 (只绑定一次)
-   attachmentButton.addEventListener('click', () => fileInput.click());
+   attachmentButton.addEventListener('click', () => {
+       // 创建一个简单的弹出菜单或模态框
+       const menu = document.createElement('div');
+       menu.className = 'attachment-menu';
+       menu.innerHTML = `
+           <button id="attach-file-btn" class="menu-item">从文件添加</button>
+           <button id="attach-url-btn" class="menu-item">从 URL 添加</button>
+       `;
+       document.body.appendChild(menu);
+
+       // 定位菜单到按钮下方
+       const rect = attachmentButton.getBoundingClientRect();
+       menu.style.top = `${rect.bottom + 5}px`;
+       menu.style.left = `${rect.left}px`;
+       menu.style.position = 'absolute';
+       menu.style.zIndex = '1000'; // 确保在最上层
+
+       // 点击外部关闭菜单
+       const dismissMenu = (e) => {
+           if (!menu.contains(e.target) && e.target !== attachmentButton) {
+               menu.remove();
+               document.removeEventListener('click', dismissMenu);
+           }
+       };
+       setTimeout(() => document.addEventListener('click', dismissMenu), 0);
+
+
+       document.getElementById('attach-file-btn').addEventListener('click', () => {
+           fileInput.click();
+           menu.remove();
+       });
+
+       document.getElementById('attach-url-btn').addEventListener('click', () => {
+           menu.remove();
+           const url = prompt('请输入 URL:');
+           if (url) {
+               attachmentManager.addUrlAttachment(url);
+           }
+       });
+   });
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
  
  
@@ -899,23 +938,67 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             let systemInstruction = systemInstructionInput.value;
 
             // 构建消息内容，参考 OCR 项目的成功实践
+            // 构建消息内容，参考 OCR 项目的成功实践
             const userContent = [];
             if (message) {
                 userContent.push({ type: 'text', text: message });
             }
-            if (attachedFile) {
-                // 参考项目使用 image_url 并传递完整的 Data URL
-                userContent.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: attachedFile.base64
+
+            // T4: 遍历所有附件，构建符合后端规范的 `parts` 数组
+            const allAttachments = attachmentManager.getAttachedFile(); // 获取当前附件 (chat 模式下只有一个)
+            const parts = [];
+
+            if (message) {
+                parts.push({ text: message });
+            }
+
+            if (allAttachments) {
+                if (allAttachments.type === 'file') {
+                    // 对于文件附件，根据 mimeType 构建
+                    if (allAttachments.mimeType.startsWith('image/')) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: allAttachments.mimeType,
+                                data: allAttachments.data.split(',')[1] // 移除 Data URL 的前缀
+                            }
+                        });
+                    } else if (allAttachments.mimeType.startsWith('audio/')) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: allAttachments.mimeType,
+                                data: allAttachments.data.split(',')[1]
+                            }
+                        });
+                    } else if (allAttachments.mimeType === 'application/pdf') {
+                        parts.push({
+                            inlineData: {
+                                mimeType: allAttachments.mimeType,
+                                data: allAttachments.data.split(',')[1]
+                            }
+                        });
+                    } else {
+                        // 对于其他文件类型，可以作为通用二进制数据处理，或者根据后端支持情况进行调整
+                        parts.push({
+                            inlineData: {
+                                mimeType: allAttachments.mimeType,
+                                data: allAttachments.data.split(',')[1]
+                            }
+                        });
                     }
-                });
+                } else if (allAttachments.type === 'url') {
+                    // 对于 URL 附件，构建 fileData 结构
+                    parts.push({
+                        fileData: {
+                            mimeType: allAttachments.mimeType, // 占位符，后端会实际检测
+                            fileUri: allAttachments.data // URL 本身
+                        }
+                    });
+                }
             }
 
             chatHistory.push({
                 role: 'user',
-                content: userContent // 保持为数组，因为可能包含文本和图片
+                content: parts // T4: 将构建好的 parts 数组作为 content
             });
 
             // 清除附件（发送后）
@@ -935,7 +1018,9 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 ],
                 enableGoogleSearch: true,
                 stream: true,
-                sessionId: currentSessionId
+                sessionId: currentSessionId,
+                // T4: 将构建好的 parts 数组传递给 chat-api.js
+                parts: parts
             };
 
             if (systemInstruction) {
