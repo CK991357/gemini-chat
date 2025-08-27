@@ -193,10 +193,17 @@ export class ChatApi {
                 userContent.push({ type: 'text', text: message });
             }
             if (attachedFile) {
-                userContent.push({
-                    type: 'image_url',
-                    image_url: { url: attachedFile.base64 }
-                });
+                if (attachedFile.type.startsWith('image/')) {
+                    userContent.push({
+                        type: 'image_url',
+                        image_url: { url: attachedFile.base64 }
+                    });
+                } else if (attachedFile.type === 'application/pdf') {
+                    userContent.push({
+                        type: 'pdf_url',
+                        pdf_url: { url: attachedFile.base64 }
+                    });
+                }
             }
 
             const newHistory = [...chatHistory, { role: 'user', content: userContent }];
