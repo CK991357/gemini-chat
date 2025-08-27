@@ -203,6 +203,11 @@ export class ChatApi {
                         type: 'pdf_url',
                         pdf_url: { url: attachedFile.base64 }
                     });
+                } else if (attachedFile.type.startsWith('audio/')) {
+                    userContent.push({
+                        type: 'audio_url',
+                        audio_url: { url: attachedFile.base64 }
+                    });
                 }
             }
 

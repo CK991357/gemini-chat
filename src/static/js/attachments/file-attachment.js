@@ -175,7 +175,13 @@ export class AttachmentManager {
      * @returns {boolean} True if the file is valid, false otherwise.
      */
     _validateFile(file) {
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm'];
+        const allowedTypes = [
+            'image/jpeg', 'image/png', 'image/webp',
+            'application/pdf',
+            'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm',
+            'audio/aac', 'audio/flac', 'audio/mp3', 'audio/m4a', 'audio/mpeg', 'audio/mpga',
+            'audio/mp4', 'audio/opus', 'audio/pcm', 'audio/wav', 'audio/webm', 'audio/aiff', 'audio/ogg'
+        ];
         const maxSize = 20 * 1024 * 1024; // 20MB
 
         if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
@@ -227,7 +233,18 @@ export class AttachmentManager {
             text.textContent = name;
             previewElement.appendChild(icon);
             previewElement.appendChild(text);
-        } else {
+        } else if (type.startsWith('audio/')) {
+            previewElement = document.createElement('div');
+            previewElement.className = 'file-placeholder';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined';
+            icon.textContent = 'audio_file'; // 音频文件专用图标
+            const text = document.createElement('p');
+            text.textContent = name;
+            previewElement.appendChild(icon);
+            previewElement.appendChild(text);
+        }
+        else {
             previewElement = document.createElement('div');
             previewElement.className = 'file-placeholder';
             const icon = document.createElement('span');
