@@ -217,12 +217,22 @@ export class AttachmentManager {
             previewElement.autoplay = true;
             previewElement.loop = true;
             previewElement.playsInline = true;
+        } else if (type === 'application/pdf') {
+            previewElement = document.createElement('div');
+            previewElement.className = 'file-placeholder';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined';
+            icon.textContent = 'picture_as_pdf'; // PDF专用图标
+            const text = document.createElement('p');
+            text.textContent = name;
+            previewElement.appendChild(icon);
+            previewElement.appendChild(text);
         } else {
             previewElement = document.createElement('div');
             previewElement.className = 'file-placeholder';
             const icon = document.createElement('span');
             icon.className = 'material-symbols-outlined';
-            icon.textContent = 'description';
+            icon.textContent = 'description'; // 其他未知文件类型
             const text = document.createElement('p');
             text.textContent = name;
             previewElement.appendChild(icon);
