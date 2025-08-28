@@ -312,8 +312,24 @@ document.addEventListener('DOMContentLoaded', () => {
            sessionData.messages.forEach(message => {
                if (message.role === 'user') {
                    const textPart = message.content.find(p => p.type === 'text')?.text || '';
+                   let file = null;
+
                    const imagePart = message.content.find(p => p.type === 'image_url');
-                   const file = imagePart ? { base64: imagePart.image_url.url, name: 'Loaded Image' } : null;
+                   const audioPart = message.content.find(p => p.type === 'audio_url');
+
+                   if (imagePart) {
+                       // 假设图片 URL 包含 MIME 类型信息，例如 data:image/jpeg;base64,...
+                       const imageUrl = imagePart.image_url.url;
+                       const mimeMatch = imageUrl.match(/^data:(.*?);base64,/);
+                       const fileType = mimeMatch ? mimeMatch[1] : 'application/octet-stream'; // 默认类型
+                       file = { base64: imageUrl, name: 'Loaded Image', type: fileType };
+                   } else if (audioPart) {
+                       // 假设音频 URL 包含 MIME 类型信息，例如 data:audio/wav;base64,...
+                       const audioUrl = audioPart.audio_url.url;
+                       const mimeMatch = audioUrl.match(/^data:(.*?);base64,/);
+                       const fileType = mimeMatch ? mimeMatch[1] : 'application/octet-stream'; // 默认类型
+                       file = { base64: audioUrl, name: 'Loaded Audio', type: fileType };
+                   }
                    chatUI.displayUserMessage(textPart, file);
                } else if (message.role === 'assistant') {
                    const aiMessage = chatUI.createAIMessageElement();
