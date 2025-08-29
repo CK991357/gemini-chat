@@ -39,6 +39,9 @@ export class ChatApiHandler {
      */
     async streamChatCompletion(requestBody, apiKey) {
         let currentMessages = requestBody.messages;
+        const selectedModelName = requestBody.model; // 获取当前模型名称
+        const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
+        const enableReasoning = modelConfig ? modelConfig.enableReasoning : false; // 获取 enableReasoning 配置
 
         try {
             const response = await fetch('/api/chat/completions', {
@@ -47,7 +50,8 @@ export class ChatApiHandler {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                body: JSON.stringify(requestBody)
+                // 将 enableReasoning 参数添加到请求体中
+                body: JSON.stringify({ ...requestBody, enableReasoning })
             });
 
             if (!response.ok) {
