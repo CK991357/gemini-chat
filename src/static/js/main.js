@@ -299,6 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
    // 附件按钮事件监听 (只绑定一次)
    attachmentButton.addEventListener('click', () => fileInput.click());
+   fileInput.multiple = true; // 允许选择多个文件
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
  
  
@@ -312,25 +313,27 @@ document.addEventListener('DOMContentLoaded', () => {
            sessionData.messages.forEach(message => {
                if (message.role === 'user') {
                    const textPart = message.content.find(p => p.type === 'text')?.text || '';
-                   let file = null;
+                   const filesToDisplay = [];
 
-                   const imagePart = message.content.find(p => p.type === 'image_url');
-                   const audioPart = message.content.find(p => p.type === 'audio_url');
-
-                   if (imagePart) {
-                       // 假设图片 URL 包含 MIME 类型信息，例如 data:image/jpeg;base64,...
-                       const imageUrl = imagePart.image_url.url;
-                       const mimeMatch = imageUrl.match(/^data:(.*?);base64,/);
-                       const fileType = mimeMatch ? mimeMatch[1] : 'application/octet-stream'; // 默认类型
-                       file = { base64: imageUrl, name: 'Loaded Image', type: fileType };
-                   } else if (audioPart) {
-                       // 假设音频 URL 包含 MIME 类型信息，例如 data:audio/wav;base64,...
-                       const audioUrl = audioPart.audio_url.url;
-                       const mimeMatch = audioUrl.match(/^data:(.*?);base64,/);
-                       const fileType = mimeMatch ? mimeMatch[1] : 'application/octet-stream'; // 默认类型
-                       file = { base64: audioUrl, name: 'Loaded Audio', type: fileType };
-                   }
-                   chatUI.displayUserMessage(textPart, file);
+                   message.content.forEach(part => {
+                       if (part.type === 'image_url') {
+                           const imageUrl = part.image_url.url;
+                           const mimeMatch = imageUrl.match(/^data:(.*?);base64,/);
+                           const fileType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+                           filesToDisplay.push({ base64: imageUrl, name: 'Loaded Image', type: fileType });
+                       } else if (part.type === 'audio_url') {
+                           const audioUrl = part.audio_url.url;
+                           const mimeMatch = audioUrl.match(/^data:(.*?);base64,/);
+                           const fileType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+                           filesToDisplay.push({ base64: audioUrl, name: 'Loaded Audio', type: fileType });
+                       } else if (part.type === 'pdf_url') {
+                           const pdfUrl = part.pdf_url.url;
+                           const mimeMatch = pdfUrl.match(/^data:(.*?);base64,/);
+                           const fileType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+                           filesToDisplay.push({ base64: pdfUrl, name: 'Loaded PDF', type: fileType });
+                       }
+                   });
+                   chatUI.displayUserMessage(textPart, filesToDisplay);
                } else if (message.role === 'assistant') {
                    const aiMessage = chatUI.createAIMessageElement();
                    aiMessage.rawMarkdownBuffer = message.content;
@@ -882,9 +885,9 @@ function disconnectFromWebsocket() {
  */
 async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     const message = messageInput.value.trim();
-    const attachedFile = attachmentManager.getAttachedFile(); // T2: 从管理器获取
+    const attachedFiles = attachmentManager.getChatAttachedFiles(); // T2: 从管理器获取所有附件
     // 如果没有文本消息，但有附件，也允许发送
-    if (!message && !attachedFile) return;
+    if (!message && attachedFiles.length === 0) return;
 
     // 确保在处理任何消息之前，会话已经存在
     // 这是修复“新会话第一条消息不显示”问题的关键
@@ -893,7 +896,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     }
 
     // 使用新的函数显示用户消息
-    chatUI.displayUserMessage(message, attachedFile);
+    chatUI.displayUserMessage(message, attachedFiles); // 传递文件数组
     messageInput.value = ''; // 清空输入框
  
     // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
@@ -901,7 +904,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
 
     if (selectedModelConfig.isWebSocket) {
         // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
-        if (attachedFile) {
+        if (attachedFiles.length > 0) {
             showSystemMessage('实时模式尚不支持文件上传。');
             attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
             return;
@@ -919,15 +922,25 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             if (message) {
                 userContent.push({ type: 'text', text: message });
             }
-            if (attachedFile) {
-                // 参考项目使用 image_url 并传递完整的 Data URL
-                userContent.push({
-                    type: 'image_url',
-                    image_url: {
-                        url: attachedFile.base64
-                    }
-                });
-            }
+            // 将所有附件添加到 userContent
+            attachedFiles.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    userContent.push({
+                        type: 'image_url',
+                        image_url: { url: file.base64 }
+                    });
+                } else if (file.type === 'application/pdf') {
+                    userContent.push({
+                        type: 'pdf_url',
+                        pdf_url: { url: file.base64 }
+                    });
+                } else if (file.type.startsWith('audio/')) {
+                    userContent.push({
+                        type: 'audio_url',
+                        audio_url: { url: file.base64 }
+                    });
+                }
+            });
 
             chatHistory.push({
                 role: 'user',
@@ -971,8 +984,8 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
             Logger.error('发送 HTTP 消息失败:', error);
             chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
         }
-        }
-        }
+    }
+}
         
         // Event Listeners
         client.on('open', () => {

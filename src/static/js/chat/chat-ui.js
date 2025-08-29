@@ -42,9 +42,9 @@ export function logMessage(message, type = 'system') {
 /**
  * Displays a user's message in the chat history, including text and optional attachments.
  * @param {string} text - The text content of the user's message.
- * @param {object|null} file - An optional file object with base64 data for display.
+ * @param {Array<object>} files - An array of file objects with base64 data for display.
  */
-export function displayUserMessage(text, file) {
+export function displayUserMessage(text, files) {
     if (!elements.messageHistory) return;
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message', 'user');
@@ -62,48 +62,52 @@ export function displayUserMessage(text, file) {
         contentDiv.appendChild(textNode);
     }
 
-    if (file && file.base64) {
-        let fileDisplayElement;
-        if (file.type.startsWith('image/')) {
-            fileDisplayElement = document.createElement('img');
-            fileDisplayElement.src = file.base64;
-            fileDisplayElement.alt = file.name || 'Attached Image';
-            fileDisplayElement.style.maxWidth = '200px';
-            fileDisplayElement.style.maxHeight = '200px';
-            fileDisplayElement.style.borderRadius = '8px';
-        } else if (file.type === 'application/pdf') {
-            fileDisplayElement = document.createElement('div');
-            fileDisplayElement.className = 'file-placeholder'; // 使用与file-attachment.js中相同的类名
-            const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
-            icon.textContent = 'picture_as_pdf'; // PDF专用图标
-            const textElement = document.createElement('p');
-            textElement.textContent = file.name;
-            fileDisplayElement.appendChild(icon);
-            fileDisplayElement.appendChild(textElement);
-        } else if (file.type.startsWith('audio/')) {
-            fileDisplayElement = document.createElement('audio');
-            fileDisplayElement.src = file.base64;
-            fileDisplayElement.controls = true; // 显示播放控件
-            fileDisplayElement.style.maxWidth = '100%'; // 适应容器宽度
-            fileDisplayElement.style.marginTop = text ? '10px' : '0';
-        } else {
-            // Fallback for other file types, similar to file-attachment.js
-            fileDisplayElement = document.createElement('div');
-            fileDisplayElement.className = 'file-placeholder';
-            const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
-            icon.textContent = 'description'; // 其他未知文件类型
-            const textElement = document.createElement('p');
-            textElement.textContent = file.name;
-            fileDisplayElement.appendChild(icon);
-            fileDisplayElement.appendChild(textElement);
-        }
+    if (files && files.length > 0) {
+        const attachmentsContainer = document.createElement('div');
+        attachmentsContainer.className = 'attachments-grid'; // Use a grid for multiple attachments
 
-        if (fileDisplayElement) {
-            fileDisplayElement.style.marginTop = text ? '10px' : '0';
-            contentDiv.appendChild(fileDisplayElement);
-        }
+        files.forEach(file => {
+            let fileDisplayElement;
+            if (file.type.startsWith('image/')) {
+                fileDisplayElement = document.createElement('img');
+                fileDisplayElement.src = file.base64;
+                fileDisplayElement.alt = file.name || 'Attached Image';
+                fileDisplayElement.style.maxWidth = '200px';
+                fileDisplayElement.style.maxHeight = '200px';
+                fileDisplayElement.style.borderRadius = '8px';
+            } else if (file.type === 'application/pdf') {
+                fileDisplayElement = document.createElement('div');
+                fileDisplayElement.className = 'file-placeholder';
+                const icon = document.createElement('span');
+                icon.className = 'material-symbols-outlined';
+                icon.textContent = 'picture_as_pdf';
+                const textElement = document.createElement('p');
+                textElement.textContent = file.name;
+                fileDisplayElement.appendChild(icon);
+                fileDisplayElement.appendChild(textElement);
+            } else if (file.type.startsWith('audio/')) {
+                fileDisplayElement = document.createElement('audio');
+                fileDisplayElement.src = file.base64;
+                fileDisplayElement.controls = true;
+                fileDisplayElement.style.maxWidth = '100%';
+            } else {
+                fileDisplayElement = document.createElement('div');
+                fileDisplayElement.className = 'file-placeholder';
+                const icon = document.createElement('span');
+                icon.className = 'material-symbols-outlined';
+                icon.textContent = 'description';
+                const textElement = document.createElement('p');
+                textElement.textContent = file.name;
+                fileDisplayElement.appendChild(icon);
+                fileDisplayElement.appendChild(textElement);
+            }
+
+            if (fileDisplayElement) {
+                fileDisplayElement.classList.add('chat-attachment'); // Add a class for styling
+                attachmentsContainer.appendChild(fileDisplayElement);
+            }
+        });
+        contentDiv.appendChild(attachmentsContainer);
     }
 
     messageDiv.appendChild(avatarDiv);

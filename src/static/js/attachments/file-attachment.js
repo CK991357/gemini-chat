@@ -23,7 +23,7 @@ export class AttachmentManager {
         this.showToast = showToast;
         this.showSystemMessage = showSystemMessage;
 
-        this.attachedFile = null; // For single-file chat mode
+        this.chatAttachedFiles = []; // For multi-file chat mode
         this.visionAttachedFiles = []; // For multi-file vision mode
 
         if (!this.chatPreviewsContainer) {
@@ -36,11 +36,11 @@ export class AttachmentManager {
 
     /**
      * @method getAttachedFile
-     * @description Returns the currently attached file for chat mode.
-     * @returns {object|null} The file data object or null.
+     * @description Returns the array of attached files for chat mode.
+     * @returns {Array<object>} The array of file data objects.
      */
-    getAttachedFile() {
-        return this.attachedFile;
+    getChatAttachedFiles() {
+        return this.chatAttachedFiles;
     }
 
     /**
@@ -64,7 +64,7 @@ export class AttachmentManager {
         if (!files || files.length === 0) return;
 
         for (const file of files) {
-            if (!this._validateFile(file)) {
+            if (!this._validateFile(file, files, mode)) { // Pass all files and mode for type consistency check
                 continue;
             }
 
@@ -92,13 +92,13 @@ export class AttachmentManager {
                         index: this.visionAttachedFiles.length - 1
                     });
                 } else {
-                    this.clearAttachedFile('chat'); // Clear previous before adding new one
-                    this.attachedFile = fileData;
+                    this.chatAttachedFiles.push(fileData);
                     this.displayFilePreview({
                         type: file.type,
                         src: base64String,
                         name: file.name,
-                        mode: 'chat'
+                        mode: 'chat',
+                        index: this.chatAttachedFiles.length - 1 // Pass index for removal
                     });
                 }
                 this.showToast(`文件已附加: ${file.name}`);
@@ -125,9 +125,8 @@ export class AttachmentManager {
         const container = mode === 'vision' ? this.visionPreviewsContainer : this.chatPreviewsContainer;
         if (!container) return;
 
-        if (mode === 'chat') {
-            container.innerHTML = '';
-        }
+        // In chat mode, we append new previews instead of clearing the container
+        // The clearing will be handled by clearAttachedFile when needed (e.g., before sending)
 
         const previewCard = this._createPreviewCard({ type, src, name, mode, index });
         container.appendChild(previewCard);
@@ -143,9 +142,29 @@ export class AttachmentManager {
             this.visionAttachedFiles = [];
             this.visionPreviewsContainer.innerHTML = '';
         } else {
-            this.attachedFile = null;
+            this.chatAttachedFiles = [];
             this.chatPreviewsContainer.innerHTML = '';
         }
+    }
+
+    /**
+     * @method removeChatAttachment
+     * @description Removes a specific attachment in chat mode.
+     * @param {number} indexToRemove - The index of the file to remove.
+     */
+    removeChatAttachment(indexToRemove) {
+        this.chatAttachedFiles.splice(indexToRemove, 1);
+        // Re-render all previews to correctly update indices
+        this.chatPreviewsContainer.innerHTML = '';
+        this.chatAttachedFiles.forEach((file, index) => {
+            this.displayFilePreview({
+                type: file.type,
+                src: file.base64,
+                name: file.name,
+                mode: 'chat',
+                index: index
+            });
+        });
     }
 
     /**
@@ -174,7 +193,7 @@ export class AttachmentManager {
      * @param {File} file - The file to validate.
      * @returns {boolean} True if the file is valid, false otherwise.
      */
-    _validateFile(file) {
+    _validateFile(file, allFiles, mode) {
         const allowedTypes = [
             'image/jpeg', 'image/png', 'image/webp',
             'application/pdf',
@@ -183,6 +202,16 @@ export class AttachmentManager {
             'audio/mp4', 'audio/opus', 'audio/pcm', 'audio/wav', 'audio/webm', 'audio/aiff', 'audio/ogg'
         ];
         const maxSize = 20 * 1024 * 1024; // 20MB
+
+        if (mode === 'chat' && allFiles.length > 1) {
+            const firstFileType = allFiles[0].type.split('/')[0];
+            for (let i = 1; i < allFiles.length; i++) {
+                if (!allFiles[i].type.startsWith(firstFileType)) {
+                    this.showSystemMessage(`单次上传时，聊天模式下只能上传同类型文件。请确保所有选定文件类型一致。`);
+                    return false;
+                }
+            }
+        }
 
         if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
             this.showSystemMessage(`不支持的文件类型: ${file.type}。`);
@@ -263,8 +292,8 @@ export class AttachmentManager {
             e.stopPropagation();
             if (mode === 'vision') {
                 this.removeVisionAttachment(index);
-            } else {
-                this.clearAttachedFile('chat');
+            } else if (mode === 'chat') {
+                this.removeChatAttachment(index);
             }
         };
 

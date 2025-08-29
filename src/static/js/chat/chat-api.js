@@ -179,36 +179,38 @@ export class ChatApi {
      * 发送聊天消息 (HTTP 模式).
      * @param {object} params - 参数对象.
      * @param {string} params.message - 用户输入的文本消息.
-     * @param {object} params.attachedFile - 附加的文件.
+     * @param {Array<object>} params.attachedFiles - 附加的文件数组.
      * @param {Array} params.chatHistory - 当前的聊天历史.
      * @param {string} params.modelName - 当前选择的模型名称.
      * @param {string} params.systemInstruction - 当前的系统指令.
      * @param {string} params.currentSessionId - 当前的会话 ID.
      * @returns {Promise<Array>} - 返回更新后的聊天历史记录.
      */
-    async sendMessage({ message, attachedFile, chatHistory, modelName, systemInstruction, currentSessionId }) {
+    async sendMessage({ message, attachedFiles, chatHistory, modelName, systemInstruction, currentSessionId }) {
         try {
             const userContent = [];
             if (message) {
                 userContent.push({ type: 'text', text: message });
             }
-            if (attachedFile) {
-                if (attachedFile.type.startsWith('image/')) {
-                    userContent.push({
-                        type: 'image_url',
-                        image_url: { url: attachedFile.base64 }
-                    });
-                } else if (attachedFile.type === 'application/pdf') {
-                    userContent.push({
-                        type: 'pdf_url',
-                        pdf_url: { url: attachedFile.base64 }
-                    });
-                } else if (attachedFile.type.startsWith('audio/')) {
-                    userContent.push({
-                        type: 'audio_url',
-                        audio_url: { url: attachedFile.base64 }
-                    });
-                }
+            if (attachedFiles && attachedFiles.length > 0) {
+                attachedFiles.forEach(file => {
+                    if (file.type.startsWith('image/')) {
+                        userContent.push({
+                            type: 'image_url',
+                            image_url: { url: file.base64 }
+                        });
+                    } else if (file.type === 'application/pdf') {
+                        userContent.push({
+                            type: 'pdf_url',
+                            pdf_url: { url: file.base64 }
+                        });
+                    } else if (file.type.startsWith('audio/')) {
+                        userContent.push({
+                            type: 'audio_url',
+                            audio_url: { url: file.base64 }
+                        });
+                    }
+                });
             }
 
             const newHistory = [...chatHistory, { role: 'user', content: userContent }];
