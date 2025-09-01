@@ -330,7 +330,7 @@ export class ChatApiHandler {
             // 构建包含 server_url 的请求体
             const proxyRequestBody = {
                 tool_name: toolCode.tool_name,
-                arguments: parsedArguments, // Send the full, parsed arguments object
+                parameters: parsedArguments, // Send the full, parsed arguments object
                 server_url: server_url
             };
             console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));

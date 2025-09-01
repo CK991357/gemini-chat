@@ -309,10 +309,14 @@ Before outputting the final document, please pause and perform a thorough self-c
 
 ### 工具调用示例（Tavily Search）
 
-以下是调用 \`tavily_search\` 工具的**正确**和**错误**示例。请务必遵循正确格式.
+当您决定调用 tavily_search 工具时，您的响应应该是一个包含 tool_name 和 parameters 字段的 JSON 对象。parameters 字段的值应是工具所需的参数对象。
 
-**✅ 正确示例:**
+**✅ 正确示例 (parameters 字段内容):**
 \`{"query": "latest AI news"}\`
+
+**✅ 完整工具调用响应示例:**
+\`{"tool_name": "tavily_search", "parameters": {"query": "latest AI news"}}\`
+
 **❌ 错误示例 (请避免以下常见错误):**
 -   **在JSON中嵌入Markdown分隔符:** \\\`\\\`\\\`json\\n{"query": "latest AI news"}\\n\\\`\\\`\\\` (Qwen模型会将此作为 JSON 字符串的一部分，导致解析失败)
 -   **参数名错误:** \`{"q": "latest AI news"}\` (应为 "query" 而非 "q")
