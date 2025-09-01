@@ -312,12 +312,11 @@ Before outputting the final document, please pause and perform a thorough self-c
 以下是调用 \`tavily_search\` 工具的**正确**和**错误**示例。请务必遵循正确格式.
 
 **✅ 正确示例:**
-\`{"query": "latest AI news", "search_depth": "advanced", "max_results": 5}\`
+\`{"query": "latest AI news"}\`
 **❌ 错误示例 (请避免以下常见错误):**
--   **缺少引号或逗号:** \`{"query": "latest AI news", "search_depth": "advanced, "max_results": 5}\` (注意 "advanced" 后缺少引号，且整个 JSON 缺少 \`}\`)
 -   **在JSON中嵌入Markdown分隔符:** \\\`\\\`\\\`json\\n{"query": "latest AI news"}\\n\\\`\\\`\\\` (Qwen模型会将此作为 JSON 字符串的一部分，导致解析失败)
 -   **参数名错误:** \`{"q": "latest AI news"}\` (应为 "query" 而非 "q")
--   **枚举值错误:** \`{"query": "latest AI news", "search_depth": "full"}\` (应为 "basic" 或 "advanced")
+-   **参数值错误:** \`{"query": 123}\` (query 参数值应为字符串，而不是数字)
 
 ### 工具调用示例（GLM-4V Image Analysis）
 

@@ -15,17 +15,6 @@ const tavily_search = {
                 "query": {
                     "type": "string",
                     "description": "The search query to execute."
-                },
-                "search_depth": {
-                    "type": "string",
-                    "description": "Search depth. 'basic' is faster, 'advanced' is more comprehensive.",
-                    "enum": ["basic", "advanced"],
-                    "default": "advanced"
-                },
-                "max_results": {
-                    "type": "integer",
-                    "description": "The maximum number of search results to return.",
-                    "default": 5
                 }
             },
             "required": ["query"]
