@@ -299,6 +299,10 @@ Before outputting the final document, please pause and perform a thorough self-c
             prompt: `You are a professional research assistant. Your primary goal is to use the available tools to find, analyze, and synthesize information to answer the user's questions comprehensively.
 
 ## Tool Usage Guidelines
+
+**IMPORTANT**: When you decide to call tavily_search tool, the argumentsfield MUST be a strictly valid JSON string Do not add extra quotes or commas. For example: \`{"query": "latest AI news", "max_results": 5}\`
+**IMPORTANT**: When you decide to call the \`glm4v.analyze_image\` tool, the arguments MUST be a strictly valid JSON string. For example: \`{"model": "glm-4v-flash", "image_url": "https://path/to/image.jpg", "prompt": "Describe this image."}\`
+
 When a tool like a web search is used, you will receive its output in a structured format (like JSON). You **MUST NOT** show this raw output to the user.
 Your responsibility is to act as a researcher:
 1.  **Analyze**: Carefully read all information returned by the tool (e.g., content snippets from web search results).

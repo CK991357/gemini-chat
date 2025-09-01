@@ -320,10 +320,10 @@ export class ChatApiHandler {
             // We will now send the full, unmodified arguments object to the proxy.
             let parsedArguments;
             try {
-                parsedArguments = JSON.parse(toolCode.arguments);
+                parsedArguments = this._robustJsonParse(toolCode.arguments);
             } catch (e) {
-                const errorMsg = `无法解析来自模型的工具参数，它不是一个有效的JSON字符串: ${toolCode.arguments}`;
-                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`, e);
+                const errorMsg = `无法解析来自模型的工具参数，即使在尝试修复后也是如此: ${toolCode.arguments}`;
+                console.error(`[${timestamp()}] [MCP] ROBUST PARSE FAILED: ${errorMsg}`, e);
                 throw new Error(errorMsg);
             }
 
@@ -429,6 +429,41 @@ export class ChatApiHandler {
             this.state.isUsingTool = false;
             console.log(`[${timestamp()}] [MCP] State isUsingTool set to false.`);
             console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall END ---`);
+        }
+    }
+
+    /**
+     * @private
+     * @description Attempts to parse a JSON string that may have minor syntax errors,
+     * which can sometimes be output by language models.
+     * @param {string} jsonString - The JSON string to parse.
+     * @returns {object} The parsed JavaScript object.
+     * @throws {Error} If the string cannot be parsed even after cleanup attempts.
+     */
+    _robustJsonParse(jsonString) {
+        try {
+            // First, try the standard parser.
+            return JSON.parse(jsonString);
+        } catch (e) {
+            console.warn("[MCP] Standard JSON.parse failed, attempting robust parsing...", e);
+            let cleanedString = jsonString;
+
+            // 1. Remove trailing commas from objects and arrays.
+            cleanedString = cleanedString.replace(/,\s*([}\]])/g, '$1');
+
+            // 2. Fix issue where a quote is added after a number or boolean.
+            // e.g., "max_results": 5" -> "max_results": 5
+            cleanedString = cleanedString.replace(/:( *[0-9\.]+)\"/g, ':$1');
+            cleanedString = cleanedString.replace(/:( *(?:true|false))\"/g, ':$1');
+
+            try {
+                // Retry parsing with the cleaned string.
+                return JSON.parse(cleanedString);
+            } catch (finalError) {
+                console.error("[MCP] Robust JSON parsing failed after cleanup.", finalError);
+                // Throw the original error for better context if the final one is not informative.
+                throw finalError || e;
+            }
         }
     }
 }
