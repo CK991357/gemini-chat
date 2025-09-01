@@ -1,4 +1,4 @@
-import { handleMcpProxyRequest } from './static/js/agent/qwen-agent-adapter.js';
+import { handleMcpProxyRequest } from './mcp_proxy/mcp-handler.js';
 
 const assetManifest = {};
 

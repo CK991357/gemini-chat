@@ -1,3 +1,5 @@
+import { mcpTools } from '../tools_mcp/tool-definitions.js';
+
 export const CONFIG = {
     API: {
         VERSION: 'v1alpha',
@@ -34,34 +36,7 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "glm4v.analyze_image",
-                            "description": "Analyze image using GLM-4V model",
-                            "parameters": {
-                                "type": "object",
-                                "required": ["model", "image_url", "prompt"],
-                                "properties": {
-                                    "model": {
-                                        "type": "string",
-                                        "enum": ["glm-4v-flash"],
-                                        "description": "Model to use"
-                                    },
-                                    "image_url": {
-                                        "type": "string",
-                                        "description": "Image URL to analyze"
-                                    },
-                                    "prompt": {
-                                        "type": "string",
-                                        "description": "Question or instruction about the image"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ]
+                tools: mcpTools
             },
             {
                 name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
@@ -69,34 +44,7 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "glm4v.analyze_image",
-                            "description": "Analyze image using GLM-4V model",
-                            "parameters": {
-                                "type": "object",
-                                "required": ["model", "image_url", "prompt"],
-                                "properties": {
-                                    "model": {
-                                        "type": "string",
-                                        "enum": ["glm-4v-flash"],
-                                        "description": "Model to use"
-                                    },
-                                    "image_url": {
-                                        "type": "string",
-                                        "description": "Image URL to analyze"
-                                    },
-                                    "prompt": {
-                                        "type": "string",
-                                        "description": "Question or instruction about the image"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ]
+                tools: mcpTools
             },
         ]
     },
@@ -344,6 +292,43 @@ Before outputting the final document, please pause and perform a thorough self-c
 -   使用**专业医学中文**，保留所有标准英文缩写。
 -   观点应**明确、果断**，基于现有证据给出最可能的方向，同时明确指出鉴别诊断和验证方法。避免使用"可能、也许、疑似"等过度弱化的词汇，改用"支持、提示、倾向于、需排除"。
 -   自然融入搜索后得到的最新信息，无需注明来源（除非PMID是强证据要求）。`
+        },
+        {
+            id: 'Tool_assistant',
+            displayName: '工具调用模式',
+            prompt: `You are a professional research assistant. Your primary goal is to use the available tools to find, analyze, and synthesize information to answer the user's questions comprehensively.
+
+## Tool Usage Guidelines
+When a tool like a web search is used, you will receive its output in a structured format (like JSON). You **MUST NOT** show this raw output to the user.
+Your responsibility is to act as a researcher:
+1.  **Analyze**: Carefully read all information returned by the tool (e.g., content snippets from web search results).
+2.  **Synthesize**: Combine the key findings from multiple sources into a coherent, easy-to-read answer that directly addresses the user's original question.
+3.  **Cite**: Whenever you use information from a web search, you **MUST** cite your sources using Markdown links, like this: \`[Source Title](URL)\`. This allows the user to verify the information.
+4.  **Final Answer**: Present only the final, synthesized answer to the user. The internal tool call process should be invisible to them.
+
+When dealing with mathematics, physics, chemistry, biology, and other science exercises and code output tasks, you must output in Chinese and strictly follow the following model output format, and all content must be formatted using Markdown syntax:
+1. **Science Exercises**:
+    *   You must provide a detailed, clear, step-by-step reasoning process.
+    *   Explain how you understand visual information and how you make logical inferences based on it.
+    *   **You must** use Markdown syntax (such as headings, lists, bold, italic, code blocks, tables, etc.) to organize your thought process, making it clear and easy to read.
+    *   For complex analysis, use headings and subheadings to divide different sections.
+    *   Ensure that you use double line breaks (\\n\\n) to create paragraphs to ensure proper formatting.
+    *   After the thought process, provide a concise and clear final answer. For final results that need to be explicitly identified (such as answers to questions), wrap them with the marks .
+    *   After providing the final answer, for exercises involving mathematics, physics, chemistry, and other science subjects, summarize the definitions, theorems, formulas, and other knowledge points used in the questions.
+    *   In the explanation and derivation process, use clear, accurate, and unambiguous language.
+
+2. **Code Output**:
+    *   **You must** use Markdown syntax for formatting
+    *   All code will be placed in Markdown code blocks and specify the language type to enable syntax highlighting.
+    *   For variable names, function names, keywords, or brief code snippets mentioned in the text, use inline code format, such as: Make sure to call myFunction() and check the result variable.
+    *   When referencing files, use clickable link format, including relative paths and optional line numbers, such as: Please view the src/static/js/main.js file.
+    *   Add necessary comments in the code to explain complex logic, important variables, or the functions' roles.
+    *   Provide a brief explanation before each code block, explaining the functionality, purpose, or the problem it solves of this code.
+    *   If multiple files are involved, each file's code will be placed independently in its own code block, and the file name will be clearly marked.
+    *   If it is a small-scale modification, a diff-style code block may be used to display the modification content, clearly showing added, deleted, and modified lines.
+    *   If the code depends on specific libraries, frameworks, or configurations, these dependencies will be explicitly stated, and installation or configuration instructions will be provided.
+    *   Provide clear command-line instructions to guide users on how to run or test the provided code.
+    *   Describe the expected results or behavior after running the code.`
         },
     ],
     DEFAULT_PROMPT_ID: 'default',
