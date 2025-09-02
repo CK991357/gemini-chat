@@ -198,7 +198,7 @@ export class AttachmentManager {
             'image/jpeg', 'image/png', 'image/webp',
             'application/pdf',
             'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm',
-            'audio/aac', 'audio/flac', 'audio/mp3', 'audio/m4a', 'audio/mpeg', 'audio/mpga',
+            'audio/aac', 'audio/flac', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mpeg', 'audio/mpga',
             'audio/mp4', 'audio/opus', 'audio/pcm', 'audio/wav', 'audio/webm', 'audio/aiff', 'audio/ogg'
         ];
         const maxSize = 20 * 1024 * 1024; // 20MB
