@@ -13,8 +13,19 @@
  * @throws {Error} If the fetch request fails or the Python server returns an error.
  */
 export async function handlePythonSandbox(parameters) {
-    const pythonToolServerUrl = 'https://tools.10110531.xyz/api/v1/execute_tool';
-    const toolName = 'python_sandbox'; // Changed from 'code_interpreter'
+    const pythonToolServerUrl = 'https://pythonsandbox.10110531.xyz/api/v1/python_sandbox';
+
+    let parsedParameters = parameters;
+    // If parameters is a string, attempt to parse it as JSON.
+    // This handles cases where the model might stringify the arguments.
+    if (typeof parameters === 'string') {
+        try {
+            parsedParameters = JSON.parse(parameters);
+        } catch (e) {
+            console.error(`Error parsing parameters string: ${e.message}`);
+            throw new Error(`Invalid parameters format for python_sandbox: ${parameters}`);
+        }
+    }
 
     try {
         const response = await fetch(pythonToolServerUrl, {
@@ -23,8 +34,7 @@ export async function handlePythonSandbox(parameters) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                tool_name: toolName,
-                parameters: parameters,
+                parameters: parsedParameters,
             }),
         });
 
