@@ -50,15 +50,36 @@ const image_url_analyzer = {
     }
 };
 
+// Code interpreter tool definition
+const code_interpreter = {
+    "type": "function",
+    "function": {
+        "name": "code_interpreter",
+        "description": "Executes Python code and returns the output. Useful for mathematical computations, data processing, and logical operations.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "The Python code to be executed."
+                }
+            },
+            "required": ["code"]
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
-    image_url_analyzer
+    image_url_analyzer,
+    code_interpreter
     // Future tools can be added here
 ];
 
 // Export a map for easy lookup by name
 export const mcpToolsMap = {
     'tavily_search': tavily_search,
-    'glm4v.analyze_image': image_url_analyzer
+    'glm4v.analyze_image': image_url_analyzer,
+    'code_interpreter': code_interpreter
 };

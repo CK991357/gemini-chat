@@ -369,6 +369,12 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **参数名错误:** \`{"img_url": "https://path/to/image.jpg"}\` (应为 "image_url" 而非 "img_url")
 -   **模型名称错误:** \`{"model": "glm4v-flash", ...}\` (应为 "glm-4v-flash")
 
+### 工具调用示例（Code Interpreter）
+
+以下是调用 \`code_interpreter\` 工具的**正确**示例。请务必遵循正确格式.
+
+**✅ 正确示例:**
+\`{"code": "print('Hello, world!')"}\`
 `
 
         },
