@@ -5,6 +5,7 @@
  */
 
 // Import all available tool handlers
+import { handlePythonSandbox } from './handlers/python-sandbox.js';
 import { handleTavilySearch } from './handlers/tavily-search.js';
 import { handleZhipuImageAnalysis } from './handlers/zhipu-glm4v.js';
 
@@ -12,6 +13,7 @@ import { handleZhipuImageAnalysis } from './handlers/zhipu-glm4v.js';
 const toolRegistry = {
     'glm4v.analyze_image': handleZhipuImageAnalysis,
     'tavily_search': handleTavilySearch,
+    'python_sandbox': handlePythonSandbox,
     // To add a new tool, import its handler and add an entry here.
     // e.g., 'new_tool_name': handleNewTool,
 };

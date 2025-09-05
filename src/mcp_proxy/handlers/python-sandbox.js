@@ -1,20 +1,20 @@
 /**
- * @file Code Interpreter Tool Handler
- * @description Handles requests for the 'code_interpreter' tool by forwarding them to the Python tool server.
+ * @file Python Sandbox Tool Handler
+ * @description Handles requests for the 'python_sandbox' tool by forwarding them to the Python tool server.
  */
 
 /**
- * Handles the 'code_interpreter' tool invocation.
+ * Handles the 'python_sandbox' tool invocation.
  * Forwards the request to the external Python tool server.
  *
- * @param {object} parameters - The parameters for the code_interpreter tool.
+ * @param {object} parameters - The parameters for the python_sandbox tool.
  * @param {string} parameters.code - The Python code to be executed.
  * @returns {Promise<object>} - A promise that resolves to the response from the Python tool server.
  * @throws {Error} If the fetch request fails or the Python server returns an error.
  */
-export async function handleCodeInterpreter(parameters) {
+export async function handlePythonSandbox(parameters) {
     const pythonToolServerUrl = 'https://tools.10110531.xyz/api/v1/execute_tool';
-    const toolName = 'code_interpreter';
+    const toolName = 'python_sandbox'; // Changed from 'code_interpreter'
 
     try {
         const response = await fetch(pythonToolServerUrl, {
@@ -35,7 +35,7 @@ export async function handleCodeInterpreter(parameters) {
 
         return await response.json();
     } catch (error) {
-        console.error(`Error in handleCodeInterpreter: ${error.message}`);
+        console.error(`Error in handlePythonSandbox: ${error.message}`); // Changed function name
         throw error;
     }
 }

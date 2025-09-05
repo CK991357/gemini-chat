@@ -50,15 +50,36 @@ const image_url_analyzer = {
     }
 };
 
+// Python sandbox tool definition
+const python_sandbox = {
+    "type": "function",
+    "function": {
+        "name": "python_sandbox",
+        "description": "Executes a snippet of Python code in a sandboxed environment and returns the output. This tool is secure and has no access to the internet or the host filesystem.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "The Python code to be executed in the sandbox."
+                }
+            },
+            "required": ["code"]
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
-    image_url_analyzer
+    image_url_analyzer,
+    python_sandbox
     // Future tools can be added here
 ];
 
 // Export a map for easy lookup by name
 export const mcpToolsMap = {
     'tavily_search': tavily_search,
-    'glm4v.analyze_image': image_url_analyzer
+    'glm4v.analyze_image': image_url_analyzer,
+    'python_sandbox': python_sandbox
 };
