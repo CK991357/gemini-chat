@@ -374,21 +374,15 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 以下是调用 \`python_sandbox\` 工具的**正确**示例。请务必遵循正确格式.
 
 **✅ 正确示例:**
-\`{"code": "print('Hello, world!')"}\`
 以下是调用 \`python_sandbox\` 工具的**正确**示例。请务必遵循正确格式。
-
-**✅ 正确示例 (parameters 字段内容):**
 \`{"code": "print('Hello, world!')"}\`
 
-**✅ 完整工具调用响应示例 (发送到后端服务):**
-\`{"parameters": {"code": "print('Hello, world!')"}}\`
 
 **❌ 错误示例 (请避免以下常见错误):**
 -   **在JSON中嵌入Markdown分隔符:** \\\`\\\`\\\`json\\n{"code": "print('Hello, world!')"}\\n\\\`\\\`\\\` (Qwen模型会将此作为 JSON 字符串的一部分，导致解析失败)
 -   **参数名错误:** \`{"script": "print('Hello, world!')"}\` (应为 "code" 而非 "script")
 -   **参数值错误:** \`{"code": 123}\` (code 参数值应为字符串，而不是数字)
--   **双重字符串化:** \`{"parameters": "{\\"code\\": \\"print('Hello, world!')\\"}"}\` (parameters 字段的值不应是字符串化的 JSON，而应直接是 JSON 对象)
--   **包含 tool_name 字段:** \`{"tool_name": "python_sandbox", "parameters": {"code": "print('Hello, world!')"}}\` (此特定后端端点不需要 tool_name字段)`
+-   **包含 tool_name 字段:** \`{"tool_name": "python_sandbox", "code": "print('Hello, world!')"}}\` (此特定后端端点不需要 tool_name字段)`
 
         },
         {
