@@ -4,11 +4,10 @@
  */
 
 /**
- * Attempts to parse a string that may be a JSON object or a multi-layered stringified JSON.
- * This robustly handles common model-generated formatting errors, like extra stringification.
+ * "Uncrashable" parser for model-generated arguments. It tries various strategies
+ * to extract a valid object and will always return an object, never throw.
  * @param {string | object} input - The input from the model's \`arguments\`.
- * @returns {object} The parsed JSON object.
- * @throws {Error} If parsing fails after multiple repair attempts.
+ * @returns {object} The parsed JSON object, or a fallback object with an error.
  */
 function parseWithRepair(input) {
     if (typeof input === 'object' && input !== null) {
@@ -16,44 +15,62 @@ function parseWithRepair(input) {
     }
 
     if (typeof input !== 'string') {
-        throw new Error(`Invalid arguments type: expected string or object, got ${typeof input}`);
+        return {
+            code: `print("Error: Tool arguments must be a string, but received type '${typeof input}'.")`
+        };
     }
 
     let currentString = input;
-    // Attempt to parse up to 3 layers of stringification.
+
+    // 1. First, try to parse it as-is, handling multiple layers of stringification.
     for (let i = 0; i < 3; i++) {
         try {
             const result = JSON.parse(currentString);
-            // If the result is another string, it was double-stringified. Continue to parse the inner string.
             if (typeof result === 'string') {
                 currentString = result;
             } else {
-                return result; // Successfully parsed to an object.
+                return result; // Success!
             }
         } catch (e) {
-            // If parsing fails, throw a clear error.
-            const errorContext = i > 0 ? `inner string: ${currentString}` : `original string: ${input}`;
-            throw new Error(`Failed to parse arguments as JSON. Error: ${e.message}. Malformed ${errorContext}`);
+            // Parsing failed, break the loop and proceed to regex fallback.
+            break;
         }
     }
 
-    throw new Error(`Exceeded maximum repair attempts for arguments: ${input}`);
+    // 2. If JSON.parse failed, try a regex fallback to salvage the code.
+    // This looks for something that looks like a "code" key and extracts its string value.
+    try {
+        const match = /"code"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(input);
+        if (match && match[1]) {
+            // We found a code block, let's unescape it and return it.
+            const code = JSON.parse(`"${match[1]}"`);
+            return {
+                code
+            };
+        }
+    } catch (e) {
+        // Regex or un-escaping failed, proceed to final fallback.
+    }
+    
+    // 3. As a last resort, return an object that tells the model what went wrong.
+    return {
+        code: `print("FATAL ERROR: Failed to parse the provided tool arguments. The input was malformed. Please ensure you provide a valid JSON string with a 'code' key. Input received: ${JSON.stringify(input)}")`
+    };
 }
 
 
 /**
- * Handles the 'python_sandbox' tool invocation.
- * Forwards the request to the external Python tool server.
+ * Handles the 'python_sandbox' tool invocation with robust error handling.
+ * This function is designed to never crash the Cloudflare Worker.
  *
  * @param {string|object} parameters - The parameters for the python_sandbox tool from the model.
- * @returns {Promise<object>} - A promise that resolves to the response from the Python tool server.
- * @throws {Error} If the fetch request fails or the Python server returns an error.
+ * @returns {Promise<object>} - A promise that resolves to a JSON response for the model.
  */
 export async function handlePythonSandbox(parameters) {
     const pythonToolServerUrl = 'https://pythonsandbox.10110531.xyz/api/v1/python_sandbox';
 
     try {
-        // Use the robust parser to handle potentially malformed arguments from the model.
+        // Use the "uncrashable" parser. It will always return a usable object.
         const parsedParameters = parseWithRepair(parameters);
 
         const response = await fetch(pythonToolServerUrl, {
@@ -67,14 +84,22 @@ export async function handlePythonSandbox(parameters) {
         });
 
         if (!response.ok) {
-            const errorBody = await response.json().catch(() => response.text()); // Gracefully handle non-JSON error responses
-            throw new Error(`Python tool server error: ${response.status} - ${JSON.stringify(errorBody)}`);
+            const errorBody = await response.json().catch(() => response.text());
+            // Return a structured JSON error to the model instead of throwing.
+            return {
+                error: `Python tool server error: ${response.status}`,
+                details: errorBody
+            };
         }
 
         return await response.json();
     } catch (error) {
-        console.error(`Error in handlePythonSandbox: ${error.message}`);
-        // Re-throw the error to be caught by the calling MCP handler.
-        throw error;
+        console.error(`Fatal error in handlePythonSandbox: ${error.stack}`);
+        // If a catastrophic error occurs (e.g., network failure),
+        // return a structured JSON error instead of crashing the worker.
+        return {
+            error: "An unexpected error occurred in the tool handler.",
+            message: error.message
+        };
     }
 }
