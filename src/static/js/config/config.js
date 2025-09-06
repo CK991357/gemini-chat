@@ -369,20 +369,20 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **参数名错误:** \`{"img_url": "https://path/to/image.jpg"}\` (应为 "image_url" 而非 "img_url")
 -   **模型名称错误:** \`{"model": "glm4v-flash", ...}\` (应为 "glm-4v-flash")
 
-### 工具调用示例（Code Interpreter）
+### 工具调用示例（Code Interpreter / python_sandbox）
 
-以下是调用 \`python_sandbox\` 工具的**正确**示例。请务必遵循正确格式.
+当调用 \`python_sandbox\` 工具时，你生成的 \`tool_calls\` 中 \`function.arguments\` 字段**必须**是一个**JSON 字符串**。该字符串在被解析后，必须是一个只包含 "code" 键的 JSON 对象。
 
-**✅ 正确示例:**
-以下是调用 \`python_sandbox\` 工具的**正确**示例。请务必遵循正确格式。
+**✅ 正确的 \`arguments\` 字符串内容示例:**
 \`{"code": "print('Hello, world!')"}\`
 
+*重要提示：模型实际生成的 \`arguments\` 值是一个字符串，例如：\`"{\\"code\\": \\"print('Hello!')\\"}"\`。*
 
 **❌ 错误示例 (请避免以下常见错误):**
--   **在JSON中嵌入Markdown分隔符:** \\\`\\\`\\\`json\\n{"code": "print('Hello, world!')"}\\n\\\`\\\`\\\` (Qwen模型会将此作为 JSON 字符串的一部分，导致解析失败)
--   **参数名错误:** \`{"script": "print('Hello, world!')"}\` (应为 "code" 而非 "script")
--   **参数值错误:** \`{"code": 123}\` (code 参数值应为字符串，而不是数字)
--   **包含 tool_name 字段:** \`{"tool_name": "python_sandbox", "code": "print('Hello, world!')"}}\` (此特定后端端点不需要 tool_name字段)`
+-   **\`arguments\` 不是有效的 JSON 字符串:** \`'print("hello")'\` (错误：必须是 JSON 格式的字符串)。
+-   **在JSON字符串中嵌入Markdown分隔符:** \`"\\\`\\\`\\\`json\\n{\\"code\\": \\"print(1)\\"}\\n\\\`\\\`\\\`"\\\` (错误：这会破坏 JSON 字符串的结构)
+-   **参数名错误:** \`{"script": "print('hello')"}\` (错误：参数名必须是 "code")。
+-   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。`
 
         },
         {
