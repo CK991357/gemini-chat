@@ -1,5 +1,4 @@
 console.log("--- ChatApiHandler v3 Loaded ---");
-import { getMcpTools } from '../tools_mcp/tool-definitions.js';
 import { Logger } from '../utils/logger.js';
 import * as chatUI from './chat-ui.js';
 
@@ -43,27 +42,6 @@ export class ChatApiHandler {
         const selectedModelName = requestBody.model; // 获取当前模型名称
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
         const enableReasoning = modelConfig ? modelConfig.enableReasoning : false; // 获取 enableReasoning 配置
-
-        // --- Dynamic Tool Fetching for Qwen MCP ---
-        if (modelConfig && modelConfig.isQwen) {
-            try {
-                Logger.info("Qwen model detected. Fetching dynamic tools from the server...");
-                // Asynchronously fetch the latest tool definitions from our documentation server.
-                const dynamicTools = await getMcpTools(true); // forceRefresh = true
-
-                if (dynamicTools && dynamicTools.length > 0) {
-                    Logger.info("Successfully fetched dynamic tools. Overwriting tools in the request body.", dynamicTools);
-                    // Replace the static tools from config with the dynamically fetched ones.
-                    requestBody.tools = dynamicTools;
-                } else {
-                    Logger.warn("Dynamic tool fetch returned empty. Using static tools from config as a fallback.");
-                }
-            } catch (error) {
-                Logger.error("Failed to fetch dynamic tools. Using static tools as a fallback.", error);
-                // On failure, we proceed with the potentially outdated tools from the config.
-            }
-        }
-        // --- End Dynamic Tool Fetching ---
 
         try {
             const response = await fetch('/api/chat/completions', {
