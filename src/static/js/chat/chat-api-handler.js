@@ -290,6 +290,7 @@ export class ChatApiHandler {
      */
     _handleMcpToolCall = async (toolCode, requestBody, apiKey) => {
         const timestamp = () => new Date().toISOString();
+        let callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
 
         try {
