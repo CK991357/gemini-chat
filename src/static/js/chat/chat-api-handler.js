@@ -354,6 +354,25 @@ export class ChatApiHandler {
             const toolResult = await proxyResponse.json();
             console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolResult);
             
+            // --- Special handling for mcp_tool_catalog tool ---
+            if (toolCode.tool_name === 'mcp_tool_catalog' && toolResult && toolResult.data && Array.isArray(toolResult.data)) {
+                console.log(`[${timestamp()}] [MCP] Discovered new tools via mcp_tool_catalog. Merging...`);
+                
+                // 获取当前Qwen模型的完整工具列表
+                const currentModelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
+                let allCurrentTools = currentModelConfig && currentModelConfig.tools ? [...currentModelConfig.tools] : [];
+
+                // 过滤掉重复的工具，然后合并
+                const newToolsToAdd = toolResult.data.filter(newTool =>
+                    !allCurrentTools.some(existingTool => existingTool.function.name === newTool.function.name)
+                );
+                allCurrentTools = [...allCurrentTools, ...newToolsToAdd];
+                
+                // 更新 requestBody，确保下次 streamChatCompletion 包含最新工具列表
+                requestBody.tools = allCurrentTools;
+                console.log(`[${timestamp()}] [MCP] Updated requestBody.tools with ${newToolsToAdd.length} new tools.`);
+            }
+
             // --- Refactored History Logging based on AliCloud Docs ---
             // 1. Push the assistant's decision to call the tool.
             // This must be an object with a `tool_calls` array.
@@ -386,7 +405,7 @@ export class ChatApiHandler {
                 ...requestBody,
                 messages: this.state.chatHistory,
                 // 确保再次传递工具定义，以防需要连续调用
-                tools: requestBody.tools
+                tools: requestBody.tools // Now 'requestBody.tools' might be updated with newly discovered tools
             }, apiKey);
             console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
 

@@ -69,11 +69,26 @@ const python_sandbox = {
     }
 };
 
+// 新增 mcp_tool_catalog 工具定义
+const mcp_tool_catalog = {
+    "type": "function",
+    "function": {
+        "name": "mcp_tool_catalog",
+        "description": "Retrieves a list of all available Multi-Cloud Platform (MCP) tools, including their descriptions and input schemas. Useful for dynamically discovering tools the agent can use.",
+        "parameters": {
+            "type": "object",
+            "properties": {}, // 目前无需参数
+            "required": []
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
     image_url_analyzer,
-    python_sandbox
+    python_sandbox,
+    mcp_tool_catalog // 添加新工具
     // Future tools can be added here
 ];
 
@@ -81,5 +96,6 @@ export const mcpTools = [
 export const mcpToolsMap = {
     'tavily_search': tavily_search,
     'glm4v.analyze_image': image_url_analyzer,
-    'python_sandbox': python_sandbox
+    'python_sandbox': python_sandbox,
+    'mcp_tool_catalog': mcp_tool_catalog // 添加新工具映射
 };
