@@ -381,11 +381,11 @@ export class ChatApiHandler {
                 role: 'assistant',
                 content: null, // Qwen expects content to be null when tool_calls are present
                 tool_calls: [{
-                    id: `call_${Date.now()}`, // Generate a unique ID for the call
+                    id: callId, // Generate a unique ID for the call
                     type: 'function',
                     function: {
                         name: toolCode.tool_name,
-                        arguments: JSON.stringify(toolCode.arguments)
+                        arguments: JSON.stringify(parsedArguments) // 使用 parsedArguments
                     }
                 }]
             });
@@ -396,7 +396,7 @@ export class ChatApiHandler {
             this.state.chatHistory.push({
                 role: 'tool',
                 content: JSON.stringify(toolResult),
-                tool_call_id: `call_${Date.now()}` // Should match the ID from the assistant message
+                tool_call_id: callId // 确保匹配 assistant message 中的 ID
             });
 
             // 再次调用模型以获得最终答案
@@ -415,17 +415,17 @@ export class ChatApiHandler {
             chatUI.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
             
             // 即使失败，也要将失败信息以正确的格式加入历史记录
-            const toolCallId = `call_${Date.now()}`;
+            const callId = `call_${Date.now()}`; // 统一生成 ID
             console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history on error...`);
             this.state.chatHistory.push({
                 role: 'assistant',
                 content: null,
                 tool_calls: [{
-                    id: toolCallId,
+                    id: callId, // 使用统一的 ID
                     type: 'function',
                     function: {
                         name: toolCode.tool_name,
-                        arguments: JSON.stringify(toolCode.arguments)
+                        arguments: JSON.stringify(parsedArguments) // 使用 parsedArguments
                     }
                 }]
             });
@@ -433,7 +433,7 @@ export class ChatApiHandler {
             this.state.chatHistory.push({
                 role: 'tool',
                 content: JSON.stringify({ error: toolError.message }),
-                tool_call_id: toolCallId
+                tool_call_id: callId // 确保匹配 assistant message 中的 ID
             });
             
             // 再次调用模型，让它知道工具失败了
@@ -470,7 +470,15 @@ export class ChatApiHandler {
             // 1. Remove trailing commas from objects and arrays.
             cleanedString = cleanedString.replace(/,\s*([}\]])/g, '$1');
 
-            // 2. Fix issue where a quote is added after a number or boolean.
+            // 2. Escape unescaped newlines and carriage returns within string literals, but not within JSON structure.
+            // This is a common issue with LLM output that can break JSON.
+            // This regex tries to target content inside string values, not keys or structural elements.
+            // This is a heuristic and might not cover all cases, but should help with common code snippets.
+            cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\n/g, '$1\\n');
+            cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\r/g, '$1\\r');
+
+
+            // 3. Fix issue where a quote is added after a number or boolean.
             // e.g., "max_results": 5" -> "max_results": 5
             cleanedString = cleanedString.replace(/:( *[0-9\.]+)\"/g, ':$1');
             cleanedString = cleanedString.replace(/:( *(?:true|false))\"/g, ':$1');

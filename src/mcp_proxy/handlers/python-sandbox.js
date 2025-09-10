@@ -58,13 +58,28 @@ function parseWithRepair(input) {
     };
 }
 
+/**
+ * Helper to create a consistent JSON response.
+ * @param {object} body - The response body.
+ * @param {number} status - The HTTP status code.
+ * @returns {Response}
+ */
+function createJsonResponse(body, status = 200) {
+    return new Response(JSON.stringify(body, null, 2), {
+        status: status,
+        headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+        },
+    });
+}
 
 /**
  * Handles the 'python_sandbox' tool invocation with robust error handling.
  * This function is designed to never crash the Cloudflare Worker.
  *
  * @param {string|object} parameters - The parameters for the python_sandbox tool from the model.
- * @returns {Promise<object>} - A promise that resolves to a JSON response for the model.
+ * @returns {Promise<Response>} - A promise that resolves to a JSON response for the model.
  */
 export async function handlePythonSandbox(parameters) {
     const pythonToolServerUrl = 'https://pythonsandbox.10110531.xyz/api/v1/python_sandbox';
@@ -86,20 +101,20 @@ export async function handlePythonSandbox(parameters) {
         if (!response.ok) {
             const errorBody = await response.json().catch(() => response.text());
             // Return a structured JSON error to the model instead of throwing.
-            return {
+            return createJsonResponse({
                 error: `Python tool server error: ${response.status}`,
                 details: errorBody
-            };
+            }, response.status);
         }
 
-        return await response.json();
+        return createJsonResponse(await response.json());
     } catch (error) {
         console.error(`Fatal error in handlePythonSandbox: ${error.stack}`);
         // If a catastrophic error occurs (e.g., network failure),
         // return a structured JSON error instead of crashing the worker.
-        return {
+        return createJsonResponse({
             error: "An unexpected error occurred in the tool handler.",
             message: error.message
-        };
+        }, 500);
     }
 }
