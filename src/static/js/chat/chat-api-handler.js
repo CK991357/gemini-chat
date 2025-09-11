@@ -43,6 +43,10 @@ export class ChatApiHandler {
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
         const enableReasoning = modelConfig ? modelConfig.enableReasoning : false; // 获取 enableReasoning 配置
 
+        // 获取模型配置中定义的 MCP 工具 (OpenAI 格式)
+        // 这些工具将作为 requestBody.tools 发送给 worker.mjs
+        const modelSpecificMCPTools = modelConfig && modelConfig.tools ? modelConfig.tools : undefined; // 如果没有 MCP 工具，则为 undefined
+
         try {
             const response = await fetch('/api/chat/completions', {
                 method: 'POST',
@@ -50,8 +54,12 @@ export class ChatApiHandler {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                // 将 enableReasoning 参数添加到请求体中
-                body: JSON.stringify({ ...requestBody, enableReasoning })
+                // 将 enableReasoning 和 tools 参数添加到请求体中
+                body: JSON.stringify({
+                    ...requestBody,
+                    enableReasoning,
+                    tools: modelSpecificMCPTools // 直接使用模型配置中的 MCP 工具
+                })
             });
 
             if (!response.ok) {
@@ -254,7 +262,7 @@ export class ChatApiHandler {
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                tools: this.toolManager.getToolDeclarations(),
+                tools: modelSpecificMCPTools, // 使用模型配置中的 MCP 工具
                 sessionId: this.state.currentSessionId
             }, apiKey);
 
@@ -272,7 +280,7 @@ export class ChatApiHandler {
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                tools: this.toolManager.getToolDeclarations(),
+                tools: modelSpecificMCPTools, // 使用模型配置中的 MCP 工具
                 sessionId: this.state.currentSessionId
             }, apiKey);
         } finally {
