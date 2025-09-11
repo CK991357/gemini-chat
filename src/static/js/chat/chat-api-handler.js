@@ -45,7 +45,15 @@ export class ChatApiHandler {
 
         // 获取模型配置中定义的 MCP 工具 (OpenAI 格式)
         // 这些工具将作为 requestBody.tools 发送给 worker.mjs
-        const modelSpecificMCPTools = modelConfig && modelConfig.tools ? modelConfig.tools : undefined; // 如果没有 MCP 工具，则为 undefined
+        const modelSpecificMCPTools = modelConfig && modelConfig.tools ? modelConfig.tools : []; // 如果没有 MCP 工具，则初始化为空数组
+
+        // 根据 disableNativeSearch 标志决定是否包含原生工具
+        let finalTools = [...modelSpecificMCPTools];
+        if (!modelConfig || !modelConfig.disableNativeSearch) {
+            // 如果 disableNativeSearch 为 false 或未定义，则添加原生工具
+            const nativeToolDeclarations = this.toolManager.getToolDeclarations();
+            finalTools = [...finalTools, ...nativeToolDeclarations];
+        }
 
         try {
             const response = await fetch('/api/chat/completions', {
@@ -58,7 +66,7 @@ export class ChatApiHandler {
                 body: JSON.stringify({
                     ...requestBody,
                     enableReasoning,
-                    tools: modelSpecificMCPTools // 直接使用模型配置中的 MCP 工具
+                    tools: finalTools // 使用合并后的最终工具列表
                 })
             });
 
@@ -262,7 +270,7 @@ export class ChatApiHandler {
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                tools: modelSpecificMCPTools, // 使用模型配置中的 MCP 工具
+                tools: finalTools, // 确保再次传递正确的工具列表
                 sessionId: this.state.currentSessionId
             }, apiKey);
 
@@ -280,7 +288,7 @@ export class ChatApiHandler {
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                tools: modelSpecificMCPTools, // 使用模型配置中的 MCP 工具
+                tools: finalTools, // 确保再次传递正确的工具列表
                 sessionId: this.state.currentSessionId
             }, apiKey);
         } finally {
@@ -414,7 +422,7 @@ export class ChatApiHandler {
                 ...requestBody,
                 messages: this.state.chatHistory,
                 // 确保再次传递工具定义，以防需要连续调用
-                tools: requestBody.tools // Now 'requestBody.tools' might be updated with newly discovered tools
+                tools: finalTools // 使用合并后的最终工具列表
             }, apiKey);
             console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
 
@@ -450,7 +458,7 @@ export class ChatApiHandler {
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                tools: requestBody.tools
+                tools: finalTools // 使用合并后的最终工具列表
             }, apiKey);
             console.log(`[${timestamp()}] [MCP] Chat completion stream after error finished.`);
         } finally {

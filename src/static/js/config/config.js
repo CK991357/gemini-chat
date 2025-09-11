@@ -14,7 +14,8 @@ export const CONFIG = {
                 name: 'models/gemini-2.5-flash-lite-preview-06-17',
                 displayName: 'gemini-2.5-flash-lite-preview-06-17 (HTTP)',
                 isWebSocket: false,
-                tools: mcpTools
+                tools: mcpTools,
+                disableNativeSearch: true
             },
             {
                 name: 'models/gemini-2.5-flash-preview-05-20',
@@ -37,7 +38,8 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: mcpTools
+                tools: mcpTools,
+                disableNativeSearch: true
             },
             {
                 name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
@@ -45,7 +47,8 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: mcpTools
+                tools: mcpTools,
+                disableNativeSearch: true
             },
         ]
     },
