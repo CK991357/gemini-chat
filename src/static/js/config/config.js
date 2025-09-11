@@ -13,7 +13,9 @@ export const CONFIG = {
             {
                 name: 'models/gemini-2.5-flash-lite-preview-06-17',
                 displayName: 'gemini-2.5-flash-lite-preview-06-17 (HTTP)',
-                isWebSocket: false
+                isWebSocket: false,
+                tools: mcpTools
+                
             },
             {
                 name: 'models/gemini-2.5-flash-preview-05-20',

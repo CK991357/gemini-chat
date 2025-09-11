@@ -31,6 +31,14 @@ export class ChatApiHandler {
     }
 
     /**
+     * @private
+     * @returns {string} Current ISO 8601 timestamp.
+     */
+    _getTimestamp() {
+        return new Date().toISOString();
+    }
+
+    /**
      * Processes an HTTP Server-Sent Events (SSE) stream from the chat completions API.
      * It handles text accumulation, UI updates, and tool calls.
      * @param {object} requestBody - The request body to be sent to the model.
@@ -43,6 +51,11 @@ export class ChatApiHandler {
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
         const enableReasoning = modelConfig ? modelConfig.enableReasoning : false; // 获取 enableReasoning 配置
 
+        // 合并默认工具声明和模型特有工具声明
+        const defaultToolDeclarations = this.toolManager.getToolDeclarations();
+        const modelSpecificTools = modelConfig && modelConfig.tools ? modelConfig.tools : [];
+        const allTools = [...defaultToolDeclarations, ...modelSpecificTools];
+
         try {
             const response = await fetch('/api/chat/completions', {
                 method: 'POST',
@@ -50,8 +63,8 @@ export class ChatApiHandler {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                // 将 enableReasoning 参数添加到请求体中
-                body: JSON.stringify({ ...requestBody, enableReasoning })
+                // 将 enableReasoning 和 tools 参数添加到请求体中
+                body: JSON.stringify({ ...requestBody, enableReasoning, tools: allTools })
             });
 
             if (!response.ok) {
@@ -177,12 +190,11 @@ export class ChatApiHandler {
                 }
             }
 
-            const timestamp = () => new Date().toISOString();
             if (functionCallDetected && currentFunctionCall) {
-                console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
+                console.log(`[${this._getTimestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
                 // 将最终的文本部分（如果有）保存到历史记录
                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
-                    console.log(`[${timestamp()}] [DISPATCH] Saving final text part to history.`);
+                    console.log(`[${this._getTimestamp()}] [DISPATCH] Saving final text part to history.`);
                     this.state.chatHistory.push({
                         role: 'assistant',
                         content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
@@ -191,17 +203,17 @@ export class ChatApiHandler {
                 this.state.currentAIMessageContentDiv = null;
 
                 // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
-                console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call structure:`, currentFunctionCall);
+                console.log(`[${this._getTimestamp()}] [DISPATCH] Analyzing tool call structure:`, currentFunctionCall);
                 if (currentFunctionCall.tool_name) {
                     // Qwen MCP Tool Call
-                    console.log(`[${timestamp()}] [DISPATCH] Detected Qwen MCP tool call. Routing to _handleMcpToolCall...`);
+                    console.log(`[${this._getTimestamp()}] [DISPATCH] Detected Qwen MCP tool call. Routing to _handleMcpToolCall...`);
                     await this._handleMcpToolCall(currentFunctionCall, requestBody, apiKey);
                 } else {
                     // Gemini Function Call
-                    console.log(`[${timestamp()}] [DISPATCH] Detected Gemini function call. Routing to _handleGeminiToolCall...`);
+                    console.log(`[${this._getTimestamp()}] [DISPATCH] Detected Gemini function call. Routing to _handleGeminiToolCall...`);
                     await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey);
                 }
-                console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
+                console.log(`[${this._getTimestamp()}] [DISPATCH] Returned from tool call handler.`);
 
             } else {
                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
@@ -254,7 +266,7 @@ export class ChatApiHandler {
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                tools: this.toolManager.getToolDeclarations(),
+                tools: allTools, // 确保重新调用时也使用合并后的工具列表
                 sessionId: this.state.currentSessionId
             }, apiKey);
 
@@ -289,31 +301,30 @@ export class ChatApiHandler {
      * @returns {Promise<void>}
      */
     _handleMcpToolCall = async (toolCode, requestBody, apiKey) => {
-        const timestamp = () => new Date().toISOString();
         let callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
-        console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
+        console.log(`[${this._getTimestamp()}] [MCP] --- _handleMcpToolCall START ---`);
 
         try {
             this.state.isUsingTool = true;
-            console.log(`[${timestamp()}] [MCP] State isUsingTool set to true.`);
+            console.log(`[${this._getTimestamp()}] [MCP] State isUsingTool set to true.`);
 
             // 显示工具调用状态UI
-            console.log(`[${timestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
+            console.log(`[${this._getTimestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
             chatUI.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
             chatUI.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
-            console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
+            console.log(`[${this._getTimestamp()}] [MCP] Tool call status UI displayed.`);
 
             // 从配置中动态查找当前模型的 MCP 服务器 URL
             const modelName = requestBody.model;
-            console.log(`[${timestamp()}] [MCP] Searching for model config for: '${modelName}'`);
+            console.log(`[${this._getTimestamp()}] [MCP] Searching for model config for: '${modelName}'`);
             const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === modelName);
 
             if (!modelConfig || !modelConfig.mcp_server_url) {
                 const errorMsg = `在 config.js 中未找到模型 '${modelName}' 的 mcp_server_url 配置。`;
-                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`);
+                console.error(`[${this._getTimestamp()}] [MCP] ERROR: ${errorMsg}`);
                 throw new Error(errorMsg);
             }
-            console.log(`[${timestamp()}] [MCP] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
+            console.log(`[${this._getTimestamp()}] [MCP] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
             const server_url = modelConfig.mcp_server_url;
 
             // --- Revert to Standard MCP Request Format for glm4v ---
@@ -324,7 +335,7 @@ export class ChatApiHandler {
                 parsedArguments = this._robustJsonParse(toolCode.arguments);
             } catch (e) {
                 const errorMsg = `无法解析来自模型的工具参数，即使在尝试修复后也是如此: ${toolCode.arguments}`;
-                console.error(`[${timestamp()}] [MCP] ROBUST PARSE FAILED: ${errorMsg}`, e);
+                console.error(`[${this._getTimestamp()}] [MCP] ROBUST PARSE FAILED: ${errorMsg}`, e);
                 throw new Error(errorMsg);
             }
 
@@ -334,30 +345,30 @@ export class ChatApiHandler {
                 parameters: parsedArguments, // Send the full, parsed arguments object
                 server_url: server_url
             };
-            console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
+            console.log(`[${this._getTimestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
 
             // 调用后端代理
-            console.log(`[${timestamp()}] [MCP] Sending fetch request to /api/mcp-proxy...`);
+            console.log(`[${this._getTimestamp()}] [MCP] Sending fetch request to /api/mcp-proxy...`);
             const proxyResponse = await fetch('/api/mcp-proxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(proxyRequestBody)
             });
-            console.log(`[${timestamp()}] [MCP] Fetch request to /api/mcp-proxy FINISHED. Response status: ${proxyResponse.status}`);
+            console.log(`[${this._getTimestamp()}] [MCP] Fetch request to /api/mcp-proxy FINISHED. Response status: ${proxyResponse.status}`);
 
             if (!proxyResponse.ok) {
                 const errorData = await proxyResponse.json();
                 const errorMsg = `MCP 代理请求失败: ${errorData.details || proxyResponse.statusText}`;
-                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`);
+                console.error(`[${this._getTimestamp()}] [MCP] ERROR: ${errorMsg}`);
                 throw new Error(errorMsg);
             }
 
             const toolResult = await proxyResponse.json();
-            console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolResult);
+            console.log(`[${this._getTimestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolResult);
             
             // --- Special handling for mcp_tool_catalog tool ---
             if (toolCode.tool_name === 'mcp_tool_catalog' && toolResult && toolResult.data && Array.isArray(toolResult.data)) {
-                console.log(`[${timestamp()}] [MCP] Discovered new tools via mcp_tool_catalog. Merging...`);
+                console.log(`[${this._getTimestamp()}] [MCP] Discovered new tools via mcp_tool_catalog. Merging...`);
                 
                 // 获取当前Qwen模型的完整工具列表
                 const currentModelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
@@ -371,13 +382,13 @@ export class ChatApiHandler {
                 
                 // 更新 requestBody，确保下次 streamChatCompletion 包含最新工具列表
                 requestBody.tools = allCurrentTools;
-                console.log(`[${timestamp()}] [MCP] Updated requestBody.tools with ${newToolsToAdd.length} new tools.`);
+                console.log(`[${this._getTimestamp()}] [MCP] Updated requestBody.tools with ${newToolsToAdd.length} new tools.`);
             }
 
             // --- Refactored History Logging based on AliCloud Docs ---
             // 1. Push the assistant's decision to call the tool.
             // This must be an object with a `tool_calls` array.
-            console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history...`);
+            console.log(`[${this._getTimestamp()}] [MCP] Pushing assistant 'tool_calls' message to history...`);
             this.state.chatHistory.push({
                 role: 'assistant',
                 content: null, // Qwen expects content to be null when tool_calls are present
@@ -393,7 +404,7 @@ export class ChatApiHandler {
 
             // 2. Push the result from the tool execution.
             // This must be an object with `role: 'tool'`.
-            console.log(`[${timestamp()}] [MCP] Pushing 'tool' result message to history...`);
+            console.log(`[${this._getTimestamp()}] [MCP] Pushing 'tool' result message to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
                 content: JSON.stringify(toolResult),
@@ -401,23 +412,23 @@ export class ChatApiHandler {
             });
 
             // 再次调用模型以获得最终答案
-            console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool result...`);
+            console.log(`[${this._getTimestamp()}] [MCP] Resuming chat completion with tool result...`);
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
                 // 确保再次传递工具定义，以防需要连续调用
                 tools: requestBody.tools // Now 'requestBody.tools' might be updated with newly discovered tools
             }, apiKey);
-            console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
+            console.log(`[${this._getTimestamp()}] [MCP] Chat completion stream finished.`);
 
         } catch (toolError) {
-            console.error(`[${timestamp()}] [MCP] --- CATCH BLOCK ERROR ---`, toolError);
+            console.error(`[${this._getTimestamp()}] [MCP] --- CATCH BLOCK ERROR ---`, toolError);
             Logger.error('MCP 工具执行失败:', toolError);
             chatUI.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
             
             // 即使失败，也要将失败信息以正确的格式加入历史记录
             const callId = `call_${Date.now()}`; // 统一生成 ID
-            console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history on error...`);
+            console.log(`[${this._getTimestamp()}] [MCP] Pushing assistant 'tool_calls' message to history on error...`);
             this.state.chatHistory.push({
                 role: 'assistant',
                 content: null,
@@ -430,7 +441,7 @@ export class ChatApiHandler {
                     }
                 }]
             });
-            console.log(`[${timestamp()}] [MCP] Pushing 'tool' error result to history...`);
+            console.log(`[${this._getTimestamp()}] [MCP] Pushing 'tool' error result to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
                 content: JSON.stringify({ error: toolError.message }),
@@ -438,17 +449,17 @@ export class ChatApiHandler {
             });
             
             // 再次调用模型，让它知道工具失败了
-            console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool error...`);
+            console.log(`[${this._getTimestamp()}] [MCP] Resuming chat completion with tool error...`);
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                tools: requestBody.tools
+                tools: allTools // 确保重新调用时也使用合并后的工具列表
             }, apiKey);
-            console.log(`[${timestamp()}] [MCP] Chat completion stream after error finished.`);
+            console.log(`[${this._getTimestamp()}] [MCP] Chat completion stream after error finished.`);
         } finally {
             this.state.isUsingTool = false;
-            console.log(`[${timestamp()}] [MCP] State isUsingTool set to false.`);
-            console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall END ---`);
+            console.log(`[${this._getTimestamp()}] [MCP] State isUsingTool set to false.`);
+            console.log(`[${this._getTimestamp()}] [MCP] --- _handleMcpToolCall END ---`);
         }
     }
 
