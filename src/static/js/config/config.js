@@ -151,7 +151,13 @@ Be warm, patient, and plain-spoken; don't use too many exclamation marks or emoj
         {
             id: 'voice_mode',
             displayName: '语音模式',
-            prompt: `When you are in audio response type, no matter which language I use for input, you must respond in English, all outputs must be in English! If you encounter anything outside of your knowledge cutoff or unclear, you must use google search tool to respond.`
+            prompt: `When you are in audio response type, no matter which language I use for input, you must respond in English, all outputs must be in English! If you encounter anything outside of your knowledge cutoff or unclear, you must use google search tool to respond.
+            Your task is to provide in-depth, comprehensive, and professional answers. When responding to questions, please follow the following steps:
+            1. Analyze the core elements of the question and think from multiple perspectives.
+            2. If necessary, decompose the question and reason step by step.
+            3. Combine professional knowledge and reliable information to provide a detailed answer.
+            4. In appropriate cases, use tools (such as search engines) to obtain the latest information to ensure the accuracy and timeliness of the answer.
+            5. At the end of the answer, you can give a summary or suggestion.`
         },
         {
             id: 'simultaneous_interpretation',
