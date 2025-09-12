@@ -36,6 +36,14 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
             },
+                        {
+                name: 'Qwen/Qwen3-Next-80B-A3B-Thinking',
+                displayName: 'Qwen3-Next-80B-A3B-Thinking (工具调用)',
+                isWebSocket: false,
+                isQwen: true, // 标记为通义千问模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            },
             {
                 name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
                 displayName: 'Qwen3-235B-A22B-Thinking-2507 (工具调用)',
