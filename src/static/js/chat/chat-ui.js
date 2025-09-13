@@ -243,8 +243,8 @@ export function createAIMessageElement() {
     contentDiv.appendChild(markdownContainer);
 
     const copyButton = document.createElement('button');
-    copyButton.classList.add('copy-button', 'material-symbols-outlined');
-    copyButton.textContent = 'content_copy';
+    copyButton.classList.add('copy-button');
+    copyButton.innerHTML = '<i class="fa-solid fa-copy"></i>';
     copyButton.addEventListener('click', async () => {
         try {
             const reasoningText = reasoningContainer.style.display !== 'none'
@@ -252,8 +252,8 @@ export function createAIMessageElement() {
                 : '';
             const mainText = markdownContainer.innerText;
             await navigator.clipboard.writeText(reasoningText + mainText);
-            copyButton.textContent = 'check';
-            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
+            copyButton.innerHTML = '<i class="fa-solid fa-check"></i>';
+            setTimeout(() => { copyButton.innerHTML = '<i class="fa-solid fa-copy"></i>'; }, 2000);
         } catch (err) {
             console.error('Failed to copy text: ', err);
         }
