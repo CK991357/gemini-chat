@@ -135,8 +135,8 @@ export class HistoryManager {
                     <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
                 </div>
                 <div class="history-actions">
-                    ${session.is_pinned ? '<span class="material-symbols-outlined pinned-icon">push_pin</span>' : ''}
-                    <button class="material-symbols-outlined history-options-button">more_vert</button>
+                    ${session.is_pinned ? '<i class="fa-solid fa-thumbtack pinned-icon"></i>' : ''}
+                    <button class="history-options-button"><i class="fa-solid fa-ellipsis-v"></i></button>
                     <div class="history-options-menu" style="display: none;">
                         <button class="menu-item" data-action="toggle-pin">${session.is_pinned ? '取消置顶' : '置顶'}</button>
                         <button class="menu-item" data-action="edit-title">编辑标题</button>

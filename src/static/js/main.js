@@ -152,14 +152,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (savedTheme) {
         body.classList.add(savedTheme);
-        themeToggleBtn.textContent = savedTheme === 'dark-mode' ? 'dark_mode' : 'light_mode';
+        themeToggleBtn.innerHTML = savedTheme === 'dark-mode' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
     } else {
         if (globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: dark)').matches) {
             body.classList.add('dark-mode');
-            themeToggleBtn.textContent = 'dark_mode';
+            themeToggleBtn.innerHTML = '<i class="fa-solid fa-sun"></i>';
         } else {
             body.classList.add('light-mode');
-            themeToggleBtn.textContent = 'light_mode';
+            themeToggleBtn.innerHTML = '<i class="fa-solid fa-moon"></i>';
         }
     }
 
@@ -167,12 +167,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (body.classList.contains('dark-mode')) {
             body.classList.remove('dark-mode');
             body.classList.add('light-mode');
-            themeToggleBtn.textContent = 'light_mode';
+            themeToggleBtn.innerHTML = '<i class="fa-solid fa-moon"></i>';
             localStorage.setItem('theme', 'light-mode');
         } else {
             body.classList.remove('light-mode');
             body.classList.add('dark-mode');
-            themeToggleBtn.textContent = 'dark_mode';
+            themeToggleBtn.innerHTML = '<i class="fa-solid fa-sun"></i>';
             localStorage.setItem('theme', 'dark-mode');
         }
     });
