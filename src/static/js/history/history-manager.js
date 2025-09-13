@@ -216,11 +216,16 @@ export class HistoryManager {
             }
             const sessionData = await response.json();
 
-            // Sanitize messages before rendering to prevent errors with marked()
+            // Sanitize messages before rendering to prevent errors with marked() and improve UI
             if (sessionData.messages && Array.isArray(sessionData.messages)) {
                 sessionData.messages.forEach(message => {
                     if (message.role === 'assistant' && !message.content) {
-                        message.content = '';
+                        if (message.tool_calls && message.tool_calls.length > 0) {
+                            const toolName = message.tool_calls[0]?.function?.name || '未知工具';
+                            message.content = `*正在调用工具: ${toolName}...*`;
+                        } else {
+                            message.content = ''; // Fallback for other empty content cases
+                        }
                     }
                 });
             }
