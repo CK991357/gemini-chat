@@ -4,11 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini Chat Multimodal Live API Client</title>
-    <link rel="stylesheet" href="https://fonts.geekzu.org/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <!-- 建议使用填充版本图标 -->
-    <link rel="stylesheet" href="https://fonts.geekzu.org/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" />
-    <!-- 新增：用于语音播放器图标 -->
-    <link rel="stylesheet" href="https://fonts.geekzu.org/icon?family=Material+Icons" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     <link rel="stylesheet" href="css/style.css">
     <!-- 引入 MathJax 用于数学公式渲染 -->
     <script type="text/javascript" id="MathJax-script" async
@@ -44,21 +40,21 @@
         <nav class="app-nav">
             <div class="mode-switcher">
                 <h1 class="app-title">Gemini Chat</h1>
-                <button id="translation-mode-button" class="mode-button material-symbols-outlined">translate</button>
-                <button id="chat-mode-button" class="mode-button material-symbols-outlined active">chat</button>
-                <button id="vision-mode-button" class="mode-button material-symbols-outlined">camera_enhance</button>
+                <button id="translation-mode-button" class="mode-button" title="Translate Mode"><i class="fa-solid fa-language"></i></button>
+                <button id="chat-mode-button" class="mode-button active" title="Chat Mode"><i class="fa-solid fa-comments"></i></button>
+                <button id="vision-mode-button" class="mode-button" title="Vision Mode"><i class="fa-solid fa-camera"></i></button>
             </div>
             <div class="nav-tools">
-                <button id="new-chat-button" class="material-symbols-outlined">add_box</button>
-                <button id="toggle-config" class="material-symbols-outlined">settings</button>
-                <button id="toggle-log" class="material-symbols-outlined">description</button>
-                <button id="theme-toggle" class="material-symbols-outlined">light_mode</button>
+                <button id="new-chat-button" title="New Chat"><i class="fa-solid fa-square-plus"></i></button>
+                <button id="toggle-config" title="Settings"><i class="fa-solid fa-gear"></i></button>
+                <button id="toggle-log" title="System Log"><i class="fa-solid fa-file-lines"></i></button>
+                <button id="theme-toggle" title="Toggle Theme"><i class="fa-solid fa-sun"></i></button>
 
             <!-- 移动媒体控制按钮到这里 -->
             <div class="media-controls">
-                <button id="mic-button" class="media-button material-symbols-outlined">mic</button>
-                <button id="camera-button" class="media-button material-symbols-outlined">videocam</button>
-                <button id="screen-button" class="media-button material-symbols-outlined">screen_share</button>
+                <button id="mic-button" class="media-button" title="Microphone"><i class="fa-solid fa-microphone"></i></button>
+                <button id="camera-button" class="media-button" title="Camera"><i class="fa-solid fa-video"></i></button>
+                <button id="screen-button" class="media-button" title="Screen Share"><i class="fa-solid fa-display"></i></button>
                 <!-- 移除翻转按钮 -->
                  </div>
             </div>
@@ -134,13 +130,13 @@
                     <div id="video-container" class="media-preview">
                       <video id="preview" playsinline webkit-playsinline autoplay muted></video>
                       <div class="video-controls">
-                        <button id="flip-camera" class="media-button material-symbols-outlined">flip_camera_ios</button>
-                        <button id="stop-video" class="close-button material-symbols-outlined">close</button>
+                        <button id="flip-camera" class="media-button" title="Flip Camera"><i class="fa-solid fa-camera-rotate"></i></button>
+                        <button id="stop-video" class="close-button" title="Stop Video"><i class="fa-solid fa-xmark"></i></button>
                       </div>
                     </div>
                     <div id="screen-preview-container" class="media-preview">
                       <video id="screen-preview-element" playsinline webkit-playsinline autoplay muted></video>
-                      <button id="stop-screen-button" class="close-button material-symbols-outlined">close</button>
+                      <button id="stop-screen-button" class="close-button" title="Stop Screen Share"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                   </div>
                   
@@ -157,12 +153,12 @@
 
                     <div class="input-area">
                         <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
-                        <button id="send-button" class="send-button material-symbols-outlined">send</button>
-                        <button id="interrupt-button" class="action-button">||</button>
+                        <button id="send-button" class="send-button" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
+                        <button id="interrupt-button" class="action-button" title="Interrupt">||</button>
                         <!-- 新增：附件按钮 -->
-                        <button id="attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                        <button id="attachment-button" class="action-button" title="Attach File"><i class="fa-solid fa-paperclip"></i></button>
                         <!-- 新增：聊天模式下的语音输入按钮 -->
-                        <button id="chat-voice-input-button" class="action-button material-symbols-outlined">mic</button>
+                        <button id="chat-voice-input-button" class="action-button" title="Voice Input"><i class="fa-solid fa-microphone"></i></button>
                         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,application/pdf,audio/*" style="display: none;">
                     </div>
                     
@@ -201,7 +197,7 @@
                         </div>
                         <textarea id="translation-input-text" placeholder="输入要翻译的内容..." rows="10"></textarea>
                         <div class="translation-action-buttons">
-                            <button id="translation-ocr-button" class="action-button material-symbols-outlined" style="display: none;">add_a_photo</button>
+                            <button id="translation-ocr-button" class="action-button" style="display: none;" title="OCR Translate"><i class="fa-solid fa-image"></i></button>
                             <input type="file" id="translation-ocr-input" accept="image/*" capture="environment" style="display: none;">
                             <button id="translate-button" class="action-button">翻译</button>
                             <!-- 新增：翻译模式下的语音输入按钮 -->
@@ -213,7 +209,7 @@
                             <select id="translation-output-language-select" title="选择输出语言"></select>
                         </div>
                         <div id="translation-output-text" class="translation-output-display"></div>
-                        <button id="translation-copy-button" class="copy-button material-symbols-outlined">content_copy</button>
+                        <button id="translation-copy-button" class="copy-button" title="Copy"><i class="fa-solid fa-copy"></i></button>
                     </div>
                 </section>
 
@@ -234,9 +230,9 @@
                     </div>
                     <div class="input-area" id="vision-input-area">
                         <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
-                        <button id="vision-attachment-button" class="action-button material-symbols-outlined">attach_file</button>
+                        <button id="vision-attachment-button" class="action-button" title="Attach File"><i class="fa-solid fa-paperclip"></i></button>
                         <input type="file" id="vision-file-input" accept="image/*,video/*,application/pdf,audio/*" style="display: none;" multiple>
-                        <button id="vision-send-button" class="send-button material-symbols-outlined">send</button>
+                        <button id="vision-send-button" class="send-button" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
                     </div>
                 </section>
 
