@@ -216,6 +216,15 @@ export class HistoryManager {
             }
             const sessionData = await response.json();
 
+            // Sanitize messages before rendering to prevent errors with marked()
+            if (sessionData.messages && Array.isArray(sessionData.messages)) {
+                sessionData.messages.forEach(message => {
+                    if (message.role === 'assistant' && !message.content) {
+                        message.content = '';
+                    }
+                });
+            }
+
             this.setCurrentSessionId(sessionData.sessionId);
             this.setChatHistory(sessionData.messages);
             this.updateChatUI(sessionData);
