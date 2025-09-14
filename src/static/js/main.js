@@ -456,7 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
    // T11: 初始化聊天UI模块并注入依赖
    const transcribeAudioHandler = async (audioBlob, buttonElement) => {
        buttonElement.disabled = true;
-       buttonElement.textContent = 'hourglass_empty';
+       buttonElement.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
        try {
            const response = await fetch('/api/transcribe-audio', {
                method: 'POST',
@@ -483,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
            console.error('语音转文字失败:', error);
        } finally {
            buttonElement.disabled = false;
-           buttonElement.textContent = 'text_fields';
+           buttonElement.innerHTML = '<i class="fa-solid fa-file-alt"></i>';
        }
    };
 
