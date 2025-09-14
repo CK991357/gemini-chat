@@ -141,8 +141,8 @@ export function displayAudioMessage(audioUrl, duration, type, audioBlob) {
     audioPlayerDiv.classList.add('audio-player');
 
     const playButton = document.createElement('button');
-    playButton.classList.add('audio-play-button', 'material-icons');
-    playButton.textContent = 'play_arrow';
+    playButton.classList.add('audio-play-button');
+    playButton.innerHTML = '<i class="fa-solid fa-play"></i>';
 
     const audioWaveform = document.createElement('div');
     audioWaveform.classList.add('audio-waveform');
@@ -155,14 +155,14 @@ export function displayAudioMessage(audioUrl, duration, type, audioBlob) {
     audioDurationSpan.textContent = handlers.formatTime ? handlers.formatTime(duration) : '00:00';
 
     const downloadButton = document.createElement('a');
-    downloadButton.classList.add('audio-download-button', 'material-icons');
-    downloadButton.textContent = 'download';
+    downloadButton.classList.add('audio-download-button');
+    downloadButton.innerHTML = '<i class="fa-solid fa-download"></i>';
     downloadButton.download = `gemini_audio_${Date.now()}.wav`;
     downloadButton.href = audioUrl;
 
     const transcribeButton = document.createElement('button');
-    transcribeButton.classList.add('audio-transcribe-button', 'material-icons');
-    transcribeButton.textContent = 'text_fields';
+    transcribeButton.classList.add('audio-transcribe-button');
+    transcribeButton.innerHTML = '<i class="fa-solid fa-file-alt"></i>';
     transcribeButton.addEventListener('click', () => {
         if (handlers.transcribeAudioHandler) {
             handlers.transcribeAudioHandler(audioBlob, transcribeButton);
@@ -179,7 +179,7 @@ export function displayAudioMessage(audioUrl, duration, type, audioBlob) {
         }
     });
     audioElement.addEventListener('ended', () => {
-        playButton.textContent = 'play_arrow';
+        playButton.innerHTML = '<i class="fa-solid fa-play"></i>';
         audioProgressBar.style.width = '0%';
         if (handlers.formatTime) {
             audioDurationSpan.textContent = handlers.formatTime(duration);
@@ -188,10 +188,10 @@ export function displayAudioMessage(audioUrl, duration, type, audioBlob) {
     playButton.addEventListener('click', () => {
         if (audioElement.paused) {
             audioElement.play();
-            playButton.textContent = 'pause';
+            playButton.innerHTML = '<i class="fa-solid fa-pause"></i>';
         } else {
             audioElement.pause();
-            playButton.textContent = 'play_arrow';
+            playButton.innerHTML = '<i class="fa-solid fa-play"></i>';
         }
     });
 
