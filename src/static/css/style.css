@@ -717,13 +717,13 @@ body {
 .message.ai .audio-play-button,
 .message.ai .audio-download-button,
 .message.ai .audio-transcribe-button {
-    color: white; /* AI 消息中的按钮颜色 */
+    color: var(--text-secondary-color); /* AI 消息中的按钮颜色，使用深灰色以增强对比度 */
 }
 
 .message.ai .audio-play-button:hover,
 .message.ai .audio-download-button:hover,
 .message.ai .audio-transcribe-button:hover {
-    color: #e0e0e0; /* AI 消息中按钮悬停颜色 */
+    color: var(--text-color); /* AI 消息中按钮悬停颜色，使用主文本颜色以提供清晰反馈 */
 }
 
 .audio-waveform {
