@@ -270,7 +270,8 @@ export function createAIMessageElement() {
         markdownContainer,
         reasoningContainer,
         contentDiv,
-        rawMarkdownBuffer: ''
+        rawMarkdownBuffer: '',
+        rawReasoningBuffer: ''
     };
 }
 

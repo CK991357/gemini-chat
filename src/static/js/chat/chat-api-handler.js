@@ -131,7 +131,9 @@ export class ChatApiHandler {
                                             this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
                                             reasoningStarted = true;
                                         }
-                                        this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
+                                        const reasoningText = choice.delta.reasoning_content;
+                                        this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
+                                        this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += reasoningText.replace(/\n/g, '<br>');
                                     }
                                     
                                     if (choice.delta.content) {
@@ -207,7 +209,8 @@ export class ChatApiHandler {
                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
                     this.state.chatHistory.push({
                         role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer,
+                        reasoning: this.state.currentAIMessageContentDiv.rawReasoningBuffer
                     });
                 }
                 this.state.currentAIMessageContentDiv = null;

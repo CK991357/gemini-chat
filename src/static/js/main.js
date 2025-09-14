@@ -336,11 +336,28 @@ document.addEventListener('DOMContentLoaded', () => {
                    chatUI.displayUserMessage(textPart, filesToDisplay);
                } else if (message.role === 'assistant') {
                    const aiMessage = chatUI.createAIMessageElement();
-                   aiMessage.rawMarkdownBuffer = message.content;
-                   aiMessage.markdownContainer.innerHTML = marked.parse(message.content);
+                   
+                   // 渲染主要内容
+                   aiMessage.rawMarkdownBuffer = message.content || '';
+                   aiMessage.markdownContainer.innerHTML = marked.parse(aiMessage.rawMarkdownBuffer);
+
+                   // 检查并渲染思维链
+                   if (message.reasoning && message.reasoning.trim() !== '') {
+                       aiMessage.rawReasoningBuffer = message.reasoning;
+                       const reasoningContent = aiMessage.reasoningContainer.querySelector('.reasoning-content');
+                       reasoningContent.innerHTML = message.reasoning.replace(/\n/g, '<br>');
+                       aiMessage.reasoningContainer.style.display = 'block';
+                       
+                       // 在思维链和答案之间添加分隔线
+                       const separator = document.createElement('hr');
+                       separator.className = 'answer-separator';
+                       aiMessage.markdownContainer.before(separator);
+                   }
+
+                   // 对两个容器都应用数学公式排版
                    if (typeof MathJax !== 'undefined' && MathJax.startup) {
                        MathJax.startup.promise.then(() => {
-                           MathJax.typeset([aiMessage.markdownContainer]);
+                           MathJax.typeset([aiMessage.markdownContainer, aiMessage.reasoningContainer]);
                        }).catch((err) => console.error('MathJax typesetting failed:', err));
                    }
                }
