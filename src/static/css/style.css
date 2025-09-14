@@ -714,6 +714,19 @@ body {
     color: #e0e0e0; /* 用户消息中按钮悬停颜色 */
 }
 
+/* 使用高优先级选择器强制设定 AI 消息中所有音频按钮的颜色 */
+.message.ai .audio-play-button,
+.message.ai .audio-download-button,
+.message.ai .audio-transcribe-button {
+    color: var(--text-color);
+}
+
+.message.ai .audio-play-button:hover,
+.message.ai .audio-download-button:hover,
+.message.ai .audio-transcribe-button:hover {
+    color: var(--text-secondary-color); /* 悬停时颜色变深 */
+}
+
 
 .audio-waveform {
     flex-grow: 1;
