@@ -684,7 +684,7 @@ body {
     flex-grow: 1; /* 允许播放器占据可用空间 */
 }
 
-.audio-play-button, .audio-download-button, .audio-transcribe-button {
+.audio-play-button, .audio-transcribe-button {
     background: none;
     border: none;
     color: inherit; /* 继承父元素的颜色 */
@@ -697,20 +697,40 @@ body {
     justify-content: center;
 }
 
-.audio-play-button:hover, .audio-download-button:hover, .audio-transcribe-button:hover {
-    color: var(--primary-color); /* 悬停时变色 */
+/* 单独为 a 标签的下载按钮设置样式 */
+.audio-download-button {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 24px;
+    transition: color 0.3s ease, transform 0.2s ease;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none; /* 移除 a 标签的下划线 */
+}
+
+.audio-play-button:hover, .audio-transcribe-button:hover, .audio-download-button:hover {
     transform: scale(1.1);
 }
 
+.message.ai .audio-play-button:hover,
+.message.ai .audio-transcribe-button:hover,
+.message.ai .audio-download-button:hover {
+    color: var(--text-secondary-color); /* AI 消息中悬停颜色变深 */
+}
+
 .message.user .audio-play-button,
-.message.user .audio-download-button,
-.message.user .audio-transcribe-button {
+.message.user .audio-transcribe-button,
+.message.user .audio-download-button {
     color: white; /* 用户消息中的按钮颜色 */
 }
 
 .message.user .audio-play-button:hover,
-.message.user .audio-download-button:hover,
-.message.user .audio-transcribe-button:hover {
+.message.user .audio-transcribe-button:hover,
+.message.user .audio-download-button:hover {
     color: #e0e0e0; /* 用户消息中按钮悬停颜色 */
 }
 
