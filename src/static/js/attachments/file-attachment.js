@@ -255,9 +255,8 @@ export class AttachmentManager {
         } else if (type === 'application/pdf') {
             previewElement = document.createElement('div');
             previewElement.className = 'file-placeholder';
-            const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
-            icon.textContent = 'picture_as_pdf'; // PDF专用图标
+            const icon = document.createElement('i'); // 使用 <i> 标签
+            icon.className = 'fa-solid fa-file-pdf'; // Font Awesome PDF 图标
             const text = document.createElement('p');
             text.textContent = name;
             previewElement.appendChild(icon);
@@ -265,9 +264,8 @@ export class AttachmentManager {
         } else if (type.startsWith('audio/')) {
             previewElement = document.createElement('div');
             previewElement.className = 'file-placeholder';
-            const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
-            icon.textContent = 'audio_file'; // 音频文件专用图标
+            const icon = document.createElement('i'); // 使用 <i> 标签
+            icon.className = 'fa-solid fa-file-audio'; // Font Awesome 音频图标
             const text = document.createElement('p');
             text.textContent = name;
             previewElement.appendChild(icon);
@@ -276,9 +274,8 @@ export class AttachmentManager {
         else {
             previewElement = document.createElement('div');
             previewElement.className = 'file-placeholder';
-            const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
-            icon.textContent = 'description'; // 其他未知文件类型
+            const icon = document.createElement('i'); // 使用 <i> 标签
+            icon.className = 'fa-solid fa-file'; // Font Awesome 通用文件图标
             const text = document.createElement('p');
             text.textContent = name;
             previewElement.appendChild(icon);

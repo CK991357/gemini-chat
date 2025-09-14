@@ -940,6 +940,35 @@ body {
     background: var(--danger-color);
 }
 
+/* 新增：文件占位符样式（用于PDF、音频等） */
+.file-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.file-placeholder i {
+    font-size: 40px; /* 调整图标大小 */
+    color: var(--text-secondary-color);
+    margin-bottom: 8px;
+}
+
+.file-placeholder p {
+    font-size: 12px;
+    color: var(--text-secondary-color);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
 /* 新增媒体控制区域样式 */
 .media-controls {
     display: flex;

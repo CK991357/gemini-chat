@@ -78,14 +78,14 @@ export function displayUserMessage(text, files) {
             } else if (file.type === 'application/pdf') {
                 fileDisplayElement = document.createElement('div');
                 fileDisplayElement.className = 'file-placeholder';
-                const icon = document.createElement('span');
-                icon.className = 'material-symbols-outlined';
-                icon.textContent = 'picture_as_pdf';
+                const icon = document.createElement('i');
+                icon.className = 'fa-solid fa-file-pdf';
                 const textElement = document.createElement('p');
                 textElement.textContent = file.name;
                 fileDisplayElement.appendChild(icon);
                 fileDisplayElement.appendChild(textElement);
             } else if (file.type.startsWith('audio/')) {
+                // For audio files in chat history, we use the full audio player
                 fileDisplayElement = document.createElement('audio');
                 fileDisplayElement.src = file.base64;
                 fileDisplayElement.controls = true;
@@ -93,9 +93,8 @@ export function displayUserMessage(text, files) {
             } else {
                 fileDisplayElement = document.createElement('div');
                 fileDisplayElement.className = 'file-placeholder';
-                const icon = document.createElement('span');
-                icon.className = 'material-symbols-outlined';
-                icon.textContent = 'description';
+                const icon = document.createElement('i');
+                icon.className = 'fa-solid fa-file';
                 const textElement = document.createElement('p');
                 textElement.textContent = file.name;
                 fileDisplayElement.appendChild(icon);
