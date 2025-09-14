@@ -75,6 +75,7 @@ export class ChatApiHandler {
                 this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
             }
 
+            let buffer = '';
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
@@ -82,12 +83,18 @@ export class ChatApiHandler {
                     break;
                 }
 
-                const chunk = decoder.decode(value, { stream: true });
-                chunk.split('\n\n').forEach(part => {
-                    if (part.startsWith('data: ')) {
-                        const jsonStr = part.substring(6);
+                buffer += decoder.decode(value, { stream: true });
+                let boundary = buffer.indexOf('\n\n');
+
+                while (boundary !== -1) {
+                    const message = buffer.substring(0, boundary);
+                    buffer = buffer.substring(boundary + 2);
+
+                    if (message.startsWith('data: ')) {
+                        const jsonStr = message.substring(6);
                         if (jsonStr === '[DONE]') {
-                            return;
+                            boundary = buffer.indexOf('\n\n');
+                            continue;
                         }
                         try {
                             const data = JSON.parse(jsonStr);
@@ -165,7 +172,8 @@ export class ChatApiHandler {
                             Logger.error('Error parsing SSE chunk:', e, jsonStr);
                         }
                     }
-                });
+                    boundary = buffer.indexOf('\n\n');
+                }
             }
 
             // --- Post-Stream Processing ---
