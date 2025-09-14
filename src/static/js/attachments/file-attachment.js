@@ -283,8 +283,10 @@ export class AttachmentManager {
         }
 
         const closeButton = document.createElement('button');
-        closeButton.className = 'close-button material-symbols-outlined';
-        closeButton.textContent = 'close';
+        closeButton.className = 'close-button'; // 移除 material-symbols-outlined
+        const closeIcon = document.createElement('i');
+        closeIcon.className = 'fa-solid fa-times'; // Font Awesome close icon
+        closeButton.appendChild(closeIcon);
         closeButton.onclick = (e) => {
             e.stopPropagation();
             if (mode === 'vision') {
