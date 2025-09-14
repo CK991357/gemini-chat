@@ -673,8 +673,8 @@ body {
 }
 
 .message.ai .audio-content {
-    background-color: var(--secondary-color); /* AI语音消息使用不同的背景色 */
-    color: white;
+    background-color: var(--bg-color); /* AI语音消息背景与普通消息一致 */
+    color: var(--text-color); /* AI语音消息文本颜色与普通消息一致 */
 }
 
 .audio-player {
@@ -714,17 +714,6 @@ body {
     color: #e0e0e0; /* 用户消息中按钮悬停颜色 */
 }
 
-.message.ai .audio-play-button,
-.message.ai .audio-download-button,
-.message.ai .audio-transcribe-button {
-    color: white; /* AI 消息中的按钮颜色 */
-}
-
-.message.ai .audio-play-button:hover,
-.message.ai .audio-download-button:hover,
-.message.ai .audio-transcribe-button:hover {
-    color: #e0e0e0; /* AI 消息中按钮悬停颜色 */
-}
 
 .audio-waveform {
     flex-grow: 1;
@@ -744,6 +733,10 @@ body {
 
 .message.user .audio-progress-bar {
     background-color: white; /* 用户消息中的进度条颜色 */
+}
+
+.message.ai .audio-progress-bar {
+    background-color: var(--text-color);
 }
 
 .audio-duration {
@@ -780,6 +773,11 @@ body {
 .message.user .audio-duration {
     color: white; /* 用户消息中的时长颜色 */
 }
+
+.message.ai .audio-duration {
+    color: var(--text-color);
+}
+
 
 .text-mode .input-area {
     display: flex;
