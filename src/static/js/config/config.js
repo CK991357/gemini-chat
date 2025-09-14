@@ -380,7 +380,7 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 **✅ 正确示例:**
 \`{"model": "glm-4v-flash", "image_url": "https://path/to/image.jpg", "prompt": "Describe this image."}\`
 **❌ 错误示例 (请避免以下常见错误):**
--   **缺少引号或逗号:** \`{"model": "glm-4v-flash", "image_url": "https://path/to/image.jpg", "prompt": "Describe this image."\` (缺少 \`}\`)
+-   **缺少引号或逗号:** \`{"model": "glm-4v-flash", "image_url": "https://path/to/image.jpg", "prompt": "Describe this image."}\` (缺少 \`}\`)
 -   **参数名错误:** \`{"img_url": "https://path/to/image.jpg"}\` (应为 "image_url" 而非 "img_url")
 -   **模型名称错误:** \`{"model": "glm4v-flash", ...}\` (应为 "glm-4v-flash")
 
@@ -397,8 +397,35 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **\`arguments\` 不是有效的 JSON 字符串:** \`'print("hello")'\` (错误：必须是 JSON 格式的字符串)。
 -   **在JSON字符串中嵌入Markdown分隔符:** \`"\\\`\\\`\\\`json\\n{\\"code\\": \\"print(1)\\"}\\n\\\`\\\`\\\`"\\\` (错误：这会破坏 JSON 字符串的结构)
 -   **参数名错误:** \`{"script": "print('hello')"}\` (错误：参数名必须是 "code")。
--   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。`
+-   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。
 
+### 工具调用示例（Firecrawl）
+
+\`firecrawl\` 是一个多功能网页抓取和数据提取工具，通过 \`mode\` 参数调用不同功能。其 \`parameters\` 结构是嵌套的。
+
+**✅ 正确的调用结构:**
+\`{"mode": "<功能模式>", "parameters": {"<参数名>": "<参数值>"}}\`
+
+**➡️ 示例 1: 抓取单个网页 (\`scrape\`)**
+
+**✅ 正确示例:**
+\`{"mode": "scrape", "parameters": {"url": "https://docs.firecrawl.dev/"}}\`
+
+**➡️ 示例 2: 异步爬取网站 (\`crawl\`) 与检查状态 (\`check_status\`)**
+
+**步骤 1: 启动爬取任务**
+**✅ 正确示例:**
+\`{"mode": "crawl", "parameters": {"url": "https://firecrawl.dev", "limit": 5}}\`
+*此调用会返回一个 \`job_id\`，用于后续查询。*
+
+**步骤 2: 使用 \`job_id\` 检查任务状态**
+**✅ 正确示例:**
+\`{"mode": "check_status", "parameters": {"job_id": "some-unique-job-identifier"}}\`
+
+**❌ 错误示例 (请避免以下常见错误):**
+-   **缺少 \`mode\` 参数:** \`{"parameters": {"url": "..."}}\`
+-   **缺少嵌套的 \`parameters\` 对象:** \`{"mode": "scrape", "url": "..."}\`
+-   **将参数放在顶层:** \`{"url": "..."}\` (错误：所有模式的参数都必须在嵌套的 \`parameters\` 对象内)`
         },
         {
             id: 'audio_summarization',

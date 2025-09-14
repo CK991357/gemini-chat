@@ -5,6 +5,7 @@
  */
 
 // Import all available tool handlers
+import { handleFirecrawl } from './handlers/firecrawl.js';
 import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
 import { handlePythonSandbox } from './handlers/python-sandbox.js';
 import { handleTavilySearch } from './handlers/tavily-search.js';
@@ -16,6 +17,7 @@ const toolRegistry = {
     'tavily_search': handleTavilySearch,
     'python_sandbox': handlePythonSandbox,
     'mcp_tool_catalog': handleMcpToolCatalog, // Add the new tool catalog handler
+    'firecrawl': handleFirecrawl,
     // To add a new tool, import its handler and add an entry here.
     // e.g., 'new_tool_name': handleNewTool,
 };

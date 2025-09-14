@@ -83,12 +83,37 @@ const mcp_tool_catalog = {
     }
 };
 
+// Firecrawl tool definition
+const firecrawl = {
+    "type": "function",
+    "function": {
+        "name": "firecrawl",
+        "description": "A powerful tool to scrape, crawl, search, map, or extract structured data from web pages. Modes: 'scrape' for a single URL, 'search' for a web query, 'crawl' for an entire website, 'map' to get all links, 'extract' for AI-powered data extraction, and 'check_status' for async jobs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["scrape", "search", "crawl", "map", "extract", "check_status"],
+                    "description": "The function to execute."
+                },
+                "parameters": {
+                    "type": "object",
+                    "description": "A dictionary of parameters for the selected mode."
+                }
+            },
+            "required": ["mode", "parameters"]
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
     image_url_analyzer,
     python_sandbox,
-    mcp_tool_catalog // 添加新工具
+    mcp_tool_catalog, // 添加新工具
+    firecrawl
     // Future tools can be added here
 ];
 
@@ -97,5 +122,6 @@ export const mcpToolsMap = {
     'tavily_search': tavily_search,
     'glm4v.analyze_image': image_url_analyzer,
     'python_sandbox': python_sandbox,
-    'mcp_tool_catalog': mcp_tool_catalog // 添加新工具映射
+    'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
+    'firecrawl': firecrawl
 };
