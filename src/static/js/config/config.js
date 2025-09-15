@@ -36,7 +36,22 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
             },
-                        {
+            {
+                name: 'glm-4.1v-thinking-flash',
+                displayName: 'GLM-4.1V-Thinking-Flash (工具调用)',
+                isZhipu: true, // 标记为智谱模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            },
+            {
+                name: 'GLM-4.5-Flash',
+                displayName: 'GLM-4.5-Flash (工具调用)',
+                isWebSocket: false,
+                isZhipu: true, // 标记为智谱模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            },
+            {
                 name: 'Qwen/Qwen3-Next-80B-A3B-Thinking',
                 displayName: 'Qwen3-Next-80B-A3B-Thinking (工具调用)',
                 isWebSocket: false,
@@ -567,23 +582,13 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
         MODELS: [
             {
                 name: 'glm-4.1v-thinking-flash',
-                displayName: 'GLM-4.1V-Thinking-Flash (工具调用)',
+                displayName: 'GLM-4.1V-Thinking-Flash',
                 isZhipu: true, // 标记为智谱模型
-                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: mcpTools
             },
             {
                 name: 'glm-4v-flash',
                 displayName: 'GLM-4V-Flash',
                 isZhipu: true // 标记为智谱模型
-            },
-            {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash (工具调用)',
-                isWebSocket: false,
-                isZhipu: true, // 标记为智谱模型
-                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: mcpTools
             }
         ],
         DEFAULT_MODEL: 'glm-4.1v-thinking-flash',

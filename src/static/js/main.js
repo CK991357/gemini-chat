@@ -990,8 +990,8 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
                 };
             }
 
-            // 动态添加工具定义，统一处理所有 Qwen 模型
-            if (selectedModelConfig && selectedModelConfig.isQwen && selectedModelConfig.tools) {
+            // 动态添加工具定义，统一处理所有 Qwen 和 Zhipu 模型
+            if (selectedModelConfig && (selectedModelConfig.isQwen || selectedModelConfig.isZhipu) && selectedModelConfig.tools) {
                 requestBody.tools = selectedModelConfig.tools;
             }
 
