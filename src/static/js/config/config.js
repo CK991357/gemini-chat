@@ -52,6 +52,14 @@ export const CONFIG = {
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
                 tools: mcpTools
             },
+            {
+                name: 'GLM-4.5-Flash',
+                displayName: 'GLM-4.5-Flash',
+                isWebSocket: false,
+                isZhipu: true, // 标记为智谱模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            }
         ]
     },
     // System prompt settings
@@ -573,12 +581,6 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
             {
                 name: 'glm-4v-flash',
                 displayName: 'GLM-4V-Flash',
-                isZhipu: true // 标记为智谱模型
-            },
-            {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash',
-                isWebSocket: false,
                 isZhipu: true // 标记为智谱模型
             }
         ],
