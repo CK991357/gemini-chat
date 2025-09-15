@@ -1,4 +1,3 @@
-import { displayToolCallStatus } from '../chat/chat-ui.js';
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
@@ -98,8 +97,12 @@ async function handleSendVisionMessage() {
         return;
     }
 
-    // Display user message in the UI and add to history
+    const selectedModel = elements.visionModelSelect.value;
+
+    // Display user message in the UI
     displayVisionUserMessage(text, visionAttachedFiles);
+
+    // Add user message to history
     const userContent = [];
     if (text) {
         userContent.push({ type: 'text', text });
@@ -113,27 +116,15 @@ async function handleSendVisionMessage() {
     elements.visionInputText.value = '';
     attachmentManager.clearAttachedFile('vision');
 
-    // Start the stream
-    await _continueVisionStream();
-}
-
-/**
- * @private
- * @description Continues the vision chat stream, typically after a user message or tool call.
- */
-async function _continueVisionStream() {
-    const selectedModel = elements.visionModelSelect.value;
-
     // Set loading state
     elements.visionSendButton.disabled = true;
-    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; // 使用 Font Awesome 加载图标
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
     Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
 
     try {
-        const modelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
         const requestBody = {
             model: selectedModel,
             messages: [
@@ -143,67 +134,36 @@ async function _continueVisionStream() {
             stream: true,
         };
 
-        if (modelConfig && modelConfig.tools) {
-            requestBody.tools = modelConfig.tools;
-        }
-
+        // 使用升级后的 ApiHandler 发送流式请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
         const decoder = new TextDecoder('utf-8');
         let finalContent = '';
         let reasoningStarted = false;
         let answerStarted = false;
-        let qwenToolCallAssembler = null;
 
-        markdownContainer.innerHTML = '';
+        markdownContainer.innerHTML = ''; // Clear loading message
 
-        let buffer = '';
         while (true) {
             const { done, value } = await reader.read();
-            if (done) {
-                Logger.info('Vision Stream finished.');
-                break;
-            }
+            if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            let boundary = buffer.indexOf('\n\n');
-
-            while (boundary !== -1) {
-                const message = buffer.substring(0, boundary);
-                buffer = buffer.substring(boundary + 2);
-
-                if (message.startsWith('data: ')) {
-                    const jsonStr = message.substring(6);
-                    if (jsonStr === '[DONE]') {
-                        boundary = buffer.indexOf('\n\n');
-                        continue;
-                    }
+            const chunk = decoder.decode(value, { stream: true });
+            chunk.split('\n\n').forEach(part => {
+                if (part.startsWith('data: ')) {
+                    const jsonStr = part.substring(6);
+                    if (jsonStr === '[DONE]') return;
                     try {
                         const data = JSON.parse(jsonStr);
                         const delta = data.choices?.[0]?.delta;
                         if (delta) {
-                            const qwenToolCallParts = delta.tool_calls;
-                            if (qwenToolCallParts && Array.isArray(qwenToolCallParts)) {
-                                qwenToolCallParts.forEach(toolCallChunk => {
-                                    const func = toolCallChunk.function;
-                                    if (func && func.name) {
-                                        if (!qwenToolCallAssembler) {
-                                            qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
-                                            Logger.info('Vision MCP tool call started:', qwenToolCallAssembler);
-                                            displayToolCallStatus(qwenToolCallAssembler.tool_name, qwenToolCallAssembler.arguments);
-                                        } else {
-                                            qwenToolCallAssembler.arguments += func.arguments || '';
-                                        }
-                                    } else if (qwenToolCallAssembler && func && func.arguments) {
-                                        qwenToolCallAssembler.arguments += func.arguments;
-                                    }
-                                });
-                            } else if (delta.reasoning_content) {
+                            if (delta.reasoning_content) {
                                 if (!reasoningStarted) {
                                     reasoningContainer.style.display = 'block';
                                     reasoningStarted = true;
                                 }
                                 reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
-                            } else if (delta.content) {
+                            }
+                            if (delta.content) {
                                 if (reasoningStarted && !answerStarted) {
                                     const separator = document.createElement('hr');
                                     separator.className = 'answer-separator';
@@ -218,21 +178,17 @@ async function _continueVisionStream() {
                         console.error('Error parsing SSE chunk:', e, jsonStr);
                     }
                 }
-                boundary = buffer.indexOf('\n\n');
-            }
+            });
             elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
         }
 
-        if (qwenToolCallAssembler) {
-            await handleMcpToolCall(qwenToolCallAssembler, requestBody);
-        } else {
-            if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                MathJax.startup.promise.then(() => {
-                    MathJax.typeset([markdownContainer, reasoningContainer]);
-                }).catch((err) => console.error('MathJax typesetting failed:', err));
-            }
-            visionChatHistory.push({ role: 'assistant', content: finalContent });
+        if (typeof MathJax !== 'undefined' && MathJax.startup) {
+            MathJax.startup.promise.then(() => {
+                MathJax.typeset([markdownContainer, reasoningContainer]);
+            }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
+
+        visionChatHistory.push({ role: 'assistant', content: finalContent });
 
     } catch (error) {
         console.error('Error sending vision message:', error);
@@ -240,7 +196,7 @@ async function _continueVisionStream() {
         Logger.info(`视觉模型请求失败: ${error.message}`, 'system');
     } finally {
         elements.visionSendButton.disabled = false;
-        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>';
+        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>'; // 恢复为 Font Awesome 发送图标
     }
 }
 
@@ -357,105 +313,4 @@ function createVisionAIMessageElement() {
         reasoningContainer,
         contentDiv,
     };
-}
-
-
-/**
- * @private
- * @description Handles the execution of a Qwen/Zhipu MCP tool call via the backend proxy.
- * @param {object} toolCode - The tool_code object from the model.
- * @param {object} originalRequestBody - The original request body.
- * @returns {Promise<void>}
- */
-async function handleMcpToolCall(toolCode, originalRequestBody) {
-    const timestamp = () => new Date().toISOString();
-    let callId = `call_${Date.now()}`;
-    Logger.info(`[${timestamp()}] [VISION_MCP] --- handleMcpToolCall START ---`);
-
-    try {
-        const modelName = originalRequestBody.model;
-        const modelConfig = CONFIG.VISION.MODELS.find(m => m.name === modelName);
-
-        if (!modelConfig || !modelConfig.mcp_server_url) {
-            throw new Error(`在 config.js 中未找到模型 '${modelName}' 的 mcp_server_url 配置。`);
-        }
-        const server_url = modelConfig.mcp_server_url;
-
-        let parsedArguments;
-        try {
-            parsedArguments = _robustJsonParse(toolCode.arguments);
-        } catch (e) {
-            throw new Error(`无法解析来自模型的工具参数: ${toolCode.arguments}`);
-        }
-
-        const proxyRequestBody = {
-            tool_name: toolCode.tool_name,
-            parameters: parsedArguments,
-            server_url: server_url
-        };
-
-        const proxyResponse = await fetch('/api/mcp-proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(proxyRequestBody)
-        });
-
-        if (!proxyResponse.ok) {
-            const errorData = await proxyResponse.json();
-            throw new Error(`MCP 代理请求失败: ${errorData.details || proxyResponse.statusText}`);
-        }
-
-        const toolResult = await proxyResponse.json();
-        
-        // Add tool call and result to history
-        visionChatHistory.push({
-            role: 'assistant',
-            content: null,
-            tool_calls: [{
-                id: callId,
-                type: 'function',
-                function: {
-                    name: toolCode.tool_name,
-                    arguments: JSON.stringify(parsedArguments)
-                }
-            }]
-        });
-
-        visionChatHistory.push({
-            role: 'tool',
-            content: JSON.stringify(toolResult),
-            tool_call_id: callId
-        });
-
-        // Resend to model to get final answer
-        await _continueVisionStream();
-
-    } catch (toolError) {
-        Logger.error('[VISION_MCP] 工具执行失败:', toolError);
-        // In case of error, we might want to display it in the UI
-        const aiMessage = createVisionAIMessageElement();
-        aiMessage.markdownContainer.innerHTML = `<p><strong>工具执行失败:</strong> ${toolError.message}</p>`;
-    }
-}
-
-/**
- * @private
- * @description Attempts to parse a JSON string that may have minor syntax errors.
- * @param {string} jsonString - The JSON string to parse.
- * @returns {object} The parsed JavaScript object.
- * @throws {Error} If the string cannot be parsed.
- */
-function _robustJsonParse(jsonString) {
-    try {
-        return JSON.parse(jsonString);
-    } catch (e) {
-        console.warn("[VISION_MCP] Standard JSON.parse failed, attempting robust parsing...", e);
-        let cleanedString = jsonString.replace(/,\s*([}\]])/g, '$1');
-        try {
-            return JSON.parse(cleanedString);
-        } catch (finalError) {
-            console.error("[VISION_MCP] Robust JSON parsing failed after cleanup.", finalError);
-            throw finalError;
-        }
-    }
 }
