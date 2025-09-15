@@ -126,6 +126,7 @@ async function handleSendVisionMessage() {
     Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
 
     try {
+        const modelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
         const requestBody = {
             model: selectedModel,
             messages: [
@@ -134,6 +135,10 @@ async function handleSendVisionMessage() {
             ],
             stream: true,
         };
+
+        if (modelConfig && modelConfig.tools) {
+            requestBody.tools = modelConfig.tools;
+        }
 
         // 使用升级后的 ApiHandler 发送流式请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
