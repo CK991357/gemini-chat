@@ -1,3 +1,4 @@
+import { displayToolCallStatus } from '../chat/chat-ui.js';
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
@@ -140,6 +141,7 @@ async function handleSendVisionMessage() {
         let finalContent = '';
         let reasoningStarted = false;
         let answerStarted = false;
+        let qwenToolCallAssembler = null; // Add tool call assembler
 
         markdownContainer.innerHTML = ''; // Clear loading message
 
@@ -156,14 +158,32 @@ async function handleSendVisionMessage() {
                         const data = JSON.parse(jsonStr);
                         const delta = data.choices?.[0]?.delta;
                         if (delta) {
-                            if (delta.reasoning_content) {
+                            const qwenToolCallParts = delta.tool_calls;
+                            if (qwenToolCallParts && Array.isArray(qwenToolCallParts)) {
+                                // --- Qwen/Zhipu Tool Call Assembly Logic ---
+                                qwenToolCallParts.forEach(toolCallChunk => {
+                                    const func = toolCallChunk.function;
+                                    if (func && func.name) { // First chunk
+                                        if (!qwenToolCallAssembler) {
+                                            qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
+                                            Logger.info('Vision MCP tool call started:', qwenToolCallAssembler);
+                                            // Use the imported UI function to show status
+                                            displayToolCallStatus(qwenToolCallAssembler.tool_name, qwenToolCallAssembler.arguments);
+                                        } else {
+                                            qwenToolCallAssembler.arguments += func.arguments || '';
+                                        }
+                                    } else if (qwenToolCallAssembler && func && func.arguments) { // Subsequent chunks
+                                        qwenToolCallAssembler.arguments += func.arguments;
+                                    }
+                                });
+                                // --- End Assembly Logic ---
+                            } else if (delta.reasoning_content) {
                                 if (!reasoningStarted) {
                                     reasoningContainer.style.display = 'block';
                                     reasoningStarted = true;
                                 }
                                 reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
-                            }
-                            if (delta.content) {
+                            } else if (delta.content) {
                                 if (reasoningStarted && !answerStarted) {
                                     const separator = document.createElement('hr');
                                     separator.className = 'answer-separator';

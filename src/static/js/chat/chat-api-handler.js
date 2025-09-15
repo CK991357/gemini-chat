@@ -110,7 +110,7 @@ export class ChatApiHandler {
                                         if (func && func.name) { // First chunk
                                             if (!qwenToolCallAssembler) {
                                                 qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
-                                                Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
+                                                Logger.info('MCP tool call started:', qwenToolCallAssembler);
                                                 chatUI.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
                                                 if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
                                             } else {
@@ -202,10 +202,20 @@ export class ChatApiHandler {
 
                 // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
                 console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call structure:`, currentFunctionCall);
-                if (currentFunctionCall.tool_name) {
-                    // Qwen MCP Tool Call
-                    console.log(`[${timestamp()}] [DISPATCH] Detected Qwen MCP tool call. Routing to _handleMcpToolCall...`);
-                    await this._handleMcpToolCall(currentFunctionCall, requestBody, apiKey);
+                const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
+                const isQwenModel = modelConfig && modelConfig.isQwen;
+                const isZhipuModel = modelConfig && modelConfig.isZhipu;
+
+                // Route to MCP handler for Qwen and Zhipu models
+                if (isQwenModel || isZhipuModel) {
+                    // The assembler already creates a {tool_name, arguments} object for tool_calls streams.
+                    // If for some reason a Gemini-style functionCall is received, we normalize it.
+                    const mcpToolCall = currentFunctionCall.tool_name
+                        ? currentFunctionCall
+                        : { tool_name: currentFunctionCall.name, arguments: JSON.stringify(currentFunctionCall.args || {}) };
+
+                    console.log(`[${timestamp()}] [DISPATCH] Detected Qwen/Zhipu MCP tool call. Routing to _handleMcpToolCall...`);
+                    await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey);
                 } else {
                     // Gemini Function Call
                     console.log(`[${timestamp()}] [DISPATCH] Detected Gemini function call. Routing to _handleGeminiToolCall...`);

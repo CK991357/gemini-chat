@@ -567,8 +567,10 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
         MODELS: [
             {
                 name: 'glm-4.1v-thinking-flash',
-                displayName: 'GLM-4.1V-Thinking-Flash',
+                displayName: 'GLM-4.1V-Thinking-Flash (工具调用)',
                 isZhipu: true, // 标记为智谱模型
+                mcp_server_url: "/api/mcp-proxy", // All Zhipu MCP calls go through our proxy
+                tools: mcpTools
             },
             {
                 name: 'glm-4v-flash',
