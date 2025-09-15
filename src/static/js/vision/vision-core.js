@@ -118,7 +118,7 @@ async function handleSendVisionMessage() {
 
     // Set loading state
     elements.visionSendButton.disabled = true;
-    elements.visionSendButton.textContent = 'progress_activity';
+    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; // 使用 Font Awesome 加载图标
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
@@ -196,7 +196,7 @@ async function handleSendVisionMessage() {
         Logger.info(`视觉模型请求失败: ${error.message}`, 'system');
     } finally {
         elements.visionSendButton.disabled = false;
-        elements.visionSendButton.textContent = 'send';
+        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>'; // 恢复为 Font Awesome 发送图标
     }
 }
 
@@ -230,6 +230,9 @@ function displayVisionUserMessage(text, files) {
             if (file.type.startsWith('image/')) {
                 attachmentElement = document.createElement('img');
                 attachmentElement.src = file.base64;
+                attachmentElement.style.maxWidth = '200px'; // 限制图片最大宽度
+                attachmentElement.style.maxHeight = '200px'; // 限制图片最大高度
+                attachmentElement.style.borderRadius = '8px'; // 添加圆角
             } else if (file.type.startsWith('video/')) {
                 attachmentElement = document.createElement('video');
                 attachmentElement.src = file.base64;
@@ -281,8 +284,8 @@ function createVisionAIMessageElement() {
     contentDiv.appendChild(markdownContainer);
 
     const copyButton = document.createElement('button');
-    copyButton.classList.add('copy-button', 'material-symbols-outlined');
-    copyButton.textContent = 'content_copy';
+    copyButton.classList.add('copy-button');
+    copyButton.innerHTML = '<i class="fa-solid fa-copy"></i>';
     copyButton.addEventListener('click', async () => {
         try {
             const reasoningText = reasoningContainer.style.display !== 'none'
@@ -290,8 +293,8 @@ function createVisionAIMessageElement() {
                 : '';
             const mainText = markdownContainer.innerText;
             await navigator.clipboard.writeText(reasoningText + mainText);
-            copyButton.textContent = 'check';
-            setTimeout(() => { copyButton.textContent = 'content_copy'; }, 2000);
+            copyButton.innerHTML = '<i class="fa-solid fa-check"></i>';
+            setTimeout(() => { copyButton.innerHTML = '<i class="fa-solid fa-copy"></i>'; }, 2000);
         } catch (err) {
             console.error('Failed to copy text: ', err);
         }
