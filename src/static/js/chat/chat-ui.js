@@ -297,9 +297,8 @@ export function displayToolCallStatus(toolName, args) {
     const statusDiv = document.createElement('div');
     statusDiv.className = 'tool-call-status';
 
-    const icon = document.createElement('span');
-    icon.className = 'material-symbols-outlined';
-    icon.textContent = 'settings'; // 使用一个合适的图标
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-cog fa-spin'; // 使用 Font Awesome 齿轮图标并添加旋转效果
 
     const text = document.createElement('span');
     // 为了UI简洁，只显示工具名
