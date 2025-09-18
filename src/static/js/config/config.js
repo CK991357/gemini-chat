@@ -405,6 +405,9 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
 
+**重要提示：**
+当你调用 \`python_sandbox\` 并生成图片（Base64 输出）时，请在最终回复中**不要重复完整的图片 URL**。前端已经会处理图片的显示，你只需提供简要的图片生成成功信息即可。
+
 **请严格遵循以下代码生成规范：**
 
 1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
@@ -574,6 +577,10 @@ print(image_base64)
             {
                 name: 'gemini-2.0-flash',
                 displayName: 'gemini-2.0-flash'
+            },
+            {
+                name: 'tencent/Hunyuan-MT-7B',
+                displayName: 'Hunyuan-MT-7B'
             },
             {
                 name: 'gemini-2.5-flash-lite-preview-06-17',
