@@ -55,7 +55,7 @@ const python_sandbox = {
     "type": "function",
     "function": {
         "name": "python_sandbox",
-        "description": "Executes a snippet of Python code in a sandboxed environment and returns the output. This tool is secure and has no access to the internet or the host filesystem.",
+        "description": "Executes a snippet of Python code in a sandboxed environment for data analysis and visualization. Can return Base64 encoded images (PNG format). This tool is secure and has no access to the internet or the host filesystem.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -65,6 +65,23 @@ const python_sandbox = {
                 }
             },
             "required": ["code"]
+        },
+        "output_schema": {
+            "type": "object",
+            "properties": {
+                "stdout": {
+                    "type": "string",
+                    "description": "Standard output from the executed code. If an image is generated, this will contain its Base64 encoded string (typically starts with 'iVBORw0KGgo' for PNG)."
+                },
+                "stderr": {
+                    "type": "string",
+                    "description": "Standard error output from the executed code."
+                },
+                "exit_code": {
+                    "type": "number",
+                    "description": "Exit code of the executed code (0 for success, non-zero for failure)."
+                }
+            }
         }
     }
 };

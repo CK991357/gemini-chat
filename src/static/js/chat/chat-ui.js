@@ -310,3 +310,61 @@ export function displayToolCallStatus(toolName, args) {
     elements.messageHistory.appendChild(statusDiv);
     scrollToBottom();
 }
+/**
+ * Displays a Base64 encoded image in the chat history with a download option.
+ * @param {string} base64Image - The Base64 encoded image string (e.g., PNG format).
+ * @param {string} [altText='Generated Image'] - Alternative text for the image.
+ * @param {string} [fileName='generated_image.png'] - The default filename for download.
+ */
+export function displayImageResult(base64Image, altText = 'Generated Image', fileName = 'generated_image.png') {
+    if (!elements.messageHistory) return;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai'); // Assume AI is generating images
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '🤖'; // AI avatar
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content', 'image-result-content');
+
+    const imageElement = document.createElement('img');
+    imageElement.src = `data:image/png;base64,${base64Image}`;
+    imageElement.alt = altText;
+    imageElement.style.maxWidth = '100%';
+    imageElement.style.height = 'auto';
+    imageElement.style.borderRadius = '8px';
+    imageElement.style.marginTop = '10px';
+    contentDiv.appendChild(imageElement);
+
+    const downloadButton = document.createElement('button');
+    downloadButton.classList.add('download-image-button');
+    downloadButton.innerHTML = '<i class="fa-solid fa-download"></i> 下载图片';
+    downloadButton.style.marginTop = '10px';
+    downloadButton.style.padding = '8px 12px';
+    downloadButton.style.backgroundColor = '#4CAF50';
+    downloadButton.style.color = 'white';
+    downloadButton.style.border = 'none';
+    downloadButton.style.borderRadius = '5px';
+    downloadButton.style.cursor = 'pointer';
+    downloadButton.style.fontSize = '14px';
+    downloadButton.style.display = 'block';
+
+    downloadButton.addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.href = `data:image/png;base64,${base64Image}`;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    contentDiv.appendChild(downloadButton);
+
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    elements.messageHistory.appendChild(messageDiv);
+
+    scrollToBottom();
+}

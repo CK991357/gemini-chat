@@ -386,6 +386,8 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 ### 工具调用示例（Code Interpreter / python_sandbox）
 
+**➡️ 场景1: 常规代码执行**
+
 当调用 \`python_sandbox\` 工具时，你生成的 \`tool_calls\` 中 \`function.arguments\` 字段**必须**是一个**JSON 字符串**。该字符串在被解析后，必须是一个只包含 "code" 键的 JSON 对象。
 
 **✅ 正确的 \`arguments\` 字符串内容示例:**
@@ -398,6 +400,54 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **在JSON字符串中嵌入Markdown分隔符:** \`"\\\`\\\`\\\`json\\n{\\"code\\": \\"print(1)\\"}\\n\\\`\\\`\\\`"\\\` (错误：这会破坏 JSON 字符串的结构)
 -   **参数名错误:** \`{"script": "print('hello')"}\` (错误：参数名必须是 "code")。
 -   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。
+
+**➡️ 场景2: 数据可视化与绘图**
+
+当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
+
+**请严格遵循以下代码生成规范：**
+
+1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
+2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
+3.  **无文件保存**: **绝不**将图表保存为物理文件。
+4.  **Base64 输出**:
+    *   绘图完成后，**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
+    *   最后，**必须**将字节流中的图片数据进行 Base64 编码，并将编码后的字符串作为**唯一的输出**打印到标准输出 (\`stdout\`)。
+    *   **不要**打印其他任何额外文本（例如 "Here is your chart:"）。
+
+**以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
+
+\`\`\`python
+import matplotlib
+matplotlib.use('Agg') # 确保在无头服务器环境正常运行
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import io
+import base64
+
+# --- 在此区域编写你的数据处理和绘图代码 ---
+# 示例：假设用户提供了以下数据
+# data = {'产品': ['A', 'B', 'C'], '销量': [150, 200, 100]}
+# df = pd.DataFrame(data)
+# plt.figure(figsize=(8, 6)) # 设置图表大小
+# sns.barplot(x='产品', y='销量', data=df)
+# plt.title('产品销量柱状图')
+# plt.xlabel('产品类型')
+# plt.ylabel('销量')
+# --- 绘图代码结束 ---
+
+# --- 以下是用于将图片转为 Base64 并输出的固定模板代码，请直接包含，不要修改 ---
+buf = io.BytesIO()
+plt.savefig(buf, format='png', bbox_inches='tight')
+buf.seek(0)
+image_base64 = base64.b64encode(buf.read()).decode('utf-8')
+buf.close()
+plt.close('all') # 关闭所有图表以释放内存，重要！
+print(image_base64)
+\`\`\`
+
+现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
 
 ### 工具调用示例（Firecrawl）
 

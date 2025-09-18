@@ -1,6 +1,7 @@
 console.log("--- ChatApiHandler v3 Loaded ---");
 import { Logger } from '../utils/logger.js';
 import * as chatUI from './chat-ui.js';
+import { displayImageResult } from './chat-ui.js';
 
 /**
  * @class ChatApiHandler
@@ -363,11 +364,39 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
-            const toolResult = await proxyResponse.json();
-            console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolResult);
+            const toolRawResult = await proxyResponse.json();
+            console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolRawResult);
             
+            let toolResultContent = toolRawResult; // Default to raw result
+            
+            // Special handling for python_sandbox output to detect and display images
+            if (toolCode.tool_name === 'python_sandbox') {
+                if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
+                    const potentialBase64Image = toolRawResult.stdout.trim();
+                    // Check for common PNG Base64 prefix (iVBORw0KGgo)
+                    if (potentialBase64Image.startsWith('iVBORw0KGgo')) {
+                        console.log(`[${timestamp()}] [MCP] Python sandbox returned a Base64 image. Displaying...`);
+                        displayImageResult(potentialBase64Image, 'Generated Chart', `chart_${Date.now()}.png`);
+                        toolResultContent = { output: 'Image generated and displayed.' }; // Replace stdout with a descriptive message for history
+                    } else if (potentialBase64Image) {
+                        // If it's not an image but there's stdout, treat it as text output
+                        console.log(`[${timestamp()}] [MCP] Python sandbox returned text output.`);
+                        toolResultContent = { output: potentialBase64Image };
+                    }
+                }
+                if (toolRawResult && toolRawResult.stderr) {
+                    // Always log stderr to the system logs and include in the tool output for debugging
+                    chatUI.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
+                    if (toolResultContent.output) {
+                         toolResultContent.output += `\nError: ${toolRawResult.stderr}`;
+                    } else {
+                        toolResultContent.output = `Error: ${toolRawResult.stderr}`;
+                    }
+                }
+            }
+
             // --- Special handling for mcp_tool_catalog tool ---
-            if (toolCode.tool_name === 'mcp_tool_catalog' && toolResult && toolResult.data && Array.isArray(toolResult.data)) {
+            if (toolCode.tool_name === 'mcp_tool_catalog' && toolRawResult && toolRawResult.data && Array.isArray(toolRawResult.data)) {
                 console.log(`[${timestamp()}] [MCP] Discovered new tools via mcp_tool_catalog. Merging...`);
                 
                 // 获取当前Qwen模型的完整工具列表
@@ -407,7 +436,7 @@ export class ChatApiHandler {
             console.log(`[${timestamp()}] [MCP] Pushing 'tool' result message to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify(toolResult),
+                content: JSON.stringify(toolResultContent), // Use the possibly modified content
                 tool_call_id: callId // 确保匹配 assistant message 中的 ID
             });
 
@@ -444,7 +473,7 @@ export class ChatApiHandler {
             console.log(`[${timestamp()}] [MCP] Pushing 'tool' error result to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify({ error: toolError.message }),
+                content: JSON.stringify({ error: toolError.message }), // Use the possibly modified content
                 tool_call_id: callId // 确保匹配 assistant message 中的 ID
             });
             
