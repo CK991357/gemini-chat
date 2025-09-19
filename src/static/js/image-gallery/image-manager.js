@@ -171,19 +171,15 @@ async function downloadImage(url, filename) {
 
 async function deleteCloudinaryImage(publicId) {
     try {
-        const password = prompt('请输入密码以确认删除：'); // 这里需要用户输入密码
-        if (!password) {
-            alert('删除操作已取消。');
-            return;
-        }
-
-        const response = await fetch('/api/delete-image', {
+        // 由于 Worker 间通信通常不需要密码，这里移除前端密码提示
+        // 假设 kapture-worker 会处理其自身的身份验证逻辑，或者不需要密码
+        const response = await fetch('/api/cloudinary/delete-image', { // 修改路径为 /api/cloudinary/delete-image
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${password}` // 认证密码
+                // 'Authorization': `Bearer ${password}` // 移除认证密码
             },
-            body: JSON.stringify({ public_id: publicId }) // DELETE 请求体通常不包含 body，这里通过 query param 传递
+            body: JSON.stringify({ public_id: publicId })
         });
 
         const result = await response.json();
@@ -199,15 +195,15 @@ async function deleteCloudinaryImage(publicId) {
         console.error('删除图片失败:', error);
         alert('删除图片失败。');
     }
-} // 调用 Cloudflare Worker API
+}
 
-export async function uploadBase64ToCloudinary(base64Image, fileName, password, folder = 'ai_generated_images') {
+export async function uploadBase64ToCloudinary(base64Image, fileName, folder = 'ai_generated_images') { // 移除 password 参数
     try {
         const response = await fetch('/api/cloudinary/upload-base64', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${password}` // 认证密码
+                // 'Authorization': `Bearer ${password}` // 移除认证密码
             },
             body: JSON.stringify({ base64Image, fileName, folder })
         });

@@ -120,6 +120,20 @@ export default {
     if (url.pathname === '/api/mcp-proxy') {
       return handleMcpProxyRequest(request, env);
     }
+    
+    // 新增：处理 Cloudinary 代理请求 (通过 Service Binding)
+    if (url.pathname.startsWith('/api/cloudinary/')) {
+        // 克隆请求，以便修改头部
+        const newRequest = new Request(request);
+        // 从当前 Worker 的环境变量中获取 AUTH_PASSWORD，并添加到 Authorization 头
+        // 假设 AUTH_PASSWORD 存储在 gemini-chat Worker 的环境变量中
+        // 移除密码设置，因为 Worker 间通信通常不需要密码
+        // 假设 kapture-worker 会处理其自身的身份验证逻辑，或者不需要密码
+        // 如果 kapture-worker 确实需要密码，您应该在 kapture-worker 内部处理
+        // 或者通过 Service Binding 传递一个预配置的 Secret
+        // 使用 CLOUDINARY_WORKER Service Binding 转发请求
+        return env.CLOUDINARY_WORKER.fetch(newRequest);
+    }
  
     // 处理静态资源
     if (url.pathname === '/' || url.pathname === '/index.html') {
