@@ -1,7 +1,7 @@
 console.log("--- ChatApiHandler v3 Loaded ---");
-import { displayCloudinaryImage, uploadBase64ToCloudinary } from '../image-gallery/image-manager.js';
 import { Logger } from '../utils/logger.js';
 import * as chatUI from './chat-ui.js';
+import { displayImageResult } from './chat-ui.js';
 
 /**
  * @class ChatApiHandler
@@ -376,29 +376,8 @@ export class ChatApiHandler {
                     // Check for common PNG Base64 prefix (iVBORw0KGgo)
                     if (potentialBase64Image.startsWith('iVBORw0KGgo')) {
                         console.log(`[${timestamp()}] [MCP] Python sandbox returned a Base64 image. Displaying...`);
-                        
-                        // 首先，立即显示 Base64 图片，并获取其 DOM 元素引用
-                        const fileName = `chart_${Date.now()}.png`;
-                        const { imageElement } = chatUI.displayImageResult(potentialBase64Image, 'Generated Chart', fileName);
-                        
-                        // 然后，异步上传到 Cloudinary
-                        // 移除密码提示，因为 Cloudflare Worker Service Binding 处理了认证
-                        try {
-                            const fullBase64DataUri = `data:image/png;base64,${potentialBase64Image}`;
-                            const cloudinaryInfo = await uploadBase64ToCloudinary(fullBase64DataUri, fileName); // 移除 password 参数
-                            if (cloudinaryInfo && cloudinaryInfo.secure_url) {
-                                console.log(`[${timestamp()}] [MCP] Image uploaded to Cloudinary: ${cloudinaryInfo.secure_url}`);
-                                // 更新聊天界面中的图片为 Cloudinary URL，并绑定浮窗事件
-                                displayCloudinaryImage(imageElement, cloudinaryInfo.secure_url, cloudinaryInfo.public_id, 'Generated Chart');
-                                toolResultContent = { output: `Image generated and uploaded to Cloudinary: ${cloudinaryInfo.secure_url}` };
-                            } else {
-                                toolResultContent = { output: 'Image generated, but Cloudinary upload failed (no URL returned).' };
-                            }
-                        } catch (uploadError) {
-                            console.error(`[${timestamp()}] [MCP] Cloudinary upload failed:`, uploadError);
-                            toolResultContent = { output: `Image generated, but Cloudinary upload failed: ${uploadError.message}` };
-                            chatUI.logMessage(`Cloudinary 图片上传失败: ${uploadError.message}`, 'system');
-                        }
+                        displayImageResult(potentialBase64Image, 'Generated Chart', `chart_${Date.now()}.png`);
+                        toolResultContent = { output: 'Image generated and displayed.' }; // Replace stdout with a descriptive message for history
                     } else if (potentialBase64Image) {
                         // If it's not an image but there's stdout, treat it as text output
                         console.log(`[${timestamp()}] [MCP] Python sandbox returned text output.`);
