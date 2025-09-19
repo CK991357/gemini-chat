@@ -2118,8 +2118,14 @@ body.dark-mode .highlight-box {
 /* 响应式调整 */
 @media (max-width: 600px) {
     .modal-content {
-        width: 95%;
+        width: 95vw; /* 使用视口宽度确保响应性 */
         padding: 15px;
+        max-height: 90vh; /* 增加最大高度限制 */
+        overflow-y: auto; /* 内容溢出时允许滚动 */
+    }
+
+    .modal-image-container {
+        max-height: 50vh; /* 限制图片容器在小屏幕上的高度 */
     }
     .modal-title {
         font-size: 1.5rem;
