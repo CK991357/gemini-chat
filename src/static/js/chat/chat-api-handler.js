@@ -372,16 +372,35 @@ export class ChatApiHandler {
             // Special handling for python_sandbox output to detect and display images
             if (toolCode.tool_name === 'python_sandbox') {
                 if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
-                    const potentialBase64Image = toolRawResult.stdout.trim();
-                    // Check for common PNG Base64 prefix (iVBORw0KGgo)
-                    if (potentialBase64Image.startsWith('iVBORw0KGgo')) {
-                        console.log(`[${timestamp()}] [MCP] Python sandbox returned a Base64 image. Displaying...`);
-                        displayImageResult(potentialBase64Image, 'Generated Chart', `chart_${Date.now()}.png`);
-                        toolResultContent = { output: 'Image generated and displayed.' }; // Replace stdout with a descriptive message for history
-                    } else if (potentialBase64Image) {
-                        // If it's not an image but there's stdout, treat it as text output
-                        console.log(`[${timestamp()}] [MCP] Python sandbox returned text output.`);
-                        toolResultContent = { output: potentialBase64Image };
+                    const stdoutContent = toolRawResult.stdout.trim();
+                    let isImageHandled = false;
+
+                    // Try to parse stdout as JSON for the new image format
+                    try {
+                        const imageData = JSON.parse(stdoutContent);
+                        if (imageData && imageData.type === 'image' && imageData.image_base64) {
+                            const title = imageData.title || 'Generated Chart';
+                            console.log(`[${timestamp()}] [MCP] Python sandbox returned a structured image object. Displaying with title: "${title}"`);
+                            displayImageResult(imageData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
+                            toolResultContent = { output: `Image "${title}" generated and displayed.` };
+                            isImageHandled = true;
+                        }
+                    } catch (e) {
+                        // Not a JSON object, fall back to legacy raw base64 check
+                        console.log(`[${timestamp()}] [MCP] stdout is not a JSON object, falling back to raw image check.`);
+                    }
+
+                    if (!isImageHandled) {
+                        // Legacy check for raw base64 string
+                        if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
+                            console.log(`[${timestamp()}] [MCP] Python sandbox returned a raw Base64 image. Displaying with default title...`);
+                            displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
+                            toolResultContent = { output: 'Image generated and displayed.' };
+                        } else if (stdoutContent) {
+                            // If it's not an image but there's stdout, treat it as text output
+                            console.log(`[${timestamp()}] [MCP] Python sandbox returned text output.`);
+                            toolResultContent = { output: stdoutContent };
+                        }
                     }
                 }
                 if (toolRawResult && toolRawResult.stderr) {
