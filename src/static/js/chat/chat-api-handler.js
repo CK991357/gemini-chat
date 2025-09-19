@@ -384,7 +384,8 @@ export class ChatApiHandler {
                         // 然后，异步上传到 Cloudinary
                         // 移除密码提示，因为 Cloudflare Worker Service Binding 处理了认证
                         try {
-                            const cloudinaryInfo = await uploadBase64ToCloudinary(potentialBase64Image, fileName); // 移除 password 参数
+                            const fullBase64DataUri = `data:image/png;base64,${potentialBase64Image}`;
+                            const cloudinaryInfo = await uploadBase64ToCloudinary(fullBase64DataUri, fileName); // 移除 password 参数
                             if (cloudinaryInfo && cloudinaryInfo.secure_url) {
                                 console.log(`[${timestamp()}] [MCP] Image uploaded to Cloudinary: ${cloudinaryInfo.secure_url}`);
                                 // 更新聊天界面中的图片为 Cloudinary URL，并绑定浮窗事件
