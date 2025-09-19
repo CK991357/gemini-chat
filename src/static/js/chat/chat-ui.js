@@ -367,4 +367,6 @@ export function displayImageResult(base64Image, altText = 'Generated Image', fil
     elements.messageHistory.appendChild(messageDiv);
 
     scrollToBottom();
+
+    return { imageElement, contentDiv }; // 返回图片元素和其父容器
 }

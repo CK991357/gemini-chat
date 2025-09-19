@@ -7,6 +7,7 @@ import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
+import { initImageManager } from './image-gallery/image-manager.js';
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
@@ -522,6 +523,8 @@ document.addEventListener('DOMContentLoaded', () => {
        },
        config: CONFIG // 注入完整的配置对象
    });
+   // 初始化图片管理器
+   initImageManager();
   });
 
 // State variables
