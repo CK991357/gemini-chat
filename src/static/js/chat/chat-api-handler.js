@@ -382,27 +382,21 @@ export class ChatApiHandler {
                         const { imageElement } = chatUI.displayImageResult(potentialBase64Image, 'Generated Chart', fileName);
                         
                         // 然后，异步上传到 Cloudinary
-                        // !!! 警告: 这里暂时通过 prompt 获取密码，后续需要更安全的机制 !!!
-                        const password = prompt('Qwen 模型请求上传图片到 Cloudinary。请输入您的 Worker 认证密码：');
-                        if (password) {
-                            try {
-                                const cloudinaryInfo = await uploadBase64ToCloudinary(potentialBase64Image, fileName, password);
-                                if (cloudinaryInfo && cloudinaryInfo.secure_url) {
-                                    console.log(`[${timestamp()}] [MCP] Image uploaded to Cloudinary: ${cloudinaryInfo.secure_url}`);
-                                    // 更新聊天界面中的图片为 Cloudinary URL，并绑定浮窗事件
-                                    displayCloudinaryImage(imageElement, cloudinaryInfo.secure_url, cloudinaryInfo.public_id, 'Generated Chart');
-                                    toolResultContent = { output: `Image generated and uploaded to Cloudinary: ${cloudinaryInfo.secure_url}` };
-                                } else {
-                                    toolResultContent = { output: 'Image generated, but Cloudinary upload failed (no URL returned).' };
-                                }
-                            } catch (uploadError) {
-                                console.error(`[${timestamp()}] [MCP] Cloudinary upload failed:`, uploadError);
-                                toolResultContent = { output: `Image generated, but Cloudinary upload failed: ${uploadError.message}` };
-                                chatUI.logMessage(`Cloudinary 图片上传失败: ${uploadError.message}`, 'system');
+                        // 移除密码提示，因为 Cloudflare Worker Service Binding 处理了认证
+                        try {
+                            const cloudinaryInfo = await uploadBase64ToCloudinary(potentialBase64Image, fileName); // 移除 password 参数
+                            if (cloudinaryInfo && cloudinaryInfo.secure_url) {
+                                console.log(`[${timestamp()}] [MCP] Image uploaded to Cloudinary: ${cloudinaryInfo.secure_url}`);
+                                // 更新聊天界面中的图片为 Cloudinary URL，并绑定浮窗事件
+                                displayCloudinaryImage(imageElement, cloudinaryInfo.secure_url, cloudinaryInfo.public_id, 'Generated Chart');
+                                toolResultContent = { output: `Image generated and uploaded to Cloudinary: ${cloudinaryInfo.secure_url}` };
+                            } else {
+                                toolResultContent = { output: 'Image generated, but Cloudinary upload failed (no URL returned).' };
                             }
-                        } else {
-                            toolResultContent = { output: 'Image generated, but Cloudinary upload cancelled (no password provided).' };
-                            chatUI.logMessage('Cloudinary 图片上传已取消 (未提供密码)。', 'system');
+                        } catch (uploadError) {
+                            console.error(`[${timestamp()}] [MCP] Cloudinary upload failed:`, uploadError);
+                            toolResultContent = { output: `Image generated, but Cloudinary upload failed: ${uploadError.message}` };
+                            chatUI.logMessage(`Cloudinary 图片上传失败: ${uploadError.message}`, 'system');
                         }
                     } else if (potentialBase64Image) {
                         // If it's not an image but there's stdout, treat it as text output
