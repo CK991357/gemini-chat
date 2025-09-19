@@ -232,6 +232,6 @@ let _currentPublicId = null;
 let _currentImageUrl = null;
 
 // 在文件末尾添加事件监听器等，确保 DOM 加载完成后执行
-// document.addEventListener('DOMContentLoaded', () => {
-//     initImageManager(); // 在 DOM 加载完成后初始化
-// });
+document.addEventListener('DOMContentLoaded', () => {
+    initImageManager(); // 在 DOM 加载完成后初始化
+});
