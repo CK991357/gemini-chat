@@ -116,10 +116,6 @@ enabled = true
 # binding = "MY_INDEX"
 # index_name = "my-index"
 
-[[services]]
-binding = "CLOUDINARY_WORKER" # 在 Worker 代码中通过 env.CLOUDINARY_WORKER 访问
-service = "kapture-worker"    # 您的 Cloudinary Worker 的名称
-
 [[kv_namespaces]]
 binding = "GEMINICHAT_HISTORY_KV"
 id = "f64330e7c00f48e6893f0bf8625106c1"

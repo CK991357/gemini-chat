@@ -1,9 +1,17 @@
+import { v2 as cloudinary } from 'cloudinary'; // 导入 Cloudinary SDK
 import { handleMcpProxyRequest } from './mcp_proxy/mcp-handler.js';
 
 const assetManifest = {};
 
 export default {
   async fetch(request, env, ctx) {
+    // 配置 Cloudinary SDK
+    cloudinary.config({
+      cloud_name: env.CLOUDINARY_CLOUD_NAME,
+      api_key: env.CLOUDINARY_API_KEY,
+      api_secret: env.CLOUDINARY_API_SECRET
+    });
+
     const url = new URL(request.url);
 
     // 处理 WebSocket 连接
@@ -121,18 +129,15 @@ export default {
       return handleMcpProxyRequest(request, env);
     }
     
-    // 新增：处理 Cloudinary 代理请求 (通过 Service Binding)
+    // 新增：处理 Cloudinary 代理请求 (现在由当前 Worker 直接处理)
     if (url.pathname.startsWith('/api/cloudinary/')) {
-        // 克隆请求，以便修改头部
-        const newRequest = new Request(request);
-        // 从当前 Worker 的环境变量中获取 AUTH_PASSWORD，并添加到 Authorization 头
-        // 假设 AUTH_PASSWORD 存储在 gemini-chat Worker 的环境变量中
-        // 移除密码设置，因为 Worker 间通信通常不需要密码
-        // 假设 kapture-worker 会处理其自身的身份验证逻辑，或者不需要密码
-        // 如果 kapture-worker 确实需要密码，您应该在 kapture-worker 内部处理
-        // 或者通过 Service Binding 传递一个预配置的 Secret
-        // 使用 CLOUDINARY_WORKER Service Binding 转发请求
-        return env.CLOUDINARY_WORKER.fetch(newRequest);
+        if (url.pathname === '/api/cloudinary/upload-base64' && request.method === 'POST') {
+            return handleUploadBase64(request, env);
+        }
+        if (url.pathname === '/api/cloudinary/delete-image' && request.method === 'DELETE') {
+            return handleDeleteImage(request, env);
+        }
+        return new Response('Cloudinary API route not found or method not allowed', { status: 404 });
     }
  
     // 处理静态资源
@@ -168,6 +173,80 @@ export default {
         return new Response('Not found', { status: 404 });
     },
 };
+
+/**
+ * 从 Cloudinary 删除图片
+ * @param {Request} request - 传入的 Request 对象
+ * @returns {Response} - 返回 Cloudinary 删除结果的 Response 对象或错误信息
+ */
+async function handleDeleteImage(request, env) {
+  try {
+    const url = new URL(request.url);
+    let public_id = url.searchParams.get('public_id');
+    if (!public_id && request.body) {
+      const body = await request.json();
+      public_id = body.public_id;
+    }
+
+    if (!public_id) {
+      return new Response(JSON.stringify({ error: 'Public ID is required.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const result = await cloudinary.uploader.destroy(public_id);
+
+    console.log('图片删除成功:', result);
+    return new Response(JSON.stringify(result), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 200
+    });
+
+  } catch (error) {
+    console.error('删除图片失败:', error);
+    return new Response(JSON.stringify({ error: 'Failed to delete image.', details: error.message }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 500
+    });
+  }
+}
+
+/**
+ * 处理 Base64 图片上传到 Cloudinary 的请求
+ * @param {Request} request - 传入的 Request 对象
+ * @param {object} env - Worker 的环境变量对象
+ * @returns {Response} - 返回 Cloudinary 上传结果的 Response 对象或错误信息
+ */
+async function handleUploadBase64(request, env) {
+  try {
+    const { base64Image, fileName, folder } = await request.json();
+
+    if (!base64Image || !fileName) {
+      return new Response(JSON.stringify({ error: 'base64Image and fileName are required.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const uploadOptions = {
+      folder: folder || 'ai_generated_images', // 默认文件夹
+      public_id: fileName.split('.')[0] // 使用文件名作为 public_id
+    };
+
+    const result = await cloudinary.uploader.upload(base64Image, uploadOptions);
+
+    console.log('Base64 图片上传成功:', result);
+    return new Response(JSON.stringify({
+      public_id: result.public_id,
+      secure_url: result.secure_url
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 200
+    });
+
+  } catch (error) {
+    console.error('Base64 图片上传失败:', error);
+    return new Response(JSON.stringify({ error: 'Base64 image upload failed.', details: error.message }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 500
+    });
+  }
+}
 
 function getContentType(path) {
   const ext = path.split('.').pop().toLowerCase();
