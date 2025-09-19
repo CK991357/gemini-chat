@@ -406,9 +406,11 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
 
 **重要提示：**
-当你调用 \`python_sandbox\` 并生成图片（Base64 输出）时，请在最终回复中**不要重复完整的base64字符串和图片URL**。前端会自动处理base64字符串的图片显示。你只需确认图片返回成功信息即可确认本轮任务完成，并进行任务总结。
+当你调用 \`python_sandbox\` 并生成图片（Base64 输出）时，请在最终回复中**不要重复完整的base64字符串，图片信息和图片URL**。前端会自动处理base64字符串的图片显示。你只需确认图片返回成功信息即可确认本轮任务完成，并进行任务总结。
 
-！！！important！！！在最终回复中不要重复完整的base64字符串及图片URL！错误示例：[Daily Values Trend](data:image/png;base64,XXXXXX......）！否则Token过长会导致返回失败！
+！！！important！！！在任务总结和最终回复中不要重复完整的base64字符串，图片信息及图片URL！错误示例：[Daily Values Trend](data:image/png;base64,XXXXXX......）！绝对不要包含[Daily Values Trend](data:image/png;base64,XXXXXX......）这样的输出格式！！否则Token过长会导致返回失败！
+
+
 
 **请严格遵循以下代码生成规范：**
 
