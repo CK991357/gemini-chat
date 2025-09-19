@@ -240,6 +240,31 @@
         </div>
 
     </div>
+
+    <!-- Image Modal Structure -->
+    <div id="image-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" id="close-image-modal">&times;</span>
+            <h2 class="modal-title" id="modal-image-title">图片详情</h2>
+            <div class="modal-image-container">
+                <img id="modal-image-display" src="" alt="图片详情">
+            </div>
+            <div class="modal-info">
+                <p><i class="fa-solid fa-info-circle"></i> **标题:** <span id="modal-image-info-title">N/A</span></p>
+                <p><i class="fa-solid fa-maximize"></i> **尺寸:** <span id="modal-image-info-dimensions">N/A</span></p>
+                <p><i class="fa-solid fa-weight-hanging"></i> **大小:** <span id="modal-image-info-size">N/A</span></p>
+                <p><i class="fa-solid fa-file-image"></i> **类型:** <span id="modal-image-info-type">N/A</span></p>
+                <p><i class="fa-solid fa-link"></i> **原始链接:** <a id="modal-image-info-url" href="#" target="_blank" rel="noopener noreferrer">N/A</a></p>
+            </div>
+            <div class="modal-actions">
+                <button class="action-button copy-button" id="copy-image-url-button" title="Copy Image URL"><i class="fa-solid fa-copy"></i> 复制链接</button>
+                <a id="download-image-button" class="action-button primary-button" download title="Download Image">
+                    <i class="fa-solid fa-download"></i> 下载图片
+                </a>
+            </div>
+        </div>
+    </div>
+
     <script src="js/main.js" type="module"></script>
 </body>
 </html>

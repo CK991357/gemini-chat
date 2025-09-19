@@ -9,6 +9,9 @@ let elements = {};
 let handlers = {};
 let libraries = {};
 
+// 导入 ImageManager 中的 openImageModal
+import { openImageModal } from '../image-gallery/image-manager.js';
+
 /**
  * Initializes the Chat UI module with necessary dependencies.
  * @param {object} el - A collection of essential DOM elements.
@@ -332,35 +335,41 @@ export function displayImageResult(base64Image, altText = 'Generated Image', fil
     const imageElement = document.createElement('img');
     imageElement.src = `data:image/png;base64,${base64Image}`;
     imageElement.alt = altText;
-    imageElement.style.maxWidth = '100%';
-    imageElement.style.height = 'auto';
-    imageElement.style.borderRadius = '8px';
-    imageElement.style.marginTop = '10px';
+    imageElement.classList.add('chat-image-result'); // 添加一个类以便 CSS 样式控制
     contentDiv.appendChild(imageElement);
 
-    const downloadButton = document.createElement('button');
-    downloadButton.classList.add('download-image-button');
-    downloadButton.innerHTML = '<i class="fa-solid fa-download"></i> 下载图片';
-    downloadButton.style.marginTop = '10px';
-    downloadButton.style.padding = '8px 12px';
-    downloadButton.style.backgroundColor = '#4CAF50';
-    downloadButton.style.color = 'white';
-    downloadButton.style.border = 'none';
-    downloadButton.style.borderRadius = '5px';
-    downloadButton.style.cursor = 'pointer';
-    downloadButton.style.fontSize = '14px';
-    downloadButton.style.display = 'block';
+    // 获取图片尺寸和类型
+    let dimensions = 'N/A';
+    let imageType = 'image/png'; // 默认为 PNG
 
-    downloadButton.addEventListener('click', () => {
-        const link = document.createElement('a');
-        link.href = `data:image/png;base64,${base64Image}`;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    });
+    // 尝试从 base64 字符串中提取实际的 MIME 类型
+    const mimeMatch = base64Image.match(/^data:(image\/[a-zA-Z0-9-.+]+);base64,/);
+    if (mimeMatch && mimeMatch[1]) {
+        imageType = mimeMatch[1];
+    } else if (base64Image.startsWith('/9j/')) {
+        imageType = 'image/jpeg';
+    } else if (base64Image.startsWith('iVBORw0KGgo')) {
+        imageType = 'image/png';
+    }
 
-    contentDiv.appendChild(downloadButton);
+
+    imageElement.onload = () => {
+        dimensions = `${imageElement.naturalWidth}x${imageElement.naturalHeight} px`;
+        // 计算图片大小 (粗略估算，因为 Base64 编码会增加大小)
+        const base64Length = base64Image.length;
+        const sizeInBytes = (base64Length * 0.75) - (base64Image.endsWith('==') ? 2 : (base64Image.endsWith('=') ? 1 : 0));
+        const sizeInKB = (sizeInBytes / 1024).toFixed(2);
+        const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
+        let size = sizeInKB < 1024 ? `${sizeInKB} KB` : `${sizeInMB} MB`;
+
+        imageElement.addEventListener('click', () => {
+            openImageModal(imageElement.src, altText, dimensions, size, imageType);
+        });
+    };
+
+    imageElement.onerror = () => {
+        console.error('Failed to load image for modal preview:', imageElement.src);
+    };
 
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
