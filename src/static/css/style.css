@@ -1993,6 +1993,7 @@ body.dark-mode .highlight-box {
     justify-content: center; /* Center horizontally */
     align-items: center; /* Center vertically */
     padding: 15px; /* Add padding for small screens */
+    overflow-y: auto; /* Allow vertical scrolling for tall content */
 }
 
 /* The Modal Content Box */
@@ -2003,12 +2004,13 @@ body.dark-mode .highlight-box {
     box-shadow: 0 8px 25px var(--shadow-color); /* Use CSS variable */
     width: 100%;
     max-width: 800px; /* Max width for desktops */
-    max-height: 90vh; /* Max height to not touch screen edges */
+    /* max-height: 90vh; */ /* Removed to allow content to define height */
     display: flex;
     flex-direction: column; /* Stack children vertically */
     position: relative; /* For positioning the close button */
-    overflow: hidden; /* Hide overflow, scrolling will be handled internally */
+    /* overflow: hidden; */ /* Removed to allow scrolling by parent */
     animation: fadeIn 0.3s ease-out;
+    margin: auto 0; /* Center vertically if content is smaller than viewport */
 }
 
 @keyframes fadeIn {
@@ -2052,7 +2054,7 @@ body.dark-mode .highlight-box {
 /* Modal Body (The scrollable part) */
 .modal-body {
     padding: 20px;
-    overflow-y: auto; /* THIS IS KEY: Make the body scrollable */
+    /* overflow-y: auto; */ /* Removed, scrolling is handled by .modal now */
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -2065,11 +2067,13 @@ body.dark-mode .highlight-box {
     background-color: var(--bg-color); /* Use CSS variable */
     border-radius: 8px;
     min-height: 200px; /* Minimum height */
+    max-height: 60vh; /* Limit image container height */
+    flex-shrink: 0; /* Prevent shrinking when info text is long */
 }
 
 .modal-image {
     max-width: 100%;
-    max-height: 55vh; /* Limit image height to leave space for info */
+    max-height: 100%; /* Allow image to fill the container's height */
     object-fit: contain;
     border-radius: 4px;
 }
