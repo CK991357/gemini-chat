@@ -343,26 +343,26 @@ export class HistoryManager {
                 currentSessionMeta = { id: sessionId, title: '新聊天', createdAt: now, updatedAt: now };
             }
 
-            // Sanitize history before saving: handle special cases like python_sandbox images
-            const sanitizedHistory = JSON.parse(JSON.stringify(chatHistory)); // Deep copy to avoid modifying the live chat
-            for (const message of sanitizedHistory) {
-                if (message.role === 'assistant' && typeof message.content === 'string') {
-                    try {
-                        // Check if content is a JSON string representing an array of image data
-                        if (message.content.trim().startsWith('[') && message.content.trim().endsWith(']')) {
-                            const contentData = JSON.parse(message.content);
-                            if (Array.isArray(contentData) && contentData.length > 0) {
-                                const firstItem = contentData[0];
-                                // Check for the specific structure of a python_sandbox image result
-                                if (firstItem.type === 'image' && firstItem.image && firstItem.image.base64 && firstItem.image.title) {
-                                    const title = firstItem.image.title;
-                                    // Replace the complex content with a simple, informative placeholder string
-                                    message.content = `[代码解释器生成了：${title}]`;
-                                }
+            // Sanitize history before saving to handle special, large content like images.
+            const sanitizedHistory = JSON.parse(JSON.stringify(chatHistory)); // Deep copy
+
+            for (let i = 0; i < sanitizedHistory.length; i++) {
+                const message = sanitizedHistory[i];
+
+                // Find an assistant message that calls the python_sandbox tool
+                if (message.role === 'assistant' && message.tool_calls) {
+                    const pythonCall = message.tool_calls.find(call => call.function && call.function.name === 'python_sandbox');
+                    
+                    if (pythonCall) {
+                        // Check the next message to see if it's the corresponding tool result
+                        if (i + 1 < sanitizedHistory.length) {
+                            const nextMessage = sanitizedHistory[i + 1];
+                            if (nextMessage.role === 'tool' && nextMessage.tool_call_id) {
+                                // This is a tool result. We'll simplify its content to avoid KV issues.
+                                // We don't need to parse the content, just replace it.
+                                nextMessage.content = '[Image Generated]';
                             }
                         }
-                    } catch (e) {
-                        // Not a JSON string or doesn't match the structure, ignore and continue
                     }
                 }
             }
