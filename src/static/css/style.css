@@ -2121,12 +2121,12 @@ body.dark-mode .highlight-box {
     .modal-content {
         width: auto; /* 移除固定的视口宽度，让其自适应父容器的 padding */
         padding: 15px;
-        max-height: 90vh; /* 限制最大高度 */
-        overflow-y: auto; /* 内容溢出时允许滚动 */
+        max-height: 85vh; /* 进一步减小最大高度，为浏览器UI留出空间 */
+        overflow-y: auto; /* 确保内容溢出时容器自身可以滚动 */
     }
 
     .modal-image-container {
-        max-height: 50vh; /* 限制图片容器在小屏幕上的高度 */
+        max-height: 45vh; /* 稍微减小图片容器的高度，以容纳更多信息 */
     }
     .modal-title {
         font-size: 1.5rem;
