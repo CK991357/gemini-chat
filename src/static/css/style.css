@@ -2015,12 +2015,7 @@ body.dark-mode .highlight-box {
     display: flex;
     flex-direction: column;
     gap: 20px; /* Space between elements inside the modal */
-    overflow-y: auto; /* CRITICAL: Allow the body to scroll */
-    min-height: 0; /* Allow shrinking */
     animation: fadeIn 0.3s ease-out;
-    display: flex; /* Make it a flex container */
-    flex-direction: column; /* Stack children vertically */
-    max-height: 90vh; /* CRITICAL: Limit the modal's own height */
 }
 
 @keyframes fadeIn {
@@ -2061,14 +2056,6 @@ body.dark-mode .highlight-box {
 }
 
 
-.modal-body {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    overflow-y: auto; /* CRITICAL: Allow the body to scroll */
-    min-height: 0; /* Allow shrinking */
-}
-
 .modal-image-container {
     display: flex;
     justify-content: center;
@@ -2076,16 +2063,15 @@ body.dark-mode .highlight-box {
     background-color: var(--bg-color);
     border-radius: 8px;
     min-height: 200px;
-    /* REMOVED max-height from here, it's now controlled by the parent */
+    max-height: 60vh; /* Key: Limit image container height */
     overflow: hidden; /* Ensure image respects border-radius */
-    min-width: 0; /* Key fix for flexbox shrinking */
+    margin-bottom: 20px; /* Key Fix: Re-add spacing lost from removing gap */
 }
 
 .modal-image {
-    width: 100%; /* Force image to shrink to container width */
+    max-width: 100%;
     max-height: 100%; /* Key: Image fills the container */
     object-fit: contain;
-    height: auto; /* Ensure aspect ratio is maintained */
     border-radius: 4px;
 }
 
@@ -2136,10 +2122,6 @@ body.dark-mode .highlight-box {
         width: 95%; /* Use more screen width on mobile */
         padding: 15px; /* Reduce internal padding */
         gap: 15px;
-    }
-    .modal-content {
-        max-height: 95vh; /* Allow a bit more height on mobile */
-        padding: 15px;
     }
     .modal-actions {
         flex-direction: column;
