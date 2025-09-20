@@ -343,6 +343,30 @@ export class HistoryManager {
                 currentSessionMeta = { id: sessionId, title: '新聊天', createdAt: now, updatedAt: now };
             }
 
+            // Sanitize history before saving: handle special cases like python_sandbox images
+            const sanitizedHistory = JSON.parse(JSON.stringify(chatHistory)); // Deep copy to avoid modifying the live chat
+            for (const message of sanitizedHistory) {
+                if (message.role === 'assistant' && typeof message.content === 'string') {
+                    try {
+                        // Check if content is a JSON string representing an array of image data
+                        if (message.content.trim().startsWith('[') && message.content.trim().endsWith(']')) {
+                            const contentData = JSON.parse(message.content);
+                            if (Array.isArray(contentData) && contentData.length > 0) {
+                                const firstItem = contentData[0];
+                                // Check for the specific structure of a python_sandbox image result
+                                if (firstItem.type === 'image' && firstItem.image && firstItem.image.base64 && firstItem.image.title) {
+                                    const title = firstItem.image.title;
+                                    // Replace the complex content with a simple, informative placeholder string
+                                    message.content = `[代码解释器生成了：${title}]`;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // Not a JSON string or doesn't match the structure, ignore and continue
+                    }
+                }
+            }
+
             const response = await fetch('/api/history/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -351,7 +375,7 @@ export class HistoryManager {
                     title: currentSessionMeta.title,
                     createdAt: currentSessionMeta.createdAt,
                     updatedAt: now,
-                    messages: chatHistory
+                    messages: sanitizedHistory
                 })
             });
 
