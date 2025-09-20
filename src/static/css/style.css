@@ -2067,7 +2067,7 @@ body.dark-mode .highlight-box {
 }
 
 .modal-image {
-    max-width: 100%;
+    width: 100%; /* Force image to shrink to container width */
     max-height: 100%; /* Key: Image fills the container */
     object-fit: contain;
     height: auto; /* Ensure aspect ratio is maintained */
