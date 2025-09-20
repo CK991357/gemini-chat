@@ -345,24 +345,19 @@ export class HistoryManager {
 
             // Sanitize history before saving to handle special, large content like images.
             const sanitizedHistory = JSON.parse(JSON.stringify(chatHistory)); // Deep copy
-
-            for (let i = 0; i < sanitizedHistory.length; i++) {
-                const message = sanitizedHistory[i];
-
-                // Find an assistant message that calls the python_sandbox tool
-                if (message.role === 'assistant' && message.tool_calls) {
-                    const pythonCall = message.tool_calls.find(call => call.function && call.function.name === 'python_sandbox');
-                    
-                    if (pythonCall) {
-                        // Check the next message to see if it's the corresponding tool result
-                        if (i + 1 < sanitizedHistory.length) {
-                            const nextMessage = sanitizedHistory[i + 1];
-                            if (nextMessage.role === 'tool' && nextMessage.tool_call_id) {
-                                // This is a tool result. We'll simplify its content to avoid KV issues.
-                                // We don't need to parse the content, just replace it.
-                                nextMessage.content = '[Image Generated]';
-                            }
+            for (const message of sanitizedHistory) {
+                // Correctly identify the tool result message containing the image data.
+                if (message.role === 'tool' && typeof message.content === 'string') {
+                    try {
+                        const contentData = JSON.parse(message.content);
+                        // Check if it's the specific image object structure from python_sandbox.
+                        if (contentData && contentData.type === 'image' && contentData.image_base64 && contentData.title) {
+                            const title = contentData.title;
+                            // Replace the large JSON object with a simple, informative placeholder string.
+                            message.content = `[代码解释器生成了：${title}]`;
                         }
+                    } catch (e) {
+                        // If content is not a JSON string or doesn't match the structure, ignore and continue.
                     }
                 }
             }

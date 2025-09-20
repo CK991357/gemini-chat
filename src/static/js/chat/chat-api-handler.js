@@ -382,7 +382,10 @@ export class ChatApiHandler {
                             const title = imageData.title || 'Generated Chart';
                             console.log(`[${timestamp()}] [MCP] Python sandbox returned a structured image object. Displaying with title: "${title}"`);
                             displayImageResult(imageData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
-                            toolResultContent = { output: `Image "${title}" generated and displayed.` };
+                            // --- KEY CHANGE ---
+                            // Do not discard the image data. Pass it directly as the tool result content.
+                            // This makes the title and other metadata available for history saving.
+                            toolResultContent = imageData;
                             isImageHandled = true;
                         }
                     } catch (e) {
