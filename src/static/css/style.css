@@ -12,6 +12,7 @@
   --primary-color: #4285f4; /* Google Blue */
   --secondary-color: #34a853; /* Google Green */
   --danger-color: #ea4335; /* Google Red */
+  --modal-backdrop-color: rgba(0, 0, 0, 0.6);
 }
 
 body.dark-mode {
@@ -25,6 +26,7 @@ body.dark-mode {
   --primary-color: #6366f1; /* 紫色系 */
   --secondary-color: #8b5cf6; /* 浅紫色系 */
   --danger-color: #ef4444;
+  --modal-backdrop-color: rgba(0, 0, 0, 0.85);
 }
 
 /* 通用样式 */
@@ -1987,8 +1989,7 @@ body.dark-mode .highlight-box {
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.85); /* Darker backdrop for more focus */
-    display: flex; /* Use flexbox for centering */
+    background-color: var(--modal-backdrop-color); /* Use CSS variable */
     justify-content: center; /* Center horizontally */
     align-items: center; /* Center vertically */
     padding: 15px; /* Add padding for small screens */
@@ -1996,10 +1997,10 @@ body.dark-mode .highlight-box {
 
 /* The Modal Content Box */
 .modal-content {
-    background-color: #282c34; /* A slightly softer dark background */
-    color: #f1f1f1;
+    background-color: var(--surface-color); /* Use CSS variable */
+    color: var(--text-color); /* Use CSS variable */
     border-radius: 12px;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 25px var(--shadow-color); /* Use CSS variable */
     width: 100%;
     max-width: 800px; /* Max width for desktops */
     max-height: 90vh; /* Max height to not touch screen edges */
@@ -2018,7 +2019,7 @@ body.dark-mode .highlight-box {
 /* Modal Header */
 .modal-header {
     padding: 15px 20px;
-    border-bottom: 1px solid #3a3f4b;
+    border-bottom: 1px solid var(--border-color); /* Use CSS variable */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2035,7 +2036,7 @@ body.dark-mode .highlight-box {
 .close-button {
     font-size: 2rem;
     font-weight: bold;
-    color: #aaa;
+    color: var(--text-secondary-color); /* Use CSS variable */
     cursor: pointer;
     line-height: 1;
     padding: 0 5px;
@@ -2044,7 +2045,7 @@ body.dark-mode .highlight-box {
 
 .close-button:hover,
 .close-button:focus {
-    color: #fff;
+    color: var(--text-color); /* Use CSS variable */
     transform: scale(1.1);
 }
 
@@ -2061,7 +2062,7 @@ body.dark-mode .highlight-box {
     display: flex;
     justify-content: center;
     align-items: center;
-    background-color: #1e2127;
+    background-color: var(--bg-color); /* Use CSS variable */
     border-radius: 8px;
     min-height: 200px; /* Minimum height */
 }
@@ -2074,7 +2075,7 @@ body.dark-mode .highlight-box {
 }
 
 .modal-info {
-    background-color: #3a3f4b;
+    background-color: var(--bg-color); /* Use CSS variable */
     padding: 15px;
     border-radius: 8px;
     font-size: 0.9em;
@@ -2092,19 +2093,19 @@ body.dark-mode .highlight-box {
 }
 
 .modal-info strong {
-    color: #61afef; /* A nice blue for dark themes */
+    color: var(--primary-color); /* Use CSS variable */
     flex-shrink: 0;
 }
 
 /* Modal Footer */
 .modal-actions {
     padding: 15px 20px;
-    border-top: 1px solid #3a3f4b;
+    border-top: 1px solid var(--border-color); /* Use CSS variable */
     display: flex;
     justify-content: flex-end;
     gap: 12px;
     flex-shrink: 0; /* Prevent footer from shrinking */
-    background-color: #282c34;
+    background-color: var(--surface-color); /* Use CSS variable */
 }
 
 .modal-actions .btn {
