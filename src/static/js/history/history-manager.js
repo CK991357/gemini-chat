@@ -38,14 +38,38 @@ export class HistoryManager {
 
         this.activeOptionsMenu = null; // Track the currently open options menu
         this.boundHandleGlobalMenuClose = this.handleGlobalMenuClose.bind(this); // Bind the method once
+ 
+        // Initialize history enabled state from localStorage, default to true
+        this.historyEnabled = localStorage.getItem('historyEnabled') !== 'false';
+ 
+        this.elements.historyEnabledSwitch = document.getElementById('history-enabled-switch');
+        this.elements.restoreHistoryBtn = document.getElementById('restore-history-btn');
+ 
+         console.log("HistoryManager initialized");
+     }
+ 
+     /**
+      * @description Initializes the history manager, renders the history list.
+      */
+    async init() {
+        if (this.elements.historyEnabledSwitch) {
+            this.elements.historyEnabledSwitch.checked = this.historyEnabled;
+            this.elements.historyEnabledSwitch.addEventListener('change', (event) => {
+                this.setHistoryEnabled(event.target.checked);
+            });
+        }
 
-        console.log("HistoryManager initialized");
-    }
+        if (this.elements.restoreHistoryBtn) {
+            this.elements.restoreHistoryBtn.addEventListener('click', () => this.recoverHistoryFromServer());
+        }
 
-    /**
-     * @description Initializes the history manager, renders the history list.
-     */
-    init() {
+        // Auto-recover if local storage is empty
+        const sessions = this.getChatSessionMeta();
+        if (!sessions || sessions.length === 0) {
+            this.logMessage('本地会话元数据为空，尝试从后端恢复...', 'system');
+            await this.recoverHistoryFromServer(false); // false to not show alert on initial load
+        }
+
         this.renderHistoryList();
     }
 
@@ -246,6 +270,10 @@ export class HistoryManager {
      * @description Saves the current session history to the backend.
      */
     async saveHistory() {
+        if (!this.historyEnabled) {
+            this.logMessage('历史记录已禁用，跳过保存。', 'system');
+            return;
+        }
         const sessionId = this.getCurrentSessionId();
         const chatHistory = this.getChatHistory();
         if (!sessionId || chatHistory.length === 0) {
@@ -439,6 +467,52 @@ export class HistoryManager {
         } catch (error) {
             console.error('删除会话失败:', error);
             this.showSystemMessage(`删除会话失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * @description Sets the history enabled state and saves it to localStorage.
+     * @param {boolean} isEnabled - Whether to enable or disable history.
+     */
+    setHistoryEnabled(isEnabled) {
+        this.historyEnabled = isEnabled;
+        localStorage.setItem('historyEnabled', isEnabled);
+        this.showToast(`历史记录已${isEnabled ? '启用' : '禁用'}`);
+        this.logMessage(`历史记录已${isEnabled ? '启用' : '禁用'}。`, 'system');
+    }
+
+    /**
+     * @description Recovers chat session metadata from the backend and overwrites local data.
+     * @param {boolean} showAlert - Whether to show a success/failure alert. Defaults to true.
+     */
+    async recoverHistoryFromServer(showAlert = true) {
+        this.showToast('正在从云端恢复历史记录...');
+        try {
+            const response = await fetch('/api/history/list-all-meta');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `无法从后端恢复: ${response.statusText}`);
+            }
+            const sessionMetas = await response.json();
+
+            if (sessionMetas) {
+                this.saveChatSessionMeta(sessionMetas);
+                this.renderHistoryList();
+                if (showAlert) {
+                    this.showToast(`已成功从云端恢复 ${sessionMetas.length} 条记录！`);
+                }
+                this.logMessage(`已从后端恢复 ${sessionMetas.length} 个会话元数据。`, 'system');
+            } else {
+                if (showAlert) {
+                    this.showToast('云端没有可恢复的记录。');
+                }
+                this.logMessage('后端没有可恢复的会话元数据。', 'system');
+            }
+        } catch (error) {
+            console.error('从后端恢复历史记录失败:', error);
+            if (showAlert) {
+                this.showSystemMessage(`从后端恢复失败: ${error.message}`);
+            }
         }
     }
 }

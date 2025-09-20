@@ -179,6 +179,15 @@
                 <section class="chat-container history-mode">
                     <div class="log-header">
                         <h3>历史记录</h3>
+                        <div class="history-controls">
+                            <label for="history-enabled-switch" class="switch" title="启用/禁用历史记录">
+                                <input type="checkbox" id="history-enabled-switch" checked>
+                                <span class="slider round"></span>
+                            </label>
+                            <button id="restore-history-btn" class="icon-button" title="从云端恢复历史记录">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="history-list" id="history-list-container">
                         <!-- 历史记录列表将动态插入此处 -->
