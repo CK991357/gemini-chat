@@ -343,25 +343,6 @@ export class HistoryManager {
                 currentSessionMeta = { id: sessionId, title: '新聊天', createdAt: now, updatedAt: now };
             }
 
-            // Sanitize history before saving to handle special, large content like images.
-            const sanitizedHistory = JSON.parse(JSON.stringify(chatHistory)); // Deep copy
-            for (const message of sanitizedHistory) {
-                // Correctly identify the tool result message containing the image data.
-                if (message.role === 'tool' && typeof message.content === 'string') {
-                    try {
-                        const contentData = JSON.parse(message.content);
-                        // Check if it's the specific image object structure from python_sandbox.
-                        if (contentData && contentData.type === 'image' && contentData.image_base64 && contentData.title) {
-                            const title = contentData.title;
-                            // Replace the large JSON object with a simple, informative placeholder string.
-                            message.content = `[代码解释器生成了：${title}]`;
-                        }
-                    } catch (e) {
-                        // If content is not a JSON string or doesn't match the structure, ignore and continue.
-                    }
-                }
-            }
-
             const response = await fetch('/api/history/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -370,7 +351,7 @@ export class HistoryManager {
                     title: currentSessionMeta.title,
                     createdAt: currentSessionMeta.createdAt,
                     updatedAt: now,
-                    messages: sanitizedHistory
+                    messages: chatHistory
                 })
             });
 
