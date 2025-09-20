@@ -169,15 +169,10 @@ export class HistoryManager {
                 li.classList.add('is-pinned');
             }
 
-            // Create a custom div-based checkbox for batch selection
-            const checkbox = document.createElement('div');
-            checkbox.className = 'batch-select-checkbox';
-            checkbox.dataset.sessionId = session.id;
-            // Use a class to indicate the checked state
+            // No checkbox needed. The selection state will be indicated by a class on the li itself.
             if (this.selectedSessions.has(session.id)) {
-                checkbox.classList.add('checked');
+                li.classList.add('selected');
             }
-            li.appendChild(checkbox);
 
             const infoDiv = document.createElement('div');
             infoDiv.className = 'history-info';
@@ -202,10 +197,9 @@ export class HistoryManager {
 
             const handleItemClick = (event) => {
                 if (this.isSelectMode) {
-                    // If in select mode, clicking the item toggles the checkbox
-                    // Toggle the 'checked' class on the custom checkbox div
-                    checkbox.classList.toggle('checked');
-                    if (checkbox.classList.contains('checked')) {
+                    // Toggle selection state by adding/removing a class on the li element
+                    li.classList.toggle('selected');
+                    if (li.classList.contains('selected')) {
                         this.selectedSessions.add(session.id);
                     } else {
                         this.selectedSessions.delete(session.id);
@@ -219,9 +213,6 @@ export class HistoryManager {
             };
 
             li.addEventListener('click', handleItemClick);
-            // The main 'li' click handler already covers this logic.
-            // The original 'change' event is not applicable to a div.
-            // We can remove this listener.
 
             const optionsButton = li.querySelector('.history-options-button');
             const optionsMenu = li.querySelector('.history-options-menu');
