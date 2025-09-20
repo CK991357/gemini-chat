@@ -1981,7 +1981,7 @@ body.dark-mode .highlight-box {
    ================================= */
 
 .modal {
-    display: none; /* 默认隐藏 */
+    display: none; /* 由 JS 直接控制 display: flex 来显示 */
     position: fixed;
     z-index: 1000;
     left: 0;
@@ -1991,14 +1991,9 @@ body.dark-mode .highlight-box {
     background-color: var(--modal-backdrop-color);
     justify-content: center;
     align-items: center;
-    opacity: 0;
-    transition: opacity 0.3s ease-in-out;
-}
-
-/* 用于 JS 控制显示/隐藏 */
-.modal.visible {
-    display: flex;
-    opacity: 1;
+    /* 备注: 平滑过渡效果(opacity)需要JS配合.
+       当前JS直接修改display, 无法触发CSS transition.
+       为确保功能正常, 暂时移除过渡效果. */
 }
 
 .modal-content {
