@@ -1980,6 +1980,11 @@ body.dark-mode .highlight-box {
 /* == Image Modal Styles (Final Version)      == */
 /* ============================================= */
 
+/* Key Fix: Apply border-box sizing to ensure padding is included in width/height calculations */
+.modal, .modal * {
+    box-sizing: border-box;
+}
+
 /* The Modal Backdrop */
 .modal {
     display: none; /* Hidden by default */
@@ -2007,7 +2012,15 @@ body.dark-mode .highlight-box {
     max-width: 800px; /* Max width for desktops */
     margin: auto; /* Key: Center the modal */
     padding: 20px; /* Key: This creates the "frame" */
+    display: flex;
+    flex-direction: column;
+    gap: 20px; /* Space between elements inside the modal */
+    overflow-y: auto; /* CRITICAL: Allow the body to scroll */
+    min-height: 0; /* Allow shrinking */
     animation: fadeIn 0.3s ease-out;
+    display: flex; /* Make it a flex container */
+    flex-direction: column; /* Stack children vertically */
+    max-height: 90vh; /* CRITICAL: Limit the modal's own height */
 }
 
 @keyframes fadeIn {
@@ -2052,6 +2065,8 @@ body.dark-mode .highlight-box {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    overflow-y: auto; /* CRITICAL: Allow the body to scroll */
+    min-height: 0; /* Allow shrinking */
 }
 
 .modal-image-container {
@@ -2061,7 +2076,7 @@ body.dark-mode .highlight-box {
     background-color: var(--bg-color);
     border-radius: 8px;
     min-height: 200px;
-    max-height: 60vh; /* Key: Limit image container height */
+    /* REMOVED max-height from here, it's now controlled by the parent */
     overflow: hidden; /* Ensure image respects border-radius */
     min-width: 0; /* Key fix for flexbox shrinking */
 }
@@ -2122,8 +2137,9 @@ body.dark-mode .highlight-box {
         padding: 15px; /* Reduce internal padding */
         gap: 15px;
     }
-    .modal-image-container {
-        max-height: 40vh; /* Reduce height on mobile */
+    .modal-content {
+        max-height: 95vh; /* Allow a bit more height on mobile */
+        padding: 15px;
     }
     .modal-actions {
         flex-direction: column;
