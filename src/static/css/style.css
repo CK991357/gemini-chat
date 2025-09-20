@@ -1980,11 +1980,6 @@ body.dark-mode .highlight-box {
 /* == Image Modal Styles (Final Version)      == */
 /* ============================================= */
 
-/* Key Fix: Apply border-box sizing to ensure padding is included in width/height calculations */
-.modal, .modal * {
-    box-sizing: border-box;
-}
-
 /* The Modal Backdrop */
 .modal {
     display: none; /* Hidden by default */
@@ -2012,9 +2007,6 @@ body.dark-mode .highlight-box {
     max-width: 800px; /* Max width for desktops */
     margin: auto; /* Key: Center the modal */
     padding: 20px; /* Key: This creates the "frame" */
-    display: flex;
-    flex-direction: column;
-    gap: 20px; /* Space between elements inside the modal */
     animation: fadeIn 0.3s ease-out;
 }
 
@@ -2056,6 +2048,12 @@ body.dark-mode .highlight-box {
 }
 
 
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
 .modal-image-container {
     display: flex;
     justify-content: center;
@@ -2065,7 +2063,6 @@ body.dark-mode .highlight-box {
     min-height: 200px;
     max-height: 60vh; /* Key: Limit image container height */
     overflow: hidden; /* Ensure image respects border-radius */
-    margin-bottom: 20px; /* Key Fix: Re-add spacing lost from removing gap */
 }
 
 .modal-image {
