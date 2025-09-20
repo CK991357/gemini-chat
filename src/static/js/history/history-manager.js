@@ -169,7 +169,12 @@ export class HistoryManager {
                 li.classList.add('is-pinned');
             }
 
-            // No checkbox needed. The selection state will be indicated by a class on the li itself.
+            // Add a selection indicator icon, hidden by default
+            const selectionIndicator = document.createElement('i');
+            selectionIndicator.className = 'fas fa-check-circle selection-indicator';
+            li.appendChild(selectionIndicator);
+
+            // If the item is selected, add the 'selected' class to the LI to show the indicator
             if (this.selectedSessions.has(session.id)) {
                 li.classList.add('selected');
             }

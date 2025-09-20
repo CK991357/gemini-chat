@@ -1825,6 +1825,7 @@ body.dark-mode .highlight-box {
     cursor: pointer;
     transition: background-color 0.3s ease;
     position: relative; /* 用于定位操作菜单 */
+    gap: 10px; /* Add gap for the new icon */
 }
 
 .history-item:hover {
@@ -2239,16 +2240,22 @@ input:checked + .slider:before {
     color: var(--danger-color);
 }
 
-/* Visual feedback for selected items in batch mode (with !important to override conflicts) */
-.history-list-container.select-mode .history-item.selected {
-    background-color: rgba(var(--primary-color-rgb), 0.15) !important;
-    border-left: 4px solid var(--primary-color);
-    padding-left: 11px;
+/* New styles for the selection indicator icon */
+.selection-indicator {
+    color: var(--primary-color);
+    font-size: 20px;
+    display: none; /* Hide by default */
+    flex-shrink: 0;
 }
 
-/* Ensure the hover effect doesn't override the selected style (with !important) */
+/* When in select mode, show the indicator for selected items */
+.history-list-container.select-mode .history-item.selected .selection-indicator {
+    display: block; /* Show the icon */
+}
+
+/* Keep the hover effect, but remove the problematic background color change */
 .history-list-container.select-mode .history-item.selected:hover {
-    background-color: rgba(var(--primary-color-rgb), 0.25) !important;
+    background-color: var(--bg-color); /* Use the standard hover color */
 }
 
 /* When in select mode, prevent the main click from loading the session */
