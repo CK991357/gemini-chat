@@ -2050,13 +2050,6 @@ body.dark-mode .highlight-box {
     transform: scale(1.1);
 }
 
-/* Modal Body (No padding needed here) */
-.modal-body {
-    /* No padding needed, controlled by .modal-content */
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
 
 .modal-image-container {
     display: flex;
@@ -2067,6 +2060,7 @@ body.dark-mode .highlight-box {
     min-height: 200px;
     max-height: 60vh; /* Key: Limit image container height */
     overflow: hidden; /* Ensure image respects border-radius */
+    margin-bottom: 20px; /* Key Fix: Re-add spacing lost from removing gap */
 }
 
 .modal-image {
