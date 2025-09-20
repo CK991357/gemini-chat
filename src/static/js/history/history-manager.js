@@ -38,15 +38,21 @@ export class HistoryManager {
 
         this.activeOptionsMenu = null; // Track the currently open options menu
         this.boundHandleGlobalMenuClose = this.handleGlobalMenuClose.bind(this); // Bind the method once
- 
+
         // Initialize history enabled state from localStorage, default to true
         this.historyEnabled = localStorage.getItem('historyEnabled') !== 'false';
- 
+
+        // State for batch selection
+        this.isSelectMode = false;
+        this.selectedSessions = new Set();
+
         this.elements.historyEnabledSwitch = document.getElementById('history-enabled-switch');
         this.elements.restoreHistoryBtn = document.getElementById('restore-history-btn');
- 
-         console.log("HistoryManager initialized");
-     }
+        this.elements.batchSelectBtn = document.getElementById('batch-select-history-btn');
+        this.elements.deleteSelectedBtn = document.getElementById('delete-selected-history-btn');
+
+        console.log("HistoryManager initialized");
+    }
  
      /**
       * @description Initializes the history manager, renders the history list.
@@ -61,6 +67,14 @@ export class HistoryManager {
 
         if (this.elements.restoreHistoryBtn) {
             this.elements.restoreHistoryBtn.addEventListener('click', () => this.recoverHistoryFromServer());
+        }
+
+        if (this.elements.batchSelectBtn) {
+            this.elements.batchSelectBtn.addEventListener('click', () => this.toggleSelectMode());
+        }
+
+        if (this.elements.deleteSelectedBtn) {
+            this.elements.deleteSelectedBtn.addEventListener('click', () => this.handleBatchDelete());
         }
 
         this.renderHistoryList();
@@ -131,7 +145,6 @@ export class HistoryManager {
     renderHistoryList() {
         this.elements.historyContent.innerHTML = '';
 
-
         let sessions = this.getChatSessionMeta();
 
         if (sessions.length === 0) {
@@ -155,24 +168,62 @@ export class HistoryManager {
             if (session.is_pinned) {
                 li.classList.add('is-pinned');
             }
-            li.innerHTML = `
-                <div class="history-info">
-                    <span class="history-title">${session.title}</span>
-                    <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
-                </div>
-                <div class="history-actions">
-                    ${session.is_pinned ? '<i class="fa-solid fa-thumbtack pinned-icon"></i>' : ''}
-                    <button class="history-options-button"><i class="fa-solid fa-ellipsis-v"></i></button>
-                    <div class="history-options-menu" style="display: none;">
-                        <button class="menu-item" data-action="toggle-pin">${session.is_pinned ? '取消置顶' : '置顶'}</button>
-                        <button class="menu-item" data-action="edit-title">编辑标题</button>
-                        <button class="menu-item" data-action="delete">删除</button>
-                    </div>
+
+            // Create checkbox for batch selection
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'batch-select-checkbox';
+            checkbox.dataset.sessionId = session.id;
+            checkbox.checked = this.selectedSessions.has(session.id);
+
+            li.appendChild(checkbox);
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'history-info';
+            infoDiv.innerHTML = `
+                <span class="history-title">${session.title}</span>
+                <span class="history-date">${new Date(session.updatedAt).toLocaleString()}</span>
+            `;
+            li.appendChild(infoDiv);
+
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'history-actions';
+            actionsDiv.innerHTML = `
+                ${session.is_pinned ? '<i class="fa-solid fa-thumbtack pinned-icon"></i>' : ''}
+                <button class="history-options-button"><i class="fa-solid fa-ellipsis-v"></i></button>
+                <div class="history-options-menu" style="display: none;">
+                    <button class="menu-item" data-action="toggle-pin">${session.is_pinned ? '取消置顶' : '置顶'}</button>
+                    <button class="menu-item" data-action="edit-title">编辑标题</button>
+                    <button class="menu-item" data-action="delete">删除</button>
                 </div>
             `;
-            li.addEventListener('click', (event) => {
-                if (!event.target.closest('.history-actions')) {
-                    this.loadSessionHistory(session.id);
+            li.appendChild(actionsDiv);
+
+            const handleItemClick = (event) => {
+                if (this.isSelectMode) {
+                    // If in select mode, clicking the item toggles the checkbox
+                    if (event.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                    }
+                    if (checkbox.checked) {
+                        this.selectedSessions.add(session.id);
+                    } else {
+                        this.selectedSessions.delete(session.id);
+                    }
+                } else {
+                    // Default behavior: load session, but not if clicking on actions
+                    if (!event.target.closest('.history-actions')) {
+                        this.loadSessionHistory(session.id);
+                    }
+                }
+            };
+
+            li.addEventListener('click', handleItemClick);
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    this.selectedSessions.add(session.id);
+                } else {
+                    this.selectedSessions.delete(session.id);
                 }
             });
 
@@ -181,6 +232,7 @@ export class HistoryManager {
 
             optionsButton.addEventListener('click', (event) => {
                 event.stopPropagation();
+                if (this.isSelectMode) return; // Disable options menu in select mode
                 if (this.activeOptionsMenu && this.activeOptionsMenu !== optionsMenu) {
                     this.activeOptionsMenu.style.display = 'none';
                 }
@@ -233,6 +285,11 @@ export class HistoryManager {
      * @param {string} sessionId - The ID of the session to load.
      */
     async loadSessionHistory(sessionId) {
+        // Exit select mode if active
+        if (this.isSelectMode) {
+            this.toggleSelectMode(false);
+        }
+
         this.showToast(`正在加载会话: ${sessionId}`);
         try {
             const response = await fetch(`/api/history/load/${sessionId}`);
@@ -525,6 +582,91 @@ export class HistoryManager {
             if (showAlert) {
                 this.showSystemMessage(`从后端恢复失败: ${error.message}`);
             }
+        }
+    }
+
+    /**
+     * @description Toggles the batch selection mode.
+     * @param {boolean} [forceState] - Optional. Force a specific state (true for on, false for off).
+     */
+    toggleSelectMode(forceState = null) {
+        this.isSelectMode = forceState !== null ? forceState : !this.isSelectMode;
+
+        const container = this.elements.historyContent.parentElement; // Get the container to apply the class
+        const batchSelectIcon = this.elements.batchSelectBtn.querySelector('i');
+
+        if (this.isSelectMode) {
+            container.classList.add('select-mode');
+            this.elements.deleteSelectedBtn.style.display = 'inline-flex';
+            this.elements.restoreHistoryBtn.style.display = 'none'; // Hide restore button
+            this.elements.batchSelectBtn.title = '取消选择';
+            batchSelectIcon.className = 'fas fa-times'; // Change to a 'cancel' icon
+        } else {
+            container.classList.remove('select-mode');
+            this.elements.deleteSelectedBtn.style.display = 'none';
+            this.elements.restoreHistoryBtn.style.display = 'inline-flex'; // Show restore button
+            this.elements.batchSelectBtn.title = '批量选择';
+            batchSelectIcon.className = 'fas fa-check-square'; // Revert to original icon
+            this.selectedSessions.clear();
+        }
+        // Re-render to show/hide checkboxes correctly without a full redraw if possible
+        // For simplicity, we'll just rely on the CSS class toggle.
+        this.renderHistoryList();
+    }
+
+    /**
+     * @description Handles the batch deletion of selected sessions.
+     */
+    async handleBatchDelete() {
+        const sessionIdsToDelete = Array.from(this.selectedSessions);
+        if (sessionIdsToDelete.length === 0) {
+            this.showToast('没有选择任何会话。');
+            return;
+        }
+
+        if (!confirm(`确定要删除选中的 ${sessionIdsToDelete.length} 个聊天会话吗？此操作不可撤销。`)) {
+            this.showToast('批量删除已取消。');
+            return;
+        }
+
+        this.showToast(`正在删除 ${sessionIdsToDelete.length} 个会话...`);
+        try {
+            const response = await fetch('/api/history/batch-delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionIds: sessionIdsToDelete })
+            });
+
+            if (!response.ok) {
+                // Try to get error details, but handle cases where it might not be JSON
+                let errorMsg = '无法批量删除会话';
+                try {
+                    const errorData = await response.json();
+                    errorMsg = errorData.error || errorMsg;
+                } catch (e) {
+                    // Ignore if response is not JSON
+                }
+                throw new Error(errorMsg);
+            }
+
+            let sessions = this.getChatSessionMeta();
+            sessions = sessions.filter(s => !this.selectedSessions.has(s.id));
+            this.saveChatSessionMeta(sessions);
+
+            this.showToast('选中的会话已成功删除！');
+
+            // Check if the currently active session was deleted
+            const currentSessionId = this.getCurrentSessionId();
+            if (this.selectedSessions.has(currentSessionId)) {
+                this.generateNewSession(); // Start a new session if the active one was deleted
+            }
+
+        } catch (error) {
+            console.error('批量删除会话失败:', error);
+            this.showSystemMessage(`批量删除失败: ${error.message}`);
+        } finally {
+            // Always exit select mode and re-render
+            this.toggleSelectMode(false);
         }
     }
 }

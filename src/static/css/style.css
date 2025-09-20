@@ -2228,3 +2228,34 @@ input:checked + .slider:before {
 .slider.round:before {
     border-radius: 50%;
 }
+
+/* =================================
+   Batch History Deletion Styles
+   ================================= */
+
+/* Style for the danger button (e.g., delete) */
+.icon-button.danger:hover {
+    background-color: rgba(var(--danger-color-rgb), 0.1);
+    color: var(--danger-color);
+}
+
+/* Checkbox for batch selection */
+.history-item .batch-select-checkbox {
+    display: none; /* Hidden by default */
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--primary-color); /* Modern way to color checkboxes */
+    margin-right: 10px; /* Space between checkbox and content */
+    flex-shrink: 0;
+}
+
+/* Show checkbox when the list is in select mode */
+.history-list-container.select-mode .history-item .batch-select-checkbox {
+    display: block;
+}
+
+/* When in select mode, prevent the main click from loading the session */
+.history-list-container.select-mode .history-item {
+    cursor: default;
+}

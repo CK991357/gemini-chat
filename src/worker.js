@@ -792,6 +792,37 @@ async function handleHistoryRequest(request, env) {
     }
   }
 
+  // 路由: 批量删除会话
+  if (path === '/api/history/batch-delete' && request.method === 'DELETE') {
+    try {
+      const { sessionIds } = await request.json();
+      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+        return new Response(JSON.stringify({ error: 'Invalid or empty sessionIds array provided' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      const deletePromises = sessionIds.map(id => {
+        const key = `history:${id}`;
+        return env.GEMINICHAT_HISTORY_KV.delete(key);
+      });
+      
+      await Promise.all(deletePromises);
+
+      return new Response(null, {
+        status: 204, // No Content
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (error) {
+      console.error('Failed to batch delete history:', error);
+      return new Response(JSON.stringify({ error: 'Failed to batch delete history', details: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+ 
   // 路由: 生成标题
   if (path === '/api/history/generate-title' && request.method === 'POST') {
     try {
