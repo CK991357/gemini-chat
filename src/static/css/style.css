@@ -2114,9 +2114,6 @@ body.dark-mode .highlight-box {
         font-size: 18px;
     }
 
-    .modal-info {
-        display: none; /* 在小屏幕上隐藏详细信息以节省空间 */
-    }
 
     .modal-actions {
         bottom: 15px;
