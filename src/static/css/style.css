@@ -2063,12 +2063,14 @@ body.dark-mode .highlight-box {
     min-height: 200px;
     max-height: 60vh; /* Key: Limit image container height */
     overflow: hidden; /* Ensure image respects border-radius */
+    min-width: 0; /* Key fix for flexbox shrinking */
 }
 
 .modal-image {
     max-width: 100%;
     max-height: 100%; /* Key: Image fills the container */
     object-fit: contain;
+    height: auto; /* Ensure aspect ratio is maintained */
     border-radius: 4px;
 }
 
@@ -2119,6 +2121,9 @@ body.dark-mode .highlight-box {
         width: 95%; /* Use more screen width on mobile */
         padding: 15px; /* Reduce internal padding */
         gap: 15px;
+    }
+    .modal-image-container {
+        max-height: 40vh; /* Reduce height on mobile */
     }
     .modal-actions {
         flex-direction: column;
