@@ -197,12 +197,16 @@ export class HistoryManager {
 
             const handleItemClick = (event) => {
                 if (this.isSelectMode) {
-                    // Toggle selection state by adding/removing a class on the li element
-                    li.classList.toggle('selected');
-                    if (li.classList.contains('selected')) {
-                        this.selectedSessions.add(session.id);
-                    } else {
+                    // Final debugging attempt: Directly manipulate inline styles to bypass all CSS issues.
+                    if (this.selectedSessions.has(session.id)) {
+                        // Item is currently selected, so unselect it
                         this.selectedSessions.delete(session.id);
+                        li.style.backgroundColor = ''; // Clear inline style
+                    } else {
+                        // Item is not selected, so select it
+                        this.selectedSessions.add(session.id);
+                        // Using a hardcoded RGBA value that corresponds to --primary-color with opacity
+                        li.style.backgroundColor = 'rgba(66, 133, 244, 0.2)';
                     }
                 } else {
                     // Default behavior: load session, but not if clicking on actions
