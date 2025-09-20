@@ -1973,177 +1973,156 @@ body.dark-mode .highlight-box {
     gap: 10px;
     border: 1px solid var(--border-color);
 }
-/* 模态框样式 */
+
+/* ============================================= */
+/* == Image Modal Styles (Refactored Version) == */
+/* ============================================= */
+
+/* The Modal Backdrop */
 .modal {
-    display: none; /* 默认隐藏 */
-    position: fixed; /* 固定定位 */
-    z-index: 1000; /* 确保在最上层 */
+    display: none; /* Hidden by default, shown via JS */
+    position: fixed; /* Stay in place, cover the whole screen */
+    z-index: 1001; /* Sit on top of everything */
     left: 0;
     top: 0;
-    width: 100%; /* 全屏 */
-    height: 100%; /* 全屏 */
-    overflow: auto; /* 允许滚动 */
-    background-color: rgba(0, 0, 0, 0.7); /* 半透明黑色背景 */
-    justify-content: center;
-    align-items: center;
-    padding: 20px; /* 内边距，防止内容紧贴边缘 */
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85); /* Darker backdrop for more focus */
+    display: flex; /* Use flexbox for centering */
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+    padding: 15px; /* Add padding for small screens */
 }
 
+/* The Modal Content Box */
 .modal-content {
-    background-color: var(--surface-color); /* 适配新的主题变量 */
-    margin: auto;
-    padding: 20px;
-    border-radius: 12px; /* 适配新的边框圆角变量 */
-    box-shadow: 0 4px 16px var(--shadow-color); /* 适配新的阴影变量 */
-    position: relative;
-    width: 90%; /* 宽度 */
-    max-width: 800px; /* 最大宽度 */
-    animation: fadeIn 0.3s ease-out; /* 淡入动画 */
+    background-color: #282c34; /* A slightly softer dark background */
+    color: #f1f1f1;
+    border-radius: 12px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+    width: 100%;
+    max-width: 800px; /* Max width for desktops */
+    max-height: 90vh; /* Max height to not touch screen edges */
     display: flex;
-    flex-direction: column;
-    gap: 20px;
-    box-sizing: border-box; /* 新增：确保 padding 不会撑大容器 */
+    flex-direction: column; /* Stack children vertically */
+    position: relative; /* For positioning the close button */
+    overflow: hidden; /* Hide overflow, scrolling will be handled internally */
+    animation: fadeIn 0.3s ease-out;
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
 }
 
-.modal .close-button { /* 模态框内部的关闭按钮，需要更高特异性 */
-    color: var(--text-secondary-color); /* 适配新的主题变量 */
-    font-size: 30px;
-    font-weight: bold;
-    position: absolute;
-    top: 10px;
-    right: 20px;
-    cursor: pointer;
-    transition: color 0.3s ease;
-}
-
-.modal .close-button:hover,
-.modal .close-button:focus {
-    color: var(--danger-color); /* 适配新的主题变量 */
+/* Modal Header */
+.modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid #3a3f4b;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .modal-title {
-    font-size: 1.8rem;
+    font-size: 1.25rem;
     font-weight: 600;
-    color: var(--primary-color); /* 适配新的主题变量 */
-    margin-bottom: 15px;
-    text-align: center;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.close-button {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #aaa;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 5px;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.close-button:hover,
+.close-button:focus {
+    color: #fff;
+    transform: scale(1.1);
+}
+
+/* Modal Body (The scrollable part) */
+.modal-body {
+    padding: 20px;
+    overflow-y: auto; /* THIS IS KEY: Make the body scrollable */
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
 }
 
 .modal-image-container {
-    background-color: var(--border-color); /* 适配新的主题变量 */
-    border-radius: 8px;
-    overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 300px;
-    max-height: 60vh; /* 限制图片容器高度 */
-    margin-bottom: 20px;
+    background-color: #1e2127;
+    border-radius: 8px;
+    min-height: 200px; /* Minimum height */
 }
 
-.modal-image-container img {
+.modal-image {
     max-width: 100%;
-    max-height: 100%;
+    max-height: 55vh; /* Limit image height to leave space for info */
     object-fit: contain;
-    display: block; /* 移除图片底部空白 */
+    border-radius: 4px;
 }
 
 .modal-info {
-    background-color: rgba(var(--primary-color-rgb), 0.05); /* 适配新的主题变量 */
-    border-radius: 8px;
+    background-color: #3a3f4b;
     padding: 15px;
-    border: 1px solid rgba(var(--primary-color-rgb), 0.1); /* 适配新的主题变量 */
+    border-radius: 8px;
+    font-size: 0.9em;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
 }
 
 .modal-info p {
     margin: 0;
+    word-wrap: break-word;
     display: flex;
     align-items: center;
     gap: 10px;
-    word-break: break-all; /* 允许长单词换行 */
-    color: var(--text-color); /* 适配新的主题变量 */
 }
 
-.modal-info i {
-    color: var(--primary-color); /* 适配新的主题变量 */
-    width: 20px;
-    flex-shrink: 0; /* 防止图标被压缩 */
+.modal-info strong {
+    color: #61afef; /* A nice blue for dark themes */
+    flex-shrink: 0;
 }
 
-.modal-info a {
-    color: var(--primary-color); /* 适配新的主题变量 */
-    text-decoration: none;
-    word-break: break-all;
-}
-
-.modal-info a:hover {
-    text-decoration: underline;
-}
-
+/* Modal Footer */
 .modal-actions {
+    padding: 15px 20px;
+    border-top: 1px solid #3a3f4b;
     display: flex;
     justify-content: flex-end;
-    gap: 15px;
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border-color); /* 适配新的主题变量 */
+    gap: 12px;
+    flex-shrink: 0; /* Prevent footer from shrinking */
+    background-color: #282c34;
 }
 
-.modal .copy-button, /* 模态框内的复制按钮，需要更高特异性 */
-.modal .open-link-button {
-    background-color: var(--secondary-color); /* 适配新的主题变量 */
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 5px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    margin-left: auto; /* 将按钮推到右侧 */
-    flex-shrink: 0; /* 防止按钮被压缩 */
+.modal-actions .btn {
+    margin-left: 0;
 }
 
-.modal .copy-button:hover,
-.modal .open-link-button:hover {
-    background-color: #34495e; /* 使用深色主题的 secondary-color 悬停色 */
-}
-
-/* 响应式调整 */
+/* Responsive Adjustments for Mobile */
 @media (max-width: 600px) {
-    .modal-content {
-        width: auto; /* 移除固定的视口宽度，让其自适应父容器的 padding */
-        padding: 15px;
-        max-height: 85vh; /* 进一步减小最大高度，为浏览器UI留出空间 */
-        overflow-y: auto; /* 确保内容溢出时容器自身可以滚动 */
-    }
-
-    .modal-image-container {
-        max-height: 45vh; /* 稍微减小图片容器的高度，以容纳更多信息 */
-    }
     .modal-title {
-        font-size: 1.5rem;
+        font-size: 1.1rem;
     }
-    .modal .close-button {
-        font-size: 24px;
-        top: 5px;
-        right: 10px;
+    .modal-body {
+        padding: 15px;
     }
-    .modal-info p {
+    .modal-actions {
         flex-direction: column;
-        align-items: flex-start;
-        gap: 5px;
     }
-    .modal .copy-button,
-    .modal .open-link-button {
-        margin-left: 0; /* 在小屏幕上取消右侧对齐 */
-        width: 100%; /* 按钮占满宽度 */
+    .modal-actions .btn {
+        width: 100%;
     }
 }
