@@ -1980,6 +1980,11 @@ body.dark-mode .highlight-box {
 /* == Image Modal Styles (Final Version)      == */
 /* ============================================= */
 
+/* Key Fix: Apply border-box sizing to ensure padding is included in width/height calculations */
+.modal, .modal * {
+    box-sizing: border-box;
+}
+
 /* The Modal Backdrop */
 .modal {
     display: none; /* Hidden by default */
