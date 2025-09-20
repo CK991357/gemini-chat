@@ -2109,6 +2109,13 @@ body.dark-mode .highlight-box {
         height: 85vh;
         padding: 15px;
     }
+    
+    @media (max-width: 768px) {
+        /* 在手机端隐藏图片模态框中的“原始链接”信息行 */
+        .modal-info p:has(#modal-image-info-url) {
+            display: none;
+        }
+    }
 
     .modal-title {
         font-size: 18px;
