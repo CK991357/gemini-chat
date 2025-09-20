@@ -103,6 +103,13 @@ export class HistoryManager {
         this.setCurrentSessionId(newSessionId);
         this.updateChatUI({ messages: [] }); // Clear the UI
 
+        // 如果历史记录被禁用，则不创建新的会话元数据
+        if (!this.historyEnabled) {
+            this.logMessage('历史记录已禁用，仅重置聊天界面。', 'system');
+            // 列表保持可见，因此不需要特殊的渲染调用
+            return;
+        }
+
         let sessions = this.getChatSessionMeta();
         const now = new Date().toISOString();
         const newSessionMeta = {
@@ -122,8 +129,10 @@ export class HistoryManager {
      * @description Renders the list of chat sessions from localStorage into the history panel.
      */
     renderHistoryList() {
-        let sessions = this.getChatSessionMeta();
         this.elements.historyContent.innerHTML = '';
+
+
+        let sessions = this.getChatSessionMeta();
 
         if (sessions.length === 0) {
             this.elements.historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
@@ -472,6 +481,7 @@ export class HistoryManager {
         localStorage.setItem('historyEnabled', isEnabled);
         this.showToast(`历史记录已${isEnabled ? '启用' : '禁用'}`);
         this.logMessage(`历史记录已${isEnabled ? '启用' : '禁用'}。`, 'system');
+        this.renderHistoryList(); // 立即刷新历史列表的显示状态
     }
 
     /**
