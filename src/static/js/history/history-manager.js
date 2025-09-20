@@ -63,13 +63,6 @@ export class HistoryManager {
             this.elements.restoreHistoryBtn.addEventListener('click', () => this.recoverHistoryFromServer());
         }
 
-        // Auto-recover if local storage is empty
-        const sessions = this.getChatSessionMeta();
-        if (!sessions || sessions.length === 0) {
-            this.logMessage('本地会话元数据为空，尝试从后端恢复...', 'system');
-            await this.recoverHistoryFromServer(false); // false to not show alert on initial load
-        }
-
         this.renderHistoryList();
     }
 
@@ -496,8 +489,17 @@ export class HistoryManager {
             const sessionMetas = await response.json();
 
             if (sessionMetas) {
+                // 强制覆盖本地存储
                 this.saveChatSessionMeta(sessionMetas);
                 this.renderHistoryList();
+
+                // 检查当前会话是否仍然存在，如果不存在则新建一个会话以清空UI
+                const currentSessionId = this.getCurrentSessionId();
+                if (currentSessionId && !sessionMetas.some(s => s.id === currentSessionId)) {
+                    this.logMessage('当前会话在恢复后已不存在，正在启动新会话...', 'system');
+                    this.generateNewSession();
+                }
+
                 if (showAlert) {
                     this.showToast(`已成功从云端恢复 ${sessionMetas.length} 条记录！`);
                 }
