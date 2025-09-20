@@ -1977,39 +1977,40 @@ body.dark-mode .highlight-box {
 }
 
 /* ============================================= */
-/* == Image Modal Styles (Refactored Version) == */
+/* == Image Modal Styles (Final Version)      == */
 /* ============================================= */
 
 /* The Modal Backdrop */
 .modal {
-    display: none; /* Hidden by default, shown via JS */
-    position: fixed; /* Stay in place, cover the whole screen */
-    z-index: 1001; /* Sit on top of everything */
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 1001;
     left: 0;
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: var(--modal-backdrop-color); /* Use CSS variable */
-    justify-content: center; /* Center horizontally */
-    align-items: center; /* Center vertically */
-    padding: 15px; /* Add padding for small screens */
-    overflow-y: auto; /* Allow vertical scrolling for tall content */
+    overflow: auto; /* Key: Allow scrolling for the whole modal */
+    background-color: var(--modal-backdrop-color);
+    justify-content: center;
+    align-items: center;
+    padding: 20px; /* Add padding to prevent content from touching edges */
 }
 
-/* The Modal Content Box */
+/* The Modal Content Box (The "Photo Frame") */
 .modal-content {
-    background-color: var(--surface-color); /* Use CSS variable */
-    color: var(--text-color); /* Use CSS variable */
+    background-color: var(--surface-color);
+    color: var(--text-color);
     border-radius: 12px;
-    box-shadow: 0 8px 25px var(--shadow-color); /* Use CSS variable */
+    box-shadow: 0 8px 25px var(--shadow-color);
+    position: relative;
+    width: 90%; /* Key: Responsive width */
     max-width: 800px; /* Max width for desktops */
-    /* max-height: 90vh; */ /* Removed to allow content to define height */
+    margin: auto; /* Key: Center the modal */
+    padding: 20px; /* Key: This creates the "frame" */
     display: flex;
-    flex-direction: column; /* Stack children vertically */
-    position: relative; /* For positioning the close button */
-    /* overflow: hidden; */ /* Removed to allow scrolling by parent */
+    flex-direction: column;
+    gap: 20px; /* Space between elements inside the modal */
     animation: fadeIn 0.3s ease-out;
-    margin: auto 0; /* Center vertically if content is smaller than viewport */
 }
 
 @keyframes fadeIn {
@@ -2017,44 +2018,41 @@ body.dark-mode .highlight-box {
     to { opacity: 1; transform: scale(1); }
 }
 
-/* Modal Header */
+/* Modal Header (Now just a container for the close button) */
 .modal-header {
-    padding: 15px 20px;
-    border-bottom: 1px solid var(--border-color); /* Use CSS variable */
+    /* No padding needed, controlled by .modal-content */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-shrink: 0; /* Prevent header from shrinking */
+    /* The close button is positioned absolutely, so this is less critical */
 }
 
 .modal-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0;
-    line-height: 1.2;
     display: none; /* Hide redundant title as per user feedback */
 }
 
-.close-button {
+/* Repositioned close button to top-right of the content box */
+.modal-content .close-button {
+    position: absolute;
+    top: 10px;
+    right: 15px;
     font-size: 2rem;
     font-weight: bold;
-    color: var(--text-secondary-color); /* Use CSS variable */
+    color: var(--text-secondary-color);
     cursor: pointer;
-    line-height: 1;
-    padding: 0 5px;
     transition: color 0.2s ease, transform 0.2s ease;
+    z-index: 10; /* Ensure it's on top */
 }
 
-.close-button:hover,
-.close-button:focus {
-    color: var(--text-color); /* Use CSS variable */
+.modal-content .close-button:hover,
+.modal-content .close-button:focus {
+    color: var(--text-color);
     transform: scale(1.1);
 }
 
-/* Modal Body (The scrollable part) */
+/* Modal Body (No padding needed here) */
 .modal-body {
-    padding: 20px;
-    /* overflow-y: auto; */ /* Removed, scrolling is handled by .modal now */
+    /* No padding needed, controlled by .modal-content */
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -2064,22 +2062,22 @@ body.dark-mode .highlight-box {
     display: flex;
     justify-content: center;
     align-items: center;
-    background-color: var(--bg-color); /* Use CSS variable */
+    background-color: var(--bg-color);
     border-radius: 8px;
-    min-height: 200px; /* Minimum height */
-    max-height: 60vh; /* Limit image container height */
-    flex-shrink: 0; /* Prevent shrinking when info text is long */
+    min-height: 200px;
+    max-height: 60vh; /* Key: Limit image container height */
+    overflow: hidden; /* Ensure image respects border-radius */
 }
 
 .modal-image {
     max-width: 100%;
-    max-height: 100%; /* Allow image to fill the container's height */
+    max-height: 100%; /* Key: Image fills the container */
     object-fit: contain;
     border-radius: 4px;
 }
 
 .modal-info {
-    background-color: var(--bg-color); /* Use CSS variable */
+    background-color: var(--bg-color);
     padding: 15px;
     border-radius: 8px;
     font-size: 0.9em;
@@ -2097,19 +2095,19 @@ body.dark-mode .highlight-box {
 }
 
 .modal-info strong {
-    color: var(--primary-color); /* Use CSS variable */
+    color: var(--primary-color);
     flex-shrink: 0;
 }
 
-/* Modal Footer */
+/* Modal Footer (No padding needed here) */
 .modal-actions {
-    padding: 15px 20px;
-    border-top: 1px solid var(--border-color); /* Use CSS variable */
+    /* No padding needed, controlled by .modal-content */
+    border-top: 1px solid var(--border-color);
+    padding-top: 20px; /* Add space above the buttons */
     display: flex;
     justify-content: flex-end;
     gap: 12px;
-    flex-shrink: 0; /* Prevent footer from shrinking */
-    background-color: var(--surface-color); /* Use CSS variable */
+    background-color: var(--surface-color);
 }
 
 .modal-actions .btn {
@@ -2118,14 +2116,13 @@ body.dark-mode .highlight-box {
 
 /* Responsive Adjustments for Mobile */
 @media (max-width: 600px) {
+    .modal {
+        padding: 10px; /* Reduce padding on small screens */
+    }
     .modal-content {
-        width: 95%; /* Ensure proper width on mobile */
-    }
-    .modal-title {
-        font-size: 1.1rem;
-    }
-    .modal-body {
-        padding: 15px;
+        width: 95%; /* Use more screen width on mobile */
+        padding: 15px; /* Reduce internal padding */
+        gap: 15px;
     }
     .modal-actions {
         flex-direction: column;
