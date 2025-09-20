@@ -1976,160 +1976,159 @@ body.dark-mode .highlight-box {
     border: 1px solid var(--border-color);
 }
 
-/* ============================================= */
-/* == Image Modal Styles (Final Version)      == */
-/* ============================================= */
+/* =================================
+   Image Modal Styles
+   ================================= */
 
-/* The Modal Backdrop */
 .modal {
-    display: none; /* Hidden by default */
+    display: none; /* 默认隐藏 */
     position: fixed;
-    z-index: 1001;
+    z-index: 1000;
     left: 0;
     top: 0;
     width: 100%;
     height: 100%;
-    overflow: auto; /* Key: Allow scrolling for the whole modal */
     background-color: var(--modal-backdrop-color);
     justify-content: center;
     align-items: center;
-    padding: 20px; /* Add padding to prevent content from touching edges */
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
 }
 
-/* The Modal Content Box (The "Photo Frame") */
+/* 用于 JS 控制显示/隐藏 */
+.modal.visible {
+    display: flex;
+    opacity: 1;
+}
+
 .modal-content {
     background-color: var(--surface-color);
     color: var(--text-color);
     border-radius: 12px;
-    box-shadow: 0 8px 25px var(--shadow-color);
-    position: relative;
+    box-shadow: 0 8px 30px var(--shadow-color);
     width: 90%;
-    max-width: 800px;
-    margin: auto;
-    padding: 20px;
-    animation: fadeIn 0.3s ease-out;
-    display: flex; /* Key Change */
-    flex-direction: column; /* Key Change */
-    max-height: 90vh; /* Key Change: Limit overall modal height */
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
-}
-
-/* Modal Header (Now just a container for the close button) */
-.modal-header {
-    /* No padding needed, controlled by .modal-content */
+    max-width: 1200px;
+    height: 90vh;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    /* The close button is positioned absolutely, so this is less critical */
+    flex-direction: column;
+    position: relative;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.modal-content .close-button {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    color: var(--text-secondary-color);
+    font-size: 32px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.3s ease;
+    z-index: 10;
+}
+
+.modal-content .close-button:hover {
+    color: var(--danger-color);
 }
 
 .modal-title {
-    display: none; /* Hide redundant title as per user feedback */
-}
-
-/* Repositioned close button to top-right of the content box */
-.modal-content .close-button {
-    position: absolute;
-    top: 10px;
-    right: 15px;
-    font-size: 2rem;
-    font-weight: bold;
-    color: var(--text-secondary-color);
-    cursor: pointer;
-    transition: color 0.2s ease, transform 0.2s ease;
-    z-index: 10; /* Ensure it's on top */
-}
-
-.modal-content .close-button:hover,
-.modal-content .close-button:focus {
-    color: var(--text-color);
-    transform: scale(1.1);
-}
-
-
-.modal-body {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    flex-grow: 1; /* Key Change: Allow body to fill space */
-    overflow-y: auto; /* Key Change: Enable vertical scrolling for body */
-    min-height: 0; /* Key Change: Flexbox fix for scrolling */
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--primary-color);
+    text-align: center;
+    font-size: 22px;
 }
 
 .modal-image-container {
+    flex-grow: 1;
     display: flex;
     justify-content: center;
     align-items: center;
+    overflow: hidden; /* 确保图片不会溢出此容器 */
+    position: relative;
     background-color: var(--bg-color);
     border-radius: 8px;
-    min-height: 200px;
-    /* max-height: 60vh; */ /* REMOVED */
-    /* overflow: hidden; */ /* REMOVED */
 }
 
-.modal-image {
+#modal-image-display {
     max-width: 100%;
-    max-height: 100%; /* Key: Image fills the container */
-    object-fit: contain;
+    max-height: 100%;
+    object-fit: contain; /* 核心：确保图片完整显示且不变形 */
     border-radius: 4px;
+    transition: transform 0.3s ease;
+    /* 为移动端手势操作提供更好的体验 */
+    touch-action: manipulation;
 }
 
 .modal-info {
-    background-color: var(--bg-color);
-    padding: 15px;
-    border-radius: 8px;
-    font-size: 0.9em;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+    font-size: 14px;
+    color: var(--text-secondary-color);
 }
 
 .modal-info p {
-    margin: 0;
-    word-wrap: break-word;
+    margin: 5px 0;
     display: flex;
     align-items: center;
+    gap: 8px;
+}
+
+.modal-info i {
+    color: var(--primary-color);
+}
+
+.modal-info a {
+    color: var(--primary-color);
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.modal-info a:hover {
+    text-decoration: underline;
+}
+
+.modal-actions {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
     gap: 10px;
 }
 
-.modal-info strong {
-    color: var(--primary-color);
-    flex-shrink: 0;
-}
-
-/* Modal Footer (No padding needed here) */
-.modal-actions {
-    /* No padding needed, controlled by .modal-content */
-    border-top: 1px solid var(--border-color);
-    padding-top: 20px; /* Add space above the buttons */
+.modal-actions .action-button {
+    padding: 10px 15px;
+    font-size: 14px;
     display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    background-color: var(--surface-color);
+    align-items: center;
+    gap: 8px;
 }
 
-.modal-actions .btn {
-    margin-left: 0;
-}
-
-/* Responsive Adjustments for Mobile */
-@media (max-width: 600px) {
-    .modal {
-        padding: 10px; /* Reduce padding on small screens */
-    }
+/* 响应式设计 */
+@media (max-width: 768px) {
     .modal-content {
-        width: 95%; /* Use more screen width on mobile */
-        padding: 15px; /* Reduce internal padding */
-        max-height: 95vh; /* Ensure it fits on mobile */
+        width: 95%;
+        height: 85vh;
+        padding: 15px;
     }
+
+    .modal-title {
+        font-size: 18px;
+    }
+
+    .modal-info {
+        display: none; /* 在小屏幕上隐藏详细信息以节省空间 */
+    }
+
     .modal-actions {
-        flex-direction: column;
+        bottom: 15px;
+        right: 15px;
     }
-    .modal-actions .btn {
-        width: 100%;
+
+    .modal-actions .action-button.copy-button {
+        display: none; /* 在小屏幕上隐藏复制链接按钮 */
     }
 }
