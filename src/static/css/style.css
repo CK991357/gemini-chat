@@ -2003,11 +2003,14 @@ body.dark-mode .highlight-box {
     border-radius: 12px;
     box-shadow: 0 8px 25px var(--shadow-color);
     position: relative;
-    width: 90%; /* Key: Responsive width */
-    max-width: 800px; /* Max width for desktops */
-    margin: auto; /* Key: Center the modal */
-    padding: 20px; /* Key: This creates the "frame" */
+    width: 90%;
+    max-width: 800px;
+    margin: auto;
+    padding: 20px;
     animation: fadeIn 0.3s ease-out;
+    display: flex; /* Key Change */
+    flex-direction: column; /* Key Change */
+    max-height: 90vh; /* Key Change: Limit overall modal height */
 }
 
 @keyframes fadeIn {
@@ -2052,6 +2055,9 @@ body.dark-mode .highlight-box {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    flex-grow: 1; /* Key Change: Allow body to fill space */
+    overflow-y: auto; /* Key Change: Enable vertical scrolling for body */
+    min-height: 0; /* Key Change: Flexbox fix for scrolling */
 }
 
 .modal-image-container {
@@ -2061,8 +2067,8 @@ body.dark-mode .highlight-box {
     background-color: var(--bg-color);
     border-radius: 8px;
     min-height: 200px;
-    max-height: 60vh; /* Key: Limit image container height */
-    overflow: hidden; /* Ensure image respects border-radius */
+    /* max-height: 60vh; */ /* REMOVED */
+    /* overflow: hidden; */ /* REMOVED */
 }
 
 .modal-image {
@@ -2118,7 +2124,7 @@ body.dark-mode .highlight-box {
     .modal-content {
         width: 95%; /* Use more screen width on mobile */
         padding: 15px; /* Reduce internal padding */
-        gap: 15px;
+        max-height: 95vh; /* Ensure it fits on mobile */
     }
     .modal-actions {
         flex-direction: column;
