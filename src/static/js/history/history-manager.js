@@ -169,13 +169,14 @@ export class HistoryManager {
                 li.classList.add('is-pinned');
             }
 
-            // Create checkbox for batch selection
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
+            // Create a custom div-based checkbox for batch selection
+            const checkbox = document.createElement('div');
             checkbox.className = 'batch-select-checkbox';
             checkbox.dataset.sessionId = session.id;
-            checkbox.checked = this.selectedSessions.has(session.id);
-
+            // Use a class to indicate the checked state
+            if (this.selectedSessions.has(session.id)) {
+                checkbox.classList.add('checked');
+            }
             li.appendChild(checkbox);
 
             const infoDiv = document.createElement('div');
@@ -202,10 +203,9 @@ export class HistoryManager {
             const handleItemClick = (event) => {
                 if (this.isSelectMode) {
                     // If in select mode, clicking the item toggles the checkbox
-                    if (event.target !== checkbox) {
-                        checkbox.checked = !checkbox.checked;
-                    }
-                    if (checkbox.checked) {
+                    // Toggle the 'checked' class on the custom checkbox div
+                    checkbox.classList.toggle('checked');
+                    if (checkbox.classList.contains('checked')) {
                         this.selectedSessions.add(session.id);
                     } else {
                         this.selectedSessions.delete(session.id);
@@ -219,13 +219,9 @@ export class HistoryManager {
             };
 
             li.addEventListener('click', handleItemClick);
-            checkbox.addEventListener('change', () => {
-                if (checkbox.checked) {
-                    this.selectedSessions.add(session.id);
-                } else {
-                    this.selectedSessions.delete(session.id);
-                }
-            });
+            // The main 'li' click handler already covers this logic.
+            // The original 'change' event is not applicable to a div.
+            // We can remove this listener.
 
             const optionsButton = li.querySelector('.history-options-button');
             const optionsMenu = li.querySelector('.history-options-menu');
