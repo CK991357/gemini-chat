@@ -2239,16 +2239,16 @@ input:checked + .slider:before {
     color: var(--danger-color);
 }
 
-/* Visual feedback for selected items in batch mode */
+/* Visual feedback for selected items in batch mode (with !important to override conflicts) */
 .history-list-container.select-mode .history-item.selected {
-    background-color: rgba(var(--primary-color-rgb), 0.15);
+    background-color: rgba(var(--primary-color-rgb), 0.15) !important;
     border-left: 4px solid var(--primary-color);
     padding-left: 11px;
 }
 
-/* Ensure the hover effect doesn't override the selected style */
+/* Ensure the hover effect doesn't override the selected style (with !important) */
 .history-list-container.select-mode .history-item.selected:hover {
-    background-color: rgba(var(--primary-color-rgb), 0.2);
+    background-color: rgba(var(--primary-color-rgb), 0.25) !important;
 }
 
 /* When in select mode, prevent the main click from loading the session */
