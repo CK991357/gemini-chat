@@ -2002,6 +2002,7 @@ body.dark-mode .highlight-box {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    box-sizing: border-box; /* 新增：确保 padding 不会撑大容器 */
 }
 
 @keyframes fadeIn {
@@ -2118,14 +2119,14 @@ body.dark-mode .highlight-box {
 /* 响应式调整 */
 @media (max-width: 600px) {
     .modal-content {
-        width: 95vw !important; /* 使用视口宽度并强制生效 */
-        padding: 15px !important;
-        max-height: 90vh !important; /* 强制最大高度限制 */
-        overflow-y: auto !important; /* 强制内容溢出时允许滚动 */
+        width: auto; /* 移除固定的视口宽度，让其自适应父容器的 padding */
+        padding: 15px;
+        max-height: 90vh; /* 限制最大高度 */
+        overflow-y: auto; /* 内容溢出时允许滚动 */
     }
 
     .modal-image-container {
-        max-height: 50vh !important; /* 强制限制图片容器在小屏幕上的高度 */
+        max-height: 50vh; /* 限制图片容器在小屏幕上的高度 */
     }
     .modal-title {
         font-size: 1.5rem;
