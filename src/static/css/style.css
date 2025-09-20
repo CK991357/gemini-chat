@@ -1825,7 +1825,6 @@ body.dark-mode .highlight-box {
     cursor: pointer;
     transition: background-color 0.3s ease;
     position: relative; /* 用于定位操作菜单 */
-    gap: 10px; /* Add gap for the new icon */
 }
 
 .history-item:hover {
@@ -2240,22 +2239,26 @@ input:checked + .slider:before {
     color: var(--danger-color);
 }
 
-/* New styles for the selection indicator icon */
-.selection-indicator {
-    color: var(--primary-color);
-    font-size: 20px;
-    display: none; /* Hide by default */
-    flex-shrink: 0;
+/* Final, robust solution using a CSS pseudo-element for selection feedback */
+.history-list-container.select-mode .history-item {
+    padding-left: 30px; /* Make space for the pseudo-element */
 }
 
-/* When in select mode, show the indicator for selected items */
-.history-list-container.select-mode .history-item.selected .selection-indicator {
-    display: block; /* Show the icon */
+.history-list-container.select-mode .history-item::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--border-color); /* Default color for the dot */
+    transition: background-color 0.3s ease;
 }
 
-/* Keep the hover effect, but remove the problematic background color change */
-.history-list-container.select-mode .history-item.selected:hover {
-    background-color: var(--bg-color); /* Use the standard hover color */
+.history-list-container.select-mode .history-item.selected::before {
+    background-color: var(--primary-color); /* Color for the selected dot */
 }
 
 /* When in select mode, prevent the main click from loading the session */
