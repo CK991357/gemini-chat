@@ -2002,7 +2002,6 @@ body.dark-mode .highlight-box {
     color: var(--text-color); /* Use CSS variable */
     border-radius: 12px;
     box-shadow: 0 8px 25px var(--shadow-color); /* Use CSS variable */
-    width: 100%;
     max-width: 800px; /* Max width for desktops */
     /* max-height: 90vh; */ /* Removed to allow content to define height */
     display: flex;
@@ -2033,6 +2032,7 @@ body.dark-mode .highlight-box {
     font-weight: 600;
     margin: 0;
     line-height: 1.2;
+    display: none; /* Hide redundant title as per user feedback */
 }
 
 .close-button {
@@ -2118,6 +2118,9 @@ body.dark-mode .highlight-box {
 
 /* Responsive Adjustments for Mobile */
 @media (max-width: 600px) {
+    .modal-content {
+        width: 95%; /* Ensure proper width on mobile */
+    }
     .modal-title {
         font-size: 1.1rem;
     }
