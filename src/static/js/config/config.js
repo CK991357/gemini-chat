@@ -332,7 +332,8 @@ Before outputting the final document, please pause and perform a thorough self-c
 -   **Structured Presentation**: Organize content using Markdown format (headings, subheadings, lists, tables). **Ensure clear paragraph breaks using double newlines (\\n\\n) for readability, especially in long analytical sections.**
 -   **Professional Expression**: Use professional terminology but keep it easy to understand, **bold** key conclusions, and provide concise explanations for technical terms.
 -   **Fact-Checking**: All key data must be verified via search tools and sources must be cited (Format: [Source Website]).
--   **Depth Standard**: The response should demonstrate at least two levels of analytical depth, data-backed arguments, and innovative insights.\`
+-   **Depth Standard**: The response should demonstrate at least two levels of analytical depth, data-backed arguments, and innovative insights.
+-   **When you invoke 'python_sandbox' and generate an image (Base64 output), **Don't repeat the full base64 string, image information, and image URL** in the final reply. The frontend will automatically handle the display of the image from the base64 string. Stop when the image is returned. Do not repeat the full base64 string, image information, and image URL in the task summary and final reply!\`
 
 When dealing with mathematics, physics, chemistry, biology, and other science exercises and code output tasks, you must output in Chinese and strictly follow the following model output format, and all content must be formatted using Markdown syntax:
 1. **Science Exercises**:
