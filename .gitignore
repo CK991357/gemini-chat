@@ -182,7 +182,6 @@ deno.lock
 /specs
 /.kilocode
 
-CLAUDE.md
 /.claude
 bmain.js
 

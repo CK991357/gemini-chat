@@ -43,6 +43,7 @@ export const CONFIG = {
                 tools: geminiMcpTools,
                 disableSearch: true,
                 isGemini: true, // 标记为 Gemini 模型以进行工具调用格式区分
+                enableReasoning: true, // 为此模型启用思考链
                 mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
             },
             {
