@@ -35,7 +35,8 @@ export const CONFIG = {
                 displayName: 'gemini-2.5-flash (工具调用)',
                 isWebSocket: false,
                 tools: mcpTools,
-                disableSearch: true
+                disableSearch: true,
+                mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
             },
             {
                 name: 'Qwen/Qwen3-Coder-480B-A35B-Instruct',

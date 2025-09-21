@@ -203,14 +203,28 @@ export class ChatApiHandler {
                 this.state.currentAIMessageContentDiv = null;
 
                 // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
-                console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call structure:`, currentFunctionCall);
-                if (currentFunctionCall.tool_name) {
-                    // Qwen MCP Tool Call
-                    console.log(`[${timestamp()}] [DISPATCH] Detected Qwen MCP tool call. Routing to _handleMcpToolCall...`);
-                    await this._handleMcpToolCall(currentFunctionCall, requestBody, apiKey);
+                console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call for model: ${requestBody.model}`);
+                const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
+
+                // Route to MCP proxy if the model is configured for it
+                if (modelConfig && modelConfig.mcp_server_url) {
+                    console.log(`[${timestamp()}] [DISPATCH] Model is configured for MCP. Routing to _handleMcpToolCall...`);
+                    
+                    // Normalize Gemini's functionCall to match Qwen's tool_code format if necessary
+                    let mcpToolCall = currentFunctionCall;
+                    if (currentFunctionCall.name && currentFunctionCall.args) { // This is a Gemini functionCall
+                        console.log(`[${timestamp()}] [DISPATCH] Normalizing Gemini functionCall to MCP format.`);
+                        mcpToolCall = {
+                            tool_name: currentFunctionCall.name,
+                            arguments: JSON.stringify(currentFunctionCall.args)
+                        };
+                    }
+                    
+                    await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey);
+
                 } else {
-                    // Gemini Function Call
-                    console.log(`[${timestamp()}] [DISPATCH] Detected Gemini function call. Routing to _handleGeminiToolCall...`);
+                    // Otherwise, handle as a standard Gemini function call (e.g., default Google Search)
+                    console.log(`[${timestamp()}] [DISPATCH] Model is not configured for MCP. Routing to _handleGeminiToolCall...`);
                     await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey);
                 }
                 console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
