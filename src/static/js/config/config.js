@@ -1,4 +1,4 @@
-import { mcpTools } from '../tools_mcp/tool-definitions.js';
+import { geminiMcpTools, mcpTools } from '../tools_mcp/tool-definitions.js';
 
 export const CONFIG = {
     API: {
@@ -34,7 +34,7 @@ export const CONFIG = {
                 name: 'models/gemini-2.5-flash',
                 displayName: 'gemini-2.5-flash (工具调用)',
                 isWebSocket: false,
-                tools: mcpTools,
+                tools: geminiMcpTools,
                 disableSearch: true,
                 isGemini: true, // 标记为 Gemini 模型以进行工具调用格式区分
                 mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy

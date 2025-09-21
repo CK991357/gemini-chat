@@ -142,3 +142,21 @@ export const mcpToolsMap = {
     'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
     'firecrawl': firecrawl
 };
+
+// Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
+const python_sandbox_gemini = JSON.parse(JSON.stringify(python_sandbox));
+delete python_sandbox_gemini.function.output_schema;
+
+// Create a deep copy of firecrawl and remove the output_schema for Gemini compatibility
+const firecrawl_gemini = JSON.parse(JSON.stringify(firecrawl));
+delete firecrawl_gemini.function.output_schema;
+
+
+// Gemini-specific toolset without output_schema
+export const geminiMcpTools = [
+    tavily_search,
+    image_url_analyzer,
+    python_sandbox_gemini,
+    mcp_tool_catalog,
+    firecrawl_gemini
+];
