@@ -298,12 +298,14 @@ async function handleAPIRequest(request, env) {
             const model = body.model || '';
 
             // 路由到新的聊天/搜索请求处理器
-            if (
+             if (
                 model === 'models/gemini-2.5-pro' ||
                 model === 'models/gemini-2.5-flash-preview-05-20' ||
                 model === 'models/gemini-2.5-flash-lite-preview-06-17' ||
-                model === 'models/gemini-2.0-flash'
-            ) {
+                model === 'models/gemini-2.0-flash'||
+                 model === 'models/gemini-2.5-flash'
+
+            ) {                
                 console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
                 const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
                 const apiKey = env.AUTH_KEY;
