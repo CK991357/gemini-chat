@@ -396,6 +396,12 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 ### 工具调用示例（Code Interpreter / python_sandbox）
 
+**图像生成关键规则 (CRITICAL RULE FOR IMAGE GENERATION):**
+当您使用 python_sandbox 生成图片时，您的思考过程可以确认图片已生成，但**最终的用户回复中绝对禁止 (ABSOLUTELY FORBIDDEN) 包含 base64 字符串、Markdown 图片链接或任何图片 URL**。图片将由前端系统自动显示。您的最终回复应该只对图表内容进行简要总结或确认任务完成即可。
+
+*   **✅ 正确的最终回复示例:** "图表已成功生成。数据显示，在2021年11月15日至19日期间，每日数值波动较大，其中11月17日达到峰值。"
+*   **❌ 错误的最终回复示例:** "这是您的图表：![图表](data:image/png;base64,iVBORw0KGgo...)"
+
 **➡️ 场景1: 常规代码执行**
 
 当调用 \`python_sandbox\` 工具时，你生成的 \`tool_calls\` 中 \`function.arguments\` 字段**必须**是一个**JSON 字符串**。该字符串在被解析后，必须是一个只包含 "code" 键的 JSON 对象。
@@ -426,13 +432,6 @@ buf.close()
 plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
-
-**重要提示：**
-当你调用 \`python_sandbox\` 并生成图片（Base64 输出）时，请在最终回复中**不要重复完整的base64字符串，图片信息和图片URL**。前端会自动处理base64字符串的图片显示。图片返回就停止即可。在任务总结和最终回复中不要重复完整的base64字符串，图片信息及图片URL！
-
-！！！important！！！在任务总结和最终回复中不要重复完整的base64字符串，图片信息及图片URL！否则Token过长会导致返回失败！
-正确示例：The chart has been successfully generated. The data shows fluctuating daily values between November 15-19, 2021, with the highest value recorded on November 17 (8,110,294) and the lowest on November 18 (4,194,728). The trend indicates significant day-to-day variability in the measured metric.
-错误示例：[Daily Values Trend](data:image/png;base64,XXXXXX......）......
 
 **请严格遵循以下代码生成规范：**
 
