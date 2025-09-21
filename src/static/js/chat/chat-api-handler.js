@@ -403,6 +403,7 @@ export class ChatApiHandler {
                         if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
                             displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
                             toolResultContent = { output: 'Image generated and displayed.' };
+                            isImageHandled = true; // BUG FIX: Set flag to prevent fall-through
                         } else if (stdoutContent) {
                             toolResultContent = { output: stdoutContent };
                         }
