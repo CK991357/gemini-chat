@@ -31,6 +31,12 @@ export const CONFIG = {
                 isWebSocket: false
             },
             {
+                name: 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+                displayName: 'Qwen3-Coder-480B-A35B-Instruct (HTTP)',
+                isWebSocket: false,
+                isQwen: true, // 标记为通义千问模型
+            },
+                        {
                 name: 'models/gemini-2.5-flash',
                 displayName: 'gemini-2.5-flash (工具调用)',
                 isWebSocket: false,
@@ -38,12 +44,6 @@ export const CONFIG = {
                 disableSearch: true,
                 isGemini: true, // 标记为 Gemini 模型以进行工具调用格式区分
                 mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
-            },
-            {
-                name: 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
-                displayName: 'Qwen3-Coder-480B-A35B-Instruct (HTTP)',
-                isWebSocket: false,
-                isQwen: true, // 标记为通义千问模型
             },
             {
                 name: 'GLM-4.5-Flash',
