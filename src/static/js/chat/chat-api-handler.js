@@ -383,33 +383,45 @@ export class ChatApiHandler {
             let toolResultContent; // Declare without initializing
 
             // Special handling for python_sandbox output to detect and display images
-            if (toolCode.tool_name === 'python_sandbox' && toolRawResult && toolRawResult.stdout) {
-                const stdoutContent = toolRawResult.stdout.trim();
-                const isBase64Image = stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/');
+            if (toolCode.tool_name === 'python_sandbox') {
+                let isImageHandled = false;
+                if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
+                    const stdoutContent = toolRawResult.stdout.trim();
+                    try {
+                        const imageData = JSON.parse(stdoutContent);
+                        if (imageData && imageData.type === 'image' && imageData.image_base64) {
+                            const title = imageData.title || 'Generated Chart';
+                            displayImageResult(imageData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
+                            toolResultContent = { output: `Image "${title}" generated and displayed.` };
+                            isImageHandled = true;
+                        }
+                    } catch (e) {
+                        // Not a JSON object, fall back to legacy raw base64 check
+                    }
 
-                if (isBase64Image) {
-                    // 1. 立即在前端渲染图片
-                    console.log(`[${timestamp()}] [MCP] Base64 image detected. Rendering immediately.`);
-                    displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
-                    
-                    // 2. 创建一个不含 Base64 的替代性结果发回给模型
-                    toolResultContent = { output: "Image generated and displayed successfully." };
-                    console.log(`[${timestamp()}] [MCP] Replacing tool result with a confirmation message for the model.`);
-
-                } else {
-                    // 如果不是图片，则按原样处理 stdout
-                    toolResultContent = { output: stdoutContent };
+                    if (!isImageHandled) {
+                        if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
+                            displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
+                            toolResultContent = { output: 'Image generated and displayed.' };
+                        } else if (stdoutContent) {
+                            toolResultContent = { output: stdoutContent };
+                        }
+                    }
                 }
-
-                // 统一处理 stderr
-                if (toolRawResult.stderr) {
+                if (toolRawResult && toolRawResult.stderr) {
                     chatUI.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
-                    // 将 stderr 附加到要发回给模型的内容中
-                    toolResultContent.output += `\n[STDERR]: ${toolRawResult.stderr}`;
+                    if (toolResultContent && toolResultContent.output) {
+                        toolResultContent.output += `\nError: ${toolRawResult.stderr}`;
+                    } else {
+                        toolResultContent = { output: `Error: ${toolRawResult.stderr}` };
+                    }
                 }
-
+                if (!toolResultContent) {
+                    toolResultContent = { output: "Tool executed successfully with no output." };
+                }
             } else {
-                // 对于所有其他工具，按原样包装结果
+                // For ALL other tools, wrap the raw result consistently to ensure a predictable
+                // structure for the transit worker.
                 toolResultContent = { output: toolRawResult };
             }
 
