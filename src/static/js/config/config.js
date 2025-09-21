@@ -36,6 +36,7 @@ export const CONFIG = {
                 isWebSocket: false,
                 tools: mcpTools,
                 disableSearch: true,
+                isGemini: true, // 标记为 Gemini 模型以进行工具调用格式区分
                 mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
             },
             {
