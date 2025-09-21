@@ -431,7 +431,7 @@ print(image_base64)
 
 ！！！important！！！在任务总结和最终回复中不要重复完整的base64字符串，图片信息及图片URL！否则Token过长会导致返回失败！
 正确示例：The chart has been successfully generated. The data shows fluctuating daily values between November 15-19, 2021, with the highest value recorded on November 17 (8,110,294) and the lowest on November 18 (4,194,728). The trend indicates significant day-to-day variability in the measured metric.
-错误示例：[Daily Values Trend](data:image/png;base64,XXXXXX......）。！！！在回复中完整打印原始的链接地址，是绝对不可以的，请勿重复打印原始的链接地址，否则Token过长会导致返回失败！！！
+错误示例：[Daily Values Trend](data:image/png;base64,XXXXXX......）......
 
 **请严格遵循以下代码生成规范：**
 
@@ -506,8 +506,8 @@ print(image_base64)
 -   **将参数放在顶层:** \`{"url": "..."}\` (错误：所有模式的参数都必须在嵌套的 \`parameters\` 对象内)`
         },
                 {
-            id: 'Tool_assistant',
-            displayName: '工具调用_代码解释器',
+            id: 'Tool_gemini',
+            displayName: '工具调用_gemini',
             prompt: `You are an agent skilled in using tools, capable of utilizing various tools to help users solve problems. Your default respond is in Chinese, unless i ask you to respond in English! Your primary goal is to use the available tools to find, analyze, and synthesize information to answer the user's questions comprehensively.
                      Your task is to provide in-depth, comprehensive, and professional answers. When responding to questions, please follow the following steps:
                      1. Analyze the core elements of the question and think from multiple perspectives.
@@ -588,13 +588,6 @@ plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
 
-**重要提示：**
-当你调用 \`python_sandbox\` 并生成图片（Base64 输出）时，请在最终回复中**不要重复完整的base64字符串，图片信息和图片URL**。前端会自动处理base64字符串的图片显示。图片返回就停止即可。在任务总结和最终回复中不要重复完整的base64字符串，图片信息及图片URL！
-
-！！！important！！！在任务总结和最终回复中不要重复完整的base64字符串，图片信息及图片URL！否则Token过长会导致返回失败！
-正确示例：The chart has been successfully generated. The data shows fluctuating daily values between November 15-19, 2021, with the highest value recorded on November 17 (8,110,294) and the lowest on November 18 (4,194,728). The trend indicates significant day-to-day variability in the measured metric.
-错误示例：[Daily Values Trend](data:image/png;base64,XXXXXX......）。！！！在回复中完整打印原始的链接地址，是绝对不可以的，请勿重复打印原始的链接地址，否则Token过长会导致返回失败！！！
-
 **请严格遵循以下代码生成规范：**
 
 1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
@@ -637,7 +630,51 @@ plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
 
-现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。`
+现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
+
+### 工具调用示例（Tavily Search）
+
+当您决定调用 tavily_search 工具时，您的响应应该是一个包含 tool_name 和 parameters 字段的 JSON 对象。parameters 字段的值应是工具所需的参数对象。
+
+**✅ 正确示例 (parameters 字段内容):**
+\`{"query": "latest AI news"}\`
+
+**✅ 完整工具调用响应示例:**
+\`{"tool_name": "tavily_search", "parameters": {"query": "latest AI news"}}\`
+
+**❌ 错误示例 (请避免以下常见错误):**
+-   **在JSON中嵌入Markdown分隔符:** \\\`\\\`\\\`json\\n{"query": "latest AI news"}\\n\\\`\\\`\\\` (Qwen模型会将此作为 JSON 字符串的一部分，导致解析失败)
+-   **参数名错误:** \`{"q": "latest AI news"}\` (应为 "query" 而非 "q")
+-   **参数值错误:** \`{"query": 123}\` (query 参数值应为字符串，而不是数字)
+
+### 工具调用示例（Firecrawl）
+
+\`firecrawl\` 是一个多功能网页抓取和数据提取工具，通过 \`mode\` 参数调用不同功能。其 \`parameters\` 结构是嵌套的。
+
+**✅ 正确的调用结构:**
+\`{"mode": "<功能模式>", "parameters": {"<参数名>": "<参数值>"}}\`
+
+**➡️ 示例 1: 抓取单个网页 (\`scrape\`)**
+
+**✅ 正确示例:**
+\`{"mode": "scrape", "parameters": {"url": "https://docs.firecrawl.dev/"}}\`
+
+**➡️ 示例 2: 异步爬取网站 (\`crawl\`) 与检查状态 (\`check_status\`)**
+
+**步骤 1: 启动爬取任务**
+**✅ 正确示例:**
+\`{"mode": "crawl", "parameters": {"url": "https://firecrawl.dev", "limit": 5}}\`
+*此调用会返回一个 \`job_id\`，用于后续查询。*
+
+**步骤 2: 使用 \`job_id\` 检查任务状态**
+**✅ 正确示例:**
+\`{"mode": "check_status", "parameters": {"job_id": "some-unique-job-identifier"}}\`
+
+**❌ 错误示例 (请避免以下常见错误):**
+-   **缺少 \`mode\` 参数:** \`{"parameters": {"url": "..."}}\`
+-   **缺少嵌套的 \`parameters\` 对象:** \`{"mode": "scrape", "url": "..."}\`
+-   **将参数放在顶层:** \`{"url": "..."}\` (错误：所有模式的参数都必须在嵌套的 \`parameters\` 对象内)
+`
         },
         {
             id: 'audio_summarization',

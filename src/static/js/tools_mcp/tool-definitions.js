@@ -155,8 +155,6 @@ delete firecrawl_gemini.function.output_schema;
 // Gemini-specific toolset without output_schema
 export const geminiMcpTools = [
     tavily_search,
-    image_url_analyzer,
     python_sandbox_gemini,
-    mcp_tool_catalog,
     firecrawl_gemini
 ];
