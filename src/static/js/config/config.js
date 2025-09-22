@@ -21,6 +21,12 @@ export const CONFIG = {
                 isWebSocket: false
             },
                         {
+                name: 'models/gemini-2.5-flash',
+                displayName: 'gemini-2.5-flash-thinking (HTTP)',
+                isWebSocket: false,
+                enableReasoning: true, // 为此模型启用思考链
+            },
+                        {
                 name: 'models/gemini-2.5-pro',
                 displayName: 'gemini-2.5-pro (HTTP)',
                 isWebSocket: false
@@ -36,7 +42,7 @@ export const CONFIG = {
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
             },
-                        {
+            {
                 name: 'models/gemini-2.5-flash',
                 displayName: 'gemini-2.5-flash (工具调用)',
                 isWebSocket: false,
