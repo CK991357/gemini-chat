@@ -98,7 +98,10 @@
                     <!-- 新增：Gemini 思维链开关 -->
                     <div class="setting-item">
                         <label for="enable-reasoning-checkbox">Gemini 思维链:</label>
-                        <input type="checkbox" id="enable-reasoning-checkbox" name="enableReasoning" title="启用后Gemini模型会显示思考过程">
+                        <label class="switch" for="enable-reasoning-checkbox" title="启用后Gemini模型会显示思考过程">
+                            <input type="checkbox" id="enable-reasoning-checkbox" name="enableReasoning">
+                            <span class="slider round"></span>
+                        </label>
                     </div>
                     <div class="setting-item">
                         <label for="fps-input">视频 FPS:</label>

@@ -43,12 +43,18 @@ export class ChatApiHandler {
         const selectedModelName = requestBody.model; // 获取当前模型名称
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
         
-        // 检查模型是否为Gemini，并从localStorage获取全局开关状态
-        const isGeminiModel = modelConfig && modelConfig.isGemini;
+        // 检查当前模型是否为Gemini类型（通过名称判断，不依赖isGemini标签）
+        const isCurrentModelGeminiType = selectedModelName.includes('gemini');
         const isReasoningEnabledGlobally = localStorage.getItem('geminiEnableReasoning') === 'true';
         
-        // 仅当模型是Gemini且全局开关开启时，才启用Reasoning
-        const enableReasoning = isGeminiModel && isReasoningEnabledGlobally;
+        let enableReasoning;
+        if (modelConfig && modelConfig.enableReasoning !== undefined) {
+            // 如果模型配置中明确设置了 enableReasoning，则以其为准
+            enableReasoning = modelConfig.enableReasoning;
+        } else {
+            // 否则，回退到 localStorage 中的全局开关状态，但仅限于 Gemini 类型模型
+            enableReasoning = isCurrentModelGeminiType && isReasoningEnabledGlobally;
+        }
         
         const disableSearch = modelConfig ? modelConfig.disableSearch : false;
 
