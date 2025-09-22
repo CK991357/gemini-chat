@@ -42,7 +42,14 @@ export class ChatApiHandler {
         let currentMessages = requestBody.messages;
         const selectedModelName = requestBody.model; // 获取当前模型名称
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
-        const enableReasoning = modelConfig ? modelConfig.enableReasoning : false; // 获取 enableReasoning 配置
+        
+        // 检查模型是否为Gemini，并从localStorage获取全局开关状态
+        const isGeminiModel = modelConfig && modelConfig.isGemini;
+        const isReasoningEnabledGlobally = localStorage.getItem('geminiEnableReasoning') === 'true';
+        
+        // 仅当模型是Gemini且全局开关开启时，才启用Reasoning
+        const enableReasoning = isGeminiModel && isReasoningEnabledGlobally;
+        
         const disableSearch = modelConfig ? modelConfig.disableSearch : false;
 
         try {

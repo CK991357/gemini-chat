@@ -117,6 +117,20 @@ if (savedFPS) {
 // We will set the default prompt based on the new config structure.
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 新增：初始化思维链开关
+    const reasoningCheckbox = document.getElementById('enable-reasoning-checkbox');
+    if (reasoningCheckbox) {
+        // 1. 初始化
+        const savedReasoningState = localStorage.getItem('geminiEnableReasoning') === 'true';
+        reasoningCheckbox.checked = savedReasoningState;
+
+        // 2. 监听变化并保存
+        reasoningCheckbox.addEventListener('change', () => {
+            localStorage.setItem('geminiEnableReasoning', reasoningCheckbox.checked);
+            showToast(`Gemini 思维链已${reasoningCheckbox.checked ? '开启' : '关闭'}`);
+        });
+    }
+
     // 配置 marked.js
     marked.setOptions({
       breaks: true, // 启用 GitHub Flavored Markdown 的换行符支持

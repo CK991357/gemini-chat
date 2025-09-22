@@ -19,7 +19,6 @@ export const CONFIG = {
                 name: 'models/gemini-2.5-flash-preview-05-20',
                 displayName: 'gemini-2.5-flash-preview-05-20 (HTTP)',
                 isWebSocket: false,
-                enableReasoning: true // 为此模型启用思考链
             },
             {
                 name: 'models/gemini-2.5-pro',

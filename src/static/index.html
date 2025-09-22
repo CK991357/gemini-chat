@@ -95,6 +95,11 @@
                             <option value="models/gemini-2.5-flash-preview-05-20" selected>gemini-2.5-flash-preview-05-20</option>
                         </select>
                     </div>
+                    <!-- 新增：Gemini 思维链开关 -->
+                    <div class="setting-item">
+                        <label for="enable-reasoning-checkbox">Gemini 思维链:</label>
+                        <input type="checkbox" id="enable-reasoning-checkbox" name="enableReasoning" title="启用后Gemini模型会显示思考过程">
+                    </div>
                     <div class="setting-item">
                         <label for="fps-input">视频 FPS:</label>
                         <input type="number" id="fps-input" placeholder="Video FPS" value="1" min="1" max="30" step="1"/>
