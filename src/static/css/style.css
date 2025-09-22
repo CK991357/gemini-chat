@@ -495,6 +495,16 @@ body {
   }
 }
 
+.setting-item.setting-item-horizontal {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.setting-item.setting-item-horizontal label:first-child {
+    margin-bottom: 0;
+}
+
 /* 媒体预览容器优化 */
 .media-previews {
   position: absolute;
