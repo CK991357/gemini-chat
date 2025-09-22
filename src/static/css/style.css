@@ -498,7 +498,8 @@ body {
 .setting-item.setting-item-horizontal {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 10px;
 }
 
 .setting-item.setting-item-horizontal label:first-child {
