@@ -31,14 +31,6 @@ export const CONFIG = {
                 isWebSocket: false
             },
             {
-                name: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
-                displayName: 'Qwen3-VL-235B-A22B-Instruct (工具调用)',
-                isWebSocket: false,
-                isQwen: true, // 标记为通义千问模型
-                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: mcpTools
-            },
-            {
                 name: 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
                 displayName: 'Qwen3-Coder-480B-A35B-Instruct (HTTP)',
                 isWebSocket: false,
