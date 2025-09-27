@@ -1666,20 +1666,29 @@ body.dark-mode {
 
 .vision-container .vision-controls {
     display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.vision-container .vision-control-row {
+    display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%; /* 确保在小屏幕下独占一行 */
-    margin-bottom: 10px; /* 与输入框保持间距 */
-    flex-wrap: wrap; /* 允许换行 */
+    width: 100%;
+    flex-wrap: wrap;
 }
 
-.vision-container .vision-controls label {
+.vision-container .vision-control-row label {
     font-weight: 500;
     color: var(--text-secondary-color);
+    min-width: 40px;
+    flex-shrink: 0;
 }
 
-.vision-container .vision-controls select {
-    flex: 1 1 150px; /* 允许下拉菜单占据可用空间，最小宽度150px */
+.vision-container .vision-control-row select {
+    flex: 1 1 150px;
     min-width: 120px;
     padding: 8px 12px;
     border: 1px solid var(--border-color);
@@ -1690,14 +1699,14 @@ body.dark-mode {
     transition: border-color 0.3s ease;
 }
 
-.vision-container .vision-controls select:focus {
+.vision-container .vision-control-row select:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
 }
 
 /* 对局总结按钮样式 */
-.vision-container .vision-controls .action-button {
+.vision-container .vision-control-row .action-button {
     background-color: var(--primary-color);
     color: white;
     border: none;
@@ -1708,14 +1717,15 @@ body.dark-mode {
     transition: all 0.3s ease;
     white-space: nowrap;
     flex-shrink: 0;
+    margin-left: 8px;
 }
 
-.vision-container .vision-controls .action-button:hover:not(:disabled) {
+.vision-container .vision-control-row .action-button:hover:not(:disabled) {
     background-color: var(--secondary-color);
     transform: translateY(-1px);
 }
 
-.vision-container .vision-controls .action-button:disabled {
+.vision-container .vision-control-row .action-button:disabled {
     background-color: var(--border-color);
     cursor: not-allowed;
     transform: none;
@@ -1779,9 +1789,9 @@ body.dark-mode {
         font-size: 20px;
     }
 
-    .vision-container .vision-controls {
-        width: 100%; /* 确保在小屏幕下独占一行 */
-        margin-bottom: 10px; /* 与输入框保持间距 */
+    .vision-container .vision-control-row {
+        width: 100%;
+        margin-bottom: 5px;
     }
 }
 

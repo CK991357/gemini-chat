@@ -366,8 +366,8 @@ async function generateGameSummary() {
 
     // 检查是否处于国际象棋相关模式
     const currentPrompt = getSelectedPrompt();
-    if (!currentPrompt.id.includes('chess')) {
-        showToastHandler('请先切换到国际象棋相关模式后再生成总结。');
+    if (currentPrompt.id !== 'chess_teacher') {
+        showToastHandler('请先切换到“国际象棋老师”模式后再生成总结。');
         return;
     }
 
@@ -386,8 +386,12 @@ async function generateGameSummary() {
     markdownContainer.innerHTML = '<p>正在生成对局总结...</p>';
 
     try {
-        // 构建总结请求
-        const summaryPrompt = CONFIG.VISION.PROMPTS.find(p => p.id === 'chess_analysis');
+        // 构建总结请求，使用专门的chess_summary提示词
+        const summaryPrompt = CONFIG.VISION.PROMPTS.find(p => p.id === 'chess_summary');
+        if (!summaryPrompt) {
+            throw new Error('找不到chess_summary提示词，请检查配置');
+        }
+        
         const summaryRequest = {
             model: selectedModel,
             messages: [

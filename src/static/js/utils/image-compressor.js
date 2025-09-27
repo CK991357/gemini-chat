@@ -101,7 +101,7 @@ export class ImageCompressor {
                             }
                         );
                         
-                        console.log(`图片压缩完成: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`);
+                        console.log(`图片压缩完成: ${(file.size / 1024).toFixed(2)}KB → ${(compressedFile.size / 1024).toFixed(2)}KB`);
                         resolve(compressedFile);
                     }, outputFormat, quality);
                     
@@ -162,13 +162,13 @@ export class ImageCompressor {
      * @returns {object} - 压缩信息
      */
     getCompressionInfo(originalFile, compressedFile) {
-        const originalSize = (originalFile.size / 1024 / 1024).toFixed(2);
-        const compressedSize = (compressedFile.size / 1024 / 1024).toFixed(2);
+        const originalSize = (originalFile.size / 1024).toFixed(2);
+        const compressedSize = (compressedFile.size / 1024).toFixed(2);
         const compressionRatio = ((1 - compressedFile.size / originalFile.size) * 100).toFixed(1);
         
         return {
-            originalSize: `${originalSize}MB`,
-            compressedSize: `${compressedSize}MB`,
+            originalSize: `${originalSize}KB`,
+            compressedSize: `${compressedSize}KB`,
             compressionRatio: `${compressionRatio}%`,
             isCompressed: compressedFile.size < originalFile.size
         };

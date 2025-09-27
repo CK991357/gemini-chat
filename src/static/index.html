@@ -248,11 +248,15 @@
                     </div>
 
                     <div class="vision-controls">
-                        <label for="vision-model-select">模型:</label>
-                        <select id="vision-model-select"></select>
-                        <label for="vision-prompt-select">模式:</label>
-                        <select id="vision-prompt-select"></select>
-                        <button id="vision-summary-button" class="action-button" title="生成对局总结">对局总结</button>
+                        <div class="vision-control-row">
+                            <label for="vision-model-select">模型:</label>
+                            <select id="vision-model-select"></select>
+                        </div>
+                        <div class="vision-control-row">
+                            <label for="vision-prompt-select">模式:</label>
+                            <select id="vision-prompt-select"></select>
+                            <button id="vision-summary-button" class="action-button" title="生成对局总结">对局总结</button>
+                        </div>
                     </div>
                     <div class="input-area" id="vision-input-area">
                         <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
