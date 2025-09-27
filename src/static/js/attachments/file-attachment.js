@@ -80,7 +80,7 @@ export class AttachmentManager {
                 if (this.enableCompression && file.type.startsWith('image/')) {
                     if (imageCompressor.needsCompression(file)) {
                         const originalSize = (file.size / 1024 / 1024).toFixed(2);
-                        this.showToast(`正在压缩图片(${originalSize}KB)...`, 5000);
+                        this.showToast(`正在压缩图片(${originalSize}MB)...`, 5000);
                         processedFile = await imageCompressor.compressImage(file);
                         
                         // 如果压缩成功且减小了文件大小

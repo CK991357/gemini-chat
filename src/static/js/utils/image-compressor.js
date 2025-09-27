@@ -162,8 +162,8 @@ export class ImageCompressor {
      * @returns {object} - 压缩信息
      */
     getCompressionInfo(originalFile, compressedFile) {
-        const originalSize = (originalFile.size / 1024).toFixed(2);
-        const compressedSize = (compressedFile.size / 1024).toFixed(2);
+        const originalSize = (originalFile.size / 1024 / 1024).toFixed(2);
+        const compressedSize = (compressedFile.size / 1024 / 1024).toFixed(2);
         const compressionRatio = ((1 - compressedFile.size / originalFile.size) * 100).toFixed(1);
         
         return {
