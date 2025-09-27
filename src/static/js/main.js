@@ -455,7 +455,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // T8: 初始化视觉功能
     const visionElements = {
         visionModelSelect: document.getElementById('vision-model-select'),
+        visionPromptSelect: document.getElementById('vision-prompt-select'),
         visionSendButton: document.getElementById('vision-send-button'),
+        visionSummaryButton: document.getElementById('vision-summary-button'),
         visionAttachmentButton: document.getElementById('vision-attachment-button'),
         visionFileInput: document.getElementById('vision-file-input'),
         visionInputText: document.getElementById('vision-input-text'),

@@ -1,7 +1,10 @@
 /**
  * @fileoverview Manages file attachments for both chat and vision modes.
  * Encapsulates state and UI logic for file previews and handling.
+ * Includes image compression functionality for vision mode.
  */
+
+import { imageCompressor } from '../utils/image-compressor.js';
 
 /**
  * @class AttachmentManager
@@ -25,6 +28,7 @@ export class AttachmentManager {
 
         this.chatAttachedFiles = []; // For multi-file chat mode
         this.visionAttachedFiles = []; // For multi-file vision mode
+        this.enableCompression = true; // 默认启用图片压缩（针对视觉模式）
 
         if (!this.chatPreviewsContainer) {
             console.error("AttachmentManager: chatPreviewsContainer is not provided.");
@@ -69,16 +73,34 @@ export class AttachmentManager {
             }
 
             try {
+                // 处理图片压缩 - 仅对视觉模式的图片进行压缩
+                let processedFile = file;
+                let compressionInfo = null;
+                
+                if (mode === 'vision' && this.enableCompression && file.type.startsWith('image/')) {
+                    if (imageCompressor.needsCompression(file)) {
+                        const originalSize = (file.size / 1024 / 1024).toFixed(2);
+                        this.showToast(`正在压缩图片(${originalSize}MB)...`, 5000);
+                        processedFile = await imageCompressor.compressImage(file);
+                        
+                        // 如果压缩成功且减小了文件大小
+                        if (processedFile && processedFile.size < file.size) {
+                            compressionInfo = imageCompressor.getCompressionInfo(file, processedFile);
+                            this.showToast(`图片压缩完成: ${compressionInfo.originalSize} → ${compressionInfo.compressedSize} (减少 ${compressionInfo.compressionRatio})`, 3000);
+                        }
+                    }
+                }
+                
                 const base64String = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = () => resolve(reader.result);
                     reader.onerror = error => reject(error);
-                    reader.readAsDataURL(file);
+                    reader.readAsDataURL(processedFile);
                 });
 
                 const fileData = {
-                    name: file.name,
-                    type: file.type,
+                    name: processedFile.name,
+                    type: processedFile.type,
                     base64: base64String
                 };
 
@@ -186,6 +208,16 @@ export class AttachmentManager {
             });
         });
     }
+    /**
+     * @method toggleCompression
+     * @description 启用或禁用图片压缩功能
+     * @param {boolean} enabled - 是否启用压缩
+     */
+    toggleCompression(enabled) {
+        this.enableCompression = enabled;
+        this.showToast(`图片压缩功能已${enabled ? '启用' : '禁用'}`);
+    }
+    
     /**
      * @method _validateFile
      * @private

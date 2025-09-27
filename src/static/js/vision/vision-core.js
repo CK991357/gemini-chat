@@ -26,6 +26,7 @@ export function initializeVisionCore(el, manager, handlers) {
     showToastHandler = handlers.showToast;
 
     populateModelSelect();
+    populatePromptSelect();
     attachEventListeners();
 
     Logger.info('Vision module initialized.');
@@ -50,12 +51,38 @@ function populateModelSelect() {
 }
 
 /**
+ * Populates the vision prompt selection dropdown.
+ */
+function populatePromptSelect() {
+    if (!elements.visionPromptSelect) return;
+
+    elements.visionPromptSelect.innerHTML = ''; // Clear existing options
+    CONFIG.VISION.PROMPTS.forEach(prompt => {
+        const option = document.createElement('option');
+        option.value = prompt.id;
+        option.textContent = prompt.name;
+        option.title = prompt.description; // 添加描述作为悬停提示
+        if (prompt.id === CONFIG.VISION.DEFAULT_PROMPT_ID) {
+            option.selected = true;
+        }
+        elements.visionPromptSelect.appendChild(option);
+    });
+}
+
+/**
  * Attaches all necessary event listeners for the vision UI.
  */
 function attachEventListeners() {
     elements.visionSendButton?.addEventListener('click', () => handleSendVisionMessage());
     elements.visionAttachmentButton?.addEventListener('click', () => elements.visionFileInput.click());
     elements.visionFileInput?.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
+    elements.visionSummaryButton?.addEventListener('click', () => generateGameSummary());
+    
+    // 监听提示词模式切换
+    elements.visionPromptSelect?.addEventListener('change', () => {
+        const selectedPrompt = getSelectedPrompt();
+        Logger.info(`Vision prompt changed to: ${selectedPrompt.name}`);
+    });
     
     // 添加视觉模式内部子标签事件监听器
     const visionTabs = document.querySelectorAll('.vision-tabs .tab');
@@ -98,6 +125,7 @@ async function handleSendVisionMessage() {
     }
 
     const selectedModel = elements.visionModelSelect.value;
+    const selectedPrompt = getSelectedPrompt();
 
     // Display user message in the UI
     displayVisionUserMessage(text, visionAttachedFiles);
@@ -128,7 +156,7 @@ async function handleSendVisionMessage() {
         const requestBody = {
             model: selectedModel,
             messages: [
-                { role: 'system', content: CONFIG.VISION.SYSTEM_PROMPT },
+                { role: 'system', content: selectedPrompt.systemPrompt },
                 ...visionChatHistory
             ],
             stream: true,
@@ -310,7 +338,169 @@ function createVisionAIMessageElement() {
     return {
         container: messageDiv,
         markdownContainer,
-        reasoningContainer,
-        contentDiv,
+        reasoningContainer
     };
+}
+
+/**
+ * 获取当前选择的提示词
+ * @returns {object} 当前选择的提示词对象
+ */
+function getSelectedPrompt() {
+    if (!elements.visionPromptSelect) {
+        return CONFIG.VISION.PROMPTS[0]; // 默认返回第一个提示词
+    }
+    
+    const selectedId = elements.visionPromptSelect.value;
+    return CONFIG.VISION.PROMPTS.find(prompt => prompt.id === selectedId) || CONFIG.VISION.PROMPTS[0];
+}
+
+/**
+ * 生成对局总结
+ */
+async function generateGameSummary() {
+    if (visionChatHistory.length === 0) {
+        showToastHandler('没有对话历史可以总结。');
+        return;
+    }
+
+    // 检查是否处于国际象棋相关模式
+    const currentPrompt = getSelectedPrompt();
+    if (!currentPrompt.id.includes('chess')) {
+        showToastHandler('请先切换到国际象棋相关模式后再生成总结。');
+        return;
+    }
+
+    const selectedModel = elements.visionModelSelect.value;
+    const summaryButton = elements.visionSummaryButton;
+    
+    // 设置按钮加载状态
+    if (summaryButton) {
+        summaryButton.disabled = true;
+        summaryButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 生成中...';
+    }
+    
+    // 创建总结消息元素
+    const aiMessage = createVisionAIMessageElement();
+    const { markdownContainer, reasoningContainer } = aiMessage;
+    markdownContainer.innerHTML = '<p>正在生成对局总结...</p>';
+
+    try {
+        // 构建总结请求
+        const summaryPrompt = CONFIG.VISION.PROMPTS.find(p => p.id === 'chess_analysis');
+        const summaryRequest = {
+            model: selectedModel,
+            messages: [
+                { role: 'system', content: summaryPrompt.systemPrompt },
+                { role: 'user', content: [
+                    { 
+                        type: 'text', 
+                        text: '请基于我们之前的对话历史，生成一份完整的对局总结和分析。这包括了我在对局中的关键决策、战术执行情况，以及需要改进的地方。请提供具体可行的建议来帮助我提高棋艺水平。' 
+                    }
+                ]},
+                ..._getRelevantHistory() // 智能获取相关历史记录
+            ],
+            stream: true
+        };
+
+        // 发送请求
+        const reader = await apiHandler.fetchStream('/api/chat/completions', summaryRequest);
+        const decoder = new TextDecoder('utf-8');
+        let finalContent = '';
+        let reasoningStarted = false;
+        let answerStarted = false;
+
+        markdownContainer.innerHTML = ''; // Clear loading message
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            chunk.split('\n\n').forEach(part => {
+                if (part.startsWith('data: ')) {
+                    const jsonStr = part.substring(6);
+                    if (jsonStr === '[DONE]') return;
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        const delta = data.choices?.[0]?.delta;
+                        if (delta) {
+                            if (delta.reasoning_content) {
+                                if (!reasoningStarted) {
+                                    reasoningContainer.style.display = 'block';
+                                    reasoningStarted = true;
+                                }
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                            }
+                            if (delta.content) {
+                                if (reasoningStarted && !answerStarted) {
+                                    const separator = document.createElement('hr');
+                                    separator.className = 'answer-separator';
+                                    reasoningContainer.after(separator);
+                                    answerStarted = true;
+                                }
+                                finalContent += delta.content;
+                                markdownContainer.innerHTML = marked.parse(finalContent);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE chunk:', e, jsonStr);
+                    }
+                }
+            });
+            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+        }
+
+        // 应用数学公式渲染
+        if (typeof MathJax !== 'undefined' && MathJax.startup) {
+            MathJax.startup.promise.then(() => {
+                MathJax.typeset([markdownContainer, reasoningContainer]);
+            }).catch((err) => console.error('MathJax typesetting failed:', err));
+        }
+
+        Logger.info('对局总结生成完成', 'system');
+
+    } catch (error) {
+        console.error('Error generating game summary:', error);
+        markdownContainer.innerHTML = `<p><strong>总结生成失败:</strong> ${error.message}</p>`;
+        Logger.info(`对局总结生成失败: ${error.message}`, 'system');
+    } finally {
+        // 恢复按钮状态
+        if (summaryButton) {
+            summaryButton.disabled = false;
+            summaryButton.innerHTML = '对局总结';
+        }
+    }
+}
+
+/**
+ * 智能获取相关历史记录
+ * @private
+ */
+function _getRelevantHistory() {
+    // 如果历史记录较少，全部返回
+    if (visionChatHistory.length <= 15) {
+        return visionChatHistory;
+    }
+    
+    // 对于较长的对话，采用智能策略：
+    // 1. 保留前3条记录（开局信息）
+    // 2. 保留最后10条记录（最新情况）
+    // 3. 从中间选择关键记录（含有图片的记录）
+    
+    const startRecords = visionChatHistory.slice(0, 3);
+    const endRecords = visionChatHistory.slice(-10);
+    
+    // 从中间部分选择含有图片的记录
+    const middleRecords = visionChatHistory.slice(3, -10);
+    const keyRecords = middleRecords.filter(record => 
+        record.role === 'user' && 
+        record.content && 
+        Array.isArray(record.content) && 
+        record.content.some(item => item.type === 'image_url')
+    ).slice(0, 5); // 最多5条关键记录
+    
+    Logger.info(`历史记录总数: ${visionChatHistory.length}, 使用记录: ${startRecords.length + keyRecords.length + endRecords.length}`, 'system');
+    
+    return [...startRecords, ...keyRecords, ...endRecords];
 }
