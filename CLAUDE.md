@@ -82,13 +82,13 @@ The `src` directory is the heart of the application, containing all source code 
         -   **Agent Module (`src/static/js/agent/`)**: Contains logic for integrating with AI agents and proxying their tool calls.
             -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): Acts as a client-side adapter for Multi-Cloud Platform (MCP) tool calls initiated by Qwen models. It receives tool call requests (containing `tool_name` and `parameters`) from `chat-api-handler.js` and proxies them to the `/api/mcp-proxy` endpoint in the backend. This is crucial for enabling flexible AI agent capabilities within the application.
         -   `src/static/js/attachments/`: Handles file attachment functionalities, like `file-attachment.js`.
-            -   [`file-attachment.js`](src/static/js/attachments/file-attachment.js): Defines the `AttachmentManager` class, which manages all logic for file attachments (selection, validation, Base64 conversion, and UI preview display) for both single-file ("chat" mode) and multi-file ("vision" mode) scenarios. It's crucial for enabling rich media input to AI models.
+            -   [`file-attachment.js`](src/static/js/attachments/file-attachment.js): Defines the `AttachmentManager` class, which manages all logic for file attachments (selection, validation, Base64 conversion, and UI preview display) for both single-file ("chat" mode) and multi-file ("vision" mode) scenarios. **ENHANCED**: Now integrates with `ImageCompressor` to automatically compress images >1MB across all modes, providing compression feedback and maintaining file type consistency. Features `toggleCompression()` method for runtime control.
         -   **Chat Module (`src/static/js/chat/`)**: Contains the core logic for managing chat UI, API interactions, and processing AI responses, including tool calls.
             -   [`chat-api.js`](src/static/js/chat/chat-api.js): Serves as the high-level interface for all frontend-to-backend chat API communications. It handles sending messages, initiating and processing Server-Sent Events (SSE) streams from the AI gateway, and recursively managing conversational turns, especially after tool executions. It's decoupled from the UI.
             -   [`chat-api-handler.js`](src/static/js/chat/chat-api-handler.js): Implements the business logic for processing streaming chat completion responses. It parses streamed data, detects and dispatches both Gemini function calls and Qwen Multi-Cloud Platform (MCP) tool calls. For Qwen MCP tool calls, it robustly parses the tool arguments and constructs a `tool_name` and `parameters` payload before sending it to the `/api/mcp-proxy` backend proxy via `QwenAgentAdapter`. It orchestrates UI updates and manages the chat history state.
             -   [`chat-ui.js`](src/static/js/chat/chat-ui.js): Dedicated to rendering and managing the visual elements of the chat interface. It handles displaying user and AI messages (including streamed content, reasoning, and tool call statuses), audio messages, and system logs. It provides functions for UI initialization, message logging, and scrolling.
         -   **Config Module (`src/static/js/config/`)**: Contains configuration files and prompt management logic.
-            -   [`config.js`](src/static/js/config/config.js): Defines the application's global configurations, including available AI models (Gemini, Qwen, etc.), API versions, default models, system prompt options, audio settings, translation models, and vision models. It serves as the central configuration hub for the application's behavior.
+            -   [`config.js`](src/static/js/config/config.js): Defines the application's global configurations, including available AI models (Gemini, Qwen, etc.), API versions, default models, system prompt options, audio settings, translation models, and vision models. **ENHANCED**: Now includes specialized `VISION.PROMPTS` array with chess-specific prompt configurations: `chess_teacher` (for gameplay guidance) and `chess_summary` (for post-game analysis). Features intelligent prompt switching and dual-mode chess instruction capabilities.
             -   [`prompt-manager.js`](src/static/js/config/prompt-manager.js): Manages the frontend's prompt mode selection and system instruction updates. It retrieves the appropriate system prompt from `config.js` based on the user's selection in a dropdown menu, updates a hidden textarea with this prompt, and handles local storage to remember user preferences.
         -   **Core Module (`src/static/js/core/`)**: Contains core utility functions, API handlers, and WebSocket client logic.
             -   [`api-handler.js`](src/static/js/core/api-handler.js): Provides a centralized handler for making HTTP API requests, standardizing JSON POST requests and handling streaming responses (Server-Sent Events). It manages headers, error responses, and ensures robust communication with backend services.
@@ -116,8 +116,10 @@ The `src` directory is the heart of the application, containing all source code 
             -   [`screen-recorder.js`](src/static/js/video/screen-recorder.js): Implements a screen recorder for capturing and processing screen frames. It supports previewing the screen capture and sending frames to a callback function, with configurable FPS, quality, and frame size.
             -   [`video-manager.js`](src/static/js/video/video-manager.js): Manages video capture and processing from a camera, including motion detection and frame preview. It orchestrates the `VideoRecorder` to capture frames, applies motion detection to optimize frame sending, and handles camera toggling (front/rear).
             -   [`video-recorder.js`](src/static/js/video/video-recorder.js): Implements a video recorder for capturing and processing video frames from a camera. It supports previewing the video stream and sending frames as base64 encoded JPEG data to a callback function, with configurable FPS and quality.
-        -   **Vision Module (`src/static/js/vision/`)**: Contains core logic for vision-related functionalities.
-            -   [`vision-core.js`](src/static/js/vision/vision-core.js): Provides the core logic for the Vision feature, handling UI initialization, API calls to the backend for multimodal vision chat, and message display. It manages vision model selection, integrates with the `AttachmentManager` for handling image/video attachments, and processes streaming responses from the AI model, including reasoning content.
+        -   **Vision Module (`src/static/js/vision/`)**: Contains core logic for vision-related functionalities, now enhanced with **Chess Master AI** capabilities.
+            -   [`vision-core.js`](src/static/js/vision/vision-core.js): Provides the core logic for the Vision feature, handling UI initialization, API calls to the backend for multimodal vision chat, and message display. It manages vision model selection, integrates with the `AttachmentManager` for handling image/video attachments, and processes streaming responses from the AI model, including reasoning content. **NEW**: Now includes specialized chess analysis functionality with `generateGameSummary()` function and intelligent history filtering via `_getRelevantHistory()`.
+        -   **Utils Module Enhanced**: New image compression capabilities added.
+            -   [`image-compressor.js`](src/static/js/utils/image-compressor.js): **NEW MODULE** - Implements intelligent image compression with 1MB threshold using Canvas API. Features include format preservation, configurable quality settings, and automatic compression for all modes (not just vision). Supports both JPEG conversion and original format retention.
 
 ### 2.3 Cloudflare Configuration & Dependencies
 
@@ -258,7 +260,147 @@ This project implements a sophisticated tool management and invocation mechanism
     *   **Modify Tool Declaration or Execution Logic**: Adjust the `getDeclaration()` or `execute()` methods in the respective tool class (e.g., `src/static/js/tools/google-search.js` or tools defined in `src/static/js/tools_mcp/tool-definitions.js`).
     *   **Modify Frontend Tool Merging Logic**: If the merging strategy for tool declarations under HTTP connections needs adjustment, modify the relevant logic in [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js).
 
-## 6（zh-CN）. 工具管理机制与连接差异
+## 6. Chess Master AI Feature (国际象棋老师功能)
+
+### 6.1 Overview
+
+The Vision module has been significantly enhanced with a specialized **Chess Master AI** system that provides intelligent chess guidance, analysis, and coaching. This feature transforms the application into a comprehensive chess learning platform while maintaining the existing vision capabilities.
+
+### 6.2 Core Components
+
+#### 6.2.1 Dual-Prompt Architecture
+
+The chess functionality is built on a sophisticated dual-prompt system:
+
+-   **`chess_teacher` Prompt** (`id: 'chess_teacher'`):
+    -   **Purpose**: Real-time gameplay guidance and situational analysis
+    -   **Display Name**: '国际象棋老师' (Chess Master)
+    -   **Functionality**: 
+        -   **Default Mode**: Provides single optimal move recommendations with concise explanations
+        -   **Analysis Mode**: Triggered by keywords like "实况分析", "局面分析" - provides detailed position analysis
+    -   **Key Features**:
+        -   **Precision-Focused**: Only gives the best move, not multiple options
+        -   **FEN Integration**: Always provides Forsyth-Edwards Notation for position tracking
+        -   **Beginner-Friendly**: Uses simple language and analogies
+        -   **Keyword-Intelligent**: Automatically switches between guidance and analysis modes
+
+-   **`chess_summary` Prompt** (`id: 'chess_summary'`):
+    -   **Purpose**: Comprehensive post-game analysis and improvement recommendations
+    -   **Display Name**: '赛后总结（仅用于总结按钮）' (Post-Game Summary - Button Only)
+    -   **Functionality**: Deep analysis of entire game history with personalized coaching
+    -   **Key Features**:
+        -   **Holistic Analysis**: Reviews key turning points and strategic themes
+        -   **Technical Deep-Dive**: Identifies missed tactical opportunities
+        -   **Learning-Oriented**: Provides specific improvement suggestions and training plans
+        -   **Skill Assessment**: Evaluates performance across opening, middlegame, endgame
+
+#### 6.2.2 Intelligent Image Compression System
+
+-   **File**: [`src/static/js/utils/image-compressor.js`](src/static/js/utils/image-compressor.js)
+-   **Purpose**: Optimizes chess board images for faster analysis while maintaining quality
+-   **Key Features**:
+    -   **1MB Threshold**: Automatically compresses images larger than 1MB
+    -   **Format Preservation**: Maintains original image format by default (configurable)
+    -   **Quality Control**: Configurable compression quality (default 80%)
+    -   **Global Application**: Works across all modes (chat, vision, translation)
+    -   **Canvas-Based**: Uses browser Canvas API for client-side processing
+    -   **Progressive Enhancement**: Falls back gracefully if compression fails
+
+#### 6.2.3 Smart History Management
+
+-   **Function**: `_getRelevantHistory()` in [`vision-core.js`](src/static/js/vision/vision-core.js)
+-   **Purpose**: Intelligently selects the most relevant game history for analysis
+-   **Algorithm**:
+    -   **Short Games** (≤15 moves): Preserves complete history
+    -   **Long Games** (>15 moves): Strategic sampling:
+        -   **Opening**: First 3 moves (understanding opening choice)
+        -   **Key Moments**: Up to 5 positions with uploaded images (critical decisions)
+        -   **Recent Play**: Last 10 moves (current situation)
+-   **Benefits**:
+    -   **Token Efficiency**: Prevents API limits while maintaining context
+    -   **Relevance Focus**: Prioritizes positions with visual evidence
+    -   **Scalability**: Handles games of any length
+
+### 6.3 User Interface Enhancements
+
+#### 6.3.1 Responsive Layout Design
+
+-   **Two-Row Layout**:
+    -   **Row 1**: Model selection (GLM-4.1V-Thinking-Flash, etc.)
+    -   **Row 2**: Mode selection (Chess Master) + Post-Game Summary button
+-   **Mobile Optimization**: Prevents UI breaking on small screens
+-   **CSS Classes**:
+    -   `.vision-control-row`: Individual row containers
+    -   `.vision-controls`: Parent container with flexbox column layout
+
+#### 6.3.2 Button Integration
+
+-   **Summary Button**: `#vision-summary-button`
+    -   **Placement**: Second row alongside mode selector
+    -   **Functionality**: Triggers comprehensive post-game analysis
+    -   **State Management**: Shows loading spinner during analysis
+    -   **Error Handling**: Graceful fallback with user feedback
+
+### 6.4 Technical Implementation
+
+#### 6.4.1 Core Functions
+
+```javascript
+// Key functions in vision-core.js:
+
+// Generates comprehensive post-game analysis
+async function generateGameSummary()
+
+// Intelligently filters game history for analysis
+function _getRelevantHistory()
+
+// Manages prompt selection and switching
+function getSelectedPrompt()
+
+// Populates chess-specific prompt options
+function populatePromptSelect()
+```
+
+#### 6.4.2 Configuration Structure
+
+```javascript
+// In config.js:
+VISION: {
+    PROMPTS: [
+        {
+            id: 'chess_teacher',
+            name: '国际象棋老师',
+            description: '对弈指导和局面分析',
+            systemPrompt: '...' // Specialized chess guidance prompt
+        },
+        {
+            id: 'chess_summary', 
+            name: '赛后总结（仅用于总结按钮）',
+            description: '专门的赛后分析和总结',
+            systemPrompt: '...' // Comprehensive analysis prompt
+        }
+    ]
+}
+```
+
+### 6.5 Usage Workflow
+
+1. **Setup**: User selects "国际象棋老师" (Chess Master) mode in vision interface
+2. **Gameplay Guidance**:
+   - Upload chess board image → Receive optimal move recommendation
+   - Type "实况分析" → Get detailed position analysis
+3. **Post-Game Analysis**: Click "对局总结" button → Comprehensive game review
+4. **Image Optimization**: Large images automatically compressed for faster processing
+
+### 6.6 Benefits
+
+-   **Educational**: Transforms chess learning with AI-powered coaching
+-   **Efficient**: Smart compression and history management optimize performance
+-   **User-Friendly**: Intuitive interface with responsive design
+-   **Comprehensive**: Covers all aspects from move-by-move guidance to strategic analysis
+-   **Scalable**: Handles games of any length with intelligent sampling
+
+## 7（zh-CN）. 工具管理机制与连接差异
 
 本项目针对不同 AI 模型和连接方式，实现了精妙的工具管理和调用机制。核心在于，`ToolManager` 类（定义在 [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js)）本身是一个通用的工具声明和执行逻辑封装，但在前端代码中被实例化了两次，分别服务于 WebSocket 和 HTTP 连接路径，从而构成了逻辑上的“两套系统”。
 
