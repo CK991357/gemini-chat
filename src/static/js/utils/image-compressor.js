@@ -101,7 +101,7 @@ export class ImageCompressor {
                             }
                         );
                         
-                        console.log(`图片压缩完成: ${(file.size / 1024).toFixed(2)}KB → ${(compressedFile.size / 1024).toFixed(2)}KB`);
+                        console.log(`图片压缩完成: ${(file.size / 1024 / 1024).toFixed(2)}KB → ${(compressedFile.size / 1024).toFixed(2)}KB`);
                         resolve(compressedFile);
                     }, outputFormat, quality);
                     
