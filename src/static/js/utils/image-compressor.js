@@ -10,7 +10,7 @@
 export class ImageCompressor {
     constructor() {
         this.MAX_DIMENSION = 1024; // 最大边长限制
-        this.DEFAULT_QUALITY = 0.8; // 默认压缩质量
+        this.DEFAULT_QUALITY = 0.95; // 默认压缩质量
         this.COMPRESSION_THRESHOLD = 1024 * 1024; // 1MB 压缩门槛
     }
 
