@@ -10,7 +10,7 @@
 export class ImageCompressor {
     constructor() {
         this.MAX_DIMENSION = 1024; // 最大边长限制
-        this.DEFAULT_QUALITY = 0.95; // 默认压缩质量
+        this.DEFAULT_QUALITY = 0.8; // 默认压缩质量
         this.COMPRESSION_THRESHOLD = 1024 * 1024; // 1MB 压缩门槛
     }
 
@@ -101,7 +101,7 @@ export class ImageCompressor {
                             }
                         );
                         
-                        console.log(`图片压缩完成: ${(file.size / 1024 / 1024).toFixed(2)}KB → ${(compressedFile.size / 1024).toFixed(2)}KB`);
+                        console.log(`图片压缩完成: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`);
                         resolve(compressedFile);
                     }, outputFormat, quality);
                     
@@ -167,8 +167,8 @@ export class ImageCompressor {
         const compressionRatio = ((1 - compressedFile.size / originalFile.size) * 100).toFixed(1);
         
         return {
-            originalSize: `${originalSize}KB`,
-            compressedSize: `${compressedSize}KB`,
+            originalSize: `${originalSize}MB`,
+            compressedSize: `${compressedSize}MB`,
             compressionRatio: `${compressionRatio}%`,
             isCompressed: compressedFile.size < originalFile.size
         };

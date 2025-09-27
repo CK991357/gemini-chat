@@ -73,11 +73,11 @@ export class AttachmentManager {
             }
 
             try {
-                // 处理图片压缩 - 对所有模式的图片进行压缩
+                // 处理图片压缩 - 仅对视觉模式的图片进行压缩
                 let processedFile = file;
                 let compressionInfo = null;
                 
-                if (this.enableCompression && file.type.startsWith('image/')) {
+                if (mode === 'vision' && this.enableCompression && file.type.startsWith('image/')) {
                     if (imageCompressor.needsCompression(file)) {
                         const originalSize = (file.size / 1024 / 1024).toFixed(2);
                         this.showToast(`正在压缩图片(${originalSize}MB)...`, 5000);
