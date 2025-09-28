@@ -1806,6 +1806,7 @@ body.dark-mode .highlight-box {
     color: #ffeb3b; /* 暗色模式下的亮色文本 */
     border-color: #808000;
 }
+
 /* Prompt Select Styles */
 #prompt-select {
     width: 100%;
@@ -1816,6 +1817,111 @@ body.dark-mode .highlight-box {
     border-radius: 4px;
     font-size: 14px;
 }
+
+#prompt-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* 视觉模式全屏样式 */
+.vision-container.full-screen {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 视觉聊天全屏 */
+.vision-chat-fullscreen {
+  display: none; /* 默认隐藏 */
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.vision-chat-fullscreen.active {
+  display: flex;
+}
+
+/* 棋盘全屏 */
+.chess-fullscreen {
+  display: none; /* 默认隐藏 */
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.chess-fullscreen.active {
+  display: flex;
+}
+
+/* 棋盘全屏时的内容布局 */
+.chess-fullscreen .chess-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chess-fullscreen .chess-board-area {
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  min-height: 0;
+  align-items: flex-start;
+}
+
+.chess-fullscreen .chess-info-panel {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chess-fullscreen .chess-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-width: 600px;
+  max-height: 600px;
+}
+
+/* 全屏模式下的控制按钮 */
+.fullscreen-controls {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .chess-fullscreen .chess-board-area {
+    flex-direction: column;
+    gap: 15px;
+  }
+  
+  .chess-fullscreen .chess-info-panel {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  
+  .chess-fullscreen .chess-board {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;
+  }
+}
+
+/* Prompt Select Styles */
+#prompt-select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
 
 #prompt-select:focus {
     outline: none;
@@ -2456,4 +2562,5 @@ input:checked + .slider:before {
 /* When in select mode, prevent the main click from loading the session */
 .history-list-container.select-mode .history-item {
     cursor: default;
+}
 }

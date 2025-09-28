@@ -21,13 +21,18 @@ const PIECE_LABELS = {
 
 class ChessGame {
     constructor(containerElement) {
-        this.container = containerElement;
-        this.boardElement = containerElement.querySelector('#chess-board');
-        this.fenOutput = containerElement.querySelector('#fen-output');
-        this.copyFenButton = containerElement.querySelector('#copy-fen-button');
-        this.resetButton = containerElement.querySelector('#reset-chess-button');
-        this.undoButton = containerElement.querySelector('#undo-move-button'); // 新增撤销按钮
-        this.toggleButton = containerElement.querySelector('#toggle-to-vision-button');
+        // 修改：传入整个视觉容器而不是棋盘容器
+        this.visionContainer = containerElement;
+        this.boardElement = this.visionContainer.querySelector('#chess-board');
+        this.fenOutput = this.visionContainer.querySelector('#fen-output');
+        this.copyFenButton = this.visionContainer.querySelector('#copy-fen-button');
+        this.resetButton = this.visionContainer.querySelector('#reset-chess-button');
+        this.undoButton = this.visionContainer.querySelector('#undo-move-button'); // 新增撤销按钮
+        this.toggleButton = this.visionContainer.querySelector('#toggle-to-vision-button');
+        
+        // 新增：全屏元素引用
+        this.chessFullscreen = this.visionContainer.querySelector('#chess-fullscreen');
+        this.visionChatFullscreen = this.visionContainer.querySelector('#vision-chat-fullscreen');
         
         this.pieces = {};
         this.currentTurn = 'w';
@@ -93,7 +98,7 @@ class ChessGame {
 
     renderBoard() {
         // 清除所有棋子
-        this.container.querySelectorAll('.chess-square').forEach(square => {
+        this.visionContainer.querySelectorAll('.chess-square').forEach(square => {
             square.innerHTML = '';
             square.classList.remove('selected', 'highlight');
         });
@@ -319,15 +324,9 @@ class ChessGame {
             this.undoMove();
         });
 
-        // 切换视图按钮
+        // 切换到聊天按钮
         this.toggleButton.addEventListener('click', () => {
-            const chessContainer = document.getElementById('chess-container');
-            const visionInputArea = document.getElementById('vision-input-area');
-            
-            if (chessContainer && visionInputArea) {
-                chessContainer.style.display = 'none';
-                visionInputArea.style.display = 'flex';
-            }
+            this.showChatView();
         });
     }
 
@@ -375,23 +374,19 @@ let chessGame = null;
  * 初始化国际象棋功能
  */
 export function initializeChessCore() {
-    const chessContainer = document.getElementById('chess-container');
+    const visionContainer = document.querySelector('.vision-container');
     const toggleToChessButton = document.getElementById('toggle-to-chess-button');
     
-    if (chessContainer) {
-        chessGame = new ChessGame(chessContainer);
+    if (visionContainer) {
+        chessGame = new ChessGame(visionContainer);
         Logger.info('Chess module initialized.');
     }
     
     // 添加按钮事件监听器
     if (toggleToChessButton) {
         toggleToChessButton.addEventListener('click', () => {
-            const chessContainer = document.getElementById('chess-container');
-            const visionInputArea = document.getElementById('vision-input-area');
-            
-            if (chessContainer && visionInputArea) {
-                chessContainer.style.display = 'block';
-                visionInputArea.style.display = 'none';
+            if (chessGame) {
+                chessGame.showChessView();
             }
         });
     }

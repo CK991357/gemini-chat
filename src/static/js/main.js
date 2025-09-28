@@ -463,11 +463,18 @@ document.addEventListener('DOMContentLoaded', () => {
         visionFileInput: document.getElementById('vision-file-input'),
         visionInputText: document.getElementById('vision-input-text'),
         visionMessageHistory: document.getElementById('vision-message-history'),
+        // 新增：切换按钮
+        toggleToChessButton: document.getElementById('toggle-to-chess-button'),
+        toggleToVisionButton: document.getElementById('toggle-to-vision-button')
     };
     const visionHandlers = {
         showToast: showToast,
     };
     initializeVisionCore(visionElements, attachmentManager, visionHandlers);
+    
+    // 初始化国际象棋
+    initializeChessCore();
+
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
 
