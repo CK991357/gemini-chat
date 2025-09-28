@@ -3,6 +3,7 @@ import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
 import { ChatApiHandler } from './chat/chat-api-handler.js';
 import * as chatUI from './chat/chat-ui.js'; // T11: 导入聊天UI模块
+import { initializeChessCore } from './chess/chess-core.js';
 import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
@@ -14,7 +15,6 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
-import { initializeChessCore } from './chess/chess-core.js';
 
 /**
  * @fileoverview Main entry point for the application.
@@ -1611,14 +1611,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }, { passive: true });
         }
-    }
-    
-    // 棋盘切换按钮
-    const toggleToChessButton = document.getElementById('toggle-to-chess-button');
-    if (toggleToChessButton && typeof chessGame !== 'undefined' && chessGame) {
-        toggleToChessButton.addEventListener('click', () => {
-            chessGame.showChessView();
-        });
     }
 });
 

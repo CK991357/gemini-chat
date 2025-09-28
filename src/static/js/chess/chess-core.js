@@ -293,70 +293,42 @@ class ChessGame {
     }
 
     setupEventListeners() {
-      // 复制FEN按钮
-      this.copyFenButton.addEventListener('click', () => {
-        this.fenOutput.select();
-        try {
-          navigator.clipboard.writeText(this.fenOutput.value).then(() => {
-            Logger.info('FEN copied to clipboard!');
-          });
-        } catch (err) {
-          document.execCommand('copy');
-          Logger.info('FEN selected - press Ctrl+C to copy');
-        }
-      });
+        // 复制FEN按钮
+        this.copyFenButton.addEventListener('click', () => {
+            this.fenOutput.select();
+            try {
+                navigator.clipboard.writeText(this.fenOutput.value).then(() => {
+                    Logger.info('FEN copied to clipboard!');
+                });
+            } catch (err) {
+                // 降级方案
+                document.execCommand('copy');
+                Logger.info('FEN selected - press Ctrl+C to copy');
+            }
+        });
 
-      // 新游戏按钮
-      this.resetButton.addEventListener('click', () => {
-        if (confirm('开始新游戏？当前进度将丢失。')) {
-          this.setupInitialPosition();
-        }
-      });
+        // 新游戏按钮
+        this.resetButton.addEventListener('click', () => {
+            if (confirm('开始新游戏？当前进度将丢失。')) {
+                this.setupInitialPosition();
+            }
+        });
 
-      // 撤销按钮
-      this.undoButton.addEventListener('click', () => {
-        this.undoMove();
-      });
+        // 撤销按钮
+        this.undoButton.addEventListener('click', () => {
+            this.undoMove();
+        });
 
-      // 切换到聊天按钮
-      this.toggleButton.addEventListener('click', () => {
-        this.showChatView();
-      });
-    }
-
-    // 新增方法：显示聊天视图
-    showChatView() {
-      const chessContainer = document.getElementById('chess-container');
-      const visionContainer = document.querySelector('.vision-container');
-      
-      if (chessContainer && visionContainer) {
-        chessContainer.style.display = 'none';
-        visionContainer.classList.remove('chess-active', 'chess-only');
-      }
-    }
-
-    // 新增方法：显示棋盘视图
-    showChessView() {
-      const chessContainer = document.getElementById('chess-container');
-      const visionContainer = document.querySelector('.vision-container');
-      const visionMessageHistory = document.getElementById('vision-message-history');
-      
-      if (chessContainer && visionContainer) {
-        chessContainer.style.display = 'flex';
-        
-        // 检查是否有聊天消息来决定布局模式
-        const hasChatMessages = visionMessageHistory && visionMessageHistory.children.length > 0;
-        
-        if (hasChatMessages) {
-          // 有聊天消息：并排布局
-          visionContainer.classList.add('chess-active');
-          visionContainer.classList.remove('chess-only');
-        } else {
-          // 没有聊天消息：棋盘全屏
-          visionContainer.classList.add('chess-only');
-          visionContainer.classList.remove('chess-active');
-        }
-      }
+        // 切换视图按钮
+        this.toggleButton.addEventListener('click', () => {
+            const chessContainer = document.getElementById('chess-container');
+            const visionInputArea = document.getElementById('vision-input-area');
+            
+            if (chessContainer && visionInputArea) {
+                chessContainer.style.display = 'none';
+                visionInputArea.style.display = 'flex';
+            }
+        });
     }
 
     // 公共方法，用于获取当前FEN
@@ -415,24 +387,11 @@ export function initializeChessCore() {
     if (toggleToChessButton) {
         toggleToChessButton.addEventListener('click', () => {
             const chessContainer = document.getElementById('chess-container');
-            const visionContainer = document.querySelector('.vision-container');
-            const visionMessageHistory = document.getElementById('vision-message-history');
+            const visionInputArea = document.getElementById('vision-input-area');
             
-            if (chessContainer && visionContainer) {
-                chessContainer.style.display = 'flex';
-                
-                // 检查是否有聊天消息来决定布局模式
-                const hasChatMessages = visionMessageHistory && visionMessageHistory.children.length > 0;
-                
-                if (hasChatMessages) {
-                    // 有聊天消息：并排布局
-                    visionContainer.classList.add('chess-active');
-                    visionContainer.classList.remove('chess-only');
-                } else {
-                    // 没有聊天消息：棋盘全屏
-                    visionContainer.classList.add('chess-only');
-                    visionContainer.classList.remove('chess-active');
-                }
+            if (chessContainer && visionInputArea) {
+                chessContainer.style.display = 'block';
+                visionInputArea.style.display = 'none';
             }
         });
     }
