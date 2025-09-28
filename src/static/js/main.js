@@ -22,8 +22,6 @@ import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
 
 // DOM Elements
 const logsContainer = document.getElementById('logs-container'); // 用于原始日志输出
-const chessModeButton = document.querySelector('.tab[data-mode="chess"]'); // T14: 新增
-const chessContainer = document.getElementById('chess-container'); // T14: 新增
 const toolManager = new ToolManager(); // 初始化 ToolManager
 const messageHistory = document.getElementById('message-history'); // 用于聊天消息显示
 const messageInput = document.getElementById('message-input');
@@ -201,8 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 只有当当前激活的顶层模式是聊天模式时，才移除视觉模式的激活状态
             // 这样可以确保在视觉模式下切换子标签时不会丢失顶层激活状态
-            if (visionContainer && visionContainer.classList.contains('active') &&
-                (mode === 'log' || mode === 'history' || mode === 'chess') && // T14: 新增 chess 模式
+            if (visionContainer && visionContainer.classList.contains('active') && 
+                (mode === 'log' || mode === 'history') && 
                 chatModeBtn.classList.contains('active')) {
                 visionContainer.classList.remove('active');
                 // 同时取消视觉主模式按钮的激活状态
@@ -226,27 +224,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isChatMode = chatModeBtn.classList.contains('active');
                 const isTranslationMode = document.querySelector('.translation-container')?.classList.contains('active');
                 const isVisionMode = visionContainer?.classList.contains('active');
-                const isChessMode = chessContainer?.classList.contains('active'); // T14: 新增
                 
                 // 只有在聊天模式下才显示历史记录，其他模式显示占位符
-                if (!isChatMode && !isChessMode) { // T14: 历史记录在聊天和国际象棋模式下都可用
+                if (!isChatMode) {
                      historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
                 } else {
                     historyManager.renderHistoryList();
                 }
-            } else if (mode === 'chess') { // T14: 处理国际象棋模式
-                if (chessContainer) {
-                    chessContainer.classList.add('active');
-                    if (!chessGameInstance) {
-                        chessGameInstance = new ChessGame();
-                        chessGameInstance.init();
-                        window.game = chessGameInstance; // 暴露给全局，以便 HTML 中的 onclick 属性可以访问
-                    }
-                }
             }
 
             // 处理系统日志或历史记录显示时隐藏其他模式的主功能区
-            if (mode === 'log' || mode === 'history' || mode === 'chess') { // T14: 新增 chess 模式
+            if (mode === 'log' || mode === 'history') {
                 // 检查当前激活的顶层模式
                 const isTranslationMode = document.querySelector('.translation-container')?.classList.contains('active');
                 const isVisionMode = visionContainer?.classList.contains('active');
@@ -258,9 +246,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isVisionMode) {
                     visionContainer.style.display = 'none';
                 }
-                if (mode !== 'chess' && chessContainer) { // T14: 如果不是国际象棋模式，则隐藏国际象棋容器
-                    chessContainer.style.display = 'none';
-                }
             } else {
                 // 切换到其他模式时，确保显示主功能区
                 const translationContainer = document.querySelector('.translation-container');
@@ -269,9 +254,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (visionContainer) {
                     visionContainer.style.display = '';
-                }
-                if (chessContainer) { // T14: 切换到其他模式时，隐藏国际象棋容器
-                    chessContainer.style.display = 'none';
                 }
             }
 
@@ -586,8 +568,6 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
-let chessGameInstance = null; // T14: 新增
-
 
 
 /**
