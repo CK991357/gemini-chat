@@ -2301,3 +2301,270 @@ input:checked + .slider:before {
 .history-list-container.select-mode .history-item {
     cursor: default;
 }
+
+/* Chess FEN Recorder 样式 */
+:root {
+    --square-size: min(10vw, 60px);
+    --light-square: #f0d9b5;
+    --dark-square: #b58863;
+    --highlight: rgba(255, 255, 0, 0.4);
+    --selected: rgba(0, 255, 0, 0.4);
+}
+
+.chess-container {
+    display: none; /* 默认隐藏 */
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 20px;
+    overflow: auto; /* 允许棋盘容器内部滚动 */
+}
+
+.chess-container.active {
+    display: flex;
+}
+
+.chess-board-wrapper {
+    display: flex;
+    gap: 20px;
+    min-height: 70vh;
+    justify-content: center; /* 居中棋盘 */
+    align-items: flex-start; /* 顶部对齐 */
+    flex-wrap: wrap; /* 允许换行 */
+}
+
+@media (max-width: 768px) {
+    .chess-board-wrapper {
+        flex-direction: column;
+        align-items: center; /* 移动端居中 */
+    }
+}
+
+/* 棋盘样式 */
+.chess-board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    width: calc(var(--square-size) * 8);
+    height: calc(var(--square-size) * 8);
+    border: 3px solid #333;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    flex-shrink: 0; /* 防止棋盘被压缩 */
+}
+
+.square {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(var(--square-size) * 0.8);
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.square.light {
+    background-color: var(--light-square);
+}
+
+.square.dark {
+    background-color: var(--dark-square);
+}
+
+.square.highlight {
+    background-color: var(--highlight);
+}
+
+.square.selected {
+    background-color: var(--selected);
+}
+
+.piece-label {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    font-size: 10px;
+    color: rgba(0, 0, 0, 0.5);
+}
+
+/* FEN 面板样式 */
+.fen-panel {
+    flex: 0 0 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+@media (max-width: 768px) {
+    .fen-panel {
+        flex: none;
+        width: 100%; /* 移动端宽度自适应 */
+    }
+}
+
+.fen-display {
+    background: var(--surface-color);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px var(--shadow-color);
+}
+
+.fen-text {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 14px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    margin-bottom: 10px;
+    word-break: break-all;
+    resize: vertical; /* 允许垂直调整大小 */
+    min-height: 60px;
+}
+
+.controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.fen-panel button {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 6px;
+    background: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.fen-panel button:hover {
+    background: var(--secondary-color);
+}
+
+.fen-panel button:disabled {
+    background: var(--border-color);
+    cursor: not-allowed;
+}
+
+.history-panel {
+    background: var(--surface-color);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px var(--shadow-color);
+    flex: 1;
+    overflow-y: auto;
+    max-height: 300px; /* 限制高度，允许滚动 */
+}
+
+.history-list {
+    list-style: none;
+}
+
+.history-item {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-color);
+}
+
+.history-item:hover {
+    background: var(--bg-color);
+}
+
+.history-item .delete-btn {
+    background: var(--danger-color);
+    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.history-item .delete-btn:hover {
+    background: #c82333; /* 更深的红色 */
+}
+
+/* 模态框样式调整 */
+.modal-content.chess-modal {
+    background: var(--surface-color);
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    color: var(--text-color);
+}
+
+.modal-content.chess-modal h2 {
+    color: var(--primary-color);
+    margin-bottom: 20px;
+}
+
+.modal-buttons.chess-modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.modal-buttons.chess-modal-buttons button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    background: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.2s;
+}
+
+.modal-buttons.chess-modal-buttons button:hover {
+    background: var(--secondary-color);
+}
+
+/* 游戏列表模态框中的列表样式 */
+#gamesList.history-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+#gamesList .history-item {
+    justify-content: space-between;
+    align-items: center;
+}
+
+#gamesList .history-item div strong {
+    color: var(--text-color);
+}
+
+#gamesList .history-item div {
+    color: var(--text-secondary-color);
+}
+
+#gamesList .history-item .delete-btn {
+    background: var(--danger-color);
+}
+
+#gamesList .history-item .delete-btn:hover {
+    background: #c82333;
+}
+
+#closeGamesBtn {
+    background: var(--text-secondary-color);
+}
+
+#closeGamesBtn:hover {
+    background: #5f6368;
+}
