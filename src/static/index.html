@@ -131,7 +131,6 @@
                     <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
                     <button class="tab" data-mode="history">📜 历史记录</button>
-                    <button class="tab" data-mode="vision">👁️ 视觉分析</button>
                 </div>
 
                 <section class="chat-container text-mode active">
@@ -239,61 +238,56 @@
 
                 <!-- 视觉模型功能区 -->
                 <section class="vision-container">
-                  <!-- 视觉聊天全屏模式 -->
-                  <div class="vision-chat-fullscreen active" id="vision-chat-fullscreen">
+                    <!-- Replicate the structure of the main chat container -->
                     <div class="message-history" id="vision-message-history">
-                      <!-- Vision chat messages will be dynamically inserted here -->
+                        <!-- Vision chat messages will be dynamically inserted here -->
                     </div>
 
                     <div class="file-attachment-previews" id="vision-attachment-previews">
-                      <!-- Attachment previews for vision mode will be dynamically inserted here -->
+                        <!-- Attachment previews for vision mode will be dynamically inserted here -->
                     </div>
 
                     <div class="vision-controls">
-                      <div class="vision-control-row">
-                        <label for="vision-model-select">模型:</label>
-                        <select id="vision-model-select"></select>
-                      </div>
-                      <div class="vision-control-row">
-                        <label for="vision-prompt-select">模式:</label>
-                        <select id="vision-prompt-select"></select>
-                        <button id="vision-summary-button" class="action-button" title="生成对局总结">对局总结</button>
-                        <button id="toggle-to-chess-button" class="action-button" title="切换到国际象棋棋盘">切换到棋盘</button>
-                      </div>
+                        <div class="vision-control-row">
+                            <label for="vision-model-select">模型:</label>
+                            <select id="vision-model-select"></select>
+                        </div>
+                        <div class="vision-control-row">
+                            <label for="vision-prompt-select">模式:</label>
+                            <select id="vision-prompt-select"></select>
+                            <button id="vision-summary-button" class="action-button" title="生成对局总结">对局总结</button>
+                            <button id="toggle-to-chess-button" class="action-button" title="切换到国际象棋棋盘">切换到棋盘</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 国际象棋功能区 -->
+                    <div class="chess-container" id="chess-container" style="display: none;">
+                        <div class="chess-content-wrapper">
+                            <div class="chess-board-area">
+                                <div class="chess-info-panel">
+                                    <h3>国际象棋棋盘</h3>
+                                    <div class="fen-display">
+                                        <label for="fen-output">当前FEN:</label>
+                                        <textarea id="fen-output" class="fen-text" readonly></textarea>
+                                        <div class="fen-actions">
+                                            <button id="copy-fen-button" class="action-button">复制FEN</button>
+                                            <button id="reset-chess-button" class="action-button">新游戏</button>
+                                            <button id="undo-move-button" class="action-button">上一步</button>
+                                            <button id="toggle-to-vision-button" class="action-button">切换到聊天</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="chess-board" class="chess-board"></div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="input-area" id="vision-input-area">
-                      <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
-                      <button id="vision-attachment-button" class="action-button" title="Attach File"><i class="fa-solid fa-paperclip"></i></button>
-                      <input type="file" id="vision-file-input" accept="image/*,video/*,application/pdf,audio/*" style="display: none;" multiple>
-                      <button id="vision-send-button" class="send-button" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
+                        <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
+                        <button id="vision-attachment-button" class="action-button" title="Attach File"><i class="fa-solid fa-paperclip"></i></button>
+                        <input type="file" id="vision-file-input" accept="image/*,video/*,application/pdf,audio/*" style="display: none;" multiple>
+                        <button id="vision-send-button" class="send-button" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
                     </div>
-                  </div>
-
-                  <!-- 棋盘全屏模式 -->
-                  <div class="chess-fullscreen" id="chess-fullscreen">
-                    <div class="chess-content-wrapper">
-                      <div class="chess-board-area">
-                        <div class="chess-info-panel">
-                          <h3>国际象棋棋盘</h3>
-                          <div class="fen-display">
-                            <label for="fen-output">当前FEN:</label>
-                            <textarea id="fen-output" class="fen-text" readonly></textarea>
-                            <div class="fen-actions">
-                              <button id="copy-fen-button" class="action-button">复制FEN</button>
-                              <button id="reset-chess-button" class="action-button">新游戏</button>
-                              <button id="undo-move-button" class="action-button">上一步</button>
-                            </div>
-                          </div>
-                        </div>
-                        <div id="chess-board" class="chess-board"></div>
-                      </div>
-                    </div>
-                    <!-- 全屏模式下的控制按钮 -->
-                    <div class="fullscreen-controls">
-                      <button id="toggle-to-vision-button" class="action-button">切换到聊天</button>
-                    </div>
-                  </div>
                 </section>
 
             </div>
@@ -324,4 +318,7 @@
             </div>
         </div>
     </div>
-</```
+
+    <script src="js/main.js" type="module"></script>
+</body>
+</html>
