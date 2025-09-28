@@ -297,6 +297,11 @@ document.addEventListener('DOMContentLoaded', () => {
         modeTabs.forEach(t => t.classList.remove('active'));
         chatContainers.forEach(c => c.classList.remove('active'));
 
+        // 明确隐藏聊天、日志和历史记录容器
+        document.querySelector('.chat-container.text-mode').style.display = 'none';
+        document.querySelector('.chat-container.log-mode').style.display = 'none';
+        document.querySelector('.chat-container.history-mode').style.display = 'none';
+
         // 激活国际象棋模式按钮和容器
         chessModeBtn.classList.add('active');
         chessContainer.classList.add('active');
@@ -313,6 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 初始化 ChessGame 实例
         if (!window.chessGame) { // 避免重复初始化
+            console.log('Initializing ChessGame:', ChessGame); // 添加调试日志
             window.chessGame = new ChessGame();
             window.chessGame.initBoard();
         }
