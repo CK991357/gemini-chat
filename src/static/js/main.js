@@ -1612,6 +1612,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }, { passive: true });
         }
     }
+    
+    // 棋盘切换按钮
+    const toggleToChessButton = document.getElementById('toggle-to-chess-button');
+    if (toggleToChessButton && typeof chessGame !== 'undefined' && chessGame) {
+        toggleToChessButton.addEventListener('click', () => {
+            chessGame.showChessView();
+        });
+    }
 });
 
 /**
