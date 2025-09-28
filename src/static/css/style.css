@@ -1623,6 +1623,7 @@ body.dark-mode {
     box-sizing: border-box;
     padding: 20px;
     overflow: hidden; /* 父容器隐藏溢出 */
+    flex: 1; /* 确保占据可用空间 */
 }
 
 .vision-container.active {
@@ -1788,6 +1789,72 @@ body.dark-mode {
     .vision-container .vision-control-row {
         width: 100%;
         margin-bottom: 5px;
+    }
+}
+
+/* 视觉模式下棋盘激活时的样式 */
+.vision-container.chess-active .message-history,
+.vision-container.chess-active .file-attachment-previews,
+.vision-container.chess-active .vision-controls,
+.vision-container.chess-active #vision-input-area {
+    display: none; /* 隐藏除棋盘外的所有元素 */
+}
+
+.vision-container.chess-active .chess-container {
+    display: flex !important; /* 强制显示棋盘 */
+    flex: 1; /* 确保棋盘占据所有可用空间 */
+    margin-top: 0; /* 移除顶部外边距 */
+    padding: 0; /* 移除内边距，让棋盘内容直接填充 */
+    background: transparent; /* 背景透明 */
+    box-shadow: none; /* 移除阴影 */
+    border-radius: 0; /* 移除圆角 */
+}
+
+.vision-container.chess-active .chess-board-area {
+    flex-direction: row; /* 桌面端横向布局 */
+    justify-content: center; /* 棋盘居中 */
+    align-items: center; /* 垂直居中 */
+    flex: 1; /* 占据可用空间 */
+    gap: 40px; /* 增加棋盘和信息面板的间距 */
+}
+
+.vision-container.chess-active .chess-info-panel {
+    min-width: 350px; /* 增加信息面板的最小宽度 */
+    max-width: 400px; /* 增加信息面板的最大宽度 */
+    padding: 20px; /* 增加内边距 */
+    background-color: var(--surface-color); /* 设置背景色 */
+    border-radius: 12px; /* 设置圆角 */
+    box-shadow: 0 4px 16px var(--shadow-color); /* 添加阴影 */
+    height: 100%; /* 确保高度填充 */
+    box-sizing: border-box; /* 包含 padding 和 border 在宽度内 */
+}
+
+.vision-container.chess-active .chess-board {
+    width: min(90vh, 600px); /* 调整棋盘大小，使其更大 */
+    height: min(90vh, 600px);
+    max-width: 600px; /* 限制最大宽度 */
+    max-height: 600px; /* 限制最大高度 */
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .vision-container.chess-active .chess-board-area {
+        flex-direction: column; /* 移动端纵向布局 */
+        gap: 15px;
+    }
+
+    .vision-container.chess-active .chess-info-panel {
+        min-width: auto;
+        max-width: none;
+        padding: 15px;
+        height: auto;
+    }
+
+    .vision-container.chess-active .chess-board {
+        width: 95vw;
+        height: 95vw;
+        max-width: 95vw;
+        max-height: 95vw;
     }
 }
 
@@ -2037,8 +2104,9 @@ body.dark-mode .highlight-box {
   background: var(--card-bg);
   border-radius: 10px;
   margin-top: 10px;
-  max-height: calc(100vh - 200px);
+  /* max-height: calc(100vh - 200px); */ /* 移除最大高度限制 */
   overflow-y: auto;
+  flex: 1; /* 确保占据可用空间 */
 }
 
 .chess-content-wrapper {
