@@ -2101,8 +2101,8 @@ body.dark-mode .highlight-box {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: repeat(8, 1fr);
-  width: clamp(280px, 70vmin, 400px); /* 调整最大尺寸和 vmin 比例 */
-  height: clamp(280px, 70vmin, 400px); /* 保持宽高一致 */
+  width: min(80vw, 400px);
+  height: min(80vw, 400px);
   border: 2px solid var(--border-color);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   aspect-ratio: 1 / 1;
@@ -2157,10 +2157,10 @@ body.dark-mode .highlight-box {
   }
   
   .chess-board {
-    width: clamp(280px, 80vmin, 400px); /* 移动端调整为 80vmin，最大尺寸为 400px */
-    height: clamp(280px, 80vmin, 400px); /* 保持宽高一致 */
-    max-width: unset; /* 移除 max-width 限制，由 clamp 控制 */
-    max-height: unset; /* 移除 max-height 限制，由 clamp 控制 */
+    width: 90vw;
+    height: 90vw;
+    max-width: 80vw;
+    max-height: 80vw;
   }
   
   .chess-container {
