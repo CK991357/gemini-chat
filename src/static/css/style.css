@@ -2098,11 +2098,11 @@ body.dark-mode .highlight-box {
 }
 
 #undo-move-button {
-  background-color: var(--secondary-color); /* 可以选择一个不同的颜色来区分 */
+  background-color: var(--primary-color); /* 改为蓝色 */
 }
 
 #undo-move-button:hover {
-  background-color: var(--primary-color);
+  background-color: var(--secondary-color); /* 悬停时变为次要颜色 */
 }
 
 .chess-board {
