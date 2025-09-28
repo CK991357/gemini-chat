@@ -92,10 +92,6 @@ const visionAttachmentButton = document.getElementById('vision-attachment-button
 const visionFileInput = document.getElementById('vision-file-input');
 const visionSendButton = document.getElementById('vision-send-button');
 
-// T9: 国际象棋模式相关 DOM 元素
-const chessModeBtn = document.getElementById('chess-mode-button');
-const chessContainer = document.getElementById('chess-container');
-
 // T3: 确保 flipCameraButton 存在
 const flipCameraButton = document.getElementById('flip-camera');
 
@@ -203,8 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 只有当当前激活的顶层模式是聊天模式时，才移除视觉模式的激活状态
             // 这样可以确保在视觉模式下切换子标签时不会丢失顶层激活状态
-            if (visionContainer && visionContainer.classList.contains('active') &&
-                (mode === 'log' || mode === 'history') &&
+            if (visionContainer && visionContainer.classList.contains('active') && 
+                (mode === 'log' || mode === 'history') && 
                 chatModeBtn.classList.contains('active')) {
                 visionContainer.classList.remove('active');
                 // 同时取消视觉主模式按钮的激活状态
@@ -228,7 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isChatMode = chatModeBtn.classList.contains('active');
                 const isTranslationMode = document.querySelector('.translation-container')?.classList.contains('active');
                 const isVisionMode = visionContainer?.classList.contains('active');
-                const isChessMode = chessContainer?.classList.contains('active'); // T9: 新增国际象棋模式检查
                 
                 // 只有在聊天模式下才显示历史记录，其他模式显示占位符
                 if (!isChatMode) {
@@ -243,17 +238,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 检查当前激活的顶层模式
                 const isTranslationMode = document.querySelector('.translation-container')?.classList.contains('active');
                 const isVisionMode = visionContainer?.classList.contains('active');
-                const isChessMode = chessContainer?.classList.contains('active'); // T9: 新增国际象棋模式检查
                 
-                // 在翻译、视觉或国际象棋模式下显示系统日志或历史记录时，隐藏对应的主功能区
+                // 在翻译或视觉模式下显示系统日志或历史记录时，隐藏对应的主功能区
                 if (isTranslationMode) {
                     document.querySelector('.translation-container').style.display = 'none';
                 }
                 if (isVisionMode) {
                     visionContainer.style.display = 'none';
-                }
-                if (isChessMode) { // T9: 隐藏国际象棋容器
-                    chessContainer.style.display = 'none';
                 }
             } else {
                 // 切换到其他模式时，确保显示主功能区
@@ -263,9 +254,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (visionContainer) {
                     visionContainer.style.display = '';
-                }
-                if (chessContainer) { // T9: 显示国际象棋容器
-                    chessContainer.style.display = '';
                 }
             }
 
@@ -283,47 +271,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 默认激活文字聊天模式
     document.querySelector('.tab[data-mode="text"]').click();
-
-    // T9: 国际象棋模式切换逻辑
-    chessModeBtn.addEventListener('click', () => {
-        // 移除所有主功能区的 active 类
-        document.querySelectorAll('.main-content-container > section').forEach(container => {
-            container.classList.remove('active');
-            container.style.display = 'none'; // 确保隐藏
-        });
-        // 移除所有模式按钮的 active 类
-        document.querySelectorAll('.mode-button').forEach(btn => btn.classList.remove('active'));
-        // 移除所有子标签页的 active 类
-        modeTabs.forEach(t => t.classList.remove('active'));
-        chatContainers.forEach(c => c.classList.remove('active'));
-
-        // 明确隐藏聊天、日志和历史记录容器
-        document.querySelector('.chat-container.text-mode').style.display = 'none';
-        document.querySelector('.chat-container.log-mode').style.display = 'none';
-        document.querySelector('.chat-container.history-mode').style.display = 'none';
-
-        // 激活国际象棋模式按钮和容器
-        chessModeBtn.classList.add('active');
-        chessContainer.classList.add('active');
-        chessContainer.style.display = 'block'; // 显示国际象棋容器
-
-        // 确保在切换模式时停止所有媒体流
-        if (videoHandler && videoHandler.getIsVideoActive()) {
-            videoHandler.stopVideo();
-        }
-        if (screenHandler && screenHandler.getIsScreenActive()) {
-            screenHandler.stopScreenSharing();
-        }
-        updateMediaPreviewsDisplay();
-
-        // 初始化 ChessGame 实例
-        if (!window.chessGame) { // 避免重复初始化
-            console.log('Initializing ChessGame:', ChessGame); // 添加调试日志
-            window.chessGame = new ChessGame();
-            window.chessGame.initBoard();
-        }
-        chatUI.logMessage('已切换到国际象棋模式', 'system');
-    });
 
     // 3. 日志显示控制逻辑
     toggleLogBtn.addEventListener('click', () => {

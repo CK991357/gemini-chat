@@ -43,7 +43,6 @@
                 <button id="translation-mode-button" class="mode-button" title="Translate Mode"><i class="fa-solid fa-language"></i></button>
                 <button id="chat-mode-button" class="mode-button active" title="Chat Mode"><i class="fa-solid fa-comments"></i></button>
                 <button id="vision-mode-button" class="mode-button" title="Vision Mode"><i class="fa-solid fa-camera"></i></button>
-                <button id="chess-mode-button" class="mode-button" title="Chess Mode"><i class="fa-solid fa-chess-king"></i></button>
             </div>
             <div class="nav-tools">
                 <button id="new-chat-button" title="New Chat"><i class="fa-solid fa-square-plus"></i></button>
@@ -267,33 +266,6 @@
                     </div>
                 </section>
 
-                <!-- 国际象棋模拟器功能区 -->
-                <section class="chess-container" id="chess-container">
-                    <div class="chess-board-wrapper">
-                        <!-- 棋盘区域 -->
-                        <div id="chessBoard" class="chess-board"></div>
-
-                        <!-- FEN 和控制面板 -->
-                        <div class="fen-panel">
-                            <div class="fen-display">
-                                <h3>Current FEN</h3>
-                                <textarea id="fenOutput" class="fen-text" readonly title="Current FEN" placeholder="FEN will appear here"></textarea>
-                                <div class="controls">
-                                    <button id="copyBtn">Copy FEN</button>
-                                    <button id="saveBtn">Save Game</button>
-                                    <button id="resetBtn">New Game</button>
-                                    <button id="loadBtn">Load Game</button>
-                                </div>
-                            </div>
-
-                            <div class="history-panel">
-                                <h3>Move History</h3>
-                                <ul id="historyList" class="history-list"></ul>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
             </div>
         </div>
 
@@ -320,26 +292,6 @@
                     <i class="fa-solid fa-download"></i> 下载图片
                 </a>
             </div>
-        </div>
-    </div>
-
-    <!-- 初始选择模态框 -->
-    <div id="chess-start-modal" class="modal">
-        <div class="modal-content chess-modal">
-            <h2>Start New Game</h2>
-            <div class="modal-buttons chess-modal-buttons">
-                <button id="chess-new-game-btn">New Game</button>
-                <button id="chess-load-game-btn">Load Game</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 游戏列表模态框 -->
-    <div id="chess-games-modal" class="modal hidden">
-        <div class="modal-content chess-modal">
-            <h2>Load Saved Game</h2>
-            <ul id="chess-games-list" class="history-list"></ul>
-            <button id="close-chess-games-btn">Close</button>
         </div>
     </div>
 
