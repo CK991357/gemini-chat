@@ -256,8 +256,31 @@
                             <label for="vision-prompt-select">模式:</label>
                             <select id="vision-prompt-select"></select>
                             <button id="vision-summary-button" class="action-button" title="生成对局总结">对局总结</button>
+                            <button id="toggle-to-chess-button" class="action-button" title="切换到国际象棋棋盘">切换到棋盘</button>
                         </div>
                     </div>
+                    
+                    <!-- 国际象棋功能区 -->
+                    <div class="chess-container" id="chess-container" style="display: none;">
+                        <div class="chess-board-area">
+                            <div class="chess-info-panel">
+                                <h3>国际象棋棋盘</h3>
+                                <div class="fen-display">
+                                    <label for="fen-output">当前FEN:</label>
+                                    <textarea id="fen-output" class="fen-text" readonly></textarea>
+                                    <div class="fen-actions">
+                                        <button id="copy-fen-button" class="action-button">复制FEN</button>
+                                        <button id="reset-chess-button" class="action-button">新游戏</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="chess-board" class="chess-board"></div>
+                        </div>
+                        <div class="chess-controls">
+                            <button id="toggle-to-vision-button" class="action-button">切换到聊天</button>
+                        </div>
+                    </div>
+                    
                     <div class="input-area" id="vision-input-area">
                         <textarea id="vision-input-text" placeholder="输入描述或问题..." rows="1"></textarea>
                         <button id="vision-attachment-button" class="action-button" title="Attach File"><i class="fa-solid fa-paperclip"></i></button>

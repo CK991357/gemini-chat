@@ -14,6 +14,7 @@ import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManag
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
+import { initializeChessCore } from './chess/chess-core.js';
 
 /**
  * @fileoverview Main entry point for the application.
@@ -1454,9 +1455,21 @@ function updateMediaPreviewsDisplay() {
     }
 }
 
+/**
+ * Initializes the application and all its modules.
+ */
+async function initializeApp() {
+    try {
+        
+        // Initialize chess module
+        initializeChessCore();
+        
+    } catch (error) {
+        Logger.error('Failed to initialize application:', error);
+    }
+}
 
-
-
+initializeApp();
 
 /**
  * Initializes mobile-specific event handlers.
