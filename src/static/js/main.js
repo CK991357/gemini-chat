@@ -453,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateMediaPreviewsDisplay
     };
     initializeTranslationCore(translationElements, mediaHandlers, showToast);
-    // 视觉模型相关 DOM 元素 - 更新为新的结构
+    // T8: 初始化视觉功能
     const visionElements = {
         visionModelSelect: document.getElementById('vision-model-select'),
         visionPromptSelect: document.getElementById('vision-prompt-select'),
@@ -463,16 +463,11 @@ document.addEventListener('DOMContentLoaded', () => {
         visionFileInput: document.getElementById('vision-file-input'),
         visionInputText: document.getElementById('vision-input-text'),
         visionMessageHistory: document.getElementById('vision-message-history'),
-        // 新增：切换按钮
-        toggleToChessButton: document.getElementById('toggle-to-chess-button'),
-        toggleToVisionButton: document.getElementById('toggle-to-vision-button')
     };
-
-    // 初始化视觉功能
+    const visionHandlers = {
+        showToast: showToast,
+    };
     initializeVisionCore(visionElements, attachmentManager, visionHandlers);
-    
-    // 初始化国际象棋
-    initializeChessCore();
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
 
