@@ -131,6 +131,7 @@
                     <!-- <button class="tab" data-mode="audio">🎙️ 音频聊天</button> 删除此行 -->
                     <button class="tab" data-mode="log">📋 系统日志</button>
                     <button class="tab" data-mode="history">📜 历史记录</button>
+                    <button class="tab" data-mode="chess">♟️ 国际象棋</button>
                 </div>
 
                 <section class="chat-container text-mode active">
@@ -266,6 +267,60 @@
                     </div>
                 </section>
 
+                <!-- 国际象棋功能区 -->
+                <section id="chess-container" class="chat-container">
+                    <header>
+                        <h1>Chess FEN Recorder</h1>
+                    </header>
+
+                    <div class="main-content">
+                        <!-- 棋盘区域 -->
+                        <div id="chessBoard" class="chess-board"></div>
+
+                        <!-- FEN 和控制面板 -->
+                        <div class="fen-panel">
+                            <div class="fen-display">
+                                <h3>Current FEN</h3>
+                                <textarea id="fenOutput" class="fen-text" readonly></textarea>
+                                <div class="controls">
+                                    <button id="copyBtn">Copy FEN</button>
+                                    <button id="saveBtn">Save Game</button>
+                                    <button id="resetBtn">New Game</button>
+                                    <button id="loadBtn">Load Game</button>
+                                </div>
+                            </div>
+
+                            <div class="history-panel">
+                                <h3>Move History</h3>
+                                <ul id="historyList" class="history-list"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 初始选择模态框 -->
+                    <div id="startModal" class="modal">
+                        <div class="modal-content">
+                            <h2>Start New Game</h2>
+                            <div class="modal-buttons">
+                                <button id="newGameBtn">New Game</button>
+                                <button id="loadGameBtn">Load Game</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 游戏列表模态框 -->
+                    <div id="gamesModal" class="modal hidden">
+                        <div class="modal-content">
+                            <h2>Load Saved Game</h2>
+                            <ul id="gamesList" class="history-list"></ul>
+                            <button id="closeGamesBtn">Close</button>
+                        </div>
+                    </div>
+
+                    <!-- 提示信息 -->
+                    <div id="toast" class="toast hidden"></div>
+                </section>
+
             </div>
         </div>
 
@@ -295,6 +350,7 @@
         </div>
     </div>
 
+    <script type="module" src="./js/chess/chess-board-manager.js"></script>
     <script src="js/main.js" type="module"></script>
 </body>
 </html>

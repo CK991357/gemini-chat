@@ -12,7 +12,7 @@ const PIECE_LABELS = {
     'b': 'Black Bishop', 'n': 'Black Knight', 'p': 'Black Pawn'
 };
 
-export class ChessGame {
+export class ChessGame { // 添加 export
     constructor() {
         this.pieces = {};
         this.currentTurn = 'w';
@@ -24,10 +24,22 @@ export class ChessGame {
         this.currentMoveIndex = -1;
         this.selectedSquare = null;
         this.gameId = null;
-        
+    }
+
+    init() { // 新增一个初始化方法，在 main.js 中调用
         this.initBoard();
         this.setupEventListeners();
         this.checkUrlParams();
+        // 检查是否应该显示开始模态框
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!urlParams.get('fen')) {
+            // 尝试加载当前游戏
+            const currentGameId = localStorage.getItem('currentGameId');
+            if (currentGameId) {
+                this.hideStartModal();
+                this.loadGame(currentGameId);
+            }
+        }
     }
 
     initBoard() {
@@ -259,9 +271,7 @@ export class ChessGame {
 
     updateFEN() {
         const fenOutput = document.getElementById('fenOutput');
-        if (fenOutput) {
-            fenOutput.value = this.generateFEN();
-        }
+        fenOutput.value = this.generateFEN();
     }
 
     addToHistory(fen) {
@@ -273,8 +283,6 @@ export class ChessGame {
 
     updateHistoryDisplay() {
         const historyList = document.getElementById('historyList');
-        if (!historyList) return;
-
         historyList.innerHTML = '';
 
         this.moveHistory.forEach((fen, index) => {
@@ -289,11 +297,10 @@ export class ChessGame {
 
             li.innerHTML = `
                 <span>${movePrefix} ${fen.split(' ')[0]}</span>
-                <button class="delete-btn" data-index="${index}">×</button>
+                <button class="delete-btn" onclick="game.deleteMove(${index})">×</button>
             `;
 
             li.addEventListener('click', () => this.loadMove(index));
-            li.querySelector('.delete-btn').addEventListener('click', (event) => this.deleteMove(event, index));
             historyList.appendChild(li);
         });
     }
@@ -305,7 +312,7 @@ export class ChessGame {
         this.updateHistoryDisplay();
     }
 
-    deleteMove(event, index) {
+    deleteMove(index) {
         event.stopPropagation();
         if (this.moveHistory.length <= 1) return;
 
@@ -356,51 +363,49 @@ export class ChessGame {
 
     setupEventListeners() {
         // 复制FEN按钮
-        document.getElementById('copyBtn')?.addEventListener('click', () => {
+        document.getElementById('copyBtn').addEventListener('click', () => {
             const fenOutput = document.getElementById('fenOutput');
-            if (fenOutput) {
-                fenOutput.select();
-                try {
-                    navigator.clipboard.writeText(fenOutput.value).then(() => {
-                        this.showToast('FEN copied to clipboard!');
-                    });
-                } catch (err) {
-                    // 降级方案
-                    document.execCommand('copy');
-                    this.showToast('FEN selected - press Ctrl+C to copy');
-                }
+            fenOutput.select();
+            try {
+                navigator.clipboard.writeText(fenOutput.value).then(() => {
+                    this.showToast('FEN copied to clipboard!');
+                });
+            } catch (err) {
+                // 降级方案
+                document.execCommand('copy');
+                this.showToast('FEN selected - press Ctrl+C to copy');
             }
         });
 
         // 保存游戏按钮
-        document.getElementById('saveBtn')?.addEventListener('click', () => {
+        document.getElementById('saveBtn').addEventListener('click', () => {
             this.saveGame();
         });
 
         // 新游戏按钮
-        document.getElementById('resetBtn')?.addEventListener('click', () => {
+        document.getElementById('resetBtn').addEventListener('click', () => {
             if (confirm('Start a new game? Current progress will be saved.')) {
                 this.newGame();
             }
         });
 
         // 载入游戏按钮
-        document.getElementById('loadBtn')?.addEventListener('click', () => {
+        document.getElementById('loadBtn').addEventListener('click', () => {
             this.showGamesModal();
         });
 
         // 模态框按钮
-        document.getElementById('chess-new-game-btn')?.addEventListener('click', () => {
+        document.getElementById('newGameBtn').addEventListener('click', () => {
             this.hideStartModal();
             this.newGame();
         });
 
-        document.getElementById('chess-load-game-btn')?.addEventListener('click', () => {
+        document.getElementById('loadGameBtn').addEventListener('click', () => {
             this.hideStartModal();
             this.showGamesModal();
         });
 
-        document.getElementById('close-chess-games-btn')?.addEventListener('click', () => {
+        document.getElementById('closeGamesBtn').addEventListener('click', () => {
             this.hideGamesModal();
         });
 
@@ -432,36 +437,26 @@ export class ChessGame {
     debouncedSave = this.debounce(() => this.saveGame(), 1000);
 
     showToast(message) {
-        // 使用现有项目的 toast 机制
-        const toastContainer = document.getElementById('toast-container');
-        if (toastContainer) {
-            const toast = document.createElement('div');
-            toast.className = 'toast-message';
-            toast.textContent = message;
-            toastContainer.appendChild(toast);
-            
-            // 强制回流以触发动画
-            void toast.offsetWidth; 
-            toast.classList.add('show');
-
-            setTimeout(() => {
-                toast.classList.remove('show');
-                toast.addEventListener('transitionend', () => toast.remove());
-            }, 2000);
-        }
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.remove('hidden');
+        
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, 2000);
     }
 
     hideStartModal() {
-        document.getElementById('chess-start-modal')?.classList.add('hidden');
+        document.getElementById('startModal').classList.add('hidden');
     }
 
     showGamesModal() {
         this.loadGamesList();
-        document.getElementById('chess-games-modal')?.classList.remove('hidden');
+        document.getElementById('gamesModal').classList.remove('hidden');
     }
 
     hideGamesModal() {
-        document.getElementById('chess-games-modal')?.classList.add('hidden');
+        document.getElementById('gamesModal').classList.add('hidden');
     }
 
     newGame() {
@@ -531,9 +526,7 @@ export class ChessGame {
     }
 
     async loadGamesList() {
-        const gamesList = document.getElementById('chess-games-list');
-        if (!gamesList) return;
-
+        const gamesList = document.getElementById('gamesList');
         gamesList.innerHTML = '';
 
         const games = await this.getGames();
@@ -549,20 +542,19 @@ export class ChessGame {
             li.innerHTML = `
                 <div>
                     <strong>${game.name}</strong>
-                    <div style="font-size: 0.8em; color: var(--text-secondary-color);">
+                    <div style="font-size: 0.8em; color: #666;">
                         ${new Date(game.timestamp).toLocaleString()}
                     </div>
                 </div>
-                <button class="delete-btn" data-game-id="${game.id}">×</button>
+                <button class="delete-btn" onclick="game.deleteSavedGame('${game.id}')">×</button>
             `;
             
             li.addEventListener('click', () => this.loadGame(game.id));
-            li.querySelector('.delete-btn').addEventListener('click', (event) => this.deleteSavedGame(event, game.id));
             gamesList.appendChild(li);
         });
     }
 
-    async deleteSavedGame(event, gameId) {
+    async deleteSavedGame(gameId) {
         event.stopPropagation();
         if (confirm('Delete this saved game?')) {
             try {
