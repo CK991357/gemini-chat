@@ -60,6 +60,30 @@ class ChessGame {
                 this.boardElement.appendChild(square);
             }
         }
+
+        // 添加行号和列标
+        const files = 'abcdefgh';
+        const ranks = '87654321';
+
+        // 添加顶部字母标签
+        const topLabels = document.createElement('div');
+        topLabels.className = 'chess-top-labels';
+        for (let i = 0; i < 8; i++) {
+            const label = document.createElement('span');
+            label.textContent = files[i];
+            topLabels.appendChild(label);
+        }
+        this.boardElement.insertBefore(topLabels, this.boardElement.firstChild);
+
+        // 添加左侧数字标签
+        const leftLabels = document.createElement('div');
+        leftLabels.className = 'chess-left-labels';
+        for (let i = 0; i < 8; i++) {
+            const label = document.createElement('span');
+            label.textContent = ranks[i];
+            leftLabels.appendChild(label);
+        }
+        this.boardElement.parentNode.insertBefore(leftLabels, this.boardElement);
     }
 
     setupInitialPosition() {

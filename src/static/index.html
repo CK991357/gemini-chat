@@ -262,22 +262,24 @@
                     
                     <!-- 国际象棋功能区 -->
                     <div class="chess-container" id="chess-container" style="display: none;">
-                        <div class="chess-board-area">
-                            <div class="chess-info-panel">
-                                <h3>国际象棋棋盘</h3>
-                                <div class="fen-display">
-                                    <label for="fen-output">当前FEN:</label>
-                                    <textarea id="fen-output" class="fen-text" readonly></textarea>
-                                    <div class="fen-actions">
-                                        <button id="copy-fen-button" class="action-button">复制FEN</button>
-                                        <button id="reset-chess-button" class="action-button">新游戏</button>
+                        <div class="chess-content-wrapper">
+                            <div class="chess-board-area">
+                                <div class="chess-info-panel">
+                                    <h3>国际象棋棋盘</h3>
+                                    <div class="fen-display">
+                                        <label for="fen-output">当前FEN:</label>
+                                        <textarea id="fen-output" class="fen-text" readonly></textarea>
+                                        <div class="fen-actions">
+                                            <button id="copy-fen-button" class="action-button">复制FEN</button>
+                                            <button id="reset-chess-button" class="action-button">新游戏</button>
+                                        </div>
                                     </div>
                                 </div>
+                                <div id="chess-board" class="chess-board"></div>
                             </div>
-                            <div id="chess-board" class="chess-board"></div>
-                        </div>
-                        <div class="chess-controls">
-                            <button id="toggle-to-vision-button" class="action-button">切换到聊天</button>
+                            <div class="chess-controls">
+                                <button id="toggle-to-vision-button" class="action-button">切换到聊天</button>
+                            </div>
                         </div>
                     </div>
                     
