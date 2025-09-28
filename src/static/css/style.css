@@ -2097,6 +2097,14 @@ body.dark-mode .highlight-box {
   margin-top: 10px;
 }
 
+#undo-move-button {
+  background-color: var(--secondary-color); /* 可以选择一个不同的颜色来区分 */
+}
+
+#undo-move-button:hover {
+  background-color: var(--primary-color);
+}
+
 .chess-board {
   display: grid;
   grid-template-columns: repeat(8, 1fr);

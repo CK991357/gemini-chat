@@ -26,6 +26,7 @@ class ChessGame {
         this.fenOutput = containerElement.querySelector('#fen-output');
         this.copyFenButton = containerElement.querySelector('#copy-fen-button');
         this.resetButton = containerElement.querySelector('#reset-chess-button');
+        this.undoButton = containerElement.querySelector('#undo-move-button'); // 新增撤销按钮
         this.toggleButton = containerElement.querySelector('#toggle-to-vision-button');
         
         this.pieces = {};
@@ -35,6 +36,7 @@ class ChessGame {
         this.halfMoveClock = 0;
         this.fullMoveNumber = 1;
         this.selectedSquare = null;
+        this.moveHistory = []; // 新增：存储 FEN 历史
         
         this.initBoard();
         this.setupEventListeners();
@@ -74,8 +76,19 @@ class ChessGame {
         };
 
         this.pieces = { ...initialPosition };
+        this.moveHistory = []; // 清空历史记录
         this.renderBoard();
         this.updateFEN();
+    }
+
+    undoMove() {
+        if (this.moveHistory.length > 0) {
+            const previousFEN = this.moveHistory.pop();
+            this.loadFEN(previousFEN);
+            Logger.info('Undid last move.');
+        } else {
+            Logger.warn('No moves to undo.');
+        }
     }
 
     renderBoard() {
@@ -147,6 +160,9 @@ class ChessGame {
         if (!piece || !this.isValidTurn(piece)) {
             return false;
         }
+
+        // 在移动前保存当前 FEN 到历史记录
+        this.moveHistory.push(this.generateFEN());
 
         // 基本规则检查：不能吃己方棋子
         if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
@@ -296,6 +312,11 @@ class ChessGame {
             if (confirm('开始新游戏？当前进度将丢失。')) {
                 this.setupInitialPosition();
             }
+        });
+
+        // 撤销按钮
+        this.undoButton.addEventListener('click', () => {
+            this.undoMove();
         });
 
         // 切换视图按钮
