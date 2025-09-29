@@ -20,19 +20,18 @@ const PIECE_LABELS = {
 };
 
 class ChessGame {
-    constructor(containerElement) {
-        // 修改：传入整个视觉容器而不是棋盘容器
-        this.visionContainer = containerElement;
-        this.boardElement = this.visionContainer.querySelector('#chess-board');
-        this.fenOutput = this.visionContainer.querySelector('#fen-output');
-        this.copyFenButton = this.visionContainer.querySelector('#copy-fen-button');
-        this.resetButton = this.visionContainer.querySelector('#reset-chess-button');
-        this.undoButton = this.visionContainer.querySelector('#undo-move-button');
-        this.toggleButton = this.visionContainer.querySelector('#toggle-to-vision-button');
+    constructor() {
+        // 直接使用全局DOM元素，不通过容器传递
+        this.boardElement = document.getElementById('chess-board');
+        this.fenOutput = document.getElementById('fen-output');
+        this.copyFenButton = document.getElementById('copy-fen-button');
+        this.resetButton = document.getElementById('reset-chess-button');
+        this.undoButton = document.getElementById('undo-move-button');
+        this.toggleButton = document.getElementById('toggle-to-vision-button');
         
-        // 新增：全屏元素引用
-        this.chessFullscreen = this.visionContainer.querySelector('#chess-fullscreen');
-        this.visionChatFullscreen = this.visionContainer.querySelector('#vision-chat-fullscreen');
+        // 全屏元素引用
+        this.chessFullscreen = document.getElementById('chess-fullscreen');
+        this.visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
         
         this.pieces = {};
         this.currentTurn = 'w';
@@ -43,12 +42,18 @@ class ChessGame {
         this.selectedSquare = null;
         this.moveHistory = [];
         
+        // 初始化
         this.initBoard();
         this.setupEventListeners();
         this.setupInitialPosition();
     }
 
     initBoard() {
+        if (!this.boardElement) {
+            console.error('Chess board element not found');
+            return;
+        }
+
         this.boardElement.innerHTML = '';
 
         // 创建棋盘格子
@@ -81,7 +86,7 @@ class ChessGame {
         };
 
         this.pieces = { ...initialPosition };
-        this.moveHistory = []; // 清空历史记录
+        this.moveHistory = [];
         this.renderBoard();
         this.updateFEN();
     }
@@ -97,8 +102,11 @@ class ChessGame {
     }
 
     renderBoard() {
+        if (!this.boardElement) return;
+
         // 清除所有棋子
-        this.visionContainer.querySelectorAll('.chess-square').forEach(square => {
+        const squares = this.boardElement.querySelectorAll('.chess-square');
+        squares.forEach(square => {
             square.innerHTML = '';
             square.classList.remove('selected', 'highlight');
         });
@@ -107,7 +115,7 @@ class ChessGame {
         Object.entries(this.pieces).forEach(([key, piece]) => {
             const [row, col] = key.split(',').map(Number);
             const square = this.getSquareElement(row, col);
-            if (square) {
+            if (square && piece in PIECES) {
                 const pieceElement = document.createElement('div');
                 pieceElement.textContent = PIECES[piece];
                 pieceElement.draggable = true;
@@ -285,11 +293,13 @@ class ChessGame {
     }
 
     updateFEN() {
-        this.fenOutput.value = this.generateFEN();
+        if (this.fenOutput) {
+            this.fenOutput.value = this.generateFEN();
+        }
     }
 
     getSquareElement(row, col) {
-        return this.visionContainer.querySelector(`.chess-square[data-row="${row}"][data-col="${col}"]`);
+        return document.querySelector(`.chess-square[data-row="${row}"][data-col="${col}"]`);
     }
 
     getSquareName(row, col) {
@@ -299,37 +309,47 @@ class ChessGame {
 
     setupEventListeners() {
         // 复制FEN按钮
-        this.copyFenButton.addEventListener('click', () => {
-            this.fenOutput.select();
-            try {
-                navigator.clipboard.writeText(this.fenOutput.value).then(() => {
-                    Logger.info('FEN copied to clipboard!');
-                });
-            } catch (err) {
-                document.execCommand('copy');
-                Logger.info('FEN selected - press Ctrl+C to copy');
-            }
-        });
+        if (this.copyFenButton) {
+            this.copyFenButton.addEventListener('click', () => {
+                if (this.fenOutput) {
+                    this.fenOutput.select();
+                    try {
+                        navigator.clipboard.writeText(this.fenOutput.value).then(() => {
+                            Logger.info('FEN copied to clipboard!');
+                        });
+                    } catch (err) {
+                        document.execCommand('copy');
+                        Logger.info('FEN selected - press Ctrl+C to copy');
+                    }
+                }
+            });
+        }
 
         // 新游戏按钮
-        this.resetButton.addEventListener('click', () => {
-            if (confirm('开始新游戏？当前进度将丢失。')) {
-                this.setupInitialPosition();
-            }
-        });
+        if (this.resetButton) {
+            this.resetButton.addEventListener('click', () => {
+                if (confirm('开始新游戏？当前进度将丢失。')) {
+                    this.setupInitialPosition();
+                }
+            });
+        }
 
         // 撤销按钮
-        this.undoButton.addEventListener('click', () => {
-            this.undoMove();
-        });
+        if (this.undoButton) {
+            this.undoButton.addEventListener('click', () => {
+                this.undoMove();
+            });
+        }
 
         // 切换到聊天按钮
-        this.toggleButton.addEventListener('click', () => {
-            this.showChatView();
-        });
+        if (this.toggleButton) {
+            this.toggleButton.addEventListener('click', () => {
+                this.showChatView();
+            });
+        }
     }
 
-    // 新增：显示聊天视图
+    // 显示聊天视图
     showChatView() {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.chessFullscreen.classList.remove('active');
@@ -338,13 +358,13 @@ class ChessGame {
         }
     }
 
-    // 新增：显示棋盘视图
+    // 显示棋盘视图
     showChessView() {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.visionChatFullscreen.classList.remove('active');
             this.chessFullscreen.classList.add('active');
             Logger.info('切换到棋盘视图');
-            // 确保棋盘重新渲染以适应新容器
+            // 确保棋盘重新渲染
             setTimeout(() => {
                 this.renderBoard();
             }, 100);
@@ -356,7 +376,7 @@ class ChessGame {
         return this.generateFEN();
     }
 
-    // 修改：加载FEN时重新渲染
+    // 加载FEN字符串
     loadFEN(fen) {
         const parts = fen.split(' ');
         if (parts.length < 6) return false;
@@ -395,21 +415,21 @@ let chessGame = null;
  * 初始化国际象棋功能
  */
 export function initializeChessCore() {
-    const visionContainer = document.querySelector('.vision-container');
-    const toggleToChessButton = document.getElementById('toggle-to-chess-button');
-    
-    if (visionContainer) {
-        chessGame = new ChessGame(visionContainer);
-        Logger.info('Chess module initialized.');
-    }
-    
-    // 添加按钮事件监听器
-    if (toggleToChessButton) {
-        toggleToChessButton.addEventListener('click', () => {
-            if (chessGame) {
-                chessGame.showChessView();
-            }
-        });
+    try {
+        chessGame = new ChessGame();
+        Logger.info('Chess module initialized successfully.');
+        
+        // 添加切换到棋盘按钮的事件监听器
+        const toggleToChessButton = document.getElementById('toggle-to-chess-button');
+        if (toggleToChessButton) {
+            toggleToChessButton.addEventListener('click', () => {
+                if (chessGame) {
+                    chessGame.showChessView();
+                }
+            });
+        }
+    } catch (error) {
+        Logger.error('Failed to initialize chess module:', error);
     }
 }
 
