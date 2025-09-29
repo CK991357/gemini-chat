@@ -2106,12 +2106,12 @@ body.dark-mode {
 @media (hover: none) and (pointer: coarse) {
     .chess-square {
         min-height: 36px;
-        min-width: 30px;
+        min-width: 28px;
     }
     
     .action-button {
         min-height: 36px;
-        min-width: 30px;
+        min-width: 28px;
     }
 }
 
