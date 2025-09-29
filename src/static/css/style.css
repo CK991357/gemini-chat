@@ -1267,7 +1267,7 @@ body {
         font-size: 14px;
     }
     .text-mode #send-button { /* 发送按钮单独设置 */
-        width: 36px;
+        width: 32px;
         height: 36px;
         font-size: 16px;
         border-radius: 8px; /* 确保是圆角矩形 */
@@ -2105,11 +2105,13 @@ body.dark-mode {
 /* 确保触摸友好的交互 */
 @media (hover: none) and (pointer: coarse) {
     .chess-square {
-        min-height: 32px;
+        min-height: 36px;
+        min-width: 30px;
     }
     
     .action-button {
-        min-height: 32px;
+        min-height: 36px;
+        min-width: 30px;
     }
 }
 
