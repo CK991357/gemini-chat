@@ -48,6 +48,8 @@ class ChessGame {
             return;
         }
         
+        console.log('Chess board element found:', this.boardElement);
+        
         this.pieces = {};
         this.currentTurn = 'w';
         this.castling = 'KQkq';
@@ -64,12 +66,12 @@ class ChessGame {
     }
 
     initBoard() {
-        // 这里的DOM检查已经移动到 initialize 方法中，所以这里不再需要
-        // if (!this.boardElement) {
-        //     console.error('Chess board element not found');
-        //     return;
-        // }
+        if (!this.boardElement) {
+            console.error('Chess board element not found');
+            return;
+        }
 
+        console.log('Initializing chess board...');
         this.boardElement.innerHTML = '';
 
         // 创建棋盘格子
@@ -88,6 +90,8 @@ class ChessGame {
                 this.boardElement.appendChild(square);
             }
         }
+        
+        console.log('Chess board initialized with', this.boardElement.children.length, 'squares');
     }
 
     setupInitialPosition() {

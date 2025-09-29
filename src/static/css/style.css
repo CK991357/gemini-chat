@@ -1811,79 +1811,168 @@ body.dark-mode {
   display: flex;
 }
 
-/* 棋盘全屏 */
+/* 棋盘全屏模式样式 */
 .chess-fullscreen {
-  display: none; /* 默认隐藏 */
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  padding: 20px;
-  box-sizing: border-box;
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+    background-color: var(--surface-color);
 }
 
 .chess-fullscreen.active {
-  display: flex;
+    display: flex;
 }
 
-/* 棋盘全屏时的内容布局 */
-.chess-fullscreen .chess-content-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.chess-fullscreen .chess-board-area {
-  flex: 1;
-  display: flex;
-  gap: 20px;
-  min-height: 0;
-  align-items: flex-start;
-}
-
-.chess-fullscreen .chess-info-panel {
-  flex: 0 0 300px;
-  display: flex;
-  flex-direction: column;
-}
-
-.chess-fullscreen .chess-board {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  max-width: 600px;
-  max-height: 600px;
-}
-
-/* 全屏模式下的控制按钮 */
-.fullscreen-controls {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 15px;
-  border-top: 1px solid var(--border-color);
-  background-color: var(--surface-color);
-}
-
-/* 响应式调整 */
-@media (max-width: 768px) {
-  .chess-fullscreen .chess-board-area {
+.chess-content-wrapper {
+    flex: 1;
+    display: flex;
     flex-direction: column;
-    gap: 15px;
-  }
-  
-  .chess-fullscreen .chess-info-panel {
-    flex: 0 0 auto;
+    gap: 20px;
+    min-height: 0;
+}
+
+.chess-board-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+}
+
+/* 桌面端横向布局 */
+@media (min-width: 768px) {
+    .chess-board-area {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: center;
+    }
+    
+    .chess-info-panel {
+        width: 300px;
+        flex-shrink: 0;
+    }
+}
+
+.chess-info-panel {
+    background: var(--surface-color);
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px var(--shadow-color);
     width: 100%;
-  }
-  
-  .chess-fullscreen .chess-board {
+    max-width: 400px;
+}
+
+.chess-info-panel h3 {
+    margin: 0 0 15px 0;
+    color: var(--primary-color);
+    text-align: center;
+}
+
+/* 国际象棋棋盘样式 */
+.chess-board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    width: min(80vw, 500px);
+    height: min(80vw, 500px);
+    border: 3px solid #333;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: #f5f5f5;
+}
+
+.chess-square {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: min(8vw, 40px);
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s ease;
+}
+
+.chess-square.light {
+    background-color: #f0d9b5;
+}
+
+.chess-square.dark {
+    background-color: #b58863;
+}
+
+.chess-square.highlight {
+    background-color: rgba(255, 255, 0, 0.4);
+}
+
+.chess-square.selected {
+    background-color: rgba(0, 255, 0, 0.4);
+}
+
+.chess-piece-label {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    font-size: 10px;
+    color: rgba(0, 0, 0, 0.5);
+}
+
+/* FEN显示区域 */
+.fen-display {
+    background: var(--bg-color);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.fen-display label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.fen-text {
     width: 100%;
-    height: auto;
-    aspect-ratio: 1 / 1;
-  }
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-family: monospace;
+    resize: vertical;
+    min-height: 60px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.fen-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.fen-actions .action-button {
+    flex: 1;
+    min-width: 100px;
+    text-align: center;
+}
+
+/* 全屏控制按钮 */
+.fullscreen-controls {
+    display: flex;
+    justify-content: center;
+    padding: 15px;
+    border-top: 1px solid var(--border-color);
+    margin-top: 20px;
+}
+
+.fullscreen-controls .action-button {
+    min-width: 150px;
 }
 
 /* 高亮答案内容的样式 */
@@ -2124,165 +2213,6 @@ body.dark-mode .highlight-box {
     border: 1px solid var(--border-color);
 }
 
-/* 国际象棋功能区样式 */
-.chess-container {
-  display: flex;
-  flex-direction: column;
-  padding: 15px;
-  background: var(--card-bg);
-  border-radius: 10px;
-  margin-top: 10px;
-  max-height: calc(100vh - 200px);
-  overflow-y: auto;
-}
-
-.chess-content-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0; /* 允许子元素收缩 */
-}
-
-.chess-board-area {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  flex: 1;
-  min-height: 0; /* 允许子元素收缩 */
-}
-
-.chess-info-panel {
-  flex: 1;
-  min-width: 300px;
-}
-
-.chess-info-panel h3 {
-  margin-bottom: 15px;
-  color: var(--text-primary);
-}
-
-.fen-display {
-  background: var(--input-bg);
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 15px;
-}
-
-.fen-display label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-}
-
-.fen-text {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-family: monospace;
-  resize: vertical;
-  min-height: 80px;
-}
-
-.fen-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-#undo-move-button {
-  background-color: var(--primary-color); /* 改为蓝色 */
-}
-
-#undo-move-button:hover {
-  background-color: var(--secondary-color); /* 悬停时变为次要颜色 */
-}
-
-.chess-board {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  grid-template-rows: repeat(8, 1fr);
-  width: min(80vw, 400px);
-  height: min(80vw, 400px);
-  border: 2px solid var(--border-color);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  aspect-ratio: 1 / 1;
-}
-
-.chess-square {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: min(8vw, 40px);
-  position: relative;
-  cursor: pointer;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.chess-square.light {
-  background-color: #f0d9b5;
-}
-
-.chess-square.dark {
-  background-color: #b58863;
-}
-
-.chess-square.selected {
-  background-color: rgba(0, 255, 0, 0.4);
-}
-
-.chess-square.highlight {
-  background-color: rgba(255, 255, 0, 0.4);
-}
-
-.chess-piece-label {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  font-size: 10px;
-  color: rgba(0, 0, 0, 0.5);
-}
-
-.chess-controls {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 15px;
-  padding-top: 15px;
-  border-top: 1px solid var(--border-color);
-}
-
-@media (max-width: 768px) {
-  .chess-board-area {
-    flex-direction: column;
-  }
-  
-  .chess-board {
-    width: 90vw;
-    height: 90vw;
-    max-width: 80vw;
-    max-height: 80vw;
-  }
-  
-  .chess-container {
-    max-height: calc(100vh - 150px);
-    padding: 10px;
-  }
-  
-  .fen-text {
-    min-height: 60px;
-  }
-  
-  .chess-controls {
-    justify-content: center;
-  }
-  
-  .chess-info-panel {
-    min-width: auto;
-  }
-}
 
 /* =================================
    Image Modal Styles
@@ -2639,38 +2569,4 @@ input:checked + .slider:before {
     flex: 1;
     min-width: 120px;
     text-align: center;
-}
-
-/* 全屏模式下的棋盘布局 */
-.chess-fullscreen .chess-content-wrapper {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    padding: 20px;
-}
-
-.chess-fullscreen .chess-board-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-}
-
-.chess-fullscreen .chess-info-panel {
-    width: 100%;
-    max-width: 500px;
-}
-
-@media (min-width: 768px) {
-    .chess-fullscreen .chess-board-area {
-        flex-direction: row;
-        align-items: flex-start;
-    }
-    
-    .chess-fullscreen .chess-info-panel {
-        width: 300px;
-    }
 }
