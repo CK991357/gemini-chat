@@ -1878,8 +1878,8 @@ body.dark-mode {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     grid-template-rows: repeat(8, 1fr);
-    width: 80vw;
-    height: 80vw;
+    width: min(80vw, 500px);
+    height: min(80vw, 500px);
     border: 3px solid #333;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     background: #f5f5f5;
@@ -1889,7 +1889,7 @@ body.dark-mode {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10vw;
+    font-size: min(8vw, 40px);
     position: relative;
     cursor: pointer;
     -webkit-user-select: none;
@@ -1927,8 +1927,6 @@ body.dark-mode {
     padding: 15px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    font-size: 12px; /* Adjust FEN display for better readability */
-    padding: 10px;
 }
 
 .fen-display label {
@@ -1961,7 +1959,7 @@ body.dark-mode {
 
 .fen-actions .action-button {
     flex: 1;
-    min-width: 80px; /* Make action buttons smaller */
+    min-width: 100px;
     text-align: center;
 }
 
@@ -2572,193 +2570,4 @@ input:checked + .slider:before {
     flex: 1;
     min-width: 120px;
     text-align: center;
-/* =================================
-   国际象棋棋盘手机端紧急修复
-   ================================= */
-
-/* 重置棋盘全屏模式的基础布局 */
-.chess-fullscreen {
-    display: none;
-    flex-direction: column;
-    height: 100%;
-    width: 100%;
-    padding: 20px;
-    box-sizing: border-box;
-    background-color: var(--surface-color);
-    position: relative;
-    overflow: auto;
 }
-
-.chess-fullscreen.active {
-    display: flex;
-}
-
-.chess-content-wrapper {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    min-height: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-.chess-board-area {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    align-items: center;
-    min-height: 0;
-    width: 100%;
-}
-
-/* 确保棋盘可见 */
-.chess-board {
-    display: grid !important;
-    grid-template-columns: repeat(8, 1fr) !important;
-    grid-template-rows: repeat(8, 1fr) !important;
-    border: 2px solid #333 !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-    background: #f5f5f5 !important;
-    width: 100% !important;
-    max-width: 500px !important;
-    aspect-ratio: 1 / 1 !important;
-}
-
-/* 手机端专用修复 */
-@media (max-width: 767px) {
-    .chess-fullscreen {
-        padding: 15px;
-        height: 100vh;
-        overflow: auto;
-    }
-    
-    .chess-content-wrapper {
-        gap: 15px;
-        padding-bottom: 80px; /* 为底部按钮留空间 */
-    }
-    
-    .chess-board-area {
-        gap: 15px;
-    }
-    
-    /* 棋盘在手机端 */
-    .chess-board {
-        width: 95vw !important;
-        height: 95vw !important;
-        max-width: 95vw !important;
-        max-height: 95vw !important;
-        margin: 0 auto;
-    }
-    
-    /* 信息面板 */
-    .chess-info-panel {
-        width: 100% !important;
-        max-width: none !important;
-        padding: 15px;
-    }
-    
-    /* FEN操作按钮垂直排列 */
-    .fen-actions {
-        flex-direction: column;
-        gap: 8px;
-    }
-    
-    .fen-actions .action-button {
-        width: 100% !important;
-        min-width: auto !important;
-    }
-    
-    /* 棋子大小 */
-    .chess-square {
-        font-size: min(9vw, 35px) !important;
-    }
-    
-    /* 固定底部按钮 */
-    .fullscreen-controls {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        background: var(--surface-color) !important;
-        padding: 15px !important;
-        margin: 0 !important;
-        border-top: 1px solid var(--border-color) !important;
-        z-index: 1000 !important;
-        display: flex !important;
-        justify-content: center !important;
-    }
-    
-    .fullscreen-controls .action-button {
-        width: 100% !important;
-        min-width: auto !important;
-        padding: 15px !important;
-        font-size: 16px !important;
-        font-weight: 600 !important;
-        margin: 0 !important;
-    }
-}
-
-/* 桌面端保护 */
-@media (min-width: 768px) {
-    .chess-fullscreen {
-        height: 100%;
-        padding: 20px;
-    }
-    
-    .chess-content-wrapper {
-        padding-bottom: 0;
-    }
-    
-    .chess-board-area {
-        flex-direction: row;
-        align-items: flex-start;
-        justify-content: center;
-        gap: 20px;
-    }
-    
-    .chess-board {
-        width: min(60vw, 500px) !important;
-        height: min(60vw, 500px) !important;
-    }
-    
-    .chess-info-panel {
-        width: 300px;
-    }
-    
-    .chess-square {
-        font-size: min(6vw, 40px) !important;
-    }
-    
-    .fen-actions {
-        flex-direction: row;
-    }
-    
-    .fen-actions .action-button {
-        min-width: 100px;
-    }
-    
-    .fullscreen-controls {
-        position: static !important;
-        display: flex;
-        justify-content: center;
-        padding: 15px;
-        border-top: 1px solid var(--border-color);
-        margin-top: 20px;
-        background: var(--surface-color);
-    }
-    
-    .fullscreen-controls .action-button {
-        min-width: 200px;
-    }
-}
-
-/* 强制确保棋盘区域可见 */
-.chess-fullscreen.active .chess-board-area,
-.chess-fullscreen.active .chess-board,
-.chess-fullscreen.active .chess-square {
-    display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}}
-
