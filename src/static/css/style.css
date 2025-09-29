@@ -1298,6 +1298,7 @@ body {
         height: 48px;
         font-size: 24px;
     }
+}
 
     /* 国际象棋棋盘响应式样式 */
     .chess-fullscreen {
@@ -1327,7 +1328,6 @@ body {
             max-width: none;
             order: 2; /* 信息面板放在棋盘下面 */
             margin-top: 10px;
-            max-width: 400px;
         }
         
         .chess-board {
@@ -1403,8 +1403,7 @@ body {
             min-height: 44px; /* 最小触摸目标尺寸 */
         }
     }
-}
-
+   
 .video-controls {
     position: absolute;
     top: 5px;
@@ -1922,6 +1921,7 @@ body.dark-mode {
     flex-direction: column;
     height: 100%;
     width: 100%;
+    padding: 20px;
     box-sizing: border-box;
     background-color: var(--surface-color);
 }
@@ -1968,13 +1968,13 @@ body.dark-mode {
     border-radius: 12px;
     box-shadow: 0 4px 16px var(--shadow-color);
     width: 100%;
+    max-width: 400px;
 }
 
 .chess-info-panel h3 {
     margin: 0 0 15px 0;
     color: var(--primary-color);
     text-align: center;
-    font-size: 1.5em;
 }
 
 /* 国际象棋棋盘样式 */
@@ -1987,7 +1987,6 @@ body.dark-mode {
     border: 3px solid #333;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     background: #f5f5f5;
-    flex-shrink: 0;
 }
 
 .chess-square {
@@ -2039,22 +2038,20 @@ body.dark-mode {
     margin-bottom: 8px;
     font-weight: 500;
     color: var(--text-color);
-    font-size: 1.1em;
 }
 
 .fen-text {
     width: 100%;
-    padding: 12px;
+    padding: 10px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--surface-color);
     color: var(--text-color);
     font-family: monospace;
     resize: vertical;
-    min-height: 80px;
+    min-height: 60px;
     font-size: 14px;
     box-sizing: border-box;
-    line-height: 1.4;
 }
 
 .fen-actions {
@@ -2068,8 +2065,6 @@ body.dark-mode {
     flex: 1;
     min-width: 100px;
     text-align: center;
-    padding: 12px 8px;
-    font-size: 14px;
 }
 
 /* 全屏控制按钮 */
@@ -2079,7 +2074,6 @@ body.dark-mode {
     padding: 15px;
     border-top: 1px solid var(--border-color);
     margin-top: 20px;
-    background: var(--surface-color);
 }
 
 .fullscreen-controls .action-button {
