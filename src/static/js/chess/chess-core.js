@@ -37,7 +37,6 @@ class ChessGame {
         this.resetButton = document.getElementById('reset-chess-button');
         this.undoButton = document.getElementById('undo-move-button');
         this.toggleButton = document.getElementById('toggle-to-vision-button');
-        this.statusElement = document.getElementById('chess-status');
         
         // 全屏元素引用
         this.chessFullscreen = document.getElementById('chess-fullscreen');
@@ -59,8 +58,6 @@ class ChessGame {
         this.fullMoveNumber = 1;
         this.selectedSquare = null;
         this.moveHistory = [];
-        this.gameOver = false;
-        this.promotionPending = null;
         
         // 初始化
         this.initBoard();
@@ -110,26 +107,21 @@ class ChessGame {
 
         this.pieces = { ...initialPosition };
         this.moveHistory = [];
-        this.castling = 'KQkq';
+        this.castling = 'KQkq'; // 确保初始有所有易位权利
         this.enPassant = '-';
         this.currentTurn = 'w';
         this.halfMoveClock = 0;
         this.fullMoveNumber = 1;
-        this.gameOver = false;
-        this.promotionPending = null;
         
         this.renderBoard();
         this.updateFEN();
-        this.updateStatus();
     }
 
     undoMove() {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
-            this.gameOver = false;
             Logger.info('Undid last move.');
-            this.updateStatus();
         } else {
             Logger.warn('No moves to undo.');
         }
@@ -142,7 +134,7 @@ class ChessGame {
         const squares = this.boardElement.querySelectorAll('.chess-square');
         squares.forEach(square => {
             square.innerHTML = '';
-            square.classList.remove('selected', 'highlight', 'check');
+            square.classList.remove('selected', 'highlight');
         });
 
         // 渲染棋子
@@ -171,33 +163,15 @@ class ChessGame {
             const [row, col] = this.selectedSquare;
             this.getSquareElement(row, col)?.classList.add('selected');
         }
-
-        // 高亮被将军的王
-        if (this.isInCheck(this.currentTurn)) {
-            const kingPos = this.findKing(this.currentTurn);
-            if (kingPos) {
-                this.getSquareElement(kingPos.row, kingPos.col)?.classList.add('check');
-            }
-        }
     }
 
     handleSquareClick(row, col) {
-        if (this.gameOver) return;
-        
-        // 处理兵的升变
-        if (this.promotionPending) {
-            this.handlePromotion(row, col);
-            return;
-        }
-
         const piece = this.pieces[`${row},${col}`];
         
         if (this.selectedSquare) {
             // 已经有选中的棋子，尝试移动
             const [fromRow, fromCol] = this.selectedSquare;
-            if (this.isValidMove(fromRow, fromCol, row, col)) {
-                this.movePiece(fromRow, fromCol, row, col);
-            }
+            this.movePiece(fromRow, fromCol, row, col);
             this.selectedSquare = null;
         } else if (piece && this.isValidTurn(piece)) {
             // 选中一个棋子
@@ -209,22 +183,15 @@ class ChessGame {
 
     handleDrop(e, toRow, toCol) {
         e.preventDefault();
-        if (this.gameOver || this.promotionPending) return;
-        
         const data = e.dataTransfer.getData('text/plain');
         const [fromRow, fromCol] = data.split(',').map(Number);
         
-        if (this.isValidMove(fromRow, fromCol, toRow, toCol)) {
-            this.movePiece(fromRow, fromCol, toRow, toCol);
-        }
+        this.movePiece(fromRow, fromCol, toRow, toCol);
         this.selectedSquare = null;
         this.renderBoard();
     }
 
-    /**
-     * 验证移动是否合法
-     */
-    isValidMove(fromRow, fromCol, toRow, toCol) {
+    movePiece(fromRow, fromCol, toRow, toCol) {
         const fromKey = `${fromRow},${fromCol}`;
         const toKey = `${toRow},${toCol}`;
         const piece = this.pieces[fromKey];
@@ -233,164 +200,17 @@ class ChessGame {
             return false;
         }
 
-        // 不能吃己方棋子
+        // 在移动前保存当前 FEN 到历史记录
+        this.moveHistory.push(this.generateFEN());
+
+        // 基本规则检查：不能吃己方棋子
         if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
             return false;
         }
 
-        // 根据棋子类型验证移动
-        const pieceType = piece.toLowerCase();
-        switch (pieceType) {
-            case 'p': return this.isValidPawnMove(fromRow, fromCol, toRow, toCol);
-            case 'r': return this.isValidRookMove(fromRow, fromCol, toRow, toCol);
-            case 'n': return this.isValidKnightMove(fromRow, fromCol, toRow, toCol);
-            case 'b': return this.isValidBishopMove(fromRow, fromCol, toRow, toCol);
-            case 'q': return this.isValidQueenMove(fromRow, fromCol, toRow, toCol);
-            case 'k': return this.isValidKingMove(fromRow, fromCol, toRow, toCol);
-            default: return false;
-        }
-    }
-
-    /**
-     * 兵的移动验证
-     */
-    isValidPawnMove(fromRow, fromCol, toRow, toCol) {
-        const piece = this.pieces[`${fromRow},${fromCol}`];
-        const isWhite = piece === 'P';
-        const direction = isWhite ? -1 : 1;
-        const startRow = isWhite ? 6 : 1;
-
-        // 前进一格
-        if (fromCol === toCol && toRow === fromRow + direction && !this.pieces[`${toRow},${toCol}`]) {
-            return true;
-        }
-
-        // 前进两格（起始位置）
-        if (fromCol === toCol && fromRow === startRow && 
-            toRow === fromRow + 2 * direction && 
-            !this.pieces[`${fromRow + direction},${toCol}`] &&
-            !this.pieces[`${toRow},${toCol}`]) {
-            return true;
-        }
-
-        // 吃子（包括吃过路兵）
-        if (Math.abs(fromCol - toCol) === 1 && toRow === fromRow + direction) {
-            // 普通吃子
-            if (this.pieces[`${toRow},${toCol}`]) {
-                return true;
-            }
-            // 吃过路兵
-            if (this.enPassant !== '-') {
-                const [epFile, epRank] = this.enPassant.split('');
-                const epCol = 'abcdefgh'.indexOf(epFile);
-                const epRow = 8 - parseInt(epRank);
-                if (toRow === epRow && toCol === epCol) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * 车的移动验证
-     */
-    isValidRookMove(fromRow, fromCol, toRow, toCol) {
-        // 必须同行或同列
-        if (fromRow !== toRow && fromCol !== toCol) return false;
-        
-        // 检查路径是否被阻挡
-        return this.isPathClear(fromRow, fromCol, toRow, toCol);
-    }
-
-    /**
-     * 马的移动验证
-     */
-    isValidKnightMove(fromRow, fromCol, toRow, toCol) {
-        const rowDiff = Math.abs(fromRow - toRow);
-        const colDiff = Math.abs(fromCol - toCol);
-        return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
-    }
-
-    /**
-     * 象的移动验证
-     */
-    isValidBishopMove(fromRow, fromCol, toRow, toCol) {
-        // 必须是对角线移动
-        if (Math.abs(fromRow - toRow) !== Math.abs(fromCol - toCol)) return false;
-        
-        // 检查路径是否被阻挡
-        return this.isPathClear(fromRow, fromCol, toRow, toCol);
-    }
-
-    /**
-     * 后的移动验证
-     */
-    isValidQueenMove(fromRow, fromCol, toRow, toCol) {
-        // 车或象的移动方式
-        return this.isValidRookMove(fromRow, fromCol, toRow, toCol) || 
-               this.isValidBishopMove(fromRow, fromCol, toRow, toCol);
-    }
-
-    /**
-     * 王的移动验证
-     */
-    isValidKingMove(fromRow, fromCol, toRow, toCol) {
-        const rowDiff = Math.abs(fromRow - toRow);
-        const colDiff = Math.abs(fromCol - toCol);
-        
-        // 普通移动（一格）
-        if (rowDiff <= 1 && colDiff <= 1) {
-            // 检查目标位置是否被攻击
-            return !this.isSquareAttacked(toRow, toCol, this.currentTurn);
-        }
-        
-        // 王车易位
-        if (rowDiff === 0 && colDiff === 2) {
-            return this.isValidCastling(fromRow, fromCol, toRow, toCol);
-        }
-        
-        return false;
-    }
-
-    /**
-     * 检查路径是否清晰
-     */
-    isPathClear(fromRow, fromCol, toRow, toCol) {
-        const rowStep = fromRow === toRow ? 0 : (fromRow < toRow ? 1 : -1);
-        const colStep = fromCol === toCol ? 0 : (fromCol < toCol ? 1 : -1);
-        
-        let currentRow = fromRow + rowStep;
-        let currentCol = fromCol + colStep;
-        
-        while (currentRow !== toRow || currentCol !== toCol) {
-            if (this.pieces[`${currentRow},${currentCol}`]) {
-                return false;
-            }
-            currentRow += rowStep;
-            currentCol += colStep;
-        }
-        
-        return true;
-    }
-
-    movePiece(fromRow, fromCol, toRow, toCol) {
-        if (this.gameOver) return false;
-
-        const fromKey = `${fromRow},${fromCol}`;
-        const toKey = `${toRow},${toCol}`;
-        const piece = this.pieces[fromKey];
-
-        if (!piece || !this.isValidMove(fromRow, fromCol, toRow, toCol)) {
-            return false;
-        }
-
-        // 在移动前保存当前 FEN 到历史记录
-        this.moveHistory.push(this.generateFEN());
-
         // 检查是否是王车易位
         if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
+            // 王车易位：国王移动了两格
             if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
                 return false;
             }
@@ -398,31 +218,12 @@ class ChessGame {
             // 普通移动
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
-
-            // 处理吃过路兵
-            if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && 
-                Math.abs(fromCol - toCol) === 1 && !this.pieces[toKey]) {
-                const [epFile, epRank] = this.enPassant.split('');
-                const epCol = 'abcdefgh'.indexOf(epFile);
-                const epRow = 8 - parseInt(epRank);
-                delete this.pieces[`${epRow},${epCol}`];
-            }
-
-            // 处理兵的升变
-            if (piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7)) {
-                this.promotionPending = { row: toRow, col: toCol, piece: piece };
-                this.showPromotionDialog();
-                return true;
-            }
         }
 
         // 更新游戏状态
         this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
         this.updateFEN();
-        
-        // 检查游戏是否结束
-        this.checkGameEnd();
-        
+
         return true;
     }
 
@@ -430,7 +231,7 @@ class ChessGame {
      * 处理王车易位
      */
     handleCastling(fromRow, fromCol, toRow, toCol) {
-        const isKingside = toCol > fromCol;
+        const isKingside = toCol > fromCol; // 短易位（王翼易位）
         const rookFromCol = isKingside ? 7 : 0;
         const rookToCol = isKingside ? toCol - 1 : toCol + 1;
         
@@ -443,11 +244,11 @@ class ChessGame {
             return false;
         }
 
-        // 检查路径是否被阻挡
+        // 检查路径是否被阻挡（只检查国王移动的路径，不检查车移动的路径）
         const step = isKingside ? 1 : -1;
         for (let col = fromCol + step; col !== toCol; col += step) {
             if (this.pieces[`${fromRow},${col}`]) {
-                return false;
+                return false; // 路径上有棋子阻挡
             }
         }
 
@@ -457,245 +258,27 @@ class ChessGame {
         const castlingType = color === 'w' ? (isKingside ? 'K' : 'Q') : (isKingside ? 'k' : 'q');
         
         if (!castlingRights.includes(castlingType)) {
-            return false;
+            return false; // 没有易位权利
         }
 
-        // 检查王是否经过被攻击的格子
-        for (let col = fromCol; col !== toCol + step; col += step) {
-            if (this.isSquareAttacked(fromRow, col, this.currentTurn)) {
-                return false;
-            }
-        }
-
-        // 执行王车易位
-        delete this.pieces[`${fromRow},${fromCol}`];
-        delete this.pieces[rookFromKey];
-        this.pieces[`${toRow},${toCol}`] = this.currentTurn === 'w' ? 'K' : 'k';
-        this.pieces[rookToKey] = this.currentTurn === 'w' ? 'R' : 'r';
+        // 执行王车易位：移动国王和车
+        delete this.pieces[`${fromRow},${fromCol}`]; // 移除原位置的国王
+        delete this.pieces[rookFromKey]; // 移除原位置的车
+        
+        this.pieces[`${toRow},${toCol}`] = this.currentTurn === 'w' ? 'K' : 'k'; // 放置国王到新位置
+        this.pieces[rookToKey] = this.currentTurn === 'w' ? 'R' : 'r'; // 放置车到新位置
 
         return true;
     }
 
-    /**
-     * 验证王车易位是否合法
-     */
-    isValidCastling(fromRow, fromCol, toRow, toCol) {
-        const isKingside = toCol > fromCol;
-        const rookFromCol = isKingside ? 7 : 0;
-        
-        // 基本检查
-        const rookPiece = this.pieces[`${fromRow},${rookFromCol}`];
-        if (!rookPiece || rookPiece.toLowerCase() !== 'r') {
-            return false;
-        }
-
-        // 检查路径
-        const step = isKingside ? 1 : -1;
-        for (let col = fromCol + step; col !== toCol; col += step) {
-            if (this.pieces[`${fromRow},${col}`]) {
-                return false;
-            }
-        }
-
-        // 检查权利
-        const castlingType = this.currentTurn === 'w' ? (isKingside ? 'K' : 'Q') : (isKingside ? 'k' : 'q');
-        if (!this.castling.includes(castlingType)) {
-            return false;
-        }
-
-        // 检查王是否被攻击或经过被攻击的格子
-        for (let col = fromCol; col !== toCol + step; col += step) {
-            if (this.isSquareAttacked(fromRow, col, this.currentTurn)) {
-                return false;
-            }
-        }
-
-        return true;
+    isValidTurn(piece) {
+        return (this.currentTurn === 'w' && piece === piece.toUpperCase()) ||
+               (this.currentTurn === 'b' && piece === piece.toLowerCase());
     }
 
-    /**
-     * 检查格子是否被攻击
-     */
-    isSquareAttacked(row, col, color) {
-        // 检查所有对方棋子的攻击范围
-        const opponentColor = color === 'w' ? 'b' : 'w';
-        
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const piece = this.pieces[`${r},${c}`];
-                if (piece && this.isSameColor(piece, opponentColor === 'w' ? 'K' : 'k')) {
-                    // 临时设置目标位置有棋子来测试攻击
-                    const originalPiece = this.pieces[`${row},${col}`];
-                    this.pieces[`${row},${col}`] = opponentColor === 'w' ? 'K' : 'k';
-                    
-                    const canAttack = this.isValidMove(r, c, row, col);
-                    
-                    // 恢复原状
-                    if (originalPiece) {
-                        this.pieces[`${row},${col}`] = originalPiece;
-                    } else {
-                        delete this.pieces[`${row},${col}`];
-                    }
-                    
-                    if (canAttack) return true;
-                }
-            }
-        }
-        
-        return false;
-    }
-
-    /**
-     * 检查是否被将军
-     */
-    isInCheck(color) {
-        const kingPos = this.findKing(color);
-        if (!kingPos) return false;
-        
-        return this.isSquareAttacked(kingPos.row, kingPos.col, color);
-    }
-
-    /**
-     * 寻找王的位置
-     */
-    findKing(color) {
-        const king = color === 'w' ? 'K' : 'k';
-        for (let row = 0; row < 8; row++) {
-            for (let col = 0; col < 8; col++) {
-                if (this.pieces[`${row},${col}`] === king) {
-                    return { row, col };
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 检查是否被将死
-     */
-    isCheckmate(color) {
-        if (!this.isInCheck(color)) return false;
-        
-        // 检查是否有任何合法移动可以解除将军
-        return !this.hasLegalMoves(color);
-    }
-
-    /**
-     * 检查是否逼和
-     */
-    isStalemate(color) {
-        if (this.isInCheck(color)) return false;
-        
-        // 检查是否有任何合法移动
-        return !this.hasLegalMoves(color);
-    }
-
-    /**
-     * 检查是否有合法移动
-     */
-    hasLegalMoves(color) {
-        // 遍历所有棋子
-        for (let fromRow = 0; fromRow < 8; fromRow++) {
-            for (let fromCol = 0; fromCol < 8; fromCol++) {
-                const piece = this.pieces[`${fromRow},${fromCol}`];
-                if (piece && this.isValidTurn(piece)) {
-                    // 遍历所有可能的目标位置
-                    for (let toRow = 0; toRow < 8; toRow++) {
-                        for (let toCol = 0; toCol < 8; toCol++) {
-                            if (this.isValidMove(fromRow, fromCol, toRow, toCol)) {
-                                // 模拟移动检查是否解除将军
-                                const fromKey = `${fromRow},${fromCol}`;
-                                const toKey = `${toRow},${toCol}`;
-                                const originalPiece = this.pieces[toKey];
-                                const movingPiece = this.pieces[fromKey];
-                                
-                                // 执行模拟移动
-                                delete this.pieces[fromKey];
-                                this.pieces[toKey] = movingPiece;
-                                
-                                const stillInCheck = this.isInCheck(color);
-                                
-                                // 恢复原状
-                                delete this.pieces[toKey];
-                                this.pieces[fromKey] = movingPiece;
-                                if (originalPiece) {
-                                    this.pieces[toKey] = originalPiece;
-                                }
-                                
-                                if (!stillInCheck) {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        return false;
-    }
-
-    /**
-     * 检查游戏是否结束
-     */
-    checkGameEnd() {
-        if (this.isCheckmate(this.currentTurn)) {
-            const winner = this.currentTurn === 'w' ? '黑方' : '白方';
-            this.gameOver = true;
-            this.updateStatus(`将死！${winner}获胜！`);
-        } else if (this.isStalemate(this.currentTurn)) {
-            this.gameOver = true;
-            this.updateStatus('逼和！游戏结束。');
-        } else if (this.isInCheck(this.currentTurn)) {
-            this.updateStatus('将军！');
-        } else {
-            this.updateStatus(`${this.currentTurn === 'w' ? '白方' : '黑方'}回合`);
-        }
-    }
-
-    /**
-     * 显示兵的升变对话框
-     */
-    showPromotionDialog() {
-        // 创建升变选择界面
-        const promotionDiv = document.createElement('div');
-        promotionDiv.className = 'promotion-dialog';
-        promotionDiv.innerHTML = `
-            <div class="promotion-options">
-                <div class="promotion-title">选择升变棋子：</div>
-                <button data-piece="q">后</button>
-                <button data-piece="r">车</button>
-                <button data-piece="b">象</button>
-                <button data-piece="n">马</button>
-            </div>
-        `;
-        
-        document.body.appendChild(promotionDiv);
-        
-        // 添加事件监听器
-        promotionDiv.querySelectorAll('button').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const newPiece = e.target.dataset.piece;
-                const piece = this.promotionPending.piece;
-                const promotedPiece = piece === 'P' ? newPiece.toUpperCase() : newPiece;
-                
-                this.pieces[`${this.promotionPending.row},${this.promotionPending.col}`] = promotedPiece;
-                this.promotionPending = null;
-                document.body.removeChild(promotionDiv);
-                
-                this.updateGameState(promotedPiece, -1, -1, this.promotionPending.row, this.promotionPending.col);
-                this.updateFEN();
-                this.checkGameEnd();
-                this.renderBoard();
-            });
-        });
-    }
-
-    /**
-     * 处理兵的升变选择
-     */
-    handlePromotion(row, col) {
-        // 这里通过对话框处理，这个方法作为备用
+    isSameColor(piece1, piece2) {
+        return (piece1 === piece1.toUpperCase() && piece2 === piece2.toUpperCase()) ||
+               (piece1 === piece1.toLowerCase() && piece2 === piece2.toLowerCase());
     }
 
     updateGameState(piece, fromRow, fromCol, toRow, toCol) {
@@ -740,6 +323,7 @@ class ChessGame {
             }
         }
         
+        // 如果易位权利字符串为空，设置为 '-'
         if (!this.castling) {
             this.castling = '-';
         }
@@ -748,7 +332,7 @@ class ChessGame {
     updateEnPassant(piece, fromRow, fromCol, toRow, toCol) {
         // 兵前进两格，设置过路兵目标格
         if (piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2) {
-            const epRow = fromRow + (toRow - fromRow) / 2;
+            const epRow = (fromRow + toRow) / 2;
             this.enPassant = this.getSquareName(epRow, toCol);
         } else {
             this.enPassant = '-';
@@ -781,6 +365,7 @@ class ChessGame {
             }
         }
 
+        // 添加其他FEN字段
         fen += ` ${this.currentTurn}`;
         fen += ` ${this.castling || '-'}`;
         fen += ` ${this.enPassant}`;
@@ -796,12 +381,6 @@ class ChessGame {
         }
     }
 
-    updateStatus(message) {
-        if (this.statusElement) {
-            this.statusElement.textContent = message || `${this.currentTurn === 'w' ? '白方' : '黑方'}回合`;
-        }
-    }
-
     getSquareElement(row, col) {
         return document.querySelector(`.chess-square[data-row="${row}"][data-col="${col}"]`);
     }
@@ -811,17 +390,8 @@ class ChessGame {
         return `${files[col]}${8 - row}`;
     }
 
-    isValidTurn(piece) {
-        return (this.currentTurn === 'w' && piece === piece.toUpperCase()) ||
-               (this.currentTurn === 'b' && piece === piece.toLowerCase());
-    }
-
-    isSameColor(piece1, piece2) {
-        return (piece1 === piece1.toUpperCase() && piece2 === piece2.toUpperCase()) ||
-               (piece1 === piece1.toLowerCase() && piece2 === piece2.toLowerCase());
-    }
-
     setupEventListeners() {
+        // 复制FEN按钮
         if (this.copyFenButton) {
             this.copyFenButton.addEventListener('click', () => {
                 if (this.fenOutput) {
@@ -838,6 +408,7 @@ class ChessGame {
             });
         }
 
+        // 新游戏按钮
         if (this.resetButton) {
             this.resetButton.addEventListener('click', () => {
                 if (confirm('开始新游戏？当前进度将丢失。')) {
@@ -846,12 +417,14 @@ class ChessGame {
             });
         }
 
+        // 撤销按钮
         if (this.undoButton) {
             this.undoButton.addEventListener('click', () => {
                 this.undoMove();
             });
         }
 
+        // 切换到聊天按钮
         if (this.toggleButton) {
             this.toggleButton.addEventListener('click', () => {
                 this.showChatView();
@@ -859,6 +432,7 @@ class ChessGame {
         }
     }
 
+    // 显示聊天视图
     showChatView() {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.chessFullscreen.classList.remove('active');
@@ -867,14 +441,17 @@ class ChessGame {
         }
     }
 
+    // 显示棋盘视图
     showChessView() {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.visionChatFullscreen.classList.remove('active');
             this.chessFullscreen.classList.add('active');
             Logger.info('切换到棋盘视图');
             
+            // 确保棋盘重新渲染 - 使用requestAnimationFrame确保DOM更新后执行
             requestAnimationFrame(() => {
                 this.renderBoard();
+                // 如果棋盘元素仍然为空，重新初始化
                 if (this.boardElement.children.length === 0) {
                     this.initBoard();
                     this.setupInitialPosition();
@@ -883,10 +460,12 @@ class ChessGame {
         }
     }
 
+    // 公共方法，用于获取当前FEN
     getCurrentFEN() {
         return this.generateFEN();
     }
 
+    // 加载FEN字符串
     loadFEN(fen) {
         const parts = fen.split(' ');
         if (parts.length < 6) return false;
@@ -906,28 +485,30 @@ class ChessGame {
             }
         });
 
+        // 解析其他状态
         this.currentTurn = parts[1];
         this.castling = parts[2];
         this.enPassant = parts[3];
         this.halfMoveClock = parseInt(parts[4]) || 0;
         this.fullMoveNumber = parseInt(parts[5]) || 1;
-        this.gameOver = false;
-        this.promotionPending = null;
 
         this.renderBoard();
         this.updateFEN();
-        this.updateStatus();
         return true;
     }
 }
 
 let chessGame = null;
 
+/**
+ * 初始化国际象棋功能
+ */
 export function initializeChessCore() {
     try {
         chessGame = new ChessGame();
         Logger.info('Chess module initialized successfully.');
         
+        // 添加切换到棋盘按钮的事件监听器
         const toggleToChessButton = document.getElementById('toggle-to-chess-button');
         if (toggleToChessButton) {
             toggleToChessButton.addEventListener('click', () => {
@@ -941,10 +522,16 @@ export function initializeChessCore() {
     }
 }
 
+/**
+ * 获取当前FEN字符串
+ */
 export function getCurrentFEN() {
     return chessGame ? chessGame.getCurrentFEN() : null;
 }
 
+/**
+ * 加载FEN字符串
+ */
 export function loadFEN(fen) {
     if (chessGame) {
         return chessGame.loadFEN(fen);
