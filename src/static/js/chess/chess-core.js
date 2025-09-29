@@ -107,6 +107,12 @@ class ChessGame {
 
         this.pieces = { ...initialPosition };
         this.moveHistory = [];
+        this.castling = 'KQkq'; // 确保初始有所有易位权利
+        this.enPassant = '-';
+        this.currentTurn = 'w';
+        this.halfMoveClock = 0;
+        this.fullMoveNumber = 1;
+        
         this.renderBoard();
         this.updateFEN();
     }
@@ -202,13 +208,65 @@ class ChessGame {
             return false;
         }
 
-        // 执行移动
-        delete this.pieces[fromKey];
-        this.pieces[toKey] = piece;
+        // 检查是否是王车易位
+        if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
+            // 王车易位：国王移动了两格
+            if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
+                return false;
+            }
+        } else {
+            // 普通移动
+            delete this.pieces[fromKey];
+            this.pieces[toKey] = piece;
+        }
 
         // 更新游戏状态
         this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
         this.updateFEN();
+
+        return true;
+    }
+
+    /**
+     * 处理王车易位
+     */
+    handleCastling(fromRow, fromCol, toRow, toCol) {
+        const isKingside = toCol > fromCol; // 短易位（王翼易位）
+        const rookFromCol = isKingside ? 7 : 0;
+        const rookToCol = isKingside ? toCol - 1 : toCol + 1;
+        
+        const rookFromKey = `${fromRow},${rookFromCol}`;
+        const rookToKey = `${fromRow},${rookToCol}`;
+        const rookPiece = this.pieces[rookFromKey];
+
+        // 检查车是否存在且未移动过
+        if (!rookPiece || rookPiece.toLowerCase() !== 'r') {
+            return false;
+        }
+
+        // 检查路径是否被阻挡（只检查国王移动的路径，不检查车移动的路径）
+        const step = isKingside ? 1 : -1;
+        for (let col = fromCol + step; col !== toCol; col += step) {
+            if (this.pieces[`${fromRow},${col}`]) {
+                return false; // 路径上有棋子阻挡
+            }
+        }
+
+        // 检查是否有王车易位的权利
+        const castlingRights = this.castling;
+        const color = this.currentTurn;
+        const castlingType = color === 'w' ? (isKingside ? 'K' : 'Q') : (isKingside ? 'k' : 'q');
+        
+        if (!castlingRights.includes(castlingType)) {
+            return false; // 没有易位权利
+        }
+
+        // 执行王车易位：移动国王和车
+        delete this.pieces[`${fromRow},${fromCol}`]; // 移除原位置的国王
+        delete this.pieces[rookFromKey]; // 移除原位置的车
+        
+        this.pieces[`${toRow},${toCol}`] = this.currentTurn === 'w' ? 'K' : 'k'; // 放置国王到新位置
+        this.pieces[rookToKey] = this.currentTurn === 'w' ? 'R' : 'r'; // 放置车到新位置
 
         return true;
     }
@@ -263,6 +321,11 @@ class ChessGame {
             } else if (fromRow === 0 && fromCol === 7) {
                 this.castling = this.castling.replace('k', '');
             }
+        }
+        
+        // 如果易位权利字符串为空，设置为 '-'
+        if (!this.castling) {
+            this.castling = '-';
         }
     }
 
