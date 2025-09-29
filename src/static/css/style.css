@@ -2573,20 +2573,20 @@ input:checked + .slider:before {
 }
 
 /* =================================
-   国际象棋棋盘手机端响应式修复
+   国际象棋棋盘手机端紧急修复
    ================================= */
 
-/* 修复棋盘全屏模式的基础布局 */
+/* 重置棋盘全屏模式的基础布局 */
 .chess-fullscreen {
     display: none;
     flex-direction: column;
-    height: 100vh; /* 使用视口高度 */
+    height: 100%;
     width: 100%;
     padding: 20px;
     box-sizing: border-box;
     background-color: var(--surface-color);
     position: relative;
-    overflow: hidden; /* 防止外部滚动 */
+    overflow: auto;
 }
 
 .chess-fullscreen.active {
@@ -2597,188 +2597,81 @@ input:checked + .slider:before {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 20px;
     min-height: 0;
-    overflow-y: auto; /* 允许内容区域滚动 */
-    -webkit-overflow-scrolling: touch; /* iOS平滑滚动 */
-    padding-bottom: 80px; /* 为底部固定按钮留出空间 */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .chess-board-area {
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 20px;
     align-items: center;
     min-height: 0;
     width: 100%;
 }
 
-/* 棋盘样式 - 确保正确显示 */
+/* 确保棋盘可见 */
 .chess-board {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    grid-template-rows: repeat(8, 1fr);
-    border: 2px solid #333;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    background: #f5f5f5;
-    aspect-ratio: 1 / 1; /* 保持正方形 */
+    display: grid !important;
+    grid-template-columns: repeat(8, 1fr) !important;
+    grid-template-rows: repeat(8, 1fr) !important;
+    border: 2px solid #333 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+    background: #f5f5f5 !important;
+    width: 100% !important;
+    max-width: 500px !important;
+    aspect-ratio: 1 / 1 !important;
 }
 
-/* 信息面板样式 */
-.chess-info-panel {
-    background: var(--surface-color);
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px var(--shadow-color);
-    width: 100%;
-    border: 1px solid var(--border-color);
-}
-
-.chess-info-panel h3 {
-    margin: 0 0 12px 0;
-    color: var(--primary-color);
-    text-align: center;
-    font-size: 1.2em;
-}
-
-/* FEN显示区域 */
-.fen-display {
-    background: var(--bg-color);
-    padding: 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-    margin-bottom: 12px;
-}
-
-.fen-display label {
-    display: block;
-    margin-bottom: 6px;
-    font-weight: 500;
-    color: var(--text-color);
-    font-size: 0.9em;
-}
-
-.fen-text {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-family: monospace;
-    resize: vertical;
-    min-height: 60px;
-    font-size: 12px;
-    box-sizing: border-box;
-    line-height: 1.3;
-}
-
-.fen-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.fen-actions .action-button {
-    flex: 1;
-    padding: 8px;
-    font-size: 12px;
-    min-height: 36px;
-}
-
-/* 棋子样式 */
-.chess-square {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    cursor: pointer;
-    user-select: none;
-    transition: background-color 0.2s ease;
-}
-
-.chess-square.light {
-    background-color: #f0d9b5;
-}
-
-.chess-square.dark {
-    background-color: #b58863;
-}
-
-.chess-square.highlight {
-    background-color: rgba(255, 255, 0, 0.4);
-}
-
-.chess-square.selected {
-    background-color: rgba(0, 255, 0, 0.4);
-}
-
-.chess-piece-label {
-    position: absolute;
-    bottom: 1px;
-    right: 1px;
-    font-size: 8px;
-    color: rgba(0, 0, 0, 0.5);
-}
-
-/* =================================
-   手机端专用样式 (最大宽度767px)
-   ================================= */
+/* 手机端专用修复 */
 @media (max-width: 767px) {
     .chess-fullscreen {
-        padding: 10px;
-        height: 100vh; /* 确保全屏显示 */
+        padding: 15px;
+        height: 100vh;
+        overflow: auto;
     }
     
     .chess-content-wrapper {
-        padding-bottom: 70px; /* 为固定按钮留空间 */
-        gap: 12px;
+        gap: 15px;
+        padding-bottom: 80px; /* 为底部按钮留空间 */
     }
     
     .chess-board-area {
-        gap: 12px;
+        gap: 15px;
     }
     
-    /* 棋盘在手机端占据主要空间 */
+    /* 棋盘在手机端 */
     .chess-board {
-        width: 96vw !important; /* 强制宽度 */
-        height: 96vw !important; /* 强制高度 */
-        max-width: 96vw;
-        max-height: 96vw;
+        width: 95vw !important;
+        height: 95vw !important;
+        max-width: 95vw !important;
+        max-height: 95vw !important;
         margin: 0 auto;
-        order: 1;
     }
     
-    /* 信息面板在棋盘下面 */
+    /* 信息面板 */
     .chess-info-panel {
-        order: 2;
-        width: 100%;
-        padding: 12px;
+        width: 100% !important;
+        max-width: none !important;
+        padding: 15px;
     }
     
     /* FEN操作按钮垂直排列 */
     .fen-actions {
         flex-direction: column;
-        gap: 6px;
+        gap: 8px;
     }
     
     .fen-actions .action-button {
-        min-width: 100%;
-        margin-bottom: 0;
+        width: 100% !important;
+        min-width: auto !important;
     }
     
-    /* 手机端棋子字体大小调整 */
+    /* 棋子大小 */
     .chess-square {
-        font-size: min(9vw, 32px) !important; /* 强制棋子大小 */
-    }
-    
-    /* 确保触摸友好的交互 */
-    .chess-square {
-        min-height: 40px; /* 最小触摸目标尺寸 */
-    }
-    
-    .action-button {
-        min-height: 40px; /* 最小触摸目标尺寸 */
+        font-size: min(9vw, 35px) !important;
     }
     
     /* 固定底部按钮 */
@@ -2788,7 +2681,7 @@ input:checked + .slider:before {
         left: 0 !important;
         right: 0 !important;
         background: var(--surface-color) !important;
-        padding: 12px 15px !important;
+        padding: 15px !important;
         margin: 0 !important;
         border-top: 1px solid var(--border-color) !important;
         z-index: 1000 !important;
@@ -2797,26 +2690,24 @@ input:checked + .slider:before {
     }
     
     .fullscreen-controls .action-button {
-        min-width: 100% !important;
-        padding: 14px !important;
+        width: 100% !important;
+        min-width: auto !important;
+        padding: 15px !important;
         font-size: 16px !important;
         font-weight: 600 !important;
         margin: 0 !important;
-        border-radius: 8px !important;
     }
 }
 
-/* =================================
-   桌面端样式保护 (最小宽度768px)
-   ================================= */
+/* 桌面端保护 */
 @media (min-width: 768px) {
     .chess-fullscreen {
-        padding: 20px;
         height: 100%;
+        padding: 20px;
     }
     
     .chess-content-wrapper {
-        padding-bottom: 20px;
+        padding-bottom: 0;
     }
     
     .chess-board-area {
@@ -2827,19 +2718,16 @@ input:checked + .slider:before {
     }
     
     .chess-board {
-        width: min(60vw, 500px);
-        height: min(60vw, 500px);
-        order: 1;
+        width: min(60vw, 500px) !important;
+        height: min(60vw, 500px) !important;
     }
     
     .chess-info-panel {
         width: 300px;
-        order: 2;
-        padding: 20px;
     }
     
     .chess-square {
-        font-size: min(6vw, 40px);
+        font-size: min(6vw, 40px) !important;
     }
     
     .fen-actions {
@@ -2850,7 +2738,6 @@ input:checked + .slider:before {
         min-width: 100px;
     }
     
-    /* 桌面端全屏控制按钮保持原有样式 */
     .fullscreen-controls {
         position: static !important;
         display: flex;
@@ -2863,35 +2750,14 @@ input:checked + .slider:before {
     
     .fullscreen-controls .action-button {
         min-width: 200px;
-        padding: 15px;
-        font-size: 16px;
-        font-weight: 600;
     }
 }
 
-/* =================================
-   强制覆盖样式 - 确保手机端正确显示
-   ================================= */
-@media (max-width: 767px) {
-    /* 确保棋盘容器正确显示 */
-    .chess-fullscreen.active {
-        display: flex !important;
-        flex-direction: column !important;
-    }
-    
-    /* 隐藏可能干扰的桌面端样式 */
-    .chess-fullscreen .chess-board-area:not(.mobile-layout) {
-        display: none;
-    }
-    
-    /* 确保内容区域可滚动 */
-    .chess-content-wrapper {
-        overflow-y: auto !important;
-        -webkit-overflow-scrolling: touch !important;
-    }
-    
-    /* 强制底部按钮显示 */
-    .chess-fullscreen .fullscreen-controls {
-        display: flex !important;
-    }
+/* 强制确保棋盘区域可见 */
+.chess-fullscreen.active .chess-board-area,
+.chess-fullscreen.active .chess-board,
+.chess-fullscreen.active .chess-square {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
