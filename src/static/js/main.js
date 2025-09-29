@@ -477,8 +477,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化视觉功能
     initializeVisionCore(visionElements, attachmentManager, visionHandlers);
     
-    // 初始化国际象棋
-    initializeChessCore();
+    // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
+    setTimeout(() => {
+        initializeChessCore();
+    }, 100);
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
 

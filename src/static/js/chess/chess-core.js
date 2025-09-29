@@ -21,6 +21,15 @@ const PIECE_LABELS = {
 
 class ChessGame {
     constructor() {
+        // 等待DOM完全加载
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.initialize());
+            return;
+        }
+        this.initialize();
+    }
+
+    initialize() {
         // 直接使用全局DOM元素，不通过容器传递
         this.boardElement = document.getElementById('chess-board');
         this.fenOutput = document.getElementById('fen-output');
@@ -32,6 +41,12 @@ class ChessGame {
         // 全屏元素引用
         this.chessFullscreen = document.getElementById('chess-fullscreen');
         this.visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
+        
+        // 检查必要元素是否存在
+        if (!this.boardElement) {
+            console.error('Chess board element (#chess-board) not found');
+            return;
+        }
         
         this.pieces = {};
         this.currentTurn = 'w';
@@ -49,10 +64,11 @@ class ChessGame {
     }
 
     initBoard() {
-        if (!this.boardElement) {
-            console.error('Chess board element not found');
-            return;
-        }
+        // 这里的DOM检查已经移动到 initialize 方法中，所以这里不再需要
+        // if (!this.boardElement) {
+        //     console.error('Chess board element not found');
+        //     return;
+        // }
 
         this.boardElement.innerHTML = '';
 
@@ -364,10 +380,16 @@ class ChessGame {
             this.visionChatFullscreen.classList.remove('active');
             this.chessFullscreen.classList.add('active');
             Logger.info('切换到棋盘视图');
-            // 确保棋盘重新渲染
-            setTimeout(() => {
+            
+            // 确保棋盘重新渲染 - 使用requestAnimationFrame确保DOM更新后执行
+            requestAnimationFrame(() => {
                 this.renderBoard();
-            }, 100);
+                // 如果棋盘元素仍然为空，重新初始化
+                if (this.boardElement.children.length === 0) {
+                    this.initBoard();
+                    this.setupInitialPosition();
+                }
+            });
         }
     }
 
