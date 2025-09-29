@@ -1812,13 +1812,12 @@ body.dark-mode {
 }
 
 /* 棋盘全屏模式样式 */
-/* 国际象棋棋盘响应式样式 */
 .chess-fullscreen {
     display: none;
     flex-direction: column;
     height: 100%;
     width: 100%;
-    padding: 15px;
+    padding: 20px;
     box-sizing: border-box;
     background-color: var(--surface-color);
 }
@@ -1838,63 +1837,15 @@ body.dark-mode {
 .chess-board-area {
     flex: 1;
     display: flex;
+    flex-direction: column;
     gap: 20px;
     align-items: center;
+    justify-content: center;
     min-height: 0;
 }
 
-/* 手机端专用样式 */
-@media (max-width: 767px) {
-    .chess-fullscreen {
-        padding: 10px;
-    }
-    
-    .chess-board-area {
-        gap: 15px;
-        justify-content: flex-start;
-    }
-    
-    .chess-info-panel {
-        width: 100%;
-        max-width: none;
-        order: 2; /* 信息面板放在棋盘下面 */
-        margin-top: 10px;
-    }
-    
-    .chess-board {
-        order: 1; /* 棋盘放在上面 */
-        width: 95vw;
-        height: 95vw;
-        max-width: 95vw;
-        max-height: 95vw;
-        margin: 0 auto;
-    }
-    
-    .fen-actions {
-        flex-direction: column;
-    }
-    
-    .fen-actions .action-button {
-        min-width: 100%;
-        margin-bottom: 5px;
-    }
-    
-    .fullscreen-controls {
-        position: sticky;
-        bottom: 0;
-        background: var(--surface-color);
-        padding: 10px;
-        margin-top: 0px; /* 调整为0，解决白线问题 */
-        border-top: 1px solid var(--border-color);
-    }
-    
-    .fullscreen-controls .action-button {
-        min-width: 100%;
-    }
-}
-
-/* 平板端样式 */
-@media (min-width: 768px) and (max-width: 1024px) {
+/* 桌面端横向布局 */
+@media (min-width: 768px) {
     .chess-board-area {
         flex-direction: row;
         align-items: flex-start;
@@ -1905,33 +1856,24 @@ body.dark-mode {
         width: 300px;
         flex-shrink: 0;
     }
-    
-    .chess-board {
-        width: min(60vw, 500px);
-        height: min(60vw, 500px);
-    }
 }
 
-/* 桌面端样式 */
-@media (min-width: 1025px) {
-    .chess-board-area {
-        flex-direction: row;
-        align-items: flex-start;
-        justify-content: center;
-    }
-    
-    .chess-info-panel {
-        width: 350px;
-        flex-shrink: 0;
-    }
-    
-    .chess-board {
-        width: min(50vw, 600px);
-        height: min(50vw, 600px);
-    }
+.chess-info-panel {
+    background: var(--surface-color);
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px var(--shadow-color);
+    width: 100%;
+    max-width: 400px;
 }
 
-/* 棋盘基础样式保持不变 */
+.chess-info-panel h3 {
+    margin: 0 0 15px 0;
+    color: var(--primary-color);
+    text-align: center;
+}
+
+/* 国际象棋棋盘样式 */
 .chess-board {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
@@ -1941,7 +1883,6 @@ body.dark-mode {
     border: 3px solid #333;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     background: #f5f5f5;
-    flex-shrink: 0; /* 防止棋盘被压缩 */
 }
 
 .chess-square {
@@ -1951,7 +1892,6 @@ body.dark-mode {
     font-size: min(8vw, 40px);
     position: relative;
     cursor: pointer;
-    -webkit-user-select: none;
     user-select: none;
     transition: background-color 0.2s ease;
 }
@@ -1980,22 +1920,6 @@ body.dark-mode {
     color: rgba(0, 0, 0, 0.5);
 }
 
-/* 信息面板样式 */
-.chess-info-panel {
-    background: var(--surface-color);
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 16px var(--shadow-color);
-    width: 100%;
-}
-
-.chess-info-panel h3 {
-    margin: 0 0 15px 0;
-    color: var(--primary-color);
-    text-align: center;
-    font-size: 1.5em;
-}
-
 /* FEN显示区域 */
 .fen-display {
     background: var(--bg-color);
@@ -2009,22 +1933,20 @@ body.dark-mode {
     margin-bottom: 8px;
     font-weight: 500;
     color: var(--text-color);
-    font-size: 1.1em;
 }
 
 .fen-text {
     width: 100%;
-    padding: 12px;
+    padding: 10px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--surface-color);
     color: var(--text-color);
     font-family: monospace;
     resize: vertical;
-    min-height: 80px;
+    min-height: 60px;
     font-size: 14px;
     box-sizing: border-box;
-    line-height: 1.4;
 }
 
 .fen-actions {
@@ -2038,8 +1960,6 @@ body.dark-mode {
     flex: 1;
     min-width: 100px;
     text-align: center;
-    padding: 12px 8px;
-    font-size: 14px;
 }
 
 /* 全屏控制按钮 */
@@ -2049,58 +1969,10 @@ body.dark-mode {
     padding: 15px;
     border-top: 1px solid var(--border-color);
     margin-top: 20px;
-    background: var(--surface-color);
 }
 
 .fullscreen-controls .action-button {
-    min-width: 200px;
-    padding: 15px;
-    font-size: 16px;
-    font-weight: 600;
-}
-
-/* 手机端字体大小调整 */
-@media (max-width: 767px) {
-    .chess-info-panel h3 {
-        font-size: 1.3em;
-    }
-    
-    .fen-display label {
-        font-size: 1em;
-    }
-    
-    .fen-text {
-        min-height: 70px;
-        font-size: 13px;
-        padding: 10px;
-    }
-    
-    .fen-actions .action-button {
-        padding: 10px 6px;
-        font-size: 13px;
-    }
-    
-    .fullscreen-controls .action-button {
-        min-width: 100%;
-        padding: 12px;
-        font-size: 15px;
-    }
-    
-    /* 手机端棋子字体大小调整 */
-    .chess-square {
-        font-size: min(10vw, 35px);
-    }
-}
-
-/* 确保触摸友好的交互 */
-@media (hover: none) and (pointer: coarse) {
-    .chess-square {
-        min-height: 44px; /* 最小触摸目标尺寸 */
-    }
-    
-    .action-button {
-        min-height: 44px; /* 最小触摸目标尺寸 */
-    }
+    min-width: 150px;
 }
 
 /* 高亮答案内容的样式 */
