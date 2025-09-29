@@ -1268,16 +1268,16 @@ body {
     }
     .text-mode #send-button { /* 发送按钮单独设置 */
         width: 32px;
-        height: 36px;
+        height: 32px;
         font-size: 16px;
         border-radius: 8px; /* 确保是圆角矩形 */
     }
     .text-mode #interrupt-button,  /* 暂停按钮 */
     .text-mode #attachment-button, /* 附件按钮 */
     .text-mode #chat-voice-input-button /* 聊天语音输入按钮 */{
-        width: 18px; /* 调整为与发送按钮一致 */
-        height: 18px; /* 调整为与发送按钮一致 */
-        font-size: 10px; /* 稍微调小字体大小 */
+        width: 28px; /* 调整为与发送按钮一致 */
+        height: 28px; /* 调整为与发送按钮一致 */
+        font-size: 12px; /* 稍微调小字体大小 */
         border-radius: 8px; /* 确保是圆角矩形 */
     }
 
