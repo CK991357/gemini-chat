@@ -1996,13 +1996,14 @@ body.dark-mode {
         justify-content: flex-start;
     }
     
-    /* 棋盘在手机上适应屏幕 */
+    /* 棋盘在手机上适应屏幕 - 关键修复 */
     .chess-board {
-        width: 95vw;
-        height: 95vw;
-        max-width: 95vw;
-        max-height: 95vw;
+        width: 95vw !important; /* 使用 !important 确保覆盖其他样式 */
+        height: 95vw !important;
+        max-width: 95vw !important;
+        max-height: 95vw !important;
         order: 1; /* 棋盘放在上面 */
+        margin: 0 auto; /* 居中显示 */
     }
     
     /* 信息面板在棋盘下面 */
