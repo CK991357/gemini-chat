@@ -2105,11 +2105,11 @@ body.dark-mode {
 /* 确保触摸友好的交互 */
 @media (hover: none) and (pointer: coarse) {
     .chess-square {
-        min-height: 36px;
+        min-height: 32px;
     }
     
     .action-button {
-        min-height: 36px;
+        min-height: 32px;
     }
 }
 
