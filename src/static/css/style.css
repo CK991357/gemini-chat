@@ -1266,20 +1266,15 @@ body {
         padding: 10px;
         font-size: 14px;
     }
-    .text-mode #send-button { /* 发送按钮单独设置 */
-        width: 32px !important;
-        height: 32px !important;
-        font-size: 16px !important;
-        border-radius: 8px !important; /* 确保是圆角矩形 */
-    }
+    .text-mode #send-button, /* 发送按钮单独设置 */
     .text-mode #interrupt-button,  /* 暂停按钮 */
     .text-mode #attachment-button, /* 附件按钮 */
-    .text-mode #chat-voice-input-button， /* 聊天语音输入按钮 */
+    .text-mode #chat-voice-input-button /* 聊天语音输入按钮 */
     {
-        width: 28px; 
-        height: 28px; 
-        font-size: 12px; 
-        border-radius: 8px; 
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+        border-radius: 8px;
     }
     
     .text-mode .input-area {
