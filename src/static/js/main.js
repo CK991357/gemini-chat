@@ -468,6 +468,12 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleToVisionButton: document.getElementById('toggle-to-vision-button')
     };
 
+    // 定义 visionHandlers
+    const visionHandlers = {
+        showToast: showToast,
+        showSystemMessage: showSystemMessage
+    };
+
     // 初始化视觉功能
     initializeVisionCore(visionElements, attachmentManager, visionHandlers);
     
