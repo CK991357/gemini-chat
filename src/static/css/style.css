@@ -2005,7 +2005,36 @@ body.dark-mode {
         order: 1; /* 棋盘放在上面 */
         margin: 0 auto; /* 居中显示 */
     }
+       /* === 新增以下部分 === */
+    /* 修复信息面板显示不全 */
+    .chess-info-panel {
+        order: 2;
+        margin-top: 10px;
+        width: 100%; /* 确保宽度100% */
+        padding: 15px; /* 调整内边距 */
+        box-sizing: border-box; /* 关键：包含内边距在宽度内 */
+    }
     
+    /* 确保FEN文本区域不溢出 */
+    .fen-text {
+        min-height: 70px;
+        font-size: 13px;
+        padding: 10px;
+        box-sizing: border-box; /* 关键：包含内边距 */
+        width: 100%; /* 确保宽度100% */
+    }
+    
+    /* 按钮组宽度调整 */
+    .fen-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .fen-actions .action-button {
+        min-width: 100%;
+        margin-bottom: 5px;
+        box-sizing: border-box; /* 关键：包含内边距 */
+    }
     /* 信息面板在棋盘下面 */
     .chess-info-panel {
         order: 2;
