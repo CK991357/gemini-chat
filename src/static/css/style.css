@@ -2571,3 +2571,194 @@ input:checked + .slider:before {
     min-width: 120px;
     text-align: center;
 }
+
+/* =================================
+   国际象棋移动端响应式样式
+   ================================= */
+
+/* 移动端棋盘布局优化 */
+@media (max-width: 768px) {
+  /* 棋盘全屏容器移动端适配 */
+  .chess-fullscreen {
+    padding: 10px;
+    overflow-y: auto; /* 允许垂直滚动 */
+  }
+  
+  .chess-content-wrapper {
+    gap: 15px;
+    min-height: auto;
+  }
+  
+  /* 棋盘区域移动端布局 */
+  .chess-board-area {
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+  
+  /* 棋盘尺寸适配 */
+  .chess-board {
+    width: 95vw;
+    height: 95vw;
+    max-width: 400px;
+    max-height: 400px;
+    margin: 0 auto;
+  }
+  
+  /* 棋子字体大小适配 */
+  .chess-square {
+    font-size: 6vw;
+  }
+  
+  /* 信息面板移动端适配 */
+  .chess-info-panel {
+    width: 100%;
+    max-width: none;
+    margin: 0 auto;
+  }
+  
+  /* FEN显示区域移动端适配 */
+  .fen-display {
+    padding: 12px;
+  }
+  
+  .fen-text {
+    font-size: 12px;
+    min-height: 50px;
+  }
+  
+  /* 按钮组移动端适配 */
+  .fen-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .fen-actions .action-button {
+    min-width: 100%;
+    margin: 0;
+  }
+  
+  /* 全屏控制按钮移动端适配 */
+  .fullscreen-controls {
+    position: sticky;
+    bottom: 0;
+    background: var(--surface-color);
+    padding: 15px 10px;
+    margin-top: 0;
+    border-top: 1px solid var(--border-color);
+    z-index: 100;
+  }
+  
+  .fullscreen-controls .action-button {
+    min-width: 100%;
+    margin: 0;
+  }
+  
+  /* 确保棋盘在移动端可滚动 */
+  .chess-fullscreen {
+    -webkit-overflow-scrolling: touch; /*  iOS 平滑滚动 */
+  }
+}
+
+/* 小屏幕手机特殊适配 */
+@media (max-width: 480px) {
+  .chess-board {
+    width: 98vw;
+    height: 98vw;
+  }
+  
+  .chess-square {
+    font-size: 7vw;
+  }
+  
+  .chess-piece-label {
+    font-size: 8px;
+    bottom: 1px;
+    right: 1px;
+  }
+}
+
+/* 平板设备适配 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .chess-board {
+    width: 70vw;
+    height: 70vw;
+    max-width: 500px;
+    max-height: 500px;
+  }
+  
+  .chess-square {
+    font-size: 5vw;
+  }
+}
+
+/* 确保电脑端布局不变 */
+@media (min-width: 1025px) {
+  .chess-board-area {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  
+  .chess-info-panel {
+    width: 300px;
+    margin-left: 20px;
+  }
+}
+
+/* 修复按钮分界线问题 */
+.fen-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 移动端按钮布局优化 */
+@media (max-width: 768px) {
+  .fen-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .fen-actions .action-button {
+    width: 100%;
+    text-align: center;
+    margin: 0;
+  }
+}
+
+/* 确保切换聊天按钮在移动端固定在底部 */
+.fullscreen-controls {
+  display: flex;
+  justify-content: center;
+  padding: 15px;
+  border-top: 1px solid var(--border-color);
+  margin-top: 20px;
+  background: var(--surface-color);
+}
+
+@media (max-width: 768px) {
+  .fullscreen-controls {
+    position: sticky;
+    bottom: 0;
+    margin-top: 0;
+    z-index: 100;
+  }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+  .chess-square {
+    cursor: default; /* 在触摸设备上移除手型光标 */
+  }
+  
+  /* 增加触摸目标尺寸 */
+  .fen-actions .action-button,
+  .fullscreen-controls .action-button {
+    min-height: 44px; /* Apple HIG 推荐的最小触摸目标尺寸 */
+    padding: 12px 16px;
+  }
+}
