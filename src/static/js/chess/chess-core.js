@@ -214,6 +214,10 @@ class ChessGame {
             if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
                 return false;
             }
+            // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
+            this.updateFEN();
+            return true;
         } else {
             // 普通移动
             delete this.pieces[fromKey];
@@ -244,11 +248,33 @@ class ChessGame {
             return false;
         }
 
-        // 检查路径是否被阻挡（只检查国王移动的路径，不检查车移动的路径）
-        const step = isKingside ? 1 : -1;
-        for (let col = fromCol + step; col !== toCol; col += step) {
+        // 检查国王和车之间的路径是否被阻挡
+        const pathStartCol = Math.min(fromCol, rookFromCol);
+        const pathEndCol = Math.max(fromCol, rookFromCol);
+        for (let col = pathStartCol + 1; col < pathEndCol; col++) {
             if (this.pieces[`${fromRow},${col}`]) {
                 return false; // 路径上有棋子阻挡
+            }
+        }
+
+        const attackingColor = this.currentTurn === 'w' ? 'b' : 'w';
+
+        // 检查国王的起始格是否被攻击
+        if (this.isSquareAttacked(fromRow, fromCol, attackingColor)) {
+            return false; // 国王当前被将军
+        }
+
+        // 检查国王移动的路径是否被攻击
+        const kingPath = [];
+        if (isKingside) { // 短易位
+            kingPath.push([fromRow, fromCol + 1], [fromRow, fromCol + 2]);
+        } else { // 长易位
+            kingPath.push([fromRow, fromCol - 1], [fromRow, fromCol - 2]);
+        }
+
+        for (const [pathRow, pathCol] of kingPath) {
+            if (this.isSquareAttacked(pathRow, pathCol, attackingColor)) {
+                return false; // 国王移动路径被攻击
             }
         }
 
@@ -281,6 +307,97 @@ class ChessGame {
                (piece1 === piece1.toLowerCase() && piece2 === piece2.toLowerCase());
     }
 
+    /**
+     * 检查给定格子是否被指定颜色的敌方棋子攻击
+     * @param {number} row - 格子的行
+     * @param {number} col - 格子的列
+     * @param {string} attackingColor - 攻击方的颜色 ('w' 或 'b')
+     * @returns {boolean} - 如果被攻击则返回 true，否则返回 false
+     */
+    isSquareAttacked(row, col, attackingColor) {
+        // 实现各种棋子的攻击逻辑
+        // 1. 兵的攻击
+        // 2. 马的攻击
+        // 3. 象的攻击
+        // 4. 车的攻击
+        // 5. 后的攻击
+        // 6. 王的攻击
+        
+        // 1. 兵的攻击
+        const pawnDirection = attackingColor === 'w' ? 1 : -1; // 白兵向上攻击，黑兵向下攻击
+        const pawnAttacks = [
+            [row + pawnDirection, col - 1],
+            [row + pawnDirection, col + 1]
+        ];
+        for (const [pawnRow, pawnCol] of pawnAttacks) {
+            if (pawnRow >= 0 && pawnRow < 8 && pawnCol >= 0 && pawnCol < 8) {
+                const piece = this.pieces[`${pawnRow},${pawnCol}`];
+                if (piece && piece.toLowerCase() === 'p' &&
+                    ((attackingColor === 'w' && piece === 'P') || (attackingColor === 'b' && piece === 'p'))) {
+                    return true;
+                }
+            }
+        }
+
+        // 2. 马的攻击
+        const knightMoves = [
+            [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+            [1, -2],, [2, -1],
+        ];
+        for (const [dr, dc] of knightMoves) {
+            const knightRow = row + dr;
+            const knightCol = col + dc;
+            if (knightRow >= 0 && knightRow < 8 && knightCol >= 0 && knightCol < 8) {
+                const piece = this.pieces[`${knightRow},${knightCol}`];
+                if (piece && piece.toLowerCase() === 'n' &&
+                    ((attackingColor === 'w' && piece === 'N') || (attackingColor === 'b' && piece === 'n'))) {
+                    return true;
+                }
+            }
+        }
+
+        // 3. 象、车、后、王的攻击 (直线和斜线)
+        const directions = [
+            [-1, 0],, [0, -1],, // 直线 (车, 后, 王)
+            [-1, -1], [-1, 1], [1, -1],  // 斜线 (象, 后, 王)
+        ];
+
+        for (const [dr, dc] of directions) {
+            for (let i = 1; i < 8; i++) {
+                const targetRow = row + dr * i;
+                const targetCol = col + dc * i;
+
+                if (targetRow < 0 || targetRow >= 8 || targetCol < 0 || targetCol >= 8) {
+                    break; // 超出棋盘范围
+                }
+
+                const piece = this.pieces[`${targetRow},${targetCol}`];
+                if (piece) {
+                    const pieceType = piece.toLowerCase();
+                    const isAttackingColor = (attackingColor === 'w' && piece === piece.toUpperCase()) ||
+                                             (attackingColor === 'b' && piece === piece.toLowerCase());
+
+                    if (isAttackingColor) {
+                        // 检查是否是攻击方的棋子
+                        if (
+                            // 车或后在直线上
+                            (dr === 0 || dc === 0) && (pieceType === 'r' || pieceType === 'q') ||
+                            // 象或后在斜线上
+                            (dr !== 0 && dc !== 0) && (pieceType === 'b' || pieceType === 'q') ||
+                            // 王在相邻格
+                            (i === 1 && pieceType === 'k')
+                        ) {
+                            return true;
+                        }
+                    }
+                    break; // 遇到棋子阻挡
+                }
+            }
+        }
+
+        return false;
+    }
+
     updateGameState(piece, fromRow, fromCol, toRow, toCol) {
         // 切换回合
         this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
@@ -298,27 +415,34 @@ class ChessGame {
         }
 
         // 处理王车易位权利
-        this.updateCastlingRights(piece, fromRow, fromCol);
+        this.updateCastlingRights(piece, fromRow, fromCol, toRow, toCol); // 传递 toRow, toCol
 
         // 处理过路兵
         this.updateEnPassant(piece, fromRow, fromCol, toRow, toCol);
     }
 
-    updateCastlingRights(piece, fromRow, fromCol) {
-        if (piece === 'K') {
+    updateCastlingRights(piece, fromRow, fromCol, toRow, toCol) { // 添加 toRow, toCol 参数
+        // 如果是王车易位，直接移除所有易位权利
+        if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
+            if (piece === 'K') {
+                this.castling = this.castling.replace(/[KQ]/g, '');
+            } else { // piece === 'k'
+                this.castling = this.castling.replace(/[kq]/g, '');
+            }
+        } else if (piece === 'K') {
             this.castling = this.castling.replace(/[KQ]/g, '');
         } else if (piece === 'k') {
             this.castling = this.castling.replace(/[kq]/g, '');
         } else if (piece === 'R') {
-            if (fromRow === 7 && fromCol === 0) {
+            if (fromRow === 7 && fromCol === 0) { // 白方后翼车
                 this.castling = this.castling.replace('Q', '');
-            } else if (fromRow === 7 && fromCol === 7) {
+            } else if (fromRow === 7 && fromCol === 7) { // 白方王翼车
                 this.castling = this.castling.replace('K', '');
             }
         } else if (piece === 'r') {
-            if (fromRow === 0 && fromCol === 0) {
+            if (fromRow === 0 && fromCol === 0) { // 黑方后翼车
                 this.castling = this.castling.replace('q', '');
-            } else if (fromRow === 0 && fromCol === 7) {
+            } else if (fromRow === 0 && fromCol === 7) { // 黑方王翼车
                 this.castling = this.castling.replace('k', '');
             }
         }
