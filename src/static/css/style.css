@@ -1266,7 +1266,7 @@ body {
         padding: 10px;
         font-size: 14px;
     }
-    .text-mode #send-button, /* 发送按钮单独设置 */
+    .text-mode #send-button, /* 发送按钮 */
     .text-mode #interrupt-button,  /* 暂停按钮 */
     .text-mode #attachment-button, /* 附件按钮 */
     .text-mode #chat-voice-input-button /* 聊天语音输入按钮 */
@@ -1274,9 +1274,9 @@ body {
         width: 28px !important;
         height: 28px !important;
         font-size: 12px !important;
-        border-radius: 8px;
+        border-radius: 8px !important; /* 确保是圆角矩形 */
     }
-    
+
     .text-mode .input-area {
         padding-left: 0px; /* 调整左侧内边距 */
         padding-right: 10px; /* 减小右侧内边距，为图标腾出空间 */
