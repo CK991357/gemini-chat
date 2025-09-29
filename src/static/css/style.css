@@ -1300,118 +1300,6 @@ body {
     }
 }
 
-    /* 国际象棋棋盘响应式样式 */
-    .chess-fullscreen {
-        padding: 15px;
-        overflow-y: auto; /* 允许垂直滚动 */
-        -webkit-overflow-scrolling: touch; /* iOS平滑滚动 */
-    }
-    
-    .chess-board-area {
-        justify-content: flex-start; /* 改为顶部对齐 */
-        overflow-y: auto; /* 允许滚动 */
-    }
-    
-    /* 手机端专用样式 */
-    @media (max-width: 767px) {
-        .chess-fullscreen {
-            padding: 10px;
-        }
-        
-        .chess-board-area {
-            gap: 15px;
-            justify-content: flex-start;
-            flex-direction: column; /* 手机端垂直堆叠 */
-        }
-        
-        .chess-info-panel {
-            width: 100%;
-            max-width: none;
-            order: 2; /* 信息面板放在棋盘下面 */
-            margin-top: 10px;
-        }
-        
-        .chess-board {
-            order: 1; /* 棋盘放在上面 */
-            width: 95vw;
-            height: 95vw;
-            max-width: 95vw;
-            max-height: 95vw;
-            margin: 0 auto;
-        }
-        
-        .fen-actions {
-            flex-direction: row; /* 按钮水平排列 */
-            flex-wrap: wrap; /* 允许按钮换行 */
-        }
-        
-        .fen-actions .action-button {
-            flex: 1 1 auto; /* 允许按钮伸缩和换行 */
-            margin-bottom: 5px;
-        }
-        
-        /* 手机端“上一步”按钮单独一行 */
-        #undo-move-button {
-            flex-basis: 100%; /* 占据整行 */
-            margin-top: 8px; /* 与上方按钮保持间距 */
-        }
-        
-        .fullscreen-controls {
-            position: sticky;
-            bottom: 0;
-            background: var(--surface-color);
-            padding: 10px;
-            margin-top: 0px; /* 调整为0，解决白线问题 */
-            border-top: 1px solid var(--border-color);
-        }
-        
-        .fullscreen-controls .action-button {
-            min-width: 100%;
-        }
-
-        /* 手机端字体大小调整 */
-        .chess-info-panel h3 {
-            font-size: 1.3em;
-        }
-        
-        .fen-display label {
-            font-size: 1em;
-        }
-        
-        .fen-text {
-            min-height: 70px;
-            font-size: 13px;
-            padding: 10px;
-        }
-        
-        .fen-actions .action-button {
-            padding: 10px 6px;
-            font-size: 13px;
-        }
-        
-        .fullscreen-controls .action-button {
-            min-width: 100%;
-            padding: 12px;
-            font-size: 15px;
-        }
-        
-        /* 手机端棋子字体大小调整 */
-        .chess-square {
-            font-size: min(10vw, 35px);
-        }
-    }
-    
-    /* 确保触摸友好的交互 */
-    @media (hover: none) and (pointer: coarse) {
-        .chess-square {
-            min-height: 44px; /* 最小触摸目标尺寸 */
-        }
-        
-        .action-button {
-            min-height: 44px; /* 最小触摸目标尺寸 */
-        }
-    }
-   
 .video-controls {
     position: absolute;
     top: 5px;
@@ -1949,6 +1837,7 @@ body.dark-mode {
 .chess-board-area {
     flex: 1;
     display: flex;
+    flex-direction: column;
     gap: 20px;
     align-items: center;
     justify-content: center;
@@ -2003,7 +1892,6 @@ body.dark-mode {
     font-size: min(8vw, 40px);
     position: relative;
     cursor: pointer;
-    -webkit-user-select: none;
     user-select: none;
     transition: background-color 0.2s ease;
 }
