@@ -1267,10 +1267,10 @@ body {
         font-size: 14px;
     }
     .text-mode #send-button { /* 发送按钮单独设置 */
-        width: 32px;
-        height: 32px;
-        font-size: 16px;
-        border-radius: 8px; /* 确保是圆角矩形 */
+        width: 32px !important;
+        height: 32px !important;
+        font-size: 16px !important;
+        border-radius: 8px !important; /* 确保是圆角矩形 */
     }
     .text-mode #interrupt-button,  /* 暂停按钮 */
     .text-mode #attachment-button, /* 附件按钮 */
