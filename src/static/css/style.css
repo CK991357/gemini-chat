@@ -1271,9 +1271,9 @@ body {
     .text-mode #attachment-button, /* 附件按钮 */
     .text-mode #chat-voice-input-button /* 聊天语音输入按钮 */
     {
-        width: 28px !important;
-        height: 28px !important;
-        font-size: 12px !important;
+        width: 22px !important;
+        height: 22px !important;
+        font-size: 10px !important;
         border-radius: 8px !important; /* 确保是圆角矩形 */
     }
 
@@ -1281,7 +1281,8 @@ body {
         padding-left: 0px; /* 调整左侧内边距 */
         padding-right: 10px; /* 减小右侧内边距，为图标腾出空间 */
         gap: 5px; /* 调整按钮间距以适应新按钮 */
-    } /* 修复：确保 .text-mode .input-area 规则正确闭合 */
+        flex-wrap: nowrap; /* 防止换行 */
+    }
     .audio-mode .media-display-area {
         grid-template-columns: 1fr;
     }
