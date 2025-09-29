@@ -1271,9 +1271,9 @@ body {
     .text-mode #attachment-button, /* 附件按钮 */
     .text-mode #chat-voice-input-button /* 聊天语音输入按钮 */
     {
-        width: 28px;
-        height: 28px;
-        font-size: 12px;
+        width: 28px !important;
+        height: 28px !important;
+        font-size: 12px !important;
         border-radius: 8px;
     }
     
