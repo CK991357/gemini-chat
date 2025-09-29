@@ -1321,6 +1321,7 @@ body {
         .chess-board-area {
             gap: 15px;
             justify-content: flex-start;
+            flex-direction: column; /* 手机端垂直堆叠 */
         }
         
         .chess-info-panel {
@@ -1340,12 +1341,19 @@ body {
         }
         
         .fen-actions {
-            flex-direction: column;
+            flex-direction: row; /* 按钮水平排列 */
+            flex-wrap: wrap; /* 允许按钮换行 */
         }
         
         .fen-actions .action-button {
-            min-width: 100%;
+            flex: 1 1 auto; /* 允许按钮伸缩和换行 */
             margin-bottom: 5px;
+        }
+        
+        /* 手机端“上一步”按钮单独一行 */
+        #undo-move-button {
+            flex-basis: 100%; /* 占据整行 */
+            margin-top: 8px; /* 与上方按钮保持间距 */
         }
         
         .fullscreen-controls {
@@ -1941,7 +1949,6 @@ body.dark-mode {
 .chess-board-area {
     flex: 1;
     display: flex;
-    flex-direction: column;
     gap: 20px;
     align-items: center;
     justify-content: center;
