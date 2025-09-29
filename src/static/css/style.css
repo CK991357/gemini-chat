@@ -1986,7 +1986,7 @@ body.dark-mode {
    ================================= */
 
 /* 手机端专用样式 */
-@media (max-width: 767px) {
+@media (max-width: 768px) {
     .chess-fullscreen {
         padding: 10px;
     }
