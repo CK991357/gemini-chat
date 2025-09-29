@@ -1281,8 +1281,7 @@ body {
         padding-left: 0px; /* 调整左侧内边距 */
         padding-right: 10px; /* 减小右侧内边距，为图标腾出空间 */
         gap: 5px; /* 调整按钮间距以适应新按钮 */
-        /* flex-wrap: nowrap; /* 防止换行 */ */
-    }
+    } /* 修复：确保 .text-mode .input-area 规则正确闭合 */
     .audio-mode .media-display-area {
         grid-template-columns: 1fr;
     }
