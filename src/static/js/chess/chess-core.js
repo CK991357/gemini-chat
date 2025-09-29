@@ -208,6 +208,9 @@ class ChessGame {
             return false;
         }
 
+        // 保存被吃的棋子（用于易位权利更新）
+        const capturedPiece = this.pieces[toKey];
+
         // 检查是否是王车易位
         if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
             // 王车易位：国王移动了两格
@@ -222,6 +225,24 @@ class ChessGame {
             // 普通移动
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
+        }
+
+        // 检查被吃的棋子是否是车，更新易位权利
+        if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
+            this.updateCastlingRightsForCapturedRook(toRow, toCol);
+        }
+
+        // 检查吃过路兵
+        if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && 
+            toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
+            // 删除被吃的过路兵
+            const epRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
+            delete this.pieces[`${epRow},${toCol}`];
+        }
+
+        // 检查兵升变
+        if (piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7)) {
+            this.promotePawn(toRow, toCol);
         }
 
         // 更新游戏状态
@@ -339,10 +360,10 @@ class ChessGame {
             }
         }
 
-        // 2. 马的攻击
+        // 2. 马的攻击 - 修复：补全所有8个方向
         const knightMoves = [
             [-2, -1], [-2, 1], [-1, -2], [-1, 2],
-            [1, -2],, [2, -1],
+            [1, -2], [1, 2], [2, -1], [2, 1]  // 修复：补全所有方向
         ];
         for (const [dr, dc] of knightMoves) {
             const knightRow = row + dr;
@@ -358,8 +379,8 @@ class ChessGame {
 
         // 3. 象、车、后、王的攻击 (直线和斜线)
         const directions = [
-            [-1, 0],, [0, -1],, // 直线 (车, 后, 王)
-            [-1, -1], [-1, 1], [1, -1],  // 斜线 (象, 后, 王)
+            [-1, 0], [1, 0], [0, -1], [0, 1], // 直线 (车, 后, 王)
+            [-1, -1], [-1, 1], [1, -1], [1, 1]  // 斜线 (象, 后, 王)
         ];
 
         for (const [dr, dc] of directions) {
@@ -453,6 +474,21 @@ class ChessGame {
         }
     }
 
+    /**
+     * 更新被吃车的易位权利
+     */
+    updateCastlingRightsForCapturedRook(row, col) {
+        if (row === 0) { // 黑方底线
+            if (col === 0) this.castling = this.castling.replace('q', '');
+            else if (col === 7) this.castling = this.castling.replace('k', '');
+        } else if (row === 7) { // 白方底线
+            if (col === 0) this.castling = this.castling.replace('Q', '');
+            else if (col === 7) this.castling = this.castling.replace('K', '');
+        }
+        
+        if (!this.castling) this.castling = '-';
+    }
+
     updateEnPassant(piece, fromRow, fromCol, toRow, toCol) {
         // 兵前进两格，设置过路兵目标格
         if (piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2) {
@@ -461,6 +497,33 @@ class ChessGame {
         } else {
             this.enPassant = '-';
         }
+    }
+
+    /**
+     * 兵升变
+     */
+    promotePawn(row, col) {
+        // 默认升变为后，实际应用中应该让用户选择
+        const newPiece = this.currentTurn === 'w' ? 'Q' : 'q';
+        this.pieces[`${row},${col}`] = newPiece;
+    }
+
+    /**
+     * 获取过路兵目标行
+     */
+    getEnPassantRow() {
+        if (this.enPassant === '-') return -1;
+        const rank = parseInt(this.enPassant[1]);
+        return 8 - rank;
+    }
+
+    /**
+     * 获取过路兵目标列
+     */
+    getEnPassantCol() {
+        if (this.enPassant === '-') return -1;
+        const file = this.enPassant[0];
+        return 'abcdefgh'.indexOf(file);
     }
 
     generateFEN() {
