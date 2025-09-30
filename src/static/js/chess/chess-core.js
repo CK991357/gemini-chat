@@ -37,7 +37,11 @@ class ChessGame {
         this.resetButton = document.getElementById('reset-chess-button');
         this.undoButton = document.getElementById('undo-move-button');
         this.toggleButton = document.getElementById('toggle-to-vision-button');
-        this.fenHistoryElement = document.getElementById('fen-history'); // 新增FEN历史记录元素
+        // this.fenHistoryElement = document.getElementById('fen-history'); // 移除直接的FEN历史记录元素
+        this.showHistoryButton = document.getElementById('show-history-button'); // 新增显示历史记录按钮
+        this.fenHistoryModal = document.getElementById('fen-history-modal'); // 新增FEN历史记录模态框
+        this.closeFenHistoryModal = document.getElementById('close-fen-history-modal'); // 新增关闭模态框按钮
+        this.fenHistoryListElement = document.getElementById('fen-history-list'); // 模态框内的历史记录列表
         
         // 全屏元素引用
         this.chessFullscreen = document.getElementById('chess-fullscreen');
@@ -125,7 +129,11 @@ class ChessGame {
     undoMove() {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
-            this.loadFEN(previousFEN); // loadFEN 会自动更新 fenHistory 和渲染
+            // 移除当前FEN，因为是撤销操作
+            if (this.fenHistory.length > 1) {
+                this.fenHistory.pop();
+            }
+            this.loadFEN(previousFEN, true); // 传递一个标志，表示是撤销操作
             Logger.info('Undid last move.');
         } else {
             Logger.warn('No moves to undo.');
@@ -604,6 +612,20 @@ class ChessGame {
             });
         }
 
+        // 显示历史记录按钮
+        if (this.showHistoryButton) {
+            this.showHistoryButton.addEventListener('click', () => {
+                this.openFenHistoryModal();
+            });
+        }
+
+        // 关闭历史记录模态框按钮
+        if (this.closeFenHistoryModal) {
+            this.closeFenHistoryModal.addEventListener('click', () => {
+                this.closeFenHistoryModal();
+            });
+        }
+
         // 新游戏按钮
         if (this.resetButton) {
             this.resetButton.addEventListener('click', () => {
@@ -662,7 +684,7 @@ class ChessGame {
     }
 
     // 加载FEN字符串
-    loadFEN(fen) {
+    loadFEN(fen, isUndo = false) { // 添加 isUndo 参数
         const parts = fen.split(' ');
         if (parts.length < 6) return false;
 
@@ -690,7 +712,9 @@ class ChessGame {
 
         this.renderBoard();
         this.updateFEN();
-        this.fenHistory.push(fen); // 将加载的FEN添加到历史记录
+        if (!isUndo) { // 如果不是撤销操作，才添加到历史记录
+            this.fenHistory.push(fen); // 将加载的FEN添加到历史记录
+        }
         this.renderFenHistory(); // 渲染FEN历史记录
         return true;
     }
@@ -699,12 +723,12 @@ class ChessGame {
      * 渲染FEN历史记录到UI
      */
     renderFenHistory() {
-        if (!this.fenHistoryElement) {
-            console.error('FEN history element (#fen-history) not found');
+        if (!this.fenHistoryListElement) {
+            console.error('FEN history list element (#fen-history-list) not found');
             return;
         }
 
-        this.fenHistoryElement.innerHTML = ''; // 清空现有列表
+        this.fenHistoryListElement.innerHTML = ''; // 清空现有列表
 
         this.fenHistory.forEach((fen, index) => {
             const historyItem = document.createElement('div');
@@ -713,71 +737,41 @@ class ChessGame {
             const fenText = document.createElement('span');
             fenText.textContent = `${index + 1}. ${fen}`;
             fenText.title = fen; // 鼠标悬停显示完整FEN
+            fenText.addEventListener('click', () => this.loadFEN(fen)); // 点击加载FEN
 
             const deleteButton = document.createElement('button');
             deleteButton.className = 'delete-fen-button';
             deleteButton.textContent = 'X';
-            deleteButton.addEventListener('click', () => this.deleteFenHistoryItem(index));
+            deleteButton.addEventListener('click', (event) => {
+                event.stopPropagation(); // 阻止事件冒泡到 fenText 的点击事件
+                this.deleteFenHistoryItem(index);
+            });
 
             historyItem.appendChild(fenText);
             historyItem.appendChild(deleteButton);
-            this.fenHistoryElement.appendChild(historyItem);
+            this.fenHistoryListElement.appendChild(historyItem);
         });
     }
 
     /**
-     * 删除FEN历史记录中的指定项
-     * @param {number} index - 要删除的项的索引
+     * 打开FEN历史记录模态框
      */
-    deleteFenHistoryItem(index) {
-        if (index >= 0 && index < this.fenHistory.length) {
-            this.fenHistory.splice(index, 1);
-            this.renderFenHistory(); // 重新渲染历史记录
-            Logger.info(`Deleted FEN history item at index ${index}.`);
+    openFenHistoryModal() {
+        if (this.fenHistoryModal) {
+            this.fenHistoryModal.classList.add('active');
+            this.renderFenHistory(); // 确保每次打开时都渲染最新历史记录
+            Logger.info('Opened FEN history modal.');
         }
     }
-}
 
-let chessGame = null;
-
-/**
- * 初始化国际象棋功能
- */
-export function initializeChessCore() {
-    try {
-        chessGame = new ChessGame();
-        Logger.info('Chess module initialized successfully.');
-        
-        // 添加切换到棋盘按钮的事件监听器
-        const toggleToChessButton = document.getElementById('toggle-to-chess-button');
-        if (toggleToChessButton) {
-            toggleToChessButton.addEventListener('click', () => {
-                if (chessGame) {
-                    chessGame.showChessView();
-                }
-            });
+    /**
+     * 关闭FEN历史记录模态框
+     */
+    closeFenHistoryModal() {
+        if (this.fenHistoryModal) {
+            this.fenHistoryModal.classList.remove('active');
+            Logger.info('Closed FEN history modal.');
         }
-        if (chessGame) {
-            chessGame.renderFenHistory(); // 确保在初始化后渲染FEN历史记录
-        }
-    } catch (error) {
-        Logger.error('Failed to initialize chess module:', error);
     }
-}
 
-/**
- * 获取当前FEN字符串
- */
-export function getCurrentFEN() {
-    return chessGame ? chessGame.getCurrentFEN() : null;
-}
-
-/**
- * 加载FEN字符串
- */
-export function loadFEN(fen) {
-    if (chessGame) {
-        return chessGame.loadFEN(fen);
-    }
-    return false;
 }
