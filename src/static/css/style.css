@@ -2614,10 +2614,13 @@ input:checked + .slider:before {
 @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
     /* 棋盘本身：宽度优先，高度跟随，上限由屏幕高度决定 */
     .chess-board {
-        --board-size: min(60vw,     /* 先让宽度吃饱 */
+        --board-size: min(50vw,     /* 先让宽度吃饱 */
                            calc(100vh - 240px)); /* 再限高：减去顶部栏+输入区+安全区 */
         width:  var(--board-size) !important;
         height: var(--board-size) !important;
+    }
+    .chess-board-area {
+        margin-top: -10px; /* 往上抬 10 px，底部就露出来了 */
     }
 
     /* 右侧信息框同步收窄，给棋盘让路 */
