@@ -479,7 +479,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
     setTimeout(() => {
-        initializeChessCore();
+        initializeChessCore({
+            showToast: showToast
+        });
         
         // 手动添加切换按钮事件监听器作为备份
         const toggleToChessBtn = document.getElementById('toggle-to-chess-button');

@@ -20,7 +20,9 @@ const PIECE_LABELS = {
 };
 
 class ChessGame {
-    constructor() {
+    constructor(options = {}) {
+        this.showToast = options.showToast || console.log;
+        
         // 等待DOM完全加载
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.initialize());
@@ -179,7 +181,7 @@ class ChessGame {
 
         // 如果有等待的升变，先处理升变
         if (this.pendingPromotion) {
-            this.showMessage('请先完成兵升变选择', 'warning');
+            this.showToast('请先完成兵升变选择');
             return;
         }
 
@@ -194,7 +196,7 @@ class ChessGame {
             // 选中一个棋子
             this.selectedSquare = [row, col];
         } else if (piece) {
-            this.showMessage(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`, 'warning');
+            this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
         }
         
         this.renderBoard();
@@ -210,7 +212,7 @@ class ChessGame {
         
         // 如果有等待的升变，先处理升变
         if (this.pendingPromotion) {
-            this.showMessage('请先完成兵升变选择', 'warning');
+            this.showToast('请先完成兵升变选择');
             return;
         }
 
@@ -233,18 +235,18 @@ class ChessGame {
         const piece = this.pieces[fromKey];
 
         if (!piece) {
-            this.showMessage('没有选中棋子', 'error');
+            this.showToast('没有选中棋子');
             return false;
         }
 
         if (!this.isValidTurn(piece)) {
-            this.showMessage(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`, 'warning');
+            this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
             return false;
         }
 
         // 基本规则检查：不能吃己方棋子
         if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
-            this.showMessage('不能吃掉自己的棋子', 'warning');
+            this.showToast('不能吃掉自己的棋子');
             return false;
         }
 
@@ -258,14 +260,14 @@ class ChessGame {
         if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
             // 王车易位：国王移动了两格
             if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
-                this.showMessage('王车易位不符合规则', 'error');
+                this.showToast('王车易位不符合规则');
                 this.moveHistory.pop(); // 移除无效的历史记录
                 return false;
             }
             // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
             this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
             this.updateFEN();
-            this.showMessage(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`, 'info');
+            this.showToast(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`);
             return true;
         } else {
             // 普通移动
@@ -288,7 +290,7 @@ class ChessGame {
             if (epPiece && epPiece.toLowerCase() === 'p' && this.isOpponentPiece(piece, epPiece)) {
                 // 删除被吃的过路兵
                 delete this.pieces[`${epRow},${toCol}`];
-                this.showMessage('吃过路兵！', 'info');
+                this.showToast('吃过路兵！');
             }
         }
 
@@ -581,7 +583,7 @@ class ChessGame {
         
         // 检查将军
         if (this.isKingInCheck(opponentColor)) {
-            this.showMessage('将军！', 'warning');
+            this.showToast('将军！');
         }
     }
 
@@ -727,7 +729,7 @@ class ChessGame {
         }
         
         modal.style.display = 'flex';
-        this.showMessage(message, 'info');
+        this.showToast(message);
     }
 
     /**
@@ -748,7 +750,7 @@ class ChessGame {
         });
         
         modal.style.display = 'flex';
-        this.showMessage('请选择兵升变的棋子', 'info');
+        this.showToast('请选择兵升变的棋子');
     }
 
     /**
@@ -774,7 +776,7 @@ class ChessGame {
         this.updateGameState(piece, row, col, row, col); // 使用相同的行列表示这是升变
         this.updateFEN();
         
-        this.showMessage(`兵升变为${this.getPieceName(newPiece)}`, 'info');
+        this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
         this.pendingPromotion = null;
         this.renderBoard();
     }
@@ -788,62 +790,6 @@ class ChessGame {
             'q': '后', 'r': '车', 'b': '象', 'n': '马'
         };
         return names[piece] || '棋子';
-    }
-
-    /**
-     * 显示消息提示
-     */
-    showMessage(message, type = 'info') {
-        // 只显示与棋局状态相关的消息（将军、升变、易位等）
-        const chessRelatedMessages = [
-            '将军', '将死', '升变', '易位', '吃过路兵', '兵升变为',
-            '王车易位', '将军', '将死', '和棋', '胜利', '失败', '50步规则'
-        ];
-        
-        const isChessRelated = chessRelatedMessages.some(keyword => 
-            message.includes(keyword)
-        );
-        
-        if (!isChessRelated) {
-            return; // 不显示非棋局相关的业务提示
-        }
-        
-        // 创建或获取消息容器
-        let messageContainer = document.getElementById('chess-message-container');
-        if (!messageContainer) {
-            messageContainer = document.createElement('div');
-            messageContainer.id = 'chess-message-container';
-            messageContainer.className = 'chess-message-container';
-            // 设置样式使其显示在顶部
-            messageContainer.style.position = 'fixed';
-            messageContainer.style.top = '20px';
-            messageContainer.style.left = '50%';
-            messageContainer.style.transform = 'translateX(-50%)';
-            messageContainer.style.zIndex = '10000';
-            messageContainer.style.display = 'flex';
-            messageContainer.style.flexDirection = 'column';
-            messageContainer.style.alignItems = 'center';
-            messageContainer.style.gap = '10px';
-            document.body.appendChild(messageContainer);
-        }
-        
-        // 创建消息元素
-        const messageElement = document.createElement('div');
-        messageElement.className = `chess-message chess-message-${type}`;
-        messageElement.textContent = message;
-        
-        // 添加到容器
-        messageContainer.appendChild(messageElement);
-        
-        // 自动移除
-        setTimeout(() => {
-            if (messageElement.parentElement) {
-                messageElement.remove();
-            }
-        }, 3000);
-        
-        // 同时记录到控制台
-        Logger[type](message);
     }
 
     /**
@@ -1021,10 +967,10 @@ class ChessGame {
 
             this.renderBoard();
             this.updateFEN();
-            this.showMessage('FEN加载成功', 'success');
+            this.showToast('FEN加载成功');
             return true;
         } catch (error) {
-            this.showMessage('FEN格式错误，无法加载', 'error');
+            this.showToast('FEN格式错误，无法加载');
             Logger.error('FEN parsing error:', error);
             return false;
         }
@@ -1036,9 +982,9 @@ let chessGame = null;
 /**
  * 初始化国际象棋功能
  */
-export function initializeChessCore() {
+export function initializeChessCore(options = {}) {
     try {
-        chessGame = new ChessGame();
+        chessGame = new ChessGame(options);
         Logger.info('Chess module initialized successfully.');
         
         // 添加切换到棋盘按钮的事件监听器
