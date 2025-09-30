@@ -2610,23 +2610,17 @@ input:checked + .slider:before {
     cursor: default;
 }
 
-/* iPad 横屏棋盘 – 固定正方形 + 不挤压格子 */
 @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
-    /* 棋盘本身：宽度优先，高度跟随，上限由屏幕高度决定 */
+    /* 1. 让棋盘继续用正方形，但尺寸由“格子”决定 */
     .chess-board {
-        --board-size: min(50vw,     /* 先让宽度吃饱 */
-                           calc(100vh - 240px)); /* 再限高：减去顶部栏+输入区+安全区 */
-        width:  var(--board-size) !important;
-        height: var(--board-size) !important;
-    }
-    .chess-board-area {
-        margin-top: -10px; /* 往上抬 10 px，底部就露出来了 */
+        width: unset !important;
+        height: unset !important;
+        grid-template-columns: repeat(8, 40px); /* 每格 40 px */
+        grid-template-rows: repeat(8, 40px);
     }
 
-    /* 右侧信息框同步收窄，给棋盘让路 */
-    .chess-info-panel {
-        width: 260px !important;
-        margin-left: 10px !important;
-        flex-shrink: 0 !important;
+    /* 2. 棋子图标同步缩小，防止溢出 */
+    .chess-square {
+        font-size: 32px; /* 原来 min(8vw,40px) → 固定 32 px */
     }
 }
