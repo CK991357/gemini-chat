@@ -2615,8 +2615,8 @@ input:checked + .slider:before {
     .chess-board {
         width: unset !important;
         height: unset !important;
-        grid-template-columns: repeat(8, 55px); /* 每格 60 px */
-        grid-template-rows: repeat(8, 55px);
+        grid-template-columns: repeat(8, 52px); /* 每格 60 px */
+        grid-template-rows: repeat(8, 52px);
         margin-left: -20px;   /* 往左挪 20 px */
     }
 
@@ -2624,4 +2624,13 @@ input:checked + .slider:before {
     .chess-square {
         font-size: 40px; /* 原来 min(8vw,40px) → 固定 40 px */
     }
+    
+    @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
+    /* 1. 棋盘已放大，现在推 FEN 面板 */
+    .chess-info-panel {
+        width: 280px !important;        /* 原来 240→280，变大 */
+        margin-left: 10px !important;   /* 再往右推 30 px */
+        flex-shrink: 0 !important;
+    }
+}
 }
