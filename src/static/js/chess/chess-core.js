@@ -250,6 +250,12 @@ class ChessGame {
             return false;
         }
 
+        // 新增：检查移动规则
+        if (!this.isValidPieceMove(piece, fromRow, fromCol, toRow, toCol)) {
+            this.showToast('移动不符合规则');
+            return false;
+        }
+
         // 在移动前保存当前 FEN 到历史记录
         this.moveHistory.push(this.generateFEN());
 
@@ -306,6 +312,157 @@ class ChessGame {
         }
 
         this.updateFEN();
+        return true;
+    }
+
+    /**
+     * 验证棋子移动是否符合规则
+     */
+    isValidPieceMove(piece, fromRow, fromCol, toRow, toCol) {
+        const pieceType = piece.toLowerCase();
+        
+        switch (pieceType) {
+            case 'k': return this.isValidKingMove(fromRow, fromCol, toRow, toCol, piece);
+            case 'q': return this.isValidQueenMove(fromRow, fromCol, toRow, toCol, piece);
+            case 'r': return this.isValidRookMove(fromRow, fromCol, toRow, toCol, piece);
+            case 'b': return this.isValidBishopMove(fromRow, fromCol, toRow, toCol, piece);
+            case 'n': return this.isValidKnightMove(fromRow, fromCol, toRow, toCol, piece);
+            case 'p': return this.isValidPawnMove(fromRow, fromCol, toRow, toCol, piece);
+            default: return false;
+        }
+    }
+
+    /**
+     * 检查王的移动是否合法
+     */
+    isValidKingMove(fromRow, fromCol, toRow, toCol, piece) {
+        const rowDiff = Math.abs(toRow - fromRow);
+        const colDiff = Math.abs(toCol - fromCol);
+        
+        // 王只能移动一格
+        if (rowDiff <= 1 && colDiff <= 1 && (rowDiff > 0 || colDiff > 0)) {
+            return true;
+        }
+        
+        // 王车易位已经在 handleCastling 中处理
+        return false;
+    }
+
+    /**
+     * 检查车的移动是否合法
+     */
+    isValidRookMove(fromRow, fromCol, toRow, toCol, piece) {
+        // 车只能直线移动
+        if (fromRow !== toRow && fromCol !== toCol) {
+            return false;
+        }
+        
+        // 检查路径上是否有其他棋子
+        return this.isPathClear(fromRow, fromCol, toRow, toCol);
+    }
+
+    /**
+     * 检查象的移动是否合法
+     */
+    isValidBishopMove(fromRow, fromCol, toRow, toCol, piece) {
+        // 象只能斜线移动
+        if (Math.abs(toRow - fromRow) !== Math.abs(toCol - fromCol)) {
+            return false;
+        }
+        
+        // 检查路径是否畅通
+        return this.isPathClear(fromRow, fromCol, toRow, toCol);
+    }
+
+    /**
+     * 检查后的移动是否合法
+     */
+    isValidQueenMove(fromRow, fromCol, toRow, toCol, piece) {
+        // 后可以直线或斜线移动
+        const isStraight = (fromRow === toRow || fromCol === toCol);
+        const isDiagonal = (Math.abs(toRow - fromRow) === Math.abs(toCol - fromCol));
+        
+        if (!isStraight && !isDiagonal) {
+            return false;
+        }
+        
+        return this.isPathClear(fromRow, fromCol, toRow, toCol);
+    }
+
+    /**
+     * 检查马的移动是否合法
+     */
+    isValidKnightMove(fromRow, fromCol, toRow, toCol, piece) {
+        const rowDiff = Math.abs(toRow - fromRow);
+        const colDiff = Math.abs(toCol - fromCol);
+        
+        // 马走"日"字：一个方向2格，另一个方向1格
+        return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+    }
+
+    /**
+     * 检查兵的移动是否合法
+     */
+    isValidPawnMove(fromRow, fromCol, toRow, toCol, piece) {
+        const isWhite = piece === 'P';
+        const direction = isWhite ? -1 : 1; // 白兵向上，黑兵向下
+        const startRow = isWhite ? 6 : 1;   // 初始行
+        
+        const rowDiff = toRow - fromRow;
+        const colDiff = Math.abs(toCol - fromCol);
+        
+        // 1. 前进一格
+        if (colDiff === 0 && rowDiff === direction) {
+            return !this.pieces[`${toRow},${toCol}`]; // 目标格必须为空
+        }
+        
+        // 2. 前进两格（仅限初始位置）
+        if (colDiff === 0 && rowDiff === 2 * direction && fromRow === startRow) {
+            const intermediateRow = fromRow + direction;
+            return !this.pieces[`${intermediateRow},${toCol}`] && 
+                   !this.pieces[`${toRow},${toCol}`];
+        }
+        
+        // 3. 斜吃子
+        if (colDiff === 1 && rowDiff === direction) {
+            // 普通吃子
+            if (this.pieces[`${toRow},${toCol}`] && 
+                this.isOpponentPiece(piece, this.pieces[`${toRow},${toCol}`])) {
+                return true;
+            }
+            
+            // 吃过路兵
+            if (this.enPassant !== '-') {
+                const epRow = this.getEnPassantRow();
+                const epCol = this.getEnPassantCol();
+                if (toRow === epRow && toCol === epCol) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * 检查移动路径是否畅通
+     */
+    isPathClear(fromRow, fromCol, toRow, toCol) {
+        const rowStep = fromRow === toRow ? 0 : (toRow > fromRow ? 1 : -1);
+        const colStep = fromCol === toCol ? 0 : (toCol > fromCol ? 1 : -1);
+        
+        let currentRow = fromRow + rowStep;
+        let currentCol = fromCol + colStep;
+        
+        // 检查路径上的每个格子（不包括目标格）
+        while (currentRow !== toRow || currentCol !== toCol) {
+            if (this.pieces[`${currentRow},${currentCol}`]) {
+                return false; // 路径被阻挡
+            }
+            currentRow += rowStep;
+            currentCol += colStep;
+        }
+        
         return true;
     }
 
@@ -883,7 +1040,7 @@ class ChessGame {
             this.resetButton.addEventListener('click', () => {
                 if (confirm('开始新游戏？当前进度将丢失。')) {
                     this.setupInitialPosition();
-                    this.showMessage('新游戏开始', 'info');
+                    this.showToast('新游戏开始');
                 }
             });
         }
