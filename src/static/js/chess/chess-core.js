@@ -1141,11 +1141,12 @@ class ChessGame {
 
         // 3. 验证过路兵目标格
         let cleanEnPassant = '-';
-        if (this.enPassant !== '-') {
-            // 验证过路兵目标格格式
-            if (this.enPassant.length === 2 && 
-                'abcdefgh'.includes(this.enPassant[0]) && 
-                '36'.includes(this.enPassant[1])) {
+        if (this.enPassant !== '-' && this.enPassant.length === 2) {
+            const file = this.enPassant[0];
+            const rank = this.enPassant[1];
+            
+            // 过路兵只能在第3或第6行（对应FEN中的3和6）
+            if ('abcdefgh'.includes(file) && '36'.includes(rank)) {
                 cleanEnPassant = this.enPassant;
             }
         }
@@ -1164,6 +1165,12 @@ class ChessGame {
             return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
         }
 
+        // 6. 最终FEN验证 - 双重保险确保FEN正确性
+        if (!this.validateFinalFEN(fen)) {
+            console.error('最终FEN验证失败，使用默认位置');
+            return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+        }
+
         return fen;
     }
 
@@ -1173,11 +1180,12 @@ class ChessGame {
     countSquaresInFENRow(fenRow) {
         let count = 0;
         for (const char of fenRow) {
-            if (isNaN(char)) {
-                count += 1; // 棋子占1格
-            } else {
-                count += parseInt(char); // 数字表示空位数
+            if (VALID_PIECES.includes(char)) {
+                count += 1;
+            } else if (!isNaN(parseInt(char))) {
+                count += parseInt(char);
             }
+            // 忽略其他无效字符
         }
         return count;
     }
@@ -1186,39 +1194,41 @@ class ChessGame {
      * 修正FEN行长度到8格
      */
     fixFENRowLength(fenRow) {
-        let currentSquares = this.countSquaresInFENRow(fenRow);
+        const currentSquares = this.countSquaresInFENRow(fenRow);
+        
+        if (currentSquares === 8) {
+            return fenRow; // 已经是正确的
+        }
         
         if (currentSquares < 8) {
-            // 不足8格，在末尾添加空位
+            // 添加缺失的空格
             const needed = 8 - currentSquares;
-            return fenRow + needed;
-        } else if (currentSquares > 8) {
-            // 超过8格，截断
+            return fenRow + needed.toString();
+        } else {
+            // 移除多余的空格
             let newRow = '';
             let count = 0;
+            
             for (const char of fenRow) {
                 if (count >= 8) break;
                 
-                if (isNaN(char)) {
+                if (VALID_PIECES.includes(char)) {
                     newRow += char;
                     count += 1;
-                } else {
+                } else if (!isNaN(parseInt(char))) {
                     const spaces = parseInt(char);
                     const remaining = 8 - count;
                     if (spaces <= remaining) {
                         newRow += char;
                         count += spaces;
                     } else {
-                        newRow += remaining;
+                        newRow += remaining.toString();
                         count = 8;
-                        break;
                     }
                 }
             }
             return newRow;
         }
-        
-        return fenRow;
     }
 
     /**
@@ -1302,6 +1312,21 @@ class ChessGame {
         } catch (error) {
             return false;
         }
+    }
+
+    validateFinalFEN(fen) {
+        const parts = fen.split(' ');
+        if (parts.length !== 6) return false;
+        
+        // 检查每行格子数
+        const rows = parts[0].split('/');
+        for (let i = 0; i < 8; i++) {
+            if (this.countSquaresInFENRow(rows[i]) !== 8) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 
     updateFEN() {
