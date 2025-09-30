@@ -37,11 +37,6 @@ class ChessGame {
         this.resetButton = document.getElementById('reset-chess-button');
         this.undoButton = document.getElementById('undo-move-button');
         this.toggleButton = document.getElementById('toggle-to-vision-button');
-        // this.fenHistoryElement = document.getElementById('fen-history'); // 移除直接的FEN历史记录元素
-        this.showHistoryButton = document.getElementById('show-history-button'); // 新增显示历史记录按钮
-        this.fenHistoryModal = document.getElementById('fen-history-modal'); // 新增FEN历史记录模态框
-        this.closeFenHistoryModal = document.getElementById('close-fen-history-modal'); // 新增关闭模态框按钮
-        this.fenHistoryListElement = document.getElementById('fen-history-list'); // 模态框内的历史记录列表
         
         // 全屏元素引用
         this.chessFullscreen = document.getElementById('chess-fullscreen');
@@ -62,8 +57,7 @@ class ChessGame {
         this.halfMoveClock = 0;
         this.fullMoveNumber = 1;
         this.selectedSquare = null;
-        this.moveHistory = []; // 用于撤销的临时历史记录
-        this.fenHistory = []; // 存储所有FEN记录
+        this.moveHistory = [];
         
         // 初始化
         this.initBoard();
@@ -112,8 +106,7 @@ class ChessGame {
         };
 
         this.pieces = { ...initialPosition };
-        this.moveHistory = []; // 用于撤销的临时历史记录
-        this.fenHistory = []; // 清空历史记录
+        this.moveHistory = [];
         this.castling = 'KQkq'; // 确保初始有所有易位权利
         this.enPassant = '-';
         this.currentTurn = 'w';
@@ -122,18 +115,12 @@ class ChessGame {
         
         this.renderBoard();
         this.updateFEN();
-        this.fenHistory.push(this.generateFEN()); // 添加初始FEN到历史记录
-        this.renderFenHistory(); // 渲染FEN历史记录
     }
 
     undoMove() {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
-            // 移除当前FEN，因为是撤销操作
-            if (this.fenHistory.length > 1) {
-                this.fenHistory.pop();
-            }
-            this.loadFEN(previousFEN, true); // 传递一个标志，表示是撤销操作
+            this.loadFEN(previousFEN);
             Logger.info('Undid last move.');
         } else {
             Logger.warn('No moves to undo.');
@@ -213,7 +200,7 @@ class ChessGame {
             return false;
         }
 
-        // 在移动前保存当前 FEN 到 moveHistory (用于撤销)
+        // 在移动前保存当前 FEN 到历史记录
         this.moveHistory.push(this.generateFEN());
 
         // 基本规则检查：不能吃己方棋子
@@ -233,8 +220,6 @@ class ChessGame {
             // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
             this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
             this.updateFEN();
-            this.fenHistory.push(this.generateFEN()); // 将新的FEN添加到历史记录
-            this.renderFenHistory(); // 渲染FEN历史记录
             return true;
         } else {
             // 普通移动
@@ -263,8 +248,6 @@ class ChessGame {
         // 更新游戏状态
         this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
         this.updateFEN();
-        this.fenHistory.push(this.generateFEN()); // 将新的FEN添加到历史记录
-        this.renderFenHistory(); // 渲染FEN历史记录
 
         return true;
     }
@@ -612,20 +595,6 @@ class ChessGame {
             });
         }
 
-        // 显示历史记录按钮
-        if (this.showHistoryButton) {
-            this.showHistoryButton.addEventListener('click', () => {
-                this.openFenHistoryModal();
-            });
-        }
-
-        // 关闭历史记录模态框按钮
-        if (this.closeFenHistoryModal) {
-            this.closeFenHistoryModal.addEventListener('click', () => {
-                this.closeFenHistoryModal();
-            });
-        }
-
         // 新游戏按钮
         if (this.resetButton) {
             this.resetButton.addEventListener('click', () => {
@@ -684,7 +653,7 @@ class ChessGame {
     }
 
     // 加载FEN字符串
-    loadFEN(fen, isUndo = false) { // 添加 isUndo 参数
+    loadFEN(fen) {
         const parts = fen.split(' ');
         if (parts.length < 6) return false;
 
@@ -712,66 +681,47 @@ class ChessGame {
 
         this.renderBoard();
         this.updateFEN();
-        if (!isUndo) { // 如果不是撤销操作，才添加到历史记录
-            this.fenHistory.push(fen); // 将加载的FEN添加到历史记录
-        }
-        this.renderFenHistory(); // 渲染FEN历史记录
         return true;
     }
+}
 
-    /**
-     * 渲染FEN历史记录到UI
-     */
-    renderFenHistory() {
-        if (!this.fenHistoryListElement) {
-            console.error('FEN history list element (#fen-history-list) not found');
-            return;
-        }
+let chessGame = null;
 
-        this.fenHistoryListElement.innerHTML = ''; // 清空现有列表
-
-        this.fenHistory.forEach((fen, index) => {
-            const historyItem = document.createElement('div');
-            historyItem.className = 'fen-history-item';
-
-            const fenText = document.createElement('span');
-            fenText.textContent = `${index + 1}. ${fen}`;
-            fenText.title = fen; // 鼠标悬停显示完整FEN
-            fenText.addEventListener('click', () => this.loadFEN(fen)); // 点击加载FEN
-
-            const deleteButton = document.createElement('button');
-            deleteButton.className = 'delete-fen-button';
-            deleteButton.textContent = 'X';
-            deleteButton.addEventListener('click', (event) => {
-                event.stopPropagation(); // 阻止事件冒泡到 fenText 的点击事件
-                this.deleteFenHistoryItem(index);
+/**
+ * 初始化国际象棋功能
+ */
+export function initializeChessCore() {
+    try {
+        chessGame = new ChessGame();
+        Logger.info('Chess module initialized successfully.');
+        
+        // 添加切换到棋盘按钮的事件监听器
+        const toggleToChessButton = document.getElementById('toggle-to-chess-button');
+        if (toggleToChessButton) {
+            toggleToChessButton.addEventListener('click', () => {
+                if (chessGame) {
+                    chessGame.showChessView();
+                }
             });
-
-            historyItem.appendChild(fenText);
-            historyItem.appendChild(deleteButton);
-            this.fenHistoryListElement.appendChild(historyItem);
-        });
-    }
-
-    /**
-     * 打开FEN历史记录模态框
-     */
-    openFenHistoryModal() {
-        if (this.fenHistoryModal) {
-            this.fenHistoryModal.classList.add('active');
-            this.renderFenHistory(); // 确保每次打开时都渲染最新历史记录
-            Logger.info('Opened FEN history modal.');
         }
+    } catch (error) {
+        Logger.error('Failed to initialize chess module:', error);
     }
+}
 
-    /**
-     * 关闭FEN历史记录模态框
-     */
-    closeFenHistoryModal() {
-        if (this.fenHistoryModal) {
-            this.fenHistoryModal.classList.remove('active');
-            Logger.info('Closed FEN history modal.');
-        }
+/**
+ * 获取当前FEN字符串
+ */
+export function getCurrentFEN() {
+    return chessGame ? chessGame.getCurrentFEN() : null;
+}
+
+/**
+ * 加载FEN字符串
+ */
+export function loadFEN(fen) {
+    if (chessGame) {
+        return chessGame.loadFEN(fen);
     }
-
+    return false;
 }
