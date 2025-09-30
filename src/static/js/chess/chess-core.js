@@ -878,11 +878,13 @@ class ChessGame {
             });
         }
 
-        // 新游戏按钮 - 移除确认对话框和提示
+        // 新游戏按钮
         if (this.resetButton) {
             this.resetButton.addEventListener('click', () => {
-                this.setupInitialPosition();
-                // 移除开始新游戏提示
+                if (confirm('开始新游戏？当前进度将丢失。')) {
+                    this.setupInitialPosition();
+                    this.showMessage('新游戏开始', 'info');
+                }
             });
         }
 
