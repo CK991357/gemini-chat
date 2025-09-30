@@ -19,6 +19,10 @@ const PIECE_LABELS = {
     'b': 'Black Bishop', 'n': 'Black Knight', 'p': 'Black Pawn'
 };
 
+// 合法的棋子字符
+const VALID_PIECES = 'KQRBNPkqrbnp';
+const VALID_CASTLING = 'KQkq';
+
 class ChessGame {
     constructor(options = {}) {
         this.showToast = options.showToast || console.log;
@@ -129,9 +133,7 @@ class ChessGame {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
-            // 移除撤销提示，只保留棋局相关提示
         }
-        // 移除没有可撤销移动的提示
     }
 
     renderBoard() {
@@ -275,29 +277,32 @@ class ChessGame {
             this.updateFEN();
             this.showToast(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`);
             return true;
-        } else {
-            // 普通移动
-            delete this.pieces[fromKey];
-            this.pieces[toKey] = piece;
-        }
-
-        // 检查被吃的棋子是否是车，更新易位权利
-        if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
-            this.updateCastlingRightsForCapturedRook(toRow, toCol);
         }
 
         // 检查吃过路兵
+        let enPassantCapture = false;
         if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && 
             toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
             // 验证过路兵条件：必须是敌方兵刚刚移动两格
             const epRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
-            const epPiece = this.pieces[`${epRow},${toCol}`];
+            const epKey = `${epRow},${toCol}`;
+            const epPiece = this.pieces[epKey];
             
             if (epPiece && epPiece.toLowerCase() === 'p' && this.isOpponentPiece(piece, epPiece)) {
                 // 删除被吃的过路兵
-                delete this.pieces[`${epRow},${toCol}`];
+                delete this.pieces[epKey];
+                enPassantCapture = true;
                 this.showToast('吃过路兵！');
             }
+        }
+
+        // 执行移动
+        delete this.pieces[fromKey];
+        this.pieces[toKey] = piece;
+
+        // 检查被吃的棋子是否是车，更新易位权利
+        if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
+            this.updateCastlingRightsForCapturedRook(toRow, toCol);
         }
 
         // 检查兵升变
@@ -308,7 +313,7 @@ class ChessGame {
             // 注意：这里不调用 promotePawn，而是等待用户选择
         } else {
             // 更新游戏状态（非升变情况）
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture);
         }
 
         this.updateFEN();
@@ -401,7 +406,7 @@ class ChessGame {
     }
 
     /**
-     * 检查兵的移动是否合法
+     * 检查兵的移动是否合法 - 修复版本
      */
     isValidPawnMove(fromRow, fromCol, toRow, toCol, piece) {
         const isWhite = piece === 'P';
@@ -436,7 +441,13 @@ class ChessGame {
                 const epRow = this.getEnPassantRow();
                 const epCol = this.getEnPassantCol();
                 if (toRow === epRow && toCol === epCol) {
-                    return true;
+                    // 验证过路兵：必须有一个敌方兵在过路兵起始位置
+                    const epPieceRow = isWhite ? 3 : 4; // 过路兵当前位置
+                    if (this.pieces[`${epPieceRow},${epCol}`] && 
+                        this.pieces[`${epPieceRow},${epCol}`].toLowerCase() === 'p' &&
+                        this.isOpponentPiece(piece, this.pieces[`${epPieceRow},${epCol}`])) {
+                        return true;
+                    }
                 }
             }
         }
@@ -548,10 +559,6 @@ class ChessGame {
 
     /**
      * 检查给定格子是否被指定颜色的敌方棋子攻击
-     * @param {number} row - 格子的行
-     * @param {number} col - 格子的列
-     * @param {string} attackingColor - 攻击方的颜色 ('w' 或 'b')
-     * @returns {boolean} - 如果被攻击则返回 true，否则返回 false
      */
     isSquareAttacked(row, col, attackingColor) {
         // 1. 兵的攻击
@@ -684,7 +691,7 @@ class ChessGame {
         return false;
     }
 
-    updateGameState(piece, fromRow, fromCol, toRow, toCol) {
+    updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture = false) {
         // 切换回合
         this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
         
@@ -694,7 +701,7 @@ class ChessGame {
         }
 
         // 更新半回合计数（用于50步规则）
-        if (piece.toLowerCase() === 'p' || this.pieces[`${toRow},${toCol}`]) {
+        if (piece.toLowerCase() === 'p' || this.pieces[`${toRow},${toCol}`] || enPassantCapture) {
             this.halfMoveClock = 0;
         } else {
             this.halfMoveClock++;
@@ -967,40 +974,233 @@ class ChessGame {
         return 'abcdefgh'.indexOf(file);
     }
 
+    /**
+     * 生成合法的FEN字符串 - 完全修复版本
+     */
     generateFEN() {
         let fen = '';
+        let totalSquares = 0;
 
-        // 棋子布局
+        // 1. 棋子布局部分
         for (let row = 0; row < 8; row++) {
             let emptyCount = 0;
+            let rowFen = '';
+            let rowSquares = 0;
+            
             for (let col = 0; col < 8; col++) {
                 const piece = this.pieces[`${row},${col}`];
-                if (piece) {
+                
+                // 只允许合法的棋子字符
+                if (piece && VALID_PIECES.includes(piece)) {
                     if (emptyCount > 0) {
-                        fen += emptyCount;
+                        rowFen += emptyCount;
                         emptyCount = 0;
                     }
-                    fen += piece;
+                    rowFen += piece;
+                    rowSquares++;
                 } else {
                     emptyCount++;
+                    rowSquares++;
                 }
             }
+            
+            // 添加行末的空位
             if (emptyCount > 0) {
-                fen += emptyCount;
+                rowFen += emptyCount;
             }
+            
+            // 验证该行正好8个格子
+            const actualSquares = this.countSquaresInFENRow(rowFen);
+            if (actualSquares !== 8) {
+                console.error(`FEN生成错误: 第${row}行格子数=${actualSquares}, 应该是8`);
+                // 自动修正
+                rowFen = this.fixFENRowLength(rowFen);
+            }
+            
+            fen += rowFen;
             if (row < 7) {
                 fen += '/';
             }
         }
 
-        // 添加其他FEN字段
+        // 2. 验证和清理易位权利
+        let cleanCastling = '';
+        if (this.castling && this.castling !== '-') {
+            for (const char of this.castling) {
+                if (VALID_CASTLING.includes(char)) {
+                    cleanCastling += char;
+                }
+            }
+            if (cleanCastling === '') {
+                cleanCastling = '-';
+            }
+        } else {
+            cleanCastling = '-';
+        }
+
+        // 3. 验证过路兵目标格
+        let cleanEnPassant = '-';
+        if (this.enPassant !== '-') {
+            // 验证过路兵目标格格式
+            if (this.enPassant.length === 2 && 
+                'abcdefgh'.includes(this.enPassant[0]) && 
+                '36'.includes(this.enPassant[1])) {
+                cleanEnPassant = this.enPassant;
+            }
+        }
+
+        // 4. 组装完整FEN
         fen += ` ${this.currentTurn}`;
-        fen += ` ${this.castling || '-'}`;
-        fen += ` ${this.enPassant}`;
-        fen += ` ${this.halfMoveClock}`;
-        fen += ` ${this.fullMoveNumber}`;
+        fen += ` ${cleanCastling}`;
+        fen += ` ${cleanEnPassant}`;
+        fen += ` ${Math.max(0, this.halfMoveClock)}`;
+        fen += ` ${Math.max(1, this.fullMoveNumber)}`;
+
+        // 5. 最终验证
+        if (!this.validateFEN(fen)) {
+            console.error('生成的FEN不合法:', fen);
+            // 返回安全的默认FEN
+            return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+        }
 
         return fen;
+    }
+
+    /**
+     * 计算FEN行中的格子数
+     */
+    countSquaresInFENRow(fenRow) {
+        let count = 0;
+        for (const char of fenRow) {
+            if (isNaN(char)) {
+                count += 1; // 棋子占1格
+            } else {
+                count += parseInt(char); // 数字表示空位数
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 修正FEN行长度到8格
+     */
+    fixFENRowLength(fenRow) {
+        let currentSquares = this.countSquaresInFENRow(fenRow);
+        
+        if (currentSquares < 8) {
+            // 不足8格，在末尾添加空位
+            const needed = 8 - currentSquares;
+            return fenRow + needed;
+        } else if (currentSquares > 8) {
+            // 超过8格，截断
+            let newRow = '';
+            let count = 0;
+            for (const char of fenRow) {
+                if (count >= 8) break;
+                
+                if (isNaN(char)) {
+                    newRow += char;
+                    count += 1;
+                } else {
+                    const spaces = parseInt(char);
+                    const remaining = 8 - count;
+                    if (spaces <= remaining) {
+                        newRow += char;
+                        count += spaces;
+                    } else {
+                        newRow += remaining;
+                        count = 8;
+                        break;
+                    }
+                }
+            }
+            return newRow;
+        }
+        
+        return fenRow;
+    }
+
+    /**
+     * 验证FEN字符串的合法性
+     */
+    validateFEN(fen) {
+        try {
+            const parts = fen.split(' ');
+            if (parts.length !== 6) {
+                return false;
+            }
+
+            // 验证棋盘部分
+            const boardPart = parts[0];
+            const rows = boardPart.split('/');
+            if (rows.length !== 8) {
+                return false;
+            }
+
+            // 验证每行正好8个格子且只包含合法棋子
+            for (let i = 0; i < 8; i++) {
+                const row = rows[i];
+                let squareCount = 0;
+                
+                for (const char of row) {
+                    if (isNaN(char)) {
+                        if (!VALID_PIECES.includes(char)) {
+                            return false;
+                        }
+                        squareCount++;
+                    } else {
+                        const num = parseInt(char);
+                        if (num < 1 || num > 8) {
+                            return false;
+                        }
+                        squareCount += num;
+                    }
+                }
+                
+                if (squareCount !== 8) {
+                    return false;
+                }
+            }
+
+            // 验证回合
+            if (parts[1] !== 'w' && parts[1] !== 'b') {
+                return false;
+            }
+
+            // 验证易位权利
+            if (parts[2] !== '-') {
+                for (const char of parts[2]) {
+                    if (!VALID_CASTLING.includes(char)) {
+                        return false;
+                    }
+                }
+            }
+
+            // 验证过路兵目标格
+            if (parts[3] !== '-') {
+                if (parts[3].length !== 2 || 
+                    !'abcdefgh'.includes(parts[3][0]) || 
+                    !'12345678'.includes(parts[3][1])) {
+                    return false;
+                }
+            }
+
+            // 验证半回合计数
+            const halfMove = parseInt(parts[4]);
+            if (isNaN(halfMove) || halfMove < 0) {
+                return false;
+            }
+
+            // 验证完整回合数
+            const fullMove = parseInt(parts[5]);
+            if (isNaN(fullMove) || fullMove < 1) {
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
     updateFEN() {
@@ -1019,17 +1219,15 @@ class ChessGame {
     }
 
     setupEventListeners() {
-        // 复制FEN按钮 - 移除提示
+        // 复制FEN按钮
         if (this.copyFenButton) {
             this.copyFenButton.addEventListener('click', () => {
                 if (this.fenOutput) {
                     this.fenOutput.select();
                     try {
                         navigator.clipboard.writeText(this.fenOutput.value);
-                        // 移除成功提示
                     } catch (err) {
                         document.execCommand('copy');
-                        // 移除信息提示
                     }
                 }
             });
@@ -1045,14 +1243,14 @@ class ChessGame {
             });
         }
 
-        // 撤销按钮 - 移除提示
+        // 撤销按钮
         if (this.undoButton) {
             this.undoButton.addEventListener('click', () => {
                 this.undoMove();
             });
         }
 
-        // 切换到聊天按钮 - 移除提示
+        // 切换到聊天按钮
         if (this.toggleButton) {
             this.toggleButton.addEventListener('click', () => {
                 this.showChatView();
@@ -1065,7 +1263,6 @@ class ChessGame {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.chessFullscreen.classList.remove('active');
             this.visionChatFullscreen.classList.add('active');
-            // 移除切换提示
         }
     }
 
@@ -1074,7 +1271,6 @@ class ChessGame {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.visionChatFullscreen.classList.remove('active');
             this.chessFullscreen.classList.add('active');
-            // 移除切换提示
             
             // 确保棋盘重新渲染
             requestAnimationFrame(() => {
@@ -1092,14 +1288,16 @@ class ChessGame {
         return this.generateFEN();
     }
 
-    // 加载FEN字符串
+    // 加载FEN字符串 - 修复版本
     loadFEN(fen) {
         try {
-            const parts = fen.split(' ');
-            if (parts.length < 6) {
-                throw new Error('FEN格式不完整');
+            // 首先验证FEN格式
+            if (!this.validateFEN(fen)) {
+                throw new Error('FEN格式不合法');
             }
 
+            const parts = fen.split(' ');
+            
             // 解析棋子布局
             this.pieces = {};
             const rows = parts[0].split('/');
@@ -1107,7 +1305,10 @@ class ChessGame {
                 let colIndex = 0;
                 for (const char of row) {
                     if (isNaN(char)) {
-                        this.pieces[`${rowIndex},${colIndex}`] = char;
+                        // 只允许合法棋子字符
+                        if (VALID_PIECES.includes(char)) {
+                            this.pieces[`${rowIndex},${colIndex}`] = char;
+                        }
                         colIndex++;
                     } else {
                         colIndex += parseInt(char);
@@ -1117,7 +1318,20 @@ class ChessGame {
 
             // 解析其他状态
             this.currentTurn = parts[1];
-            this.castling = parts[2];
+            
+            // 清理易位权利
+            if (parts[2] !== '-') {
+                let cleanCastling = '';
+                for (const char of parts[2]) {
+                    if (VALID_CASTLING.includes(char)) {
+                        cleanCastling += char;
+                    }
+                }
+                this.castling = cleanCastling || '-';
+            } else {
+                this.castling = '-';
+            }
+            
             this.enPassant = parts[3];
             this.halfMoveClock = parseInt(parts[4]) || 0;
             this.fullMoveNumber = parseInt(parts[5]) || 1;
@@ -1129,7 +1343,7 @@ class ChessGame {
             this.showToast('FEN加载成功');
             return true;
         } catch (error) {
-            this.showToast('FEN格式错误，无法加载');
+            this.showToast('FEN格式错误，无法加载: ' + error.message);
             Logger.error('FEN parsing error:', error);
             return false;
         }
