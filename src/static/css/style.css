@@ -2614,6 +2614,6 @@ input:checked + .slider:before {
 @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
     .chess-board {
         width: min(70vw, 460px) !important;
-        height: min(60vh, 460px) !important;
+        height: min(75vh, 460px) !important;
     }
 }
