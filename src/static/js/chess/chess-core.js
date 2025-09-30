@@ -683,22 +683,22 @@ class ChessGame {
      */
     createGameOverModal() {
         // 检查是否已存在模态框
-        if (document.getElementById('game-over-modal')) {
+        if (document.getElementById('chess-game-over-modal')) {
             return;
         }
 
         const modal = document.createElement('div');
-        modal.id = 'game-over-modal';
-        modal.className = 'game-over-modal';
+        modal.id = 'chess-game-over-modal';
+        modal.className = 'chess-game-over-modal';
         modal.style.display = 'none';
         
         modal.innerHTML = `
-            <div class="game-over-content">
+            <div class="chess-game-over-content">
                 <h2>游戏结束</h2>
-                <p id="game-over-message"></p>
-                <div class="game-over-buttons">
-                    <button id="new-game-btn" class="btn-primary">开始新游戏</button>
-                    <button id="close-modal-btn" class="btn-secondary">关闭</button>
+                <p id="chess-game-over-message"></p>
+                <div class="chess-game-over-buttons">
+                    <button id="chess-new-game-btn" class="chess-btn-primary">开始新游戏</button>
+                    <button id="chess-close-modal-btn" class="chess-btn-secondary">关闭</button>
                 </div>
             </div>
         `;
@@ -706,12 +706,12 @@ class ChessGame {
         document.body.appendChild(modal);
         
         // 添加事件监听器
-        document.getElementById('new-game-btn').addEventListener('click', () => {
+        document.getElementById('chess-new-game-btn').addEventListener('click', () => {
             this.setupInitialPosition();
             modal.style.display = 'none';
         });
         
-        document.getElementById('close-modal-btn').addEventListener('click', () => {
+        document.getElementById('chess-close-modal-btn').addEventListener('click', () => {
             modal.style.display = 'none';
         });
     }
@@ -720,10 +720,10 @@ class ChessGame {
      * 显示游戏结束模态框
      */
     showGameOverModal(message) {
-        const modal = document.getElementById('game-over-modal');
+        const modal = document.getElementById('chess-game-over-modal');
         if (!modal) return;
         
-        const messageElement = document.getElementById('game-over-message');
+        const messageElement = document.getElementById('chess-game-over-message');
         if (messageElement) {
             messageElement.textContent = message;
         }

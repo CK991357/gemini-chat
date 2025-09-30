@@ -2634,3 +2634,75 @@ input:checked + .slider:before {
     }
 }
 }
+
+/* 国际象棋游戏结束模态框样式 */
+.chess-game-over-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.chess-game-over-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.chess-game-over-content h2 {
+    margin: 0 0 1rem 0;
+    color: #333;
+}
+
+.chess-game-over-content p {
+    margin: 0 0 2rem 0;
+    font-size: 1.2rem;
+    color: #666;
+}
+
+.chess-game-over-buttons {
+    margin-top: 1rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.chess-btn-primary {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+.chess-btn-primary:hover {
+    background: #0056b3;
+}
+
+.chess-btn-secondary {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+.chess-btn-secondary:hover {
+    background: #545b62;
+}
