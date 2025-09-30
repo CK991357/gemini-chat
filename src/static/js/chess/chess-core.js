@@ -59,12 +59,14 @@ class ChessGame {
         this.selectedSquare = null;
         this.moveHistory = [];
         this.pendingPromotion = null; // 等待升变的棋子
+        this.gameOver = false; // 新增：游戏结束状态
         
         // 初始化
         this.initBoard();
         this.setupEventListeners();
         this.setupInitialPosition();
         this.createPromotionModal();
+        this.createGameOverModal(); // 新增：创建游戏结束模态框
     }
 
     initBoard() {
@@ -115,6 +117,7 @@ class ChessGame {
         this.halfMoveClock = 0;
         this.fullMoveNumber = 1;
         this.pendingPromotion = null;
+        this.gameOver = false; // 重置游戏结束状态
         
         this.renderBoard();
         this.updateFEN();
@@ -124,10 +127,9 @@ class ChessGame {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
-            this.showMessage('撤销了上一步移动', 'info');
-        } else {
-            this.showMessage('没有可以撤销的移动', 'warning');
+            // 移除撤销提示，只保留棋局相关提示
         }
+        // 移除没有可撤销移动的提示
     }
 
     renderBoard() {
@@ -170,6 +172,11 @@ class ChessGame {
     }
 
     handleSquareClick(row, col) {
+        // 如果游戏已结束，不允许操作
+        if (this.gameOver) {
+            return;
+        }
+
         // 如果有等待的升变，先处理升变
         if (this.pendingPromotion) {
             this.showMessage('请先完成兵升变选择', 'warning');
@@ -196,6 +203,11 @@ class ChessGame {
     handleDrop(e, toRow, toCol) {
         e.preventDefault();
         
+        // 如果游戏已结束，不允许操作
+        if (this.gameOver) {
+            return;
+        }
+        
         // 如果有等待的升变，先处理升变
         if (this.pendingPromotion) {
             this.showMessage('请先完成兵升变选择', 'warning');
@@ -211,6 +223,11 @@ class ChessGame {
     }
 
     movePiece(fromRow, fromCol, toRow, toCol) {
+        // 如果游戏已结束，不允许移动
+        if (this.gameOver) {
+            return false;
+        }
+
         const fromKey = `${fromRow},${fromCol}`;
         const toKey = `${toRow},${toCol}`;
         const piece = this.pieces[fromKey];
@@ -453,6 +470,61 @@ class ChessGame {
         return false;
     }
 
+    /**
+     * 检查指定颜色的王是否被将军
+     */
+    isKingInCheck(color) {
+        // 找到王的位置
+        let kingPosition = null;
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.pieces[`${row},${col}`];
+                if (piece && 
+                    ((color === 'w' && piece === 'K') || 
+                     (color === 'b' && piece === 'k'))) {
+                    kingPosition = [row, col];
+                    break;
+                }
+            }
+            if (kingPosition) break;
+        }
+        
+        if (!kingPosition) return false;
+        
+        // 检查王的位置是否被对方攻击
+        const attackingColor = color === 'w' ? 'b' : 'w';
+        return this.isSquareAttacked(kingPosition[0], kingPosition[1], attackingColor);
+    }
+
+    /**
+     * 检查是否将死
+     */
+    isCheckmate(color) {
+        // 如果不在将军状态，肯定不是将死
+        if (!this.isKingInCheck(color)) {
+            return false;
+        }
+        
+        // 简化版本：这里应该检查是否有任何合法移动可以解除将军
+        // 由于我们没有实现完整的走法规则，这里暂时返回false
+        // 在实际实现中，需要遍历所有可能的移动来检查是否能解除将军
+        return false;
+    }
+
+    /**
+     * 检查是否逼和（无子可动）
+     */
+    isStalemate(color) {
+        // 如果在将军状态，不是逼和
+        if (this.isKingInCheck(color)) {
+            return false;
+        }
+        
+        // 简化版本：这里应该检查是否有任何合法移动
+        // 由于我们没有实现完整的走法规则，这里暂时返回false
+        return false;
+    }
+
     updateGameState(piece, fromRow, fromCol, toRow, toCol) {
         // 切换回合
         this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
@@ -474,6 +546,43 @@ class ChessGame {
 
         // 处理过路兵
         this.updateEnPassant(piece, fromRow, fromCol, toRow, toCol);
+        
+        // 检查游戏结束条件
+        this.checkGameEndConditions();
+    }
+
+    /**
+     * 检查游戏结束条件
+     */
+    checkGameEndConditions() {
+        const opponentColor = this.currentTurn; // 当前回合的玩家是刚刚移动的玩家的对手
+        
+        // 检查将死
+        if (this.isCheckmate(opponentColor)) {
+            const winner = this.currentTurn === 'w' ? '白方' : '黑方';
+            this.showGameOverModal(`将死！${winner}获胜！`);
+            this.gameOver = true;
+            return;
+        }
+        
+        // 检查逼和
+        if (this.isStalemate(opponentColor)) {
+            this.showGameOverModal('逼和！游戏平局。');
+            this.gameOver = true;
+            return;
+        }
+        
+        // 检查50步规则（50个完整回合 = 100个半回合）
+        if (this.halfMoveClock >= 100) {
+            this.showGameOverModal('50步规则，和棋！');
+            this.gameOver = true;
+            return;
+        }
+        
+        // 检查将军
+        if (this.isKingInCheck(opponentColor)) {
+            this.showMessage('将军！', 'warning');
+        }
     }
 
     updateCastlingRights(piece, fromRow, fromCol) {
@@ -568,6 +677,60 @@ class ChessGame {
     }
 
     /**
+     * 创建游戏结束模态框
+     */
+    createGameOverModal() {
+        // 检查是否已存在模态框
+        if (document.getElementById('game-over-modal')) {
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.id = 'game-over-modal';
+        modal.className = 'game-over-modal';
+        modal.style.display = 'none';
+        
+        modal.innerHTML = `
+            <div class="game-over-content">
+                <h2>游戏结束</h2>
+                <p id="game-over-message"></p>
+                <div class="game-over-buttons">
+                    <button id="new-game-btn" class="btn-primary">开始新游戏</button>
+                    <button id="close-modal-btn" class="btn-secondary">关闭</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // 添加事件监听器
+        document.getElementById('new-game-btn').addEventListener('click', () => {
+            this.setupInitialPosition();
+            modal.style.display = 'none';
+        });
+        
+        document.getElementById('close-modal-btn').addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+    }
+
+    /**
+     * 显示游戏结束模态框
+     */
+    showGameOverModal(message) {
+        const modal = document.getElementById('game-over-modal');
+        if (!modal) return;
+        
+        const messageElement = document.getElementById('game-over-message');
+        if (messageElement) {
+            messageElement.textContent = message;
+        }
+        
+        modal.style.display = 'flex';
+        this.showMessage(message, 'info');
+    }
+
+    /**
      * 显示兵升变选择界面
      */
     showPromotionModal(row, col) {
@@ -631,12 +794,36 @@ class ChessGame {
      * 显示消息提示
      */
     showMessage(message, type = 'info') {
+        // 只显示与棋局状态相关的消息（将军、升变、易位等）
+        const chessRelatedMessages = [
+            '将军', '将死', '升变', '易位', '吃过路兵', '兵升变为',
+            '王车易位', '将军', '将死', '和棋', '胜利', '失败', '50步规则'
+        ];
+        
+        const isChessRelated = chessRelatedMessages.some(keyword => 
+            message.includes(keyword)
+        );
+        
+        if (!isChessRelated) {
+            return; // 不显示非棋局相关的业务提示
+        }
+        
         // 创建或获取消息容器
         let messageContainer = document.getElementById('chess-message-container');
         if (!messageContainer) {
             messageContainer = document.createElement('div');
             messageContainer.id = 'chess-message-container';
             messageContainer.className = 'chess-message-container';
+            // 设置样式使其显示在顶部
+            messageContainer.style.position = 'fixed';
+            messageContainer.style.top = '20px';
+            messageContainer.style.left = '50%';
+            messageContainer.style.transform = 'translateX(-50%)';
+            messageContainer.style.zIndex = '10000';
+            messageContainer.style.display = 'flex';
+            messageContainer.style.flexDirection = 'column';
+            messageContainer.style.alignItems = 'center';
+            messageContainer.style.gap = '10px';
             document.body.appendChild(messageContainer);
         }
         
@@ -729,41 +916,38 @@ class ChessGame {
     }
 
     setupEventListeners() {
-        // 复制FEN按钮
+        // 复制FEN按钮 - 移除提示
         if (this.copyFenButton) {
             this.copyFenButton.addEventListener('click', () => {
                 if (this.fenOutput) {
                     this.fenOutput.select();
                     try {
-                        navigator.clipboard.writeText(this.fenOutput.value).then(() => {
-                            this.showMessage('FEN已复制到剪贴板！', 'success');
-                        });
+                        navigator.clipboard.writeText(this.fenOutput.value);
+                        // 移除成功提示
                     } catch (err) {
                         document.execCommand('copy');
-                        this.showMessage('FEN已选中 - 按Ctrl+C复制', 'info');
+                        // 移除信息提示
                     }
                 }
             });
         }
 
-        // 新游戏按钮
+        // 新游戏按钮 - 移除确认对话框和提示
         if (this.resetButton) {
             this.resetButton.addEventListener('click', () => {
-                if (confirm('开始新游戏？当前进度将丢失。')) {
-                    this.setupInitialPosition();
-                    this.showMessage('新游戏开始', 'info');
-                }
+                this.setupInitialPosition();
+                // 移除开始新游戏提示
             });
         }
 
-        // 撤销按钮
+        // 撤销按钮 - 移除提示
         if (this.undoButton) {
             this.undoButton.addEventListener('click', () => {
                 this.undoMove();
             });
         }
 
-        // 切换到聊天按钮
+        // 切换到聊天按钮 - 移除提示
         if (this.toggleButton) {
             this.toggleButton.addEventListener('click', () => {
                 this.showChatView();
@@ -776,7 +960,7 @@ class ChessGame {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.chessFullscreen.classList.remove('active');
             this.visionChatFullscreen.classList.add('active');
-            this.showMessage('切换到聊天视图', 'info');
+            // 移除切换提示
         }
     }
 
@@ -785,7 +969,7 @@ class ChessGame {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.visionChatFullscreen.classList.remove('active');
             this.chessFullscreen.classList.add('active');
-            this.showMessage('切换到棋盘视图', 'info');
+            // 移除切换提示
             
             // 确保棋盘重新渲染
             requestAnimationFrame(() => {
@@ -805,39 +989,45 @@ class ChessGame {
 
     // 加载FEN字符串
     loadFEN(fen) {
-        const parts = fen.split(' ');
-        if (parts.length < 6) {
-            this.showMessage('无效的FEN格式', 'error');
+        try {
+            const parts = fen.split(' ');
+            if (parts.length < 6) {
+                throw new Error('FEN格式不完整');
+            }
+
+            // 解析棋子布局
+            this.pieces = {};
+            const rows = parts[0].split('/');
+            rows.forEach((row, rowIndex) => {
+                let colIndex = 0;
+                for (const char of row) {
+                    if (isNaN(char)) {
+                        this.pieces[`${rowIndex},${colIndex}`] = char;
+                        colIndex++;
+                    } else {
+                        colIndex += parseInt(char);
+                    }
+                }
+            });
+
+            // 解析其他状态
+            this.currentTurn = parts[1];
+            this.castling = parts[2];
+            this.enPassant = parts[3];
+            this.halfMoveClock = parseInt(parts[4]) || 0;
+            this.fullMoveNumber = parseInt(parts[5]) || 1;
+            this.pendingPromotion = null;
+            this.gameOver = false; // 重置游戏结束状态
+
+            this.renderBoard();
+            this.updateFEN();
+            this.showMessage('FEN加载成功', 'success');
+            return true;
+        } catch (error) {
+            this.showMessage('FEN格式错误，无法加载', 'error');
+            Logger.error('FEN parsing error:', error);
             return false;
         }
-
-        // 解析棋子布局
-        this.pieces = {};
-        const rows = parts[0].split('/');
-        rows.forEach((row, rowIndex) => {
-            let colIndex = 0;
-            for (const char of row) {
-                if (isNaN(char)) {
-                    this.pieces[`${rowIndex},${colIndex}`] = char;
-                    colIndex++;
-                } else {
-                    colIndex += parseInt(char);
-                }
-            }
-        });
-
-        // 解析其他状态
-        this.currentTurn = parts[1];
-        this.castling = parts[2];
-        this.enPassant = parts[3];
-        this.halfMoveClock = parseInt(parts[4]) || 0;
-        this.fullMoveNumber = parseInt(parts[5]) || 1;
-        this.pendingPromotion = null;
-
-        this.renderBoard();
-        this.updateFEN();
-        this.showMessage('FEN加载成功', 'success');
-        return true;
     }
 }
 
