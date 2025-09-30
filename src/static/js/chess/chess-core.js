@@ -806,7 +806,7 @@ class ChessGame {
     }
 
     /**
-     * 创建兵升变模态框
+     * 创建兵升变模态框 - 更新版本
      */
     createPromotionModal() {
         // 检查是否已存在模态框
@@ -828,17 +828,89 @@ class ChessGame {
                     <button class="promotion-option" data-piece="b">♗ 象</button>
                     <button class="promotion-option" data-piece="n">♘ 马</button>
                 </div>
+                <div class="promotion-confirm-buttons">
+                    <button class="confirm-btn" disabled>确认选择</button>
+                    <button class="cancel-btn">取消</button>
+                </div>
             </div>
         `;
         
         document.body.appendChild(modal);
         
         // 添加事件监听器
+        this.setupPromotionModalEvents();
+    }
+
+    /**
+     * 设置兵升变模态框事件
+     */
+    setupPromotionModalEvents() {
+        const modal = document.getElementById('promotion-modal');
+        if (!modal) return;
+        
+        let selectedPiece = null;
+        
+        // 棋子选择事件
         modal.querySelectorAll('.promotion-option').forEach(button => {
             button.addEventListener('click', (e) => {
-                const pieceType = e.target.dataset.piece;
-                this.completePromotion(pieceType);
+                // 移除之前的选择
+                modal.querySelectorAll('.promotion-option').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+                
+                // 设置当前选择
+                e.target.classList.add('selected');
+                selectedPiece = e.target.dataset.piece;
+                
+                // 启用确认按钮
+                const confirmBtn = modal.querySelector('.confirm-btn');
+                confirmBtn.disabled = false;
             });
+        });
+        
+        // 确认按钮事件
+        modal.querySelector('.confirm-btn').addEventListener('click', () => {
+            if (selectedPiece) {
+                this.completePromotion(selectedPiece);
+                modal.style.display = 'none';
+                
+                // 重置状态
+                selectedPiece = null;
+                modal.querySelector('.confirm-btn').disabled = true;
+                modal.querySelectorAll('.promotion-option').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+            }
+        });
+        
+        // 取消按钮事件
+        modal.querySelector('.cancel-btn').addEventListener('click', () => {
+            modal.style.display = 'none';
+            
+            // 重置状态
+            selectedPiece = null;
+            modal.querySelector('.confirm-btn').disabled = true;
+            modal.querySelectorAll('.promotion-option').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            this.showToast('已取消兵升变');
+        });
+        
+        // 点击模态框背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+                
+                // 重置状态
+                selectedPiece = null;
+                modal.querySelector('.confirm-btn').disabled = true;
+                modal.querySelectorAll('.promotion-option').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+                
+                this.showToast('已取消兵升变');
+            }
         });
     }
 
@@ -897,11 +969,17 @@ class ChessGame {
     }
 
     /**
-     * 显示兵升变选择界面
+     * 显示兵升变选择界面 - 更新版本
      */
     showPromotionModal(row, col) {
         const modal = document.getElementById('promotion-modal');
         if (!modal) return;
+        
+        // 重置选择状态
+        modal.querySelector('.confirm-btn').disabled = true;
+        modal.querySelectorAll('.promotion-option').forEach(btn => {
+            btn.classList.remove('selected');
+        });
         
         // 根据棋子颜色设置选项
         const isWhite = this.pendingPromotion.piece === 'P';
@@ -914,11 +992,11 @@ class ChessGame {
         });
         
         modal.style.display = 'flex';
-        this.showToast('请选择兵升变的棋子');
+        this.showToast('请选择兵升变的棋子，然后点击确认');
     }
 
     /**
-     * 完成兵升变
+     * 完成兵升变 - 更新版本
      */
     completePromotion(pieceType) {
         if (!this.pendingPromotion) return;

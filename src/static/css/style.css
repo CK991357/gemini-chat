@@ -2646,45 +2646,97 @@ input:checked + .slider:before {
     display: none;
     justify-content: center;
     align-items: center;
-    z-index: 10000; /* 确保在最上层 */
+    z-index: 10000;
 }
 
 .promotion-content {
     background: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     text-align: center;
-    min-width: 300px;
+    min-width: 350px;
+    max-width: 500px;
     z-index: 10001;
 }
 
 .promotion-content h3 {
-    margin-bottom: 15px;
+    margin-bottom: 20px;
     color: #333;
+    font-size: 1.4em;
 }
 
 .promotion-options {
     display: flex;
     justify-content: center;
-    gap: 10px;
+    gap: 12px;
     flex-wrap: wrap;
+    margin-bottom: 20px;
 }
 
 .promotion-option {
-    padding: 10px 15px;
-    font-size: 18px;
-    background: #f0f0f0;
-    border: 2px solid #ddd;
-    border-radius: 5px;
+    padding: 12px 18px;
+    font-size: 20px;
+    background: #f8f9fa;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
+    min-width: 80px;
 }
 
 .promotion-option:hover {
-    background: #e0e0e0;
+    background: #e9ecef;
     border-color: #007bff;
-    transform: scale(1.05);
+    transform: translateY(-2px);
+}
+
+.promotion-option.selected {
+    background: #007bff;
+    color: white;
+    border-color: #0056b3;
+}
+
+.promotion-confirm-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.confirm-btn, .cancel-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s ease;
+}
+
+.confirm-btn {
+    background: #28a745;
+    color: white;
+}
+
+.confirm-btn:hover:not(:disabled) {
+    background: #218838;
+    transform: translateY(-1px);
+}
+
+.confirm-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.cancel-btn {
+    background: #dc3545;
+    color: white;
+}
+
+.cancel-btn:hover {
+    background: #c82333;
+    transform: translateY(-1px);
 }
 
 /* 国际象棋游戏结束模态框样式 */
