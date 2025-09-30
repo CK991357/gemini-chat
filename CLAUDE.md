@@ -499,4 +499,3 @@ VISION: {
         2.  修改对应工具类（例如 `src/static/js/tools/google-search.js`）中的 `getDeclaration()` 和 `execute()` 方法。
     *   **修改工具声明或执行逻辑**：修改对应工具类（例如 `src/static/js/tools/google-search.js` 或 `src/static/js/tools_mcp/tool-definitions.js` 中定义的工具）的 `getDeclaration()` 或 `execute()` 方法。
     *   **修改前端工具合并逻辑**：若需调整 HTTP 连接下工具声明的合并方式，则修改 [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js) 中的相关逻辑。
-
