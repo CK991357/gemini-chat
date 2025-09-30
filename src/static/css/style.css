@@ -2615,12 +2615,12 @@ input:checked + .slider:before {
     .chess-board {
         width: unset !important;
         height: unset !important;
-        grid-template-columns: repeat(8, 50px); /* 每格 40 px */
-        grid-template-rows: repeat(8, 50px);
+        grid-template-columns: repeat(8, 60px); /* 每格 40 px */
+        grid-template-rows: repeat(8, 60px);
     }
 
     /* 2. 棋子图标同步缩小，防止溢出 */
     .chess-square {
-        font-size: 32px; /* 原来 min(8vw,40px) → 固定 32 px */
+        font-size: 40px; /* 原来 min(8vw,40px) → 固定 32 px */
     }
 }
