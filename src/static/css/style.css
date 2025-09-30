@@ -2615,8 +2615,9 @@ input:checked + .slider:before {
     .chess-board {
         width: unset !important;
         height: unset !important;
-        grid-template-columns: repeat(8, 58px); /* 每格 60 px */
-        grid-template-rows: repeat(8, 58px);
+        grid-template-columns: repeat(8, 55px); /* 每格 60 px */
+        grid-template-rows: repeat(8, 55px);
+        margin-left: -20px;   /* 往左挪 20 px */
     }
 
     /* 2. 棋子图标同步缩小，防止溢出 */
