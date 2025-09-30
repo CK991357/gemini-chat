@@ -2609,3 +2609,29 @@ input:checked + .slider:before {
 .history-list-container.select-mode .history-item {
     cursor: default;
 }
+
+/* iPad横屏棋盘显示优化 */
+@media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
+    .chess-board-area {
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .chess-board {
+        width: min(60vw, 400px) !important;
+        height: min(60vw, 400px) !important;
+        order: 1;
+    }
+    
+    .chess-info-panel {
+        width: 100%;
+        max-width: 400px;
+        order: 2;
+        margin-left: 0;
+    }
+    
+    .chess-content-wrapper {
+        gap: 15px;
+    }
+}

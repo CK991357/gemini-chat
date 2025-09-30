@@ -260,145 +260,186 @@ This project implements a sophisticated tool management and invocation mechanism
     *   **Modify Tool Declaration or Execution Logic**: Adjust the `getDeclaration()` or `execute()` methods in the respective tool class (e.g., `src/static/js/tools/google-search.js` or tools defined in `src/static/js/tools_mcp/tool-definitions.js`).
     *   **Modify Frontend Tool Merging Logic**: If the merging strategy for tool declarations under HTTP connections needs adjustment, modify the relevant logic in [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js).
 
-## 6. Chess Master AI Feature (国际象棋老师功能)
+## 6. 国际象棋大师 AI 功能 (Chess Master AI Feature)
 
-### 6.1 Overview
+### 6.1 概述
 
-The Vision module has been significantly enhanced with a specialized **Chess Master AI** system that provides intelligent chess guidance, analysis, and coaching. This feature transforms the application into a comprehensive chess learning platform while maintaining the existing vision capabilities.
+视觉模块已通过专业的 **国际象棋大师 AI 系统** 得到显著增强，该系统提供智能的国际象棋指导、分析和教练功能。此功能将应用程序转变为一个全面的国际象棋学习平台，同时保留了现有的视觉能力。
 
-### 6.2 Core Components
+### 6.2 核心组件
 
-#### 6.2.1 Dual-Prompt Architecture
+#### 6.2.1 双提示词架构
 
-The chess functionality is built on a sophisticated dual-prompt system:
+国际象棋功能建立在一个复杂的双提示词系统之上：
 
--   **`chess_teacher` Prompt** (`id: 'chess_teacher'`):
-    -   **Purpose**: Real-time gameplay guidance and situational analysis
-    -   **Display Name**: '国际象棋老师' (Chess Master)
-    -   **Functionality**: 
-        -   **Default Mode**: Provides single optimal move recommendations with concise explanations
-        -   **Analysis Mode**: Triggered by keywords like "实况分析", "局面分析" - provides detailed position analysis
-    -   **Key Features**:
-        -   **Precision-Focused**: Only gives the best move, not multiple options
-        -   **FEN Integration**: Always provides Forsyth-Edwards Notation for position tracking
-        -   **Beginner-Friendly**: Uses simple language and analogies
-        -   **Keyword-Intelligent**: Automatically switches between guidance and analysis modes
+-   **`chess_teacher` 提示词** (`id: 'chess_teacher'`):
+    -   **目的**: 实时对弈指导和局面分析
+    -   **显示名称**: '国际象棋老师' (Chess Master)
+    -   **功能**:
+        -   **默认模式**: 提供单一最佳走法推荐及简洁解释
+        -   **分析模式**: 通过关键词如 "实况分析", "局面分析" 触发 - 提供详细的局面分析
+    -   **关键特性**:
+        -   **注重精确**: 只给出最佳走法，不提供多种选择
+        -   **FEN 集成**: 始终提供 Forsyth-Edwards Notation (FEN) 以跟踪局面
+        -   **新手友好**: 使用简单语言和类比
+        -   **关键词智能**: 自动在指导和分析模式之间切换
 
--   **`chess_summary` Prompt** (`id: 'chess_summary'`):
-    -   **Purpose**: Comprehensive post-game analysis and improvement recommendations
-    -   **Display Name**: '赛后总结（仅用于总结按钮）' (Post-Game Summary - Button Only)
-    -   **Functionality**: Deep analysis of entire game history with personalized coaching
-    -   **Key Features**:
-        -   **Holistic Analysis**: Reviews key turning points and strategic themes
-        -   **Technical Deep-Dive**: Identifies missed tactical opportunities
-        -   **Learning-Oriented**: Provides specific improvement suggestions and training plans
-        -   **Skill Assessment**: Evaluates performance across opening, middlegame, endgame
+-   **`chess_summary` 提示词** (`id: 'chess_summary'`):
+    -   **目的**: 全面的赛后分析和改进建议
+    -   **显示名称**: '赛后总结（仅用于总结按钮）' (Post-Game Summary - Button Only)
+    -   **功能**: 对整个对局历史进行深入分析，提供个性化教练
+    -   **关键特性**:
+        -   **整体分析**: 回顾关键转折点和战略主题
+        -   **技术深入**: 识别错失的战术机会
+        -   **学习导向**: 提供具体的改进建议和训练计划
+        -   **技能评估**: 评估开局、中局、残局的表现
 
-#### 6.2.2 Intelligent Image Compression System
+#### 6.2.2 国际象棋棋盘 UI 与交互
 
--   **File**: [`src/static/js/utils/image-compressor.js`](src/static/js/utils/image-compressor.js)
--   **Purpose**: Optimizes chess board images for faster analysis while maintaining quality
--   **Key Features**:
-    -   **1MB Threshold**: Automatically compresses images larger than 1MB
-    -   **Format Preservation**: Maintains original image format by default (configurable)
-    -   **Quality Control**: Configurable compression quality (default 80%)
-    -   **Global Application**: Works across all modes (chat, vision, translation)
-    -   **Canvas-Based**: Uses browser Canvas API for client-side processing
-    -   **Progressive Enhancement**: Falls back gracefully if compression fails
+-   **文件**: [`src/static/index.html`](src/static/index.html), [`src/static/js/chess/chess-core.js`](src/static/js/chess/chess-core.js), [`src/static/css/style.css`](src/static/css/style.css)
+-   **目的**: 提供一个可交互的国际象棋棋盘界面，支持棋子移动、FEN 记录和游戏控制。
+-   **关键特性**:
+    -   **双视图模式**: 在视觉聊天 (`vision-chat-fullscreen`) 和国际象棋棋盘 (`chess-fullscreen`) 之间无缝切换。
+        -   通过导航栏的国际象棋图标 (<i class="fas fa-chess-king"></i>) 或视觉模式内的 "切换到棋盘" 按钮 (`#toggle-to-chess-button`) 进入棋盘视图。
+        -   在棋盘视图中，通过 "切换到聊天" 按钮 (`#toggle-to-vision-button`) 返回视觉聊天。
+    -   **棋盘渲染**:
+        -   使用 `div` 元素动态生成 8x8 的棋盘格子，并根据行和列的奇偶性应用 `light` 或 `dark` 样式。
+        -   棋子通过 Unicode 字符 (`PIECES` 对象) 渲染，并支持拖放移动。
+        -   选中格子和可移动目标格子会进行高亮显示。
+    -   **FEN 管理**:
+        -   实时生成并显示当前棋局的 FEN (Forsyth-Edwards Notation) 字符串在 `#fen-output` 文本区域。
+        -   提供 "复制 FEN" (`#copy-fen-button`)、"新游戏" (`#reset-chess-button`) 和 "上一步" (`#undo-move-button`) 按钮，方便用户操作。
+        -   `loadFEN()` 方法支持从 FEN 字符串加载棋局状态。
+    -   **游戏逻辑**:
+        -   `ChessGame` 类 (`chess-core.js`) 封装了所有游戏状态和逻辑，包括当前回合、易位权利、过路兵、半回合计数和完整回合数。
+        -   支持棋子点击移动和拖放移动。
+        -   实现了基本的走法验证（如不能吃己方棋子）。
+        -   处理王车易位、兵升变和过路兵规则。
+        -   `isSquareAttacked()` 方法用于检查某个格子是否被敌方棋子攻击，为王车易位等复杂规则提供支持。
+    -   **响应式设计**:
+        -   棋盘和信息面板的布局在桌面、平板和手机端进行了优化，确保在不同屏幕尺寸下都能良好显示和交互。
+        -   棋盘尺寸会根据视口宽度自适应调整。
 
-#### 6.2.3 Smart History Management
+#### 6.2.3 智能图像压缩系统
 
--   **Function**: `_getRelevantHistory()` in [`vision-core.js`](src/static/js/vision/vision-core.js)
--   **Purpose**: Intelligently selects the most relevant game history for analysis
--   **Algorithm**:
-    -   **Short Games** (≤15 moves): Preserves complete history
-    -   **Long Games** (>15 moves): Strategic sampling:
-        -   **Opening**: First 3 moves (understanding opening choice)
-        -   **Key Moments**: Up to 5 positions with uploaded images (critical decisions)
-        -   **Recent Play**: Last 10 moves (current situation)
--   **Benefits**:
-    -   **Token Efficiency**: Prevents API limits while maintaining context
-    -   **Relevance Focus**: Prioritizes positions with visual evidence
-    -   **Scalability**: Handles games of any length
+-   **文件**: [`src/static/js/utils/image-compressor.js`](src/static/js/utils/image-compressor.js)
+-   **目的**: 优化国际象棋棋盘图像，以实现更快的分析，同时保持图像质量。
+-   **关键特性**:
+    -   **1MB 阈值**: 自动压缩大于 1MB 的图像。
+    -   **格式保留**: 默认保留原始图像格式（可配置）。
+    -   **质量控制**: 可配置的压缩质量（默认为 80%）。
+    -   **全局应用**: 适用于所有模式（聊天、视觉、翻译）。
+    -   **基于 Canvas**: 使用浏览器 Canvas API 进行客户端处理。
+    -   **渐进增强**: 如果压缩失败，则优雅地回退。
 
-### 6.3 User Interface Enhancements
+#### 6.2.4 智能历史记录管理
 
-#### 6.3.1 Responsive Layout Design
+-   **函数**: [`_getRelevantHistory()`](src/static/js/vision/vision-core.js:354) 在 [`vision-core.js`](src/static/js/vision/vision-core.js) 中
+-   **目的**: 智能选择最相关的对局历史进行分析。
+-   **算法**:
+    -   **短对局** (≤15 步): 保留完整历史记录。
+    -   **长对局** (>15 步): 策略性采样：
+        -   **开局**: 前 3 步（理解开局选择）。
+        -   **关键时刻**: 最多 5 个上传了图像的局面（关键决策）。
+        -   **近期走法**: 最后 10 步（当前局面）。
+-   **优势**:
+    -   **Token 效率**: 在保持上下文的同时，防止超出 API 限制。
+    -   **聚焦相关性**: 优先处理带有视觉证据的局面。
+    -   **可扩展性**: 处理任意长度的对局。
 
--   **Two-Row Layout**:
-    -   **Row 1**: Model selection (GLM-4.1V-Thinking-Flash, etc.)
-    -   **Row 2**: Mode selection (Chess Master) + Post-Game Summary button
--   **Mobile Optimization**: Prevents UI breaking on small screens
--   **CSS Classes**:
-    -   `.vision-control-row`: Individual row containers
-    -   `.vision-controls`: Parent container with flexbox column layout
+### 6.3 用户界面增强
 
-#### 6.3.2 Button Integration
+#### 6.3.1 响应式布局设计
 
--   **Summary Button**: `#vision-summary-button`
-    -   **Placement**: Second row alongside mode selector
-    -   **Functionality**: Triggers comprehensive post-game analysis
-    -   **State Management**: Shows loading spinner during analysis
-    -   **Error Handling**: Graceful fallback with user feedback
+-   **两行布局**:
+    -   **第 1 行**: 模型选择 (GLM-4.1V-Thinking-Flash 等)。
+    -   **第 2 行**: 模式选择 (国际象棋老师) + 赛后总结按钮。
+-   **移动端优化**: 防止在小屏幕上 UI 破裂。
+-   **CSS 类**:
+    -   `.vision-control-row`: 单独的行容器。
+    -   `.vision-controls`: 带有 flexbox 列布局的父容器。
 
-### 6.4 Technical Implementation
+#### 6.3.2 按钮集成
 
-#### 6.4.1 Core Functions
+-   **总结按钮**: `#vision-summary-button`
+    -   **位置**: 模式选择器旁边的第二行。
+    -   **功能**: 触发全面的赛后分析。
+    -   **状态管理**: 在分析期间显示加载指示器。
+    -   **错误处理**: 优雅回退并提供用户反馈。
+
+### 6.4 技术实现
+
+#### 6.4.1 核心函数
 
 ```javascript
-// Key functions in vision-core.js:
+// vision-core.js 中的关键函数:
 
-// Generates comprehensive post-game analysis
+// 生成全面的赛后分析
 async function generateGameSummary()
 
-// Intelligently filters game history for analysis
+// 智能过滤对局历史进行分析
 function _getRelevantHistory()
 
-// Manages prompt selection and switching
+// 管理提示词选择和切换
 function getSelectedPrompt()
 
-// Populates chess-specific prompt options
+// 填充国际象棋专用提示词选项
 function populatePromptSelect()
+
+// chess-core.js 中的关键函数:
+
+// 初始化国际象棋核心功能
+function initializeChessCore()
+
+// 获取当前 FEN 字符串
+function getCurrentFEN()
+
+// 加载 FEN 字符串
+function loadFEN(fen)
 ```
 
-#### 6.4.2 Configuration Structure
+#### 6.4.2 配置结构
 
 ```javascript
-// In config.js:
+// 在 config.js 中:
 VISION: {
     PROMPTS: [
         {
             id: 'chess_teacher',
             name: '国际象棋老师',
             description: '对弈指导和局面分析',
-            systemPrompt: '...' // Specialized chess guidance prompt
+            systemPrompt: '...' // 专业的国际象棋指导提示词
         },
         {
-            id: 'chess_summary', 
+            id: 'chess_summary',
             name: '赛后总结（仅用于总结按钮）',
             description: '专门的赛后分析和总结',
-            systemPrompt: '...' // Comprehensive analysis prompt
+            systemPrompt: '...' // 全面分析提示词
         }
     ]
 }
 ```
 
-### 6.5 Usage Workflow
+### 6.5 使用工作流程
 
-1. **Setup**: User selects "国际象棋老师" (Chess Master) mode in vision interface
-2. **Gameplay Guidance**:
-   - Upload chess board image → Receive optimal move recommendation
-   - Type "实况分析" → Get detailed position analysis
-3. **Post-Game Analysis**: Click "对局总结" button → Comprehensive game review
-4. **Image Optimization**: Large images automatically compressed for faster processing
+1.  **设置**: 用户在视觉界面中选择 "国际象棋老师" 模式。
+2.  **对弈指导**:
+    -   上传棋盘图像 → 接收最佳走法推荐。
+    -   输入 "实况分析" → 获取详细局面分析。
+3.  **赛后分析**: 点击 "对局总结" 按钮 → 全面对局回顾。
+4.  **图像优化**: 大图像自动压缩以加快处理速度。
+5.  **棋盘交互**:
+    -   在棋盘视图中，用户可以点击或拖放棋子进行移动。
+    -   随时复制当前 FEN，开始新游戏或撤销上一步。
 
-### 6.6 Benefits
+### 6.6 优势
 
--   **Educational**: Transforms chess learning with AI-powered coaching
--   **Efficient**: Smart compression and history management optimize performance
--   **User-Friendly**: Intuitive interface with responsive design
--   **Comprehensive**: Covers all aspects from move-by-move guidance to strategic analysis
--   **Scalable**: Handles games of any length with intelligent sampling
+-   **教育性**: 通过 AI 驱动的教练功能，改变国际象棋学习方式。
+-   **高效性**: 智能压缩和历史记录管理优化性能。
+-   **用户友好**: 直观的界面和响应式设计。
+-   **全面性**: 涵盖从逐步指导到战略分析的所有方面。
+-   **可扩展性**: 通过智能采样处理任意长度的对局。
+-   **交互性**: 提供完整的国际象棋棋盘交互体验。
 
 ## 7（zh-CN）. 工具管理机制与连接差异
 
