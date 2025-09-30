@@ -296,24 +296,31 @@ class ChessGame {
             }
         }
 
-        // 执行移动
-        delete this.pieces[fromKey];
-        this.pieces[toKey] = piece;
+        // 检查兵升变
+        const isPromotion = piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7);
+        
+        if (isPromotion) {
+            // 先执行移动，但保持兵的状态
+            delete this.pieces[fromKey];
+            this.pieces[toKey] = piece;
+            
+            // 设置等待升变状态
+            this.pendingPromotion = { row: toRow, col: toCol, piece: piece };
+            this.showPromotionModal(toRow, toCol);
+            
+            // 注意：这里不立即更新游戏状态，等待用户选择升变
+        } else {
+            // 普通移动
+            delete this.pieces[fromKey];
+            this.pieces[toKey] = piece;
+            
+            // 更新游戏状态
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture);
+        }
 
         // 检查被吃的棋子是否是车，更新易位权利
         if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
             this.updateCastlingRightsForCapturedRook(toRow, toCol);
-        }
-
-        // 检查兵升变
-        if (piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7)) {
-            // 设置等待升变状态，不立即升变
-            this.pendingPromotion = { row: toRow, col: toCol, piece: piece };
-            this.showPromotionModal(toRow, toCol);
-            // 注意：这里不调用 promotePawn，而是等待用户选择
-        } else {
-            // 更新游戏状态（非升变情况）
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture);
         }
 
         this.updateFEN();
@@ -891,10 +898,10 @@ class ChessGame {
             selectedPiece = null;
             modal.querySelector('.confirm-btn').disabled = true;
             modal.querySelectorAll('.promotion-option').forEach(btn => {
-                btn.classList.remove('selected');
-            });
-            
-            this.showToast('已取消兵升变');
+                    btn.classList.remove('selected');
+                });
+                
+                this.showToast('已取消兵升变');
         });
         
         // 点击模态框背景关闭
@@ -996,16 +1003,26 @@ class ChessGame {
     }
 
     /**
-     * 完成兵升变 - 更新版本
+     * 完成兵升变 - 最终修复版本
      */
     completePromotion(pieceType) {
-        if (!this.pendingPromotion) return;
+        if (!this.pendingPromotion) {
+            console.error('没有等待的升变！');
+            return;
+        }
         
         const { row, col, piece } = this.pendingPromotion;
         const isWhite = piece === 'P';
         const newPiece = isWhite ? pieceType.toUpperCase() : pieceType;
         
-        // 更新棋子
+        console.log('完成兵升变:', { 
+            position: `${row},${col}`, 
+            fromPiece: piece, 
+            toPiece: newPiece,
+            pendingPromotion: this.pendingPromotion 
+        });
+        
+        // 更新棋子为升变后的棋子
         this.pieces[`${row},${col}`] = newPiece;
         
         // 隐藏模态框
@@ -1014,13 +1031,19 @@ class ChessGame {
             modal.style.display = 'none';
         }
         
-        // 更新游戏状态
-        this.updateGameState(piece, row, col, row, col); // 使用相同的行列表示这是升变
+        // 重要：现在调用 updateGameState 来正确处理回合切换
+        this.updateGameState(piece, row, col, row, col, false);
+        
         this.updateFEN();
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
         this.pendingPromotion = null;
         this.renderBoard();
+        
+        console.log('升变完成，pendingPromotion已清除:', this.pendingPromotion);
+        
+        // 检查游戏结束条件
+        this.checkGameEndConditions();
     }
 
     /**
