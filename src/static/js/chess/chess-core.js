@@ -58,11 +58,13 @@ class ChessGame {
         this.fullMoveNumber = 1;
         this.selectedSquare = null;
         this.moveHistory = [];
+        this.pendingPromotion = null; // 等待升变的棋子
         
         // 初始化
         this.initBoard();
         this.setupEventListeners();
         this.setupInitialPosition();
+        this.createPromotionModal();
     }
 
     initBoard() {
@@ -112,6 +114,7 @@ class ChessGame {
         this.currentTurn = 'w';
         this.halfMoveClock = 0;
         this.fullMoveNumber = 1;
+        this.pendingPromotion = null;
         
         this.renderBoard();
         this.updateFEN();
@@ -121,9 +124,9 @@ class ChessGame {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
-            Logger.info('Undid last move.');
+            this.showMessage('撤销了上一步移动', 'info');
         } else {
-            Logger.warn('No moves to undo.');
+            this.showMessage('没有可以撤销的移动', 'warning');
         }
     }
 
@@ -143,6 +146,7 @@ class ChessGame {
             const square = this.getSquareElement(row, col);
             if (square && piece in PIECES) {
                 const pieceElement = document.createElement('div');
+                pieceElement.className = 'chess-piece';
                 pieceElement.textContent = PIECES[piece];
                 pieceElement.draggable = true;
                 pieceElement.addEventListener('dragstart', (e) => {
@@ -166,6 +170,12 @@ class ChessGame {
     }
 
     handleSquareClick(row, col) {
+        // 如果有等待的升变，先处理升变
+        if (this.pendingPromotion) {
+            this.showMessage('请先完成兵升变选择', 'warning');
+            return;
+        }
+
         const piece = this.pieces[`${row},${col}`];
         
         if (this.selectedSquare) {
@@ -176,6 +186,8 @@ class ChessGame {
         } else if (piece && this.isValidTurn(piece)) {
             // 选中一个棋子
             this.selectedSquare = [row, col];
+        } else if (piece) {
+            this.showMessage(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`, 'warning');
         }
         
         this.renderBoard();
@@ -183,6 +195,13 @@ class ChessGame {
 
     handleDrop(e, toRow, toCol) {
         e.preventDefault();
+        
+        // 如果有等待的升变，先处理升变
+        if (this.pendingPromotion) {
+            this.showMessage('请先完成兵升变选择', 'warning');
+            return;
+        }
+
         const data = e.dataTransfer.getData('text/plain');
         const [fromRow, fromCol] = data.split(',').map(Number);
         
@@ -196,17 +215,24 @@ class ChessGame {
         const toKey = `${toRow},${toCol}`;
         const piece = this.pieces[fromKey];
 
-        if (!piece || !this.isValidTurn(piece)) {
+        if (!piece) {
+            this.showMessage('没有选中棋子', 'error');
+            return false;
+        }
+
+        if (!this.isValidTurn(piece)) {
+            this.showMessage(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`, 'warning');
+            return false;
+        }
+
+        // 基本规则检查：不能吃己方棋子
+        if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
+            this.showMessage('不能吃掉自己的棋子', 'warning');
             return false;
         }
 
         // 在移动前保存当前 FEN 到历史记录
         this.moveHistory.push(this.generateFEN());
-
-        // 基本规则检查：不能吃己方棋子
-        if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
-            return false;
-        }
 
         // 保存被吃的棋子（用于易位权利更新）
         const capturedPiece = this.pieces[toKey];
@@ -215,11 +241,14 @@ class ChessGame {
         if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
             // 王车易位：国王移动了两格
             if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
+                this.showMessage('王车易位不符合规则', 'error');
+                this.moveHistory.pop(); // 移除无效的历史记录
                 return false;
             }
             // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
             this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
             this.updateFEN();
+            this.showMessage(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`, 'info');
             return true;
         } else {
             // 普通移动
@@ -235,20 +264,29 @@ class ChessGame {
         // 检查吃过路兵
         if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && 
             toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
-            // 删除被吃的过路兵
+            // 验证过路兵条件：必须是敌方兵刚刚移动两格
             const epRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
-            delete this.pieces[`${epRow},${toCol}`];
+            const epPiece = this.pieces[`${epRow},${toCol}`];
+            
+            if (epPiece && epPiece.toLowerCase() === 'p' && this.isOpponentPiece(piece, epPiece)) {
+                // 删除被吃的过路兵
+                delete this.pieces[`${epRow},${toCol}`];
+                this.showMessage('吃过路兵！', 'info');
+            }
         }
 
         // 检查兵升变
         if (piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7)) {
-            this.promotePawn(toRow, toCol);
+            // 设置等待升变状态，不立即升变
+            this.pendingPromotion = { row: toRow, col: toCol, piece: piece };
+            this.showPromotionModal(toRow, toCol);
+            // 注意：这里不调用 promotePawn，而是等待用户选择
+        } else {
+            // 更新游戏状态（非升变情况）
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
         }
 
-        // 更新游戏状态
-        this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
         this.updateFEN();
-
         return true;
     }
 
@@ -328,6 +366,10 @@ class ChessGame {
                (piece1 === piece1.toLowerCase() && piece2 === piece2.toLowerCase());
     }
 
+    isOpponentPiece(piece1, piece2) {
+        return !this.isSameColor(piece1, piece2);
+    }
+
     /**
      * 检查给定格子是否被指定颜色的敌方棋子攻击
      * @param {number} row - 格子的行
@@ -336,14 +378,6 @@ class ChessGame {
      * @returns {boolean} - 如果被攻击则返回 true，否则返回 false
      */
     isSquareAttacked(row, col, attackingColor) {
-        // 实现各种棋子的攻击逻辑
-        // 1. 兵的攻击
-        // 2. 马的攻击
-        // 3. 象的攻击
-        // 4. 车的攻击
-        // 5. 后的攻击
-        // 6. 王的攻击
-        
         // 1. 兵的攻击
         const pawnDirection = attackingColor === 'w' ? 1 : -1; // 白兵向上攻击，黑兵向下攻击
         const pawnAttacks = [
@@ -360,10 +394,10 @@ class ChessGame {
             }
         }
 
-        // 2. 马的攻击 - 修复：补全所有8个方向
+        // 2. 马的攻击
         const knightMoves = [
             [-2, -1], [-2, 1], [-1, -2], [-1, 2],
-            [1, -2], [1, 2], [2, -1], [2, 1]  // 修复：补全所有方向
+            [1, -2], [1, 2], [2, -1], [2, 1]
         ];
         for (const [dr, dc] of knightMoves) {
             const knightRow = row + dr;
@@ -436,25 +470,22 @@ class ChessGame {
         }
 
         // 处理王车易位权利
-        this.updateCastlingRights(piece, fromRow, fromCol, toRow, toCol); // 传递 toRow, toCol
+        this.updateCastlingRights(piece, fromRow, fromCol);
 
         // 处理过路兵
         this.updateEnPassant(piece, fromRow, fromCol, toRow, toCol);
     }
 
-    updateCastlingRights(piece, fromRow, fromCol, toRow, toCol) { // 添加 toRow, toCol 参数
-        // 如果是王车易位，直接移除所有易位权利
-        if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
-            if (piece === 'K') {
-                this.castling = this.castling.replace(/[KQ]/g, '');
-            } else { // piece === 'k'
-                this.castling = this.castling.replace(/[kq]/g, '');
-            }
-        } else if (piece === 'K') {
+    updateCastlingRights(piece, fromRow, fromCol) {
+        // 如果是王移动，移除该颜色的所有易位权利
+        if (piece === 'K') {
             this.castling = this.castling.replace(/[KQ]/g, '');
         } else if (piece === 'k') {
             this.castling = this.castling.replace(/[kq]/g, '');
-        } else if (piece === 'R') {
+        }
+        
+        // 如果是车移动，移除对应的易位权利
+        if (piece === 'R') {
             if (fromRow === 7 && fromCol === 0) { // 白方后翼车
                 this.castling = this.castling.replace('Q', '');
             } else if (fromRow === 7 && fromCol === 7) { // 白方王翼车
@@ -500,12 +531,132 @@ class ChessGame {
     }
 
     /**
-     * 兵升变
+     * 创建兵升变模态框
      */
-    promotePawn(row, col) {
-        // 默认升变为后，实际应用中应该让用户选择
-        const newPiece = this.currentTurn === 'w' ? 'Q' : 'q';
+    createPromotionModal() {
+        // 检查是否已存在模态框
+        if (document.getElementById('promotion-modal')) {
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.id = 'promotion-modal';
+        modal.className = 'promotion-modal';
+        modal.style.display = 'none';
+        
+        modal.innerHTML = `
+            <div class="promotion-content">
+                <h3>选择升变棋子</h3>
+                <div class="promotion-options">
+                    <button class="promotion-option" data-piece="q">♕ 后</button>
+                    <button class="promotion-option" data-piece="r">♖ 车</button>
+                    <button class="promotion-option" data-piece="b">♗ 象</button>
+                    <button class="promotion-option" data-piece="n">♘ 马</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // 添加事件监听器
+        modal.querySelectorAll('.promotion-option').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const pieceType = e.target.dataset.piece;
+                this.completePromotion(pieceType);
+            });
+        });
+    }
+
+    /**
+     * 显示兵升变选择界面
+     */
+    showPromotionModal(row, col) {
+        const modal = document.getElementById('promotion-modal');
+        if (!modal) return;
+        
+        // 根据棋子颜色设置选项
+        const isWhite = this.pendingPromotion.piece === 'P';
+        const options = modal.querySelectorAll('.promotion-option');
+        
+        options.forEach(option => {
+            const pieceType = option.dataset.piece;
+            const pieceChar = isWhite ? pieceType.toUpperCase() : pieceType;
+            option.textContent = `${PIECES[pieceChar]} ${this.getPieceName(pieceChar)}`;
+        });
+        
+        modal.style.display = 'flex';
+        this.showMessage('请选择兵升变的棋子', 'info');
+    }
+
+    /**
+     * 完成兵升变
+     */
+    completePromotion(pieceType) {
+        if (!this.pendingPromotion) return;
+        
+        const { row, col, piece } = this.pendingPromotion;
+        const isWhite = piece === 'P';
+        const newPiece = isWhite ? pieceType.toUpperCase() : pieceType;
+        
+        // 更新棋子
         this.pieces[`${row},${col}`] = newPiece;
+        
+        // 隐藏模态框
+        const modal = document.getElementById('promotion-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        
+        // 更新游戏状态
+        this.updateGameState(piece, row, col, row, col); // 使用相同的行列表示这是升变
+        this.updateFEN();
+        
+        this.showMessage(`兵升变为${this.getPieceName(newPiece)}`, 'info');
+        this.pendingPromotion = null;
+        this.renderBoard();
+    }
+
+    /**
+     * 获取棋子名称
+     */
+    getPieceName(piece) {
+        const names = {
+            'Q': '后', 'R': '车', 'B': '象', 'N': '马',
+            'q': '后', 'r': '车', 'b': '象', 'n': '马'
+        };
+        return names[piece] || '棋子';
+    }
+
+    /**
+     * 显示消息提示
+     */
+    showMessage(message, type = 'info') {
+        // 创建或获取消息容器
+        let messageContainer = document.getElementById('chess-message-container');
+        if (!messageContainer) {
+            messageContainer = document.createElement('div');
+            messageContainer.id = 'chess-message-container';
+            messageContainer.className = 'chess-message-container';
+            document.body.appendChild(messageContainer);
+        }
+        
+        // 创建消息元素
+        const messageElement = document.createElement('div');
+        messageElement.className = `chess-message chess-message-${type}`;
+        messageElement.textContent = message;
+        
+        // 添加到容器
+        messageContainer.appendChild(messageElement);
+        
+        // 自动移除
+        setTimeout(() => {
+            if (messageElement.parentElement) {
+                messageElement.remove();
+            }
+        }, 3000);
+        
+        // 同时记录到控制台
+        Logger[type](message);
     }
 
     /**
@@ -585,11 +736,11 @@ class ChessGame {
                     this.fenOutput.select();
                     try {
                         navigator.clipboard.writeText(this.fenOutput.value).then(() => {
-                            Logger.info('FEN copied to clipboard!');
+                            this.showMessage('FEN已复制到剪贴板！', 'success');
                         });
                     } catch (err) {
                         document.execCommand('copy');
-                        Logger.info('FEN selected - press Ctrl+C to copy');
+                        this.showMessage('FEN已选中 - 按Ctrl+C复制', 'info');
                     }
                 }
             });
@@ -600,6 +751,7 @@ class ChessGame {
             this.resetButton.addEventListener('click', () => {
                 if (confirm('开始新游戏？当前进度将丢失。')) {
                     this.setupInitialPosition();
+                    this.showMessage('新游戏开始', 'info');
                 }
             });
         }
@@ -624,7 +776,7 @@ class ChessGame {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.chessFullscreen.classList.remove('active');
             this.visionChatFullscreen.classList.add('active');
-            Logger.info('切换到聊天视图');
+            this.showMessage('切换到聊天视图', 'info');
         }
     }
 
@@ -633,12 +785,11 @@ class ChessGame {
         if (this.chessFullscreen && this.visionChatFullscreen) {
             this.visionChatFullscreen.classList.remove('active');
             this.chessFullscreen.classList.add('active');
-            Logger.info('切换到棋盘视图');
+            this.showMessage('切换到棋盘视图', 'info');
             
-            // 确保棋盘重新渲染 - 使用requestAnimationFrame确保DOM更新后执行
+            // 确保棋盘重新渲染
             requestAnimationFrame(() => {
                 this.renderBoard();
-                // 如果棋盘元素仍然为空，重新初始化
                 if (this.boardElement.children.length === 0) {
                     this.initBoard();
                     this.setupInitialPosition();
@@ -655,7 +806,10 @@ class ChessGame {
     // 加载FEN字符串
     loadFEN(fen) {
         const parts = fen.split(' ');
-        if (parts.length < 6) return false;
+        if (parts.length < 6) {
+            this.showMessage('无效的FEN格式', 'error');
+            return false;
+        }
 
         // 解析棋子布局
         this.pieces = {};
@@ -678,9 +832,11 @@ class ChessGame {
         this.enPassant = parts[3];
         this.halfMoveClock = parseInt(parts[4]) || 0;
         this.fullMoveNumber = parseInt(parts[5]) || 1;
+        this.pendingPromotion = null;
 
         this.renderBoard();
         this.updateFEN();
+        this.showMessage('FEN加载成功', 'success');
         return true;
     }
 }
