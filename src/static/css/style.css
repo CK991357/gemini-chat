@@ -2613,7 +2613,7 @@ input:checked + .slider:before {
 /* iPad横屏棋盘尺寸优化 - 最小修改版本 */
 @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
     .chess-board {
-        width: min(60vw, 460px) !important;
-        height: min(50vh, 460px) !important;
+        width: min(70vw, 460px) !important;
+        height: min(60vh, 460px) !important;
     }
 }
