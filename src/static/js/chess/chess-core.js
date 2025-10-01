@@ -66,6 +66,7 @@ class ChessGame {
         this.moveHistory = [];
         this.pendingPromotion = null; // 等待升变的棋子
         this.gameOver = false; // 新增：游戏结束状态
+        this.positionHistory = []; // 存储历史局面（用于重复检测）
         
         // 初始化
         this.initBoard();
@@ -684,7 +685,71 @@ class ChessGame {
     }
 
     /**
-     * 检查是否将死
+     * 获取指定棋子的所有合法移动
+     */
+    getLegalMovesForPiece(row, col) {
+        const piece = this.pieces[`${row},${col}`];
+        if (!piece) return [];
+        
+        const legalMoves = [];
+        
+        // 遍历所有可能的终点格子
+        for (let toRow = 0; toRow < 8; toRow++) {
+            for (let toCol = 0; toCol < 8; toCol++) {
+                // 跳过原地不动
+                if (toRow === row && toCol === col) continue;
+                
+                // 检查基本移动规则（包括王车易位）
+                if (this.isValidPieceMove(piece, row, col, toRow, toCol)) {
+                    // 检查不能吃同色棋子
+                    const targetPiece = this.pieces[`${toRow},${toCol}`];
+                    if (targetPiece && this.isSameColor(piece, targetPiece)) {
+                        continue;
+                    }
+                    
+                    // 检查移动后是否会导致自己的王被将军
+                    if (!this.wouldBeInCheckAfterMove(row, col, toRow, toCol, this.currentTurn)) {
+                        legalMoves.push([toRow, toCol]);
+                    }
+                }
+            }
+        }
+        
+        return legalMoves;
+    }
+
+    /**
+     * 模拟移动后检查指定颜色的王是否会被将军
+     */
+    wouldBeInCheckAfterMove(fromRow, fromCol, toRow, toCol, color) {
+        // 保存当前状态
+        const originalPieces = { ...this.pieces };
+        const fromKey = `${fromRow},${fromCol}`;
+        const toKey = `${toRow},${toCol}`;
+        const movingPiece = this.pieces[fromKey];
+        
+        // 执行模拟移动
+        delete this.pieces[fromKey];
+        this.pieces[toKey] = movingPiece;
+        
+        // 如果是吃过路兵，需要移除被吃的兵
+        if (movingPiece.toLowerCase() === 'p' && this.enPassant !== '-' &&
+            toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
+            const epRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
+            delete this.pieces[`${epRow},${toCol}`];
+        }
+        
+        // 检查是否被将军
+        const inCheck = this.isKingInCheck(color);
+        
+        // 恢复状态
+        this.pieces = originalPieces;
+        
+        return inCheck;
+    }
+
+    /**
+     * 检查是否将死 - 完整实现
      */
     isCheckmate(color) {
         // 如果不在将军状态，肯定不是将死
@@ -692,14 +757,25 @@ class ChessGame {
             return false;
         }
         
-        // 简化版本：这里应该检查是否有任何合法移动可以解除将军
-        // 由于我们没有实现完整的走法规则，这里暂时返回false
-        // 在实际实现中，需要遍历所有可能的移动来检查是否能解除将军
-        return false;
+        // 遍历所有己方棋子，检查是否有任何合法移动能解除将军
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.pieces[`${row},${col}`];
+                if (piece && ((color === 'w' && piece === piece.toUpperCase()) ||
+                             (color === 'b' && piece === piece.toLowerCase()))) {
+                    const legalMoves = this.getLegalMovesForPiece(row, col);
+                    if (legalMoves.length > 0) {
+                        return false; // 有解将的走法，不是将死
+                    }
+                }
+            }
+        }
+        
+        return true; // 无解将走法，将死
     }
 
     /**
-     * 检查是否逼和（无子可动）
+     * 检查是否逼和（无子可动） - 完整实现
      */
     isStalemate(color) {
         // 如果在将军状态，不是逼和
@@ -707,9 +783,40 @@ class ChessGame {
             return false;
         }
         
-        // 简化版本：这里应该检查是否有任何合法移动
-        // 由于我们没有实现完整的走法规则，这里暂时返回false
-        return false;
+        // 检查是否有任何合法移动
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.pieces[`${row},${col}`];
+                if (piece && ((color === 'w' && piece === piece.toUpperCase()) ||
+                             (color === 'b' && piece === piece.toLowerCase()))) {
+                    const legalMoves = this.getLegalMovesForPiece(row, col);
+                    if (legalMoves.length > 0) {
+                        return false; // 有合法移动，不是逼和
+                    }
+                }
+            }
+        }
+        
+        return true; // 无任何合法移动，逼和
+    }
+
+    /**
+     * 检查是否三次重复局面
+     */
+    isThreefoldRepetition() {
+        if (this.positionHistory.length < 6) return false; // 至少需要3个重复局面
+        
+        const currentPosition = this.positionHistory[this.positionHistory.length - 1];
+        let repetitionCount = 0;
+        
+        // 统计当前局面出现的次数
+        for (let i = 0; i < this.positionHistory.length; i++) {
+            if (this.positionHistory[i] === currentPosition) {
+                repetitionCount++;
+            }
+        }
+        
+        return repetitionCount >= 3;
     }
 
     updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture = false) {
@@ -734,12 +841,21 @@ class ChessGame {
         // 处理过路兵
         this.updateEnPassant(piece, fromRow, fromCol, toRow, toCol);
         
+        // 记录局面历史用于重复检测
+        const currentPosition = this.generateFEN().split(' '); // 只记录棋子布局部分
+        this.positionHistory.push(currentPosition);
+
+        // 只保留最近20个局面（足够检测三次重复）
+        if (this.positionHistory.length > 20) {
+            this.positionHistory.shift();
+        }
+        
         // 检查游戏结束条件
         this.checkGameEndConditions();
     }
 
     /**
-     * 检查游戏结束条件
+     * 检查游戏结束条件 - 完整版本
      */
     checkGameEndConditions() {
         const opponentColor = this.currentTurn; // 当前回合的玩家是刚刚移动的玩家的对手
@@ -762,6 +878,13 @@ class ChessGame {
         // 检查50步规则（50个完整回合 = 100个半回合）
         if (this.halfMoveClock >= 100) {
             this.showGameOverModal('50步规则，和棋！');
+            this.gameOver = true;
+            return;
+        }
+        
+        // 检查三次重复局面
+        if (this.isThreefoldRepetition()) {
+            this.showGameOverModal('三次重复局面，和棋！');
             this.gameOver = true;
             return;
         }
