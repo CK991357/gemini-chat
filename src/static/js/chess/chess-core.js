@@ -219,7 +219,8 @@ class ChessGame {
         // 如果有等待的升变，阻止所有其他操作
         if (this.pendingPromotion) {
             this.showToast('请先完成兵升变选择');
-            this.showPromotionModal(this.pendingPromotion.row, this.pendingPromotion.col);
+            // 修复：改为调用 showPromotionSelection
+            this.showPromotionSelection(this.pendingPromotion.row, this.pendingPromotion.col);
             return;
         }
         
@@ -291,8 +292,10 @@ class ChessGame {
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
             
-            // 设置等待升变状态
+            // 设置等待升变状态 - 修复：添加 fromRow 和 fromCol
             this.pendingPromotion = {
+                fromRow: fromRow,    // 添加这行
+                fromCol: fromCol,    // 添加这行
                 row: toRow,
                 col: toCol,
                 piece: piece
@@ -1017,57 +1020,6 @@ class ChessGame {
     }
 
 
-    /**
-     * 完成兵升变 - 完全修复版本
-     */
-    completePromotion(pieceType) {
-        console.log('开始处理兵升变，当前pendingPromotion:', this.pendingPromotion);
-        
-        if (!this.pendingPromotion) {
-            console.error('没有等待的升变！当前状态:', this.pendingPromotion);
-            this.showToast('升变状态异常，请重新尝试');
-            return;
-        }
-        
-        const { row, col, piece, fromRow, fromCol } = this.pendingPromotion;
-        const isWhite = piece === 'P';
-        const newPiece = isWhite ? pieceType.toUpperCase() : pieceType;
-        
-        console.log('完成兵升变:', {
-            fromPosition: `${fromRow},${fromCol}`,
-            toPosition: `${row},${col}`,
-            fromPiece: piece,
-            toPiece: newPiece
-        });
-        
-        // 重要修复：确保正确更新棋子
-        // 先删除原来的兵
-        delete this.pieces[`${row},${col}`];
-        // 再放置新棋子
-        this.pieces[`${row},${col}`] = newPiece;
-        
-        // 隐藏模态框
-        const modal = document.getElementById('promotion-modal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        
-        // 重要修复：先清除pending状态，再更新游戏状态
-        this.pendingPromotion = null;
-        
-        // 使用正确的起始位置调用 updateGameState
-        this.updateGameState(piece, fromRow, fromCol, row, col, false);
-        
-        this.updateFEN();
-        this.renderBoard();
-        
-        this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
-        
-        console.log('升变完成，pendingPromotion已清除，新棋子已放置');
-        
-        // 检查游戏结束条件
-        this.checkGameEndConditions();
-    }
 
     /**
      * 简化的兵升变处理
@@ -1169,32 +1121,6 @@ class ChessGame {
         }
     }
 
-    /**
-     * 升变后更新游戏状态
-     */
-    updateGameStateAfterPromotion() {
-        // 切换回合
-        this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
-        
-        // 更新完整回合数（黑方走完后）
-        if (this.currentTurn === 'w') {
-            this.fullMoveNumber++;
-        }
-        
-        // 升变重置50步规则计数
-        this.halfMoveClock = 0;
-        
-        // 记录局面历史
-        const currentPosition = this.generateFEN().split(' ');
-        this.positionHistory.push(currentPosition);
-        
-        if (this.positionHistory.length > 20) {
-            this.positionHistory.shift();
-        }
-        
-        // 检查游戏结束条件
-        this.checkGameEndConditions();
-    }
 
     /**
      * 获取棋子名称
