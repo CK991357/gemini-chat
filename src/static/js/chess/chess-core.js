@@ -33,6 +33,8 @@ class ChessGame {
             return;
         }
         this.initialize();
+        this.showLegalMoves = true; // 默认开启走法提示
+        this.legalMoves = []; // 存储当前棋子的合法移动
     }
 
     initialize() {
@@ -74,6 +76,21 @@ class ChessGame {
         this.setupInitialPosition();
         this.createPromotionModal();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
+
+        // 走法提示开关
+        this.legalMovesCheckbox = document.getElementById('show-legal-moves-checkbox');
+        if (this.legalMovesCheckbox) {
+            this.legalMovesCheckbox.checked = this.showLegalMoves;
+            this.legalMovesCheckbox.addEventListener('change', (e) => {
+                this.showLegalMoves = e.target.checked;
+                if (!this.showLegalMoves) {
+                    this.clearLegalMovesHighlight();
+                } else if (this.selectedSquare) {
+                    this.highlightLegalMoves(this.selectedSquare, this.selectedSquare);
+                }
+                this.renderBoard();
+            });
+        }
     }
 
     initBoard() {
@@ -128,23 +145,26 @@ class ChessGame {
         
         this.renderBoard();
         this.updateFEN();
+        this.clearLegalMovesHighlight();
     }
 
     undoMove() {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
+            this.clearLegalMovesHighlight();
         }
     }
 
     renderBoard() {
         if (!this.boardElement) return;
 
-        // 清除所有棋子
+        // 清除所有棋子和高亮
         const squares = this.boardElement.querySelectorAll('.chess-square');
         squares.forEach(square => {
             square.innerHTML = '';
             square.classList.remove('selected', 'highlight');
+            // 注意：不移除 legal-move 和 legal-capture，由专门的方法管理
         });
 
         // 渲染棋子
@@ -174,6 +194,11 @@ class ChessGame {
             const [row, col] = this.selectedSquare;
             this.getSquareElement(row, col)?.classList.add('selected');
         }
+
+        // 重新应用合法移动高亮
+        if (this.showLegalMoves && this.selectedSquare) {
+            this.highlightLegalMoves(this.selectedSquare, this.selectedSquare);
+        }
     }
 
     handleSquareClick(row, col) {
@@ -193,13 +218,32 @@ class ChessGame {
         const piece = this.pieces[`${row},${col}`];
         
         if (this.selectedSquare) {
-            // 已经有选中的棋子，尝试移动
-            const [fromRow, fromCol] = this.selectedSquare;
-            this.movePiece(fromRow, fromCol, row, col);
-            this.selectedSquare = null;
+            // 检查是否点击了合法移动的目标格
+            const isLegalMove = this.legalMoves.some(([legalRow, legalCol]) =>
+                legalRow === row && legalCol === col
+            );
+            
+            if (isLegalMove) {
+                // 已经有选中的棋子，尝试移动
+                const [fromRow, fromCol] = this.selectedSquare;
+                this.movePiece(fromRow, fromCol, row, col);
+                this.selectedSquare = null;
+                this.clearLegalMovesHighlight();
+            } else {
+                // 点击了其他位置，取消选择
+                this.selectedSquare = null;
+                this.clearLegalMovesHighlight();
+                
+                // 如果点击的是己方棋子，重新选择
+                if (piece && this.isValidTurn(piece)) {
+                    this.selectedSquare = [row, col];
+                    this.highlightLegalMoves(row, col);
+                }
+            }
         } else if (piece && this.isValidTurn(piece)) {
             // 选中一个棋子
             this.selectedSquare = [row, col];
+            this.highlightLegalMoves(row, col);
         } else if (piece) {
             this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
         }
@@ -716,6 +760,42 @@ class ChessGame {
         }
         
         return legalMoves;
+    }
+
+    // 添加新的方法来高亮合法移动
+    highlightLegalMoves(row, col) {
+        this.clearLegalMovesHighlight();
+        
+        if (!this.showLegalMoves) return;
+        
+        const piece = this.pieces[`${row},${col}`];
+        if (!piece || !this.isValidTurn(piece)) return;
+        
+        this.legalMoves = this.getLegalMovesForPiece(row, col);
+        
+        // 高亮所有合法移动
+        this.legalMoves.forEach(([toRow, toCol]) => {
+            const square = this.getSquareElement(toRow, toCol);
+            if (square) {
+                const targetPiece = this.pieces[`${toRow},${toCol}`];
+                if (targetPiece) {
+                    // 吃子提示
+                    square.classList.add('legal-capture');
+                } else {
+                    // 移动提示
+                    square.classList.add('legal-move');
+                }
+            }
+        });
+    }
+
+    // 添加清除高亮的方法
+    clearLegalMovesHighlight() {
+        this.legalMoves = [];
+        const squares = this.boardElement.querySelectorAll('.chess-square');
+        squares.forEach(square => {
+            square.classList.remove('legal-move', 'legal-capture');
+        });
     }
 
     /**

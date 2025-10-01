@@ -2810,3 +2810,52 @@ input:checked + .slider:before {
 .chess-btn-secondary:hover {
     background: #545b62;
 }
+/* 走法提示样式 */
+.chess-square.legal-move {
+    position: relative;
+}
+
+.chess-square.legal-move::after {
+    content: '';
+    position: absolute;
+    width: 20%;
+    height: 20%;
+    background-color: rgba(0, 255, 0, 0.6);
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+}
+
+/* 吃子提示样式 */
+.chess-square.legal-capture {
+    position: relative;
+}
+
+.chess-square.legal-capture::before {
+    content: '';
+    position: absolute;
+    width: 90%;
+    height: 90%;
+    border: 3px solid rgba(255, 0, 0, 0.6);
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .chess-square.legal-move::after {
+        width: 25%;
+        height: 25%;
+    }
+    
+    .chess-square.legal-capture::before {
+        width: 85%;
+        height: 85%;
+        border-width: 2px;
+    }
+}
