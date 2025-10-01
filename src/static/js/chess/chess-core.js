@@ -181,12 +181,14 @@ class ChessGame {
             return;
         }
 
-        // 如果有等待的升变，先处理升变
+        // 如果有等待的升变，阻止所有其他操作
         if (this.pendingPromotion) {
             this.showToast('请先完成兵升变选择');
+            // 重新显示模态框以防它被意外关闭
+            this.showPromotionModal(this.pendingPromotion.row, this.pendingPromotion.col);
             return;
         }
-
+        
         const piece = this.pieces[`${row},${col}`];
         
         if (this.selectedSquare) {
@@ -212,12 +214,13 @@ class ChessGame {
             return;
         }
         
-        // 如果有等待的升变，先处理升变
+        // 如果有等待的升变，阻止所有其他操作
         if (this.pendingPromotion) {
             this.showToast('请先完成兵升变选择');
+            this.showPromotionModal(this.pendingPromotion.row, this.pendingPromotion.col);
             return;
         }
-
+        
         const data = e.dataTransfer.getData('text/plain');
         const [fromRow, fromCol] = data.split(',').map(Number);
         
@@ -304,17 +307,22 @@ class ChessGame {
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
             
-            // 设置等待升变状态，保存起始位置
-            this.pendingPromotion = { 
-                fromRow: fromRow, 
-                fromCol: fromCol, 
-                row: toRow, 
-                col: toCol, 
-                piece: piece 
+            // 设置等待升变状态，保存起始位置和目标位置
+            this.pendingPromotion = {
+                fromRow: fromRow,
+                fromCol: fromCol,
+                row: toRow,
+                col: toCol,
+                piece: piece
             };
+            
+            console.log('设置pendingPromotion:', this.pendingPromotion);
             this.showPromotionModal(toRow, toCol);
             
             // 注意：这里不立即更新游戏状态，等待用户选择升变
+            // 但需要重新渲染棋盘显示移动后的兵
+            this.renderBoard();
+            return true; // 返回true表示移动已处理
         } else {
             // 普通移动
             delete this.pieces[fromKey];
@@ -881,41 +889,75 @@ class ChessGame {
             });
         });
         
-        // 确认按钮事件
+        // 确认按钮事件 - 修复版本
         modal.querySelector('.confirm-btn').addEventListener('click', () => {
-            if (selectedPiece) {
+            if (selectedPiece && this.pendingPromotion) {
                 this.completePromotion(selectedPiece);
-                modal.style.display = 'none';
                 
-                // 重置状态
+                // 重置模态框状态
                 selectedPiece = null;
                 modal.querySelector('.confirm-btn').disabled = true;
                 modal.querySelectorAll('.promotion-option').forEach(btn => {
                     btn.classList.remove('selected');
                 });
+            } else {
+                this.showToast('请先选择要升变的棋子类型');
             }
         });
         
-        // 取消按钮事件
+        // 取消按钮事件 - 修复版本
         modal.querySelector('.cancel-btn').addEventListener('click', () => {
+            // 重要：取消时需要撤销兵的移动
+            if (this.pendingPromotion) {
+                const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
+                
+                // 撤销移动：把兵放回原位置
+                delete this.pieces[`${row},${col}`];
+                this.pieces[`${fromRow},${fromCol}`] = piece;
+                
+                // 从历史记录中移除这次不完整的移动
+                if (this.moveHistory.length > 0) {
+                    this.moveHistory.pop();
+                }
+                
+                this.pendingPromotion = null;
+                this.renderBoard();
+                this.updateFEN();
+            }
+            
             modal.style.display = 'none';
             
             // 重置状态
             selectedPiece = null;
             modal.querySelector('.confirm-btn').disabled = true;
             modal.querySelectorAll('.promotion-option').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-                
-                this.showToast('已取消兵升变');
+                btn.classList.remove('selected');
+            });
+            
+            this.showToast('已取消兵升变');
         });
         
-        // 点击模态框背景关闭
+        // 点击模态框背景关闭 - 修复版本
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
+                // 同样需要撤销兵的移动
+                if (this.pendingPromotion) {
+                    const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
+                    
+                    delete this.pieces[`${row},${col}`];
+                    this.pieces[`${fromRow},${fromCol}`] = piece;
+                    
+                    if (this.moveHistory.length > 0) {
+                        this.moveHistory.pop();
+                    }
+                    
+                    this.pendingPromotion = null;
+                    this.renderBoard();
+                    this.updateFEN();
+                }
+                
                 modal.style.display = 'none';
                 
-                // 重置状态
                 selectedPiece = null;
                 modal.querySelector('.confirm-btn').disabled = true;
                 modal.querySelectorAll('.promotion-option').forEach(btn => {
@@ -1012,23 +1054,29 @@ class ChessGame {
      * 完成兵升变 - 完全修复版本
      */
     completePromotion(pieceType) {
+        console.log('开始处理兵升变，当前pendingPromotion:', this.pendingPromotion);
+        
         if (!this.pendingPromotion) {
-            console.error('没有等待的升变！');
+            console.error('没有等待的升变！当前状态:', this.pendingPromotion);
+            this.showToast('升变状态异常，请重新尝试');
             return;
         }
         
-        const { row, col, piece, fromRow, fromCol } = this.pendingPromotion; // 需要保存起始位置
+        const { row, col, piece, fromRow, fromCol } = this.pendingPromotion;
         const isWhite = piece === 'P';
         const newPiece = isWhite ? pieceType.toUpperCase() : pieceType;
         
-        console.log('完成兵升变:', { 
+        console.log('完成兵升变:', {
             fromPosition: `${fromRow},${fromCol}`,
             toPosition: `${row},${col}`,
-            fromPiece: piece, 
+            fromPiece: piece,
             toPiece: newPiece
         });
         
-        // 更新棋子为升变后的棋子
+        // 重要修复：确保正确更新棋子
+        // 先删除原来的兵
+        delete this.pieces[`${row},${col}`];
+        // 再放置新棋子
         this.pieces[`${row},${col}`] = newPiece;
         
         // 隐藏模态框
@@ -1037,16 +1085,18 @@ class ChessGame {
             modal.style.display = 'none';
         }
         
-        // 重要：使用正确的起始位置调用 updateGameState
+        // 重要修复：先清除pending状态，再更新游戏状态
+        this.pendingPromotion = null;
+        
+        // 使用正确的起始位置调用 updateGameState
         this.updateGameState(piece, fromRow, fromCol, row, col, false);
         
         this.updateFEN();
         this.renderBoard();
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
-        this.pendingPromotion = null;
         
-        console.log('升变完成，pendingPromotion已清除');
+        console.log('升变完成，pendingPromotion已清除，新棋子已放置');
         
         // 检查游戏结束条件
         this.checkGameEndConditions();
