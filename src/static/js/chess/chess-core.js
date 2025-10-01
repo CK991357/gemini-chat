@@ -995,7 +995,7 @@ class ChessGame {
     }
 
     /**
-     * 创建兵升变模态框 - 修复版本
+     * 创建兵升变模态框 - 更新版本
      */
     createPromotionModal() {
         // 检查是否已存在模态框
@@ -1026,37 +1026,24 @@ class ChessGame {
         
         document.body.appendChild(modal);
         
-        // 重要修复：等待DOM更新后绑定事件
-        setTimeout(() => {
-            this.setupPromotionModalEvents();
-        }, 0);
+        // 添加事件监听器
+        this.setupPromotionModalEvents();
     }
 
     /**
-     * 设置兵升变模态框事件 - 完全修复版本
+     * 设置兵升变模态框事件
      */
     setupPromotionModalEvents() {
         const modal = document.getElementById('promotion-modal');
-        if (!modal) {
-            console.error('Promotion modal not found');
-            return;
-        }
+        if (!modal) return;
         
-        console.log('Setting up promotion modal events');
-        
-        // 使用变量存储选择的棋子，确保在不同事件间共享
         let selectedPiece = null;
         
-        // 直接使用原始的 modal 元素，避免替换 DOM 元素
-        const updatedModal = modal;
-        
-        // 棋子选择事件 - 使用事件委托确保可靠
-        updatedModal.addEventListener('click', (e) => {
-            if (e.target.classList.contains('promotion-option')) {
-                console.log('棋子选项被点击:', e.target.dataset.piece);
-                
+        // 棋子选择事件
+        modal.querySelectorAll('.promotion-option').forEach(button => {
+            button.addEventListener('click', (e) => {
                 // 移除之前的选择
-                updatedModal.querySelectorAll('.promotion-option').forEach(btn => {
+                modal.querySelectorAll('.promotion-option').forEach(btn => {
                     btn.classList.remove('selected');
                 });
                 
@@ -1064,62 +1051,88 @@ class ChessGame {
                 e.target.classList.add('selected');
                 selectedPiece = e.target.dataset.piece;
                 
-                console.log('已选择棋子:', selectedPiece);
-                
                 // 启用确认按钮
-                const confirmBtn = updatedModal.querySelector('.confirm-btn');
+                const confirmBtn = modal.querySelector('.confirm-btn');
                 confirmBtn.disabled = false;
-                confirmBtn.textContent = `确认为${this.getPieceName(selectedPiece)}`;
-            }
+            });
         });
         
         // 确认按钮事件 - 修复版本
-        const confirmBtn = updatedModal.querySelector('.confirm-btn');
-        if (confirmBtn) {
-            confirmBtn.addEventListener('click', () => {
-                console.log('确认按钮点击，selectedPiece:', selectedPiece, 'pendingPromotion:', this.pendingPromotion);
+        modal.querySelector('.confirm-btn').addEventListener('click', () => {
+            if (selectedPiece && this.pendingPromotion) {
+                this.completePromotion(selectedPiece);
                 
-                if (selectedPiece && this.pendingPromotion) {
-                    this.completePromotion(selectedPiece);
-                    
-                    // 重置模态框状态
-                    selectedPiece = null;
-                    if (updatedModal) { // 使用 updatedModal
-                        updatedModal.querySelector('.confirm-btn').disabled = true;
-                        updatedModal.querySelector('.confirm-btn').textContent = '确认选择';
-                        updatedModal.querySelectorAll('.promotion-option').forEach(btn => {
-                            btn.classList.remove('selected');
-                        });
-                    }
-                } else {
-                    if (!selectedPiece) {
-                        this.showToast('请先选择要升变的棋子类型');
-                        console.error('没有选择棋子类型');
-                    }
-                    if (!this.pendingPromotion) {
-                        this.showToast('升变状态异常');
-                        console.error('没有pendingPromotion');
-                    }
+                // 重置模态框状态
+                selectedPiece = null;
+                modal.querySelector('.confirm-btn').disabled = true;
+                modal.querySelectorAll('.promotion-option').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+            } else {
+                this.showToast('请先选择要升变的棋子类型');
+            }
+        });
+        
+        // 取消按钮事件 - 修复版本
+        modal.querySelector('.cancel-btn').addEventListener('click', () => {
+            // 重要：取消时需要撤销兵的移动
+            if (this.pendingPromotion) {
+                const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
+                
+                // 撤销移动：把兵放回原位置
+                delete this.pieces[`${row},${col}`];
+                this.pieces[`${fromRow},${fromCol}`] = piece;
+                
+                // 从历史记录中移除这次不完整的移动
+                if (this.moveHistory.length > 0) {
+                    this.moveHistory.pop();
                 }
+                
+                this.pendingPromotion = null;
+                this.renderBoard();
+                this.updateFEN();
+            }
+            
+            modal.style.display = 'none';
+            
+            // 重置状态
+            selectedPiece = null;
+            modal.querySelector('.confirm-btn').disabled = true;
+            modal.querySelectorAll('.promotion-option').forEach(btn => {
+                btn.classList.remove('selected');
             });
-        } else {
-            console.error('Confirm button not found in modal');
-        }
+            
+            this.showToast('已取消兵升变');
+        });
         
-        // 取消按钮事件
-        const cancelBtn = updatedModal.querySelector('.cancel-btn');
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => {
-                this.cancelPromotion();
-            });
-        } else {
-            console.error('Cancel button not found in modal');
-        }
-        
-        // 点击模态框背景关闭
-        updatedModal.addEventListener('click', (e) => {
-            if (e.target === updatedModal) {
-                this.cancelPromotion();
+        // 点击模态框背景关闭 - 修复版本
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                // 同样需要撤销兵的移动
+                if (this.pendingPromotion) {
+                    const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
+                    
+                    delete this.pieces[`${row},${col}`];
+                    this.pieces[`${fromRow},${fromCol}`] = piece;
+                    
+                    if (this.moveHistory.length > 0) {
+                        this.moveHistory.pop();
+                    }
+                    
+                    this.pendingPromotion = null;
+                    this.renderBoard();
+                    this.updateFEN();
+                }
+                
+                modal.style.display = 'none';
+                
+                selectedPiece = null;
+                modal.querySelector('.confirm-btn').disabled = true;
+                modal.querySelectorAll('.promotion-option').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+                
+                this.showToast('已取消兵升变');
             }
         });
     }
@@ -1177,70 +1190,28 @@ class ChessGame {
         modal.style.display = 'flex';
         this.showToast(message);
     }
-    /**
-     * 取消兵升变 - 提取为独立方法
-     */
-    cancelPromotion() {
-        const modal = document.getElementById('promotion-modal');
-        
-        // 重要：取消时需要撤销兵的移动
-        if (this.pendingPromotion) {
-            const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
-            
-            // 撤销移动：把兵放回原位置
-            delete this.pieces[`${row},${col}`];
-            this.pieces[`${fromRow},${fromCol}`] = piece;
-            
-            // 从历史记录中移除这次不完整的移动
-            if (this.moveHistory.length > 0) {
-                this.moveHistory.pop();
-            }
-            
-            this.pendingPromotion = null;
-            this.renderBoard();
-            this.updateFEN();
-        }
-        
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        
-        this.showToast('已取消兵升变');
-    }
 
     /**
-     * 显示兵升变选择界面 - 修复版本
+     * 显示兵升变选择界面 - 更新版本
      */
     showPromotionModal(row, col) {
         const modal = document.getElementById('promotion-modal');
-        if (!modal) {
-            console.error('Promotion modal not found when trying to show');
-            return;
-        }
-        
-        console.log('显示升变模态框，位置:', row, col, 'pendingPromotion:', this.pendingPromotion);
+        if (!modal) return;
         
         // 重置选择状态
-        const confirmBtn = modal.querySelector('.confirm-btn');
-        if (confirmBtn) {
-            confirmBtn.disabled = true;
-            confirmBtn.textContent = '确认选择';
-        }
-        
+        modal.querySelector('.confirm-btn').disabled = true;
         modal.querySelectorAll('.promotion-option').forEach(btn => {
             btn.classList.remove('selected');
         });
         
         // 根据棋子颜色设置选项
-        const isWhite = this.pendingPromotion && this.pendingPromotion.piece === 'P';
+        const isWhite = this.pendingPromotion.piece === 'P';
         const options = modal.querySelectorAll('.promotion-option');
         
         options.forEach(option => {
             const pieceType = option.dataset.piece;
-            const pieceChar = isWhite ? pieceType.toUpperCase() : pieceType.toLowerCase();
+            const pieceChar = isWhite ? pieceType.toUpperCase() : pieceType;
             option.textContent = `${PIECES[pieceChar]} ${this.getPieceName(pieceChar)}`;
-            // 确保data-piece属性正确设置
-            option.setAttribute('data-piece', pieceType);
         });
         
         modal.style.display = 'flex';
@@ -1248,13 +1219,13 @@ class ChessGame {
     }
 
     /**
-     * 完成兵升变 - 修复版本
+     * 完成兵升变 - 完全修复版本
      */
     completePromotion(pieceType) {
-        console.log('开始处理兵升变，pieceType:', pieceType, 'pendingPromotion:', this.pendingPromotion);
+        console.log('开始处理兵升变，当前pendingPromotion:', this.pendingPromotion);
         
         if (!this.pendingPromotion) {
-            console.error('没有等待的升变！');
+            console.error('没有等待的升变！当前状态:', this.pendingPromotion);
             this.showToast('升变状态异常，请重新尝试');
             return;
         }
