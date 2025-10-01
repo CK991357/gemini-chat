@@ -43,11 +43,23 @@ export class LegalMovesHelper {
     highlightLegalMoves(row, col) {
         this.clearLegalMovesHighlight();
         
-        if (!this.showLegalMoves) return;
+        if (!this.showLegalMoves) {
+            console.log('走法提示已关闭');
+            return;
+        }
         
         const piece = this.chessGame.pieces[`${row},${col}`];
-        if (!piece || !this.chessGame.isValidTurn(piece)) return;
+        if (!piece) {
+            console.log('没有找到棋子');
+            return;
+        }
         
+        if (!this.chessGame.isValidTurn(piece)) {
+            console.log('不是当前回合的棋子');
+            return;
+        }
+        
+        console.log(`高亮棋子(${row},${col}) ${piece} 的合法移动`);
         this.legalMoves = this.getLegalMovesForPiece(row, col);
         
         this.legalMoves.forEach(([toRow, toCol]) => {
@@ -56,11 +68,15 @@ export class LegalMovesHelper {
                 const targetPiece = this.chessGame.pieces[`${toRow},${toCol}`];
                 if (targetPiece) {
                     square.classList.add('legal-capture');
+                    console.log(`  - 可吃子: (${toRow},${toCol}) ${targetPiece}`);
                 } else {
                     square.classList.add('legal-move');
+                    console.log(`  - 可移动: (${toRow},${toCol})`);
                 }
             }
         });
+        
+        console.log(`总共高亮 ${this.legalMoves.length} 个合法移动`);
     }
 
     /**
@@ -94,16 +110,21 @@ export class LegalMovesHelper {
         
         const legalMoves = [];
         
+        // 遍历所有可能的终点格子
         for (let toRow = 0; toRow < 8; toRow++) {
             for (let toCol = 0; toCol < 8; toCol++) {
+                // 跳过原地不动
                 if (toRow === row && toCol === col) continue;
                 
+                // 使用主游戏的移动验证逻辑
                 if (this.chessGame.isValidPieceMove(piece, row, col, toRow, toCol)) {
+                    // 检查不能吃同色棋子
                     const targetPiece = this.chessGame.pieces[`${toRow},${toCol}`];
                     if (targetPiece && this.chessGame.isSameColor(piece, targetPiece)) {
                         continue;
                     }
                     
+                    // 检查移动后是否会导致自己的王被将军
                     if (!this.wouldBeInCheckAfterMove(row, col, toRow, toCol)) {
                         legalMoves.push([toRow, toCol]);
                     }
@@ -111,6 +132,7 @@ export class LegalMovesHelper {
             }
         }
         
+        console.log(`棋子(${row},${col}) ${piece} 的合法移动:`, legalMoves.length, '个');
         return legalMoves;
     }
 
@@ -118,10 +140,12 @@ export class LegalMovesHelper {
      * 模拟移动后检查是否会被将军
      */
     wouldBeInCheckAfterMove(fromRow, fromCol, toRow, toCol) {
+        // 保存当前状态
         const originalPieces = { ...this.chessGame.pieces };
         const fromKey = `${fromRow},${fromCol}`;
         const toKey = `${toRow},${toCol}`;
         const movingPiece = this.chessGame.pieces[fromKey];
+        const movingColor = this.chessGame.currentTurn;
         
         // 执行模拟移动
         delete this.chessGame.pieces[fromKey];
@@ -130,12 +154,12 @@ export class LegalMovesHelper {
         // 如果是吃过路兵，需要移除被吃的兵
         if (movingPiece.toLowerCase() === 'p' && this.chessGame.enPassant !== '-' &&
             toRow === this.chessGame.getEnPassantRow() && toCol === this.chessGame.getEnPassantCol()) {
-            const epRow = this.chessGame.currentTurn === 'w' ? toRow + 1 : toRow - 1;
+            const epRow = movingColor === 'w' ? toRow + 1 : toRow - 1;
             delete this.chessGame.pieces[`${epRow},${toCol}`];
         }
         
-        // 检查是否被将军
-        const inCheck = this.chessGame.isKingInCheck(this.chessGame.currentTurn);
+        // 检查是否被将军（检查移动方的王是否被攻击）
+        const inCheck = this.chessGame.isKingInCheck(movingColor);
         
         // 恢复状态
         this.chessGame.pieces = originalPieces;

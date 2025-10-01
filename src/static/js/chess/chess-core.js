@@ -75,11 +75,13 @@ class ChessGame {
         this.createPromotionModal();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
         
-        // 初始化走法提示模块
+        // 然后初始化走法提示模块
         this.legalMovesHelper = new LegalMovesHelper(this).initialize();
         
-        // 设置初始位置（现在 legalMovesHelper 已存在）
+        // 最后设置初始位置
         this.setupInitialPosition();
+        
+        console.log('Chess game fully initialized');
     }
 
     initBoard() {
@@ -131,10 +133,15 @@ class ChessGame {
         this.fullMoveNumber = 1;
         this.pendingPromotion = null;
         this.gameOver = false; // 重置游戏结束状态
+        this.selectedSquare = null; // 确保没有选中的棋子
+        
+        // 清除所有高亮和选择状态
         this.legalMovesHelper.clearLegalMovesHighlight();
         
         this.renderBoard();
         this.updateFEN();
+        
+        console.log('初始位置设置完成，当前回合:', this.currentTurn);
     }
 
     undoMove() {
@@ -205,7 +212,7 @@ class ChessGame {
         if (this.selectedSquare) {
             const [fromRow, fromCol] = this.selectedSquare;
             
-            // 检查是否是点击了自己已经选中的棋子（切换选择）
+            // 检查是否是点击了自己已经选中的棋子（取消选择）
             if (fromRow === row && fromCol === col) {
                 this.selectedSquare = null;
                 this.legalMovesHelper.clearLegalMovesHighlight();
@@ -215,26 +222,37 @@ class ChessGame {
             
             // 使用走法提示模块检查是否点击了合法移动
             if (this.legalMovesHelper.isLegalMove(row, col)) {
+                console.log('执行移动:', fromRow, fromCol, '->', row, col);
                 this.movePiece(fromRow, fromCol, row, col);
                 this.selectedSquare = null;
                 this.legalMovesHelper.clearLegalMovesHighlight();
             } else {
+                // 点击了非法位置，清除选择
                 this.selectedSquare = null;
                 this.legalMovesHelper.clearLegalMovesHighlight();
                 
                 // 如果点击的是己方棋子，重新选择
                 if (piece && this.isValidTurn(piece)) {
+                    console.log('重新选择棋子:', row, col);
                     this.selectedSquare = [row, col];
                     this.legalMovesHelper.highlightLegalMoves(row, col);
                 }
                 this.renderBoard();
             }
         } else if (piece && this.isValidTurn(piece)) {
+            // 第一次点击己方棋子，选择它
+            console.log('选择棋子:', row, col);
             this.selectedSquare = [row, col];
             this.legalMovesHelper.highlightLegalMoves(row, col);
             this.renderBoard();
         } else if (piece) {
+            // 点击了对方棋子但没有己方棋子被选中
             this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
+        } else {
+            // 点击了空位置但没有棋子被选中
+            this.selectedSquare = null;
+            this.legalMovesHelper.clearLegalMovesHighlight();
+            this.renderBoard();
         }
     }
 
