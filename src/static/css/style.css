@@ -2810,52 +2810,35 @@ input:checked + .slider:before {
 .chess-btn-secondary:hover {
     background: #545b62;
 }
-/* 走法提示样式 */
-.chess-square.legal-move {
+/* 合法移动提示 */
+.legal-move {
     position: relative;
 }
 
-.chess-square.legal-move::after {
+.legal-move::after {
     content: '';
     position: absolute;
-    width: 20%;
-    height: 20%;
-    background-color: rgba(0, 255, 0, 0.6);
-    border-radius: 50%;
     top: 50%;
     left: 50%;
+    width: 20px;
+    height: 20px;
+    background: rgba(0, 255, 0, 0.3);
+    border-radius: 50%;
     transform: translate(-50%, -50%);
-    z-index: 1;
 }
 
-/* 吃子提示样式 */
-.chess-square.legal-capture {
+.legal-capture {
     position: relative;
 }
 
-.chess-square.legal-capture::before {
+.legal-capture::after {
     content: '';
     position: absolute;
-    width: 90%;
-    height: 90%;
-    border: 3px solid rgba(255, 0, 0, 0.6);
-    border-radius: 50%;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 1;
-}
-
-/* 移动端适配 */
-@media (max-width: 768px) {
-    .chess-square.legal-move::after {
-        width: 25%;
-        height: 25%;
-    }
-    
-    .chess-square.legal-capture::before {
-        width: 85%;
-        height: 85%;
-        border-width: 2px;
-    }
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 3px solid rgba(255, 0, 0, 0.5);
+    border-radius: 2px;
+    box-sizing: border-box;
 }

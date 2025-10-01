@@ -4,6 +4,7 @@
  */
 
 import { Logger } from '../utils/logger.js';
+import { LegalMovesHelper } from './legal-moves-helper.js';
 
 // 棋子 Unicode 字符
 const PIECES = {
@@ -71,9 +72,14 @@ class ChessGame {
         // 初始化
         this.initBoard();
         this.setupEventListeners();
-        this.setupInitialPosition();
         this.createPromotionModal();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
+        
+        // 初始化走法提示模块
+        this.legalMovesHelper = new LegalMovesHelper(this).initialize();
+        
+        // 设置初始位置（现在 legalMovesHelper 已存在）
+        this.setupInitialPosition();
     }
 
     initBoard() {
@@ -125,6 +131,7 @@ class ChessGame {
         this.fullMoveNumber = 1;
         this.pendingPromotion = null;
         this.gameOver = false; // 重置游戏结束状态
+        this.legalMovesHelper.clearLegalMovesHighlight();
         
         this.renderBoard();
         this.updateFEN();
@@ -134,6 +141,7 @@ class ChessGame {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
+            this.legalMovesHelper.clearLegalMovesHighlight();
         }
     }
 
@@ -144,7 +152,7 @@ class ChessGame {
         const squares = this.boardElement.querySelectorAll('.chess-square');
         squares.forEach(square => {
             square.innerHTML = '';
-            square.classList.remove('selected', 'highlight');
+            square.classList.remove('selected', 'highlight', 'legal-move', 'legal-capture');
         });
 
         // 渲染棋子
@@ -174,6 +182,9 @@ class ChessGame {
             const [row, col] = this.selectedSquare;
             this.getSquareElement(row, col)?.classList.add('selected');
         }
+        
+        // 更新走法提示
+        this.legalMovesHelper.onRenderBoard();
     }
 
     handleSquareClick(row, col) {
@@ -185,7 +196,6 @@ class ChessGame {
         // 如果有等待的升变，阻止所有其他操作
         if (this.pendingPromotion) {
             this.showToast('请先完成兵升变选择');
-            // 重新显示模态框以防它被意外关闭
             this.showPromotionModal(this.pendingPromotion.row, this.pendingPromotion.col);
             return;
         }
@@ -193,18 +203,39 @@ class ChessGame {
         const piece = this.pieces[`${row},${col}`];
         
         if (this.selectedSquare) {
-            // 已经有选中的棋子，尝试移动
             const [fromRow, fromCol] = this.selectedSquare;
-            this.movePiece(fromRow, fromCol, row, col);
-            this.selectedSquare = null;
+            
+            // 检查是否是点击了自己已经选中的棋子（切换选择）
+            if (fromRow === row && fromCol === col) {
+                this.selectedSquare = null;
+                this.legalMovesHelper.clearLegalMovesHighlight();
+                this.renderBoard();
+                return;
+            }
+            
+            // 使用走法提示模块检查是否点击了合法移动
+            if (this.legalMovesHelper.isLegalMove(row, col)) {
+                this.movePiece(fromRow, fromCol, row, col);
+                this.selectedSquare = null;
+                this.legalMovesHelper.clearLegalMovesHighlight();
+            } else {
+                this.selectedSquare = null;
+                this.legalMovesHelper.clearLegalMovesHighlight();
+                
+                // 如果点击的是己方棋子，重新选择
+                if (piece && this.isValidTurn(piece)) {
+                    this.selectedSquare = [row, col];
+                    this.legalMovesHelper.highlightLegalMoves(row, col);
+                }
+                this.renderBoard();
+            }
         } else if (piece && this.isValidTurn(piece)) {
-            // 选中一个棋子
             this.selectedSquare = [row, col];
+            this.legalMovesHelper.highlightLegalMoves(row, col);
+            this.renderBoard();
         } else if (piece) {
             this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
         }
-        
-        this.renderBoard();
     }
 
     handleDrop(e, toRow, toCol) {
