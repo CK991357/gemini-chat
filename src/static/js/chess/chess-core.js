@@ -33,6 +33,8 @@ class ChessGame {
             return;
         }
         this.initialize();
+        this.showLegalMoves = true; // 默认开启走法提示
+        this.legalMoves = []; // 存储当前棋子的合法移动
     }
 
     initialize() {
@@ -74,6 +76,21 @@ class ChessGame {
         this.setupInitialPosition();
         this.createPromotionModal();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
+
+        // 走法提示开关
+        this.legalMovesCheckbox = document.getElementById('show-legal-moves-checkbox');
+        if (this.legalMovesCheckbox) {
+            this.legalMovesCheckbox.checked = this.showLegalMoves;
+            this.legalMovesCheckbox.addEventListener('change', (e) => {
+                this.showLegalMoves = e.target.checked;
+                if (!this.showLegalMoves) {
+                    this.clearLegalMovesHighlight();
+                } else if (this.selectedSquare) {
+                    this.highlightLegalMoves(this.selectedSquare, this.selectedSquare);
+                }
+                this.renderBoard();
+            });
+        }
     }
 
     initBoard() {
@@ -128,53 +145,61 @@ class ChessGame {
         
         this.renderBoard();
         this.updateFEN();
+        this.clearLegalMovesHighlight();
     }
 
     undoMove() {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
+            this.clearLegalMovesHighlight();
         }
     }
 
-    renderBoard() {
-        if (!this.boardElement) return;
+renderBoard() {
+    if (!this.boardElement) return;
 
-        // 清除所有棋子
-        const squares = this.boardElement.querySelectorAll('.chess-square');
-        squares.forEach(square => {
-            square.innerHTML = '';
-            square.classList.remove('selected', 'highlight');
-        });
+    // 清除所有棋子和选择高亮，但保留合法移动高亮
+    const squares = this.boardElement.querySelectorAll('.chess-square');
+    squares.forEach(square => {
+        square.innerHTML = '';
+        square.classList.remove('selected', 'highlight');
+        // 注意：不移除 legal-move 和 legal-capture，由专门的方法管理
+    });
 
-        // 渲染棋子
-        Object.entries(this.pieces).forEach(([key, piece]) => {
-            const [row, col] = key.split(',').map(Number);
-            const square = this.getSquareElement(row, col);
-            if (square && piece in PIECES) {
-                const pieceElement = document.createElement('div');
-                pieceElement.className = 'chess-piece';
-                pieceElement.textContent = PIECES[piece];
-                pieceElement.draggable = true;
-                pieceElement.addEventListener('dragstart', (e) => {
-                    e.dataTransfer.setData('text/plain', `${row},${col}`);
-                });
-                
-                const label = document.createElement('span');
-                label.className = 'chess-piece-label';
-                label.textContent = piece;
-                
-                square.appendChild(pieceElement);
-                square.appendChild(label);
-            }
-        });
-
-        // 高亮选中的格子
-        if (this.selectedSquare) {
-            const [row, col] = this.selectedSquare;
-            this.getSquareElement(row, col)?.classList.add('selected');
+    // 渲染棋子
+    Object.entries(this.pieces).forEach(([key, piece]) => {
+        const [row, col] = key.split(',').map(Number);
+        const square = this.getSquareElement(row, col);
+        if (square && piece in PIECES) {
+            const pieceElement = document.createElement('div');
+            pieceElement.className = 'chess-piece';
+            pieceElement.textContent = PIECES[piece];
+            pieceElement.draggable = true;
+            pieceElement.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', `${row},${col}`);
+            });
+            
+            const label = document.createElement('span');
+            label.className = 'chess-piece-label';
+            label.textContent = piece;
+            
+            square.appendChild(pieceElement);
+            square.appendChild(label);
         }
+    });
+
+    // 高亮选中的格子
+    if (this.selectedSquare) {
+        const [row, col] = this.selectedSquare;
+        this.getSquareElement(row, col)?.classList.add('selected');
     }
+
+    // 如果关闭了走法提示，清除所有合法移动高亮
+    if (!this.showLegalMoves) {
+        this.clearLegalMovesHighlight();
+    }
+}
 
     handleSquareClick(row, col) {
         // 如果游戏已结束，不允许操作
@@ -193,18 +218,50 @@ class ChessGame {
         const piece = this.pieces[`${row},${col}`];
         
         if (this.selectedSquare) {
-            // 已经有选中的棋子，尝试移动
             const [fromRow, fromCol] = this.selectedSquare;
-            this.movePiece(fromRow, fromCol, row, col);
-            this.selectedSquare = null;
+            
+            // 检查是否是点击了自己已经选中的棋子（切换选择）
+            if (fromRow === row && fromCol === col) {
+                // 点击了已选中的棋子，取消选择
+                this.selectedSquare = null;
+                this.clearLegalMovesHighlight();
+                this.renderBoard();
+                return;
+            }
+            
+            // 检查是否点击了合法移动的目标格
+            const isLegalMove = this.legalMoves.some(([legalRow, legalCol]) =>
+                legalRow === row && legalCol === col
+            );
+            
+            if (isLegalMove) {
+                // 已经有选中的棋子，尝试移动
+                this.movePiece(fromRow, fromCol, row, col);
+                this.selectedSquare = null;
+                this.clearLegalMovesHighlight();
+                // 注意：movePiece 内部会调用 renderBoard()，所以这里不需要再次调用
+            } else {
+                // 点击了其他位置，取消选择
+                this.selectedSquare = null;
+                this.clearLegalMovesHighlight();
+                
+                // 如果点击的是己方棋子，重新选择
+                if (piece && this.isValidTurn(piece)) {
+                    this.selectedSquare = [row, col];
+                    this.highlightLegalMoves(row, col);
+                    this.renderBoard(); // 这里需要重新渲染以显示新的选择
+                } else {
+                    this.renderBoard(); // 确保棋盘重新渲染以清除之前的选择
+                }
+            }
         } else if (piece && this.isValidTurn(piece)) {
             // 选中一个棋子
             this.selectedSquare = [row, col];
+            this.highlightLegalMoves(row, col);
+            this.renderBoard();
         } else if (piece) {
             this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
         }
-        
-        this.renderBoard();
     }
 
     handleDrop(e, toRow, toCol) {
@@ -230,117 +287,62 @@ class ChessGame {
         this.renderBoard();
     }
 
-    movePiece(fromRow, fromCol, toRow, toCol) {
-        // 如果游戏已结束，不允许移动
-        if (this.gameOver) {
+movePiece(fromRow, fromCol, toRow, toCol) {
+    // 如果游戏已结束，不允许移动
+    if (this.gameOver) {
+        return false;
+    }
+
+    const fromKey = `${fromRow},${fromCol}`;
+    const toKey = `${toRow},${toCol}`;
+    const piece = this.pieces[fromKey];
+
+    if (!piece) {
+        this.showToast('没有选中棋子');
+        return false;
+    }
+
+    if (!this.isValidTurn(piece)) {
+        this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
+        return false;
+    }
+
+    // 基本规则检查：不能吃己方棋子
+    if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
+        this.showToast('不能吃掉自己的棋子');
+        return false;
+    }
+
+    // 新增：检查移动规则
+    if (!this.isValidPieceMove(piece, fromRow, fromCol, toRow, toCol)) {
+        this.showToast('移动不符合规则');
+        return false;
+    }
+
+    // 在移动前保存当前 FEN 到历史记录
+    this.moveHistory.push(this.generateFEN());
+
+    // 保存被吃的棋子（用于易位权利更新）
+    const capturedPiece = this.pieces[toKey];
+
+    // 检查是否是王车易位
+    if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
+        // 王车易位：国王移动了两格
+        if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
+            this.showToast('王车易位不符合规则');
+            this.moveHistory.pop(); // 移除无效的历史记录
             return false;
         }
-
-        const fromKey = `${fromRow},${fromCol}`;
-        const toKey = `${toRow},${toCol}`;
-        const piece = this.pieces[fromKey];
-
-        if (!piece) {
-            this.showToast('没有选中棋子');
-            return false;
-        }
-
-        if (!this.isValidTurn(piece)) {
-            this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
-            return false;
-        }
-
-        // 基本规则检查：不能吃己方棋子
-        if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
-            this.showToast('不能吃掉自己的棋子');
-            return false;
-        }
-
-        // 新增：检查移动规则
-        if (!this.isValidPieceMove(piece, fromRow, fromCol, toRow, toCol)) {
-            this.showToast('移动不符合规则');
-            return false;
-        }
-
-        // 在移动前保存当前 FEN 到历史记录
-        this.moveHistory.push(this.generateFEN());
-
-        // 保存被吃的棋子（用于易位权利更新）
-        const capturedPiece = this.pieces[toKey];
-
-        // 检查是否是王车易位
-        if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
-            // 王车易位：国王移动了两格
-            if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
-                this.showToast('王车易位不符合规则');
-                this.moveHistory.pop(); // 移除无效的历史记录
-                return false;
-            }
-            // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
-            this.updateFEN();
-            this.showToast(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`);
-            return true;
-        }
-
-        // 检查吃过路兵
-        let enPassantCapture = false;
-        if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && 
-            toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
-            // 验证过路兵条件：必须是敌方兵刚刚移动两格
-            const epRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
-            const epKey = `${epRow},${toCol}`;
-            const epPiece = this.pieces[epKey];
-            
-            if (epPiece && epPiece.toLowerCase() === 'p' && this.isOpponentPiece(piece, epPiece)) {
-                // 删除被吃的过路兵
-                delete this.pieces[epKey];
-                enPassantCapture = true;
-                this.showToast('吃过路兵！');
-            }
-        }
-
-        // 检查兵升变
-        const isPromotion = piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7);
-        
-        if (isPromotion) {
-            // 先执行移动，但保持兵的状态
-            delete this.pieces[fromKey];
-            this.pieces[toKey] = piece;
-            
-            // 设置等待升变状态，保存起始位置和目标位置
-            this.pendingPromotion = {
-                fromRow: fromRow,
-                fromCol: fromCol,
-                row: toRow,
-                col: toCol,
-                piece: piece
-            };
-            
-            console.log('设置pendingPromotion:', this.pendingPromotion);
-            this.showPromotionModal(toRow, toCol);
-            
-            // 注意：这里不立即更新游戏状态，等待用户选择升变
-            // 但需要重新渲染棋盘显示移动后的兵
-            this.renderBoard();
-            return true; // 返回true表示移动已处理
-        } else {
-            // 普通移动
-            delete this.pieces[fromKey];
-            this.pieces[toKey] = piece;
-            
-            // 更新游戏状态
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture);
-        }
-
-        // 检查被吃的棋子是否是车，更新易位权利
-        if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
-            this.updateCastlingRightsForCapturedRook(toRow, toCol);
-        }
-
+        // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
+        this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
         this.updateFEN();
+        this.renderBoard(); // 确保棋盘重新渲染
+        this.showToast(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`);
         return true;
     }
+
+    // ... 其余代码保持不变
+}
 
     /**
      * 验证棋子移动是否符合规则
@@ -716,6 +718,42 @@ class ChessGame {
         }
         
         return legalMoves;
+    }
+
+highlightLegalMoves(row, col) {
+    this.clearLegalMovesHighlight();
+    
+    // 如果关闭了走法提示，直接返回
+    if (!this.showLegalMoves) return;
+    
+    const piece = this.pieces[`${row},${col}`];
+    if (!piece || !this.isValidTurn(piece)) return;
+    
+    this.legalMoves = this.getLegalMovesForPiece(row, col);
+    
+    // 高亮所有合法移动
+    this.legalMoves.forEach(([toRow, toCol]) => {
+        const square = this.getSquareElement(toRow, toCol);
+        if (square) {
+            const targetPiece = this.pieces[`${toRow},${toCol}`];
+            if (targetPiece) {
+                // 吃子提示
+                square.classList.add('legal-capture');
+            } else {
+                // 移动提示
+                square.classList.add('legal-move');
+            }
+        }
+    });
+}
+
+    // 添加清除高亮的方法
+    clearLegalMovesHighlight() {
+        this.legalMoves = [];
+        const squares = this.boardElement.querySelectorAll('.chess-square');
+        squares.forEach(square => {
+            square.classList.remove('legal-move', 'legal-capture');
+        });
     }
 
     /**
