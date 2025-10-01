@@ -159,12 +159,11 @@ class ChessGame {
 renderBoard() {
     if (!this.boardElement) return;
 
-    // 清除所有棋子和选择高亮，但保留合法移动高亮
+    // 清除所有棋子和选择高亮
     const squares = this.boardElement.querySelectorAll('.chess-square');
     squares.forEach(square => {
         square.innerHTML = '';
-        square.classList.remove('selected', 'highlight');
-        // 注意：不移除 legal-move 和 legal-capture，由专门的方法管理
+        square.classList.remove('selected', 'highlight', 'legal-move', 'legal-capture');
     });
 
     // 渲染棋子
@@ -193,76 +192,74 @@ renderBoard() {
     if (this.selectedSquare) {
         const [row, col] = this.selectedSquare;
         this.getSquareElement(row, col)?.classList.add('selected');
-    }
-
-    // 如果关闭了走法提示，清除所有合法移动高亮
-    if (!this.showLegalMoves) {
-        this.clearLegalMovesHighlight();
+        
+        // 如果开启了走法提示，重新高亮合法移动
+        if (this.showLegalMoves) {
+            this.highlightLegalMoves(row, col);
+        }
     }
 }
 
-    handleSquareClick(row, col) {
-        // 如果游戏已结束，不允许操作
-        if (this.gameOver) {
-            return;
-        }
-
-        // 如果有等待的升变，阻止所有其他操作
-        if (this.pendingPromotion) {
-            this.showToast('请先完成兵升变选择');
-            // 重新显示模态框以防它被意外关闭
-            this.showPromotionModal(this.pendingPromotion.row, this.pendingPromotion.col);
-            return;
-        }
-        
-        const piece = this.pieces[`${row},${col}`];
-        
-        if (this.selectedSquare) {
-            const [fromRow, fromCol] = this.selectedSquare;
-            
-            // 检查是否是点击了自己已经选中的棋子（切换选择）
-            if (fromRow === row && fromCol === col) {
-                // 点击了已选中的棋子，取消选择
-                this.selectedSquare = null;
-                this.clearLegalMovesHighlight();
-                this.renderBoard();
-                return;
-            }
-            
-            // 检查是否点击了合法移动的目标格
-            const isLegalMove = this.legalMoves.some(([legalRow, legalCol]) =>
-                legalRow === row && legalCol === col
-            );
-            
-            if (isLegalMove) {
-                // 已经有选中的棋子，尝试移动
-                this.movePiece(fromRow, fromCol, row, col);
-                this.selectedSquare = null;
-                this.clearLegalMovesHighlight();
-                // 注意：movePiece 内部会调用 renderBoard()，所以这里不需要再次调用
-            } else {
-                // 点击了其他位置，取消选择
-                this.selectedSquare = null;
-                this.clearLegalMovesHighlight();
-                
-                // 如果点击的是己方棋子，重新选择
-                if (piece && this.isValidTurn(piece)) {
-                    this.selectedSquare = [row, col];
-                    this.highlightLegalMoves(row, col);
-                    this.renderBoard(); // 这里需要重新渲染以显示新的选择
-                } else {
-                    this.renderBoard(); // 确保棋盘重新渲染以清除之前的选择
-                }
-            }
-        } else if (piece && this.isValidTurn(piece)) {
-            // 选中一个棋子
-            this.selectedSquare = [row, col];
-            this.highlightLegalMoves(row, col);
-            this.renderBoard();
-        } else if (piece) {
-            this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
-        }
+handleSquareClick(row, col) {
+    // 如果游戏已结束，不允许操作
+    if (this.gameOver) {
+        return;
     }
+
+    // 如果有等待的升变，阻止所有其他操作
+    if (this.pendingPromotion) {
+        this.showToast('请先完成兵升变选择');
+        this.showPromotionModal(this.pendingPromotion.row, this.pendingPromotion.col);
+        return;
+    }
+    
+    const piece = this.pieces[`${row},${col}`];
+    
+    if (this.selectedSquare) {
+        const [fromRow, fromCol] = this.selectedSquare;
+        
+        // 检查是否是点击了自己已经选中的棋子（切换选择）
+        if (fromRow === row && fromCol === col) {
+            // 点击了已选中的棋子，取消选择
+            this.selectedSquare = null;
+            this.clearLegalMovesHighlight();
+            this.renderBoard();
+            return;
+        }
+        
+        // 检查是否点击了合法移动的目标格
+        const isLegalMove = this.legalMoves.some(([legalRow, legalCol]) =>
+            legalRow === row && legalCol === col
+        );
+        
+        if (isLegalMove) {
+            // 已经有选中的棋子，尝试移动
+            const moveSuccess = this.movePiece(fromRow, fromCol, row, col);
+            if (moveSuccess) {
+                this.selectedSquare = null;
+                this.clearLegalMovesHighlight();
+            }
+        } else {
+            // 点击了其他位置，取消选择
+            this.selectedSquare = null;
+            this.clearLegalMovesHighlight();
+            
+            // 如果点击的是己方棋子，重新选择
+            if (piece && this.isValidTurn(piece)) {
+                this.selectedSquare = [row, col];
+                this.highlightLegalMoves(row, col);
+            }
+            this.renderBoard();
+        }
+    } else if (piece && this.isValidTurn(piece)) {
+        // 选中一个棋子
+        this.selectedSquare = [row, col];
+        this.highlightLegalMoves(row, col);
+        this.renderBoard();
+    } else if (piece) {
+        this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
+    }
+}
 
     handleDrop(e, toRow, toCol) {
         e.preventDefault();
@@ -336,12 +333,69 @@ movePiece(fromRow, fromCol, toRow, toCol) {
         // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
         this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
         this.updateFEN();
-        this.renderBoard(); // 确保棋盘重新渲染
+        this.renderBoard();
         this.showToast(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`);
         return true;
     }
 
-    // ... 其余代码保持不变
+    // 检查吃过路兵
+    let enPassantCapture = false;
+    if (piece.toLowerCase() === 'p' && this.enPassant !== '-' &&
+        toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
+        // 验证过路兵条件：必须是敌方兵刚刚移动两格
+        const epRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
+        const epKey = `${epRow},${toCol}`;
+        const epPiece = this.pieces[epKey];
+        
+        if (epPiece && epPiece.toLowerCase() === 'p' && this.isOpponentPiece(piece, epPiece)) {
+            // 删除被吃的过路兵
+            delete this.pieces[epKey];
+            enPassantCapture = true;
+            this.showToast('吃过路兵！');
+        }
+    }
+
+    // 检查兵升变
+    const isPromotion = piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7);
+    
+    if (isPromotion) {
+        // 先执行移动，但保持兵的状态
+        delete this.pieces[fromKey];
+        this.pieces[toKey] = piece;
+        
+        // 设置等待升变状态，保存起始位置和目标位置
+        this.pendingPromotion = {
+            fromRow: fromRow,
+            fromCol: fromCol,
+            row: toRow,
+            col: toCol,
+            piece: piece
+        };
+        
+        console.log('设置pendingPromotion:', this.pendingPromotion);
+        this.showPromotionModal(toRow, toCol);
+        
+        // 注意：这里不立即更新游戏状态，等待用户选择升变
+        // 但需要重新渲染棋盘显示移动后的兵
+        this.renderBoard();
+        return true; // 返回true表示移动已处理
+    } else {
+        // 普通移动
+        delete this.pieces[fromKey];
+        this.pieces[toKey] = piece;
+        
+        // 更新游戏状态
+        this.updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture);
+        
+        // 检查被吃的棋子是否是车，更新易位权利
+        if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
+            this.updateCastlingRightsForCapturedRook(toRow, toCol);
+        }
+
+        this.updateFEN();
+        this.renderBoard();
+        return true;
+    }
 }
 
     /**
@@ -686,50 +740,55 @@ movePiece(fromRow, fromCol, toRow, toCol) {
         return this.isSquareAttacked(kingPosition[0], kingPosition[1], attackingColor);
     }
 
-    /**
-     * 获取指定棋子的所有合法移动
-     */
-    getLegalMovesForPiece(row, col) {
-        const piece = this.pieces[`${row},${col}`];
-        if (!piece) return [];
-        
-        const legalMoves = [];
-        
-        // 遍历所有可能的终点格子
-        for (let toRow = 0; toRow < 8; toRow++) {
-            for (let toCol = 0; toCol < 8; toCol++) {
-                // 跳过原地不动
-                if (toRow === row && toCol === col) continue;
+getLegalMovesForPiece(row, col) {
+    const piece = this.pieces[`${row},${col}`];
+    if (!piece) return [];
+    
+    const legalMoves = [];
+    
+    // 遍历所有可能的终点格子
+    for (let toRow = 0; toRow < 8; toRow++) {
+        for (let toCol = 0; toCol < 8; toCol++) {
+            // 跳过原地不动
+            if (toRow === row && toCol === col) continue;
+            
+            // 检查基本移动规则（包括王车易位）
+            if (this.isValidPieceMove(piece, row, col, toRow, toCol)) {
+                // 检查不能吃同色棋子
+                const targetPiece = this.pieces[`${toRow},${toCol}`];
+                if (targetPiece && this.isSameColor(piece, targetPiece)) {
+                    continue;
+                }
                 
-                // 检查基本移动规则（包括王车易位）
-                if (this.isValidPieceMove(piece, row, col, toRow, toCol)) {
-                    // 检查不能吃同色棋子
-                    const targetPiece = this.pieces[`${toRow},${toCol}`];
-                    if (targetPiece && this.isSameColor(piece, targetPiece)) {
-                        continue;
-                    }
-                    
-                    // 检查移动后是否会导致自己的王被将军
-                    if (!this.wouldBeInCheckAfterMove(row, col, toRow, toCol, this.currentTurn)) {
-                        legalMoves.push([toRow, toCol]);
-                    }
+                // 检查移动后是否会导致自己的王被将军
+                if (!this.wouldBeInCheckAfterMove(row, col, toRow, toCol, this.currentTurn)) {
+                    legalMoves.push([toRow, toCol]);
                 }
             }
         }
-        
-        return legalMoves;
     }
+    
+    return legalMoves;
+}
 
 highlightLegalMoves(row, col) {
-    this.clearLegalMovesHighlight();
-    
-    // 如果关闭了走法提示，直接返回
-    if (!this.showLegalMoves) return;
+    // 如果关闭了走法提示，直接返回并清除高亮
+    if (!this.showLegalMoves) {
+        this.clearLegalMovesHighlight();
+        return;
+    }
     
     const piece = this.pieces[`${row},${col}`];
-    if (!piece || !this.isValidTurn(piece)) return;
+    if (!piece || !this.isValidTurn(piece)) {
+        this.clearLegalMovesHighlight();
+        return;
+    }
     
+    // 获取合法移动
     this.legalMoves = this.getLegalMovesForPiece(row, col);
+    
+    // 清除之前的高亮
+    this.clearLegalMovesHighlight();
     
     // 高亮所有合法移动
     this.legalMoves.forEach(([toRow, toCol]) => {
