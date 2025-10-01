@@ -21,11 +21,6 @@ export const CONFIG = {
                 isWebSocket: false,
             },
             {
-                name: 'models/gemini-2.5-flash-preview-09-2025',
-                displayName: 'gemini-2.5-flash-preview-09-2025 (HTTP)',
-                isWebSocket: false,
-            },
-            {
                 name: 'models/gemini-2.5-pro',
                 displayName: 'gemini-2.5-pro (HTTP)',
                 isWebSocket: false

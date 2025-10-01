@@ -828,57 +828,6 @@ class ChessGame {
         return inCheck;
     }
 
-    /**
-     * 检查是否将死 - 完整实现
-     */
-    isCheckmate(color) {
-        // 如果不在将军状态，肯定不是将死
-        if (!this.isKingInCheck(color)) {
-            return false;
-        }
-        
-        // 遍历所有己方棋子，检查是否有任何合法移动能解除将军
-        for (let row = 0; row < 8; row++) {
-            for (let col = 0; col < 8; col++) {
-                const piece = this.pieces[`${row},${col}`];
-                if (piece && ((color === 'w' && piece === piece.toUpperCase()) ||
-                             (color === 'b' && piece === piece.toLowerCase()))) {
-                    const legalMoves = this.getLegalMovesForPiece(row, col);
-                    if (legalMoves.length > 0) {
-                        return false; // 有解将的走法，不是将死
-                    }
-                }
-            }
-        }
-        
-        return true; // 无解将走法，将死
-    }
-
-    /**
-     * 检查是否逼和（无子可动） - 完整实现
-     */
-    isStalemate(color) {
-        // 如果在将军状态，不是逼和
-        if (this.isKingInCheck(color)) {
-            return false;
-        }
-        
-        // 检查是否有任何合法移动
-        for (let row = 0; row < 8; row++) {
-            for (let col = 0; col < 8; col++) {
-                const piece = this.pieces[`${row},${col}`];
-                if (piece && ((color === 'w' && piece === piece.toUpperCase()) ||
-                             (color === 'b' && piece === piece.toLowerCase()))) {
-                    const legalMoves = this.getLegalMovesForPiece(row, col);
-                    if (legalMoves.length > 0) {
-                        return false; // 有合法移动，不是逼和
-                    }
-                }
-            }
-        }
-        
-        return true; // 无任何合法移动，逼和
-    }
 
     /**
      * 检查是否三次重复局面
@@ -899,6 +848,9 @@ class ChessGame {
         return repetitionCount >= 3;
     }
 
+    /**
+     * 更新游戏状态
+     */
     updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture = false) {
         // 切换回合
         this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
@@ -922,35 +874,47 @@ class ChessGame {
         this.updateEnPassant(piece, fromRow, fromCol, toRow, toCol);
         
         // 记录局面历史用于重复检测
-        const currentPosition = this.generateFEN().split(' '); // 只记录棋子布局部分
+        const currentPosition = this.generateFEN().split(' ');
         this.positionHistory.push(currentPosition);
 
-        // 只保留最近20个局面（足够检测三次重复）
+        // 只保留最近20个局面
         if (this.positionHistory.length > 20) {
             this.positionHistory.shift();
         }
-        
+
         // 检查游戏结束条件
         this.checkGameEndConditions();
     }
 
     /**
-     * 检查游戏结束条件 - 完整版本
+     * 检查游戏结束条件 - 简化版本（只检查王被吃掉）
      */
     checkGameEndConditions() {
-        const opponentColor = this.currentTurn; // 当前回合的玩家是刚刚移动的玩家的对手
+        // 检查王是否被吃掉
+        let whiteKingExists = false;
+        let blackKingExists = false;
         
-        // 检查将死
-        if (this.isCheckmate(opponentColor)) {
-            const winner = this.currentTurn === 'w' ? '白方' : '黑方';
-            this.showGameOverModal(`将死！${winner}获胜！`);
+        // 遍历棋盘查找王
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.pieces[`${row},${col}`];
+                if (piece === 'K') {
+                    whiteKingExists = true;
+                } else if (piece === 'k') {
+                    blackKingExists = true;
+                }
+            }
+        }
+        
+        // 王被吃掉判定胜利
+        if (!whiteKingExists) {
+            this.showGameOverModal('黑方胜利！白王被吃掉。');
             this.gameOver = true;
             return;
         }
         
-        // 检查逼和
-        if (this.isStalemate(opponentColor)) {
-            this.showGameOverModal('逼和！游戏平局。');
+        if (!blackKingExists) {
+            this.showGameOverModal('白方胜利！黑王被吃掉。');
             this.gameOver = true;
             return;
         }
@@ -969,7 +933,8 @@ class ChessGame {
             return;
         }
         
-        // 检查将军
+        // 保留将军提示（但不作为结束条件）
+        const opponentColor = this.currentTurn;
         if (this.isKingInCheck(opponentColor)) {
             this.showToast('将军！');
         }
