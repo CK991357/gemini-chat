@@ -477,40 +477,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化视觉功能
     initializeVisionCore(visionElements, attachmentManager, visionHandlers);
     
-    // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
-    setTimeout(() => {
-        initializeChessCore({
-            showToast: showToast
-        });
-        
-        // 手动添加切换按钮事件监听器作为备份
-        const toggleToChessBtn = document.getElementById('toggle-to-chess-button');
-        const toggleToVisionBtn = document.getElementById('toggle-to-vision-button');
-        
-        if (toggleToChessBtn) {
-            toggleToChessBtn.addEventListener('click', () => {
-                const chessFullscreen = document.getElementById('chess-fullscreen');
-                const visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
-                if (chessFullscreen && visionChatFullscreen) {
-                    visionChatFullscreen.classList.remove('active');
-                    chessFullscreen.classList.add('active');
-                    console.log('Switched to chess view');
-                }
-            });
-        }
-        
-        if (toggleToVisionBtn) {
-            toggleToVisionBtn.addEventListener('click', () => {
-                const chessFullscreen = document.getElementById('chess-fullscreen');
-                const visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
-                if (chessFullscreen && visionChatFullscreen) {
-                    chessFullscreen.classList.remove('active');
-                    visionChatFullscreen.classList.add('active');
-                    console.log('Switched to vision chat view');
-                }
-            });
-        }
-    }, 500);
    // 初始化指令模式选择
    initializePromptSelect(promptSelect, systemInstructionInput);
 
