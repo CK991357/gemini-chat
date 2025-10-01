@@ -1097,7 +1097,8 @@ class ChessGame {
         this.clearPromotionDisplay();
         
         // 更新游戏状态
-        this.updateGameStateAfterPromotion();
+        // 修复：替换为 updateGameState
+        this.updateGameState(piece, this.pendingPromotion.fromRow, this.pendingPromotion.fromCol, row, col, false);
         
         this.updateFEN();
         this.renderBoard();
