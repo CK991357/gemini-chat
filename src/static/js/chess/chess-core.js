@@ -995,7 +995,7 @@ class ChessGame {
     }
 
     /**
-     * 创建兵升变模态框 - 更新版本
+     * 创建兵升变模态框 - 修复版本
      */
     createPromotionModal() {
         // 检查是否已存在模态框
@@ -1026,26 +1026,39 @@ class ChessGame {
         
         document.body.appendChild(modal);
         
-        // 添加事件监听器
-        this.setupPromotionModalEvents();
+        // 重要修复：等待DOM更新后绑定事件
+        setTimeout(() => {
+            this.setupPromotionModalEvents();
+        }, 0);
     }
 
     /**
-     * 设置兵升变模态框事件 - 修复版本
+     * 设置兵升变模态框事件 - 完全修复版本
      */
     setupPromotionModalEvents() {
         const modal = document.getElementById('promotion-modal');
-        if (!modal) return;
+        if (!modal) {
+            console.error('Promotion modal not found');
+            return;
+        }
         
+        console.log('Setting up promotion modal events');
+        
+        // 使用变量存储选择的棋子，确保在不同事件间共享
         let selectedPiece = null;
         
-        // 棋子选择事件 - 修复版本
-        modal.querySelectorAll('.promotion-option').forEach(button => {
-            button.addEventListener('click', (e) => {
+        // 移除之前可能添加的事件监听器，避免重复绑定
+        const newModal = modal.cloneNode(true);
+        modal.parentNode.replaceChild(newModal, modal);
+        const updatedModal = document.getElementById('promotion-modal');
+        
+        // 棋子选择事件 - 使用事件委托确保可靠
+        updatedModal.addEventListener('click', (e) => {
+            if (e.target.classList.contains('promotion-option')) {
                 console.log('棋子选项被点击:', e.target.dataset.piece);
                 
                 // 移除之前的选择
-                modal.querySelectorAll('.promotion-option').forEach(btn => {
+                updatedModal.querySelectorAll('.promotion-option').forEach(btn => {
                     btn.classList.remove('selected');
                 });
                 
@@ -1056,100 +1069,60 @@ class ChessGame {
                 console.log('已选择棋子:', selectedPiece);
                 
                 // 启用确认按钮
-                const confirmBtn = modal.querySelector('.confirm-btn');
+                const confirmBtn = updatedModal.querySelector('.confirm-btn');
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = `确认为${this.getPieceName(selectedPiece)}`;
-            });
+            }
         });
         
         // 确认按钮事件 - 修复版本
-        modal.querySelector('.confirm-btn').addEventListener('click', () => {
-            console.log('确认按钮点击，selectedPiece:', selectedPiece, 'pendingPromotion:', this.pendingPromotion);
-            
-            if (selectedPiece && this.pendingPromotion) {
-                this.completePromotion(selectedPiece);
+        const confirmBtn = updatedModal.querySelector('.confirm-btn');
+        if (confirmBtn) {
+            confirmBtn.addEventListener('click', () => {
+                console.log('确认按钮点击，selectedPiece:', selectedPiece, 'pendingPromotion:', this.pendingPromotion);
                 
-                // 重置模态框状态
-                selectedPiece = null;
-                modal.querySelector('.confirm-btn').disabled = true;
-                modal.querySelector('.confirm-btn').textContent = '确认选择';
-                modal.querySelectorAll('.promotion-option').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-            } else {
-                if (!selectedPiece) {
-                    this.showToast('请先选择要升变的棋子类型');
-                    console.error('没有选择棋子类型');
-                }
-                if (!this.pendingPromotion) {
-                    this.showToast('升变状态异常');
-                    console.error('没有pendingPromotion');
-                }
-            }
-        });
-        
-        // 取消按钮事件 - 保持不变
-        modal.querySelector('.cancel-btn').addEventListener('click', () => {
-            // 重要：取消时需要撤销兵的移动
-            if (this.pendingPromotion) {
-                const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
-                
-                // 撤销移动：把兵放回原位置
-                delete this.pieces[`${row},${col}`];
-                this.pieces[`${fromRow},${fromCol}`] = piece;
-                
-                // 从历史记录中移除这次不完整的移动
-                if (this.moveHistory.length > 0) {
-                    this.moveHistory.pop();
-                }
-                
-                this.pendingPromotion = null;
-                this.renderBoard();
-                this.updateFEN();
-            }
-            
-            modal.style.display = 'none';
-            
-            // 重置状态
-            selectedPiece = null;
-            modal.querySelector('.confirm-btn').disabled = true;
-            modal.querySelector('.confirm-btn').textContent = '确认选择';
-            modal.querySelectorAll('.promotion-option').forEach(btn => {
-                btn.classList.remove('selected');
-            });
-            
-            this.showToast('已取消兵升变');
-        });
-        
-        // 点击模态框背景关闭 - 保持不变
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                // 同样需要撤销兵的移动
-                if (this.pendingPromotion) {
-                    const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
+                if (selectedPiece && this.pendingPromotion) {
+                    this.completePromotion(selectedPiece);
                     
-                    delete this.pieces[`${row},${col}`];
-                    this.pieces[`${fromRow},${fromCol}`] = piece;
-                    
-                    if (this.moveHistory.length > 0) {
-                        this.moveHistory.pop();
+                    // 重置模态框状态
+                    selectedPiece = null;
+                    const modal = document.getElementById('promotion-modal');
+                    if (modal) {
+                        modal.querySelector('.confirm-btn').disabled = true;
+                        modal.querySelector('.confirm-btn').textContent = '确认选择';
+                        modal.querySelectorAll('.promotion-option').forEach(btn => {
+                            btn.classList.remove('selected');
+                        });
                     }
-                    
-                    this.pendingPromotion = null;
-                    this.renderBoard();
-                    this.updateFEN();
+                } else {
+                    if (!selectedPiece) {
+                        this.showToast('请先选择要升变的棋子类型');
+                        console.error('没有选择棋子类型');
+                    }
+                    if (!this.pendingPromotion) {
+                        this.showToast('升变状态异常');
+                        console.error('没有pendingPromotion');
+                    }
                 }
-                
-                modal.style.display = 'none';
-                
-                selectedPiece = null;
-                modal.querySelector('.confirm-btn').disabled = true;
-                modal.querySelector('.confirm-btn').textContent = '确认选择';
-                modal.querySelectorAll('.promotion-option').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-                
-                this.showToast('已取消兵升变');
+            });
+        } else {
+            console.error('Confirm button not found in modal');
+        }
+        
+        // 取消按钮事件
+        const cancelBtn = updatedModal.querySelector('.cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                this.cancelPromotion();
+            });
+        } else {
+            console.error('Cancel button not found in modal');
+        }
+        
+        // 点击模态框背景关闭
+        updatedModal.addEventListener('click', (e) => {
+            if (e.target === updatedModal) {
+                this.cancelPromotion();
             }
         });
     }
@@ -1207,32 +1180,70 @@ class ChessGame {
         modal.style.display = 'flex';
         this.showToast(message);
     }
+    /**
+     * 取消兵升变 - 提取为独立方法
+     */
+    cancelPromotion() {
+        const modal = document.getElementById('promotion-modal');
+        
+        // 重要：取消时需要撤销兵的移动
+        if (this.pendingPromotion) {
+            const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
+            
+            // 撤销移动：把兵放回原位置
+            delete this.pieces[`${row},${col}`];
+            this.pieces[`${fromRow},${fromCol}`] = piece;
+            
+            // 从历史记录中移除这次不完整的移动
+            if (this.moveHistory.length > 0) {
+                this.moveHistory.pop();
+            }
+            
+            this.pendingPromotion = null;
+            this.renderBoard();
+            this.updateFEN();
+        }
+        
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        
+        this.showToast('已取消兵升变');
+    }
 
     /**
      * 显示兵升变选择界面 - 修复版本
      */
     showPromotionModal(row, col) {
         const modal = document.getElementById('promotion-modal');
-        if (!modal) return;
+        if (!modal) {
+            console.error('Promotion modal not found when trying to show');
+            return;
+        }
         
         console.log('显示升变模态框，位置:', row, col, 'pendingPromotion:', this.pendingPromotion);
         
         // 重置选择状态
-        modal.querySelector('.confirm-btn').disabled = true;
-        modal.querySelector('.confirm-btn').textContent = '确认选择';
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = '确认选择';
+        }
+        
         modal.querySelectorAll('.promotion-option').forEach(btn => {
             btn.classList.remove('selected');
         });
         
         // 根据棋子颜色设置选项
-        const isWhite = this.pendingPromotion.piece === 'P';
+        const isWhite = this.pendingPromotion && this.pendingPromotion.piece === 'P';
         const options = modal.querySelectorAll('.promotion-option');
         
         options.forEach(option => {
             const pieceType = option.dataset.piece;
-            const pieceChar = isWhite ? pieceType.toUpperCase() : pieceType;
+            const pieceChar = isWhite ? pieceType.toUpperCase() : pieceType.toLowerCase();
             option.textContent = `${PIECES[pieceChar]} ${this.getPieceName(pieceChar)}`;
-            option.dataset.piece = pieceType; // 确保data-piece属性正确设置
+            // 确保data-piece属性正确设置
+            option.setAttribute('data-piece', pieceType);
         });
         
         modal.style.display = 'flex';
