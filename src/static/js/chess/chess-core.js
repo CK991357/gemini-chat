@@ -67,6 +67,7 @@ class ChessGame {
         this.pendingPromotion = null; // 等待升变的棋子
         this.gameOver = false; // 新增：游戏结束状态
         this.positionHistory = []; // 存储历史局面（用于重复检测）
+        this.lastMoveError = null; // 新增：存储最后一次移动的错误信息
         
         // 初始化
         this.initBoard();
@@ -256,9 +257,25 @@ class ChessGame {
             return false;
         }
 
-        // 新增：检查移动规则
+        // 检查移动规则，使用详细的错误提示
         if (!this.isValidPieceMove(piece, fromRow, fromCol, toRow, toCol)) {
-            this.showToast('移动不符合规则');
+            // 优先显示具体的错误信息
+            if (this.lastMoveError) {
+                this.showToast(this.lastMoveError);
+                this.lastMoveError = null; // 清除错误信息
+            } else {
+                // 如果没有具体错误信息，显示通用提示
+                const pieceType = piece.toLowerCase();
+                const genericMessages = {
+                    'p': '兵走法：向前走一格，起始位置可走两格，吃子时斜走',
+                    'n': '马走"日"字：两格直线加一格横线',
+                    'b': '象走斜线：只能沿对角线移动',
+                    'r': '车走直线：可以横向或纵向移动',
+                    'q': '后走直线或斜线：可以横向、纵向或对角线移动',
+                    'k': '王走一格：可以横向、纵向或对角线移动一格'
+                };
+                this.showToast(genericMessages[pieceType] || '移动不符合规则');
+            }
             return false;
         }
 
@@ -338,6 +355,7 @@ class ChessGame {
             this.updateCastlingRightsForCapturedRook(toRow, toCol);
         }
 
+        this.lastMoveError = null; // 成功移动，清除错误信息
         this.updateFEN();
         return true;
     }
@@ -368,10 +386,12 @@ class ChessGame {
         
         // 王只能移动一格
         if (rowDiff <= 1 && colDiff <= 1 && (rowDiff > 0 || colDiff > 0)) {
+            this.lastMoveError = null;
             return true;
         }
         
         // 王车易位已经在 handleCastling 中处理
+        this.lastMoveError = '王每次只能移动一格（王车易位除外）';
         return false;
     }
 
@@ -381,11 +401,18 @@ class ChessGame {
     isValidRookMove(fromRow, fromCol, toRow, toCol, piece) {
         // 车只能直线移动
         if (fromRow !== toRow && fromCol !== toCol) {
+            this.lastMoveError = '车只能横向或纵向移动';
             return false;
         }
         
         // 检查路径上是否有其他棋子
-        return this.isPathClear(fromRow, fromCol, toRow, toCol);
+        if (!this.isPathClear(fromRow, fromCol, toRow, toCol)) {
+            this.lastMoveError = '车移动路径被其他棋子阻挡';
+            return false;
+        }
+        
+        this.lastMoveError = null;
+        return true;
     }
 
     /**
@@ -394,11 +421,18 @@ class ChessGame {
     isValidBishopMove(fromRow, fromCol, toRow, toCol, piece) {
         // 象只能斜线移动
         if (Math.abs(toRow - fromRow) !== Math.abs(toCol - fromCol)) {
+            this.lastMoveError = '象只能沿对角线移动';
             return false;
         }
         
         // 检查路径是否畅通
-        return this.isPathClear(fromRow, fromCol, toRow, toCol);
+        if (!this.isPathClear(fromRow, fromCol, toRow, toCol)) {
+            this.lastMoveError = '象移动路径被其他棋子阻挡';
+            return false;
+        }
+        
+        this.lastMoveError = null;
+        return true;
     }
 
     /**
@@ -410,10 +444,17 @@ class ChessGame {
         const isDiagonal = (Math.abs(toRow - fromRow) === Math.abs(toCol - fromCol));
         
         if (!isStraight && !isDiagonal) {
+            this.lastMoveError = '后只能直线或斜线移动';
             return false;
         }
         
-        return this.isPathClear(fromRow, fromCol, toRow, toCol);
+        if (!this.isPathClear(fromRow, fromCol, toRow, toCol)) {
+            this.lastMoveError = '后移动路径被其他棋子阻挡';
+            return false;
+        }
+        
+        this.lastMoveError = null;
+        return true;
     }
 
     /**
@@ -424,7 +465,15 @@ class ChessGame {
         const colDiff = Math.abs(toCol - fromCol);
         
         // 马走"日"字：一个方向2格，另一个方向1格
-        return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+        const isValid = (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+        
+        if (!isValid) {
+            this.lastMoveError = '马走"日"字：先走两格直线再走一格横线，或先走一格直线再走两格横线';
+        } else {
+            this.lastMoveError = null;
+        }
+        
+        return isValid;
     }
 
     /**
@@ -439,22 +488,40 @@ class ChessGame {
         const colDiff = Math.abs(toCol - fromCol);
         
         // 1. 前进一格
+        // 1. 前进一格
         if (colDiff === 0 && rowDiff === direction) {
-            return !this.pieces[`${toRow},${toCol}`]; // 目标格必须为空
+            if (this.pieces[`${toRow},${toCol}`]) {
+                this.lastMoveError = isWhite ?
+                    '白兵前进时不能吃子，只能斜走吃子' :
+                    '黑兵前进时不能吃子，只能斜走吃子';
+                return false;
+            }
+            this.lastMoveError = null;
+            return true;
         }
         
         // 2. 前进两格（仅限初始位置）
+        // 2. 前进两格（仅限初始位置）
         if (colDiff === 0 && rowDiff === 2 * direction && fromRow === startRow) {
             const intermediateRow = fromRow + direction;
-            return !this.pieces[`${intermediateRow},${toCol}`] && 
-                   !this.pieces[`${toRow},${toCol}`];
+            if (this.pieces[`${intermediateRow},${toCol}`]) {
+                this.lastMoveError = '兵前进两格时路径被阻挡';
+                return false;
+            }
+            if (this.pieces[`${toRow},${toCol}`]) {
+                this.lastMoveError = '兵前进时目标格必须为空';
+                return false;
+            }
+            this.lastMoveError = null;
+            return true;
         }
         
         // 3. 斜吃子
         if (colDiff === 1 && rowDiff === direction) {
             // 普通吃子
-            if (this.pieces[`${toRow},${toCol}`] && 
+            if (this.pieces[`${toRow},${toCol}`] &&
                 this.isOpponentPiece(piece, this.pieces[`${toRow},${toCol}`])) {
+                this.lastMoveError = null;
                 return true;
             }
             
@@ -465,15 +532,22 @@ class ChessGame {
                 if (toRow === epRow && toCol === epCol) {
                     // 验证过路兵：必须有一个敌方兵在过路兵起始位置
                     const epPieceRow = isWhite ? 3 : 4; // 过路兵当前位置
-                    if (this.pieces[`${epPieceRow},${epCol}`] && 
+                    if (this.pieces[`${epPieceRow},${epCol}`] &&
                         this.pieces[`${epPieceRow},${epCol}`].toLowerCase() === 'p' &&
                         this.isOpponentPiece(piece, this.pieces[`${epPieceRow},${epCol}`])) {
+                        this.lastMoveError = null;
                         return true;
                     }
                 }
             }
+            
+            this.lastMoveError = '兵只能斜走一格吃子，且目标格必须有对方棋子';
+            return false;
         }
         
+        this.lastMoveError = isWhite ?
+            '白兵走法：向前走一格，起始位置可走两格，吃子时斜走' :
+            '黑兵走法：向前走一格，起始位置可走两格，吃子时斜走';
         return false;
     }
 
@@ -513,6 +587,7 @@ class ChessGame {
 
         // 检查车是否存在且未移动过
         if (!rookPiece || rookPiece.toLowerCase() !== 'r') {
+            this.lastMoveError = '王车易位需要王和车都在初始位置且未被移动过';
             return false;
         }
 
@@ -521,6 +596,7 @@ class ChessGame {
         const pathEndCol = Math.max(fromCol, rookFromCol);
         for (let col = pathStartCol + 1; col < pathEndCol; col++) {
             if (this.pieces[`${fromRow},${col}`]) {
+                this.lastMoveError = '王车易位时王和车之间不能有其他棋子';
                 return false; // 路径上有棋子阻挡
             }
         }
@@ -529,6 +605,7 @@ class ChessGame {
 
         // 检查国王的起始格是否被攻击
         if (this.isSquareAttacked(fromRow, fromCol, attackingColor)) {
+            this.lastMoveError = '王车易位时王不能处于被将军状态';
             return false; // 国王当前被将军
         }
 
@@ -542,6 +619,7 @@ class ChessGame {
 
         for (const [pathRow, pathCol] of kingPath) {
             if (this.isSquareAttacked(pathRow, pathCol, attackingColor)) {
+                this.lastMoveError = '王车易位时王经过的格子不能被攻击';
                 return false; // 国王移动路径被攻击
             }
         }
@@ -552,6 +630,7 @@ class ChessGame {
         const castlingType = color === 'w' ? (isKingside ? 'K' : 'Q') : (isKingside ? 'k' : 'q');
         
         if (!castlingRights.includes(castlingType)) {
+            this.lastMoveError = '已经失去该方向的王车易位权利';
             return false; // 没有易位权利
         }
 
@@ -562,6 +641,7 @@ class ChessGame {
         this.pieces[`${toRow},${toCol}`] = this.currentTurn === 'w' ? 'K' : 'k'; // 放置国王到新位置
         this.pieces[rookToKey] = this.currentTurn === 'w' ? 'R' : 'r'; // 放置车到新位置
 
+        this.lastMoveError = null;
         return true;
     }
 
