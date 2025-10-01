@@ -1026,8 +1026,11 @@ class ChessGame {
      */
     handlePromotionClick(row, col) {
         // 检查点击是否在升变选择区域内
-        if (row === this.pendingPromotion.row && col >= 0 && col <= 3) {
-            const promotionPieces = this.currentTurn === 'w' ? ['Q', 'R', 'B', 'N'] : ['q', 'r', 'b', 'n'];
+        const optionRow = this.pendingPromotion.row > 3 ? this.pendingPromotion.row - 1 : this.pendingPromotion.row + 1;
+        
+        if (row === optionRow && col >= 0 && col <= 3) {
+            // 修复：按照车、马、象、后的顺序排列
+            const promotionPieces = this.currentTurn === 'w' ? ['R', 'N', 'B', 'Q'] : ['r', 'n', 'b', 'q'];
             const selectedPiece = promotionPieces[col];
             
             this.completePromotion(selectedPiece);
@@ -1035,11 +1038,15 @@ class ChessGame {
     }
 
     /**
-     * 简化的兵升变显示
+     * 简化的兵升变显示 - 修复顺序
      */
     showPromotionSelection(row, col) {
-        const promotionPieces = this.currentTurn === 'w' ? ['Q', 'R', 'B', 'N'] : ['q', 'r', 'b', 'n'];
-        const pieceNames = { 'Q': '后', 'R': '车', 'B': '象', 'N': '马', 'q': '后', 'r': '车', 'b': '象', 'n': '马' };
+        // 修复：按照车、马、象、后的顺序排列（国际象棋标准顺序）
+        const promotionPieces = this.currentTurn === 'w' ? ['R', 'N', 'B', 'Q'] : ['r', 'n', 'b', 'q'];
+        const pieceNames = {
+            'Q': '后', 'R': '车', 'B': '象', 'N': '马',
+            'q': '后', 'r': '车', 'b': '象', 'n': '马'
+        };
         
         // 直接在棋盘上方显示升变选择
         for (let i = 0; i < 4; i++) {
@@ -1065,7 +1072,7 @@ class ChessGame {
             }
         }
         
-        this.showToast('请点击选择升变棋子：后、车、象或马');
+        this.showToast('请点击选择升变棋子：车、马、象、后');
     }
 
     /**
@@ -1077,12 +1084,13 @@ class ChessGame {
             return;
         }
         
-        const { row, col, piece } = this.pendingPromotion;
+        const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
         const isWhite = piece === 'P';
         const newPiece = isWhite ? pieceType.toUpperCase() : pieceType.toLowerCase();
         
         console.log('完成兵升变:', {
-            position: `${row},${col}`,
+            fromPosition: `${fromRow},${fromCol}`,
+            toPosition: `${row},${col}`,
             fromPiece: piece,
             toPiece: newPiece
         });
@@ -1096,9 +1104,8 @@ class ChessGame {
         // 清除升变选择显示
         this.clearPromotionDisplay();
         
-        // 更新游戏状态
-        // 修复：替换为 updateGameState
-        this.updateGameState(piece, this.pendingPromotion.fromRow, this.pendingPromotion.fromCol, row, col, false);
+        // 修复：使用标准的 updateGameState
+        this.updateGameState(piece, fromRow, fromCol, row, col, false);
         
         this.updateFEN();
         this.renderBoard();
