@@ -1027,12 +1027,12 @@ class ChessGame {
     handlePromotionClick(row, col) {
         if (!this.pendingPromotion) return;
         
-        // 修复：根据兵的颜色确定选项行位置
         const isWhite = this.pendingPromotion.piece === 'P';
-        const optionRow = isWhite ? 1 : 6; // 白兵在底线(0行)，选项显示在第1行；黑兵在底线(7行)，选项显示在第6行
+        const optionRow = isWhite ? 1 : 6;
         
         if (row === optionRow && col >= 0 && col <= 3) {
-            const promotionPieces = this.currentTurn === 'w' ? ['R', 'N', 'B', 'Q'] : ['r', 'n', 'b', 'q'];
+            // 修正：按照后、车、象、马的顺序排列
+            const promotionPieces = this.currentTurn === 'w' ? ['Q', 'R', 'B', 'N'] : ['q', 'r', 'b', 'n'];
             const selectedPiece = promotionPieces[col];
             
             this.completePromotion(selectedPiece);
@@ -1040,18 +1040,18 @@ class ChessGame {
     }
 
     /**
-     * 简化的兵升变显示 - 最终修复版本
+     * 简化的兵升变显示 - 修正顺序
      */
     showPromotionSelection(row, col) {
-        const promotionPieces = this.currentTurn === 'w' ? ['R', 'N', 'B', 'Q'] : ['r', 'n', 'b', 'q'];
+        // 修正：按照后、车、象、马的顺序排列（国际象棋标准顺序）
+        const promotionPieces = this.currentTurn === 'w' ? ['Q', 'R', 'B', 'N'] : ['q', 'r', 'b', 'n'];
         const pieceNames = {
             'Q': '后', 'R': '车', 'B': '象', 'N': '马',
             'q': '后', 'r': '车', 'b': '象', 'n': '马'
         };
         
-        // 修复：根据兵的颜色确定选项行位置
         const isWhite = this.currentTurn === 'w';
-        const selectionRow = isWhite ? 1 : 6; // 白兵选项在第1行，黑兵选项在第6行
+        const selectionRow = isWhite ? 1 : 6;
         
         for (let i = 0; i < 4; i++) {
             const selectionCol = i;
@@ -1075,7 +1075,7 @@ class ChessGame {
             }
         }
         
-        this.showToast('请点击选择升变棋子：车、马、象、后');
+        this.showToast('请点击选择升变棋子：后、车、象、马');
     }
 
     /**
