@@ -1047,10 +1047,8 @@ class ChessGame {
         // 使用变量存储选择的棋子，确保在不同事件间共享
         let selectedPiece = null;
         
-        // 移除之前可能添加的事件监听器，避免重复绑定
-        const newModal = modal.cloneNode(true);
-        modal.parentNode.replaceChild(newModal, modal);
-        const updatedModal = document.getElementById('promotion-modal');
+        // 直接使用原始的 modal 元素，避免替换 DOM 元素
+        const updatedModal = modal;
         
         // 棋子选择事件 - 使用事件委托确保可靠
         updatedModal.addEventListener('click', (e) => {
@@ -1086,11 +1084,10 @@ class ChessGame {
                     
                     // 重置模态框状态
                     selectedPiece = null;
-                    const modal = document.getElementById('promotion-modal');
-                    if (modal) {
-                        modal.querySelector('.confirm-btn').disabled = true;
-                        modal.querySelector('.confirm-btn').textContent = '确认选择';
-                        modal.querySelectorAll('.promotion-option').forEach(btn => {
+                    if (updatedModal) { // 使用 updatedModal
+                        updatedModal.querySelector('.confirm-btn').disabled = true;
+                        updatedModal.querySelector('.confirm-btn').textContent = '确认选择';
+                        updatedModal.querySelectorAll('.promotion-option').forEach(btn => {
                             btn.classList.remove('selected');
                         });
                     }
