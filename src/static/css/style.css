@@ -2635,108 +2635,20 @@ input:checked + .slider:before {
 }
 }
 
-/* 兵升变模态框样式 */
-.promotion-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: none;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-}
-
-.promotion-content {
-    background: white;
-    padding: 25px;
-    border-radius: 12px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
-    text-align: center;
-    min-width: 350px;
-    max-width: 500px;
-    z-index: 10001;
-}
-
-.promotion-content h3 {
-    margin-bottom: 20px;
-    color: #333;
-    font-size: 1.4em;
-}
-
-.promotion-options {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 20px;
-}
-
+/* 升变选项样式 */
 .promotion-option {
-    padding: 12px 18px;
-    font-size: 20px;
-    background: #f8f9fa;
-    border: 2px solid #dee2e6;
-    border-radius: 8px;
+    background-color: #ffeb3b !important;
+    border: 2px solid #ff9800 !important;
+}
+
+.promotion-piece {
+    transform: scale(1.2);
     cursor: pointer;
-    transition: all 0.2s ease;
-    min-width: 80px;
 }
 
-.promotion-option:hover {
-    background: #e9ecef;
-    border-color: #007bff;
-    transform: translateY(-2px);
-}
-
-.promotion-option.selected {
-    background: #007bff;
-    color: white;
-    border-color: #0056b3;
-}
-
-.promotion-confirm-buttons {
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    margin-top: 15px;
-}
-
-.confirm-btn, .cancel-btn {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 16px;
-    transition: all 0.2s ease;
-}
-
-.confirm-btn {
-    background: #28a745;
-    color: white;
-}
-
-.confirm-btn:hover:not(:disabled) {
-    background: #218838;
-    transform: translateY(-1px);
-}
-
-.confirm-btn:disabled {
-    background: #6c757d;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.cancel-btn {
-    background: #dc3545;
-    color: white;
-}
-
-.cancel-btn:hover {
-    background: #c82333;
-    transform: translateY(-1px);
+.promotion-piece:hover {
+    transform: scale(1.3);
+    transition: transform 0.2s;
 }
 
 /* 国际象棋游戏结束模态框样式 */

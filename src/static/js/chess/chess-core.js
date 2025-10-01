@@ -73,7 +73,6 @@ class ChessGame {
         this.initBoard();
         this.setupEventListeners();
         this.setupInitialPosition();
-        this.createPromotionModal();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
     }
 
@@ -177,17 +176,18 @@ class ChessGame {
         }
     }
 
+    /**
+     * 简化的兵升变处理
+     */
     handleSquareClick(row, col) {
         // 如果游戏已结束，不允许操作
         if (this.gameOver) {
             return;
         }
 
-        // 如果有等待的升变，阻止所有其他操作
+        // 如果有等待的升变，先处理升变
         if (this.pendingPromotion) {
-            this.showToast('请先完成兵升变选择');
-            // 重新显示模态框以防它被意外关闭
-            this.showPromotionModal(this.pendingPromotion.row, this.pendingPromotion.col);
+            this.handlePromotionClick(row, col);
             return;
         }
         
@@ -231,6 +231,9 @@ class ChessGame {
         this.renderBoard();
     }
 
+    /**
+     * 修改兵移动逻辑 - 简化版本
+     */
     movePiece(fromRow, fromCol, toRow, toCol) {
         // 如果游戏已结束，不允许移动
         if (this.gameOver) {
@@ -251,111 +254,74 @@ class ChessGame {
             return false;
         }
 
-        // 基本规则检查：不能吃己方棋子
+        // 基本规则检查
         if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
             this.showToast('不能吃掉自己的棋子');
             return false;
         }
 
-        // 检查移动规则，使用详细的错误提示
+        // 检查移动规则
         if (!this.isValidPieceMove(piece, fromRow, fromCol, toRow, toCol)) {
-            // 优先显示具体的错误信息
             if (this.lastMoveError) {
                 this.showToast(this.lastMoveError);
-                this.lastMoveError = null; // 清除错误信息
+                this.lastMoveError = null;
             } else {
-                // 如果没有具体错误信息，显示通用提示
                 const pieceType = piece.toLowerCase();
                 const genericMessages = {
                     'p': '兵走法：向前走一格，起始位置可走两格，吃子时斜走',
-                    'n': '马走"日"字：两格直线加一格横线',
-                    'b': '象走斜线：只能沿对角线移动',
-                    'r': '车走直线：可以横向或纵向移动',
-                    'q': '后走直线或斜线：可以横向、纵向或对角线移动',
-                    'k': '王走一格：可以横向、纵向或对角线移动一格'
+                    'n': '马走"日"字',
+                    'b': '象走斜线',
+                    'r': '车走直线',
+                    'q': '后走直线或斜线',
+                    'k': '王走一格'
                 };
                 this.showToast(genericMessages[pieceType] || '移动不符合规则');
             }
             return false;
         }
 
-        // 在移动前保存当前 FEN 到历史记录
+        // 保存当前 FEN 到历史记录
         this.moveHistory.push(this.generateFEN());
-
-        // 保存被吃的棋子（用于易位权利更新）
-        const capturedPiece = this.pieces[toKey];
-
-        // 检查是否是王车易位
-        if (piece.toLowerCase() === 'k' && Math.abs(fromCol - toCol) === 2) {
-            // 王车易位：国王移动了两格
-            if (!this.handleCastling(fromRow, fromCol, toRow, toCol)) {
-                this.showToast('王车易位不符合规则');
-                this.moveHistory.pop(); // 移除无效的历史记录
-                return false;
-            }
-            // 王车易位后，直接更新游戏状态，因为 handleCastling 已经处理了棋子移动
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
-            this.updateFEN();
-            this.showToast(`${this.currentTurn === 'w' ? '白方' : '黑方'}完成了${toCol > fromCol ? '短' : '长'}易位`);
-            return true;
-        }
-
-        // 检查吃过路兵
-        let enPassantCapture = false;
-        if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && 
-            toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
-            // 验证过路兵条件：必须是敌方兵刚刚移动两格
-            const epRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
-            const epKey = `${epRow},${toCol}`;
-            const epPiece = this.pieces[epKey];
-            
-            if (epPiece && epPiece.toLowerCase() === 'p' && this.isOpponentPiece(piece, epPiece)) {
-                // 删除被吃的过路兵
-                delete this.pieces[epKey];
-                enPassantCapture = true;
-                this.showToast('吃过路兵！');
-            }
-        }
 
         // 检查兵升变
         const isPromotion = piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7);
         
         if (isPromotion) {
-            // 先执行移动，但保持兵的状态
+            // 执行移动
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
             
-            // 设置等待升变状态，保存起始位置和目标位置
+            // 设置等待升变状态
             this.pendingPromotion = {
-                fromRow: fromRow,
-                fromCol: fromCol,
                 row: toRow,
                 col: toCol,
                 piece: piece
             };
             
-            console.log('设置pendingPromotion:', this.pendingPromotion);
-            this.showPromotionModal(toRow, toCol);
+            console.log('触发兵升变:', this.pendingPromotion);
             
-            // 注意：这里不立即更新游戏状态，等待用户选择升变
-            // 但需要重新渲染棋盘显示移动后的兵
+            // 显示升变选择
+            this.showPromotionSelection(toRow, toCol);
+            
             this.renderBoard();
-            return true; // 返回true表示移动已处理
+            return true;
         } else {
             // 普通移动
+            const capturedPiece = this.pieces[toKey];
+            
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
             
             // 更新游戏状态
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture);
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
+            
+            // 更新易位权利
+            if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
+                this.updateCastlingRightsForCapturedRook(toRow, toCol);
+            }
         }
 
-        // 检查被吃的棋子是否是车，更新易位权利
-        if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
-            this.updateCastlingRightsForCapturedRook(toRow, toCol);
-        }
-
-        this.lastMoveError = null; // 成功移动，清除错误信息
+        this.lastMoveError = null;
         this.updateFEN();
         return true;
     }
@@ -994,148 +960,7 @@ class ChessGame {
         }
     }
 
-    /**
-     * 创建兵升变模态框 - 更新版本
-     */
-    createPromotionModal() {
-        // 检查是否已存在模态框
-        if (document.getElementById('promotion-modal')) {
-            return;
-        }
 
-        const modal = document.createElement('div');
-        modal.id = 'promotion-modal';
-        modal.className = 'promotion-modal';
-        modal.style.display = 'none';
-        
-        modal.innerHTML = `
-            <div class="promotion-content">
-                <h3>选择升变棋子</h3>
-                <div class="promotion-options">
-                    <button class="promotion-option" data-piece="q">♕ 后</button>
-                    <button class="promotion-option" data-piece="r">♖ 车</button>
-                    <button class="promotion-option" data-piece="b">♗ 象</button>
-                    <button class="promotion-option" data-piece="n">♘ 马</button>
-                </div>
-                <div class="promotion-confirm-buttons">
-                    <button class="confirm-btn" disabled>确认选择</button>
-                    <button class="cancel-btn">取消</button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        // 添加事件监听器
-        this.setupPromotionModalEvents();
-    }
-
-    /**
-     * 设置兵升变模态框事件
-     */
-    setupPromotionModalEvents() {
-        const modal = document.getElementById('promotion-modal');
-        if (!modal) return;
-        
-        let selectedPiece = null;
-        
-        // 棋子选择事件
-        modal.querySelectorAll('.promotion-option').forEach(button => {
-            button.addEventListener('click', (e) => {
-                // 移除之前的选择
-                modal.querySelectorAll('.promotion-option').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-                
-                // 设置当前选择
-                e.target.classList.add('selected');
-                selectedPiece = e.target.dataset.piece;
-                
-                // 启用确认按钮
-                const confirmBtn = modal.querySelector('.confirm-btn');
-                confirmBtn.disabled = false;
-            });
-        });
-        
-        // 确认按钮事件 - 修复版本
-        modal.querySelector('.confirm-btn').addEventListener('click', () => {
-            if (selectedPiece && this.pendingPromotion) {
-                this.completePromotion(selectedPiece);
-                
-                // 重置模态框状态
-                selectedPiece = null;
-                modal.querySelector('.confirm-btn').disabled = true;
-                modal.querySelectorAll('.promotion-option').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-            } else {
-                this.showToast('请先选择要升变的棋子类型');
-            }
-        });
-        
-        // 取消按钮事件 - 修复版本
-        modal.querySelector('.cancel-btn').addEventListener('click', () => {
-            // 重要：取消时需要撤销兵的移动
-            if (this.pendingPromotion) {
-                const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
-                
-                // 撤销移动：把兵放回原位置
-                delete this.pieces[`${row},${col}`];
-                this.pieces[`${fromRow},${fromCol}`] = piece;
-                
-                // 从历史记录中移除这次不完整的移动
-                if (this.moveHistory.length > 0) {
-                    this.moveHistory.pop();
-                }
-                
-                this.pendingPromotion = null;
-                this.renderBoard();
-                this.updateFEN();
-            }
-            
-            modal.style.display = 'none';
-            
-            // 重置状态
-            selectedPiece = null;
-            modal.querySelector('.confirm-btn').disabled = true;
-            modal.querySelectorAll('.promotion-option').forEach(btn => {
-                btn.classList.remove('selected');
-            });
-            
-            this.showToast('已取消兵升变');
-        });
-        
-        // 点击模态框背景关闭 - 修复版本
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                // 同样需要撤销兵的移动
-                if (this.pendingPromotion) {
-                    const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
-                    
-                    delete this.pieces[`${row},${col}`];
-                    this.pieces[`${fromRow},${fromCol}`] = piece;
-                    
-                    if (this.moveHistory.length > 0) {
-                        this.moveHistory.pop();
-                    }
-                    
-                    this.pendingPromotion = null;
-                    this.renderBoard();
-                    this.updateFEN();
-                }
-                
-                modal.style.display = 'none';
-                
-                selectedPiece = null;
-                modal.querySelector('.confirm-btn').disabled = true;
-                modal.querySelectorAll('.promotion-option').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-                
-                this.showToast('已取消兵升变');
-            }
-        });
-    }
 
     /**
      * 创建游戏结束模态框
@@ -1191,32 +1016,6 @@ class ChessGame {
         this.showToast(message);
     }
 
-    /**
-     * 显示兵升变选择界面 - 更新版本
-     */
-    showPromotionModal(row, col) {
-        const modal = document.getElementById('promotion-modal');
-        if (!modal) return;
-        
-        // 重置选择状态
-        modal.querySelector('.confirm-btn').disabled = true;
-        modal.querySelectorAll('.promotion-option').forEach(btn => {
-            btn.classList.remove('selected');
-        });
-        
-        // 根据棋子颜色设置选项
-        const isWhite = this.pendingPromotion.piece === 'P';
-        const options = modal.querySelectorAll('.promotion-option');
-        
-        options.forEach(option => {
-            const pieceType = option.dataset.piece;
-            const pieceChar = isWhite ? pieceType.toUpperCase() : pieceType;
-            option.textContent = `${PIECES[pieceChar]} ${this.getPieceName(pieceChar)}`;
-        });
-        
-        modal.style.display = 'flex';
-        this.showToast('请选择兵升变的棋子，然后点击确认');
-    }
 
     /**
      * 完成兵升变 - 完全修复版本
@@ -1265,6 +1064,133 @@ class ChessGame {
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
         
         console.log('升变完成，pendingPromotion已清除，新棋子已放置');
+        
+        // 检查游戏结束条件
+        this.checkGameEndConditions();
+    }
+
+    /**
+     * 简化的兵升变处理
+     */
+    handlePromotionClick(row, col) {
+        // 检查点击是否在升变选择区域内
+        if (row === this.pendingPromotion.row && col >= 0 && col <= 3) {
+            const promotionPieces = this.currentTurn === 'w' ? ['Q', 'R', 'B', 'N'] : ['q', 'r', 'b', 'n'];
+            const selectedPiece = promotionPieces[col];
+            
+            this.completePromotion(selectedPiece);
+        }
+    }
+
+    /**
+     * 简化的兵升变显示
+     */
+    showPromotionSelection(row, col) {
+        const promotionPieces = this.currentTurn === 'w' ? ['Q', 'R', 'B', 'N'] : ['q', 'r', 'b', 'n'];
+        const pieceNames = { 'Q': '后', 'R': '车', 'B': '象', 'N': '马', 'q': '后', 'r': '车', 'b': '象', 'n': '马' };
+        
+        // 直接在棋盘上方显示升变选择
+        for (let i = 0; i < 4; i++) {
+            const selectionRow = row > 3 ? row - 1 : row + 1; // 在选择行上方或下方显示
+            const selectionCol = i;
+            
+            const square = this.getSquareElement(selectionRow, selectionCol);
+            if (square) {
+                square.innerHTML = '';
+                square.classList.add('promotion-option');
+                
+                const pieceElement = document.createElement('div');
+                pieceElement.className = 'chess-piece promotion-piece';
+                pieceElement.textContent = PIECES[promotionPieces[i]];
+                pieceElement.dataset.piece = promotionPieces[i];
+                
+                const label = document.createElement('span');
+                label.className = 'chess-piece-label';
+                label.textContent = pieceNames[promotionPieces[i]];
+                
+                square.appendChild(pieceElement);
+                square.appendChild(label);
+            }
+        }
+        
+        this.showToast('请点击选择升变棋子：后、车、象或马');
+    }
+
+    /**
+     * 简化的完成升变
+     */
+    completePromotion(pieceType) {
+        if (!this.pendingPromotion) {
+            console.error('没有等待的升变！');
+            return;
+        }
+        
+        const { row, col, piece } = this.pendingPromotion;
+        const isWhite = piece === 'P';
+        const newPiece = isWhite ? pieceType.toUpperCase() : pieceType.toLowerCase();
+        
+        console.log('完成兵升变:', {
+            position: `${row},${col}`,
+            fromPiece: piece,
+            toPiece: newPiece
+        });
+        
+        // 更新棋子
+        this.pieces[`${row},${col}`] = newPiece;
+        
+        // 清除升变状态
+        this.pendingPromotion = null;
+        
+        // 清除升变选择显示
+        this.clearPromotionDisplay();
+        
+        // 更新游戏状态
+        this.updateGameStateAfterPromotion();
+        
+        this.updateFEN();
+        this.renderBoard();
+        
+        this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
+        
+        console.log('升变完成');
+    }
+
+    /**
+     * 清除升变选择显示
+     */
+    clearPromotionDisplay() {
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const square = this.getSquareElement(row, col);
+                if (square) {
+                    square.classList.remove('promotion-option');
+                }
+            }
+        }
+    }
+
+    /**
+     * 升变后更新游戏状态
+     */
+    updateGameStateAfterPromotion() {
+        // 切换回合
+        this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
+        
+        // 更新完整回合数（黑方走完后）
+        if (this.currentTurn === 'w') {
+            this.fullMoveNumber++;
+        }
+        
+        // 升变重置50步规则计数
+        this.halfMoveClock = 0;
+        
+        // 记录局面历史
+        const currentPosition = this.generateFEN().split(' ');
+        this.positionHistory.push(currentPosition);
+        
+        if (this.positionHistory.length > 20) {
+            this.positionHistory.shift();
+        }
         
         // 检查游戏结束条件
         this.checkGameEndConditions();
