@@ -1655,6 +1655,38 @@ document.addEventListener('DOMContentLoaded', () => {
             }, { passive: true });
         }
     }
+    // --- START: Add Voice Input Listeners for Chat Mode ---
+    if (chatVoiceInputButton) {
+        // Mouse events for press-and-hold recording
+        chatVoiceInputButton.addEventListener('mousedown', startChatRecording);
+        chatVoiceInputButton.addEventListener('mouseup', stopChatRecording);
+        chatVoiceInputButton.addEventListener('mouseleave', () => {
+            if (isChatRecording) {
+                cancelChatRecording();
+            }
+        });
+
+        // Touch events for press-and-hold recording on mobile
+        chatVoiceInputButton.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent scrolling/zooming
+            chatInitialTouchY = e.touches.clientY;
+            startChatRecording();
+        });
+        chatVoiceInputButton.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            stopChatRecording();
+        });
+        chatVoiceInputButton.addEventListener('touchmove', (e) => {
+            if (isChatRecording) {
+                const currentTouchY = e.touches.clientY;
+                // Check for a significant upward swipe to cancel
+                if (chatInitialTouchY - currentTouchY > 50) {
+                    cancelChatRecording();
+                }
+            }
+        });
+    }
+    // --- END: Add Voice Input Listeners for Chat Mode ---
 });
 
 /**
