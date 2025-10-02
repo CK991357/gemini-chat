@@ -265,6 +265,29 @@ class ChessGame {
             return false;
         }
 
+        // 检查是否为王车易位 (必须是王，且在同一行上移动2格)
+        const isCastlingAttempt = piece.toLowerCase() === 'k' && fromRow === toRow && Math.abs(toCol - fromCol) === 2;
+
+        if (isCastlingAttempt) {
+            this.moveHistory.push(this.generateFEN());
+            if (this.handleCastling(fromRow, fromCol, toRow, toCol)) {
+                this.showToast('王车易位！');
+                // 王车易位成功，更新游戏状态
+                this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
+                this.lastMoveError = null;
+                this.playMoveSound(piece);
+                this.updateFEN();
+                this.renderBoard();
+                return true;
+            } else {
+                // 王车易位失败，显示错误信息
+                this.moveHistory.pop(); // 恢复历史记录
+                this.showToast(this.lastMoveError || '王车易位不符合规则');
+                this.lastMoveError = null;
+                return false;
+            }
+        }
+
         // 检查移动规则
         if (!this.isValidPieceMove(piece, fromRow, fromCol, toRow, toCol)) {
             if (this.lastMoveError) {
@@ -374,8 +397,7 @@ class ChessGame {
             return true;
         }
         
-        // 王车易位已经在 handleCastling 中处理
-        this.lastMoveError = '王每次只能移动一格（王车易位除外）';
+        this.lastMoveError = '王每次只能移动一格';
         return false;
     }
 
