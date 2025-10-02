@@ -1756,7 +1756,6 @@ async function startChatRecording() {
     showToast('录音已开始...');
     chatVoiceInputButton.classList.add('recording'); // 使用新的 CSS 类
     messageInput.placeholder = '正在录音，请说话...';
-    messageInput.value = '';
 
     chatAudioChunks = [];
     chatAudioRecorder = new AudioRecorder();
