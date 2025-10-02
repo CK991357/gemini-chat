@@ -1669,7 +1669,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Touch events for press-and-hold recording on mobile
         chatVoiceInputButton.addEventListener('touchstart', (e) => {
             e.preventDefault(); // Prevent scrolling/zooming
-            chatInitialTouchY = e.touches.clientY;
+            chatInitialTouchY = e.touches[0].clientY; 
             startChatRecording();
         });
         chatVoiceInputButton.addEventListener('touchend', (e) => {
