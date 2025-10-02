@@ -4,6 +4,7 @@
  */
 
 import { Logger } from '../utils/logger.js';
+import { ChessAIEnhanced } from './chess-ai-enhanced.js';
 
 // 棋子 Unicode 字符
 const PIECES = {
@@ -69,11 +70,16 @@ class ChessGame {
         this.positionHistory = []; // 存储历史局面（用于重复检测）
         this.lastMoveError = null; // 新增：存储最后一次移动的错误信息
 
+        this.fullGameHistory = []; // 完整对局历史
+        this.chessAI = null; // AI实例
+
         // 初始化
         this.initBoard();
         this.setupEventListeners();
         this.setupInitialPosition();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
+        this.initializeAI();
+        this.addAIButton();
     }
 
     initBoard() {
@@ -125,6 +131,9 @@ class ChessGame {
         this.fullMoveNumber = 1;
         this.pendingPromotion = null;
         this.gameOver = false; // 重置游戏结束状态
+
+        // 在所有状态设置完成后，调用专门的方法初始化历史
+        this.initializeFullHistory();
         
         this.renderBoard();
         this.updateFEN();
@@ -134,6 +143,7 @@ class ChessGame {
         if (this.moveHistory.length > 0) {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
+            this.removeLastMoveFromHistory(); // 同步完整历史记录
         }
     }
 
@@ -270,6 +280,7 @@ class ChessGame {
                 this.showToast('王车易位！');
                 // 王车易位成功，更新游戏状态
                 this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
+                this.recordMoveToHistory();
                 this.lastMoveError = null;
                 this.playMoveSound(piece);
                 this.updateFEN();
@@ -350,6 +361,7 @@ class ChessGame {
             
             // 更新游戏状态
             this.updateGameState(piece, fromRow, fromCol, toRow, toCol, isEnPassantCapture);
+            this.recordMoveToHistory();
             
             // 更新易位权利
             if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
@@ -1141,6 +1153,7 @@ class ChessGame {
         
         // 修复：使用标准的 updateGameState
         this.updateGameState(piece, fromRow, fromCol, row, col, false);
+        this.recordMoveToHistory();
         
         this.updateFEN();
         this.renderBoard();
@@ -1582,6 +1595,91 @@ class ChessGame {
             this.showToast('FEN格式错误，无法加载: ' + error.message);
             Logger.error('FEN parsing error:', error);
             return false;
+        }
+    }
+
+    // --- 历史记录管理 (集成增强日志) ---
+    initializeFullHistory() {
+        this.fullGameHistory = [this.generateFEN()];
+        console.log('完整对局历史已初始化，初始FEN:', this.fullGameHistory);
+    }
+
+    recordMoveToHistory() {
+        const currentFEN = this.generateFEN();
+        this.fullGameHistory.push(currentFEN);
+        console.log(`记录历史步数: ${this.fullGameHistory.length}, FEN: ${currentFEN}`);
+    }
+
+    removeLastMoveFromHistory() {
+        if (this.fullGameHistory.length > 1) {
+            const removed = this.fullGameHistory.pop();
+            console.log(`撤销历史记录，剩余步数: ${this.fullGameHistory.length}, 移除的FEN: ${removed}`);
+        }
+    }
+
+    getFullGameHistory() {
+        return [...this.fullGameHistory];
+    }
+
+    // --- AI 功能集成 (集成增强的按钮状态管理) ---
+    initializeAI() {
+        this.chessAI = new ChessAIEnhanced(this, {
+            showToast: this.showToast
+        });
+        console.log('Chess AI Enhanced module initialized.');
+    }
+
+    addAIButton() {
+        const fenActions = document.querySelector('.fen-actions');
+        if (!fenActions) {
+            console.error('.fen-actions container not found for AI button.');
+            return;
+        }
+
+        // 防止重复添加
+        if (document.getElementById('ask-ai-button')) return;
+
+        const aiButton = document.createElement('button');
+        aiButton.id = 'ask-ai-button';
+        aiButton.className = 'action-button chess-ai-button';
+        aiButton.innerHTML = '<i class="fas fa-robot"></i> 问AI走法';
+        aiButton.addEventListener('click', () => this.handleAskAI());
+        
+        fenActions.appendChild(aiButton);
+    }
+
+    async handleAskAI() {
+        if (this.gameOver) {
+            this.showToast('游戏已结束，无法询问AI');
+            return;
+        }
+        if (this.pendingPromotion) {
+            this.showToast('请先完成兵的升变选择');
+            return;
+        }
+        
+        const aiButton = document.getElementById('ask-ai-button');
+        const originalText = aiButton.innerHTML;
+        
+        aiButton.disabled = true;
+        aiButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> AI思考中...';
+
+        try {
+            this.showToast('正在获取AI建议的走法...');
+            const success = await this.chessAI.askAIForMove();
+            
+            if (success) {
+                this.showToast('AI走法执行成功！');
+            } else {
+                // 具体的失败原因已在 askAIForMove 内部 toast
+            }
+        } catch (error) {
+            console.error('AI走法处理异常:', error);
+            this.showToast(`AI走法处理失败: ${error.message}`);
+        } finally {
+            // 确保按钮状态在任何情况下都能恢复
+            aiButton.disabled = false;
+            aiButton.innerHTML = originalText;
         }
     }
 }

@@ -2722,3 +2722,26 @@ input:checked + .slider:before {
 .chess-btn-secondary:hover {
     background: #545b62;
 }
+/* Chess AI Button Styles */
+.chess-ai-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-top: 8px;
+    width: 100%;
+    transition: background 0.3s ease, opacity 0.3s ease;
+}
+
+.chess-ai-button:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
+
+.chess-ai-button:disabled {
+    background: #999;
+    cursor: not-allowed;
+    opacity: 0.7;
+}

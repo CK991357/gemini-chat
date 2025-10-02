@@ -106,8 +106,9 @@ The `src` directory is the heart of the application, containing all source code 
             -   [`tool-manager.js`](src/static/js/tools/tool-manager.js): Manages the registration and execution of various tools. It registers default tools like Google Search and Weather, provides their declarations to the Gemini API, and handles incoming tool call requests from the API by executing the corresponding tool's logic.
             -   [`weather-tool.js`](src/static/js/tools/weather-tool.js): Represents a mock tool for retrieving weather forecasts. It defines a function `get_weather_on_date` with parameters for location and date, and returns simulated weather data for demonstration purposes.
         -   **Translation Module (`src/static/js/translation/`)**: Contains logic for translation, including OCR capabilities.
-            -   [`translation-core.js`](src/static/js/translation/translation-core.js): Provides the core logic for the translation feature, handling UI initialization, API calls to the backend translation endpoint, and mode switching within the application. It manages language and model selections, and orchestrates voice input for transcription before translation.
-            -   [`translation-ocr.js`](src/static/js/translation/translation-ocr.js): Manages the OCR (Optical Character Recognition) process for the translation feature. It handles user image uploads, converts images to Base64, sends them to the backend for text recognition using a Gemini model, and displays the extracted text in the input area. It also controls the visibility of the OCR button based on the selected translation model.
+            -   [`translation-core.js`](src/static/js/translation/translation-core.js): 提供翻译功能的核心逻辑，处理 UI 初始化、对后端翻译端点的 API 调用以及应用程序内的模式切换。它管理语言和模型选择，并协调语音输入以在翻译前进行转录。
+            -   [`translation-audio.js`](src/static/js/translation/translation-audio.js): **新增模块** - 负责翻译模式下的语音输入处理。它提供与聊天模式相同的用户体验，支持按住录音、将 PCM 数据转换为 WAV 格式，并将音频发送到 `/api/transcribe-audio` 后端 API 进行语音转文字。
+            -   [`translation-ocr.js`](src/static/js/translation/translation-ocr.js): 管理翻译功能的 OCR（光学字符识别）过程。它处理用户图像上传，将图像转换为 Base64，发送到后端使用 Gemini 模型进行文本识别，并在输入区域显示提取的文本。它还根据所选的翻译模型控制 OCR 按钮的可见性。
         -   **Utils Module (`src/static/js/utils/`)**: Contains general utility functions, error handling, and logging.
             -   [`error-boundary.js`](src/static/js/utils/error-boundary.js): Defines an error boundary for handling various types of application errors. It provides a set of predefined `ErrorCodes` and a custom `ApplicationError` class for consistent and structured error reporting throughout the application.
             -   [`logger.js`](src/static/js/utils/logger.js): A singleton logger that logs messages to the console and emits events for real-time logging. It also stores a limited number of logs in memory and provides a method to export them, aiding in debugging and monitoring.
@@ -313,8 +314,11 @@ This project implements a sophisticated tool management and invocation mechanism
     -   **游戏逻辑**:
         -   `ChessGame` 类 (`chess-core.js`) 封装了所有游戏状态和逻辑，包括当前回合、易位权利、过路兵、半回合计数和完整回合数。
         -   支持棋子点击移动和拖放移动。
-        -   实现了基本的走法验证（如不能吃己方棋子）。
-        -   处理王车易位、兵升变和过路兵规则。
+        -   实现了全面的走法验证，包括不能吃己方棋子、王车易位、兵升变和过路兵规则。
+        -   **游戏结束条件**: 新增了游戏结束状态 (`gameOver`) 和模态框 (`createGameOverModal`, `showGameOverModal`)。`checkGameEndConditions()` 方法现在会检查王是否被吃掉、50步规则和三次重复局面，并在游戏结束时显示相应的模态框。
+        -   **兵升变处理**: 优化了兵升变逻辑，`pendingPromotion` 状态现在包含 `fromRow` 和 `fromCol` 以便更准确地追踪。升变棋子选择（后、车、象、马）的顺序已修正为国际象棋标准顺序，并修复了 `completePromotion` 方法以正确更新游戏状态。
+        -   **FEN 管理健壮性**: `generateFEN()` 和 `loadFEN()` 方法增加了更严格的验证和修正逻辑，包括 `countSquaresInFENRow()`、`fixFENRowLength()`、`validateFEN()` 和 `validateFinalFEN()`，确保生成的 FEN 字符串始终合法且棋盘布局正确。
+        -   **错误提示**: 通过 `lastMoveError` 属性，为不合法走法提供更具体的错误信息。
         -   `isSquareAttacked()` 方法用于检查某个格子是否被敌方棋子攻击，为王车易位等复杂规则提供支持。
     -   **响应式设计**:
         -   棋盘和信息面板的布局在桌面、平板和手机端进行了优化，确保在不同屏幕尺寸下都能良好显示和交互。
