@@ -370,8 +370,20 @@ async function stopTranslationRecording(elements, showToast) {
 
         const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE);
 
-        // Assuming apiHandler is available in this scope
-        const result = await apiHandler.fetchJson('/api/transcribe-audio', audioBlob, { isBlob: true });
+        const response = await fetch('/api/transcribe-audio', {
+            method: 'POST',
+            headers: { 'Content-Type': audioBlob.type },
+            body: audioBlob,
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({
+                error: { message: `Request failed with status: ${response.status}` }
+            }));
+            throw new Error(`转文字失败: ${errorData.error?.message || response.statusText}`);
+        }
+
+        const result = await response.json();
         elements.inputTextarea.value = result.text || '未获取到转录文本。';
         showToast('语音转文字成功');
  
