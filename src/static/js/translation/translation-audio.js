@@ -11,6 +11,8 @@ let translationAudioChunks = [];
 let translationRecordingTimeout = null;
 let _isTranslationRecording = false;
 let hasRequestedTranslationMicPermission = false;
+let _isProcessing = false;
+let _recordingStartTime = 0; // 新增：记录录音开始时间
 
 /**
  * Starts voice recording for translation
@@ -23,6 +25,16 @@ export async function startTranslationRecording(elements, showToast, Logger) {
     if (_isTranslationRecording) {
         Logger?.info('Recording already in progress, skipping start');
         return;
+    }
+
+    // 首先停止任何可能存在的录音
+    if (translationAudioRecorder) {
+        try {
+            translationAudioRecorder.stop();
+        } catch (e) {
+            // 忽略停止错误
+        }
+        translationAudioRecorder = null;
     }
 
     // First click: request permission only
@@ -41,7 +53,6 @@ export async function startTranslationRecording(elements, showToast, Logger) {
             // Immediately stop the stream to release resources, just get permission
             stream.getTracks().forEach(track => {
                 track.stop();
-                Logger?.debug('Stopped permission track:', track.id);
             });
             
             hasRequestedTranslationMicPermission = true;
@@ -65,39 +76,49 @@ export async function startTranslationRecording(elements, showToast, Logger) {
         elements.inputTextarea.placeholder = '正在录音，请说话...';
         elements.inputTextarea.value = '';
 
+        // 重置数据 - 确保完全清空
         translationAudioChunks = [];
         translationAudioRecorder = new AudioRecorder(CONFIG.AUDIO.INPUT_SAMPLE_RATE);
+        _recordingStartTime = Date.now();
 
         Logger?.info('Starting audio recording for translation');
         
-        await translationAudioRecorder.start((chunk) => {
-            // Add chunk size validation and logging
+        // 使用防抖的回调函数，防止重复调用
+        let lastChunkTime = 0;
+        const debouncedCallback = (chunk) => {
+            const now = Date.now();
+            // 防止在1毫秒内重复调用
+            if (now - lastChunkTime < 1) {
+                return;
+            }
+            lastChunkTime = now;
+            
             if (chunk && chunk.byteLength > 0) {
                 translationAudioChunks.push(chunk);
                 Logger?.debug('Received audio chunk, size:', chunk.byteLength, 'Total chunks:', translationAudioChunks.length);
-            } else {
-                Logger?.warn('Received empty or invalid audio chunk');
             }
-        }, { returnRaw: true });
+        };
+
+        await translationAudioRecorder.start(debouncedCallback, { returnRaw: true });
 
         _isTranslationRecording = true;
         Logger?.info('Translation recording started successfully');
 
-        // Set reasonable timeout (30 seconds)
+        // 设置与主聊天模式相同的超时时间 (10秒)
         translationRecordingTimeout = setTimeout(() => {
             if (_isTranslationRecording) {
                 Logger?.info('Recording timeout reached, stopping automatically');
                 showToast('录音超时，自动停止');
                 stopTranslationRecording(elements, showToast, Logger);
             }
-        }, 30000); // 30 seconds timeout
+        }, 10000); // 10 seconds timeout - 与主聊天模式完全一致
 
     } catch (error) {
         const errorMsg = `启动录音失败: ${error.message}`;
         showToast(errorMsg);
         Logger?.error('Failed to start translation recording:', error);
         resetTranslationRecordingState(elements);
-        hasRequestedTranslationMicPermission = false; // Reset permission state on failure
+        hasRequestedTranslationMicPermission = false;
     }
 }
 
@@ -109,42 +130,60 @@ export async function startTranslationRecording(elements, showToast, Logger) {
  * @returns {Promise<void>}
  */
 export async function stopTranslationRecording(elements, showToast, Logger) {
-    if (!_isTranslationRecording) {
-        Logger?.warn('Attempted to stop translation recording when not recording');
+    // 防止重复调用
+    if (!_isTranslationRecording || _isProcessing) {
+        Logger?.warn('Stop called but not recording or already processing. isRecording:', _isTranslationRecording, 'isProcessing:', _isProcessing);
         return;
     }
 
+    _isProcessing = true;
     clearTimeout(translationRecordingTimeout);
-    showToast('停止录音，正在处理...');
-    elements.inputTextarea.placeholder = '正在处理语音...';
-
+    
     try {
+        const recordingDuration = Date.now() - _recordingStartTime;
+        Logger?.info('Stopping translation recording, duration:', recordingDuration + 'ms');
+        
+        showToast('停止录音，正在处理...');
+        elements.inputTextarea.placeholder = '正在处理语音...';
+
+        // 立即停止录音器
         if (translationAudioRecorder) {
             translationAudioRecorder.stop();
             translationAudioRecorder = null;
             Logger?.info('Audio recorder stopped');
         }
 
+        // 检查录音时长，如果太短可能是误触
+        if (recordingDuration < 300) {
+            showToast('录音时间过短');
+            Logger?.warn('Recording too short:', recordingDuration + 'ms');
+            return;
+        }
+
         // Check if we have any audio data
         if (translationAudioChunks.length === 0) {
             showToast('没有录到音频');
             Logger?.warn('No audio chunks recorded');
-            resetTranslationRecordingState(elements);
             return;
         }
 
         // Add detailed logging
         Logger?.info('Processing audio data for translation, chunk count:', translationAudioChunks.length);
         
-        // Calculate total length and merge data (aligned with main.js implementation)
+        // Calculate total length and merge data
         const totalLength = translationAudioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
         Logger?.info('Total audio data length:', totalLength, 'bytes');
         
         if (totalLength === 0) {
             showToast('音频数据为空');
             Logger?.error('Total audio data length is 0');
-            resetTranslationRecordingState(elements);
             return;
+        }
+
+        // 数据量检查 - 3秒录音应该在30-50KB左右
+        if (totalLength > 100000) { // 100KB 限制
+            Logger?.warn('Audio data unusually large, expected ~50KB for 3s, got:', totalLength + 'bytes');
+            // 但仍然继续处理，不截断
         }
 
         const mergedAudioData = new Uint8Array(totalLength);
@@ -154,19 +193,23 @@ export async function stopTranslationRecording(elements, showToast, Logger) {
             mergedAudioData.set(chunkArray, offset);
             offset += chunkArray.length;
         }
+        
+        // 立即清空数据，防止重复处理
+        const audioChunksToProcess = [...translationAudioChunks];
         translationAudioChunks = [];
+        
         Logger?.info('Audio data merged successfully, final size:', mergedAudioData.length);
 
-        // Convert to WAV blob (aligned with main.js implementation)
+        // Convert to WAV blob
         const audioBlob = pcmToWavBlob([mergedAudioData], CONFIG.AUDIO.INPUT_SAMPLE_RATE);
         Logger?.info('WAV blob created, size:', audioBlob.size, 'type:', audioBlob.type);
 
-        // Add timeout control and error handling
+        // 添加超时控制和错误处理
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
             controller.abort();
             Logger?.warn('Translation transcription request timed out');
-        }, 30000); // 30 second timeout
+        }, 10000); // 10秒超时
 
         try {
             Logger?.info('Sending transcription request for translation');
@@ -174,7 +217,7 @@ export async function stopTranslationRecording(elements, showToast, Logger) {
                 method: 'POST',
                 headers: { 
                     'Content-Type': audioBlob.type,
-                    'X-Request-Source': 'translation' // Add request source identifier
+                    'X-Request-Source': 'translation'
                 },
                 body: audioBlob,
                 signal: controller.signal
@@ -188,7 +231,6 @@ export async function stopTranslationRecording(elements, showToast, Logger) {
                     const errorData = await response.json();
                     errorMessage = `转文字失败: ${errorData.error || response.statusText}`;
                 } catch (e) {
-                    // If JSON parsing fails, use text content
                     try {
                         const text = await response.text();
                         errorMessage = `转文字失败: ${text || response.statusText}`;
@@ -219,7 +261,11 @@ export async function stopTranslationRecording(elements, showToast, Logger) {
         showToast(`语音转文字失败: ${error.message}`);
         elements.inputTextarea.placeholder = '语音转文字失败，请重试。';
     } finally {
+        // 确保状态被重置
         resetTranslationRecordingState(elements);
+        _isProcessing = false;
+        // 确保数据被清空
+        translationAudioChunks = [];
     }
 }
 
@@ -243,6 +289,7 @@ export function cancelTranslationRecording(elements, showToast, Logger) {
         translationAudioRecorder = null;
         Logger?.info('Audio recorder stopped during cancellation');
     }
+    // 彻底清空数据
     translationAudioChunks = [];
     resetTranslationRecordingState(elements);
     elements.inputTextarea.placeholder = '输入要翻译的内容...';
@@ -256,6 +303,7 @@ function resetTranslationRecordingState(elements) {
     _isTranslationRecording = false;
     elements.voiceInputButton.classList.remove('recording-active');
     elements.inputTextarea.placeholder = '输入要翻译的内容...';
+    _recordingStartTime = 0;
 }
 
 /**
