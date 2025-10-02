@@ -147,7 +147,7 @@ export class TranslationAudio {
             this.showToast('录音已开始...');
             this.elements.translationVoiceInputButton.classList.add('recording');
             this.elements.translationInputTextarea.placeholder = '正在录音，请说话...';
-            this.elements.translationInputTextarea.value = '';
+            //this.elements.translationInputTextarea.value = '';
 
             this.audioChunks = [];
             this.audioRecorder = new AudioRecorder();
@@ -225,7 +225,8 @@ export class TranslationAudio {
             const transcriptionText = result.text;
 
             if (transcriptionText) {
-                this.elements.translationInputTextarea.value = transcriptionText;
+                const currentText = this.elements.translationInputTextarea.value;
+                const _separator = currentText ? ' ' : ''; // 如果已有内容，加一个空格分隔
                 this.showToast('语音转文字成功');
             } else {
                 this.showSystemMessage('未获取到转录文本。');
