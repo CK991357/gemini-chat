@@ -1678,7 +1678,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         chatVoiceInputButton.addEventListener('touchmove', (e) => {
             if (isChatRecording) {
-                const currentTouchY = e.touches.clientY;
+                const currentTouchY = e.touches[0].clientY;
                 // Check for a significant upward swipe to cancel
                 if (chatInitialTouchY - currentTouchY > 50) {
                     cancelChatRecording();
@@ -1755,7 +1755,7 @@ async function startChatRecording() {
   try {
     showToast('录音已开始...');
     chatVoiceInputButton.classList.add('recording'); // 使用新的 CSS 类
-    messageInput.placeholder = '正在录音，请说话...';
+    chatUI.logMessage('开始录音...', 'system');
 
     chatAudioChunks = [];
     chatAudioRecorder = new AudioRecorder();
@@ -1799,7 +1799,7 @@ async function stopChatRecording() {
     }
 
     if (chatAudioChunks.length === 0) {
-      showSystemMessage('没有录到音频，请重试');
+      showToast('没有录到音频，请重试');
       resetChatRecordingState();
       return;
     }
@@ -1832,12 +1832,14 @@ async function stopChatRecording() {
     if (transcriptionText) {
         messageInput.value += transcriptionText;
         showToast('语音转文字成功');
+        chatUI.logMessage(`语音转文字成功: ${transcriptionText}`, 'system'); // 添加日志
     } else {
-        showSystemMessage('未获取到转录文本。');
+        showToast('未获取到转录文本。');
+        chatUI.logMessage('未获取到转录文本。', 'system'); // 添加日志
     }
 
   } catch (error) {
-    showSystemMessage(`语音转文字失败: ${error.message}`);
+    showToast(`语音转文字失败: ${error.message}`);
     console.error('语音转文字失败:', error);
   } finally {
     resetChatRecordingState();
