@@ -68,7 +68,7 @@ class ChessGame {
         this.gameOver = false; // 新增：游戏结束状态
         this.positionHistory = []; // 存储历史局面（用于重复检测）
         this.lastMoveError = null; // 新增：存储最后一次移动的错误信息
-        
+
         // 初始化
         this.initBoard();
         this.setupEventListeners();
@@ -271,6 +271,7 @@ class ChessGame {
                 // 王车易位成功，更新游戏状态
                 this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
                 this.lastMoveError = null;
+                this.playMoveSound(piece);
                 this.updateFEN();
                 this.renderBoard();
                 return true;
@@ -1145,6 +1146,8 @@ class ChessGame {
         this.renderBoard();
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
+        this.playMoveSound(newPiece); // 播放音效
+        
         console.log('升变完成');
     }
 
@@ -1162,7 +1165,7 @@ class ChessGame {
         }
     }
 
-
+    
     /**
      * 获取棋子名称
      */
@@ -1589,10 +1592,6 @@ let chessGame = null;
  * 初始化国际象棋功能
  */
 export function initializeChessCore(options = {}) {
-    // 防止重复初始化
-    if (chessGame) {
-        return;
-    }
     try {
         chessGame = new ChessGame(options);
         Logger.info('Chess module initialized successfully.');
