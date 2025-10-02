@@ -1,6 +1,7 @@
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js';
 import { Logger } from '../utils/logger.js';
+import { TranslationAudio } from './translation-audio.js'; // 新增导入
 import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-ocr.js';
 
 /**
@@ -10,6 +11,7 @@ import { handleTranslationOcr, toggleOcrButtonVisibility } from './translation-o
 
 // Store references to DOM elements to avoid repeated lookups
 let elements = {};
+let translationAudio = null; // 新增：语音输入实例
 const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
 
 /**
@@ -26,11 +28,34 @@ export function initializeTranslationCore(el, handlers, showToast) {
     // Populate model dropdown from config
     populateModelSelect();
 
+    // 新增：初始化语音输入模块
+    initializeTranslationAudio(showToast);
+
     // Attach event listeners
     attachEventListeners(handlers, showToast);
 
     // Set initial state for the OCR button
     toggleOcrButtonVisibility();
+}
+
+/**
+ * 初始化翻译语音输入模块
+ * @param {function} showToast - Toast显示函数
+ */
+function initializeTranslationAudio(showToast) {
+    // 确保语音输入按钮存在
+    if (!elements.translationVoiceInputButton) {
+        console.warn('Translation voice input button not found');
+        return;
+    }
+
+    // 创建showSystemMessage的替代函数，因为翻译模块没有消息历史区域
+    const showSystemMessage = (message) => {
+        console.log('Translation System Message:', message);
+        showToast(message);
+    };
+
+    translationAudio = new TranslationAudio(elements, showToast, showSystemMessage);
 }
 
 /**
@@ -188,13 +213,18 @@ function switchMode(mode, handlers) {
     if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
     if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
 
+    // 新增：清理语音输入状态
+    if (translationAudio && mode !== 'translation') {
+        translationAudio.cancelRecording();
+    }
+
     // Activate the target mode
     switch (mode) {
         case 'translation':
             elements.translationContainer.classList.add('active');
             elements.translationModeBtn.classList.add('active');
-            // 隐藏语音输入按钮，因为语音功能已移除
-            if (elements.translationVoiceInputButton) elements.translationVoiceInputButton.style.display = 'none';
+            // 显示语音输入按钮
+            if (elements.translationVoiceInputButton) elements.translationVoiceInputButton.style.display = 'inline-flex';
             break;
         case 'chat':
             elements.chatContainer.classList.add('active');
@@ -212,5 +242,15 @@ function switchMode(mode, handlers) {
             elements.logContainer.classList.add('active');
             document.querySelector('.tab[data-mode="log"]')?.click();
             break;
+    }
+}
+
+/**
+ * Clean up translation audio resources
+ */
+export function cleanupTranslationAudio() {
+    if (translationAudio) {
+        translationAudio.destroy();
+        translationAudio = null;
     }
 }
