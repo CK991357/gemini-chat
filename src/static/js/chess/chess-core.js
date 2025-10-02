@@ -311,12 +311,22 @@ class ChessGame {
         } else {
             // 普通移动
             const capturedPiece = this.pieces[toKey];
+            let isEnPassantCapture = false;
+
+            // 检查并处理吃过路兵
+            if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
+                const capturedPawnRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
+                const capturedPawnKey = `${capturedPawnRow},${toCol}`;
+                delete this.pieces[capturedPawnKey]; // 移除被吃掉的兵
+                isEnPassantCapture = true;
+                this.showToast('吃过路兵！');
+            }
             
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
             
             // 更新游戏状态
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, isEnPassantCapture);
             
             // 更新易位权利
             if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
