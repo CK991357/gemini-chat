@@ -69,56 +69,11 @@ class ChessGame {
         this.positionHistory = []; // 存储历史局面（用于重复检测）
         this.lastMoveError = null; // 新增：存储最后一次移动的错误信息
         
-        // 初始化音效
-        this.whiteMoveSound = new Audio('asset/白棋-在棋盘上落子.mp3'); // 修正路径
-        this.isSoundEnabled = false; // 新增：音效开关状态
-        this.isAudioUnlocked = false; // 新增：用于跟踪音频是否已由用户交互解锁
-        this.blackMoveSound = new Audio('asset/黑棋-在棋盘上落子.mp3'); // 修正路径
-
         // 初始化
         this.initBoard();
         this.setupEventListeners();
         this.setupInitialPosition();
-        this.setupSoundToggle(); // 新增：设置音效切换按钮
         this.createGameOverModal(); // 新增：创建游戏结束模态框
-    }
-
-    setupSoundToggle() {
-        // 如果按钮已存在，则不重复创建
-        if (document.getElementById('sound-toggle-btn')) {
-            return;
-        }
-        const soundToggleButton = document.createElement('button');
-        soundToggleButton.id = 'sound-toggle-btn';
-        soundToggleButton.textContent = '🔊 音效: 关'; // 使用图标和文字
-        soundToggleButton.className = 'chess-btn-secondary';
-
-        // 找到标题容器并添加按钮
-        // 假设标题栏有一个 class="chess-header"
-        const header = document.querySelector('.chess-header');
-        if (header) {
-            header.appendChild(soundToggleButton);
-        } else {
-            console.warn('未找到 .chess-header 元素，音效按钮将不会显示。');
-        }
-
-        soundToggleButton.addEventListener('click', () => {
-            // 第一次点击时，需要先解锁音频
-            if (!this.isAudioUnlocked) {
-                this.whiteMoveSound.play().catch(() => {});
-                this.whiteMoveSound.pause();
-                this.blackMoveSound.play().catch(() => {});
-                this.blackMoveSound.pause();
-                this.isAudioUnlocked = true;
-            }
-
-            // 切换音效状态
-            this.isSoundEnabled = !this.isSoundEnabled;
-
-            // 更新按钮文本和提示信息
-            soundToggleButton.textContent = this.isSoundEnabled ? '🔊 音效: 开' : '🔊 音效: 关';
-            this.showToast(`音效已${this.isSoundEnabled ? '启用' : '禁用'}`);
-        });
     }
 
     initBoard() {
@@ -316,7 +271,6 @@ class ChessGame {
                 // 王车易位成功，更新游戏状态
                 this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
                 this.lastMoveError = null;
-                this.playMoveSound(piece);
                 this.updateFEN();
                 this.renderBoard();
                 return true;
@@ -403,7 +357,6 @@ class ChessGame {
         }
 
         this.lastMoveError = null;
-        this.playMoveSound(piece); // 播放音效
         this.updateFEN();
         return true;
     }
@@ -1192,8 +1145,6 @@ class ChessGame {
         this.renderBoard();
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
-        this.playMoveSound(newPiece); // 播放音效
-        
         console.log('升变完成');
     }
 
@@ -1211,23 +1162,6 @@ class ChessGame {
         }
     }
 
-
-    /**
-     * 播放落子音效
-     */
-    playMoveSound(piece) {
-        // 如果音效未启用，则不播放
-        if (!this.isSoundEnabled) return;
-
-        const isWhite = piece === piece.toUpperCase();
-        const sound = isWhite ? this.whiteMoveSound : this.blackMoveSound;
-        
-        sound.currentTime = 0; // 允许快速重复播放
-        sound.play().catch(error => {
-            console.warn('无法播放音效:', error);
-            // 在某些浏览器中，用户需要先与页面交互才能播放音频
-        });
-    }
 
     /**
      * 获取棋子名称

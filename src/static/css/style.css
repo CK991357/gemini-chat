@@ -2722,10 +2722,3 @@ input:checked + .slider:before {
 .chess-btn-secondary:hover {
     background: #545b62;
 }
-/* src/static/css/style.css */
-.chess-header {
-    display: flex;
-    justify-content: space-between; /* 标题在左，按钮在右 */
-    align-items: center;          /* 垂直居中对齐 */
-    margin-bottom: 1rem;          /* 和下方棋盘保持一些间距 */
-}
