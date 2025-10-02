@@ -145,9 +145,10 @@ export class TranslationAudio {
         // Permission already requested, start recording
         try {
             this.showToast('录音已开始...');
-            this.elements.translationVoiceInputButton.classList.add('recording');
+            // 使用 recording-active 类名与 CSS 匹配
+            this.elements.translationVoiceInputButton.classList.add('recording-active');
             this.elements.translationInputTextarea.placeholder = '正在录音，请说话...';
-            //this.elements.translationInputTextarea.value = '';
+            // 不清空输入框内容，实现内容叠加
 
             this.audioChunks = [];
             this.audioRecorder = new AudioRecorder();
@@ -225,6 +226,7 @@ export class TranslationAudio {
             const transcriptionText = result.text;
 
             if (transcriptionText) {
+                // 简单的内容追加，与 main.js 保持一致
                 this.elements.translationInputTextarea.value += transcriptionText;
                 this.showToast('语音转文字成功');
             } else {
@@ -261,7 +263,8 @@ export class TranslationAudio {
      */
     resetRecordingState() {
         this.isRecording = false;
-        this.elements.translationVoiceInputButton.classList.remove('recording');
+        // 使用 recording-active 类名与 CSS 匹配
+        this.elements.translationVoiceInputButton.classList.remove('recording-active');
         this.elements.translationInputTextarea.placeholder = '输入要翻译的内容...';
     }
 
@@ -275,7 +278,8 @@ export class TranslationAudio {
         
         const voiceButton = this.elements.translationVoiceInputButton;
         if (voiceButton) {
-            voiceButton.classList.remove('recording');
+            // 使用 recording-active 类名与 CSS 匹配
+            voiceButton.classList.remove('recording-active');
         }
     }
 }
