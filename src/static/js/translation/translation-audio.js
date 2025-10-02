@@ -225,8 +225,7 @@ export class TranslationAudio {
             const transcriptionText = result.text;
 
             if (transcriptionText) {
-                const currentText = this.elements.translationInputTextarea.value;
-                const _separator = currentText ? ' ' : ''; // 如果已有内容，加一个空格分隔
+                this.elements.translationInputTextarea.value += transcriptionText;
                 this.showToast('语音转文字成功');
             } else {
                 this.showSystemMessage('未获取到转录文本。');
