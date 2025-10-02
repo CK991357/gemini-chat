@@ -1,4 +1,3 @@
-import { marked } from '../lib/marked-16.3.0/marked.js';
 import { AttachmentManager } from './attachments/file-attachment.js'; // T2 新增
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
