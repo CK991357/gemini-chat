@@ -84,6 +84,10 @@ class ChessGame {
     }
 
     setupSoundToggle() {
+        // 如果按钮已存在，则不重复创建
+        if (document.getElementById('sound-toggle-btn')) {
+            return;
+        }
         const soundToggleButton = document.createElement('button');
         soundToggleButton.id = 'sound-toggle-btn';
         soundToggleButton.textContent = '🔊 音效: 关'; // 使用图标和文字
@@ -1651,6 +1655,10 @@ let chessGame = null;
  * 初始化国际象棋功能
  */
 export function initializeChessCore(options = {}) {
+    // 防止重复初始化
+    if (chessGame) {
+        return;
+    }
     try {
         chessGame = new ChessGame(options);
         Logger.info('Chess module initialized successfully.');
