@@ -18,11 +18,18 @@ export class ApiHandler {
      * @throws {Error} Throws an error if the network request fails or if the server returns a non-successful status code (not in the 200-299 range).
      */
     async fetchJson(url, body, options = {}) {
-        Logger.info(`[ApiHandler] Sending JSON request to ${url}`);
+        Logger.info(`[ApiHandler] Sending request to ${url}`);
 
-        const headers = {
-            'Content-Type': 'application/json',
-        };
+        const headers = {};
+        let requestBody = body;
+
+        if (options.isBlob) {
+            headers['Content-Type'] = 'audio/wav';
+            // For Blob, the body is already in the correct format, no stringification needed
+        } else {
+            headers['Content-Type'] = 'application/json';
+            requestBody = JSON.stringify(body);
+        }
 
         if (options.apiKey) {
             headers['Authorization'] = `Bearer ${options.apiKey}`;
@@ -32,7 +39,7 @@ export class ApiHandler {
             const response = await fetch(url, {
                 method: 'POST',
                 headers: headers,
-                body: JSON.stringify(body)
+                body: requestBody
             });
 
             if (!response.ok) {
