@@ -1,3 +1,4 @@
+import { AudioRecorder } from '../audio/audio-recorder.js';
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
