@@ -20,6 +20,7 @@ let translationAudioChunks = [];
 let recordingTimeout = null;
 let _isTranslationRecording = false;
 let hasRequestedMicPermission = false;
+let translationAbortController = null; // 用于管理 fetch 请求的 AbortController
 
 /**
  * Initializes the translation feature.
@@ -244,6 +245,15 @@ function switchMode(mode, handlers) {
     if (videoHandler?.getIsVideoActive()) videoHandler.stopVideo();
     if (screenHandler?.getIsScreenActive()) screenHandler.stopScreenSharing();
 
+    // 如果正在翻译录音，则取消正在进行的 fetch 请求和录音
+    if (_isTranslationRecording) {
+        if (translationAbortController) {
+            translationAbortController.abort();
+            translationAbortController = null;
+        }
+        cancelTranslationRecording(elements, showToast); // 调用取消函数重置状态
+    }
+
     // Activate the target mode
     switch (mode) {
         case 'translation':
@@ -310,12 +320,13 @@ async function startTranslationRecording(elements, showToast) {
         elements.inputTextarea.value = '';
 
         translationAudioChunks = [];
-        // Assuming AudioRecorder is available in this scope, might need to import it
         translationAudioRecorder = new AudioRecorder();
 
         await translationAudioRecorder.start((chunk) => {
             translationAudioChunks.push(chunk);
         }, { returnRaw: true });
+
+        translationAbortController = new AbortController(); // 创建新的 AbortController
 
         _isTranslationRecording = true;
 
@@ -374,6 +385,7 @@ async function stopTranslationRecording(elements, showToast) {
             method: 'POST',
             headers: { 'Content-Type': audioBlob.type },
             body: audioBlob,
+            signal: translationAbortController.signal, // 传递 AbortSignal
         });
 
         if (!response.ok) {
@@ -393,6 +405,7 @@ async function stopTranslationRecording(elements, showToast) {
         elements.inputTextarea.placeholder = '语音转文字失败，请重试。';
     } finally {
         resetRecordingState(elements);
+        translationAbortController = null; // 请求完成后重置 AbortController
     }
 }
 
@@ -410,6 +423,10 @@ function cancelTranslationRecording(elements, showToast) {
     if (translationAudioRecorder) {
         translationAudioRecorder.stop();
         translationAudioRecorder = null;
+    }
+    if (translationAbortController) {
+        translationAbortController.abort(); // 取消正在进行的 fetch 请求
+        translationAbortController = null;
     }
     translationAudioChunks = [];
     resetRecordingState(elements);
