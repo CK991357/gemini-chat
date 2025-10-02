@@ -115,7 +115,7 @@ function attachEventListeners(handlers, showToast) {
     elements.toggleLogBtn.addEventListener('click', () => switchMode('log', handlers));
 
     // Voice input events (mousedown, mouseup, mouseleave, touchstart, touchend, touchmove)
-    attachVoiceInputListeners();
+    attachVoiceInputListeners(showToast);
 }
 
 /**
@@ -124,7 +124,7 @@ function attachEventListeners(handlers, showToast) {
  * @description Binds mouse and touch events to the voice input button for starting, stopping, and canceling recordings.
  * @returns {void}
  */
-function attachVoiceInputListeners() {
+function attachVoiceInputListeners(showToast) {
     const button = elements.translationVoiceInputButton;
     if (!button) return;
 
