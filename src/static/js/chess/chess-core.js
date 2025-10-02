@@ -69,6 +69,10 @@ class ChessGame {
         this.positionHistory = []; // 存储历史局面（用于重复检测）
         this.lastMoveError = null; // 新增：存储最后一次移动的错误信息
         
+        // 初始化音效
+        this.whiteMoveSound = new Audio('src/static/asset/白棋-在棋盘上落子.mp3');
+        this.blackMoveSound = new Audio('src/static/asset/黑棋-在棋盘上落子.mp3');
+
         // 初始化
         this.initBoard();
         this.setupEventListeners();
@@ -335,6 +339,7 @@ class ChessGame {
         }
 
         this.lastMoveError = null;
+        this.playMoveSound(piece); // 播放音效
         this.updateFEN();
         return true;
     }
@@ -1124,6 +1129,7 @@ class ChessGame {
         this.renderBoard();
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
+        this.playMoveSound(newPiece); // 播放音效
         
         console.log('升变完成');
     }
@@ -1142,6 +1148,20 @@ class ChessGame {
         }
     }
 
+
+    /**
+     * 播放落子音效
+     */
+    playMoveSound(piece) {
+        const isWhite = piece === piece.toUpperCase();
+        const sound = isWhite ? this.whiteMoveSound : this.blackMoveSound;
+        
+        sound.currentTime = 0; // 允许快速重复播放
+        sound.play().catch(error => {
+            console.warn('无法播放音效:', error);
+            // 在某些浏览器中，用户需要先与页面交互才能播放音频
+        });
+    }
 
     /**
      * 获取棋子名称
