@@ -1,11 +1,58 @@
 import { AudioRecorder } from '../audio/audio-recorder.js';
 import { CONFIG } from '../config/config.js';
-import { pcmToWavBlob } from '../main.js';
 
 /**
  * @fileoverview Audio input handling for translation mode.
  * Provides voice-to-text functionality with the same UX as chat mode.
  */
+
+/**
+ * PCM to WAV blob conversion function (copied from main.js)
+ * @param {Uint8Array[]} pcmDataBuffers - Array of PCM data buffers
+ * @param {number} sampleRate - Sample rate (default 24000)
+ * @returns {Blob} WAV format blob
+ */
+function pcmToWavBlob(pcmDataBuffers, sampleRate = 24000) {
+    let dataLength = 0;
+    for (const buffer of pcmDataBuffers) {
+        dataLength += buffer.length;
+    }
+
+    const buffer = new ArrayBuffer(44 + dataLength);
+    const view = new DataView(buffer);
+
+    // WAV header
+    const writeString = (view, offset, string) => {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    };
+
+    writeString(view, 0, 'RIFF'); // RIFF identifier
+    view.setUint32(4, 36 + dataLength, true); // file length
+    writeString(view, 8, 'WAVE'); // RIFF type
+    writeString(view, 12, 'fmt '); // format chunk identifier
+    view.setUint32(16, 16, true); // format chunk length
+    view.setUint16(20, 1, true); // sample format (1 = PCM)
+    view.setUint16(22, 1, true); // num channels
+    view.setUint32(24, sampleRate, true); // sample rate
+    view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * numChannels * bytesPerSample)
+    view.setUint16(32, 2, true); // block align (numChannels * bytesPerSample)
+    view.setUint16(34, 16, true); // bits per sample
+    writeString(view, 36, 'data'); // data chunk identifier
+    view.setUint32(40, dataLength, true); // data length
+
+    // Write PCM data
+    let offset = 44;
+    for (const pcmBuffer of pcmDataBuffers) {
+        for (let i = 0; i < pcmBuffer.length; i++) {
+            view.setUint8(offset + i, pcmBuffer[i]);
+        }
+        offset += pcmBuffer.length;
+    }
+
+    return new Blob([view], { type: 'audio/wav' });
+}
 
 /**
  * TranslationAudio class handling voice input for translation mode
