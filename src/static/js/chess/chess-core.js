@@ -70,14 +70,51 @@ class ChessGame {
         this.lastMoveError = null; // 新增：存储最后一次移动的错误信息
         
         // 初始化音效
-        this.whiteMoveSound = new Audio('src/static/asset/白棋-在棋盘上落子.mp3');
-        this.blackMoveSound = new Audio('src/static/asset/黑棋-在棋盘上落子.mp3');
+        this.whiteMoveSound = new Audio('asset/白棋-在棋盘上落子.mp3'); // 修正路径
+        this.isSoundEnabled = false; // 新增：音效开关状态
+        this.isAudioUnlocked = false; // 新增：用于跟踪音频是否已由用户交互解锁
+        this.blackMoveSound = new Audio('asset/黑棋-在棋盘上落子.mp3'); // 修正路径
 
         // 初始化
         this.initBoard();
         this.setupEventListeners();
         this.setupInitialPosition();
+        this.setupSoundToggle(); // 新增：设置音效切换按钮
         this.createGameOverModal(); // 新增：创建游戏结束模态框
+    }
+
+    setupSoundToggle() {
+        const soundToggleButton = document.createElement('button');
+        soundToggleButton.id = 'sound-toggle-btn';
+        soundToggleButton.textContent = '🔊 音效: 关'; // 使用图标和文字
+        soundToggleButton.className = 'chess-btn-secondary';
+
+        // 找到标题容器并添加按钮
+        // 假设标题栏有一个 class="chess-header"
+        const header = document.querySelector('.chess-header');
+        if (header) {
+            header.appendChild(soundToggleButton);
+        } else {
+            console.warn('未找到 .chess-header 元素，音效按钮将不会显示。');
+        }
+
+        soundToggleButton.addEventListener('click', () => {
+            // 第一次点击时，需要先解锁音频
+            if (!this.isAudioUnlocked) {
+                this.whiteMoveSound.play().catch(() => {});
+                this.whiteMoveSound.pause();
+                this.blackMoveSound.play().catch(() => {});
+                this.blackMoveSound.pause();
+                this.isAudioUnlocked = true;
+            }
+
+            // 切换音效状态
+            this.isSoundEnabled = !this.isSoundEnabled;
+
+            // 更新按钮文本和提示信息
+            soundToggleButton.textContent = this.isSoundEnabled ? '🔊 音效: 开' : '🔊 音效: 关';
+            this.showToast(`音效已${this.isSoundEnabled ? '启用' : '禁用'}`);
+        });
     }
 
     initBoard() {
@@ -1175,6 +1212,9 @@ class ChessGame {
      * 播放落子音效
      */
     playMoveSound(piece) {
+        // 如果音效未启用，则不播放
+        if (!this.isSoundEnabled) return;
+
         const isWhite = piece === piece.toUpperCase();
         const sound = isWhite ? this.whiteMoveSound : this.blackMoveSound;
         
