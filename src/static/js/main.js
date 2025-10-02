@@ -1831,7 +1831,7 @@ async function stopChatRecording() {
     const transcriptionText = result.text;
 
     if (transcriptionText) {
-        messageInput.value = transcriptionText;
+        messageInput.value += transcriptionText;
         showToast('语音转文字成功');
     } else {
         showSystemMessage('未获取到转录文本。');
