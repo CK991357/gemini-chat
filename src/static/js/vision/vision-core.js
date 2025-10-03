@@ -514,7 +514,7 @@ function _getRelevantHistory() {
  * 这是从外部模块调用的接口，例如从国际象棋AI模块。
  * @param {string} markdownContent - 要显示的Markdown格式的文本内容。
  */
-export function displayVisonMessage(markdownContent) {
+export function displayVisionMessage(markdownContent) {
     if (!elements.visionMessageHistory) {
         console.error('Vision message history element not found.');
         return;
