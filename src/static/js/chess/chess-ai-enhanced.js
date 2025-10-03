@@ -96,19 +96,28 @@ export class ChessAIEnhanced {
     }
 
     /**
-     * 第一阶段：构建分析提示词
+     * 第一阶段：构建分析提示词 (已修复和优化)
      */
     buildAnalysisPrompt(history, currentFEN) {
-        const turn = currentFEN.split(' ') === 'w' ? '白方' : '黑方';
-        return `你是一位国际象棋特级大师。基于以下对局历史，请深入分析当前局面并给出最佳走法建议。
+        // 修复：正确从FEN中获取当前走棋方
+        const turnColor = currentFEN.split(' ')?.[index];
+        const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
 
-对局历史（FEN格式，从开局到当前）：
-${history.map((fen, index) => `步骤 ${index + 1}: ${fen}`).join('\n')}
+        // 优化：为AI提供更清晰的上下文和指令
+        const historyText = history.length > 1
+            ? `这是一个完整的对局历史，从开局到现在共有 ${history.length} 步。请聚焦于分析最后一个局面。
+对局历史（FEN格式）:
+${history.join('\n')}`
+            : `这是一个新的棋局。`;
 
-当前局面FEN：${currentFEN}
-当前轮到：${turn}
+        return `你是一位国际象棋特级大师。请分析以下棋局。
 
-请你分析当前局面，评估双方的优劣势，并推荐1-2个最佳走法。请简要说明推荐这些走法的战略意图。
+${historyText}
+
+当前局面 (最后一个FEN): ${currentFEN}
+现在轮到: ${turn}
+
+请你深入分析当前局面，评估双方的优劣势，并推荐1-2个最佳走法。请简要说明推荐这些走法的战略意图。
 请务必使用标准代数记谱法（SAN）来表示所有提到的走法，例如：Nf3, e4, O-O, exd5, a8=Q 等。`;
     }
 
@@ -174,14 +183,20 @@ ${history.map((fen, index) => `步骤 ${index + 1}: ${fen}`).join('\n')}
     }
 
     /**
-     * 将棋盘坐标（如 'e4'）转换为行列索引
+     * 将棋盘坐标（如 'e4'）转换为行列索引 (已修复)
      */
     squareToIndices(square) {
         const files = 'abcdefgh';
-        const fileChar = square;
-        const rankChar = square;
+        // 修复：从 square 字符串的不同部分提取 file 和 rank
+        const fileChar = square.charAt(0);
+        const rankChar = square.charAt(1);
         const col = files.indexOf(fileChar);
         const row = 8 - parseInt(rankChar, 10);
+        if (isNaN(col) || isNaN(row) || col < 0 || row < 0 || row > 7) {
+            console.error(`无效的棋盘坐标: ${square}`);
+            // 提供一个安全的回退值，尽管理论上不应发生
+            return { row: 0, col: 0 };
+        }
         return { row, col };
     }
 
