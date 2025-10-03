@@ -2745,3 +2745,102 @@ input:checked + .slider:before {
     cursor: not-allowed;
     opacity: 0.7;
 }
+/* AI走法选择模态框样式 */
+.chess-ai-choice-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1001; /* 比游戏结束模态框更高一级 */
+}
+
+.chess-ai-choice-content {
+    background: #ffffff;
+    padding: 1.5rem 2rem;
+    border-radius: 12px;
+    text-align: left;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.chess-ai-choice-content h2 {
+    margin: 0 0 0.5rem 0;
+    color: #2c3e50;
+    text-align: center;
+    font-size: 1.5rem;
+}
+
+.ai-analysis-container {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 1rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.ai-analysis-container p {
+    margin: 0 0 0.5rem 0;
+    font-weight: bold;
+    color: #495057;
+}
+
+.ai-analysis-text {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #343a40;
+    white-space: pre-wrap; /* 保留换行和空格 */
+}
+
+.ai-move-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.ai-move-choices p {
+    margin: 0;
+    font-weight: bold;
+    color: #495057;
+}
+
+.ai-move-choice {
+    display: block;
+    background-color: #f1f3f5;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.2s;
+    border: 1px solid #dee2e6;
+}
+
+.ai-move-choice:hover {
+    background-color: #e9ecef;
+}
+
+.ai-move-choice input[type="radio"] {
+    margin-right: 0.75rem;
+    transform: scale(1.2);
+}
+
+.chess-ai-choice-buttons {
+    margin-top: 1rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end; /* 按钮靠右对齐 */
+}
+
+/* 继承已有的按钮样式，并为禁用状态添加特定样式 */
+.chess-btn-primary:disabled {
+    background-color: #a0c7ff;
+    cursor: not-allowed;
+}

@@ -78,6 +78,7 @@ class ChessGame {
         this.setupEventListeners();
         this.setupInitialPosition();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
+        this.createAIMoveChoiceModal(); // 新增：创建AI走法选择模态框
         this.initializeAI();
         this.addAIButton();
     }
@@ -1631,7 +1632,16 @@ class ChessGame {
     // --- AI 功能集成 (集成增强的按钮状态管理) ---
     initializeAI() {
         this.chessAI = new ChessAIEnhanced(this, {
-            showToast: this.showToast
+            showToast: this.showToast,
+            // 传入UI日志记录器和模态框显示器
+            logMessage: (message, type = 'info') => {
+                if (typeof chatUI !== 'undefined' && chatUI.logMessage) {
+                    chatUI.logMessage(message, type);
+                } else {
+                    console.log(`[ChessAI ${type}]: ${message}`);
+                }
+            },
+            showMoveChoiceModal: (analysis, moves) => this.showAIMoveChoiceModal(analysis, moves)
         });
         console.log('Chess AI Enhanced module initialized.');
     }
@@ -1689,7 +1699,109 @@ class ChessGame {
             aiButton.innerHTML = originalText;
         }
     }
+    /**
+     * 新增：创建AI走法选择模态框
+     */
+    createAIMoveChoiceModal() {
+        if (document.getElementById('chess-ai-choice-modal')) return;
+
+        const modal = document.createElement('div');
+        modal.id = 'chess-ai-choice-modal';
+        modal.className = 'chess-ai-choice-modal';
+        modal.style.display = 'none';
+
+        modal.innerHTML = `
+            <div class="chess-ai-choice-content">
+                <h2>AI 提供了多个建议</h2>
+                <div class="ai-analysis-container">
+                    <p><strong>AI 分析:</strong></p>
+                    <div id="ai-analysis-text" class="ai-analysis-text"></div>
+                </div>
+                <div id="ai-move-choices" class="ai-move-choices">
+                    <p><strong>请选择一个走法:</strong></p>
+                </div>
+                <div class="chess-ai-choice-buttons">
+                    <button id="chess-ai-confirm-btn" class="chess-btn-primary" disabled>确定</button>
+                    <button id="chess-ai-cancel-btn" class="chess-btn-secondary">取消</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    /**
+     * 新增：显示AI走法选择模态框，并返回一个Promise
+     */
+    showAIMoveChoiceModal(analysisText, moves) {
+        return new Promise((resolve, reject) => {
+            const modal = document.getElementById('chess-ai-choice-modal');
+            const analysisElement = document.getElementById('ai-analysis-text');
+            const choicesContainer = document.getElementById('ai-move-choices');
+            const confirmBtn = document.getElementById('chess-ai-confirm-btn');
+            const cancelBtn = document.getElementById('chess-ai-cancel-btn');
+
+            if (!modal || !analysisElement || !choicesContainer || !confirmBtn || !cancelBtn) {
+                return reject(new Error('AI选择模态框的必要元素未找到'));
+            }
+
+            // 填充内容
+            analysisElement.textContent = analysisText;
+            
+            // 清空旧选项并创建新选项
+            choicesContainer.innerHTML = '<p><strong>请选择一个走法:</strong></p>'; // 重置
+            let selectedMove = null;
+
+            moves.forEach((move, index) => {
+                const label = document.createElement('label');
+                label.className = 'ai-move-choice';
+                const input = document.createElement('input');
+                input.type = 'radio';
+                input.name = 'ai-move-choice';
+                input.value = move;
+                input.id = `ai-move-${index}`;
+                
+                input.addEventListener('change', () => {
+                    selectedMove = input.value;
+                    confirmBtn.disabled = false;
+                });
+
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(` ${move}`));
+                choicesContainer.appendChild(label);
+            });
+
+            // 重置并显示
+            confirmBtn.disabled = true;
+            modal.style.display = 'flex';
+
+            // --- 事件处理 ---
+            const onConfirm = () => {
+                cleanup();
+                if (selectedMove) {
+                    resolve(selectedMove);
+                } else {
+                    // 理论上不会发生，因为按钮被禁用
+                    reject(new Error('没有选择任何走法'));
+                }
+            };
+
+            const onCancel = () => {
+                cleanup();
+                reject(new Error('用户取消了选择'));
+            };
+
+            const cleanup = () => {
+                modal.style.display = 'none';
+                confirmBtn.removeEventListener('click', onConfirm);
+                cancelBtn.removeEventListener('click', onCancel);
+            };
+
+            confirmBtn.addEventListener('click', onConfirm);
+            cancelBtn.addEventListener('click', onCancel);
+        });
+    }
 }
+
 
 let chessGame = null;
 
