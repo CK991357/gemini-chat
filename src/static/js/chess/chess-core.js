@@ -81,7 +81,7 @@ class ChessGame {
         this.createAIMoveChoiceModal(); // 新增：创建AI走法选择模态框
         this.initializeAI();
         this.addAIButton();
-        this.loadGameFromLocalStorage(); // 新增：尝试从本地存储加载游戏
+        this.loadGameFromLocalStorage(); // 尝试从本地存储加载游戏
     }
 
     initBoard() {
@@ -140,7 +140,7 @@ class ChessGame {
         
         this.renderBoard();
         this.updateFEN();
-        this.saveGameToLocalStorage(); // 新增：保存新游戏状态
+        this.saveGameToLocalStorage(); // 保存新游戏状态
     }
 
     undoMove() {
@@ -148,7 +148,7 @@ class ChessGame {
             const previousFEN = this.moveHistory.pop();
             this.loadFEN(previousFEN);
             this.removeLastMoveFromHistory(); // 同步完整历史记录
-            this.saveGameToLocalStorage(); // 新增：保存撤销后的状态
+            this.saveGameToLocalStorage(); // 保存撤销后的状态
         }
     }
 
@@ -1619,7 +1619,7 @@ class ChessGame {
         const currentFEN = this.generateFEN();
         this.fullGameHistory.push(currentFEN);
         console.log(`记录历史步数: ${this.fullGameHistory.length}, FEN: ${currentFEN}`);
-        this.saveGameToLocalStorage(); // 新增：每次移动后保存游戏
+        this.saveGameToLocalStorage(); // 每次移动后保存游戏
     }
 
     removeLastMoveFromHistory() {
@@ -1631,6 +1631,44 @@ class ChessGame {
 
     getFullGameHistory() {
         return [...this.fullGameHistory];
+    }
+
+    // --- 本地存储 ---
+    /**
+     * 将当前游戏状态保存到localStorage
+     */
+    saveGameToLocalStorage() {
+        try {
+            const gameState = {
+                fullGameHistory: this.getFullGameHistory(),
+                currentFEN: this.getCurrentFEN()
+            };
+            localStorage.setItem('chessGameState', JSON.stringify(gameState));
+        } catch (error) {
+            console.error('无法保存游戏状态到localStorage:', error);
+        }
+    }
+
+    /**
+     * 从localStorage加载游戏状态
+     */
+    loadGameFromLocalStorage() {
+        try {
+            const savedState = localStorage.getItem('chessGameState');
+            if (savedState) {
+                const gameState = JSON.parse(savedState);
+                if (gameState && gameState.fullGameHistory && gameState.currentFEN) {
+                    this.fullGameHistory = gameState.fullGameHistory;
+                    this.loadFEN(gameState.currentFEN);
+                    console.log('成功从localStorage加载游戏状态。');
+                    this.showToast('已恢复您上次的棋局');
+                }
+            }
+        } catch (error) {
+            console.error('无法从localStorage加载游戏状态:', error);
+            // 如果加载失败，确保开始一个新游戏
+            this.setupInitialPosition();
+        }
     }
 
     // --- AI 功能集成 (集成增强的按钮状态管理) ---
@@ -1846,44 +1884,4 @@ export function loadFEN(fen) {
         return chessGame.loadFEN(fen);
     }
     return false;
-}
-
-// --- 本地存储 ---
-/**
- * 将当前游戏状态保存到localStorage
- */
-function saveGameToLocalStorage() {
-    if (!chessGame) return;
-    try {
-        const gameState = {
-            fullGameHistory: chessGame.getFullGameHistory(),
-            currentFEN: chessGame.getCurrentFEN()
-        };
-        localStorage.setItem('chessGameState', JSON.stringify(gameState));
-    } catch (error) {
-        console.error('无法保存游戏状态到localStorage:', error);
-    }
-}
-
-/**
- * 从localStorage加载游戏状态
- */
-function loadGameFromLocalStorage() {
-    if (!chessGame) return;
-    try {
-        const savedState = localStorage.getItem('chessGameState');
-        if (savedState) {
-            const gameState = JSON.parse(savedState);
-            if (gameState && gameState.fullGameHistory && gameState.currentFEN) {
-                chessGame.fullGameHistory = gameState.fullGameHistory;
-                chessGame.loadFEN(gameState.currentFEN);
-                console.log('成功从localStorage加载游戏状态。');
-                chessGame.showToast('已恢复您上次的棋局');
-            }
-        }
-    } catch (error) {
-        console.error('无法从localStorage加载游戏状态:', error);
-        // 如果加载失败，确保开始一个新游戏
-        chessGame.setupInitialPosition();
-    }
 }

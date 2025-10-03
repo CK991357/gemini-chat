@@ -28,7 +28,8 @@ export class ChessAIEnhanced {
             this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
             const analysisPrompt = this.buildAnalysisPrompt(history, currentFEN);
             const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash');
-            this.logMessage(`AI分析响应: ${analysisResponse}`, 'ai-analysis');
+            const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
+            this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
 
             // --- 第二阶段：智能提取与决策 ---
             this.logMessage('第二阶段：从分析中提取所有可能的走法...', 'system');
@@ -59,7 +60,8 @@ export class ChessAIEnhanced {
                 
                 const extractionPrompt = this.buildExtractionPrompt(analysisResponse);
                 const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
-                this.logMessage(`AI降级提取响应: "${extractedResponse}"`, 'ai-extraction');
+                const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
+                this.logMessage(`AI降级提取响应: "${extractionLog}"`, 'ai-extraction');
 
                 // 再次尝试提取
                 moves = this.extractAllSANFromText(extractedResponse);
@@ -100,7 +102,7 @@ export class ChessAIEnhanced {
      */
     buildAnalysisPrompt(history, currentFEN) {
         // 修复：正确从FEN中获取当前走棋方
-        const turnColor = currentFEN.split(' ')?.[index];
+        const turnColor = currentFEN.split(' ')?.[1];
         const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
 
         // 优化：为AI提供更清晰的上下文和指令
