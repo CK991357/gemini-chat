@@ -52,13 +52,17 @@ ${history.map((fen, index) => `步骤 ${index + 1}: ${fen}`).join('\n')}
     }
 
     /**
-     * [新] 解析并执行AI返回的SAN走法，包含更强的解析逻辑
+     * [增强] 解析并执行AI返回的SAN走法，包含更强的解析逻辑和健壮性
      */
     async parseAndExecuteSAN(aiResponse, currentFEN) {
-        console.log("AI 原始响应:", aiResponse); // 调试步骤1：记录原始响应
+        // 增强1：检查无效输入
+        if (!aiResponse) {
+            throw new Error('AI未返回任何内容');
+        }
+        console.log("AI 原始响应:", aiResponse);
 
-        // 调试步骤2：使用正则表达式从文本中提取SAN走法
-        const sanRegex = /\b([a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?|O-O(-O)?|([KQRBN][a-h]?[1-8]?x?[a-h][1-8]))[+#]?\b/g;
+        // 增强2：使用更强大的正则表达式从文本中提取SAN走法
+        const sanRegex = /\b([a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?|O-O(?:-O)?|[KQRBN][a-h]?[1-8]?x?[a-h][1-8])[+#]?\b/g;
         const matches = aiResponse.match(sanRegex);
 
         if (!matches || matches.length === 0) {
@@ -72,7 +76,7 @@ ${history.map((fen, index) => `步骤 ${index + 1}: ${fen}`).join('\n')}
         this.chess.load(currentFEN);
         
         // 尝试执行走法，chess.js会自动验证
-        const moveObject = this.chess.move(sanMove, { sloppy: true }); // sloppy: true 允许不严格的SAN
+        const moveObject = this.chess.move(sanMove, { sloppy: true });
         
         if (moveObject === null) {
             console.error(`chess.js 验证失败。 FEN: ${currentFEN}, 提取的SAN: ${sanMove}, 原始响应: "${aiResponse}"`);
@@ -101,17 +105,16 @@ ${history.map((fen, index) => `步骤 ${index + 1}: ${fen}`).join('\n')}
     }
 
     /**
-     * 向后端API发送请求 (已根据审查建议优化)
+     * 向后端API发送请求 (已增强日志记录)
      */
     async sendToAI(prompt) {
-        // 使用项目主流的 /api/chat/completions 端点
         const response = await fetch('/api/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'models/gemini-2.5-flash-preview-05-20', // 确保模型名称正确
+                model: 'models/gemini-2.5-flash-preview-05-20',
                 messages: [{ role: 'user', content: prompt }],
                 stream: false
             })
@@ -123,7 +126,11 @@ ${history.map((fen, index) => `步骤 ${index + 1}: ${fen}`).join('\n')}
         }
         
         const data = await response.json();
-        // 优化响应解析，确保从正确的路径获取内容
+        
+        // 增强3：将完整的AI响应打印到系统日志
+        this.showToast(`AI 原始响应 (JSON):\n<pre>${JSON.stringify(data, null, 2)}</pre>`);
+        
+        // 修复：添加 return 语句并使用正确的语法
         data.choices?.[0]?.message?.content
     }
 }

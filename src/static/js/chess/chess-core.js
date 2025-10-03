@@ -282,7 +282,7 @@ class ChessGame {
                 this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
                 this.recordMoveToHistory();
                 this.lastMoveError = null;
-                this.playMoveSound(piece);
+                // this.playMoveSound(piece);
                 this.updateFEN();
                 this.renderBoard();
                 return true;
@@ -1159,7 +1159,7 @@ class ChessGame {
         this.renderBoard();
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
-        this.playMoveSound(newPiece); // 播放音效
+        // this.playMoveSound(newPiece); // 播放音效
         
         console.log('升变完成');
     }
