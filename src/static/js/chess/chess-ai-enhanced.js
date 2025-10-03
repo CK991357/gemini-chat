@@ -149,7 +149,12 @@ ${analysisResponse}
         this.showToast(`AI 走法: ${cleanedMove} (${moveObject.from} → ${moveObject.to})`);
 
         // 调用核心逻辑来移动棋子
-        return this.chessGame.movePiece(from.row, from.col, to.row, to.col);
+        const moveResult = this.chessGame.movePiece(from.row, from.col, to.row, to.col);
+        
+        // 强制UI刷新以确保棋子移动在视觉上同步
+        this.chessGame.renderBoard();
+        
+        return moveResult;
     }
 
     /**
