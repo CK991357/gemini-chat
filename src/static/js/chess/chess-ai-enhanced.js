@@ -102,7 +102,7 @@ ${history.map((fen, index) => `步骤 ${index + 1}: ${fen}`).join('\n')}
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'models/gemini-2.5-flash-preview-05-20', // 使用更强大的模型以获得更好的棋艺
+                model: 'models/gemini-2.5-flash', // 使用更强大的模型以获得更好的棋艺
                 messages: [{ role: 'user', content: prompt }],
                 stream: false
             })

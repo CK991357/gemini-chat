@@ -1038,6 +1038,7 @@ class ChessGame {
         // 添加事件监听器
         document.getElementById('chess-new-game-btn').addEventListener('click', () => {
             this.setupInitialPosition();
+            this.gameOver = false; // 确保游戏状态被重置
             modal.style.display = 'none';
         });
         
