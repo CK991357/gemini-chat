@@ -23,71 +23,49 @@ export class ChessAIEnhanced {
         try {
             const history = this.chessGame.getFullGameHistory();
             const currentFEN = this.chessGame.getCurrentFEN();
-            
-            // --- 第一阶段：获取AI分析 ---
+
+            // --- 第一阶段：获取AI的详细分析 ---
             this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
             const analysisPrompt = this.buildAnalysisPrompt(history, currentFEN);
             const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash');
             const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
             this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
 
-            // --- 第二阶段：智能提取与决策 ---
-            this.logMessage('第二阶段：从分析中提取所有可能的走法...', 'system');
-            let moves = this.extractAllSANFromText(analysisResponse);
-            this.logMessage(`提取到 ${moves.length} 个可能的走法: [${moves.join(', ')}]`, 'debug');
+            // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
+            this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
+            const extractionPrompt = this.buildPreciseExtractionPrompt(analysisResponse);
+            const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
+            const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
+            this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
 
-            let finalMove = null;
+            // --- 第三阶段：验证并决策 ---
+            this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
+            const finalMoves = this.extractAllSANFromText(extractedResponse);
+            this.logMessage(`最终提取并验证了 ${finalMoves.length} 个走法: [${finalMoves.join(', ')}]`, 'debug');
 
-            if (moves.length === 1) {
-                // 情况A：找到唯一走法，直接使用
-                this.logMessage('决策：找到唯一走法，将自动执行。', 'system');
-                finalMove = moves;
-            } else if (moves.length > 1) {
-                // 情况B：找到多个走法，弹出用户选择框
-                this.logMessage('决策：找到多个走法，请求用户选择...', 'system');
+            let chosenMove = null;
+
+            if (finalMoves.length === 0) {
+                throw new Error('AI未能提取出任何有效走法');
+            } else if (finalMoves.length === 1) {
+                chosenMove = finalMoves;
+                this.logMessage(`决策：找到唯一最佳走法 "${chosenMove}"，将自动执行。`, 'system');
+            } else {
+                this.logMessage('决策：找到多个推荐走法，请求用户选择...', 'system');
                 try {
-                    finalMove = await this.showMoveChoiceModal(analysisResponse, moves);
-                    this.logMessage(`用户选择了走法: "${finalMove}"`, 'user-choice');
+                    // 弹窗中，分析文本用模型1的，选项用模型2的
+                    chosenMove = await this.showMoveChoiceModal(analysisResponse, finalMoves);
+                    this.logMessage(`用户选择了走法: "${chosenMove}"`, 'user-choice');
                 } catch (error) {
                     this.showToast('用户取消了选择');
                     this.logMessage('用户取消了AI走法选择', 'info');
                     return false; // 用户取消，操作结束
                 }
-            } else {
-                // 情况C：未找到任何走法，启动智能降级
-                this.logMessage('决策：未从分析中提取到走法，启动AI降级提取...', 'system');
-                this.showToast('AI分析较复杂，正在进行深度提取...');
-                
-                const extractionPrompt = this.buildExtractionPrompt(analysisResponse);
-                const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
-                const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
-                this.logMessage(`AI降级提取响应: "${extractionLog}"`, 'ai-extraction');
-
-                // 再次尝试提取
-                moves = this.extractAllSANFromText(extractedResponse);
-                this.logMessage(`降级后提取到 ${moves.length} 个走法: [${moves.join(', ')}]`, 'debug');
-
-                if (moves.length === 1) {
-                    finalMove = moves;
-                } else if (moves.length > 0) {
-                    // 如果降级后仍然有多个选项，再次让用户选择
-                    this.logMessage('降级后仍有多个选项，再次请求用户选择...', 'system');
-                    try {
-                        finalMove = await this.showMoveChoiceModal(analysisResponse, moves);
-                        this.logMessage(`用户最终选择了走法: "${finalMove}"`, 'user-choice');
-                    } catch (error) {
-                        this.showToast('用户取消了选择');
-                        this.logMessage('用户取消了AI走法选择', 'info');
-                        return false;
-                    }
-                } else {
-                    throw new Error('AI降级提取后仍未找到有效走法');
-                }
             }
 
-            // --- 第三阶段：执行 ---
-            this.logMessage(`第三阶段：执行最终确定的走法 "${finalMove}"`, 'system');
-            return await this.executeSANMove(finalMove, currentFEN);
+            // --- 第四阶段：执行 ---
+            this.logMessage(`第四阶段：执行最终确定的走法 "${chosenMove}"`, 'system');
+            return await this.executeSANMove(chosenMove, currentFEN);
 
         } catch (error) {
             this.showToast(`AI走法获取失败: ${error.message}`);
@@ -124,17 +102,23 @@ ${historyText}
     }
 
     /**
-     * 第二阶段（降级）：构建提取提示词
+     * 第二阶段：构建精确提取提示词
      */
-    buildExtractionPrompt(analysisResponse) {
-        return `你是一个国际象棋走法提取器。请从以下国际象棋分析文本中，提取出最主要推荐的标准代数记谱法（SAN）走法。
+    buildPreciseExtractionPrompt(analysisResponse) {
+        return `你是一个专业的国际象棋走法提取引擎。你的任务是从下面的分析文本中，找出最被推荐的、唯一的最佳走法。
 
-分析文本：
-"${analysisResponse}"
+**规则：**
+1.  **只返回SAN**：你的输出必须是且仅是标准代数记谱法（SAN）字符串。例如："Rg8"。
+2.  **唯一最佳**：如果文本中提到了多个走法（例如 "1... Ng7" 和 "1... Rg8"），请仔细阅读上下文，找出作者最终**最推荐**的那个。通常会用“最佳走法”、“推荐走法”、“唯一的走法”等词语来强调。
+3.  **无解释**：绝对不要添加任何解释、分析、前缀（如 "1..."）或标点符号。
+4.  **处理复杂文本**：分析文本可能包含对劣势走法的讨论，你需要忽略它们，只关注最终的正面推荐。
 
-请只返回最主要推荐的那个走法的SAN字符串，不要返回任何其他解释、评论或多余的文字。
-例如，如果分析中说"我认为Nf3是最好的选择"，则只返回"Nf3"。
-如果分析中推荐了多个走法，请只选择第一个也是最主要推荐的那个走法。`;
+**分析文本如下：**
+---
+${analysisResponse}
+---
+
+**你的输出应该是唯一的SAN字符串，例如 "Qh7#" 或 "Rg8"。**`;
     }
 
     /**

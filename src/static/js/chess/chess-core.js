@@ -1851,9 +1851,14 @@ let chessGame = null;
  * 初始化国际象棋功能
  */
 export function initializeChessCore(options = {}) {
-    // 单例模式：确保全局只有一个 chessGame 实例，防止因重复初始化导致历史记录丢失
+    // 优化单例模式：如果实例已存在，则更新其配置，特别是UI回调
     if (chessGame) {
-        Logger.info('Chess module already initialized. Skipping re-initialization.');
+        Logger.info('Chess module already initialized. Updating configuration.');
+        // 确保 showToast 函数被更新，以恢复UI提示
+        if (options.showToast) {
+            chessGame.showToast = options.showToast;
+        }
+        // 可以在这里添加其他需要更新的配置
         return;
     }
     try {
