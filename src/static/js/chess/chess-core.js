@@ -1850,38 +1850,40 @@ class ChessGame {
 let chessGame = null;
 
 /**
-    initializeChessCore(options = {}) {
-        // 优化单例模式：如果实例已存在，则更新其配置，特别是UI回调
-        if (chessGame) {
-            Logger.info('Chess module already initialized. Updating configuration.');
-            // 确保 showToast 函数被更新，以恢复UI提示
-            if (options.showToast) {
-                chessGame.showToast = options.showToast;
-            }
-            // 新增：更新 displayVisionMessage
-            if (options.displayVisionMessage) {
-                chessGame.displayVisionMessage = options.displayVisionMessage;
-            }
-            // 可以在这里添加其他需要更新的配置
-            return;
+ * 初始化国际象棋功能
+ */
+export function initializeChessCore(options = {}) {
+    // 优化单例模式：如果实例已存在，则更新其配置，特别是UI回调
+    if (chessGame) {
+        Logger.info('Chess module already initialized. Updating configuration.');
+        // 确保 showToast 函数被更新，以恢复UI提示
+        if (options.showToast) {
+            chessGame.showToast = options.showToast;
         }
-        try {
-            chessGame = new ChessGame(options);
-            Logger.info('Chess module initialized successfully.');
-            
-            // 添加切换到棋盘按钮的事件监听器
-            const toggleToChessButton = document.getElementById('toggle-to-chess-button');
-            if (toggleToChessButton) {
-                toggleToChessButton.addEventListener('click', () => {
-                    if (chessGame) {
-                        chessGame.showChessView();
-                    }
-                });
-            }
-        } catch (error) {
-            Logger.error('Failed to initialize chess module:', error);
+        // 新增：更新 displayVisionMessage
+        if (options.displayVisionMessage) {
+            chessGame.displayVisionMessage = options.displayVisionMessage;
         }
+        // 可以在这里添加其他需要更新的配置
+        return;
     }
+    try {
+        chessGame = new ChessGame(options);
+        Logger.info('Chess module initialized successfully.');
+        
+        // 添加切换到棋盘按钮的事件监听器
+        const toggleToChessButton = document.getElementById('toggle-to-chess-button');
+        if (toggleToChessButton) {
+            toggleToChessButton.addEventListener('click', () => {
+                if (chessGame) {
+                    chessGame.showChessView();
+                }
+            });
+        }
+    } catch (error) {
+        Logger.error('Failed to initialize chess module:', error);
+    }
+}
 
 /**
  * 获取当前FEN字符串
