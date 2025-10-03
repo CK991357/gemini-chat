@@ -11,6 +11,7 @@ export class ChessAIEnhanced {
         this.chessGame = chessGame;
         this.showToast = options.showToast || console.log;
         this.logMessage = options.logMessage || console.log;
+        this.displayVisionMessage = options.displayVisionMessage || console.log; // 新增：接收 displayVisionMessage
         this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
         // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
@@ -30,6 +31,7 @@ export class ChessAIEnhanced {
             const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash');
             const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
             this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
+            this.displayVisionMessage(`**AI详细分析:**\n${analysisResponse}`); // 实时显示第一次AI调用结果
 
             // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
             this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
@@ -37,6 +39,7 @@ export class ChessAIEnhanced {
             const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
             const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
             this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
+            this.displayVisionMessage(`**AI推荐走法 (SAN):**\n\`${extractedResponse}\``); // 实时显示第二次AI调用结果
 
             // --- 第三阶段：验证并决策 ---
             this.logMessage('第三阶段：验证提取的走法并决策...', 'system');

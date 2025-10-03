@@ -14,7 +14,7 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
-import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增
+import { displayVisonMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisonMessage
 
 /**
  * @fileoverview Main entry point for the application.
@@ -480,7 +480,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
     setTimeout(() => {
         initializeChessCore({
-            showToast: showToast
+            showToast: showToast,
+            displayVisonMessage: displayVisonMessage // 注入渲染函数
         });
         
         // 手动添加切换按钮事件监听器作为备份

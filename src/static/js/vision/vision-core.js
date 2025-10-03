@@ -508,3 +508,34 @@ function _getRelevantHistory() {
     
     return [...startRecords, ...keyRecords, ...endRecords];
 }
+
+/**
+ * 在视觉聊天界面显示一条AI消息。
+ * 这是从外部模块调用的接口，例如从国际象棋AI模块。
+ * @param {string} markdownContent - 要显示的Markdown格式的文本内容。
+ */
+export function displayVisonMessage(markdownContent) {
+    if (!elements.visionMessageHistory) {
+        console.error('Vision message history element not found.');
+        return;
+    }
+
+    // 使用现有的函数来创建和渲染AI消息元素
+    const { markdownContainer, reasoningContainer } = createVisionAIMessageElement();
+    
+    // 渲染Markdown内容
+    markdownContainer.innerHTML = marked.parse(markdownContent);
+
+    // 渲染可能存在的数学公式
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            MathJax.typeset([markdownContainer, reasoningContainer]);
+        }).catch((err) => console.error('MathJax typesetting failed:', err));
+    }
+
+    // 将这条消息添加到内部历史记录中，以保持一致性
+    visionChatHistory.push({ role: 'assistant', content: markdownContent });
+
+    // 滚动到底部
+    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+}
