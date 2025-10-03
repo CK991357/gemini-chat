@@ -477,6 +477,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化视觉功能
     initializeVisionCore(visionElements, attachmentManager, visionHandlers);
     
+    // 建立象棋模块和视觉模块的通信桥梁
+    window.displayVisionMessage = (message) => {
+        // 调用 vision-core 中的显示函数
+        if (typeof displayVisonMessage === 'function') {
+            displayVisonMessage(message);
+        }
+    };
+    
     // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
     setTimeout(() => {
         initializeChessCore({

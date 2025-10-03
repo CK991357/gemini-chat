@@ -523,8 +523,10 @@ export function displayVisonMessage(markdownContent) {
     // 使用现有的函数来创建和渲染AI消息元素
     const { markdownContainer, reasoningContainer } = createVisionAIMessageElement();
     
-    // 渲染Markdown内容
-    markdownContainer.innerHTML = marked.parse(markdownContent);
+    // 渲染 Markdown 内容
+    // 确保 markdownContent 是字符串，以防外部模块传入非字符串类型
+    const contentToRender = typeof markdownContent === 'string' ? markdownContent : String(markdownContent);
+    markdownContainer.innerHTML = marked.parse(contentToRender);
 
     // 渲染可能存在的数学公式
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
@@ -534,7 +536,7 @@ export function displayVisonMessage(markdownContent) {
     }
 
     // 将这条消息添加到内部历史记录中，以保持一致性
-    visionChatHistory.push({ role: 'assistant', content: markdownContent });
+    visionChatHistory.push({ role: 'assistant', content: contentToRender });
 
     // 滚动到底部
     elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;

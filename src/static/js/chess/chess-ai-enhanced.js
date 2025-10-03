@@ -12,6 +12,8 @@ export class ChessAIEnhanced {
         this.showToast = options.showToast || console.log;
         this.logMessage = options.logMessage || console.log;
         this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
+        // 新增：视觉聊天区消息显示函数
+        this.displayVisionMessage = options.displayVisionMessage || console.log;
         // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
     }
@@ -30,6 +32,9 @@ export class ChessAIEnhanced {
             const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash');
             const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
             this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
+            
+            // 新增：在视觉聊天区显示详细分析
+            this.displayVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}`);
 
             // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
             this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
@@ -37,6 +42,9 @@ export class ChessAIEnhanced {
             const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
             const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
             this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
+            
+            // 新增：在视觉聊天区显示提取的走法
+            this.displayVisionMessage(`**🎯 推荐走法**\n\n${extractedResponse}`);
 
             // --- 第三阶段：验证并决策 ---
             this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
@@ -65,11 +73,22 @@ export class ChessAIEnhanced {
 
             // --- 第四阶段：执行 ---
             this.logMessage(`第四阶段：执行最终确定的走法 "${chosenMove}"`, 'system');
-            return await this.executeSANMove(chosenMove, currentFEN);
+            const moveResult = await this.executeSANMove(chosenMove, currentFEN);
+            
+            // 新增：在视觉聊天区显示执行结果
+            if (moveResult) {
+                this.displayVisionMessage(`**🎊 执行成功**\n\n走法 **${chosenMove}** 已成功执行`);
+            } else {
+                this.displayVisionMessage(`**⚠️ 执行失败**\n\n走法 **${chosenMove}** 执行失败`);
+            }
+            
+            return moveResult;
 
         } catch (error) {
             this.showToast(`AI走法获取失败: ${error.message}`);
             this.logMessage(`AI处理流程错误: ${error.message}`, 'error');
+            // 新增：在视觉聊天区显示错误信息
+            this.displayVisionMessage(`**💥 错误信息**\n\nAI走法获取失败: ${error.message}`);
             console.error('AI Error:', error);
             return false;
         }

@@ -1683,7 +1683,15 @@ class ChessGame {
                     console.log(`[ChessAI ${type}]: ${message}`);
                 }
             },
-            showMoveChoiceModal: (analysis, moves) => this.showAIMoveChoiceModal(analysis, moves)
+            showMoveChoiceModal: (analysis, moves) => this.showAIMoveChoiceModal(analysis, moves),
+            // 新增：传递视觉聊天区消息显示函数
+            displayVisionMessage: (message) => {
+                // 这里需要调用视觉聊天区的显示函数
+                // 由于模块间依赖，我们需要通过全局变量或事件来通信
+                if (typeof window.displayVisionMessage === 'function') {
+                    window.displayVisionMessage(message);
+                }
+            }
         });
         console.log('Chess AI Enhanced module initialized.');
     }
