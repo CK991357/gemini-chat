@@ -81,7 +81,7 @@ class ChessGame {
         this.createAIMoveChoiceModal(); // 新增：创建AI走法选择模态框
         this.initializeAI();
         this.addAIButton();
-        this.loadGameFromLocalStorage(); // 尝试从本地存储加载游戏
+
     }
 
     initBoard() {
@@ -1851,6 +1851,11 @@ let chessGame = null;
  * 初始化国际象棋功能
  */
 export function initializeChessCore(options = {}) {
+    // 单例模式：确保全局只有一个 chessGame 实例，防止因重复初始化导致历史记录丢失
+    if (chessGame) {
+        Logger.info('Chess module already initialized. Skipping re-initialization.');
+        return;
+    }
     try {
         chessGame = new ChessGame(options);
         Logger.info('Chess module initialized successfully.');
