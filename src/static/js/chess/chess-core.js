@@ -27,7 +27,6 @@ const VALID_CASTLING = 'KQkq';
 class ChessGame {
     constructor(options = {}) {
         this.showToast = options.showToast || console.log;
-        this.displayVisionMessage = options.displayVisionMessage || console.log; // 新增：接收 displayVisionMessage
         
         // 等待DOM完全加载
         if (document.readyState === 'loading') {
@@ -1676,7 +1675,6 @@ class ChessGame {
     initializeAI() {
         this.chessAI = new ChessAIEnhanced(this, {
             showToast: this.showToast,
-            displayVisionMessage: this.displayVisionMessage, // 新增：传递 displayVisionMessage
             // 传入UI日志记录器和模态框显示器
             logMessage: (message, type = 'info') => {
                 if (typeof chatUI !== 'undefined' && chatUI.logMessage) {
@@ -1859,10 +1857,6 @@ export function initializeChessCore(options = {}) {
         // 确保 showToast 函数被更新，以恢复UI提示
         if (options.showToast) {
             chessGame.showToast = options.showToast;
-        }
-        // 新增：更新 displayVisionMessage
-        if (options.displayVisionMessage) {
-            chessGame.displayVisionMessage = options.displayVisionMessage;
         }
         // 可以在这里添加其他需要更新的配置
         return;
