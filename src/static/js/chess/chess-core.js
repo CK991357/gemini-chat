@@ -131,7 +131,8 @@ class ChessGame {
         this.fullMoveNumber = 1;
         this.pendingPromotion = null;
         this.gameOver = false; // 重置游戏结束状态
-
+        this.selectedSquare = null; // 新增：重置选中的棋子
+ 
         // 在所有状态设置完成后，调用专门的方法初始化历史
         this.initializeFullHistory();
         
@@ -1038,7 +1039,6 @@ class ChessGame {
         // 添加事件监听器
         document.getElementById('chess-new-game-btn').addEventListener('click', () => {
             this.setupInitialPosition();
-            this.gameOver = false; // 确保游戏状态被重置
             modal.style.display = 'none';
         });
         
