@@ -1,5 +1,5 @@
 import { CONFIG } from '../config/config.js';
-import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
+import { ApiHandler } from '../core/api-handler.js';
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -12,7 +12,7 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
-const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
+const apiHandler = new ApiHandler();
 
 /**
  * Initializes the Vision feature.
@@ -147,6 +147,8 @@ async function handleSendVisionMessage() {
     // Set loading state
     elements.visionSendButton.disabled = true;
     elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; // 使用 Font Awesome 加载图标
+    
+    // 创建AI消息元素用于流式渲染
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
@@ -165,7 +167,10 @@ async function handleSendVisionMessage() {
         // 使用升级后的 ApiHandler 发送流式请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
         const decoder = new TextDecoder('utf-8');
-        let finalContent = '';
+        
+        // 用于累积内容
+        let currentReasoning = '';
+        let currentContent = '';
         let reasoningStarted = false;
         let answerStarted = false;
 
@@ -176,47 +181,73 @@ async function handleSendVisionMessage() {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') return;
+            const lines = chunk.split('\n');
+            
+            for (const line of lines) {
+                if (line.trim() === '') continue;
+                
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
+                    if (jsonStr === '[DONE]') continue;
+                    
                     try {
                         const data = JSON.parse(jsonStr);
                         const delta = data.choices?.[0]?.delta;
+                        
                         if (delta) {
+                            // 处理思维链内容
                             if (delta.reasoning_content) {
                                 if (!reasoningStarted) {
                                     reasoningContainer.style.display = 'block';
                                     reasoningStarted = true;
                                 }
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                                currentReasoning += delta.reasoning_content;
+                                // 实时更新思维链显示
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML = 
+                                    currentReasoning.replace(/\n/g, '<br>');
                             }
+                            
+                            // 处理主要回答内容
                             if (delta.content) {
+                                // 第一次收到内容时，在思维链和答案之间插入分隔线
                                 if (reasoningStarted && !answerStarted) {
                                     const separator = document.createElement('hr');
                                     separator.className = 'answer-separator';
                                     reasoningContainer.after(separator);
                                     answerStarted = true;
                                 }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
+                                
+                                currentContent += delta.content;
+                                // 实时更新Markdown渲染
+                                markdownContainer.innerHTML = marked.parse(currentContent);
+                                
+                                // 实时滚动到底部
+                                elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
                             }
                         }
                     } catch (e) {
                         console.error('Error parsing SSE chunk:', e, jsonStr);
                     }
                 }
-            });
-            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+            }
         }
 
+        // 流式完成后的最终渲染（确保格式正确）
+        markdownContainer.innerHTML = marked.parse(currentContent);
+        
+        // 应用数学公式渲染
         if (typeof MathJax !== 'undefined' && MathJax.startup) {
             MathJax.startup.promise.then(() => {
                 MathJax.typeset([markdownContainer, reasoningContainer]);
             }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
+        // 将完整响应添加到历史记录
+        visionChatHistory.push({ 
+            role: 'assistant', 
+            content: currentContent,
+            reasoning: currentReasoning 
+        });
 
     } catch (error) {
         console.error('Error sending vision message:', error);
@@ -367,7 +398,7 @@ async function generateGameSummary() {
     // 检查是否处于国际象棋相关模式
     const currentPrompt = getSelectedPrompt();
     if (currentPrompt.id !== 'chess_teacher') {
-        showToastHandler('请先切换到“国际象棋老师”模式后再生成总结。');
+        showToastHandler('请先切换到"国际象棋老师"模式后再生成总结。');
         return;
     }
 
@@ -410,7 +441,9 @@ async function generateGameSummary() {
         // 发送请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', summaryRequest);
         const decoder = new TextDecoder('utf-8');
-        let finalContent = '';
+        
+        let currentReasoning = '';
+        let currentContent = '';
         let reasoningStarted = false;
         let answerStarted = false;
 
@@ -421,21 +454,32 @@ async function generateGameSummary() {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
-                    if (jsonStr === '[DONE]') return;
+            const lines = chunk.split('\n');
+            
+            for (const line of lines) {
+                if (line.trim() === '') continue;
+                
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
+                    if (jsonStr === '[DONE]') continue;
+                    
                     try {
                         const data = JSON.parse(jsonStr);
                         const delta = data.choices?.[0]?.delta;
+                        
                         if (delta) {
+                            // 处理思维链内容
                             if (delta.reasoning_content) {
                                 if (!reasoningStarted) {
                                     reasoningContainer.style.display = 'block';
                                     reasoningStarted = true;
                                 }
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                                currentReasoning += delta.reasoning_content;
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML = 
+                                    currentReasoning.replace(/\n/g, '<br>');
                             }
+                            
+                            // 处理主要回答内容
                             if (delta.content) {
                                 if (reasoningStarted && !answerStarted) {
                                     const separator = document.createElement('hr');
@@ -443,18 +487,22 @@ async function generateGameSummary() {
                                     reasoningContainer.after(separator);
                                     answerStarted = true;
                                 }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
+                                
+                                currentContent += delta.content;
+                                markdownContainer.innerHTML = marked.parse(currentContent);
+                                elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
                             }
                         }
                     } catch (e) {
                         console.error('Error parsing SSE chunk:', e, jsonStr);
                     }
                 }
-            });
-            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+            }
         }
 
+        // 最终渲染
+        markdownContainer.innerHTML = marked.parse(currentContent);
+        
         // 应用数学公式渲染
         if (typeof MathJax !== 'undefined' && MathJax.startup) {
             MathJax.startup.promise.then(() => {
