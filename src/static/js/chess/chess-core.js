@@ -1038,7 +1038,7 @@ class ChessGame {
         
         // 添加事件监听器
         document.getElementById('chess-new-game-btn').addEventListener('click', () => {
-            this.setupInitialPosition();
+            this.completelyResetGame();
             modal.style.display = 'none';
         });
         
@@ -1064,6 +1064,15 @@ class ChessGame {
     }
 
 
+
+   /**
+    * 新增：完全重置游戏状态，确保事件监听器被重新附加
+    */
+   completelyResetGame() {
+       this.initBoard(); // 重新创建棋盘格子并附加事件监听器
+       this.setupInitialPosition(); // 设置初始棋子位置并重置所有游戏状态
+       this.showToast('新游戏开始！');
+   }
 
     /**
      * 简化的兵升变处理
@@ -1485,8 +1494,7 @@ class ChessGame {
         if (this.resetButton) {
             this.resetButton.addEventListener('click', () => {
                 if (confirm('开始新游戏？当前进度将丢失。')) {
-                    this.setupInitialPosition();
-                    this.showToast('新游戏开始');
+                    this.completelyResetGame();
                 }
             });
         }
