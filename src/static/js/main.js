@@ -14,7 +14,7 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
-import { displayVisonMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisonMessage
+import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
 
 /**
  * @fileoverview Main entry point for the application.
@@ -480,8 +480,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 建立象棋模块和视觉模块的通信桥梁
     window.displayVisionMessage = (message) => {
         // 调用 vision-core 中的显示函数
-        if (typeof displayVisonMessage === 'function') {
-            displayVisonMessage(message);
+        if (typeof displayVisionMessage === 'function') {
+            displayVisionMessage(message);
         }
     };
     
@@ -489,7 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         initializeChessCore({
             showToast: showToast,
-            displayVisonMessage: displayVisonMessage // 注入渲染函数
+            displayVisionMessage: displayVisionMessage // 注入渲染函数
         });
         
         // 手动添加切换按钮事件监听器作为备份
