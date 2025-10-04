@@ -38,7 +38,7 @@ export class ChessAIEnhanced {
 
             // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
             this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
-            const extractionPrompt = this.buildPreciseExtractionPrompt(analysisResponse);
+            const extractionPrompt = this.buildPreciseExtractionPrompt(analysisResponse, currentFEN);
             const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
             const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
             this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
@@ -48,7 +48,14 @@ export class ChessAIEnhanced {
 
             // --- 第三阶段：验证并决策 ---
             this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
-            const finalMoves = this.extractAllSANFromText(extractedResponse);
+            const rawMoves = this.extractAllSANFromText(extractedResponse);
+            this.logMessage(`原始提取的走法: [${rawMoves.join(', ')}]`, 'debug');
+
+            // 新增：根据当前回合方自动修正大小写
+            const correctedMoves = this.correctMoveCaseForTurn(rawMoves, currentFEN);
+            this.logMessage(`修正大小写后的走法: [${correctedMoves.join(', ')}]`, 'debug');
+
+            const finalMoves = correctedMoves;
             this.logMessage(`最终提取并验证了 ${finalMoves.length} 个走法: [${finalMoves.join(', ')}]`, 'debug');
 
             let chosenMove = null;
@@ -142,23 +149,36 @@ ${pieceColorExplanation}
     }
 
     /**
-     * 第二阶段：构建精确提取提示词 (修复王车易位解析问题)
+     * 第二阶段：构建精确提取提示词 (增强版本，强制正确的大小写)
      */
-    buildPreciseExtractionPrompt(analysisResponse) {
+    buildPreciseExtractionPrompt(analysisResponse, currentFEN) {
+        // 从FEN中获取当前回合方信息
+        const turnColor = currentFEN.split(' ');
+        const currentTurn = turnColor === 'w' ? '白方' : '黑方';
+        const requiredCase = turnColor === 'w' ? '大写字母' : '小写字母';
+        
         return `你是一个专业的国际象棋走法提取引擎。你的任务是从下面的分析文本中，找出所有被明确推荐为"最佳"或"推荐"的走法。
 
+**当前局面信息：**
+- 当前轮到：${currentTurn}走棋
+- **必须使用${requiredCase}表示棋子**
+
 **重要规则：**
-1. **提取所有推荐走法**：找出文本中所有被正面推荐的走法。通常会用"最佳走法推荐"、"...是最佳选择"、"或者...也是一个好选择"等词语来标识。
-2. **特殊走法处理**：
-   - 王车易位必须保持完整："O-O" 或 "O-O-O"，不能分割
-   - 兵升变必须保持完整："e8=Q"、"a1=R" 等
-   - 吃子走法："Nxf3"、"exd5" 等
-   - 将军和将死："Qh5+"、"Rd8#" 等
-3. **逗号分隔格式**：将所有找到的SAN走法以一个半角逗号分隔的列表形式返回。例如："Nf6, O-O, exd5, e8=Q"。
-4. **只返回SAN列表**：你的输出必须是且仅是这个逗号分隔的SAN字符串列表。不要添加任何解释、编号、前缀或多余的文字。
-5. **忽略负面走法**：不要提取那些被评价为"不可取"、"劣势"或仅用于分析目的的走法。
+1. **提取所有推荐走法**：找出文本中所有被正面推荐的走法。
+2. **大小写强制要求**：
+   - 如果当前是白方回合，所有棋子必须使用大写字母：K, Q, R, B, N, P
+   - 如果当前是黑方回合，所有棋子必须使用小写字母：k, q, r, b, n, p
+3. **特殊走法处理**：
+   - 王车易位："O-O" 或 "O-O-O"（保持原样）
+   - 兵升变："e8=Q" 或 "a1=N"（根据回合方决定大小写）
+   - 将军和将死："Qh4+" 或 "qh4#"（根据回合方决定大小写）
+   - 吃子走法："Nxf3" 或 "nxf6" （根据回合方决定大小写）
+4. 3. **逗号分隔格式**：将所有找到的SAN走法以一个半角逗号分隔的列表形式返回。例如："Nf6, O-O, exd5, e8=Q"。
+5. **只返回SAN列表**：你的输出必须是且仅是这个逗号分隔的SAN字符串列表。不要添加任何解释、编号、前缀或多余的文字。
+6. **忽略负面走法**：不要提取那些被评价为"不可取"、"劣势"或仅用于分析目的的走法。
 
 **特别注意：**
+- **当前是${currentTurn}回合，必须使用${requiredCase}！**
 - 如果遇到"O-O"或"O-O-O"，必须原样保留，不能分割
 - 确保走法格式完整，包括所有必要的符号（x, +, #, =）
 
@@ -167,7 +187,7 @@ ${pieceColorExplanation}
 ${analysisResponse}
 ---
 
-**你的输出应该是一个逗号分隔的SAN字符串列表，例如 "Nf6, O-O, exd5"。**`;
+**你的输出应该是一个逗号分隔的SAN字符串列表，例如 "Nf6, O-O, exd5"。（根据回合方决定大小写）**`;
     }
 
     /**
@@ -220,6 +240,53 @@ ${analysisResponse}
         
         // 去重并返回
         return [...new Set(matches)];
+    }
+
+    /**
+     * 根据当前回合方自动修正走法的大小写
+     */
+    correctMoveCaseForTurn(moves, currentFEN) {
+        // 从FEN中获取当前回合方
+        const turnColor = currentFEN.split(' '); // 'w' 或 'b'
+        const isBlackTurn = turnColor === 'b';
+        
+        return moves.map(move => {
+            // 处理王车易位（保持原样）
+            if (move === 'O-O' || move === 'O-O-O') {
+                return move;
+            }
+            
+            // 处理兵升变（如 e8=Q）
+            if (move.includes('=')) {
+                const [movePart, promotionPart] = move.split('=');
+                const correctedMovePart = this.correctSingleMoveCase(movePart, isBlackTurn);
+                const correctedPromotionPart = isBlackTurn ? promotionPart.toLowerCase() : promotionPart.toUpperCase();
+                return `${correctedMovePart}=${correctedPromotionPart}`;
+            }
+            
+            // 处理普通走法
+            return this.correctSingleMoveCase(move, isBlackTurn);
+        });
+    }
+
+    /**
+     * 修正单个走法的大小写
+     */
+    correctSingleMoveCase(move, isBlackTurn) {
+        // 匹配棋子类型（K、Q、R、B、N）或兵移动
+        const pieceMatch = move.match(/^([KQRBN]?)(.*)$/);
+        if (!pieceMatch) return move;
+        
+        const [, piece, rest] = pieceMatch;
+        
+        if (piece) {
+            // 有明确棋子类型的走法
+            const correctedPiece = isBlackTurn ? piece.toLowerCase() : piece.toUpperCase();
+            return correctedPiece + rest;
+        } else {
+            // 兵移动，不需要修改大小写
+            return move;
+        }
     }
 
     /**
