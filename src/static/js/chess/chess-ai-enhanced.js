@@ -55,19 +55,25 @@ export class ChessAIEnhanced {
 
             if (finalMoves.length === 0) {
                 throw new Error('AI未能提取出任何有效走法');
-            } else if (finalMoves.length === 1) {
-                chosenMove = finalMoves[0];
-                this.logMessage(`决策：找到唯一最佳走法 "${chosenMove}"，将自动执行。`, 'system');
             } else {
-                this.logMessage('决策：找到多个推荐走法，请求用户选择...', 'system');
+                // 修改：无论有多少个选项，都显示选择模态框
+                this.logMessage(`决策：找到 ${finalMoves.length} 个推荐走法，请求用户选择...`, 'system');
+                
+                // 在视觉聊天区显示选项
+                const optionsText = finalMoves.length === 1 
+                    ? `唯一推荐走法: **${finalMoves[0]}**`
+                    : `请从以下走法中选择: ${finalMoves.join(', ')}`;
+                this.displayVisionMessage(`**🤔 走法选择**\n\n${optionsText}`);
+                
                 try {
-                    // 弹窗中，分析文本用模型1的，选项用模型2的
                     chosenMove = await this.showMoveChoiceModal(analysisResponse, finalMoves);
                     this.logMessage(`用户选择了走法: "${chosenMove}"`, 'user-choice');
+                    this.displayVisionMessage(`**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
                 } catch (error) {
                     this.showToast('用户取消了选择');
                     this.logMessage('用户取消了AI走法选择', 'info');
-                    return false; // 用户取消，操作结束
+                    this.displayVisionMessage(`**❌ 操作取消**\n\n用户取消了走法选择`);
+                    return false;
                 }
             }
 
