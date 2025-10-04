@@ -149,14 +149,18 @@ ${pieceColorExplanation}
 
 **重要规则：**
 1. **提取所有推荐走法**：找出文本中所有被正面推荐的走法。通常会用"最佳走法推荐"、"...是最佳选择"、"或者...也是一个好选择"等词语来标识。
-2. **特殊走法处理**：
+2. **大小写强制要求**：
+   - 如果当前是白方回合，所有棋子必须使用大写字母：K, Q, R, B, N, P
+   - 如果当前是黑方回合，所有棋子必须使用小写字母：k, q, r, b, n, p
+   - 如果原文不符，则更改后输出，如"Nf3"改为"nf3"（如果是黑方回合），"Nf3"改为"Nf3"（如果是白方回合）
+3. **特殊走法处理**：
    - 王车易位必须保持完整："O-O" 或 "O-O-O"，不能分割
    - 兵升变必须保持完整："e8=Q"、"a1=R" 等
    - 吃子走法："Nxf3"、"exd5" 等
    - 将军和将死："Qh5+"、"Rd8#" 等
-3. **逗号分隔格式**：将所有找到的SAN走法以一个半角逗号分隔的列表形式返回。例如："Nf6, O-O, exd5, e8=Q"。
-4. **只返回SAN列表**：你的输出必须是且仅是这个逗号分隔的SAN字符串列表。不要添加任何解释、编号、前缀或多余的文字。
-5. **忽略负面走法**：不要提取那些被评价为"不可取"、"劣势"或仅用于分析目的的走法。
+4. **逗号分隔格式**：将所有找到的SAN走法以一个半角逗号分隔的列表形式返回。例如："Nf6, O-O, exd5, e8=Q"。
+5. **只返回SAN列表**：你的输出必须是且仅是这个逗号分隔的SAN字符串列表。不要添加任何解释、编号、前缀或多余的文字。
+6. **忽略负面走法**：不要提取那些被评价为"不可取"、"劣势"或仅用于分析目的的走法。
 
 **特别注意：**
 - 如果遇到"O-O"或"O-O-O"，必须原样保留，不能分割
@@ -221,52 +225,7 @@ ${analysisResponse}
         // 去重并返回
         return [...new Set(matches)];
     }
-    /**
-     * 根据当前回合方自动修正走法的大小写
-     */
-    correctMoveCaseForTurn(moves, currentFEN) {
-        // 从FEN中获取当前回合方
-        const turnColor = currentFEN.split(' '); // 'w' 或 'b'
-        const isBlackTurn = turnColor === 'b';
-        
-        return moves.map(move => {
-            // 处理王车易位（保持原样）
-            if (move === 'O-O' || move === 'O-O-O') {
-                return move;
-            }
-            
-            // 处理兵升变（如 e8=Q）
-            if (move.includes('=')) {
-                const [movePart, promotionPart] = move.split('=');
-                const correctedMovePart = this.correctSingleMoveCase(movePart, isBlackTurn);
-                const correctedPromotionPart = isBlackTurn ? promotionPart.toLowerCase() : promotionPart.toUpperCase();
-                return `${correctedMovePart}=${correctedPromotionPart}`;
-            }
-            
-            // 处理普通走法
-            return this.correctSingleMoveCase(move, isBlackTurn);
-        });
-    }
 
-    /**
-     * 修正单个走法的大小写
-     */
-    correctSingleMoveCase(move, isBlackTurn) {
-        // 匹配棋子类型（K、Q、R、B、N）或兵移动
-        const pieceMatch = move.match(/^([KQRBN]?)(.*)$/);
-        if (!pieceMatch) return move;
-        
-        const [, piece, rest] = pieceMatch;
-        
-        if (piece) {
-            // 有明确棋子类型的走法
-            const correctedPiece = isBlackTurn ? piece.toLowerCase() : piece.toUpperCase();
-            return correctedPiece + rest;
-        } else {
-            // 兵移动，不需要修改大小写
-            return move;
-        }
-    }
     /**
      * 将棋盘坐标（如 'e4'）转换为行列索引 (已修复)
      */
