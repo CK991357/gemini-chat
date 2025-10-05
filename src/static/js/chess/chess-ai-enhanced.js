@@ -12,16 +12,18 @@ export class ChessAIEnhanced {
         this.showToast = options.showToast || console.log;
         this.logMessage = options.logMessage || console.log;
         this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
-        // 新增：视觉聊天区消息显示函数
-        this.displayVisionMessage = options.displayVisionMessage || console.log;
+        // 新增：视觉聊天区消息创建函数
+        this.createVisionMessage = options.createVisionMessage || this.defaultCreateVisionMessage;
         // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
     }
 
     /**
-     * 主方法：请求AI并执行其返回的最佳走法
+     * 主方法：请求AI并执行其返回的最佳走法（流式版本）
      */
     async askAIForMove() {
+        let updateVisionMessage = null;
+        
         try {
             // 在获取FEN前确保影子引擎同步
             this.chessGame.forceShadowSync();
@@ -29,25 +31,40 @@ export class ChessAIEnhanced {
             const history = this.chessGame.getFullGameHistory();
             const currentFEN = this.chessGame.getCurrentFEN();
 
+            // 创建视觉消息并获取更新函数
+            this.logMessage('创建视觉聊天消息...', 'system');
+            updateVisionMessage = this.createVisionMessage();
+            
+            if (!updateVisionMessage || typeof updateVisionMessage !== 'function') {
+                throw new Error('无法创建视觉消息更新函数');
+            }
+
+            // 初始化消息内容
+            updateVisionMessage("**♟️ 国际象棋AI分析**\n\n正在分析棋局...");
+
             // --- 第一阶段：获取AI的详细分析 ---
             this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
             const analysisPrompt = this.buildAnalysisPrompt(history, currentFEN);
-            const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash');
-            const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
-            this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
             
-            // 新增：在视觉聊天区显示详细分析
-            this.displayVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}`);
+            let analysisResponse = '';
+            await this.sendToAIStream(analysisPrompt, 'models/gemini-2.5-flash', (delta) => {
+                analysisResponse += delta;
+                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}`);
+            });
+
+            this.logMessage(`AI分析响应: ${analysisResponse}`, 'ai-analysis');
 
             // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
             this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
             const extractionPrompt = this.buildPreciseExtractionPrompt(analysisResponse);
-            const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
-            const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
-            this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
             
-            // 新增：在视觉聊天区显示提取的走法
-            this.displayVisionMessage(`**🎯 推荐走法**\n\n${extractedResponse}`);
+            let extractedResponse = '';
+            await this.sendToAIStream(extractionPrompt, 'models/gemini-2.0-flash', (delta) => {
+                extractedResponse += delta;
+                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}`);
+            });
+
+            this.logMessage(`AI提取响应: "${extractedResponse}"`, 'ai-extraction');
 
             // --- 第三阶段：验证并决策 ---
             this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
@@ -66,16 +83,16 @@ export class ChessAIEnhanced {
                 const optionsText = finalMoves.length === 1 
                     ? `唯一推荐走法: **${finalMoves[0]}**`
                     : `请从以下走法中选择: ${finalMoves.join(', ')}`;
-                this.displayVisionMessage(`**🤔 走法选择**\n\n${optionsText}`);
+                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}`);
                 
                 try {
                     chosenMove = await this.showMoveChoiceModal(analysisResponse, finalMoves);
                     this.logMessage(`用户选择了走法: "${chosenMove}"`, 'user-choice');
-                    this.displayVisionMessage(`**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
+                    updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
                 } catch (error) {
                     this.showToast('用户取消了选择');
                     this.logMessage('用户取消了AI走法选择', 'info');
-                    this.displayVisionMessage(`**❌ 操作取消**\n\n用户取消了走法选择`);
+                    updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**❌ 操作取消**\n\n用户取消了走法选择`);
                     return false;
                 }
             }
@@ -84,11 +101,11 @@ export class ChessAIEnhanced {
             this.logMessage(`第四阶段：执行最终确定的走法 "${chosenMove}"`, 'system');
             const moveResult = await this.executeSANMove(chosenMove, currentFEN);
             
-            // 新增：在视觉聊天区显示执行结果
+            // 在视觉聊天区显示执行结果
             if (moveResult) {
-                this.displayVisionMessage(`**🎊 执行成功**\n\n走法 **${chosenMove}** 已成功执行`);
+                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**\n\n**🎊 执行成功**\n\n走法 **${chosenMove}** 已成功执行`);
             } else {
-                this.displayVisionMessage(`**⚠️ 执行失败**\n\n走法 **${chosenMove}** 执行失败`);
+                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**\n\n**⚠️ 执行失败**\n\n走法 **${chosenMove}** 执行失败`);
             }
             
             return moveResult;
@@ -96,10 +113,70 @@ export class ChessAIEnhanced {
         } catch (error) {
             this.showToast(`AI走法获取失败: ${error.message}`);
             this.logMessage(`AI处理流程错误: ${error.message}`, 'error');
-            // 新增：在视觉聊天区显示错误信息
-            this.displayVisionMessage(`**💥 错误信息**\n\nAI走法获取失败: ${error.message}`);
+            // 在视觉聊天区显示错误信息
+            if (updateVisionMessage) {
+                updateVisionMessage(`**💥 错误信息**\n\nAI走法获取失败: ${error.message}`);
+            }
             console.error('AI Error:', error);
             return false;
+        }
+    }
+
+    /**
+     * 流式API请求函数
+     */
+    async sendToAIStream(prompt, model = 'models/gemini-2.5-flash', onDelta) {
+        try {
+            this.logMessage(`发送AI流式请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
+            
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [{ role: 'user', content: prompt }],
+                    stream: true
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Unknown API error' }));
+                throw new Error(`API请求失败: ${response.status} - ${errorData.error || 'Unknown error'}`);
+            }
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullContent = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            const content = data.choices?.[0]?.delta?.content || '';
+                            if (content) {
+                                fullContent += content;
+                                onDelta(content);
+                            }
+                        } catch (e) {
+                            // 忽略解析错误，继续处理其他行
+                        }
+                    }
+                }
+            }
+
+            return fullContent;
+        } catch (error) {
+            this.logMessage(`AI流式请求错误: ${error.message}`, 'error');
+            throw error;
         }
     }
 
@@ -259,39 +336,16 @@ ${analysisResponse}
     }
 
     /**
-     * 向后端API发送请求
+     * 默认的视觉消息创建函数
      */
-    async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
-        try {
-            this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
-            
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: model,
-                    messages: [{ role: 'user', content: prompt }],
-                    stream: false
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: 'Unknown API error' }));
-                throw new Error(`API请求失败: ${response.status} - ${errorData.error || 'Unknown error'}`);
+    defaultCreateVisionMessage() {
+        let currentContent = '';
+        return (newContent) => {
+            if (newContent !== currentContent) {
+                currentContent = newContent;
+                console.log('Vision Message Update:', newContent);
             }
-            
-            const data = await response.json();
-            const content = data.choices?.[0]?.message?.content || data.content || data.choices?.[0]?.text || '';
-            if (!content) {
-                 this.logMessage('AI响应内容为空', 'warning');
-            }
-            return content;
-        } catch (error) {
-            this.logMessage(`AI请求错误: ${error.message}`, 'error');
-            throw error;
-        }
+        };
     }
 
     /**
