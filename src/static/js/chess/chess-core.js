@@ -316,6 +316,24 @@ class ChessGame {
     }
 
     /**
+     * 移动成功后的统一处理程序
+     */
+    handleMoveSuccess(move) {
+        // 更新UI
+        this.renderBoard();
+
+        // 更新并保存历史记录
+        this.moveHistory.push(this.game.fen());
+        this.recordMoveToHistory(); // 这个方法会调用 localStorage 保存
+
+        // 更新FEN显示
+        this.updateFEN();
+
+        // 检查游戏结束条件
+        this.checkGameEndConditions();
+    }
+
+    /**
      * 验证棋子移动是否符合规则
      */
     isValidPieceMove(piece, fromRow, fromCol, toRow, toCol) {
@@ -803,148 +821,27 @@ class ChessGame {
     }
 
     /**
-     * 更新游戏状态
-     */
-    updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece = null, enPassantCapture = false) {
-        // 切换回合
-        this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
-        
-        // 更新完整回合数（黑方走完后）
-        if (this.currentTurn === 'w') {
-            this.fullMoveNumber++;
-        }
-
-        // 更新半回合计数（用于50步规则） - 已根据测试报告修复
-        if (piece.toLowerCase() === 'p' || capturedPiece || enPassantCapture) {
-            this.halfMoveClock = 0;
-        } else {
-            this.halfMoveClock++;
-        }
-
-        // 处理王车易位权利
-        this.updateCastlingRights(piece, fromRow, fromCol);
-
-        // 处理过路兵
-        this.updateEnPassant(piece, fromRow, fromCol, toRow, toCol);
-        
-        // 记录局面历史用于重复检测
-        const currentPosition = this.generateFEN().split(' ');
-        this.positionHistory.push(currentPosition);
-
-        // 只保留最近20个局面
-        if (this.positionHistory.length > 20) {
-            this.positionHistory.shift();
-        }
-
-        // 检查游戏结束条件
-        this.checkGameEndConditions();
-    }
-
-    /**
-     * 检查游戏结束条件 - 简化版本（只检查王被吃掉）
+     * 检查游戏结束条件 - 步骤 2.2: 完全迁移到 chess.js
      */
     checkGameEndConditions() {
-        // 检查王是否被吃掉
-        let whiteKingExists = false;
-        let blackKingExists = false;
-        
-        // 遍历棋盘查找王
-        for (let row = 0; row < 8; row++) {
-            for (let col = 0; col < 8; col++) {
-                const piece = this.pieces[`${row},${col}`];
-                if (piece === 'K') {
-                    whiteKingExists = true;
-                } else if (piece === 'k') {
-                    blackKingExists = true;
-                }
-            }
-        }
-        
-        // 王被吃掉判定胜利
-        if (!whiteKingExists) {
-            this.showGameOverModal('黑方胜利！白王被吃掉。');
+        if (this.game.isCheckmate()) {
             this.gameOver = true;
-            return;
-        }
-        
-        if (!blackKingExists) {
-            this.showGameOverModal('白方胜利！黑王被吃掉。');
+            const winner = this.game.turn() === 'w' ? '黑方' : '白方';
+            this.showGameOverModal(`${winner}胜利 (将杀)！`);
+        } else if (this.game.isStalemate()) {
             this.gameOver = true;
-            return;
-        }
-        
-        // 检查50步规则（50个完整回合 = 100个半回合）
-        if (this.halfMoveClock >= 100) {
-            this.showGameOverModal('50步规则，和棋！');
+            this.showGameOverModal('和棋 (逼和)！');
+        } else if (this.game.isThreefoldRepetition()) {
             this.gameOver = true;
-            return;
-        }
-        
-        // 检查三次重复局面
-        if (this.isThreefoldRepetition()) {
-            this.showGameOverModal('三次重复局面，和棋！');
+            this.showGameOverModal('和棋 (三次重复局面)！');
+        } else if (this.game.isInsufficientMaterial()) {
             this.gameOver = true;
-            return;
-        }
-        
-        // 保留将军提示（但不作为结束条件）
-        const opponentColor = this.currentTurn;
-        if (this.isKingInCheck(opponentColor)) {
+            this.showGameOverModal('和棋 (子力不足)！');
+        } else if (this.game.isDraw()) { // 包含50步规则
+            this.gameOver = true;
+            this.showGameOverModal('和棋 (50步规则)！');
+        } else if (this.game.inCheck()) {
             this.showToast('将军！');
-        }
-    }
-
-    updateCastlingRights(piece, fromRow, fromCol) {
-        // 如果是王移动，移除该颜色的所有易位权利
-        if (piece === 'K') {
-            this.castling = this.castling.replace(/[KQ]/g, '');
-        } else if (piece === 'k') {
-            this.castling = this.castling.replace(/[kq]/g, '');
-        }
-        
-        // 如果是车移动，移除对应的易位权利
-        if (piece === 'R') {
-            if (fromRow === 7 && fromCol === 0) { // 白方后翼车
-                this.castling = this.castling.replace('Q', '');
-            } else if (fromRow === 7 && fromCol === 7) { // 白方王翼车
-                this.castling = this.castling.replace('K', '');
-            }
-        } else if (piece === 'r') {
-            if (fromRow === 0 && fromCol === 0) { // 黑方后翼车
-                this.castling = this.castling.replace('q', '');
-            } else if (fromRow === 0 && fromCol === 7) { // 黑方王翼车
-                this.castling = this.castling.replace('k', '');
-            }
-        }
-        
-        // 如果易位权利字符串为空，设置为 '-'
-        if (!this.castling) {
-            this.castling = '-';
-        }
-    }
-
-    /**
-     * 更新被吃车的易位权利
-     */
-    updateCastlingRightsForCapturedRook(row, col) {
-        if (row === 0) { // 黑方底线
-            if (col === 0) this.castling = this.castling.replace('q', '');
-            else if (col === 7) this.castling = this.castling.replace('k', '');
-        } else if (row === 7) { // 白方底线
-            if (col === 0) this.castling = this.castling.replace('Q', '');
-            else if (col === 7) this.castling = this.castling.replace('K', '');
-        }
-        
-        if (!this.castling) this.castling = '-';
-    }
-
-    updateEnPassant(piece, fromRow, fromCol, toRow, toCol) {
-        // 兵前进两格，设置过路兵目标格
-        if (piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2) {
-            const epRow = (fromRow + toRow) / 2;
-            this.enPassant = this.getSquareName(epRow, toCol);
-        } else {
-            this.enPassant = '-';
         }
     }
 
