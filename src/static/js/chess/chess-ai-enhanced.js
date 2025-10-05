@@ -23,6 +23,9 @@ export class ChessAIEnhanced {
      */
     async askAIForMove() {
         try {
+            // 在获取FEN前确保影子引擎同步
+            this.chessGame.forceShadowSync();
+            
             const history = this.chessGame.getFullGameHistory();
             const currentFEN = this.chessGame.getCurrentFEN();
 

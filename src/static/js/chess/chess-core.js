@@ -1926,9 +1926,17 @@ class ChessGame {
                 console.error('%cFEN不一致!', 'color: red;', { move: `${moveObject.from}${moveObject.to}` });
                 console.warn('自定义引擎FEN:', customFEN);
                 console.warn('影子引擎FEN:', shadowFEN);
-                // 如果不一致，强制同步到自定义引擎的状态
-                console.log('状态不一致，强制将影子引擎同步到当前FEN。');
-                this.game.load(customFEN);
+                
+                // 方案1A: 使用chess.js的FEN作为权威
+                const authoritativeFEN = this.game.fen();
+                if (this.validateFEN(authoritativeFEN)) {
+                    console.warn('使用chess.js的权威FEN覆盖自定义引擎');
+                    this.loadFEN(authoritativeFEN); // 用chess.js的FEN重置自定义引擎
+                } else {
+                    // 回退到自定义引擎
+                    console.warn('chess.js的FEN也无效，回退到自定义引擎的FEN');
+                    this.game.load(customFEN);
+                }
             }
         } catch (e) {
             console.error('同步影子引擎时发生异常:', e);
