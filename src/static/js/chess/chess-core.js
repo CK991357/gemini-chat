@@ -5,12 +5,7 @@
 
 import { Logger } from '../utils/logger.js';
 import { ChessAIEnhanced } from './chess-ai-enhanced.js';
-
-// 风险缓解：确保 chess.js 已加载
-if (typeof window.Chess === 'undefined') {
-   throw new Error('chess.js 库未正确加载，请检查CDN链接');
-}
-const Chess = window.Chess;
+import Chess from './chess.js';
 
 // 棋子 Unicode 字符
 const PIECES = {
