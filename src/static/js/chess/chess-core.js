@@ -186,8 +186,6 @@ class ChessGame {
             return false;
         }
 
-        this.handleMoveSuccess(move);
-        return true;
     }
 
     handleMoveSuccess(move) {
