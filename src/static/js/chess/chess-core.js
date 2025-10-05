@@ -283,12 +283,16 @@ class ChessGame {
 
         const fromKey = `${fromRow},${fromCol}`;
         const toKey = `${toRow},${toCol}`;
-        const piece = this.pieces[fromKey];
+        // 步骤 2.1 修复：确保 movePiece 也从 chess.js 读取状态
+        const fromSquare = this.getSquareName(fromRow, fromCol);
+        const pieceOnSquare = this.game.get(fromSquare);
 
-        if (!piece) {
+        if (!pieceOnSquare) {
             this.showToast('没有选中棋子');
             return false;
         }
+        // 将 chess.js 的棋子对象转换为我们旧逻辑需要的字符格式
+        const piece = pieceOnSquare.color === 'w' ? pieceOnSquare.type.toUpperCase() : pieceOnSquare.type.toLowerCase();
 
         if (!this.isValidTurn(piece)) {
             this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
