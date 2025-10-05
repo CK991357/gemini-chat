@@ -12,8 +12,10 @@ export class ChessAIEnhanced {
         this.showToast = options.showToast || console.log;
         this.logMessage = options.logMessage || console.log;
         this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
-        // 新增：视觉聊天区消息创建函数
+        // 注入的视觉聊天区消息创建函数，现在它应该返回一个更新函数
         this.createVisionMessage = options.createVisionMessage || this.defaultCreateVisionMessage;
+        // 注入的滚动到底部函数
+        this.scrollToBottom = options.scrollToBottom || (() => {});
         // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
     }
@@ -22,7 +24,7 @@ export class ChessAIEnhanced {
      * 主方法：请求AI并执行其返回的最佳走法（流式版本）
      */
     async askAIForMove() {
-        let updateVisionMessage = null;
+        let updateVisionMessageContent = null; // 重命名为更清晰的变量名
         
         try {
             // 在获取FEN前确保影子引擎同步
@@ -33,14 +35,16 @@ export class ChessAIEnhanced {
 
             // 创建视觉消息并获取更新函数
             this.logMessage('创建视觉聊天消息...', 'system');
-            updateVisionMessage = this.createVisionMessage();
+            // 调用注入的 createVisionMessage 函数，它现在应该返回一个更新函数
+            updateVisionMessageContent = this.createVisionMessage();
             
-            if (!updateVisionMessage || typeof updateVisionMessage !== 'function') {
+            if (!updateVisionMessageContent || typeof updateVisionMessageContent !== 'function') {
                 throw new Error('无法创建视觉消息更新函数');
             }
 
             // 初始化消息内容
-            updateVisionMessage("**♟️ 国际象棋AI分析**\n\n正在分析棋局...");
+            updateVisionMessageContent("**♟️ 国际象棋AI分析**\n\n正在分析棋局...");
+            this.scrollToBottom(); // 每次更新后滚动到底部
 
             // --- 第一阶段：获取AI的详细分析 ---
             this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
@@ -49,7 +53,8 @@ export class ChessAIEnhanced {
             let analysisResponse = '';
             await this.sendToAIStream(analysisPrompt, 'models/gemini-2.5-flash', (delta) => {
                 analysisResponse += delta;
-                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}`);
+                updateVisionMessageContent(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}`);
+                this.scrollToBottom(); // 每次更新后滚动到底部
             });
 
             this.logMessage(`AI分析响应: ${analysisResponse}`, 'ai-analysis');
@@ -61,7 +66,8 @@ export class ChessAIEnhanced {
             let extractedResponse = '';
             await this.sendToAIStream(extractionPrompt, 'models/gemini-2.0-flash', (delta) => {
                 extractedResponse += delta;
-                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}`);
+                updateVisionMessageContent(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}`);
+                this.scrollToBottom(); // 每次更新后滚动到底部
             });
 
             this.logMessage(`AI提取响应: "${extractedResponse}"`, 'ai-extraction');
@@ -80,19 +86,22 @@ export class ChessAIEnhanced {
                 this.logMessage(`决策：找到 ${finalMoves.length} 个推荐走法，请求用户选择...`, 'system');
                 
                 // 在视觉聊天区显示选项
-                const optionsText = finalMoves.length === 1 
+                const optionsText = finalMoves.length === 1
                     ? `唯一推荐走法: **${finalMoves[0]}**`
                     : `请从以下走法中选择: ${finalMoves.join(', ')}`;
-                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}`);
+                updateVisionMessageContent(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}`);
+                this.scrollToBottom(); // 每次更新后滚动到底部
                 
                 try {
                     chosenMove = await this.showMoveChoiceModal(analysisResponse, finalMoves);
                     this.logMessage(`用户选择了走法: "${chosenMove}"`, 'user-choice');
-                    updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
+                    updateVisionMessageContent(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
+                    this.scrollToBottom(); // 每次更新后滚动到底部
                 } catch (error) {
                     this.showToast('用户取消了选择');
                     this.logMessage('用户取消了AI走法选择', 'info');
-                    updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**❌ 操作取消**\n\n用户取消了走法选择`);
+                    updateVisionMessageContent(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**❌ 操作取消**\n\n用户取消了走法选择`);
+                    this.scrollToBottom(); // 每次更新后滚动到底部
                     return false;
                 }
             }
@@ -103,10 +112,11 @@ export class ChessAIEnhanced {
             
             // 在视觉聊天区显示执行结果
             if (moveResult) {
-                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**\n\n**🎊 执行成功**\n\n走法 **${chosenMove}** 已成功执行`);
+                updateVisionMessageContent(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**\n\n**🎊 执行成功**\n\n走法 **${chosenMove}** 已成功执行`);
             } else {
-                updateVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**\n\n**⚠️ 执行失败**\n\n走法 **${chosenMove}** 执行失败`);
+                updateVisionMessageContent(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}\n\n**🎯 推荐走法**\n\n${extractedResponse}\n\n**🤔 走法选择**\n\n${optionsText}\n\n**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**\n\n**⚠️ 执行失败**\n\n走法 **${chosenMove}** 执行失败`);
             }
+            this.scrollToBottom(); // 每次更新后滚动到底部
             
             return moveResult;
 
@@ -114,8 +124,9 @@ export class ChessAIEnhanced {
             this.showToast(`AI走法获取失败: ${error.message}`);
             this.logMessage(`AI处理流程错误: ${error.message}`, 'error');
             // 在视觉聊天区显示错误信息
-            if (updateVisionMessage) {
-                updateVisionMessage(`**💥 错误信息**\n\nAI走法获取失败: ${error.message}`);
+            if (updateVisionMessageContent) {
+                updateVisionMessageContent(`**💥 错误信息**\n\nAI走法获取失败: ${error.message}`);
+                this.scrollToBottom(); // 每次更新后滚动到底部
             }
             console.error('AI Error:', error);
             return false;
@@ -336,15 +347,12 @@ ${analysisResponse}
     }
 
     /**
-     * 默认的视觉消息创建函数
+     * 默认的视觉消息创建函数 (现在应该由外部注入)
      */
     defaultCreateVisionMessage() {
-        let currentContent = '';
+        console.warn('defaultCreateVisionMessage 被调用，这可能意味着 createVisionMessage 未被正确注入。');
         return (newContent) => {
-            if (newContent !== currentContent) {
-                currentContent = newContent;
-                console.log('Vision Message Update:', newContent);
-            }
+            console.log('Vision Message Update (default fallback):', newContent);
         };
     }
 

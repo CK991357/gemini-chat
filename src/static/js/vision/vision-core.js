@@ -541,3 +541,35 @@ export function displayVisionMessage(markdownContent) {
     // 滚动到底部
     elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
 }
+
+/**
+ * @function createVisionMessageUpdater
+ * @description 创建并返回一个用于更新视觉聊天界面AI消息的函数。
+ *              此函数旨在供外部模块（如国际象棋AI）使用，以实现流式消息更新。
+ * @returns {Function} 一个接受字符串参数的函数，用于更新AI消息内容。
+ */
+export function createVisionMessageUpdater() {
+    if (!elements.visionMessageHistory) {
+        console.error('Vision message history element not found.');
+        return (content) => console.log('Vision Message Update (fallback):', content); // 提供一个回退函数
+    }
+
+    const { markdownContainer, reasoningContainer } = createVisionAIMessageElement();
+    let currentContent = ''; // 用于累积内容
+
+    // 返回一个更新函数
+    return (newContent) => {
+        if (newContent !== currentContent) {
+            currentContent = newContent;
+            markdownContainer.innerHTML = marked.parse(currentContent);
+
+            // 渲染可能存在的数学公式
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([markdownContainer, reasoningContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
+            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+        }
+    };
+}
