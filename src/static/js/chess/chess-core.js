@@ -180,26 +180,31 @@ class ChessGame {
             square.classList.remove('selected', 'highlight');
         });
 
-        // 渲染棋子
-        Object.entries(this.pieces).forEach(([key, piece]) => {
-            const [row, col] = key.split(',').map(Number);
-            const square = this.getSquareElement(row, col);
-            if (square && piece in PIECES) {
-                const pieceElement = document.createElement('div');
-                pieceElement.className = 'chess-piece';
-                pieceElement.textContent = PIECES[piece];
-                pieceElement.draggable = true;
-                pieceElement.addEventListener('dragstart', (e) => {
-                    e.dataTransfer.setData('text/plain', `${row},${col}`);
-                });
-                
-                const label = document.createElement('span');
-                label.className = 'chess-piece-label';
-                label.textContent = piece;
-                
-                square.appendChild(pieceElement);
-                square.appendChild(label);
-            }
+        // 渲染棋子 - 步骤 2.1：从 chess.js 引擎读取状态
+        const board = this.game.board();
+        board.forEach((rowArray, row) => {
+            rowArray.forEach((piece, col) => {
+                if (piece) {
+                    const square = this.getSquareElement(row, col);
+                    if (square) {
+                        const pieceSymbol = piece.color === 'w' ? piece.type.toUpperCase() : piece.type.toLowerCase();
+                        const pieceElement = document.createElement('div');
+                        pieceElement.className = 'chess-piece';
+                        pieceElement.textContent = PIECES[pieceSymbol];
+                        pieceElement.draggable = true;
+                        pieceElement.addEventListener('dragstart', (e) => {
+                            e.dataTransfer.setData('text/plain', `${row},${col}`);
+                        });
+
+                        const label = document.createElement('span');
+                        label.className = 'chess-piece-label';
+                        label.textContent = pieceSymbol;
+
+                        square.appendChild(pieceElement);
+                        square.appendChild(label);
+                    }
+                }
+            });
         });
 
         // 高亮选中的格子
@@ -224,18 +229,20 @@ class ChessGame {
             return;
         }
         
-        const piece = this.pieces[`${row},${col}`];
-        
+        // 步骤 2.1：从 chess.js 获取棋子信息和回合方
+        const squareName = this.getSquareName(row, col);
+        const piece = this.game.get(squareName);
+
         if (this.selectedSquare) {
             // 已经有选中的棋子，尝试移动
             const [fromRow, fromCol] = this.selectedSquare;
             this.movePiece(fromRow, fromCol, row, col);
             this.selectedSquare = null;
-        } else if (piece && this.isValidTurn(piece)) {
+        } else if (piece && piece.color === this.game.turn()) {
             // 选中一个棋子
             this.selectedSquare = [row, col];
         } else if (piece) {
-            this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
+            this.showToast(`现在轮到${this.game.turn() === 'w' ? '白方' : '黑方'}走棋`);
         }
         
         this.renderBoard();
