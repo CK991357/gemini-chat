@@ -378,7 +378,7 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
             model,
             messages: [{ role: 'user', content: prompt }],
             stream: true,
-            reasoning: { include_reasoning: true, tokens: 4096 }, // ✅ 让 Gemini 返回思维链
+            enableReasoning: true,  // ✅ 改成 worker.mjs 能识别的字段
             temperature: 1.0,
             top_p: 0.9
         };
