@@ -8,7 +8,15 @@ const Chess = window.Chess;
 
 // ✅ 新增：引入普通聊天的流式处理逻辑
 import { ChatApiHandler } from '../chat/chat-api-handler.js';
-const chatApiHandler = new ChatApiHandler();
+
+// ✅ 提供一个安全的空依赖对象，避免 undefined 报错
+const chatApiHandler = new ChatApiHandler({
+    toolManager: null,
+    historyManager: null,
+    state: {},
+    libs: {},
+    config: { API: { AVAILABLE_MODELS: [] } } // 避免 .config.API 报错
+});
 
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
