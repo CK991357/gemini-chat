@@ -302,7 +302,9 @@ class ChessGame {
             if (this.handleCastling(fromRow, fromCol, toRow, toCol)) {
                 this.showToast('王车易位！');
                 // 王车易位成功，更新游戏状态
-                this.updateGameState(piece, fromRow, fromCol, toRow, toCol);
+                // 捕获吃子信息
+                const capturedPiece = this.pieces[`${toRow},${toCol}`] || null;
+                this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece);
                 this.recordMoveToHistory();
                 this.lastMoveError = null;
                 this.updateFEN();
@@ -383,7 +385,7 @@ class ChessGame {
             this.pieces[toKey] = piece;
             
             // 更新游戏状态
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, isEnPassantCapture);
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece, isEnPassantCapture);
             this.recordMoveToHistory();
             this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
             
@@ -888,7 +890,7 @@ class ChessGame {
     /**
      * 更新游戏状态
      */
-    updateGameState(piece, fromRow, fromCol, toRow, toCol, enPassantCapture = false) {
+    updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece = null, enPassantCapture = false) {
         // 切换回合
         this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
         
@@ -897,8 +899,8 @@ class ChessGame {
             this.fullMoveNumber++;
         }
 
-        // 更新半回合计数（用于50步规则）
-        if (piece.toLowerCase() === 'p' || this.pieces[`${toRow},${toCol}`] || enPassantCapture) {
+        // 更新半回合计数（用于50步规则） - 已根据测试报告修复
+        if (piece.toLowerCase() === 'p' || capturedPiece || enPassantCapture) {
             this.halfMoveClock = 0;
         } else {
             this.halfMoveClock++;
@@ -1184,8 +1186,9 @@ class ChessGame {
         // 清除升变选择显示
         this.clearPromotionDisplay();
         
-        // 修复：使用标准的 updateGameState
-        this.updateGameState(piece, fromRow, fromCol, row, col, false);
+        // 修复：使用标准的 updateGameState，并传递吃子信息（升变时总是有吃子）
+        const capturedPiece = this.pieces[`${row},${col}`] || piece; // 升变总是覆盖一个兵
+        this.updateGameState(piece, fromRow, fromCol, row, col, capturedPiece, false);
         this.recordMoveToHistory();
         
         this.updateFEN();
