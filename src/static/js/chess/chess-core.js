@@ -5,7 +5,7 @@
 
 import { Logger } from '../utils/logger.js';
 import { ChessAIEnhanced } from './chess-ai-enhanced.js';
-import Chess from './chess.js';
+import { Chess } from './chess.js';
 
 // 棋子 Unicode 字符
 const PIECES = {
