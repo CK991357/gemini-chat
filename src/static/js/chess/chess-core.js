@@ -273,142 +273,45 @@ class ChessGame {
     }
 
     /**
-     * 修改兵移动逻辑 - 简化版本
+     * 移动棋子 - 步骤 2.2：完全迁移到 chess.js 引擎
      */
     movePiece(fromRow, fromCol, toRow, toCol) {
-        // 如果游戏已结束，不允许移动
         if (this.gameOver) {
             return false;
         }
 
-        const fromKey = `${fromRow},${fromCol}`;
-        const toKey = `${toRow},${toCol}`;
-        // 步骤 2.1 修复：确保 movePiece 也从 chess.js 读取状态
         const fromSquare = this.getSquareName(fromRow, fromCol);
-        const pieceOnSquare = this.game.get(fromSquare);
+        const toSquare = this.getSquareName(toRow, toCol);
 
-        if (!pieceOnSquare) {
-            this.showToast('没有选中棋子');
-            return false;
-        }
-        // 将 chess.js 的棋子对象转换为我们旧逻辑需要的字符格式
-        const piece = pieceOnSquare.color === 'w' ? pieceOnSquare.type.toUpperCase() : pieceOnSquare.type.toLowerCase();
+        // 检查是否为兵升变
+        const piece = this.game.get(fromSquare);
+        const isPromotion = piece && piece.type === 'p' && (toRow === 0 || toRow === 7);
 
-        if (!this.isValidTurn(piece)) {
-            this.showToast(`现在轮到${this.currentTurn === 'w' ? '白方' : '黑方'}走棋`);
-            return false;
-        }
-
-        // 基本规则检查
-        if (this.pieces[toKey] && this.isSameColor(piece, this.pieces[toKey])) {
-            this.showToast('不能吃掉自己的棋子');
-            return false;
-        }
-
-        // 检查是否为王车易位 (必须是王，且在同一行上移动2格)
-        const isCastlingAttempt = piece.toLowerCase() === 'k' && fromRow === toRow && Math.abs(toCol - fromCol) === 2;
-
-        if (isCastlingAttempt) {
-            this.moveHistory.push(this.generateFEN());
-            if (this.handleCastling(fromRow, fromCol, toRow, toCol)) {
-                this.showToast('王车易位！');
-                // 王车易位成功，更新游戏状态
-                // 捕获吃子信息
-                const capturedPiece = this.pieces[`${toRow},${toCol}`] || null;
-                this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece);
-                this.recordMoveToHistory();
-                this.lastMoveError = null;
-                this.updateFEN();
-                this.renderBoard();
-                this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
-                return true;
-            } else {
-                // 王车易位失败，显示错误信息
-                this.moveHistory.pop(); // 恢复历史记录
-                this.showToast(this.lastMoveError || '王车易位不符合规则');
-                this.lastMoveError = null;
-                return false;
-            }
-        }
-
-        // 检查移动规则
-        if (!this.isValidPieceMove(piece, fromRow, fromCol, toRow, toCol)) {
-            if (this.lastMoveError) {
-                this.showToast(this.lastMoveError);
-                this.lastMoveError = null;
-            } else {
-                const pieceType = piece.toLowerCase();
-                const genericMessages = {
-                    'p': '兵走法：向前走一格，起始位置可走两格，吃子时斜走',
-                    'n': '马走"日"字',
-                    'b': '象走斜线',
-                    'r': '车走直线',
-                    'q': '后走直线或斜线',
-                    'k': '王走一格'
-                };
-                this.showToast(genericMessages[pieceType] || '移动不符合规则');
-            }
-            return false;
-        }
-
-        // 保存当前 FEN 到历史记录
-        this.moveHistory.push(this.generateFEN());
-
-        // 检查兵升变
-        const isPromotion = piece.toLowerCase() === 'p' && (toRow === 0 || toRow === 7);
-        
         if (isPromotion) {
-            // 执行移动
-            delete this.pieces[fromKey];
-            this.pieces[toKey] = piece;
-            
-            // 设置等待升变状态 - 修复：添加 fromRow 和 fromCol
-            this.pendingPromotion = {
-                fromRow: fromRow,    // 添加这行
-                fromCol: fromCol,    // 添加这行
-                row: toRow,
-                col: toCol,
-                piece: piece
-            };
-            
-            console.log('触发兵升变:', this.pendingPromotion);
-            
-            // 显示升变选择
+            // 对于兵升变，我们先不执行移动，而是触发UI选择
+            this.pendingPromotion = { from: fromSquare, to: toSquare };
             this.showPromotionSelection(toRow, toCol);
-            
+            // 移动棋子到目标格以在UI上显示
+            this.pieces = this.fenToPieces(this.game.fen()); // 临时同步一下
+            delete this.pieces[`${fromRow},${fromCol}`];
+            this.pieces[`${toRow},${toCol}`] = piece.color === 'w' ? 'P' : 'p';
             this.renderBoard();
-            // 升变是一个两步过程，我们等到 completePromotion 时再同步影子引擎
-            console.warn('升变已触发，影子引擎将等待升变完成后一次性同步。');
-            return true;
-        } else {
-            // 普通移动
-            const capturedPiece = this.pieces[toKey];
-            let isEnPassantCapture = false;
-
-            // 检查并处理吃过路兵
-            if (piece.toLowerCase() === 'p' && this.enPassant !== '-' && toRow === this.getEnPassantRow() && toCol === this.getEnPassantCol()) {
-                const capturedPawnRow = this.currentTurn === 'w' ? toRow + 1 : toRow - 1;
-                const capturedPawnKey = `${capturedPawnRow},${toCol}`;
-                delete this.pieces[capturedPawnKey]; // 移除被吃掉的兵
-                isEnPassantCapture = true;
-                this.showToast('吃过路兵！');
-            }
-            
-            delete this.pieces[fromKey];
-            this.pieces[toKey] = piece;
-            
-            // 更新游戏状态
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece, isEnPassantCapture);
-            this.recordMoveToHistory();
-            
-            // 更新易位权利
-            if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
-                this.updateCastlingRightsForCapturedRook(toRow, toCol);
-            }
+            return true; // 等待用户选择
         }
 
-        this.lastMoveError = null;
-        this.updateFEN();
+        // 对于所有其他走法，直接调用 chess.js
+        const move = this.game.move({
+            from: fromSquare,
+            to: toSquare
+        });
+
+        if (move === null) {
+            this.showToast('不合法的移动！');
+            return false;
+        }
+
+        // 移动成功，更新所有状态
+        this.handleMoveSuccess(move);
         return true;
     }
 
@@ -1172,51 +1075,32 @@ class ChessGame {
     /**
      * 简化的完成升变
      */
-    completePromotion(pieceType) {
+    completePromotion(promotionPiece) {
         if (!this.pendingPromotion) {
             console.error('没有等待的升变！');
             return;
         }
-        
-        const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
-        const isWhite = piece === 'P';
-        const newPiece = isWhite ? pieceType.toUpperCase() : pieceType.toLowerCase();
-        
-        console.log('完成兵升变:', {
-            fromPosition: `${fromRow},${fromCol}`,
-            toPosition: `${row},${col}`,
-            fromPiece: piece,
-            toPiece: newPiece
-        });
-        
-        // 更新棋子
-        this.pieces[`${row},${col}`] = newPiece;
-        
-        // 清除升变状态
-        this.pendingPromotion = null;
-        
-        // 清除升变选择显示
-        this.clearPromotionDisplay();
-        
-        // 修复：使用标准的 updateGameState，并传递吃子信息（升变时总是有吃子）
-        const capturedPiece = this.pieces[`${row},${col}`] || piece; // 升变总是覆盖一个兵
-        this.updateGameState(piece, fromRow, fromCol, row, col, capturedPiece, false);
-        this.recordMoveToHistory();
-        
-        this.updateFEN();
-        this.renderBoard();
-        
-        this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
-        
-        // 升变完成，此时一次性将完整的带升变信息的走法同步到影子引擎
-        console.log('正在向影子引擎同步完整的升变走法...');
-        this.syncAndVerifyShadowEngine({
-            from: this.getSquareName(fromRow, fromCol),
-            to: this.getSquareName(row, col),
-            promotion: newPiece.toLowerCase()
+
+        const { from, to } = this.pendingPromotion;
+
+        const move = this.game.move({
+            from: from,
+            to: to,
+            promotion: promotionPiece.toLowerCase()
         });
 
-        console.log('升变完成');
+        if (move === null) {
+            this.showToast('升变失败，这是一个不合法的走法。');
+            // 恢复棋盘到升变前的状态
+            this.game.undo(); // 撤销兵移动到最后一行的那一步
+            this.renderBoard();
+        } else {
+            this.showToast(`兵升变为${this.getPieceName(promotionPiece)}`);
+            this.handleMoveSuccess(move);
+        }
+
+        this.pendingPromotion = null;
+        this.clearPromotionDisplay();
     }
 
     /**
