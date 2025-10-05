@@ -27,39 +27,88 @@ export class ChessAIEnhanced {
         // 新增：视觉聊天区消息显示函数
         this.displayVisionMessage = options.displayVisionMessage || console.log;
         // chess.js 实例，用于验证和解析走法
+        // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
-        // ✅ 代理封装视觉聊天更新逻辑，支持单条消息持续追加
-        this._visionMsgCache = {}; // 用于缓存流式消息
-        const originalDisplay = this.displayVisionMessage;
 
+        // ====== 新增：代理 displayVisionMessage 支持按 id 更新同一条消息块 ======
+        // 保存原始显示函数（通常由 main.js 注入）
+        const originalDisplayVision = this.displayVisionMessage;
+
+        // 缓存（id -> 文本）
+        this._visionMsgCache = {};
+
+        // helper: 定位容器
+        const _getVisionContainer = () => {
+            return document.getElementById('vision-message-history')
+                || document.getElementById('message-history')
+                || document.querySelector('.vision-container .vision-message-history')
+                || document.querySelector('.vision-container')
+                || document.body;
+        };
+
+        // helper: 立刻创建一个 AI 消息 DOM（与 vision-core 风格兼容）
+        const _createAIMessageElement = (id, initialHtml = '') => {
+            const container = _getVisionContainer();
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ai';
+            messageDiv.setAttribute('data-msg-id', id);
+
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'avatar';
+            avatarDiv.textContent = '🤖';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'content';
+
+            const markdownContainer = document.createElement('div');
+            markdownContainer.className = 'markdown-container';
+            markdownContainer.innerHTML = initialHtml || '';
+
+            contentDiv.appendChild(markdownContainer);
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(contentDiv);
+
+            container.appendChild(messageDiv);
+            return messageDiv;
+        };
+
+        // 代理函数：支持 { id, create, append } 三个选项
         this.displayVisionMessage = (content, opts = {}) => {
-            const { id, append } = opts;
+            const { id, create, append } = opts || {};
 
+            // append 模式：尝试更新已有消息（若不存在则创建）
             if (append && id) {
-                // 如果已有该消息块，则更新它
-                if (this._visionMsgCache[id]) {
-                    const el = document.querySelector(`[data-msg-id="${id}"]`);
-                    if (el) {
-                        el.innerHTML = content; // 直接更新内容
-                        this._visionMsgCache[id] = content;
-                        return;
+                let existing = document.querySelector(`[data-msg-id="${id}"]`);
+                if (!existing) {
+                    // 直接同步创建占位 DOM（避免 race）
+                    existing = _createAIMessageElement(id, content ? (typeof marked !== 'undefined' ? marked.parse(content) : content) : '');
+                    this._visionMsgCache[id] = content || '';
+                    return;
+                } else {
+                    const md = existing.querySelector('.markdown-container') || existing.querySelector('.content') || existing;
+                    if (md) {
+                        md.innerHTML = (typeof marked !== 'undefined') ? marked.parse(content) : content;
+                    } else {
+                        existing.innerHTML = (typeof marked !== 'undefined') ? marked.parse(content) : content;
                     }
+                    this._visionMsgCache[id] = content;
+                    return;
                 }
             }
 
-            // 否则新建一条消息并标记ID
-            if (typeof originalDisplay === 'function') {
-                originalDisplay(content);
+            // create 专用：立即创建占位（不调用原函数，避免 race）
+            if (create && id) {
+                _createAIMessageElement(id, content ? (typeof marked !== 'undefined' ? marked.parse(content) : content) : '');
+                this._visionMsgCache[id] = content || '';
+                return;
             }
 
-            if (id) {
-                // 新消息生成后立即标记DOM（延时确保插入）
-                setTimeout(() => {
-                    const msgBlocks = document.querySelectorAll('.chat-message.ai, .vision-message.ai');
-                    const lastMsg = msgBlocks[msgBlocks.length - 1];
-                    if (lastMsg) lastMsg.setAttribute('data-msg-id', id);
-                    this._visionMsgCache[id] = content;
-                }, 50);
+            // 回退：调用原来的显示方法（保持兼容）
+            if (typeof originalDisplayVision === 'function') {
+                originalDisplayVision(content);
+            } else {
+                // 极端回退：简单创建 DOM
+                _createAIMessageElement('fallback-' + Date.now(), (typeof marked !== 'undefined') ? marked.parse(content) : content);
             }
         };
     }
@@ -78,22 +127,23 @@ export class ChessAIEnhanced {
             // --- 第一阶段：获取AI的详细分析 ---
             this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
             const analysisPrompt = this.buildAnalysisPrompt(history, currentFEN);
-            const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash');
+// 使用固定 id 来把流追加到同一条消息中（阶段一）
+            const analysisId = `chess-analysis-${Date.now()}`;
+            this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, create: true });
+            const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash', analysisId);
             const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
             this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
-            
-            // 新增：在视觉聊天区显示详细分析
-            this.displayVisionMessage(`**♟️ 国际象棋AI分析**\n\n${analysisResponse}`);
+            // （不要在这里再次调用 displayVisionMessage 插入完整文本 —— sendToAI 已经把整段追加到了同一条消息）
 
             // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
             this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
             const extractionPrompt = this.buildPreciseExtractionPrompt(analysisResponse);
-            const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash');
+            // 阶段二：走法提取，使用不同 id
+            const extractionId = `chess-extract-${Date.now()}`;
+            this.displayVisionMessage('**🎯 推荐走法**', { id: extractionId, create: true });
+            const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash', extractionId);
             const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
             this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
-            
-            // 新增：在视觉聊天区显示提取的走法
-            this.displayVisionMessage(`**🎯 推荐走法**\n\n${extractedResponse}`);
 
             // --- 第三阶段：验证并决策 ---
             this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
@@ -305,21 +355,25 @@ ${analysisResponse}
     }
 
 /**
- * ✅ 改进版：将流式返回内容追加到同一个消息块（不会分多条消息）
+ * 改进版：SSE 流式解析，支持按 messageId 更新同一条消息（避免重复气泡）
+ * @param {string} prompt
+ * @param {string} model
+ * @param {string|null} messageId - 可选：用于将流追加到已有消息块
  */
-async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
+async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
     try {
         this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
 
-        // 在视觉聊天中创建一个“占位块”，用于持续更新
-        let currentMessageId = `ai-stream-${Date.now()}`;
-        let accumulatedText = '';
-        if (this.displayVisionMessage) {
-            // 创建一个初始占位消息（空内容，后续持续更新）
-            this.displayVisionMessage(``, { id: currentMessageId, append: false });
+        // 如果 caller 提供了 messageId，则先创建占位（同步）
+        let msgId = messageId || `ai-${Date.now()}`;
+        if (messageId) {
+            // create 占位（如果已有则会被忽略）
+            this.displayVisionMessage('', { id: msgId, create: true });
+        } else {
+            // 若 caller 未传 id，也立即创建一个（便于后续 append）
+            this.displayVisionMessage('', { id: msgId, create: true });
         }
 
-        // 发起流式请求
         const requestBody = {
             model,
             messages: [{ role: 'user', content: prompt }],
@@ -332,37 +386,66 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
             body: JSON.stringify(requestBody),
         });
 
-        if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
+        if (!response.ok) {
+            const errText = await response.text().catch(() => '');
+            throw new Error(`API请求失败: ${response.status} ${errText}`);
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
+
+        let buffer = '';
+        let accumulatedText = '';
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
+            // 处理片段（可能不是完整 JSON）
             const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n\n');
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const dataStr = line.slice(6);
-                if (dataStr === '[DONE]') break;
+            buffer += chunk;
+
+            // 将 buffer 按 SSE 的空行分段，保留最后一段（可能不完整）
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop(); // 不完整部分留给下轮
+
+            for (const part of parts) {
+                if (!part || !part.startsWith('data: ')) continue;
+                const dataStr = part.slice(6).trim();
+                if (dataStr === '[DONE]') {
+                    // 流结束
+                    break;
+                }
                 try {
                     const data = JSON.parse(dataStr);
                     const delta = data.choices?.[0]?.delta;
-                    if (delta?.content) {
-                        accumulatedText += delta.content;
-
-                        // ✅ 更新同一个消息块（不是新建）
-                        if (this.displayVisionMessage) {
-                            this.displayVisionMessage(accumulatedText, {
-                                id: currentMessageId,
-                                append: true,
-                            });
-                        }
+                    // delta 里可能是 content、reasoning_content 等
+                    const newText = delta?.content || delta?.reasoning_content || '';
+                    if (newText) {
+                        accumulatedText += newText;
+                        // 立即更新同一个消息块（不会创建新气泡）
+                        this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
                     }
-                } catch (_) {
-                    /* 忽略解析错误 */
+                } catch (e) {
+                    // 忽略解析错误（可能是分片）
+                }
+            }
+        }
+
+        // 流结束之后，buffer 里可能有尾部
+        if (buffer && buffer.startsWith('data: ')) {
+            const tail = buffer.slice(6).trim();
+            if (tail !== '[DONE]') {
+                try {
+                    const data = JSON.parse(tail);
+                    const delta = data.choices?.[0]?.delta;
+                    const newText = delta?.content || delta?.reasoning_content || '';
+                    if (newText) {
+                        accumulatedText += newText;
+                        this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
+                    }
+                } catch (e) {
+                    // ignore
                 }
             }
         }
@@ -370,7 +453,9 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
         return accumulatedText.trim();
     } catch (error) {
         this.logMessage(`AI请求错误: ${error.message}`, 'error');
-        this.displayVisionMessage(`💥 AI请求失败: ${error.message}`);
+        // 显示错误到该占位（如果没指定 id，就创建一个新消息显示错误）
+        const errId = `ai-err-${Date.now()}`;
+        this.displayVisionMessage(`💥 AI请求失败: ${error.message}`, { id: errId, create: true });
         throw error;
     }
 }
