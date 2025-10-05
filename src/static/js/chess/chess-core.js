@@ -366,6 +366,8 @@ class ChessGame {
             this.showPromotionSelection(toRow, toCol);
             
             this.renderBoard();
+            // 升变是一个两步过程，我们等到 completePromotion 时再同步影子引擎
+            console.warn('升变已触发，影子引擎将等待升变完成后一次性同步。');
             return true;
         } else {
             // 普通移动
@@ -387,7 +389,6 @@ class ChessGame {
             // 更新游戏状态
             this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece, isEnPassantCapture);
             this.recordMoveToHistory();
-            this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
             
             // 更新易位权利
             if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
@@ -1196,7 +1197,8 @@ class ChessGame {
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
         
-        // 同步影子引擎（升变）
+        // 升变完成，此时一次性将完整的带升变信息的走法同步到影子引擎
+        console.log('正在向影子引擎同步完整的升变走法...');
         this.syncAndVerifyShadowEngine({
             from: this.getSquareName(fromRow, fromCol),
             to: this.getSquareName(row, col),
@@ -1894,12 +1896,24 @@ class ChessGame {
      * 将走法同步到影子引擎并验证FEN是否一致
      */
     syncAndVerifyShadowEngine(moveObject) {
+        // 在执行移动前，确保影子引擎处于上一步的正确状态
+        const history = this.getFullGameHistory();
+        if (history.length > 1) {
+            const previousFEN = history[history.length - 2]; // 获取移动前的FEN
+            if (this.game.fen() !== previousFEN) {
+                console.warn('影子引擎状态与预期不符，正在从上一步历史强制同步...');
+                this.game.load(previousFEN);
+            }
+        }
+
         try {
             const moveResult = this.game.move(moveObject);
             if (moveResult === null) {
                 console.error('影子引擎移动失败!', moveObject);
                 console.warn('自定义引擎FEN:', this.getCurrentFEN());
-                console.warn('影子引擎FEN:', this.game.fen());
+                console.warn('影子引擎FEN (失败前):', this.game.fen());
+                // 尝试从当前FEN加载，看看是否能恢复
+                this.game.load(this.getCurrentFEN());
                 return;
             }
 
@@ -1907,11 +1921,14 @@ class ChessGame {
             const shadowFEN = this.game.fen();
 
             if (customFEN === shadowFEN) {
-                console.log('%cFEN一致性验证通过', 'color: green;', { move: moveObject.from + moveObject.to, fen: customFEN });
+                console.log('%cFEN一致性验证通过', 'color: green;', { move: `${moveObject.from}${moveObject.to}`, fen: customFEN });
             } else {
-                console.error('%cFEN不一致!', 'color: red;', { move: moveObject.from + moveObject.to });
+                console.error('%cFEN不一致!', 'color: red;', { move: `${moveObject.from}${moveObject.to}` });
                 console.warn('自定义引擎FEN:', customFEN);
                 console.warn('影子引擎FEN:', shadowFEN);
+                // 如果不一致，强制同步到自定义引擎的状态
+                console.log('状态不一致，强制将影子引擎同步到当前FEN。');
+                this.game.load(customFEN);
             }
         } catch (e) {
             console.error('同步影子引擎时发生异常:', e);
