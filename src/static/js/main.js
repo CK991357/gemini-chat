@@ -14,7 +14,7 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
-import { initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
+import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
 
 /**
  * @fileoverview Main entry point for the application.
@@ -478,26 +478,18 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeVisionCore(visionElements, attachmentManager, visionHandlers);
     
     // 建立象棋模块和视觉模块的通信桥梁
-    // 原始的 displayVisionMessage 保持不变，供其他地方使用
-    // window.displayVisionMessage = (message) => {
-    //     if (typeof displayVisionMessage === 'function') {
-    //         displayVisionMessage(message);
-    //     }
-    // };
+    window.displayVisionMessage = (message) => {
+        // 调用 vision-core 中的显示函数
+        if (typeof displayVisionMessage === 'function') {
+            displayVisionMessage(message);
+        }
+    };
     
     // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
     setTimeout(() => {
         initializeChessCore({
             showToast: showToast,
-            // 注入新的消息创建和更新函数
-            createVisionMessage: createVisionMessageUpdater,
-            // 注入视觉聊天区的滚动函数
-            scrollToBottom: () => {
-                const visionMessageHistory = document.getElementById('vision-message-history');
-                if (visionMessageHistory) {
-                    visionMessageHistory.scrollTop = visionMessageHistory.scrollHeight;
-                }
-            }
+            displayVisionMessage: displayVisionMessage // 注入渲染函数
         });
         
         // 手动添加切换按钮事件监听器作为备份
