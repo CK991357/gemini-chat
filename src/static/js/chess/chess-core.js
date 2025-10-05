@@ -6,6 +6,12 @@
 import { Logger } from '../utils/logger.js';
 import { ChessAIEnhanced } from './chess-ai-enhanced.js';
 
+// 风险缓解：确保 chess.js 已加载
+if (typeof window.Chess === 'undefined') {
+   throw new Error('chess.js 库未正确加载，请检查CDN链接');
+}
+const Chess = window.Chess;
+
 // 棋子 Unicode 字符
 const PIECES = {
     'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
@@ -72,6 +78,9 @@ class ChessGame {
 
         this.fullGameHistory = []; // 完整对局历史
         this.chessAI = null; // AI实例
+
+        // 第一阶段重构：引入chess.js作为影子引擎
+        this.game = new Chess(); // chess.js 实例
 
         // 初始化
         this.initBoard();
@@ -140,6 +149,15 @@ class ChessGame {
         
         this.renderBoard();
         this.updateFEN();
+
+        // 同步影子引擎
+        try {
+            this.game.load(this.getCurrentFEN());
+            console.log('影子引擎已同步至初始状态。');
+        } catch (e) {
+            console.error('影子引擎同步失败:', e);
+        }
+
         this.saveGameToLocalStorage(); // 保存新游戏状态
     }
 
@@ -289,6 +307,7 @@ class ChessGame {
                 this.lastMoveError = null;
                 this.updateFEN();
                 this.renderBoard();
+                this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
                 return true;
             } else {
                 // 王车易位失败，显示错误信息
@@ -366,6 +385,7 @@ class ChessGame {
             // 更新游戏状态
             this.updateGameState(piece, fromRow, fromCol, toRow, toCol, isEnPassantCapture);
             this.recordMoveToHistory();
+            this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
             
             // 更新易位权利
             if (capturedPiece && capturedPiece.toLowerCase() === 'r') {
@@ -1173,6 +1193,13 @@ class ChessGame {
         
         this.showToast(`兵升变为${this.getPieceName(newPiece)}`);
         
+        // 同步影子引擎（升变）
+        this.syncAndVerifyShadowEngine({
+            from: this.getSquareName(fromRow, fromCol),
+            to: this.getSquareName(row, col),
+            promotion: newPiece.toLowerCase()
+        });
+
         console.log('升变完成');
     }
 
@@ -1601,6 +1628,15 @@ class ChessGame {
             this.renderBoard();
             this.updateFEN();
             this.showToast('FEN加载成功');
+
+            // 同步影子引擎
+            try {
+                this.game.load(fen);
+                console.log('影子引擎已通过 loadFEN 同步。');
+            } catch (e) {
+                console.error('影子引擎同步失败:', e);
+            }
+
             return true;
         } catch (error) {
             this.showToast('FEN格式错误，无法加载: ' + error.message);
@@ -1850,11 +1886,37 @@ class ChessGame {
             cancelBtn.addEventListener('click', onCancel);
         });
     }
+    // --- 影子引擎同步与验证 ---
+    /**
+     * 将走法同步到影子引擎并验证FEN是否一致
+     */
+    syncAndVerifyShadowEngine(moveObject) {
+        try {
+            const moveResult = this.game.move(moveObject);
+            if (moveResult === null) {
+                console.error('影子引擎移动失败!', moveObject);
+                console.warn('自定义引擎FEN:', this.getCurrentFEN());
+                console.warn('影子引擎FEN:', this.game.fen());
+                return;
+            }
+
+            const customFEN = this.getCurrentFEN();
+            const shadowFEN = this.game.fen();
+
+            if (customFEN === shadowFEN) {
+                console.log('%cFEN一致性验证通过', 'color: green;', { move: moveObject.from + moveObject.to, fen: customFEN });
+            } else {
+                console.error('%cFEN不一致!', 'color: red;', { move: moveObject.from + moveObject.to });
+                console.warn('自定义引擎FEN:', customFEN);
+                console.warn('影子引擎FEN:', shadowFEN);
+            }
+        } catch (e) {
+            console.error('同步影子引擎时发生异常:', e);
+        }
+    }
 }
 
-
 let chessGame = null;
-
 /**
  * 初始化国际象棋功能
  */

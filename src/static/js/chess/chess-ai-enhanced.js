@@ -182,7 +182,7 @@ ${pieceColorExplanation}
 ${analysisResponse}
 ---
 
-**你的输出应该是一个逗号分隔的SAN字符串列表，例如 "Nf6, O-O, exd5"。**`;
+**你的输出应该是一个逗号分隔的SAN字符串列表，例如 "Nf6, O-O, exd5, O-O-O, Nxf3, exd5"。**`;
     }
 
     /**
