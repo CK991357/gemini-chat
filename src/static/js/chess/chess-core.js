@@ -1942,6 +1942,25 @@ class ChessGame {
             console.error('同步影子引擎时发生异常:', e);
         }
     }
+    /**
+     * 强制同步影子引擎到当前自定义引擎状态
+     */
+    forceShadowSync() {
+      try {
+        const currentFEN = this.generateFEN();
+        if (this.validateFEN(currentFEN)) {
+          this.game.load(currentFEN);
+          console.log('强制同步影子引擎完成');
+          return true;
+        } else {
+          console.error('当前FEN无效，无法同步影子引擎');
+          return false;
+        }
+      } catch (error) {
+        console.error('强制同步失败:', error);
+        return false;
+      }
+    }
 }
 
 let chessGame = null;
