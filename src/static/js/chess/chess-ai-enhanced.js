@@ -271,35 +271,37 @@ ${analysisResponse}
     }
 
 /**
- * ✅ 改进版：支持流式返回（使用 ChatApiHandler.streamChatCompletion）
+ * ✅ 改进版：将流式返回内容追加到同一个消息块（不会分多条消息）
  */
 async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
     try {
         this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
 
-        // 构造与 ChatApiHandler 兼容的请求体
+        // 在视觉聊天中创建一个“占位块”，用于持续更新
+        let currentMessageId = `ai-stream-${Date.now()}`;
+        let accumulatedText = '';
+        if (this.displayVisionMessage) {
+            // 创建一个初始占位消息（空内容，后续持续更新）
+            this.displayVisionMessage(``, { id: currentMessageId, append: false });
+        }
+
+        // 发起流式请求
         const requestBody = {
             model,
             messages: [{ role: 'user', content: prompt }],
             stream: true,
         };
 
-        let finalText = '';
-        const decoder = new TextDecoder('utf-8');
-
-        // ChatApiHandler.streamChatCompletion 内部是异步迭代 SSE，
-        // 我们自己监听 Response 流进行处理（保证兼容性）
         const response = await fetch('/api/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody),
         });
 
-        if (!response.ok) {
-            throw new Error(`API请求失败: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
 
         const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
 
         while (true) {
             const { done, value } = await reader.read();
@@ -307,36 +309,37 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
 
             const chunk = decoder.decode(value, { stream: true });
             const lines = chunk.split('\n\n');
-
             for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const dataStr = line.slice(6);
-                    if (dataStr === '[DONE]') break;
-                    try {
-                        const data = JSON.parse(dataStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (delta?.content) {
-                            finalText += delta.content;
-                            if (this.displayVisionMessage) {
-                                this.displayVisionMessage(delta.content);
-                            }
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.slice(6);
+                if (dataStr === '[DONE]') break;
+                try {
+                    const data = JSON.parse(dataStr);
+                    const delta = data.choices?.[0]?.delta;
+                    if (delta?.content) {
+                        accumulatedText += delta.content;
+
+                        // ✅ 更新同一个消息块（不是新建）
+                        if (this.displayVisionMessage) {
+                            this.displayVisionMessage(accumulatedText, {
+                                id: currentMessageId,
+                                append: true,
+                            });
                         }
-                    } catch (err) {
-                        // 跳过解析错误
                     }
+                } catch (_) {
+                    /* 忽略解析错误 */
                 }
             }
         }
 
-        return finalText.trim();
-
+        return accumulatedText.trim();
     } catch (error) {
         this.logMessage(`AI请求错误: ${error.message}`, 'error');
         this.displayVisionMessage(`💥 AI请求失败: ${error.message}`);
         throw error;
     }
 }
-
 
     /**
      * 默认的模态框处理器（以防外部未提供）
