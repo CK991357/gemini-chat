@@ -14,8 +14,6 @@ export class ChessAIEnhanced {
         this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
         // 新增：视觉聊天区消息显示函数
         this.displayVisionMessage = options.displayVisionMessage || console.log;
-        // chess.js 实例，用于验证和解析走法
-        this.chess = new Chess();
     }
 
     /**
@@ -188,7 +186,7 @@ ${analysisResponse}
     /**
      * 解析并执行AI返回的SAN走法
      */
-    async executeSANMove(sanMove, currentFEN) {
+    async executeSANMove(sanMove) {
         if (!sanMove) {
             throw new Error('最终确定的走法为空');
         }
@@ -197,26 +195,14 @@ ${analysisResponse}
         const cleanedMove = sanMove.replace(/^["']|["'.,]$/g, '').trim();
         this.logMessage(`清理后的SAN: "${cleanedMove}"`, 'debug');
 
-        // 使用chess.js加载当前局面以验证走法
-        this.chess.load(currentFEN);
+        // 直接调用核心模块的新方法来执行移动
+        // 验证、移动、UI更新和历史记录都由 chess-core 统一处理
+        const moveResult = this.chessGame.movePieceWithSAN(cleanedMove);
         
-        const moveObject = this.chess.move(cleanedMove, { sloppy: true });
-        
-        if (moveObject === null) {
-            this.logMessage(`chess.js 验证失败。 FEN: ${currentFEN}, SAN: "${cleanedMove}"`, 'error');
+        if (!moveResult) {
+            // movePieceWithSAN 内部会显示toast，这里只抛出错误以停止流程
             throw new Error(`AI返回了无效或不合法的走法: "${cleanedMove}"`);
         }
-
-        const from = this.squareToIndices(moveObject.from);
-        const to = this.squareToIndices(moveObject.to);
-
-        this.showToast(`AI 走法: ${cleanedMove} (${moveObject.from} → ${moveObject.to})`);
-
-        // 调用核心逻辑来移动棋子
-        const moveResult = this.chessGame.movePiece(from.row, from.col, to.row, to.col);
-        
-        // 强制UI刷新以确保棋子移动在视觉上同步
-        this.chessGame.renderBoard();
         
         return moveResult;
     }
@@ -237,23 +223,6 @@ ${analysisResponse}
         return [...new Set(matches)];
     }
 
-    /**
-     * 将棋盘坐标（如 'e4'）转换为行列索引 (已修复)
-     */
-    squareToIndices(square) {
-        const files = 'abcdefgh';
-        // 修复：从 square 字符串的不同部分提取 file 和 rank
-        const fileChar = square.charAt(0);
-        const rankChar = square.charAt(1);
-        const col = files.indexOf(fileChar);
-        const row = 8 - parseInt(rankChar, 10);
-        if (isNaN(col) || isNaN(row) || col < 0 || row < 0 || row > 7) {
-            console.error(`无效的棋盘坐标: ${square}`);
-            // 提供一个安全的回退值，尽管理论上不应发生
-            return { row: 0, col: 0 };
-        }
-        return { row, col };
-    }
 
     /**
      * 向后端API发送请求
