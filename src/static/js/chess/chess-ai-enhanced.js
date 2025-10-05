@@ -270,42 +270,73 @@ ${analysisResponse}
         return { row, col };
     }
 
-    /**
- * ✅ 改进版：支持流式返回（与普通聊天机制对齐）
+/**
+ * ✅ 改进版：支持流式返回（使用 ChatApiHandler.streamChatCompletion）
  */
 async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
     try {
         this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
 
-        let finalText = '';
-        await chatApiHandler.sendStreamMessage({
+        // 构造与 ChatApiHandler 兼容的请求体
+        const requestBody = {
             model,
-            prompt,
-            onDelta: (chunk) => {
-                // 每接收到新块时更新视觉聊天内容
-                if (chunk && typeof chunk === 'string') {
-                    finalText += chunk;
-                    if (this.displayVisionMessage) {
-                        this.displayVisionMessage(chunk);
-                    }
-                }
-            },
-            onComplete: (full) => {
-                finalText = full || finalText;
-            },
-            onError: (err) => {
-                console.error('AI流错误:', err);
-                this.displayVisionMessage(`⚠️ 流接收异常: ${err.message}`);
-            },
+            messages: [{ role: 'user', content: prompt }],
+            stream: true,
+        };
+
+        let finalText = '';
+        const decoder = new TextDecoder('utf-8');
+
+        // ChatApiHandler.streamChatCompletion 内部是异步迭代 SSE，
+        // 我们自己监听 Response 流进行处理（保证兼容性）
+        const response = await fetch('/api/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
         });
 
+        if (!response.ok) {
+            throw new Error(`API请求失败: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.slice(6);
+                    if (dataStr === '[DONE]') break;
+                    try {
+                        const data = JSON.parse(dataStr);
+                        const delta = data.choices?.[0]?.delta;
+                        if (delta?.content) {
+                            finalText += delta.content;
+                            if (this.displayVisionMessage) {
+                                this.displayVisionMessage(delta.content);
+                            }
+                        }
+                    } catch (err) {
+                        // 跳过解析错误
+                    }
+                }
+            }
+        }
+
         return finalText.trim();
+
     } catch (error) {
         this.logMessage(`AI请求错误: ${error.message}`, 'error');
         this.displayVisionMessage(`💥 AI请求失败: ${error.message}`);
         throw error;
     }
 }
+
 
     /**
      * 默认的模态框处理器（以防外部未提供）
