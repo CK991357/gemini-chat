@@ -6,6 +6,10 @@ if (typeof window.Chess === 'undefined') {
 }
 const Chess = window.Chess;
 
+// ✅ 新增：引入普通聊天的流式处理逻辑
+import { ChatApiHandler } from '../chat/chat-api-handler.js';
+const chatApiHandler = new ChatApiHandler();
+
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
         this.chessGame = chessGame;
@@ -259,40 +263,41 @@ ${analysisResponse}
     }
 
     /**
-     * 向后端API发送请求
-     */
-    async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
-        try {
-            this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
-            
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: model,
-                    messages: [{ role: 'user', content: prompt }],
-                    stream: false
-                })
-            });
+ * ✅ 改进版：支持流式返回（与普通聊天机制对齐）
+ */
+async sendToAI(prompt, model = 'models/gemini-2.5-flash') {
+    try {
+        this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: 'Unknown API error' }));
-                throw new Error(`API请求失败: ${response.status} - ${errorData.error || 'Unknown error'}`);
-            }
-            
-            const data = await response.json();
-            const content = data.choices?.[0]?.message?.content || data.content || data.choices?.[0]?.text || '';
-            if (!content) {
-                 this.logMessage('AI响应内容为空', 'warning');
-            }
-            return content;
-        } catch (error) {
-            this.logMessage(`AI请求错误: ${error.message}`, 'error');
-            throw error;
-        }
+        let finalText = '';
+        await chatApiHandler.sendStreamMessage({
+            model,
+            prompt,
+            onDelta: (chunk) => {
+                // 每接收到新块时更新视觉聊天内容
+                if (chunk && typeof chunk === 'string') {
+                    finalText += chunk;
+                    if (this.displayVisionMessage) {
+                        this.displayVisionMessage(chunk);
+                    }
+                }
+            },
+            onComplete: (full) => {
+                finalText = full || finalText;
+            },
+            onError: (err) => {
+                console.error('AI流错误:', err);
+                this.displayVisionMessage(`⚠️ 流接收异常: ${err.message}`);
+            },
+        });
+
+        return finalText.trim();
+    } catch (error) {
+        this.logMessage(`AI请求错误: ${error.message}`, 'error');
+        this.displayVisionMessage(`💥 AI请求失败: ${error.message}`);
+        throw error;
     }
+}
 
     /**
      * 默认的模态框处理器（以防外部未提供）
