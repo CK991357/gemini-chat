@@ -28,6 +28,40 @@ export class ChessAIEnhanced {
         this.displayVisionMessage = options.displayVisionMessage || console.log;
         // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
+        // ✅ 代理封装视觉聊天更新逻辑，支持单条消息持续追加
+        this._visionMsgCache = {}; // 用于缓存流式消息
+        const originalDisplay = this.displayVisionMessage;
+
+        this.displayVisionMessage = (content, opts = {}) => {
+            const { id, append } = opts;
+
+            if (append && id) {
+                // 如果已有该消息块，则更新它
+                if (this._visionMsgCache[id]) {
+                    const el = document.querySelector(`[data-msg-id="${id}"]`);
+                    if (el) {
+                        el.innerHTML = content; // 直接更新内容
+                        this._visionMsgCache[id] = content;
+                        return;
+                    }
+                }
+            }
+
+            // 否则新建一条消息并标记ID
+            if (typeof originalDisplay === 'function') {
+                originalDisplay(content);
+            }
+
+            if (id) {
+                // 新消息生成后立即标记DOM（延时确保插入）
+                setTimeout(() => {
+                    const msgBlocks = document.querySelectorAll('.chat-message.ai, .vision-message.ai');
+                    const lastMsg = msgBlocks[msgBlocks.length - 1];
+                    if (lastMsg) lastMsg.setAttribute('data-msg-id', id);
+                    this._visionMsgCache[id] = content;
+                }, 50);
+            }
+        };
     }
 
     /**
