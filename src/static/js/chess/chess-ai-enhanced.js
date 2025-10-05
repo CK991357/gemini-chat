@@ -378,6 +378,9 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
             model,
             messages: [{ role: 'user', content: prompt }],
             stream: true,
+            reasoning: { include_reasoning: true, tokens: 4096 }, // ✅ 让 Gemini 返回思维链
+            temperature: 1.0,
+            top_p: 0.9
         };
 
         const response = await fetch('/api/chat/completions', {
