@@ -364,13 +364,10 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
     try {
         this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
 
-        // 如果 caller 提供了 messageId，则先创建占位（同步）
-        let msgId = messageId || `ai-${Date.now()}`;
-        if (messageId) {
-            // create 占位（如果已有则会被忽略）
-            this.displayVisionMessage('', { id: msgId, create: true });
-        } else {
-            // 若 caller 未传 id，也立即创建一个（便于后续 append）
+        // ==== 占位消息安全创建 ====
+        const msgId = messageId || `ai-${Date.now()}`;
+        const existingMsg = document.querySelector(`[data-msg-id="${msgId}"]`);
+        if (!existingMsg) {
             this.displayVisionMessage('', { id: msgId, create: true });
         }
 
