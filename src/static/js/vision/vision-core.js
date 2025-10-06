@@ -168,6 +168,7 @@ async function handleSendVisionMessage() {
         let finalContent = '';
         let reasoningStarted = false;
         let answerStarted = false;
+        let buffer = '';
 
         markdownContainer.innerHTML = ''; // Clear loading message
 
@@ -176,10 +177,16 @@ async function handleSendVisionMessage() {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
+            buffer += chunk;
+            
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
                     if (jsonStr === '[DONE]') return;
+                    
                     try {
                         const data = JSON.parse(jsonStr);
                         const delta = data.choices?.[0]?.delta;
@@ -203,10 +210,11 @@ async function handleSendVisionMessage() {
                             }
                         }
                     } catch (e) {
-                        console.error('Error parsing SSE chunk:', e, jsonStr);
+                        // 忽略解析错误，继续处理下一行
+                        console.warn('Skipping invalid SSE data:', jsonStr);
                     }
                 }
-            });
+            }
             elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
         }
 
@@ -437,6 +445,7 @@ ${fenHistory.join('\n')}
         let finalContent = '';
         let reasoningStarted = false;
         let answerStarted = false;
+        let buffer = '';
 
         markdownContainer.innerHTML = ''; // Clear loading message
 
@@ -445,10 +454,16 @@ ${fenHistory.join('\n')}
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').forEach(part => {
-                if (part.startsWith('data: ')) {
-                    const jsonStr = part.substring(6);
+            buffer += chunk;
+            
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
                     if (jsonStr === '[DONE]') return;
+                    
                     try {
                         const data = JSON.parse(jsonStr);
                         const delta = data.choices?.[0]?.delta;
@@ -472,10 +487,11 @@ ${fenHistory.join('\n')}
                             }
                         }
                     } catch (e) {
-                        console.error('Error parsing SSE chunk:', e, jsonStr);
+                        // 忽略解析错误，继续处理下一行
+                        console.warn('Skipping invalid SSE data:', jsonStr);
                     }
                 }
-            });
+            }
             elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
         }
 
