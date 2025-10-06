@@ -356,18 +356,31 @@ function getSelectedPrompt() {
 }
 
 /**
- * 生成对局总结
+ * 生成对局总结 - 基于FEN历史而不是聊天历史
  */
 async function generateGameSummary() {
-    if (visionChatHistory.length === 0) {
-        showToastHandler('没有对话历史可以总结。');
+    // 检查是否能获取到国际象棋实例
+    let chessGame = null;
+    
+    // 尝试多种方式获取国际象棋实例
+    if (typeof window.chessGame !== 'undefined') {
+        chessGame = window.chessGame;
+    } else if (typeof getChessGameInstance === 'function') {
+        chessGame = getChessGameInstance();
+    } else {
+        // 最后尝试通过DOM事件或其他全局访问方式
+        chessGame = window.chessGameInstance;
+    }
+    
+    if (!chessGame || typeof chessGame.getFullGameHistory !== 'function') {
+        showToastHandler('无法获取国际象棋对局数据，请确保棋局已初始化。');
         return;
     }
 
-    // 检查是否处于国际象棋相关模式
-    const currentPrompt = getSelectedPrompt();
-    if (currentPrompt.id !== 'chess_teacher') {
-        showToastHandler('请先切换到“国际象棋老师”模式后再生成总结。');
+    // 获取完整的FEN历史
+    const fenHistory = chessGame.getFullGameHistory();
+    if (!fenHistory || fenHistory.length === 0) {
+        showToastHandler('没有对局历史可以总结。');
         return;
     }
 
@@ -377,32 +390,43 @@ async function generateGameSummary() {
     // 设置按钮加载状态
     if (summaryButton) {
         summaryButton.disabled = true;
-        summaryButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 生成中...';
+        summaryButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 分析中...';
     }
     
     // 创建总结消息元素
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
-    markdownContainer.innerHTML = '<p>正在生成对局总结...</p>';
+    markdownContainer.innerHTML = '<p>正在分析对局历史...</p>';
 
     try {
-        // 构建总结请求，使用专门的chess_summary提示词
-        const summaryPrompt = CONFIG.VISION.PROMPTS.find(p => p.id === 'chess_summary');
-        if (!summaryPrompt) {
-            throw new Error('找不到chess_summary提示词，请检查配置');
-        }
-        
+        // 获取chess_summary提示词
+        const summaryPromptConfig = CONFIG.VISION.PROMPTS.find(prompt => prompt.id === 'chess_summary');
+        const systemPrompt = summaryPromptConfig ? summaryPromptConfig.systemPrompt : `你是一位国际象棋特级大师。请基于提供的完整对局历史（FEN格式）生成一份详细的对局总结和分析。`;
+
+        // 构建基于FEN历史的总结请求
         const summaryRequest = {
             model: selectedModel,
             messages: [
-                { role: 'system', content: summaryPrompt.systemPrompt },
-                { role: 'user', content: [
-                    { 
-                        type: 'text', 
-                        text: '请基于我们之前的对话历史，生成一份完整的对局总结和分析。这包括了我在对局中的关键决策、战术执行情况，以及需要改进的地方。请提供具体可行的建议来帮助我提高棋艺水平。' 
-                    }
-                ]},
-                ..._getRelevantHistory() // 智能获取相关历史记录
+                { 
+                    role: 'system', 
+                    content: systemPrompt
+                },
+                { 
+                    role: 'user', 
+                    content: [
+                        { 
+                            type: 'text', 
+                            text: `请分析以下国际象棋对局历史（共${fenHistory.length}步）：
+
+完整FEN历史：
+${fenHistory.join('\n')}
+
+当前局面：${fenHistory[fenHistory.length - 1]}
+
+请基于这个完整的对局历史，生成一份专业的对局分析总结。` 
+                        }
+                    ]
+                }
             ],
             stream: true
         };
@@ -462,6 +486,9 @@ async function generateGameSummary() {
             }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
+        // 将总结添加到视觉聊天历史
+        visionChatHistory.push({ role: 'assistant', content: finalContent });
+
         Logger.info('对局总结生成完成', 'system');
 
     } catch (error) {
@@ -475,38 +502,6 @@ async function generateGameSummary() {
             summaryButton.innerHTML = '对局总结';
         }
     }
-}
-
-/**
- * 智能获取相关历史记录
- * @private
- */
-function _getRelevantHistory() {
-    // 如果历史记录较少，全部返回
-    if (visionChatHistory.length <= 15) {
-        return visionChatHistory;
-    }
-    
-    // 对于较长的对话，采用智能策略：
-    // 1. 保留前3条记录（开局信息）
-    // 2. 保留最后10条记录（最新情况）
-    // 3. 从中间选择关键记录（含有图片的记录）
-    
-    const startRecords = visionChatHistory.slice(0, 3);
-    const endRecords = visionChatHistory.slice(-10);
-    
-    // 从中间部分选择含有图片的记录
-    const middleRecords = visionChatHistory.slice(3, -10);
-    const keyRecords = middleRecords.filter(record => 
-        record.role === 'user' && 
-        record.content && 
-        Array.isArray(record.content) && 
-        record.content.some(item => item.type === 'image_url')
-    ).slice(0, 5); // 最多5条关键记录
-    
-    Logger.info(`历史记录总数: ${visionChatHistory.length}, 使用记录: ${startRecords.length + keyRecords.length + endRecords.length}`, 'system');
-    
-    return [...startRecords, ...keyRecords, ...endRecords];
 }
 
 /**

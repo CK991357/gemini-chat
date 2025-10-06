@@ -1191,3 +1191,18 @@ export function loadFEN(fen) {
     }
     return false;
 }
+
+// src/static/js/chess/chess-core.js
+
+// ... 在文件末尾添加 ...
+
+/**
+ * 获取国际象棋游戏实例（供其他模块使用）
+ */
+export function getChessGameInstance() {
+    return chessGame;
+}
+
+// 同时暴露到全局，作为备用访问方式
+window.getChessGameInstance = getChessGameInstance;
+window.chessGameInstance = chessGame;
