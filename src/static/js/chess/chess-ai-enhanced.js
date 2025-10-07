@@ -147,12 +147,8 @@ export class ChessAIEnhanced {
 
             // --- 第三阶段：验证并决策 ---
             this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
-            let finalMoves = this.extractAllSANFromText(extractedResponse);
-            this.logMessage(`AI提取到 ${finalMoves.length} 个原始走法: [${finalMoves.join(', ')}]`, 'debug');
-            
-            // ✅ 新增：验证提取的走法
-            finalMoves = this.validateExtractedMoves(finalMoves, currentFEN);
-            this.logMessage(`经过合法性验证后，剩余 ${finalMoves.length} 个有效走法: [${finalMoves.join(', ')}]`, 'debug');
+            const finalMoves = this.extractAllSANFromText(extractedResponse);
+            this.logMessage(`最终提取并验证了 ${finalMoves.length} 个走法: [${finalMoves.join(', ')}]`, 'debug');
 
             let chosenMove = null;
 

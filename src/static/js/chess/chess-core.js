@@ -1018,8 +1018,14 @@ class ChessGame {
         choicesContainer.innerHTML = '<p><strong>请选择一个走法:</strong></p>';
         let selectedMove = null;
 
-        // 替换原来的脆弱过滤逻辑
-        const validMoves = (moves || []).filter(m => typeof m === 'string' && m.trim().length > 0);
+        // 修复：确保显示完整的走法，而不是分割的字符
+        const validMoves = moves.filter(move => {
+            // 过滤掉无效的单个字符（除非是合法的王车易位）
+            if (move.length === 1 && move !== 'O') {
+                return false;
+            }
+            return true;
+        });
 
         validMoves.forEach((move, index) => {
             const label = document.createElement('label');
