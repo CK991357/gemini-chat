@@ -227,13 +227,13 @@ export class ChessAIEnhanced {
      * 第一阶段：构建分析提示词 (已修复和优化)
      */
     buildAnalysisPrompt(history, currentFEN) {
-    const turnColor = currentFEN.split(' ')?.[1];
+     const turnColor = currentFEN.split(' ')[1];
     const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
     
     // 🚨 明确棋子颜色与大小写规则
     const pieceConstraints = turnColor === 'w' 
-        ? '🚨 关键约束：当前为白方回合，所有推荐走法必须使用大写字母（K、Q、R、B、N、P），且必须是白方棋子的合法移动。'
-        : '🚨 关键约束：当前为黑方回合，所有推荐走法必须使用小写字母（k、q、r、b、n、p），且必须是黑方棋子的合法移动。';
+        ? '🚨🚨 极其关键：当前为白方回合，所有推荐走法必须使用大写字母（K、Q、R、B、N、P），且必须是白方棋子的合法移动。'
+        : '🚨🚨 极其关键：当前为黑方回合，所有推荐走法必须使用小写字母（k、q、r、b、n、p），且必须是黑方棋子的合法移动。';
 
     // 📜 最近3个FEN局面，最后一行为当前状态
     const historyContext = history.length > 1
@@ -249,7 +249,9 @@ ${history.slice(-3).join('\n')}
     return `你是一位国际象棋特级大师兼规则验证专家。请基于精确的棋盘状态进行分析。
 
 ## 🎯 核心目标
-分析当前局面 → 评估优劣势 → 推荐合法且最优的 1–3 个走法。
+1.  **首先，极其严格地确认当前回合方。**
+2.  分析当前局面 → 评估优劣势 → 推荐**合法且最优的 1–3 个走法**。
+3.  **绝对禁止推荐非当前回合方的走法。**
 
 ## 📋 输入信息
 ${historyContext}
