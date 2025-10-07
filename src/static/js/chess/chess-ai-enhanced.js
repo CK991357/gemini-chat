@@ -399,57 +399,168 @@ text
 现在，请从上面的分析文本中提取所有推荐的SAN走法：`;
 }
 
-    /**
-     * 解析并执行AI返回的SAN走法
-     */
-    async executeSANMove(sanMove, currentFEN) {
-        if (!sanMove) {
-            throw new Error('最终确定的走法为空');
-        }
-
-        // 清理走法字符串
-        const cleanedMove = sanMove.replace(/^["']|["'.,]$/g, '').trim();
-        this.logMessage(`清理后的SAN: "${cleanedMove}"`, 'debug');
-
-        // 使用chess.js加载当前局面以验证走法
-        this.chess.load(currentFEN);
-        
-        const moveObject = this.chess.move(cleanedMove, { sloppy: true });
-        
-        if (moveObject === null) {
-            this.logMessage(`chess.js 验证失败。 FEN: ${currentFEN}, SAN: "${cleanedMove}"`, 'error');
-            throw new Error(`AI返回了无效或不合法的走法: "${cleanedMove}"`);
-        }
-
-        const from = this.squareToIndices(moveObject.from);
-        const to = this.squareToIndices(moveObject.to);
-
-        this.showToast(`AI 走法: ${cleanedMove} (${moveObject.from} → ${moveObject.to})`);
-
-        // 调用核心逻辑来移动棋子
-        const moveResult = this.chessGame.movePiece(from.row, from.col, to.row, to.col);
-        
-        // 强制UI刷新以确保棋子移动在视觉上同步
-        this.chessGame.renderBoard();
-        
-        return moveResult;
+/**
+ * 解析并执行AI返回的SAN走法（含智能降级和详细诊断）
+ */
+async executeSANMove(sanMove, currentFEN) {
+    if (!sanMove) {
+        throw new Error('最终确定的走法为空');
     }
 
-    /**
-     * 使用正则表达式从文本中提取所有SAN走法
-     */
-    extractAllSANFromText(text) {
-        // 综合性的SAN正则表达式，能处理大多数情况
-        const sanPattern = /\b([O-O-O|O-O]|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?)\b/g;
-        const matches = text.match(sanPattern);
+    // 初始清理
+    let cleanedMove = sanMove.replace(/^["'\s]+|["'\s.,;:]+$/g, '').trim();
+    this.logMessage(`执行走法: 原始="${sanMove}" -> 清理="${cleanedMove}"`, 'debug');
+
+    // 王车易位标准化
+    cleanedMove = cleanedMove
+        .replace(/\b0-0-0\b/g, 'O-O-O')
+        .replace(/\b0-0\b/g, 'O-O')
+        .replace(/\bo-o-o\b/gi, 'O-O-O')
+        .replace(/\bo-o\b/gi, 'O-O');
+
+    // 特殊处理：单独的"O"自动修正（使用修正后的逻辑）
+    if (cleanedMove === 'O') {
+        this.logMessage('检测到单独"O"，尝试自动修正为王车易位', 'warn');
         
-        if (!matches) {
-            return [];
+        const isWhiteTurn = currentFEN.split(' ') === 'w';
+        const kingSquare = isWhiteTurn ? 'e1' : 'e8';
+        const kingPiece = this.chess.get(kingSquare);
+        
+        const hasKing = kingPiece && 
+                       kingPiece.type === 'k' && 
+                       kingPiece.color === (isWhiteTurn ? 'w' : 'b');
+        
+        if (hasKing) {
+            const castlingRights = currentFEN.split(' ');
+            if (isWhiteTurn) {
+                if (castlingRights.includes('K')) {
+                    cleanedMove = 'O-O';
+                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (白方短易位)`, 'info');
+                } else if (castlingRights.includes('Q')) {
+                    cleanedMove = 'O-O-O';
+                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (白方长易位)`, 'info');
+                }
+            } else {
+                if (castlingRights.includes('k')) {
+                    cleanedMove = 'O-O';
+                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (黑方短易位)`, 'info');
+                } else if (castlingRights.includes('q')) {
+                    cleanedMove = 'O-O-O';
+                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (黑方长易位)`, 'info');
+                }
+            }
         }
-        
-        // 去重并返回
-        return [...new Set(matches)];
     }
+
+    // 加载局面并尝试执行
+    this.chess.load(currentFEN);
+    let moveObject = this.chess.move(cleanedMove, { sloppy: true });
+
+    // 如果失败，启动智能降级尝试
+    if (moveObject === null) {
+        this.logMessage(`初始执行失败: "${cleanedMove}"，启动降级策略...`, 'warn');
+        
+        const alternativeMoves = this.generateAlternativeMoves(cleanedMove, currentFEN);
+        
+        for (const altMove of alternativeMoves) {
+            this.logMessage(`尝试替代走法: "${altMove}"`, 'debug');
+            this.chess.load(currentFEN); // 重置局面
+            moveObject = this.chess.move(altMove, { sloppy: true });
+            
+            if (moveObject !== null) {
+                cleanedMove = altMove;
+                this.logMessage(`降级成功: 使用"${cleanedMove}"`, 'info');
+                break;
+            }
+        }
+    }
+
+    // 最终验证
+    if (moveObject === null) {
+        const availableMoves = this.chess.moves();
+        this.logMessage(`所有执行尝试失败。可用走法: [${availableMoves.join(', ')}]`, 'error');
+        throw new Error(`无法执行走法: "${sanMove}"。请检查走法是否合法。`);
+    }
+
+    // 执行物理移动
+    const from = this.squareToIndices(moveObject.from);
+    const to = this.squareToIndices(moveObject.to);
+
+    this.showToast(`AI走法: ${cleanedMove} (${moveObject.from} → ${moveObject.to})`);
+
+    const moveResult = this.chessGame.movePiece(from.row, from.col, to.row, to.col);
+    this.chessGame.renderBoard();
+
+    return moveResult;
+}
+
+/**
+ * 使用健壮的正则从文本中提取所有SAN走法，并进行全面规范化
+ */
+extractAllSANFromText(text) {
+    if (!text || typeof text !== 'string') {
+        this.logMessage('提取走法：输入文本为空或非字符串', 'warn');
+        return [];
+    }
+
+    this.logMessage(`原始提取文本: ${text.substring(0, 200)}...`, 'debug');
+
+    // 全面文本预处理
+    let normalized = text
+        .replace(/（/g, '(').replace(/）/g, ')')    // 全角括号转半角
+        .replace(/\b0-0-0\b/g, 'O-O-O')            // 数字零写法标准化
+        .replace(/\b0-0\b/g, 'O-O')
+        .replace(/\b(o-o-o)\b/gi, 'O-O-O')         // 小写字母标准化
+        .replace(/\b(o-o)\b/gi, 'O-O')
+        // 移除常见注释和标点
+        .replace(/\([^)]*\)/g, ' ')                // 移除括号内容
+        .replace(/\[[^\]]*\]/g, ' ')               // 移除方括号内容
+        .replace(/[!?{}]/g, ' ')                   // 移除特殊标点
+        // 压缩空白
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    this.logMessage(`预处理后文本: ${normalized.substring(0, 200)}...`, 'debug');
+
+    // 进一步优化的SAN正则表达式，避免重复匹配
+    const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)|[a-h][1-8])\b/g;
+
+    const rawMatches = normalized.match(sanPattern) || [];
+    this.logMessage(`原始匹配: [${rawMatches.join(', ')}]`, 'debug');
+
+    // 深度清理和规范化
+    const cleaned = rawMatches.map(s => {
+        let move = s
+            .replace(/^[,.;:"'!?()\s]+|[,.;:"'!?()\s]+$/g, '') // 移除两端标点
+            .trim()
+            // 二次标准化（保险）
+            .replace(/\b0-0-0\b/g, 'O-O-O')
+            .replace(/\b0-0\b/g, 'O-O')
+            .replace(/\bo-o-o\b/gi, 'O-O-O')
+            .replace(/\bo-o\b/gi, 'O-O');
+
+        return move;
+    }).filter(move => {
+        // 过滤掉明显无效的走法
+        if (!move || move.length === 0) return false;
+        if (move.length === 1 && move !== 'O') return false; // 单独的字符（除了O）都无效
+        if (move === '-' || move === 'x') return false; // 单独的符号无效
+        return true;
+    });
+
+    // 去重并保留顺序
+    const seen = new Set();
+    const unique = [];
+    for (const mv of cleaned) {
+        if (mv && !seen.has(mv)) {
+            seen.add(mv);
+            unique.push(mv);
+        }
+    }
+
+    this.logMessage(`最终提取走法: [${unique.join(', ')}]`, 'info');
+    return unique;
+}
 
     /**
      * 将棋盘坐标（如 'e4'）转换为行列索引 (已修复)
@@ -591,5 +702,73 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
                 reject(new Error('用户取消或输入了无效的选择'));
             }
         });
+    }
+
+    /**
+     * 生成可能的替代走法（降级策略）
+     */
+    generateAlternativeMoves(originalMove, currentFEN) {
+        const alternatives = new Set();
+        
+        // 1. 移除后缀符号
+        const withoutSuffix = originalMove.replace(/[+#!?]$/g, '');
+        if (withoutSuffix !== originalMove) alternatives.add(withoutSuffix);
+        
+        // 2. 大小写修正
+        alternatives.add(originalMove.toUpperCase());
+        alternatives.add(originalMove.toLowerCase());
+        
+        // 3. 移除空格
+        const noSpaces = originalMove.replace(/\s+/g, '');
+        if (noSpaces !== originalMove) alternatives.add(noSpaces);
+        
+        // 4. 自然语言解析 - 修复：正确的条件顺序
+        const moveLower = originalMove.toLowerCase();
+        if (/queen.?side/i.test(moveLower)) {
+            alternatives.add('O-O-O');
+        } else if (/king.?side/i.test(moveLower) || /castle/i.test(moveLower)) {
+            alternatives.add('O-O');
+        }
+        
+        // 5. 基于当前局面的智能建议
+        this.chess.load(currentFEN);
+        const legalMoves = this.chess.moves({ verbose: true });
+        
+        // 尝试匹配类似的合法走法
+        legalMoves.forEach(legalMove => {
+            const legalSAN = legalMove.san;
+            // 简单的相似度匹配
+            if (legalSAN.includes(originalMove) || 
+                originalMove.includes(legalSAN) ||
+                this.moveSimilarity(originalMove, legalSAN) > 0.7) {
+                alternatives.add(legalSAN);
+            }
+        });
+        
+        // 移除原始走法（已经失败）和空值
+        alternatives.delete(originalMove);
+        alternatives.delete('');
+        
+        return Array.from(alternatives);
+    }
+
+    /**
+     * 简单的走法相似度计算（基于字符交集比例）
+     */
+    moveSimilarity(move1, move2) {
+        const longer = move1.length > move2.length ? move1 : move2;
+        const shorter = move1.length > move2.length ? move2 : move1;
+
+        if (longer.length === 0) return 1.0;
+
+        let matches = 0;
+        for (let i = 0; i < shorter.length; i++) {
+            if (longer.includes(shorter[i])) {
+                matches++;
+            }
+        }
+
+        // 返回相似度比例（0~1）
+        return matches / longer.length;
     }
 }

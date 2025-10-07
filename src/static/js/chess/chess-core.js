@@ -1014,32 +1014,61 @@ class ChessGame {
             // 填充内容
             analysisElement.textContent = analysisText;
             
-            // 清空旧选项并创建新选项
-            choicesContainer.innerHTML = '<p><strong>请选择一个走法:</strong></p>'; // 重置
-            let selectedMove = null;
+        // 清空旧选项并创建新选项
+        choicesContainer.innerHTML = '<p><strong>请选择一个走法:</strong></p>';
+        let selectedMove = null;
 
-            moves.forEach((move, index) => {
-                const label = document.createElement('label');
-                label.className = 'ai-move-choice';
-                const input = document.createElement('input');
-                input.type = 'radio';
-                input.name = 'ai-move-choice';
-                input.value = move;
-                input.id = `ai-move-${index}`;
-                
-                input.addEventListener('change', () => {
-                    selectedMove = input.value;
-                    confirmBtn.disabled = false;
-                });
+        // 修复：确保显示完整的走法，而不是分割的字符
+        const validMoves = moves.filter(move => {
+            // 过滤掉无效的单个字符（除非是合法的王车易位）
+            if (move.length === 1 && move !== 'O') {
+                return false;
+            }
+            return true;
+        });
 
-                label.appendChild(input);
-                label.appendChild(document.createTextNode(` ${move}`));
-                choicesContainer.appendChild(label);
+        validMoves.forEach((move, index) => {
+            const label = document.createElement('label');
+            label.className = 'ai-move-choice';
+            const input = document.createElement('input');
+            input.type = 'radio';
+            input.name = 'ai-move-choice';
+            input.value = move;
+            input.id = `ai-move-${index}`;
+            
+            input.addEventListener('change', () => {
+                selectedMove = input.value;
+                confirmBtn.disabled = false;
             });
 
-            // 重置并显示
-            confirmBtn.disabled = true;
-            modal.style.display = 'flex';
+            label.appendChild(input);
+            
+            // 修复：显示完整的走法描述
+            const moveText = document.createElement('span');
+            moveText.textContent = ` ${move}`;
+            if (move === 'O-O' || move === 'O-O-O') {
+                const desc = document.createElement('small');
+                desc.textContent = ` (${move === 'O-O' ? '短易位' : '长易位'})`;
+                desc.style.color = '#666';
+                label.appendChild(moveText);
+                label.appendChild(desc);
+            } else {
+                label.appendChild(moveText);
+            }
+            
+            choicesContainer.appendChild(label);
+            
+            // 如果只有一个选项，自动选择
+            if (validMoves.length === 1 && index === 0) {
+                input.checked = true;
+                selectedMove = move;
+                confirmBtn.disabled = false;
+            }
+        });
+
+        // 重置并显示
+        confirmBtn.disabled = true;
+        modal.style.display = 'flex';
 
             // --- 事件处理 ---
             const onConfirm = () => {
