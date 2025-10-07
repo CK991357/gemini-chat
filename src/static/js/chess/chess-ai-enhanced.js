@@ -521,7 +521,7 @@ extractAllSANFromText(text) {
     s = s.replace(/\b0-0-0\b/gi, 'O-O-O').replace(/\b0-0\b/gi, 'O-O');
 
     // 3) 更稳健的 SAN 正则（i 忽略大小写）
-    const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#!?]*)\b/gi;
+    const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBNP]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#!?]*)|[a-h][1-8])\b/gi;
 
     const rawMatches = s.match(sanPattern) || [];
 
