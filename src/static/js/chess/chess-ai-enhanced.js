@@ -497,65 +497,69 @@ async executeSANMove(sanMove, currentFEN) {
 /**
  * 使用健壮的正则从文本中提取所有SAN走法，并进行全面规范化
  */
-/**
- * 从 AI 文本中提取所有 SAN 走法（保持顺序，去重）
- * 兼容 qxc8 / nxb4 / 0-0 / O-O-O / exd8=Q+ 等常见形式
- */
 extractAllSANFromText(text) {
-    if (!text || typeof text !== 'string') return [];
+    if (!text || typeof text !== 'string') {
+        this.logMessage('提取走法：输入文本为空或非字符串', 'warn');
+        return [];
+    }
 
-    // 1) 基础清理：去掉换行、emoji、全角逗号等噪声
-    let s = text
-        .replace(/[\uFEFF\xA0]/g, ' ')            // invisible spaces
-        .replace(/[\r\n]+/g, ' ')                 // newlines -> space
-        .replace(/[🤖🤔👤🎊]/g, ' ')               // remove some emojis if present
-        .replace(/[，、；：]/g, ',')               // chinese punctuation -> comma
-        .replace(/\s+/g, ' ')                     // 多空格合并
+    this.logMessage(`原始提取文本: ${text.substring(0, 200)}...`, 'debug');
+
+    // 全面文本预处理
+    let normalized = text
+        .replace(/（/g, '(').replace(/）/g, ')')    // 全角括号转半角
+        .replace(/\b0-0-0\b/g, 'O-O-O')            // 数字零写法标准化
+        .replace(/\b0-0\b/g, 'O-O')
+        .replace(/\b(o-o-o)\b/gi, 'O-O-O')         // 小写字母标准化
+        .replace(/\b(o-o)\b/gi, 'O-O')
+        // 移除常见注释和标点
+        .replace(/\([^)]*\)/g, ' ')                // 移除括号内容
+        .replace(/\[[^\]]*\]/g, ' ')               // 移除方括号内容
+        .replace(/[!?{}]/g, ' ')                   // 移除特殊标点
+        // 压缩空白
+        .replace(/\s+/g, ' ')
         .trim();
 
-    // 2) 标准化：把数字 0-0/0-0-0 → 字母 O-O/O-O-O（常见模型输出误用 0）
-    s = s.replace(/\b0-0-0\b/gi, 'O-O-O').replace(/\b0-0\b/gi, 'O-O');
+    this.logMessage(`预处理后文本: ${normalized.substring(0, 200)}...`, 'debug');
 
-    // 3) 更稳健的 SAN 正则（i 忽略大小写）
-    const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBNP]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#!?]*)|[a-h][1-8])\b/gi;
+    // 进一步优化的SAN正则表达式，避免重复匹配
+    const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)|[a-h][1-8])\b/g;
 
-    const rawMatches = s.match(sanPattern) || [];
+    const rawMatches = normalized.match(sanPattern) || [];
+    this.logMessage(`原始匹配: [${rawMatches.join(', ')}]`, 'debug');
 
-    // 4) 清理每个匹配项、按出现顺序去重
+    // 深度清理和规范化
+    const cleaned = rawMatches.map(s => {
+        let move = s
+            .replace(/^[,.;:"'!?()\s]+|[,.;:"'!?()\s]+$/g, '') // 移除两端标点
+            .trim()
+            // 二次标准化（保险）
+            .replace(/\b0-0-0\b/g, 'O-O-O')
+            .replace(/\b0-0\b/g, 'O-O')
+            .replace(/\bo-o-o\b/gi, 'O-O-O')
+            .replace(/\bo-o\b/gi, 'O-O');
+
+        return move;
+    }).filter(move => {
+        // 过滤掉明显无效的走法
+        if (!move || move.length === 0) return false;
+        if (move.length === 1 && move !== 'O') return false; // 单独的字符（除了O）都无效
+        if (move === '-' || move === 'x') return false; // 单独的符号无效
+        return true;
+    });
+
+    // 去重并保留顺序
     const seen = new Set();
-    const result = [];
-    for (let m of rawMatches) {
-        m = m.trim();
-        if (!m) continue;
-
-        // 再把可能的 "0-0"（若漏掉）做一遍标准化保护
-        m = m.replace(/\b0-0-0\b/gi, 'O-O-O').replace(/\b0-0\b/gi, 'O-O');
-
-        if (!seen.has(m)) {
-            seen.add(m);
-            result.push(m);
+    const unique = [];
+    for (const mv of cleaned) {
+        if (mv && !seen.has(mv)) {
+            seen.add(mv);
+            unique.push(mv);
         }
     }
 
-    return result;
-}
-
-/**
- * 使用 chess.js 验证走法在当前局面下的合法性
- */
-validateExtractedMoves(moves, currentFEN) {
-    if (!moves || moves.length === 0) return moves;
-    
-    // 使用chess.js验证走法合法性
-    const chess = new Chess(currentFEN);
-    return moves.filter(move => {
-        try {
-            const result = chess.move(move, { sloppy: true });
-            return result !== null;
-        } catch {
-            return false;
-        }
-    });
+    this.logMessage(`最终提取走法: [${unique.join(', ')}]`, 'info');
+    return unique;
 }
 
     /**
