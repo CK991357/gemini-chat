@@ -27,7 +27,6 @@ export class ChessAIEnhanced {
         // 新增：视觉聊天区消息显示函数
         this.displayVisionMessage = options.displayVisionMessage || console.log;
         // chess.js 实例，用于验证和解析走法
-        // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
 
         // ====== 新增：代理 displayVisionMessage 支持按 id 更新同一条消息块 ======
@@ -426,37 +425,26 @@ async executeSANMove(sanMove, currentFEN) {
         .replace(/\bo-o-o\b/gi, 'O-O-O')
         .replace(/\bo-o\b/gi, 'O-O');
 
-    // 特殊处理：单独的"O"自动修正（使用修正后的逻辑）
+    // 特殊处理：单独的"O"自动修正
     if (cleanedMove === 'O') {
         this.logMessage('检测到单独"O"，尝试自动修正为王车易位', 'warn');
+        this.chess.load(currentFEN); // 确保内部棋局状态正确
         
-        const isWhiteTurn = currentFEN.split(' ') === 'w';
-        const kingSquare = isWhiteTurn ? 'e1' : 'e8';
-        const kingPiece = this.chess.get(kingSquare);
+        let foundCastlingMove = false;
+        // 检查短易位 O-O 是否合法
+        if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O')) {
+            cleanedMove = 'O-O';
+            this.logMessage(`自动修正: "O" -> "${cleanedMove}" (短易位)`, 'info');
+            foundCastlingMove = true;
+        } else if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O-O')) { // 检查长易位 O-O-O 是否合法
+            cleanedMove = 'O-O-O';
+            this.logMessage(`自动修正: "O" -> "${cleanedMove}" (长易位)`, 'info');
+            foundCastlingMove = true;
+        }
         
-        const hasKing = kingPiece && 
-                       kingPiece.type === 'k' && 
-                       kingPiece.color === (isWhiteTurn ? 'w' : 'b');
-        
-        if (hasKing) {
-            const castlingRights = currentFEN.split(' ');
-            if (isWhiteTurn) {
-                if (castlingRights.includes('K')) {
-                    cleanedMove = 'O-O';
-                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (白方短易位)`, 'info');
-                } else if (castlingRights.includes('Q')) {
-                    cleanedMove = 'O-O-O';
-                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (白方长易位)`, 'info');
-                }
-            } else {
-                if (castlingRights.includes('k')) {
-                    cleanedMove = 'O-O';
-                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (黑方短易位)`, 'info');
-                } else if (castlingRights.includes('q')) {
-                    cleanedMove = 'O-O-O';
-                    this.logMessage(`自动修正: "O" -> "${cleanedMove}" (黑方长易位)`, 'info');
-                }
-            }
+        if (!foundCastlingMove) {
+             this.logMessage('无法将单独"O"修正为合法的王车易位', 'warn');
+             // 如果修正失败，就让它继续尝试原始的 'O'，因为后续的降级策略可能会处理
         }
     }
 
@@ -722,46 +710,55 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
      */
     generateAlternativeMoves(originalMove, currentFEN) {
         const alternatives = new Set();
-        
+
         // 1. 移除后缀符号
         const withoutSuffix = originalMove.replace(/[+#!?]$/g, '');
         if (withoutSuffix !== originalMove) alternatives.add(withoutSuffix);
-        
+
         // 2. 大小写修正
         alternatives.add(originalMove.toUpperCase());
         alternatives.add(originalMove.toLowerCase());
-        
+
         // 3. 移除空格
         const noSpaces = originalMove.replace(/\s+/g, '');
         if (noSpaces !== originalMove) alternatives.add(noSpaces);
-        
-        // 4. 自然语言解析 - 修复：正确的条件顺序
-        const moveLower = originalMove.toLowerCase();
-        if (/queen.?side/i.test(moveLower)) {
-            alternatives.add('O-O-O');
-        } else if (/king.?side/i.test(moveLower) || /castle/i.test(moveLower)) {
-            alternatives.add('O-O');
-        }
-        
-        // 5. 基于当前局面的智能建议
+
+        // 提前加载 FEN 以便复用
         this.chess.load(currentFEN);
         const legalMoves = this.chess.moves({ verbose: true });
-        
+
+        // 4. 自然语言解析 (改进版，基于合法走法)
+        const moveLower = originalMove.toLowerCase();
+        if (/castle|king.?side|queen.?side/i.test(moveLower)) {
+            const canCastleShort = legalMoves.some(m => m.san === 'O-O');
+            const canCastleLong = legalMoves.some(m => m.san === 'O-O-O');
+
+            if (/queen.?side/i.test(moveLower) && canCastleLong) {
+                alternatives.add('O-O-O');
+            } else if (/king.?side/i.test(moveLower) && canCastleShort) {
+                alternatives.add('O-O');
+            } else if (/castle/i.test(moveLower)) { // 通用 "castle"
+                if (canCastleShort) alternatives.add('O-O');
+                if (canCastleLong) alternatives.add('O-O-O');
+            }
+        }
+
+        // 5. 基于当前局面的智能建议
         // 尝试匹配类似的合法走法
         legalMoves.forEach(legalMove => {
             const legalSAN = legalMove.san;
             // 简单的相似度匹配
-            if (legalSAN.includes(originalMove) || 
+            if (legalSAN.includes(originalMove) ||
                 originalMove.includes(legalSAN) ||
                 this.moveSimilarity(originalMove, legalSAN) > 0.7) {
                 alternatives.add(legalSAN);
             }
         });
-        
+
         // 移除原始走法（已经失败）和空值
         alternatives.delete(originalMove);
         alternatives.delete('');
-        
+
         return Array.from(alternatives);
     }
 
