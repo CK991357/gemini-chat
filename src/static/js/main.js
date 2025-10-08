@@ -236,7 +236,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (visionHistoryManager) {
                         visionHistoryManager.renderHistoryList();
                     } else {
-                        historyContent.innerHTML = '<p class="empty-history">视觉历史记录正在初始化...</p>';
+                        // 如果历史管理器尚未初始化，则显示通用的空状态
+                        historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
                     }
                 } else {
                     // 其他模式（如翻译）显示占位符
