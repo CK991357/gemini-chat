@@ -321,6 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
  
    // T10: 初始化 HistoryManager
    historyManager = new HistoryManager({
+       mode: 'chat', // 明确指定模式为 'chat'
        elements: {
            historyContent: historyContent,
        },
