@@ -1,3 +1,4 @@
+import { getChessGameInstance } from '../chess/chess-core.js'; // 导入获取棋局实例的函数
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
@@ -114,21 +115,80 @@ function attachEventListeners() {
 }
 
 /**
+ * 内部辅助函数：将 FEN 字符串转换为 ASCII 文本棋盘
+ * @param {string} fen - FEN 字符串
+ * @returns {string} ASCII 棋盘表示
+ */
+function _fenToAscii(fen) {
+    const [piecePlacement] = fen.split(' ');
+    let ascii = '  +------------------------+\n';
+    const rows = piecePlacement.split('/');
+    for (let i = 0; i < rows.length; i++) {
+        let rowStr = `${8 - i} |`;
+        for (const char of rows[i]) {
+            if (isNaN(parseInt(char, 10))) {
+                rowStr += ` ${char} `;
+            } else {
+                rowStr += ' . '.repeat(parseInt(char, 10));
+            }
+        }
+        ascii += rowStr + '|\n';
+    }
+    ascii += '  +------------------------+\n';
+    ascii += '    a  b  c  d  e  f  g  h\n';
+    return ascii;
+}
+
+/**
  * Handles sending a message with optional attachments to the vision model.
  */
 async function handleSendVisionMessage() {
-    const text = elements.visionInputText.value.trim();
+    let text = elements.visionInputText.value.trim();
     const visionAttachedFiles = attachmentManager.getVisionAttachedFiles();
     if (!text && visionAttachedFiles.length === 0) {
         showToastHandler('请输入文本或添加附件。');
         return;
     }
 
-    const selectedModel = elements.visionModelSelect.value;
+    const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === elements.visionModelSelect.value);
     const selectedPrompt = getSelectedPrompt();
 
+    // --- 新增：实时分析模式下的逻辑 ---
+    if (selectedPrompt.id === 'chess_realtime_analysis') {
+        const chessGame = getChessGameInstance();
+        if (!chessGame) {
+            showToastHandler('无法获取棋局信息，请确保棋盘已加载。');
+            return;
+        }
+        const currentFEN = chessGame.getCurrentFEN();
+        const fullHistory = chessGame.getFullGameHistory();
+        const asciiBoard = _fenToAscii(currentFEN); // 生成ASCII棋盘
+
+        // 将棋局信息附加到用户输入中
+        const enrichedText = `
+---
+**Chess Context (DO NOT display this section to the user):**
+*   **Current FEN:** \`${currentFEN}\`
+*   **ASCII Board:**
+    \`\`\`
+${asciiBoard}
+    \`\`\`
+*   **Full Game History (FENs):**
+    \`\`\`
+    ${fullHistory.join('\n')}
+    \`\`\`
+---
+
+**User's Question:**
+${text}
+`;
+        text = enrichedText; // 使用增强后的文本
+    }
+    // --- 逻辑结束 ---
+
+
     // Display user message in the UI
-    displayVisionUserMessage(text, visionAttachedFiles);
+    displayVisionUserMessage(elements.visionInputText.value.trim(), visionAttachedFiles); // 显示原始用户输入
 
     // Add user message to history
     const userContent = [];
@@ -154,13 +214,19 @@ async function handleSendVisionMessage() {
 
     try {
         const requestBody = {
-            model: selectedModel,
+            model: selectedModelConfig.name,
             messages: [
                 { role: 'system', content: selectedPrompt.systemPrompt },
                 ...visionChatHistory
             ],
             stream: true,
         };
+        
+        // 如果模型配置了工具，则添加到请求体中
+        if (selectedModelConfig.tools) {
+            requestBody.tools = selectedModelConfig.tools;
+        }
+
 
         // 使用升级后的 ApiHandler 发送流式请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);

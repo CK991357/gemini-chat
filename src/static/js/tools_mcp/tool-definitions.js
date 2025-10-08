@@ -124,13 +124,60 @@ const firecrawl = {
     }
 };
 
+// Stockfish analyzer tool definition
+const stockfish_analyzer = {
+    "type": "function",
+    "function": {
+        "name": "stockfish_analyzer",
+        "description": "一个强大的国际象棋分析工具，使用Stockfish引擎。通过'mode'参数选择不同的分析功能。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fen": {
+                    "type": "string",
+                    "description": "必需。当前棋盘局面的FEN字符串。"
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "必需。要执行的分析模式。可选值: 'get_best_move', 'get_top_moves', 'evaluate_position'。",
+                    "enum": ["get_best_move", "get_top_moves", "evaluate_position"]
+                },
+                "options": {
+                    "type": "object",
+                    "description": "可选。为特定模式提供额外参数。",
+                    "properties": {
+                        "skill_level": {
+                            "type": "number",
+                            "description": "设置Stockfish的技能等级 (0-20)。默认20。",
+                            "minimum": 0,
+                            "maximum": 20
+                        },
+                        "depth": {
+                            "type": "number",
+                            "description": "分析深度 (1-30)。数值越高，计算越准但越慢。默认15。",
+                            "minimum": 1,
+                            "maximum": 30
+                        },
+                        "count": {
+                            "type": "number",
+                            "description": "在 'get_top_moves' 模式下，要返回的最佳走法数量。默认3。"
+                        }
+                    }
+                }
+            },
+            "required": ["fen", "mode"]
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
     image_url_analyzer,
     python_sandbox,
     mcp_tool_catalog, // 添加新工具
-    firecrawl
+    firecrawl,
+    stockfish_analyzer
     // Future tools can be added here
 ];
 
@@ -140,7 +187,8 @@ export const mcpToolsMap = {
     'glm4v.analyze_image': image_url_analyzer,
     'python_sandbox': python_sandbox,
     'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
-    'firecrawl': firecrawl
+    'firecrawl': firecrawl,
+    'stockfish_analyzer': stockfish_analyzer
 };
 
 // Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
@@ -156,5 +204,6 @@ delete firecrawl_gemini.function.output_schema;
 export const geminiMcpTools = [
     tavily_search,
     python_sandbox_gemini,
-    firecrawl_gemini
+    firecrawl_gemini,
+    stockfish_analyzer
 ];
