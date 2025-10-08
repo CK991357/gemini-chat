@@ -475,6 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
         visionFileInput: document.getElementById('vision-file-input'),
         visionInputText: document.getElementById('vision-input-text'),
         visionMessageHistory: document.getElementById('vision-message-history'),
+        visionHistoryContent: document.getElementById('history-list-container'), // 修复：传入历史记录容器
         // 新增：切换按钮
         toggleToChessButton: document.getElementById('toggle-to-chess-button'),
         toggleToVisionButton: document.getElementById('toggle-to-vision-button')
