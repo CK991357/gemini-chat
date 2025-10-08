@@ -14,7 +14,7 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
-import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
+import { displayVisionMessage, getVisionHistoryManager, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
 
 /**
  * @fileoverview Main entry point for the application.
@@ -223,14 +223,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mode === 'history') {
                 // 检查当前激活的顶层模式
                 const isChatMode = chatModeBtn.classList.contains('active');
-                const isTranslationMode = document.querySelector('.translation-container')?.classList.contains('active');
-                const isVisionMode = visionContainer?.classList.contains('active');
-                
-                // 只有在聊天模式下才显示历史记录，其他模式显示占位符
-                if (!isChatMode) {
-                     historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
+                const isVisionMode = visionModeBtn.classList.contains('active');
+
+                if (isChatMode) {
+                    // 为聊天模式渲染历史记录
+                    if (historyManager) {
+                        historyManager.renderHistoryList();
+                    }
+                } else if (isVisionMode) {
+                    // 为视觉/国际象棋模式渲染历史记录
+                    const visionHistoryManager = getVisionHistoryManager();
+                    if (visionHistoryManager) {
+                        visionHistoryManager.renderHistoryList();
+                    } else {
+                        historyContent.innerHTML = '<p class="empty-history">视觉历史记录正在初始化...</p>';
+                    }
                 } else {
-                    historyManager.renderHistoryList();
+                    // 其他模式（如翻译）显示占位符
+                    historyContent.innerHTML = '<p class="empty-history">当前模式暂不支持历史记录功能。</p>';
                 }
             }
 
