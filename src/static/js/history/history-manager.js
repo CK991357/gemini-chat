@@ -25,15 +25,7 @@ export class HistoryManager {
      * @param {Function} options.showSystemMessage - Function to show a system message in chat.
      * @param {Function} options.logMessage - Function to log a system message.
      */
-    constructor({ mode, elements, updateChatUI, getChatHistory, setChatHistory, getCurrentSessionId, setCurrentSessionId, showToast, showSystemMessage, logMessage }) {
-        // NEW: Validate mode
-        if (!mode || (mode !== 'chat' && mode !== 'vision')) {
-            throw new Error("HistoryManager requires a valid 'mode' ('chat' or 'vision').");
-        }
-
-        // NEW: Store the mode
-        this.mode = mode;
-
+    constructor({ elements, updateChatUI, getChatHistory, setChatHistory, getCurrentSessionId, setCurrentSessionId, showToast, showSystemMessage, logMessage }) {
         this.elements = elements;
         this.updateChatUI = updateChatUI;
         this.getChatHistory = getChatHistory;
@@ -44,15 +36,13 @@ export class HistoryManager {
         this.showSystemMessage = showSystemMessage;
         this.logMessage = logMessage;
 
-        // NEW: Dynamic API path and storage key based on mode
-        this.apiBasePath = this.mode === 'vision' ? '/api/vision/history' : '/api/history';
-        this.metaStorageKey = this.mode === 'vision' ? 'vision_session_meta' : 'chat_session_meta';
+        this.activeOptionsMenu = null; // Track the currently open options menu
+        this.boundHandleGlobalMenuClose = this.handleGlobalMenuClose.bind(this); // Bind the method once
 
-        this.activeOptionsMenu = null;
-        this.boundHandleGlobalMenuClose = this.handleGlobalMenuClose.bind(this);
-
+        // Initialize history enabled state from localStorage, default to true
         this.historyEnabled = localStorage.getItem('historyEnabled') !== 'false';
 
+        // State for batch selection
         this.isSelectMode = false;
         this.selectedSessions = new Set();
 
@@ -61,7 +51,7 @@ export class HistoryManager {
         this.elements.batchSelectBtn = document.getElementById('batch-select-history-btn');
         this.elements.deleteSelectedBtn = document.getElementById('delete-selected-history-btn');
 
-        console.log(`HistoryManager initialized in '${this.mode}' mode.`);
+        console.log("HistoryManager initialized");
     }
  
      /**
@@ -95,13 +85,12 @@ export class HistoryManager {
      * @returns {Array<object>} Array of session metadata, or an empty array on failure.
      * @private
      */
-    getSessionMeta() { // CHANGED: Renamed from getChatSessionMeta
+    getChatSessionMeta() {
         try {
-            // CHANGED: Use dynamic storage key
-            const meta = localStorage.getItem(this.metaStorageKey);
+            const meta = localStorage.getItem('chat_session_meta');
             return meta ? JSON.parse(meta) : [];
         } catch (e) {
-            console.error(`Failed to parse session meta for mode '${this.mode}':`, e);
+            console.error('Failed to parse chat session meta:', e);
             return [];
         }
     }
@@ -111,12 +100,11 @@ export class HistoryManager {
      * @param {Array<object>} meta - The session metadata array to save.
      * @private
      */
-    saveSessionMeta(meta) { // CHANGED: Renamed from saveChatSessionMeta
+    saveChatSessionMeta(meta) {
         try {
-            // CHANGED: Use dynamic storage key
-            localStorage.setItem(this.metaStorageKey, JSON.stringify(meta));
+            localStorage.setItem('chat_session_meta', JSON.stringify(meta));
         } catch (e) {
-            console.error(`Failed to save session meta for mode '${this.mode}':`, e);
+            console.error('Failed to save chat session meta:', e);
         }
     }
 
@@ -125,28 +113,29 @@ export class HistoryManager {
      */
     generateNewSession() {
         this.setChatHistory([]);
-        // NEW: Prefix session ID with mode for clarity
-        const newSessionId = `session-${this.mode}-${crypto.randomUUID()}`;
+        const newSessionId = `session-${crypto.randomUUID()}`;
         this.setCurrentSessionId(newSessionId);
         this.updateChatUI({ messages: [] }); // Clear the UI
 
+        // 如果历史记录被禁用，则不创建新的会话元数据
         if (!this.historyEnabled) {
             this.logMessage('历史记录已禁用，仅重置聊天界面。', 'system');
+            // 列表保持可见，因此不需要特殊的渲染调用
             return;
         }
 
-        let sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+        let sessions = this.getChatSessionMeta();
         const now = new Date().toISOString();
         const newSessionMeta = {
             id: newSessionId,
-            title: this.mode === 'vision' ? '新棋局' : '新聊天', // NEW: Mode-specific default title
+            title: '新聊天',
             updatedAt: now,
             createdAt: now
         };
         sessions.unshift(newSessionMeta);
-        this.saveSessionMeta(sessions); // CHANGED: Use generalized method
+        this.saveChatSessionMeta(sessions);
 
-        this.logMessage(`新会话已开始 (ID: ${newSessionId})`, 'system');
+        this.logMessage(`新聊天已开始 (ID: ${newSessionId})`, 'system');
         this.renderHistoryList();
     }
 
@@ -156,7 +145,7 @@ export class HistoryManager {
     renderHistoryList() {
         this.elements.historyContent.innerHTML = '';
 
-        let sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+        let sessions = this.getChatSessionMeta();
 
         if (sessions.length === 0) {
             this.elements.historyContent.innerHTML = '<p class="empty-history">暂无历史记录</p>';
@@ -294,8 +283,7 @@ export class HistoryManager {
 
         this.showToast(`正在加载会话: ${sessionId}`);
         try {
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/load/${sessionId}`);
+            const response = await fetch(`/api/history/load/${sessionId}`);
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || `无法加载会话: ${response.statusText}`);
@@ -343,7 +331,7 @@ export class HistoryManager {
         }
 
         try {
-            let sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+            let sessions = this.getChatSessionMeta();
             const now = new Date().toISOString();
             const existingIndex = sessions.findIndex(s => s.id === sessionId);
             let currentSessionMeta;
@@ -352,13 +340,10 @@ export class HistoryManager {
                 currentSessionMeta = sessions.splice(existingIndex, 1)[0];
                 currentSessionMeta.updatedAt = now;
             } else {
-                // NEW: Mode-specific default title
-                const defaultTitle = this.mode === 'vision' ? '新棋局' : '新聊天';
-                currentSessionMeta = { id: sessionId, title: defaultTitle, createdAt: now, updatedAt: now };
+                currentSessionMeta = { id: sessionId, title: '新聊天', createdAt: now, updatedAt: now };
             }
 
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/save`, {
+            const response = await fetch('/api/history/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -376,11 +361,11 @@ export class HistoryManager {
             }
 
             sessions.unshift(currentSessionMeta);
-            this.saveSessionMeta(sessions); // CHANGED: Use generalized method
+            this.saveChatSessionMeta(sessions);
             this.renderHistoryList();
 
             // 在第一轮交互后，如果标题仍为默认值，则生成标题
-            if (chatHistory.length === 2 && (currentSessionMeta.title === '新聊天' || currentSessionMeta.title === '新棋局')) {
+            if (chatHistory.length === 2 && currentSessionMeta.title === '新聊天') {
                 this.generateTitleForSession(sessionId, chatHistory);
             }
             // 在第二轮交互后，再次生成标题以获得更精确的结果，并覆盖旧标题
@@ -400,8 +385,7 @@ export class HistoryManager {
      */
     async generateTitleForSession(sessionId, messages) {
         try {
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/generate-title`, {
+            const response = await fetch('/api/history/generate-title', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, messages })
@@ -414,11 +398,11 @@ export class HistoryManager {
 
             const { title } = await response.json();
             if (title) {
-                const sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+                const sessions = this.getChatSessionMeta();
                 const sessionToUpdate = sessions.find(s => s.id === sessionId);
                 if (sessionToUpdate) {
                     sessionToUpdate.title = title;
-                    this.saveSessionMeta(sessions); // CHANGED: Use generalized method
+                    this.saveChatSessionMeta(sessions);
                     this.renderHistoryList();
                     this.showToast('会话标题已生成');
                 }
@@ -436,8 +420,7 @@ export class HistoryManager {
     async togglePinSession(sessionId, isPinned) {
         this.showToast(`正在${isPinned ? '置顶' : '取消置顶'}会话...`);
         try {
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/${sessionId}/pin`, {
+            const response = await fetch(`/api/history/${sessionId}/pin`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ is_pinned: isPinned })
@@ -448,11 +431,11 @@ export class HistoryManager {
                 throw new Error(errorData.error || `无法${isPinned ? '置顶' : '取消置顶'}会话`);
             }
 
-            let sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+            let sessions = this.getChatSessionMeta();
             const sessionToUpdate = sessions.find(s => s.id === sessionId);
             if (sessionToUpdate) {
                 sessionToUpdate.is_pinned = isPinned;
-                this.saveSessionMeta(sessions); // CHANGED: Use generalized method
+                this.saveChatSessionMeta(sessions);
                 this.renderHistoryList();
                 this.showToast(`会话已${isPinned ? '置顶' : '取消置顶'}！`);
             }
@@ -476,8 +459,7 @@ export class HistoryManager {
 
         this.showToast('正在更新标题...');
         try {
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/${sessionId}/title`, {
+            const response = await fetch(`/api/history/${sessionId}/title`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title: newTitle.trim() })
@@ -488,11 +470,11 @@ export class HistoryManager {
                 throw new Error(errorData.error || '无法更新标题');
             }
 
-            let sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+            let sessions = this.getChatSessionMeta();
             const sessionToUpdate = sessions.find(s => s.id === sessionId);
             if (sessionToUpdate) {
                 sessionToUpdate.title = newTitle.trim();
-                this.saveSessionMeta(sessions); // CHANGED: Use generalized method
+                this.saveChatSessionMeta(sessions);
                 this.renderHistoryList();
                 this.showToast('会话标题已更新！');
             }
@@ -514,8 +496,7 @@ export class HistoryManager {
 
         this.showToast('正在删除会话...');
         try {
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/${sessionId}`, {
+            const response = await fetch(`/api/history/${sessionId}`, {
                 method: 'DELETE'
             });
 
@@ -524,9 +505,9 @@ export class HistoryManager {
                 throw new Error(errorData.error || '无法删除会话');
             }
 
-            let sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+            let sessions = this.getChatSessionMeta();
             sessions = sessions.filter(s => s.id !== sessionId);
-            this.saveSessionMeta(sessions); // CHANGED: Use generalized method
+            this.saveChatSessionMeta(sessions);
             this.renderHistoryList();
             this.showToast('会话已删除！');
 
@@ -558,8 +539,7 @@ export class HistoryManager {
     async recoverHistoryFromServer(showAlert = true) {
         this.showToast('正在从云端恢复历史记录...');
         try {
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/list-all-meta`);
+            const response = await fetch('/api/history/list-all-meta');
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || `无法从后端恢复: ${response.statusText}`);
@@ -568,7 +548,7 @@ export class HistoryManager {
 
             if (sessionMetas) {
                 // 强制覆盖本地存储
-                this.saveSessionMeta(sessionMetas); // CHANGED: Use generalized method
+                this.saveChatSessionMeta(sessionMetas);
                 this.renderHistoryList();
 
                 // 检查当前会话是否仍然存在，如果不存在则新建一个会话以清空UI
@@ -642,8 +622,7 @@ export class HistoryManager {
 
         this.showToast(`正在删除 ${sessionIdsToDelete.length} 个会话...`);
         try {
-            // CHANGED: Use dynamic API path
-            const response = await fetch(`${this.apiBasePath}/batch-delete`, {
+            const response = await fetch('/api/history/batch-delete', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionIds: sessionIdsToDelete })
@@ -661,9 +640,9 @@ export class HistoryManager {
                 throw new Error(errorMsg);
             }
 
-            let sessions = this.getSessionMeta(); // CHANGED: Use generalized method
+            let sessions = this.getChatSessionMeta();
             sessions = sessions.filter(s => !this.selectedSessions.has(s.id));
-            this.saveSessionMeta(sessions); // CHANGED: Use generalized method
+            this.saveChatSessionMeta(sessions);
 
             this.showToast('选中的会话已成功删除！');
 

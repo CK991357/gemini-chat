@@ -120,9 +120,3 @@ enabled = true
 binding = "GEMINICHAT_HISTORY_KV"
 id = "f64330e7c00f48e6893f0bf8625106c1"
 preview_id = "f64330e7c00f48e6893f0bf8625106c1"
-
-
-[[kv_namespaces]]
-binding = "VISION_HISTORY_KV"
-id = "a89c2c75a5e04b15b0d76e869956f3ee"
-preview_id = "a89c2c75a5e04b15b0d76e869956f3ee"

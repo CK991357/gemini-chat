@@ -112,11 +112,6 @@ export default {
     }
 
     // 处理历史记录API请求
-    // 注意：这里的顺序很重要，先匹配更具体的 /api/vision/history/
-    if (url.pathname.startsWith('/api/vision/history/')) { // <--- 新增的视觉模式历史记录路由
-      console.log('Routing to handleVisionHistoryRequest');
-      return handleVisionHistoryRequest(request, env);
-    }
     if (url.pathname.startsWith('/api/history/')) {
       return handleHistoryRequest(request, env);
     }
@@ -636,8 +631,6 @@ async function handleImageGenerationRequest(request, env) {
 async function handleHistoryRequest(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  // 核心区别：操作的 KV 命名空间是 GEMINICHAT_HISTORY_KV
-  const KV_NAMESPACE = env.GEMINICHAT_HISTORY_KV; 
 
   // 路由: 保存会话
   if (path === '/api/history/save' && request.method === 'POST') {
@@ -655,7 +648,7 @@ async function handleHistoryRequest(request, env) {
         is_pinned: sessionData.is_pinned === true // 确保是布尔值
       };
       const key = `history:${sessionData.sessionId}`;
-      await KV_NAMESPACE.put(key, JSON.stringify(dataToSave)); // <--- 使用 KV_NAMESPACE
+      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(dataToSave));
       return new Response(JSON.stringify({ status: 'success' }), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
@@ -674,7 +667,7 @@ async function handleHistoryRequest(request, env) {
     try {
       const sessionId = loadMatch[1];
       const key = `history:${sessionId}`;
-      const sessionData = await KV_NAMESPACE.get(key); // <--- 使用 KV_NAMESPACE
+      const sessionData = await env.GEMINICHAT_HISTORY_KV.get(key);
 
       if (sessionData === null) {
         return new Response(JSON.stringify({ error: 'Session not found' }), {
@@ -706,7 +699,7 @@ async function handleHistoryRequest(request, env) {
     try {
       const sessionId = pinMatch[1];
       const key = `history:${sessionId}`;
-      const existingData = await KV_NAMESPACE.get(key); // <--- 使用 KV_NAMESPACE
+      const existingData = await env.GEMINICHAT_HISTORY_KV.get(key);
 
       if (existingData === null) {
         return new Response(JSON.stringify({ error: 'Session not found' }), {
@@ -726,7 +719,7 @@ async function handleHistoryRequest(request, env) {
       }
 
       sessionData.is_pinned = is_pinned;
-      await KV_NAMESPACE.put(key, JSON.stringify(sessionData)); // <--- 使用 KV_NAMESPACE
+      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(sessionData));
 
       return new Response(JSON.stringify({ status: 'success', is_pinned: sessionData.is_pinned }), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -746,7 +739,7 @@ async function handleHistoryRequest(request, env) {
     try {
       const sessionId = titleMatch[1];
       const key = `history:${sessionId}`;
-      const existingData = await KV_NAMESPACE.get(key); // <--- 使用 KV_NAMESPACE
+      const existingData = await env.GEMINICHAT_HISTORY_KV.get(key);
 
       if (existingData === null) {
         return new Response(JSON.stringify({ error: 'Session not found' }), {
@@ -766,7 +759,7 @@ async function handleHistoryRequest(request, env) {
       }
 
       sessionData.current_title = title.trim(); // 更新标题
-      await KV_NAMESPACE.put(key, JSON.stringify(sessionData)); // <--- 使用 KV_NAMESPACE
+      await env.GEMINICHAT_HISTORY_KV.put(key, JSON.stringify(sessionData));
 
       return new Response(JSON.stringify({ status: 'success', new_title: sessionData.current_title }), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -786,7 +779,7 @@ async function handleHistoryRequest(request, env) {
     try {
       const sessionId = deleteMatch[1];
       const key = `history:${sessionId}`;
-      await KV_NAMESPACE.delete(key); // <--- 使用 KV_NAMESPACE
+      await env.GEMINICHAT_HISTORY_KV.delete(key);
 
       return new Response(null, {
         status: 204, // No Content
@@ -814,7 +807,7 @@ async function handleHistoryRequest(request, env) {
 
       const deletePromises = sessionIds.map(id => {
         const key = `history:${id}`;
-        return KV_NAMESPACE.delete(key); // <--- 使用 KV_NAMESPACE
+        return env.GEMINICHAT_HISTORY_KV.delete(key);
       });
       
       await Promise.all(deletePromises);
@@ -895,10 +888,10 @@ async function handleHistoryRequest(request, env) {
   // 路由: 列出所有会话元数据
   if (path === '/api/history/list-all-meta' && request.method === 'GET') {
     try {
-      const { keys } = await KV_NAMESPACE.list({ prefix: 'history:' }); // <--- 使用 KV_NAMESPACE
+      const { keys } = await env.GEMINICHAT_HISTORY_KV.list({ prefix: 'history:' });
       const sessionMetas = [];
       for (const keyInfo of keys) {
-        const sessionData = await KV_NAMESPACE.get(keyInfo.name); // <--- 使用 KV_NAMESPACE
+        const sessionData = await env.GEMINICHAT_HISTORY_KV.get(keyInfo.name);
         if (sessionData) {
           const parsedSessionData = JSON.parse(sessionData);
           sessionMetas.push({
@@ -923,308 +916,6 @@ async function handleHistoryRequest(request, env) {
   }
  
    return new Response(JSON.stringify({ error: 'History API route not found' }), {
-     status: 404,
-     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-   });
-}
-
-/**
- * @function handleVisionHistoryRequest
- * @description 处理所有与视觉模式聊天历史记录相关的API请求。
- * @param {Request} request - 传入的请求对象。
- * @param {Object} env - 环境变量对象，包含KV命名空间等。
- * @returns {Promise<Response>} - 返回一个 Promise，解析为处理后的响应。
- */
-async function handleVisionHistoryRequest(request, env) {
-  const url = new URL(request.url);
-  const path = url.pathname;
-  // 核心区别：操作的 KV 命名空间是 VISION_HISTORY_KV
-  const KV_NAMESPACE = env.VISION_HISTORY_KV; 
-
-  // 路由: 保存会话
-  if (path === '/api/vision/history/save' && request.method === 'POST') {
-    try {
-      const sessionData = await request.json();
-      if (!sessionData || !sessionData.sessionId) {
-        return new Response(JSON.stringify({ error: 'Missing session data or sessionId' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-      // 确保 sessionData 包含 is_pinned 字段，如果不存在则默认为 false
-      const dataToSave = {
-        ...sessionData,
-        is_pinned: sessionData.is_pinned === true // 确保是布尔值
-      };
-      const key = `vision_history:${sessionData.sessionId}`;
-      await KV_NAMESPACE.put(key, JSON.stringify(dataToSave)); // <--- 使用 VISION_HISTORY_KV
-      return new Response(JSON.stringify({ status: 'success' }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (error) {
-      console.error('Failed to save vision history:', error);
-      return new Response(JSON.stringify({ error: 'Failed to save vision history', details: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-  }
-
-  // 路由: 加载会话
-  const loadMatch = path.match(/^\/api\/vision\/history\/load\/(.+)$/);
-  if (loadMatch && request.method === 'GET') {
-    try {
-      const sessionId = loadMatch[1];
-      const key = `vision_history:${sessionId}`;
-      const sessionData = await KV_NAMESPACE.get(key); // <--- 使用 VISION_HISTORY_KV
-
-      if (sessionData === null) {
-        return new Response(JSON.stringify({ error: 'Vision session not found' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      const parsedSessionData = JSON.parse(sessionData);
-      // 确保 is_pinned 字段存在，如果不存在则默认为 false
-      if (typeof parsedSessionData.is_pinned === 'undefined') {
-        parsedSessionData.is_pinned = false;
-      }
-      return new Response(JSON.stringify(parsedSessionData), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (error) {
-      console.error('Failed to load vision history:', error);
-      return new Response(JSON.stringify({ error: 'Failed to load vision history', details: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-  }
-
-  // 路由: 置顶/取消置顶会话
-  const pinMatch = path.match(/^\/api\/vision\/history\/(.+)\/pin$/);
-  if (pinMatch && request.method === 'PATCH') {
-    try {
-      const sessionId = pinMatch[1];
-      const key = `vision_history:${sessionId}`;
-      const existingData = await KV_NAMESPACE.get(key); // <--- 使用 VISION_HISTORY_KV
-
-      if (existingData === null) {
-        return new Response(JSON.stringify({ error: 'Vision session not found' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      const sessionData = JSON.parse(existingData);
-      const { is_pinned } = await request.json();
-
-      if (typeof is_pinned !== 'boolean') {
-        return new Response(JSON.stringify({ error: 'Invalid value for is_pinned, must be boolean' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      sessionData.is_pinned = is_pinned;
-      await KV_NAMESPACE.put(key, JSON.stringify(sessionData)); // <--- 使用 VISION_HISTORY_KV
-
-      return new Response(JSON.stringify({ status: 'success', is_pinned: sessionData.is_pinned }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (error) {
-      console.error('Failed to update vision pin status:', error);
-      return new Response(JSON.stringify({ error: 'Failed to update vision pin status', details: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-  }
-
-  // 路由: 编辑会话标题
-  const titleMatch = path.match(/^\/api\/vision\/history\/(.+)\/title$/);
-  if (titleMatch && request.method === 'PATCH') {
-    try {
-      const sessionId = titleMatch[1];
-      const key = `vision_history:${sessionId}`;
-      const existingData = await KV_NAMESPACE.get(key); // <--- 使用 VISION_HISTORY_KV
-
-      if (existingData === null) {
-        return new Response(JSON.stringify({ error: 'Vision session not found' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      const sessionData = JSON.parse(existingData);
-      const { title } = await request.json();
-
-      if (typeof title !== 'string' || title.trim().length === 0 || title.length > 50) { // 标题长度限制
-        return new Response(JSON.stringify({ error: 'Invalid title provided. Title must be a non-empty string up to 50 characters.' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      sessionData.current_title = title.trim(); // 更新标题
-      await KV_NAMESPACE.put(key, JSON.stringify(sessionData)); // <--- 使用 VISION_HISTORY_KV
-
-      return new Response(JSON.stringify({ status: 'success', new_title: sessionData.current_title }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (error) {
-      console.error('Failed to update vision title:', error);
-      return new Response(JSON.stringify({ error: 'Failed to update vision title', details: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-  }
-
-  // 路由: 删除会话
-  const deleteMatch = path.match(/^\/api\/vision\/history\/(.+)$/);
-  if (deleteMatch && request.method === 'DELETE') {
-    try {
-      const sessionId = deleteMatch[1];
-      const key = `vision_history:${sessionId}`;
-      await KV_NAMESPACE.delete(key); // <--- 使用 VISION_HISTORY_KV
-
-      return new Response(null, {
-        status: 204, // No Content
-        headers: { 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (error) {
-      console.error('Failed to delete vision history:', error);
-      return new Response(JSON.stringify({ error: 'Failed to delete vision history', details: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-  }
-
-  // 路由: 批量删除会话
-  if (path === '/api/vision/history/batch-delete' && request.method === 'DELETE') {
-    try {
-      const { sessionIds } = await request.json();
-      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
-        return new Response(JSON.stringify({ error: 'Invalid or empty sessionIds array provided' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      const deletePromises = sessionIds.map(id => {
-        const key = `vision_history:${id}`;
-        return KV_NAMESPACE.delete(key); // <--- 使用 VISION_HISTORY_KV
-      });
-      
-      await Promise.all(deletePromises);
-
-      return new Response(null, {
-        status: 204, // No Content
-        headers: { 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (error) {
-      console.error('Failed to batch delete vision history:', error);
-      return new Response(JSON.stringify({ error: 'Failed to batch delete vision history', details: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-  }
- 
-  // 路由: 生成标题
-  if (path === '/api/vision/history/generate-title' && request.method === 'POST') {
-    try {
-        const { messages } = await request.json();
-        if (!messages || messages.length === 0) {
-            return new Response(JSON.stringify({ error: 'Missing messages for title generation' }), {
-                status: 400,
-                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-            });
-        }
-
-        // 使用 gemini-2.0-flash 模型进行总结
-        const model = 'models/gemini-2.0-flash';
-        const apiKey = env.AUTH_KEY;
-        const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
-
-        if (!apiKey) {
-            throw new Error('AUTH_KEY is not configured in environment variables.');
-        }
-
-        const systemPrompt = "你是一个对话总结专家。请根据以下对话内容，生成一个不超过10个字的、简洁明了的标题。只返回标题本身，不要任何多余的文字。";
-        const userContent = messages.map(m => `${m.role}: ${m.content}`).join('\n');
-
-        const proxyResponse = await fetch(targetUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userContent }
-                ],
-                stream: false
-            })
-        });
-
-        if (!proxyResponse.ok) {
-            const errorData = await proxyResponse.text();
-            throw new Error(`AI title generation failed: ${proxyResponse.status} - ${errorData}`);
-        }
-
-        const result = await proxyResponse.json();
-        const title = result.choices[0]?.message?.content.trim() || '无标题视觉对话';
-
-        return new Response(JSON.stringify({ title: title }), {
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-
-    } catch (error) {
-        console.error('Failed to generate vision title:', error);
-        return new Response(JSON.stringify({ error: 'Failed to generate vision title', details: error.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-    }
-  }
-
-  // 路由: 列出所有会话元数据
-  if (path === '/api/vision/history/list-all-meta' && request.method === 'GET') {
-    try {
-      const { keys } = await KV_NAMESPACE.list({ prefix: 'vision_history:' }); // <--- 使用 VISION_HISTORY_KV
-      const sessionMetas = [];
-      for (const keyInfo of keys) {
-        const sessionData = await KV_NAMESPACE.get(keyInfo.name); // <--- 使用 VISION_HISTORY_KV
-        if (sessionData) {
-          const parsedSessionData = JSON.parse(sessionData);
-          sessionMetas.push({
-            id: parsedSessionData.sessionId,
-            title: parsedSessionData.title || '无标题视觉聊天',
-            createdAt: parsedSessionData.createdAt,
-            updatedAt: parsedSessionData.updatedAt,
-            is_pinned: parsedSessionData.is_pinned === true, // 确保是布尔值
-          });
-        }
-      }
-      return new Response(JSON.stringify(sessionMetas), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (error) {
-      console.error('Failed to list all vision history meta:', error);
-      return new Response(JSON.stringify({ error: 'Failed to list all vision history meta', details: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-  }
- 
-   return new Response(JSON.stringify({ error: 'Vision history API route not found' }), {
      status: 404,
      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
    });
