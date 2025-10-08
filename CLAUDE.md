@@ -118,7 +118,7 @@ The `src` directory is the heart of the application, containing all source code 
             -   [`video-manager.js`](src/static/js/video/video-manager.js): Manages video capture and processing from a camera, including motion detection and frame preview. It orchestrates the `VideoRecorder` to capture frames, applies motion detection to optimize frame sending, and handles camera toggling (front/rear).
             -   [`video-recorder.js`](src/static/js/video/video-recorder.js): Implements a video recorder for capturing and processing video frames from a camera. It supports previewing the video stream and sending frames as base64 encoded JPEG data to a callback function, with configurable FPS and quality.
         -   **Vision Module (`src/static/js/vision/`)**: Contains core logic for vision-related functionalities, now enhanced with **Chess Master AI** capabilities.
-            -   [`vision-core.js`](src/static/js/vision/vision-core.js): Provides the core logic for the Vision feature, handling UI initialization, API calls to the backend for multimodal vision chat, and message display. It manages vision model selection, integrates with the `AttachmentManager` for handling image/video attachments, and processes streaming responses from the AI model, including reasoning content. **NEW**: Now includes specialized chess analysis functionality with `generateGameSummary()` function and intelligent history filtering via `_getRelevantHistory()`.
+            -   [`vision-core.js`](src/static/js/vision/vision-core.js): Provides the core logic for the Vision feature, handling UI initialization, API calls to the backend for multimodal vision chat, and message display. It manages vision model selection, integrates with the `AttachmentManager` for handling image/video attachments, and processes streaming responses from the AI model, including reasoning content。**增强**: `displayVisionMessage()` 函数现在支持 `id`、`create` 和 `append` 选项，允许将流式响应追加到同一个 UI 消息气泡中，显著改善了用户体验。**NEW**: 现在包括专门的国际象棋分析功能，带有 `generateGameSummary()` 函数。
         -   **Utils Module Enhanced**: New image compression capabilities added.
             -   [`image-compressor.js`](src/static/js/utils/image-compressor.js): **NEW MODULE** - Implements intelligent image compression with 1MB threshold using Canvas API. Features include format preservation, configurable quality settings, and automatic compression for all modes (not just vision). Supports both JPEG conversion and original format retention.
 
@@ -313,18 +313,48 @@ This project implements a sophisticated tool management and invocation mechanism
         -   `loadFEN()` 方法支持从 FEN 字符串加载棋局状态。
     -   **游戏逻辑**:
         -   `ChessGame` 类 (`chess-core.js`) 封装了所有游戏状态和逻辑，包括当前回合、易位权利、过路兵、半回合计数和完整回合数。
+        -   **[`chess-rule.js`](src/static/js/chess/chess-rule.js)**: **新增模块** - 独立封装了所有国际象棋规则逻辑，包括棋子移动验证、特殊走法（如王车易位、吃过路兵、兵升变）和游戏状态验证。它通过 `ChessRules` 类提供了一套全面的规则检查方法，与 `chess-core.js` 解耦，提升了模块化和可维护性。
         -   支持棋子点击移动和拖放移动。
         -   实现了全面的走法验证，包括不能吃己方棋子、王车易位、兵升变和过路兵规则。
-        -   **游戏结束条件**: 新增了游戏结束状态 (`gameOver`) 和模态框 (`createGameOverModal`, `showGameOverModal`)。`checkGameEndConditions()` 方法现在会检查王是否被吃掉、50步规则和三次重复局面，并在游戏结束时显示相应的模态框。
+        -   **影子引擎验证**: **重大升级** - 内部集成 `chess.js` 库作为“影子引擎”。自定义引擎的每一步走法都会与 `chess.js` 引擎进行交叉验证。`syncAndVerifyShadowEngine()` 方法确保了两种逻辑生成的 FEN 始终保持一致，从根本上杜绝了状态不同步的 Bug，极大地提升了系统的健壮性。
+        -   **游戏结束条件**: `checkGameEndConditions()` 方法现在能准确检查**王被吃掉**、**50步规则**和**三次重复局面**，并在游戏结束时显示相应的模态框。
         -   **兵升变处理**: 优化了兵升变逻辑，`pendingPromotion` 状态现在包含 `fromRow` 和 `fromCol` 以便更准确地追踪。升变棋子选择（后、车、象、马）的顺序已修正为国际象棋标准顺序，并修复了 `completePromotion` 方法以正确更新游戏状态。
         -   **FEN 管理健壮性**: `generateFEN()` 和 `loadFEN()` 方法增加了更严格的验证和修正逻辑，包括 `countSquaresInFENRow()`、`fixFENRowLength()`、`validateFEN()` 和 `validateFinalFEN()`，确保生成的 FEN 字符串始终合法且棋盘布局正确。
         -   **错误提示**: 通过 `lastMoveError` 属性，为不合法走法提供更具体的错误信息。
         -   `isSquareAttacked()` 方法用于检查某个格子是否被敌方棋子攻击，为王车易位等复杂规则提供支持。
+        -   **游戏完全重置 (`completelyResetGame`)**: 新增 `completelyResetGame()` 方法，用于彻底重置游戏状态，包括重新初始化棋盘格子和事件监听器，确保新游戏开始时环境干净。
+        -   **本地存储**: 新增 `saveGameToLocalStorage()` 和 `loadGameFromLocalStorage()` 方法，用于将游戏状态（包括完整的对局历史和当前 FEN）保存到浏览器的 `localStorage`，并在页面加载时自动恢复，提供持久化的游戏体验。
     -   **响应式设计**:
         -   棋盘和信息面板的布局在桌面、平板和手机端进行了优化，确保在不同屏幕尺寸下都能良好显示和交互。
         -   棋盘尺寸会根据视口宽度自适应调整。
 
-#### 6.2.3 智能图像压缩系统
+#### 6.2.3 增强的 AI 对弈引擎
+
+-   **文件**: [`src/static/js/chess/chess-ai-enhanced.js`](src/static/js/chess/chess-ai-enhanced.js)
+-   **目的**: 提供一个高度智能、健壮且用户体验良好的 AI 对手。
+-   **关键特性**:
+    -   **增强的 `displayVisionMessage` 代理**: 在 `ChessAIEnhanced` 构造函数中，`displayVisionMessage` 函数被代理，以支持 `id`、`create` 和 `append` 选项。这使得 AI 的流式响应能够被追加到**同一个 UI 消息气泡**中，显著改善了用户在接收实时分析和走法推荐时的体验。
+    -   **三阶段 AI 走法生成**:
+        1.  **分析阶段**: 使用强大的 `gemini-2.5-flash` 模型对当前局面进行深入的战术和战略分析，生成包含多种候选走法的详细报告。此阶段的流式响应通过 `messageId` 实时更新到 UI。
+        2.  **提取阶段**: 使用速度更快的 `gemini-2.0-flash` 模型，从第一阶段的分析报告中精确、可靠地提取所有推荐的 SAN (标准代数记法) 走法。此阶段的流式响应也通过独立的 `messageId` 实时更新到 UI。
+        3.  **决策与执行阶段**: 将提取出的走法通过一个模态框呈现给用户选择。用户确认后，系统会以极高的容错率执行该走法。用户选择和执行结果也会通过 `displayVisionMessage` 更新到 UI。
+    -   **智能走法执行 (`executeSANMove`)**:
+        -   **健壮的清理与标准化**: 对 AI 返回的 SAN 走法进行初始清理，并标准化王车易位记法（如 `0-0-0` 修正为 `O-O-O`）。
+        -   **“O”的智能修正**: 特别处理单独的字符 "O"，根据当前棋局的合法性自动修正为短易位 (`O-O`) 或长易位 (`O-O-O`)。
+        -   **强大的“降级修正”机制**: 如果 AI 返回的 SAN 格式有轻微错误（如多余符号、大小写错误），`generateAlternativeMoves()` 会尝试多种替代格式进行修正，大大提高了对 AI 输出的容错性。
+    -   **流式 UI 更新 (`sendToAI`)**: `sendToAI()` 方法完全支持 SSE 流式响应，并且能够通过 `messageId` 将所有流式内容追加到**同一个 UI 消息气泡**中。这为 AI 的分析和思考过程提供了实时的、连贯的视觉反馈，显著改善了用户体验。同时，请求体中新增 `enableReasoning: true` 字段，以更好地利用模型推理能力。
+    -   **深度优化的提示词**:
+        -   **分析提示词 (`buildAnalysisPrompt`)**: 明确当前回合方，并新增 `pieceConstraints` 严格约束棋子颜色和大小写规则。提示词内容更加详细，强调棋盘精确匹配、合法性检查和标准化格式。
+        -   **提取提示词 (`buildPreciseExtractionPrompt`)**: 专门针对第一阶段输出的结构化格式设计，明确提取“候选走法”和“最终推荐”中的所有 SAN 走法。新增了详细的提取规则、格式处理规则、去重处理、特殊情形处理（如多个候选走法、散落的推荐、格式偏差修正）和严格禁止项，确保提取的准确性和规范性。
+    -   **健壮的 SAN 走法提取 (`extractAllSANFromText`)**:
+        -   **全面文本预处理**: 清理不可见字符、特定 Emoji、标准化中文标点、全角括号转半角、数字零写法标准化、移除常见注释和标点、压缩空白。
+        -   **优化正则表达式**: 使用更全面且大小写不敏感的正则表达式 (`gi` 标志) 匹配 SAN 走法。
+        -   **深度清理与去重**: 对匹配到的走法进行二次清理、过滤无效走法，并使用 `Set` 进行去重，确保最终列表的准确性和唯一性。
+    -   **修复 `squareToIndices`**: 确保棋盘坐标到行列索引的转换准确无误。
+    -   **智能替代走法生成 (`generateAlternativeMoves`)**: 结合移除后缀、大小写修正、移除空格、自然语言解析（针对王车易位）以及基于当前局面合法走法的相似度匹配，生成更全面的替代走法列表。
+    -   **走法相似度计算 (`moveSimilarity`)**: 辅助 `generateAlternativeMoves`，通过字符交集比例计算走法相似度。
+
+#### 6.2.4 智能图像压缩系统
 
 -   **文件**: [`src/static/js/utils/image-compressor.js`](src/static/js/utils/image-compressor.js)
 -   **目的**: 优化国际象棋棋盘图像，以实现更快的分析，同时保持图像质量。
@@ -338,18 +368,15 @@ This project implements a sophisticated tool management and invocation mechanism
 
 #### 6.2.4 智能历史记录管理
 
--   **函数**: [`_getRelevantHistory()`](src/static/js/vision/vision-core.js:354) 在 [`vision-core.js`](src/static/js/vision/vision-core.js) 中
--   **目的**: 智能选择最相关的对局历史进行分析。
+-   **函数**: [`generateGameSummary()`](src/static/js/vision/vision-core.js) 在 [`vision-core.js`](src/static/js/vision/vision-core.js) 中
+-   **目的**: **重大升级** - 生成全面、专业的赛后分析报告。
 -   **算法**:
-    -   **短对局** (≤15 步): 保留完整历史记录。
-    -   **长对局** (>15 步): 策略性采样：
-        -   **开局**: 前 3 步（理解开局选择）。
-        -   **关键时刻**: 最多 5 个上传了图像的局面（关键决策）。
-        -   **近期走法**: 最后 10 步（当前局面）。
+    -   **数据源**: 不再使用聊天历史或采样的 FEN，而是直接从 `chessGame` 实例调用 `getFullGameHistory()` 方法，获取**完整的、未经删减的 FEN 对局历史记录**。
+    -   **分析**: 将完整的 FEN 历史提交给 AI，并使用 `chess_summary` 专用提示词，要求 AI 进行全局性的、连贯的战略和战术复盘。
 -   **优势**:
-    -   **Token 效率**: 在保持上下文的同时，防止超出 API 限制。
-    -   **聚焦相关性**: 优先处理带有视觉证据的局面。
-    -   **可扩展性**: 处理任意长度的对局。
+    -   **准确性**: 基于完整的官方对局记录，分析结果精准可靠。
+    -   **专业性**: AI 能够洞察整个对局的演变、关键转折点和玩家的风格，提供特级大师水平的复盘。
+    -   **简洁高效**: 架构得到简化，不再需要复杂的历史采样逻辑。
 
 ### 6.3 用户界面增强
 
@@ -381,25 +408,54 @@ This project implements a sophisticated tool management and invocation mechanism
 // 生成全面的赛后分析
 async function generateGameSummary()
 
-// 智能过滤对局历史进行分析
-function _getRelevantHistory()
-
 // 管理提示词选择和切换
 function getSelectedPrompt()
 
 // 填充国际象棋专用提示词选项
 function populatePromptSelect()
 
+// 在视觉聊天界面显示一条AI消息，支持按ID更新
+export function displayVisionMessage(markdownContent, opts = {})
+
 // chess-core.js 中的关键函数:
 
-// 初始化国际象棋核心功能
-function initializeChessCore()
+// 初始化国际象棋核心功能 (单例模式)
+export function initializeChessCore(options = {})
 
 // 获取当前 FEN 字符串
-function getCurrentFEN()
+export function getCurrentFEN()
 
 // 加载 FEN 字符串
-function loadFEN(fen)
+export function loadFEN(fen)
+
+// 获取国际象棋游戏实例
+export function getChessGameInstance()
+
+// chess-ai-enhanced.js 中的关键函数:
+
+// 请求AI并执行其返回的最佳走法 (三阶段流程)
+async function askAIForMove()
+
+// 构建AI分析提示词
+function buildAnalysisPrompt(history, currentFEN)
+
+// 构建精确提取走法的提示词
+function buildPreciseExtractionPrompt(analysisResponse)
+
+// 从文本中提取所有SAN走法
+function extractAllSANFromText(text)
+
+// 执行SAN走法 (含智能降级和详细诊断)
+async function executeSANMove(sanMove, currentFEN)
+
+// 将走法同步到影子引擎并验证FEN是否一致
+function syncAndVerifyShadowEngine(moveObject)
+
+// 强制同步影子引擎到当前自定义引擎状态
+function forceShadowSync()
+
+// 发送AI请求 (SSE 流式解析，支持按 messageId 更新)
+async function sendToAI(prompt, model, messageId)
 ```
 
 #### 6.4.2 配置结构

@@ -1,5 +1,7 @@
+import { getChessGameInstance } from '../chess/chess-core.js'; // 引入棋盘函数
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
+import { HistoryManager } from '../history/history-manager.js'; // 引入 HistoryManager
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -13,6 +15,10 @@ let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
 const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
+
+// History management variables
+let visionHistoryManager = null;
+let currentVisionSessionId = null;
 
 /**
  * Initializes the Vision feature.
@@ -28,8 +34,149 @@ export function initializeVisionCore(el, manager, handlers) {
     populateModelSelect();
     populatePromptSelect();
     attachEventListeners();
+    
+    // 初始化历史管理器
+    initializeVisionHistoryManager(handlers);
 
     Logger.info('Vision module initialized.');
+}
+
+/**
+ * Initializes the history manager for vision mode
+ * @param {object} handlers - Handler functions from main module
+ */
+function initializeVisionHistoryManager(handlers) {
+    if (!elements.visionHistoryContent) {
+        console.warn('Vision history content element not found, history features disabled');
+        return;
+    }
+
+    // Custom UI update function for vision mode
+    const updateVisionChatUI = (sessionData) => {
+        if (!elements.visionMessageHistory) {
+            console.error('Vision message history element not found');
+            return;
+        }
+
+        // 1. Clear existing messages
+        elements.visionMessageHistory.innerHTML = '';
+        visionChatHistory = [];
+
+        // 2. Render all messages from the loaded history
+        if (sessionData.messages && sessionData.messages.length > 0) {
+            sessionData.messages.forEach(message => {
+                if (message.role === 'user') {
+                    // 处理用户消息
+                    const text = message.content.find(c => c.type === 'text')?.text || '';
+                    const files = message.content
+                        .filter(c => c.type === 'image_url')
+                        .map(c => ({
+                            base64: c.image_url.url,
+                            type: 'image/jpeg' // 假设类型，实际应该从历史数据中获取
+                        }));
+                    displayVisionUserMessage(text, files);
+                    
+                    // 添加到内部历史记录
+                    visionChatHistory.push({
+                        role: 'user',
+                        content: message.content
+                    });
+                } else if (message.role === 'assistant') {
+                    // 处理AI消息
+                    const content = typeof message.content === 'string' ? message.content : 
+                                   message.content.find(c => c.type === 'text')?.text || '';
+                    displayVisionMessage(content);
+                    
+                    // 添加到内部历史记录
+                    visionChatHistory.push({
+                        role: 'assistant',
+                        content: content
+                    });
+                }
+            });
+
+            // 3. CRITICAL: Restore the chessboard to the last known state
+            const lastMessage = sessionData.messages[sessionData.messages.length - 1];
+            if (lastMessage.fen) {
+                Logger.info(`Restoring board to FEN: ${lastMessage.fen}`, 'system');
+                try {
+                    // 尝试获取国际象棋实例并加载FEN
+                    const chessGame = getChessGameInstance();
+                    if (chessGame && typeof chessGame.loadFEN === 'function') {
+                        chessGame.loadFEN(lastMessage.fen);
+                        Logger.info('Chess board state restored from history', 'system');
+                    }
+                } catch (error) {
+                    console.error('Failed to restore chess board state:', error);
+                    Logger.info('Failed to restore chess board state', 'system');
+                }
+            }
+
+            // 滚动到底部
+            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+        }
+    };
+
+    // 获取当前会话ID的函数
+    const getCurrentSessionId = () => currentVisionSessionId;
+    
+    // 设置当前会话ID的函数
+    const setCurrentSessionId = (id) => { currentVisionSessionId = id; };
+
+    // 获取当前聊天历史的函数
+    const getChatHistory = () => {
+        // 将内部格式转换为历史管理器期望的格式
+        return visionChatHistory.map(msg => {
+            if (msg.role === 'user') {
+                // 用户消息可能包含文本和图片
+                const textContent = msg.content.find(c => c.type === 'text');
+                const imageContents = msg.content.filter(c => c.type === 'image_url');
+                
+                return {
+                    role: 'user',
+                    content: [
+                        ...(textContent ? [textContent] : []),
+                        ...imageContents
+                    ],
+                    fen: msg.fen // 保存FEN状态
+                };
+            } else {
+                // AI消息
+                return {
+                    role: 'assistant',
+                    content: typeof msg.content === 'string' ? 
+                        [{ type: 'text', text: msg.content }] : msg.content,
+                    fen: msg.fen // 保存FEN状态
+                };
+            }
+        });
+    };
+
+    // 设置聊天历史的函数
+    const setChatHistory = (history) => {
+        visionChatHistory = history;
+    };
+
+    visionHistoryManager = new HistoryManager({
+        mode: 'vision',
+        elements: {
+            historyContent: elements.visionHistoryContent,
+            // 可以根据需要添加其他历史相关的DOM元素
+        },
+        updateChatUI: updateVisionChatUI,
+        getChatHistory: getChatHistory,
+        setChatHistory: setChatHistory,
+        getCurrentSessionId: getCurrentSessionId,
+        setCurrentSessionId: setCurrentSessionId,
+        showToast: showToastHandler,
+        showSystemMessage: handlers.showSystemMessage || console.log,
+        logMessage: handlers.logMessage || console.log
+    });
+
+    // 初始化历史管理器
+    visionHistoryManager.init();
+    
+    Logger.info('Vision history manager initialized', 'system');
 }
 
 /**
@@ -77,6 +224,21 @@ function attachEventListeners() {
     elements.visionAttachmentButton?.addEventListener('click', () => elements.visionFileInput.click());
     elements.visionFileInput?.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
     elements.visionSummaryButton?.addEventListener('click', () => generateGameSummary());
+    
+    const resetChessButton = document.getElementById('reset-chess-button');
+    if (resetChessButton) {
+        resetChessButton.addEventListener('click', () => {
+            // 1. Reset the actual chess game state and UI
+            const chessGame = getChessGameInstance();
+            if (chessGame) {
+                chessGame.completelyResetGame();
+                showToastHandler('新棋局已开始！');
+            }
+            
+            // 2. CRITICAL: Reset the history session ID
+            startNewVisionSession();
+        });
+    }
     
     // 监听提示词模式切换
     elements.visionPromptSelect?.addEventListener('change', () => {
@@ -127,10 +289,21 @@ async function handleSendVisionMessage() {
     const selectedModel = elements.visionModelSelect.value;
     const selectedPrompt = getSelectedPrompt();
 
-    // Display user message in the UI
-    displayVisionUserMessage(text, visionAttachedFiles);
+    // --- 历史保存逻辑开始 ---
+    
+    // 1. 获取当前FEN字符串
+    let currentFEN = '';
+    try {
+        const chessGame = getChessGameInstance();
+        if (chessGame && typeof chessGame.getCurrentFEN === 'function') {
+            currentFEN = chessGame.getCurrentFEN();
+            Logger.info(`Current FEN for history: ${currentFEN}`, 'system');
+        }
+    } catch (error) {
+        console.warn('Could not get current FEN:', error);
+    }
 
-    // Add user message to history
+    // 2. 创建用户消息对象并包含FEN
     const userContent = [];
     if (text) {
         userContent.push({ type: 'text', text });
@@ -138,7 +311,18 @@ async function handleSendVisionMessage() {
     visionAttachedFiles.forEach(file => {
         userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
     });
-    visionChatHistory.push({ role: 'user', content: userContent });
+    
+    const userMessage = {
+        role: 'user',
+        content: userContent,
+        fen: currentFEN // 附加棋盘状态
+    };
+    
+    // 添加到历史记录并显示
+    visionChatHistory.push(userMessage);
+    displayVisionUserMessage(text, visionAttachedFiles);
+
+    // --- 历史保存逻辑结束 ---
 
     // Clear inputs
     elements.visionInputText.value = '';
@@ -224,7 +408,19 @@ async function handleSendVisionMessage() {
             }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
+        // --- 保存AI回复到历史记录 ---
+        const assistantMessage = {
+            role: 'assistant',
+            content: finalContent,
+            fen: currentFEN // 使用相同的FEN状态
+        };
+        visionChatHistory.push(assistantMessage);
+
+        // 4. 保存整个会话到后端
+        if (visionHistoryManager) {
+            await visionHistoryManager.saveHistory();
+            Logger.info('Vision conversation saved to history', 'system');
+        }
 
     } catch (error) {
         console.error('Error sending vision message:', error);
@@ -407,6 +603,16 @@ async function generateGameSummary() {
     markdownContainer.innerHTML = '<p>正在分析对局历史...</p>';
 
     try {
+        // 获取当前FEN状态
+        let currentFEN = '';
+        try {
+            if (chessGame && typeof chessGame.getCurrentFEN === 'function') {
+                currentFEN = chessGame.getCurrentFEN();
+            }
+        } catch (error) {
+            console.warn('Could not get current FEN for summary:', error);
+        }
+
         // 获取chess_summary提示词
         const summaryPromptConfig = CONFIG.VISION.PROMPTS.find(prompt => prompt.id === 'chess_summary');
         const systemPrompt = summaryPromptConfig ? summaryPromptConfig.systemPrompt : `你是一位国际象棋特级大师。请基于提供的完整对局历史（FEN格式）生成一份详细的对局总结和分析。`;
@@ -502,8 +708,19 @@ ${fenHistory.join('\n')}
             }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
-        // 将总结添加到视觉聊天历史
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
+        // 将总结添加到视觉聊天历史并保存
+        const assistantMessage = {
+            role: 'assistant',
+            content: finalContent,
+            fen: currentFEN // 保存当前FEN状态
+        };
+        visionChatHistory.push(assistantMessage);
+
+        // 保存历史记录
+        if (visionHistoryManager) {
+            await visionHistoryManager.saveHistory();
+            Logger.info('Game summary saved to history', 'system');
+        }
 
         Logger.info('对局总结生成完成', 'system');
 
@@ -524,15 +741,56 @@ ${fenHistory.join('\n')}
  * 在视觉聊天界面显示一条AI消息。
  * 这是从外部模块调用的接口，例如从国际象棋AI模块。
  * @param {string} markdownContent - 要显示的Markdown格式的文本内容。
+ * @param {object} opts - 选项参数
+ * @param {string} opts.id - 消息ID（用于更新现有消息）
+ * @param {boolean} opts.create - 是否创建新消息
+ * @param {boolean} opts.append - 是否追加到现有消息
  */
-export function displayVisionMessage(markdownContent) {
+export function displayVisionMessage(markdownContent, opts = {}) {
     if (!elements.visionMessageHistory) {
         console.error('Vision message history element not found.');
         return;
     }
 
-    // 使用现有的函数来创建和渲染AI消息元素
+    const { id, create = true, append = false } = opts;
+
+    // 如果指定了ID且不是创建新消息，尝试更新现有消息
+    if (id && !create) {
+        const existingMessage = document.querySelector(`[data-message-id="${id}"]`);
+        if (existingMessage) {
+            const markdownContainer = existingMessage.querySelector('.markdown-container');
+            if (markdownContainer) {
+                if (append) {
+                    // 追加内容
+                    const contentToRender = typeof markdownContent === 'string' ? markdownContent : String(markdownContent);
+                    markdownContainer.innerHTML += marked.parse(contentToRender);
+                } else {
+                    // 替换内容
+                    const contentToRender = typeof markdownContent === 'string' ? markdownContent : String(markdownContent);
+                    markdownContainer.innerHTML = marked.parse(contentToRender);
+                }
+                
+                // 重新渲染数学公式
+                if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                    MathJax.startup.promise.then(() => {
+                        MathJax.typeset([markdownContainer]);
+                    }).catch((err) => console.error('MathJax typesetting failed:', err));
+                }
+                
+                // 滚动到底部
+                elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+                return;
+            }
+        }
+    }
+
+    // 创建新消息
     const { markdownContainer, reasoningContainer } = createVisionAIMessageElement();
+    
+    // 设置消息ID（如果提供）
+    if (id) {
+        markdownContainer.closest('.message').setAttribute('data-message-id', id);
+    }
     
     // 渲染 Markdown 内容
     // 确保 markdownContent 是字符串，以防外部模块传入非字符串类型
@@ -547,8 +805,55 @@ export function displayVisionMessage(markdownContent) {
     }
 
     // 将这条消息添加到内部历史记录中，以保持一致性
-    visionChatHistory.push({ role: 'assistant', content: contentToRender });
+    // 注意：这里不会自动保存到历史管理器，需要调用者处理
+    // visionChatHistory.push({ role: 'assistant', content: contentToRender });
 
     // 滚动到底部
     elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+}
+
+/**
+ * 获取视觉历史管理器实例
+ * @returns {HistoryManager|null} 历史管理器实例
+ */
+export function getVisionHistoryManager() {
+    return visionHistoryManager;
+}
+
+/**
+ * 获取当前视觉会话ID
+ * @returns {string|null} 当前会话ID
+ */
+export function getCurrentVisionSessionId() {
+    return currentVisionSessionId;
+}
+
+/**
+ * 设置当前视觉会话ID
+ * @param {string} sessionId - 会话ID
+ */
+export function setCurrentVisionSessionId(sessionId) {
+    currentVisionSessionId = sessionId;
+}
+
+/**
+ * Clears the current vision session ID and chat history,
+ * effectively starting a new session on the next saveHistory() call.
+ */
+export function startNewVisionSession() {
+    console.log("Starting new vision/chess session.");
+    currentVisionSessionId = null;
+    visionChatHistory = [];
+    // Optionally clear the chat message display as well
+    if (elements.visionMessageHistory) {
+        elements.visionMessageHistory.innerHTML = '';
+    }
+    // Assuming logMessage is available globally or passed via handlers
+    // If not, you might need to adjust how logMessage is accessed here.
+    // For now, we'll assume it's accessible or we'll use console.log as a fallback.
+    if (typeof logMessage === 'function') {
+        logMessage('新棋局开始，历史记录会话已重置。', 'system');
+    } else {
+        console.log('新棋局开始，历史记录会话已重置。');
+    }
 }

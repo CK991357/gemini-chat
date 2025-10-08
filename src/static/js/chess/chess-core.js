@@ -5,6 +5,7 @@
  */
 
 import { Logger } from '../utils/logger.js';
+import { startNewVisionSession } from '../vision/vision-core.js'; // 导入视觉会话重置函数
 import { ChessAIEnhanced } from './chess-ai-enhanced.js';
 import { ChessRules, PIECES, VALID_CASTLING, VALID_PIECES } from './chess-rule.js';
 
@@ -541,6 +542,9 @@ class ChessGame {
        this.initBoard(); // 重新创建棋盘格子并附加事件监听器
        this.setupInitialPosition(); // 设置初始棋子位置并重置所有游戏状态
        this.showToast('新游戏开始！');
+       
+       // 重置视觉会话ID
+       startNewVisionSession();
    }
 
     /**
