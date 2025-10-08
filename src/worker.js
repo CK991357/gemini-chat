@@ -303,7 +303,8 @@ async function handleAPIRequest(request, env) {
                 model === 'models/gemini-2.5-flash-preview-05-20' ||
                 model === 'models/gemini-2.5-flash-lite-preview-06-17' ||
                 model === 'models/gemini-2.0-flash'||
-                 model === 'models/gemini-2.5-flash'
+                 model === 'models/gemini-2.5-flash' ||
+                 model === 'gemini-2.5-flash-preview-09-2025'
 
             ) {                
                 console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
