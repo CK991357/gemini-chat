@@ -62,6 +62,16 @@ export const CONFIG = {
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
                 tools: mcpTools
             },
+            {
+                name: 'gemini-2.5-flash-preview-09-2025',
+                displayName: 'gemini-2.5-flash-preview-09-2025 (工具调用)',
+                isWebSocket: false,
+                tools: geminiMcpTools,
+                disableSearch: true,
+                isGemini: true, // 标记为 Gemini 模型以进行工具调用格式区分
+                enableReasoning: true, // 为此模型启用思考链
+                mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
+            },
         ]
     },
     // System prompt settings
