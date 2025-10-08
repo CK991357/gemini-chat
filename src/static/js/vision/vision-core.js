@@ -15,6 +15,10 @@ let attachmentManager = null;
 let showToastHandler = null;
 const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
 
+// 新增：工具调用状态
+let currentToolCall = null;
+let toolCallContainer = null;
+
 /**
  * Initializes the Vision feature.
  * @param {object} el - A collection of DOM elements required by the vision module.
@@ -140,6 +144,346 @@ function _fenToAscii(fen) {
 }
 
 /**
+ * 显示工具调用状态UI（与主聊天窗口保持一致）
+ * @param {string} toolName - 工具名称
+ * @param {object} args - 工具参数
+ */
+function _displayToolCallStatus(toolName, args) {
+    if (!elements.visionMessageHistory) return;
+    
+    // 清除之前的工具调用状态
+    const existingStatus = elements.visionMessageHistory.querySelector('.tool-call-status');
+    if (existingStatus) {
+        existingStatus.remove();
+    }
+    
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'tool-call-status';
+
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-cog fa-spin';
+
+    const text = document.createElement('span');
+    text.textContent = `正在调用工具: ${toolName}...`;
+
+    statusDiv.appendChild(icon);
+    statusDiv.appendChild(text);
+    elements.visionMessageHistory.appendChild(statusDiv);
+    
+    // 显示工具参数代码块
+    const argsDiv = document.createElement('div');
+    argsDiv.className = 'tool-call-args';
+    
+    const argsTitle = document.createElement('p');
+    argsTitle.innerHTML = '<strong>工具参数:</strong>';
+    
+    const argsCode = document.createElement('pre');
+    argsCode.className = 'tool-arguments-code';
+    argsCode.textContent = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
+    
+    argsDiv.appendChild(argsTitle);
+    argsDiv.appendChild(argsCode);
+    elements.visionMessageHistory.appendChild(argsDiv);
+    
+    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+}
+
+/**
+ * 清除工具调用状态UI
+ */
+function _clearToolCallStatus() {
+    if (!elements.visionMessageHistory) return;
+    
+    const statusDiv = elements.visionMessageHistory.querySelector('.tool-call-status');
+    if (statusDiv) {
+        statusDiv.remove();
+    }
+    
+    const argsDiv = elements.visionMessageHistory.querySelector('.tool-call-args');
+    if (argsDiv) {
+        argsDiv.remove();
+    }
+}
+
+/**
+ * 从文本中提取所有SAN走法（复用chess-ai-enhanced.js的逻辑）
+ * @param {string} text - 要提取走法的文本
+ * @returns {Array} 提取的SAN走法数组
+ */
+function _extractAllSANFromText(text) {
+    if (!text || typeof text !== 'string') {
+        Logger.info('提取走法：输入文本为空或非字符串', 'warn');
+        return [];
+    }
+
+    Logger.info(`原始提取文本: ${text.substring(0, 200)}...`, 'debug');
+
+    // 全面文本预处理
+    let normalized = text
+        .replace(/[\uFEFF\xA0]/g, ' ')             // 清理不可见字符
+        .replace(/[🤖🤔👤🎊]/g, ' ')                // 移除特定 Emoji
+        .replace(/[，、；：]/g, ',')                // 标准化中文标点
+        .replace(/（/g, '(').replace(/）/g, ')')    // 全角括号转半角
+        .replace(/\b0-0-0\b/g, 'O-O-O')            // 数字零写法标准化
+        .replace(/\b0-0\b/g, 'O-O')
+        .replace(/\b(o-o-o)\b/gi, 'O-O-O')         // 小写字母标准化
+        .replace(/\b(o-o)\b/gi, 'O-O')
+        .replace(/\([^)]*\)/g, ' ')                // 移除括号内容
+        .replace(/\[[^\]]*\]/g, ' ')               // 移除方括号内容
+        .replace(/[!?{}]/g, ' ')                   // 移除特殊标点
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    Logger.info(`预处理后文本: ${normalized.substring(0, 200)}...`, 'debug');
+
+    // SAN正则表达式
+    const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)|[a-h][1-8])\b/gi;
+
+    const rawMatches = normalized.match(sanPattern) || [];
+    Logger.info(`原始匹配: [${rawMatches.join(', ')}]`, 'debug');
+
+    // 深度清理和规范化
+    const cleaned = rawMatches.map(s => {
+        let move = s
+            .replace(/^[,.;:"'!?()\s]+|[,.;:"'!?()\s]+$/g, '') // 移除两端标点
+            .trim()
+            // 二次标准化（保险）
+            .replace(/\b0-0-0\b/g, 'O-O-O')
+            .replace(/\b0-0\b/g, 'O-O')
+            .replace(/\bo-o-o\b/gi, 'O-O-O')
+            .replace(/\bo-o\b/gi, 'O-O');
+
+        return move;
+    }).filter(move => {
+        // 过滤掉明显无效的走法
+        if (!move || move.length === 0) return false;
+        if (move.length === 1 && move !== 'O') return false; // 单独的字符（除了O）都无效
+        if (move === '-' || move === 'x') return false; // 单独的符号无效
+        return true;
+    });
+
+    // 去重并保留顺序
+    const seen = new Set();
+    const unique = [];
+    for (const mv of cleaned) {
+        if (mv && !seen.has(mv)) {
+            seen.add(mv);
+            unique.push(mv);
+        }
+    }
+
+    Logger.info(`最终提取走法: [${unique.join(', ')}]`, 'info');
+    return unique;
+}
+
+/**
+ * 显示走法选择模态框（复用chess-ai-enhanced.js的交互体验）
+ * @param {Array} moves - SAN走法数组
+ * @param {string} analysisText - AI分析文本
+ * @returns {Promise<string>} 用户选择的走法
+ */
+function _presentMoveSelectionModal(moves, analysisText) {
+    return new Promise((resolve, reject) => {
+        // 创建模态框
+        const modal = document.createElement('div');
+        modal.id = 'vision-move-choice-modal';
+        modal.className = 'chess-ai-choice-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+
+        modal.innerHTML = `
+            <div class="chess-ai-choice-content" style="
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                max-width: 600px;
+                max-height: 80vh;
+                overflow-y: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            ">
+                <h2 style="margin-top: 0; color: #333;">AI 推荐走法</h2>
+                <div class="ai-analysis-container" style="margin-bottom: 20px;">
+                    <p><strong>AI 分析:</strong></p>
+                    <div class="ai-analysis-text" style="
+                        background: #f5f5f5;
+                        padding: 12px;
+                        border-radius: 4px;
+                        border-left: 4px solid #007bff;
+                        font-size: 14px;
+                        line-height: 1.4;
+                        max-height: 200px;
+                        overflow-y: auto;
+                    ">${analysisText}</div>
+                </div>
+                <div class="ai-move-choices" style="margin-bottom: 20px;">
+                    <p><strong>请选择一个走法执行:</strong></p>
+                    <div id="vision-move-choices-container" style="
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                    "></div>
+                </div>
+                <div class="chess-ai-choice-buttons" style="
+                    display: flex;
+                    gap: 10px;
+                    justify-content: flex-end;
+                ">
+                    <button id="vision-move-cancel-btn" class="chess-btn-secondary" style="
+                        padding: 8px 16px;
+                        border: 1px solid #ddd;
+                        background: #f8f9fa;
+                        border-radius: 4px;
+                        cursor: pointer;
+                    ">取消</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // 填充走法选项
+        const choicesContainer = document.getElementById('vision-move-choices-container');
+        moves.forEach((move, index) => {
+            const moveButton = document.createElement('button');
+            moveButton.className = 'ai-move-choice-btn';
+            moveButton.style.cssText = `
+                padding: 12px 16px;
+                border: 2px solid #e9ecef;
+                background: white;
+                border-radius: 6px;
+                cursor: pointer;
+                text-align: left;
+                transition: all 0.2s;
+                font-weight: 500;
+            `;
+            
+            moveButton.innerHTML = `
+                <span style="font-size: 16px; color: #495057;">${move}</span>
+                ${move === 'O-O' || move === 'O-O-O' ? 
+                    `<small style="color: #6c757d; margin-left: 8px;">(${move === 'O-O' ? '短易位' : '长易位'})</small>` : 
+                    ''
+                }
+            `;
+
+            moveButton.addEventListener('mouseenter', () => {
+                moveButton.style.borderColor = '#007bff';
+                moveButton.style.background = '#f8f9ff';
+            });
+
+            moveButton.addEventListener('mouseleave', () => {
+                moveButton.style.borderColor = '#e9ecef';
+                moveButton.style.background = 'white';
+            });
+
+            moveButton.addEventListener('click', () => {
+                // 执行选中的走法
+                _executeChessMove(move);
+                modal.remove();
+                resolve(move);
+            });
+
+            choicesContainer.appendChild(moveButton);
+        });
+
+        // 取消按钮事件
+        document.getElementById('vision-move-cancel-btn').addEventListener('click', () => {
+            modal.remove();
+            reject(new Error('用户取消了走法选择'));
+        });
+
+        // 点击模态框外部关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                reject(new Error('用户取消了走法选择'));
+            }
+        });
+    });
+}
+
+/**
+ * 执行国际象棋走法
+ * @param {string} sanMove - SAN格式的走法
+ */
+function _executeChessMove(sanMove) {
+    try {
+        const chessGame = getChessGameInstance();
+        if (!chessGame) {
+            showToastHandler('无法获取棋局实例');
+            return false;
+        }
+
+        // 使用临时chess.js实例来解析SAN走法
+        const Chess = window.Chess;
+        if (!Chess) {
+            showToastHandler('Chess.js 未加载');
+            return false;
+        }
+
+        const tempChess = new Chess();
+        const currentFEN = chessGame.getCurrentFEN();
+        tempChess.load(currentFEN);
+
+        // 尝试执行走法
+        const moveResult = tempChess.move(sanMove, { sloppy: true });
+        if (!moveResult) {
+            showToastHandler(`无效的走法: ${sanMove}`);
+            return false;
+        }
+
+        // 转换为行列索引并执行移动
+        const fromIndices = _squareToIndices(moveResult.from);
+        const toIndices = _squareToIndices(moveResult.to);
+        
+        const success = chessGame.movePiece(fromIndices.row, fromIndices.col, toIndices.row, toIndices.col);
+        
+        if (success) {
+            showToastHandler(`执行走法: ${sanMove}`);
+            // 在视觉聊天区显示执行结果
+            const messageId = `move-exec-${Date.now()}`;
+            _displayVisionMessage(`**🎊 执行成功**\n\n走法 **${sanMove}** 已成功执行`, { id: messageId, create: true });
+        } else {
+            showToastHandler(`执行走法失败: ${sanMove}`);
+        }
+
+        return success;
+    } catch (error) {
+        console.error('执行走法时出错:', error);
+        showToastHandler(`执行走法时出错: ${error.message}`);
+        return false;
+    }
+}
+
+/**
+ * 将棋盘坐标转换为行列索引
+ * @param {string} square - 棋盘坐标（如'e2'）
+ * @returns {object} 行列索引对象
+ */
+function _squareToIndices(square) {
+    const files = 'abcdefgh';
+    const fileChar = square.charAt(0);
+    const rankChar = square.charAt(1);
+    const col = files.indexOf(fileChar);
+    const row = 8 - parseInt(rankChar, 10);
+    
+    if (col < 0 || row < 0 || row > 7) {
+        throw new Error(`无效的棋盘坐标: ${square}`);
+    }
+    
+    return { row, col };
+}
+
+/**
  * Handles sending a message with optional attachments to the vision model.
  */
 async function handleSendVisionMessage() {
@@ -186,7 +530,6 @@ ${text}
     }
     // --- 逻辑结束 ---
 
-
     // Display user message in the UI
     displayVisionUserMessage(elements.visionInputText.value.trim(), visionAttachedFiles); // 显示原始用户输入
 
@@ -210,7 +553,7 @@ ${text}
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
-    Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
+    Logger.info(`Requesting vision model: ${selectedModelConfig.name}`, 'system');
 
     try {
         const requestBody = {
@@ -227,7 +570,6 @@ ${text}
             requestBody.tools = selectedModelConfig.tools;
         }
 
-
         // 使用升级后的 ApiHandler 发送流式请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
         const decoder = new TextDecoder('utf-8');
@@ -235,6 +577,8 @@ ${text}
         let reasoningStarted = false;
         let answerStarted = false;
         let buffer = '';
+        let toolCallDetected = false;
+        let currentToolCall = null;
 
         markdownContainer.innerHTML = ''; // Clear loading message
 
@@ -257,14 +601,28 @@ ${text}
                         const data = JSON.parse(jsonStr);
                         const delta = data.choices?.[0]?.delta;
                         if (delta) {
-                            if (delta.reasoning_content) {
+                            // 检查工具调用
+                            const toolCalls = delta.tool_calls;
+                            if (toolCalls && toolCalls.length > 0) {
+                                toolCallDetected = true;
+                                const toolCall = toolCalls[0];
+                                if (toolCall.function) {
+                                    currentToolCall = {
+                                        name: toolCall.function.name,
+                                        arguments: toolCall.function.arguments
+                                    };
+                                    _displayToolCallStatus(currentToolCall.name, currentToolCall.arguments);
+                                }
+                            }
+
+                            if (delta.reasoning_content && !toolCallDetected) {
                                 if (!reasoningStarted) {
                                     reasoningContainer.style.display = 'block';
                                     reasoningStarted = true;
                                 }
                                 reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
                             }
-                            if (delta.content) {
+                            if (delta.content && !toolCallDetected) {
                                 if (reasoningStarted && !answerStarted) {
                                     const separator = document.createElement('hr');
                                     separator.className = 'answer-separator';
@@ -290,12 +648,38 @@ ${text}
             }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
+        // 清除工具调用状态
+        if (toolCallDetected) {
+            _clearToolCallStatus();
+        }
+
         visionChatHistory.push({ role: 'assistant', content: finalContent });
+
+        // --- 新增：在实时分析模式下自动提取和显示棋步推荐 ---
+        if (selectedPrompt.id === 'chess_realtime_analysis' && finalContent) {
+            const extractedMoves = _extractAllSANFromText(finalContent);
+            if (extractedMoves.length > 0) {
+                // 短暂延迟以确保消息渲染完成
+                setTimeout(async () => {
+                    try {
+                        await _presentMoveSelectionModal(extractedMoves, finalContent);
+                    } catch (error) {
+                        // 用户取消选择是正常情况，不需要处理
+                        if (error.message !== '用户取消了走法选择') {
+                            console.error('显示走法选择模态框时出错:', error);
+                        }
+                    }
+                }, 500);
+            }
+        }
 
     } catch (error) {
         console.error('Error sending vision message:', error);
         markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
         Logger.info(`视觉模型请求失败: ${error.message}`, 'system');
+        
+        // 清除工具调用状态
+        _clearToolCallStatus();
     } finally {
         elements.visionSendButton.disabled = false;
         elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>'; // 恢复为 Font Awesome 发送图标
@@ -587,21 +971,37 @@ ${fenHistory.join('\n')}
 }
 
 /**
- * 在视觉聊天界面显示一条AI消息。
- * 这是从外部模块调用的接口，例如从国际象棋AI模块。
- * @param {string} markdownContent - 要显示的Markdown格式的文本内容。
+ * 内部函数：在视觉聊天界面显示一条AI消息（支持流式更新）
  */
-export function displayVisionMessage(markdownContent) {
+function _displayVisionMessage(markdownContent, options = {}) {
     if (!elements.visionMessageHistory) {
         console.error('Vision message history element not found.');
         return;
     }
 
-    // 使用现有的函数来创建和渲染AI消息元素
+    const { id, create, append } = options;
+    
+    // append 模式：尝试更新已有消息
+    if (append && id) {
+        let existing = document.querySelector(`[data-msg-id="${id}"]`);
+        if (existing) {
+            const md = existing.querySelector('.markdown-container') || existing.querySelector('.content') || existing;
+            if (md) {
+                md.innerHTML = (typeof marked !== 'undefined') ? marked.parse(markdownContent) : markdownContent;
+            }
+            return;
+        }
+    }
+
+    // create 模式或回退：创建新消息
     const { markdownContainer, reasoningContainer } = createVisionAIMessageElement();
     
+    // 设置消息ID
+    if (id) {
+        markdownContainer.closest('.message').setAttribute('data-msg-id', id);
+    }
+    
     // 渲染 Markdown 内容
-    // 确保 markdownContent 是字符串，以防外部模块传入非字符串类型
     const contentToRender = typeof markdownContent === 'string' ? markdownContent : String(markdownContent);
     markdownContainer.innerHTML = marked.parse(contentToRender);
 
@@ -617,4 +1017,13 @@ export function displayVisionMessage(markdownContent) {
 
     // 滚动到底部
     elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+}
+
+/**
+ * 在视觉聊天界面显示一条AI消息。
+ * 这是从外部模块调用的接口，例如从国际象棋AI模块。
+ * @param {string} markdownContent - 要显示的Markdown格式的文本内容。
+ */
+export function displayVisionMessage(markdownContent) {
+    _displayVisionMessage(markdownContent);
 }
