@@ -1,5 +1,6 @@
+import { ChatApi } from '../chat/chat-api.js';
 import { CONFIG } from '../config/config.js';
-import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
+import { ApiHandler } from '../core/api-handler.js';
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -12,7 +13,10 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
-const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
+const apiHandler = new ApiHandler();
+
+// Vision ChatApi 实例
+let visionChatApi = null;
 
 /**
  * Initializes the Vision feature.
@@ -24,6 +28,45 @@ export function initializeVisionCore(el, manager, handlers) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
+
+    // 初始化 Vision ChatApi
+    visionChatApi = new ChatApi({
+        getApiKey: () => CONFIG.API_KEY,
+        callbacks: {
+            logMessage: (msg, type = 'system') => Logger.info(`[Vision-${type}] ${msg}`),
+            createAIMessageElement: createVisionAIMessageElement,
+            scrollToBottom: () => {
+                if (elements.visionMessageHistory) {
+                    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+                }
+            },
+            handleToolCall: async (toolCall) => {
+                // 在 Vision 聊天中显示工具调用状态
+                if (elements.visionMessageHistory) {
+                    const toolDiv = document.createElement('div');
+                    toolDiv.className = 'tool-call-status';
+                    toolDiv.innerHTML = `<i class="fa-solid fa-cog fa-spin"></i> 调用工具：<b>${toolCall.name}</b>`;
+                    elements.visionMessageHistory.appendChild(toolDiv);
+                    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+                }
+                
+                // 实际调用工具逻辑 — 复用全局 handler
+                if (typeof window.handleToolCall === 'function') {
+                    return await window.handleToolCall(toolCall);
+                }
+                
+                // 备用方案：简单的工具模拟
+                Logger.info(`[VisionTool] 执行工具: ${toolCall.name}`, 'system');
+                return { 
+                    functionResponses: [{ 
+                        response: { 
+                            output: `🔧 工具 ${toolCall.name} 执行完成（模拟）` 
+                        } 
+                    }] 
+                };
+            },
+        },
+    });
 
     populateModelSelect();
     populatePromptSelect();
@@ -115,10 +158,7 @@ function attachEventListeners() {
 
 /**
  * Handles sending a message with optional attachments to the vision model.
- */
-/**
- * Handles sending a message with optional attachments to the vision model.
- * 基础版：支持 Gemini 模型、工具调用、流式输出。
+ * 使用 ChatApi 的完整流程，支持工具调用和流式输出
  */
 async function handleSendVisionMessage() {
     const text = elements.visionInputText.value.trim();
@@ -149,149 +189,30 @@ async function handleSendVisionMessage() {
     // 设置加载状态
     elements.visionSendButton.disabled = true;
     elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    const aiMessage = createVisionAIMessageElement();
-    const { markdownContainer, reasoningContainer } = aiMessage;
-    markdownContainer.innerHTML = '<p>正在请求模型...</p>';
-    Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
+    Logger.info(`VisionChat → Model: ${selectedModel}`, 'system');
 
     try {
-        // ========= 🧩 构建基础请求体 =========
+        // 构建请求体
         const requestBody = {
             model: selectedModel,
             messages: [
                 { role: 'system', content: selectedPrompt.systemPrompt },
-                ...visionChatHistory
+                ...visionChatHistory,
             ],
             stream: true,
-            enable_reasoning: true,
         };
 
-        // ========= 🧠 注入可用工具 =========
-        requestBody.tools = [
-            {
-                type: "function",
-                function: {
-                    name: "tavily_search",
-                    description: "Web search via Tavily API",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            query: { type: "string", description: "Search query" }
-                        },
-                        required: ["query"]
-                    }
-                }
-            },
-            {
-                type: "function",
-                function: {
-                    name: "python_sandbox",
-                    description: "Run Python code securely in a sandbox",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            code: { type: "string", description: "Python code to execute" }
-                        },
-                        required: ["code"]
-                    }
-                }
-            },
-            {
-                type: "function",
-                function: {
-                    name: "firecrawl",
-                    description: "Web scraping/crawling/extraction tool",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            mode: {
-                                type: "string",
-                                enum: ["scrape", "search", "crawl", "map", "extract", "check_status"]
-                            },
-                            parameters: { type: "object" }
-                        },
-                        required: ["mode", "parameters"]
-                    }
-                }
-            }
-        ];
+        // 调用 ChatApi 的完整 HTTP 流逻辑（包含工具处理循环）
+        const updatedHistory = await visionChatApi.processHttpStream(requestBody, visionChatHistory);
 
-        // ========= ⚙️ Gemini 模型兼容性处理 =========
-        if (selectedModel.includes('gemini')) {
-            Logger.info('Detected Gemini model, applying ChatML compatibility mode.');
-            requestBody.enableReasoning = true;
-            requestBody.disableSearch = true;
-        }
-
-        console.log("🚀 [Vision] Final requestBody:", requestBody);
-
-        // ========= 🚀 发起流式请求 =========
-        const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
-        const decoder = new TextDecoder('utf-8');
-        let finalContent = '';
-        let reasoningStarted = false;
-        let answerStarted = false;
-        let buffer = '';
-
-        markdownContainer.innerHTML = ''; // 清空占位内容
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
-
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const jsonStr = line.substring(6);
-                if (jsonStr === '[DONE]') return;
-
-                try {
-                    const data = JSON.parse(jsonStr);
-                    const delta = data.choices?.[0]?.delta;
-
-                    if (delta) {
-                        if (delta.reasoning_content) {
-                            if (!reasoningStarted) {
-                                reasoningContainer.style.display = 'block';
-                                reasoningStarted = true;
-                            }
-                            reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
-                        }
-                        if (delta.content) {
-                            if (reasoningStarted && !answerStarted) {
-                                const separator = document.createElement('hr');
-                                separator.className = 'answer-separator';
-                                reasoningContainer.after(separator);
-                                answerStarted = true;
-                            }
-                            finalContent += delta.content;
-                            markdownContainer.innerHTML = marked.parse(finalContent);
-                        }
-                    }
-                } catch {
-                    console.warn('Skipping invalid SSE data line');
-                }
-            }
-            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
-        }
-
-        // ========= ✅ 渲染数学公式 =========
-        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-            MathJax.startup.promise.then(() => {
-                MathJax.typeset([markdownContainer, reasoningContainer]);
-            }).catch(err => console.error('MathJax typesetting failed:', err));
-        }
-
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
-        Logger.info('✅ Vision AI response completed', 'system');
+        // 更新历史
+        visionChatHistory = updatedHistory;
+        Logger.info('VisionChat 回合完成 ✅');
 
     } catch (error) {
-        console.error('Error sending vision message:', error);
-        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
+        console.error('Error in VisionChat:', error);
+        const aiMessage = createVisionAIMessageElement();
+        aiMessage.markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
         Logger.info(`视觉模型请求失败: ${error.message}`, 'system');
     } finally {
         elements.visionSendButton.disabled = false;
@@ -409,7 +330,10 @@ function createVisionAIMessageElement() {
     return {
         container: messageDiv,
         markdownContainer,
-        reasoningContainer
+        reasoningContainer,
+        contentDiv,
+        rawMarkdownBuffer: '',
+        rawReasoningBuffer: ''
     };
 }
 
