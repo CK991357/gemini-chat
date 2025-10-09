@@ -18,6 +18,7 @@ const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
 // 新增：工具调用状态
 let currentToolCall = null;
 let toolCallContainer = null;
+let isUsingTool = false;
 
 /**
  * Initializes the Vision feature.
@@ -203,6 +204,117 @@ function _clearToolCallStatus() {
     if (argsDiv) {
         argsDiv.remove();
     }
+}
+
+/**
+ * 处理工具调用结果
+ * @param {object} toolCall - 工具调用对象
+ * @param {object} requestBody - 原始请求体
+ * @param {object} selectedModelConfig - 选中的模型配置
+ * @returns {Promise<object>} 工具调用结果
+ */
+async function _handleToolCall(toolCall, requestBody, selectedModelConfig) {
+    isUsingTool = true;
+    
+    try {
+        const toolName = toolCall.function?.name || toolCall.tool_name;
+        const toolArgs = toolCall.function?.arguments || toolCall.arguments;
+        
+        _displayToolCallStatus(toolName, toolArgs);
+        
+        let parsedArgs;
+        try {
+            parsedArgs = typeof toolArgs === 'string' ? JSON.parse(toolArgs) : toolArgs;
+        } catch (e) {
+            console.warn("Failed to parse tool arguments, using raw:", toolArgs);
+            parsedArgs = toolArgs;
+        }
+
+        // 构建代理请求体
+        const proxyRequestBody = {
+            tool_name: toolName,
+            parameters: parsedArgs,
+            server_url: selectedModelConfig.mcp_server_url || "/api/mcp-proxy"
+        };
+
+        const proxyResponse = await fetch('/api/mcp-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(proxyRequestBody)
+        });
+
+        if (!proxyResponse.ok) {
+            const errorData = await proxyResponse.json();
+            throw new Error(`MCP 代理请求失败: ${errorData.details || proxyResponse.statusText}`);
+        }
+
+        const toolResult = await proxyResponse.json();
+        
+        // 特殊处理：python_sandbox 的图像输出
+        if (toolName === 'python_sandbox' && toolResult && toolResult.stdout) {
+            const stdoutContent = toolResult.stdout.trim();
+            try {
+                const imageData = JSON.parse(stdoutContent);
+                if (imageData && imageData.type === 'image' && imageData.image_base64) {
+                    const title = imageData.title || 'Generated Chart';
+                    _displayImageResult(imageData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
+                    return { output: `Image "${title}" generated and displayed.` };
+                }
+            } catch (e) {
+                // 不是JSON对象，回退到原始base64检查
+            }
+
+            // 检查原始base64图像
+            if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
+                _displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
+                return { output: 'Image generated and displayed.' };
+            }
+            
+            // 返回标准输出
+            if (stdoutContent) {
+                return { output: stdoutContent };
+            }
+        }
+
+        return toolResult;
+
+    } catch (error) {
+        console.error('工具执行失败:', error);
+        return { error: error.message };
+    } finally {
+        isUsingTool = false;
+        _clearToolCallStatus();
+    }
+}
+
+/**
+ * 显示图像结果
+ * @param {string} base64Data - Base64编码的图像数据
+ * @param {string} title - 图像标题
+ * @param {string} filename - 文件名
+ */
+function _displayImageResult(base64Data, title, filename) {
+    const imageMessage = createVisionAIMessageElement();
+    const { markdownContainer } = imageMessage;
+    
+    const imageElement = document.createElement('img');
+    imageElement.src = `data:image/png;base64,${base64Data}`;
+    imageElement.alt = title;
+    imageElement.style.maxWidth = '100%';
+    imageElement.style.borderRadius = '8px';
+    imageElement.style.marginTop = '10px';
+    
+    const titleElement = document.createElement('p');
+    titleElement.innerHTML = `<strong>${title}</strong>`;
+    
+    markdownContainer.appendChild(titleElement);
+    markdownContainer.appendChild(imageElement);
+    
+    // 添加到聊天历史
+    visionChatHistory.push({ 
+        role: 'assistant', 
+        content: `![${title}](data:image/png;base64,${base64Data})` 
+    });
 }
 
 /**
@@ -484,6 +596,129 @@ function _squareToIndices(square) {
 }
 
 /**
+ * 处理流式响应，支持工具调用
+ * @param {object} requestBody - 请求体
+ * @param {object} selectedModelConfig - 选中的模型配置
+ * @param {object} aiMessage - AI消息元素
+ * @returns {Promise<object>} 处理结果
+ */
+async function _processStreamWithToolSupport(requestBody, selectedModelConfig, aiMessage) {
+    const { markdownContainer, reasoningContainer } = aiMessage;
+    let finalContent = '';
+    let reasoningStarted = false;
+    let answerStarted = false;
+    let buffer = '';
+    let toolCallDetected = false;
+    let currentToolCall = null;
+    let callId = null;
+
+    markdownContainer.innerHTML = ''; // Clear loading message
+
+    try {
+        const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
+        const decoder = new TextDecoder('utf-8');
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+            
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
+                    if (jsonStr === '[DONE]') {
+                        return { 
+                            success: true, 
+                            finalContent, 
+                            toolCallDetected: false 
+                        };
+                    }
+                    
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        const delta = data.choices?.[0]?.delta;
+                        if (delta) {
+                            // 检查工具调用 (Gemini/Qwen格式)
+                            const toolCalls = delta.tool_calls;
+                            if (toolCalls && toolCalls.length > 0) {
+                                toolCallDetected = true;
+                                const toolCall = toolCalls[0];
+                                
+                                if (toolCall.id) {
+                                    callId = toolCall.id;
+                                }
+                                
+                                if (toolCall.function) {
+                                    currentToolCall = {
+                                        id: callId,
+                                        function: {
+                                            name: toolCall.function.name,
+                                            arguments: toolCall.function.arguments
+                                        }
+                                    };
+                                }
+                                
+                                // 立即返回以处理工具调用
+                                return { 
+                                    success: true, 
+                                    finalContent, 
+                                    toolCallDetected: true,
+                                    currentToolCall 
+                                };
+                            }
+
+                            // 处理推理内容
+                            if (delta.reasoning_content && !toolCallDetected) {
+                                if (!reasoningStarted) {
+                                    reasoningContainer.style.display = 'block';
+                                    reasoningStarted = true;
+                                }
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                            }
+                            
+                            // 处理文本内容
+                            if (delta.content && !toolCallDetected) {
+                                if (reasoningStarted && !answerStarted) {
+                                    const separator = document.createElement('hr');
+                                    separator.className = 'answer-separator';
+                                    reasoningContainer.after(separator);
+                                    answerStarted = true;
+                                }
+                                finalContent += delta.content;
+                                markdownContainer.innerHTML = marked.parse(finalContent);
+                            }
+                        }
+                    } catch (e) {
+                        // 忽略解析错误，继续处理下一行
+                        console.warn('Skipping invalid SSE data:', jsonStr);
+                    }
+                }
+            }
+            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+        }
+
+        return { 
+            success: true, 
+            finalContent, 
+            toolCallDetected: false 
+        };
+
+    } catch (error) {
+        console.error('处理流时出错:', error);
+        return { 
+            success: false, 
+            error: error.message,
+            toolCallDetected: false 
+        };
+    }
+}
+
+/**
  * Handles sending a message with optional attachments to the vision model.
  */
 async function handleSendVisionMessage() {
@@ -497,7 +732,7 @@ async function handleSendVisionMessage() {
     const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === elements.visionModelSelect.value);
     const selectedPrompt = getSelectedPrompt();
 
-    // --- 新增：实时分析模式下的逻辑 ---
+    // --- 实时分析模式下的逻辑 ---
     if (selectedPrompt.id === 'chess_realtime_analysis') {
         const chessGame = getChessGameInstance();
         if (!chessGame) {
@@ -556,6 +791,7 @@ ${text}
     Logger.info(`Requesting vision model: ${selectedModelConfig.name}`, 'system');
 
     try {
+        // 构建初始请求体
         const requestBody = {
             model: selectedModelConfig.name,
             messages: [
@@ -570,92 +806,82 @@ ${text}
             requestBody.tools = selectedModelConfig.tools;
         }
 
-        // 使用升级后的 ApiHandler 发送流式请求
-        const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
-        const decoder = new TextDecoder('utf-8');
-        let finalContent = '';
-        let reasoningStarted = false;
-        let answerStarted = false;
-        let buffer = '';
-        let toolCallDetected = false;
-        let currentToolCall = null;
-
-        markdownContainer.innerHTML = ''; // Clear loading message
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
-            
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const jsonStr = line.substring(6);
-                    if (jsonStr === '[DONE]') return;
-                    
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (delta) {
-                            // 检查工具调用
-                            const toolCalls = delta.tool_calls;
-                            if (toolCalls && toolCalls.length > 0) {
-                                toolCallDetected = true;
-                                const toolCall = toolCalls[0];
-                                if (toolCall.function) {
-                                    currentToolCall = {
-                                        name: toolCall.function.name,
-                                        arguments: toolCall.function.arguments
-                                    };
-                                    _displayToolCallStatus(currentToolCall.name, currentToolCall.arguments);
-                                }
-                            }
-
-                            if (delta.reasoning_content && !toolCallDetected) {
-                                if (!reasoningStarted) {
-                                    reasoningContainer.style.display = 'block';
-                                    reasoningStarted = true;
-                                }
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
-                            }
-                            if (delta.content && !toolCallDetected) {
-                                if (reasoningStarted && !answerStarted) {
-                                    const separator = document.createElement('hr');
-                                    separator.className = 'answer-separator';
-                                    reasoningContainer.after(separator);
-                                    answerStarted = true;
-                                }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
-                            }
-                        }
-                    } catch (e) {
-                        // 忽略解析错误，继续处理下一行
-                        console.warn('Skipping invalid SSE data:', jsonStr);
-                    }
-                }
-            }
-            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+        // 处理Gemini推理能力
+        if (selectedModelConfig.enableReasoning) {
+            requestBody.enableReasoning = true;
         }
 
+        // 处理流式响应，支持工具调用
+        let shouldContinue = true;
+        let currentRequestBody = requestBody;
+        let finalContent = '';
+
+        while (shouldContinue) {
+            const result = await _processStreamWithToolSupport(currentRequestBody, selectedModelConfig, aiMessage);
+            
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+
+            if (result.toolCallDetected && result.currentToolCall) {
+                // 处理工具调用
+                const toolResult = await _handleToolCall(
+                    result.currentToolCall, 
+                    currentRequestBody, 
+                    selectedModelConfig
+                );
+
+                // 将工具调用和结果添加到历史记录
+                visionChatHistory.push({
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [{
+                        id: result.currentToolCall.id || `call_${Date.now()}`,
+                        type: 'function',
+                        function: {
+                            name: result.currentToolCall.function.name,
+                            arguments: result.currentToolCall.function.arguments
+                        }
+                    }]
+                });
+
+                visionChatHistory.push({
+                    role: 'tool',
+                    tool_call_id: result.currentToolCall.id || `call_${Date.now()}`,
+                    content: JSON.stringify(toolResult)
+                });
+
+                // 更新请求体，继续对话
+                currentRequestBody = {
+                    ...currentRequestBody,
+                    messages: [
+                        { role: 'system', content: selectedPrompt.systemPrompt },
+                        ...visionChatHistory
+                    ]
+                };
+
+                // 继续处理
+                continue;
+            } else {
+                // 没有工具调用，完成处理
+                finalContent = result.finalContent;
+                shouldContinue = false;
+            }
+        }
+
+        // 应用数学公式渲染
         if (typeof MathJax !== 'undefined' && MathJax.startup) {
             MathJax.startup.promise.then(() => {
                 MathJax.typeset([markdownContainer, reasoningContainer]);
             }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
-        // 清除工具调用状态
-        if (toolCallDetected) {
-            _clearToolCallStatus();
+        // 将最终回复添加到历史记录
+        if (finalContent) {
+            visionChatHistory.push({ role: 'assistant', content: finalContent });
         }
 
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
-
-        // --- 新增：在实时分析模式下自动提取和显示棋步推荐 ---
+        // --- 在实时分析模式下自动提取和显示棋步推荐 ---
         if (selectedPrompt.id === 'chess_realtime_analysis' && finalContent) {
             const extractedMoves = _extractAllSANFromText(finalContent);
             if (extractedMoves.length > 0) {
@@ -889,60 +1115,11 @@ ${fenHistory.join('\n')}
             stream: true
         };
 
-        // 发送请求
-        const reader = await apiHandler.fetchStream('/api/chat/completions', summaryRequest);
-        const decoder = new TextDecoder('utf-8');
-        let finalContent = '';
-        let reasoningStarted = false;
-        let answerStarted = false;
-        let buffer = '';
-
-        markdownContainer.innerHTML = ''; // Clear loading message
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
-            
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const jsonStr = line.substring(6);
-                    if (jsonStr === '[DONE]') return;
-                    
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (delta) {
-                            if (delta.reasoning_content) {
-                                if (!reasoningStarted) {
-                                    reasoningContainer.style.display = 'block';
-                                    reasoningStarted = true;
-                                }
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
-                            }
-                            if (delta.content) {
-                                if (reasoningStarted && !answerStarted) {
-                                    const separator = document.createElement('hr');
-                                    separator.className = 'answer-separator';
-                                    reasoningContainer.after(separator);
-                                    answerStarted = true;
-                                }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
-                            }
-                        }
-                    } catch (e) {
-                        // 忽略解析错误，继续处理下一行
-                        console.warn('Skipping invalid SSE data:', jsonStr);
-                    }
-                }
-            }
-            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+        // 处理流式响应
+        const result = await _processStreamWithToolSupport(summaryRequest, { tools: [] }, aiMessage);
+        
+        if (!result.success) {
+            throw new Error(result.error);
         }
 
         // 应用数学公式渲染
@@ -953,7 +1130,9 @@ ${fenHistory.join('\n')}
         }
 
         // 将总结添加到视觉聊天历史
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
+        if (result.finalContent) {
+            visionChatHistory.push({ role: 'assistant', content: result.finalContent });
+        }
 
         Logger.info('对局总结生成完成', 'system');
 
