@@ -287,7 +287,9 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
                             functionCallDetected = true;
                             currentFunctionCall = functionCallPart.functionCall;
                             Logger.info('Vision Function call detected:', currentFunctionCall);
-                            showToastHandler(`🧠 正在调用 ${currentFunctionCall.name}...`);
+                            
+                            // 显示工具调用状态（与主聊天模式一致）
+                            displayVisionToolCallStatus(currentFunctionCall.name);
                             
                             // 如果有AI消息，先保存当前内容
                             if (aiMessage && aiMessage.rawMarkdownBuffer) {
@@ -381,6 +383,9 @@ async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt)
         const toolResult = await toolManager.handleToolCall(functionCall);
         const toolResponsePart = toolResult.functionResponses[0].response.output;
 
+        // 移除工具调用状态显示
+        removeVisionToolCallStatus();
+
         // 将工具调用和响应添加到历史记录
         visionChatHistory.push({
             role: 'assistant',
@@ -399,6 +404,9 @@ async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt)
         Logger.error('Vision tool execution failed:', toolError);
         showToastHandler(`❌ 工具执行失败: ${toolError.message}`);
         
+        // 移除工具调用状态显示
+        removeVisionToolCallStatus();
+        
         // 即使失败也要将错误信息添加到历史记录
         visionChatHistory.push({
             role: 'assistant',
@@ -412,6 +420,40 @@ async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt)
 
         // 继续处理，让模型知道工具调用失败
         await processVisionStream(selectedModel, selectedPrompt, visionChatHistory, true);
+    }
+}
+
+/**
+ * 在视觉聊天界面显示工具调用状态
+ * @param {string} toolName - 工具名称
+ */
+function displayVisionToolCallStatus(toolName) {
+    if (!elements.visionMessageHistory) return;
+    
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'tool-call-status vision-tool-call-status';
+    statusDiv.id = 'vision-tool-call-status';
+
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-cog fa-spin';
+
+    const text = document.createElement('span');
+    text.textContent = `正在调用工具: ${toolName}...`;
+
+    statusDiv.appendChild(icon);
+    statusDiv.appendChild(text);
+
+    elements.visionMessageHistory.appendChild(statusDiv);
+    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+}
+
+/**
+ * 移除视觉聊天界面的工具调用状态
+ */
+function removeVisionToolCallStatus() {
+    const statusElement = document.getElementById('vision-tool-call-status');
+    if (statusElement) {
+        statusElement.remove();
     }
 }
 
