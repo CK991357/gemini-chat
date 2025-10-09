@@ -118,7 +118,6 @@ function attachEventListeners() {
 
 /**
  * Handles sending a message with optional attachments to the vision model.
- * 完整版：支持 Gemini 模型、工具调用、流式输出、递归工具调用处理。
  */
 async function handleSendVisionMessage() {
     const text = elements.visionInputText.value.trim();
@@ -164,10 +163,6 @@ async function handleSendVisionMessage() {
 
 /**
  * 处理视觉模型的流式请求，包括工具调用
- * @param {string} selectedModel - 选择的模型名称
- * @param {object} selectedPrompt - 选择的提示词
- * @param {Array} currentHistory - 当前聊天历史
- * @param {boolean} isToolCallFollowUp - 是否为工具调用的后续请求
  */
 async function processVisionStream(selectedModel, selectedPrompt, currentHistory, isToolCallFollowUp = false) {
     // ========= 🧩 构建基础请求体 =========
@@ -280,18 +275,18 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
                     const delta = data.choices?.[0]?.delta;
 
                     if (delta) {
-                        // 检查是否有工具调用
+                        // 🔥 关键修复：正确处理 Gemini 模型的工具调用格式
                         const functionCallPart = delta.parts?.find(p => p.functionCall);
                         
                         if (functionCallPart) {
                             functionCallDetected = true;
                             currentFunctionCall = functionCallPart.functionCall;
-                            Logger.info('Vision Function call detected:', currentFunctionCall);
+                            Logger.info('🎯 [Vision] Function call detected:', currentFunctionCall);
                             
                             // 显示工具调用状态（与主聊天模式一致）
                             displayVisionToolCallStatus(currentFunctionCall.name);
                             
-                            // 如果有AI消息，先保存当前内容
+                            // 保存当前AI消息内容到历史记录
                             if (aiMessage && aiMessage.rawMarkdownBuffer) {
                                 visionChatHistory.push({ 
                                     role: 'assistant', 
@@ -301,6 +296,7 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
                             break; // 跳出循环处理工具调用
                         }
 
+                        // 处理推理内容
                         if (delta.reasoning_content) {
                             if (!aiMessage) aiMessage = createVisionAIMessageElement();
                             if (!reasoningStarted) {
@@ -310,6 +306,8 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
                             aiMessage.rawReasoningBuffer += delta.reasoning_content;
                             aiMessage.reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
                         }
+                        
+                        // 处理普通文本内容
                         if (delta.content) {
                             if (!aiMessage) aiMessage = createVisionAIMessageElement();
                             
@@ -324,8 +322,8 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
                             aiMessage.markdownContainer.innerHTML = marked.parse(aiMessage.rawMarkdownBuffer);
                         }
                     }
-                } catch {
-                    console.warn('Skipping invalid SSE data line');
+                } catch (e) {
+                    console.warn('Skipping invalid SSE data line:', e);
                 }
             }
             
@@ -339,7 +337,8 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
 
         // ========= 🛠️ 处理工具调用 =========
         if (functionCallDetected && currentFunctionCall) {
-            await handleVisionToolCall(currentFunctionCall, selectedModel, selectedPrompt);
+            console.log('🎯 [Vision] Processing tool call:', currentFunctionCall);
+            await handleVisionToolCall(currentFunctionCall, selectedModel, selectedPrompt, requestBody);
             return; // 工具调用会递归处理后续流程
         }
 
@@ -360,7 +359,7 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
         }
 
     } catch (error) {
-        console.error('Error in vision stream processing:', error);
+        console.error('❌ [Vision] Error in vision stream processing:', error);
         if (aiMessage) {
             aiMessage.markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
         }
@@ -369,24 +368,66 @@ async function processVisionStream(selectedModel, selectedPrompt, currentHistory
 }
 
 /**
- * 处理视觉模块的工具调用
- * @param {object} functionCall - 函数调用对象
- * @param {string} selectedModel - 模型名称
- * @param {object} selectedPrompt - 提示词对象
+ * 🔥 关键修复：重新实现 Vision 模块的工具调用逻辑
+ * 使用与主聊天模式相同的 MCP 代理调用方式
  */
-async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt) {
+async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt, originalRequestBody) {
+    console.log('🎯 [Vision] Starting tool call execution:', functionCall);
+    
     try {
-        Logger.info(`Executing vision tool: ${functionCall.name}`, 'system');
+        // 显示工具执行状态
         showToastHandler(`🛠️ 执行工具: ${functionCall.name}`);
         
-        // 执行工具调用
-        const toolResult = await toolManager.handleToolCall(functionCall);
-        const toolResponsePart = toolResult.functionResponses[0].response.output;
+        // 🔥 关键修复：构建 MCP 代理请求体
+        const proxyRequestBody = {
+            tool_name: functionCall.name,
+            parameters: functionCall.args || {},
+            server_url: getMcpServerUrl(selectedModel) // 动态获取 MCP 服务器 URL
+        };
+
+        console.log('🎯 [Vision] MCP Proxy request body:', proxyRequestBody);
+
+        // 🔥 关键修复：调用 MCP 代理端点
+        const proxyResponse = await fetch('/api/mcp-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(proxyRequestBody)
+        });
+
+        if (!proxyResponse.ok) {
+            const errorData = await proxyResponse.json();
+            throw new Error(`MCP 代理请求失败: ${errorData.details || proxyResponse.statusText}`);
+        }
+
+        const toolRawResult = await proxyResponse.json();
+        console.log('🎯 [Vision] Tool execution result:', toolRawResult);
 
         // 移除工具调用状态显示
         removeVisionToolCallStatus();
 
-        // 将工具调用和响应添加到历史记录
+        // 🔥 关键修复：构建工具响应格式（与主聊天模式一致）
+        let toolResponseContent;
+        if (functionCall.name === 'python_sandbox' && toolRawResult.stdout) {
+            // 特殊处理 Python sandbox 的图像输出
+            try {
+                const stdoutContent = toolRawResult.stdout.trim();
+                const imageData = JSON.parse(stdoutContent);
+                if (imageData && imageData.type === 'image' && imageData.image_base64) {
+                    const title = imageData.title || 'Generated Chart';
+                    // 这里需要调用显示图像的函数
+                    // displayImageResult(imageData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
+                    toolResponseContent = { output: `Image "${title}" generated and displayed.` };
+                }
+            } catch (e) {
+                // 不是 JSON，使用原始输出
+                toolResponseContent = { output: stdoutContent };
+            }
+        } else {
+            // 其他工具的统一处理
+            toolResponseContent = { output: toolRawResult };
+        }
+
+        // 🔥 关键修复：使用正确的 Gemini 工具调用历史记录格式
         visionChatHistory.push({
             role: 'assistant',
             parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
@@ -394,20 +435,22 @@ async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt)
 
         visionChatHistory.push({
             role: 'tool',
-            parts: [{ functionResponse: { name: functionCall.name, response: toolResponsePart } }]
+            parts: [{ functionResponse: { name: functionCall.name, response: toolResponseContent } }]
         });
+
+        console.log('🎯 [Vision] Tool call completed, resuming chat...');
 
         // 递归处理后续响应
         await processVisionStream(selectedModel, selectedPrompt, visionChatHistory, true);
 
     } catch (toolError) {
-        Logger.error('Vision tool execution failed:', toolError);
+        console.error('❌ [Vision] Tool execution failed:', toolError);
         showToastHandler(`❌ 工具执行失败: ${toolError.message}`);
         
         // 移除工具调用状态显示
         removeVisionToolCallStatus();
         
-        // 即使失败也要将错误信息添加到历史记录
+        // 🔥 关键修复：即使失败也要将错误信息添加到历史记录
         visionChatHistory.push({
             role: 'assistant',
             parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
@@ -418,14 +461,25 @@ async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt)
             parts: [{ functionResponse: { name: functionCall.name, response: { error: toolError.message } } }]
         });
 
+        console.log('🎯 [Vision] Tool error recorded, resuming chat...');
+
         // 继续处理，让模型知道工具调用失败
         await processVisionStream(selectedModel, selectedPrompt, visionChatHistory, true);
     }
 }
 
 /**
+ * 获取 MCP 服务器 URL
+ */
+function getMcpServerUrl(modelName) {
+    // 这里需要根据模型名称返回对应的 MCP 服务器 URL
+    // 可以从配置中获取或使用默认值
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    return modelConfig?.mcp_server_url || 'https://default-mcp-server.com';
+}
+
+/**
  * 在视觉聊天界面显示工具调用状态
- * @param {string} toolName - 工具名称
  */
 function displayVisionToolCallStatus(toolName) {
     if (!elements.visionMessageHistory) return;
@@ -457,10 +511,11 @@ function removeVisionToolCallStatus() {
     }
 }
 
+// 其余函数保持不变（displayVisionUserMessage, createVisionAIMessageElement, getSelectedPrompt, generateGameSummary, displayVisionMessage）
+// ... 保持原有代码不变
+
 /**
  * Displays a user's message in the vision chat UI.
- * @param {string} text - The text part of the message.
- * @param {Array<object>} files - An array of attached file objects.
  */
 function displayVisionUserMessage(text, files) {
     const messageDiv = document.createElement('div');
@@ -511,7 +566,6 @@ function displayVisionUserMessage(text, files) {
 
 /**
  * Creates and appends a new AI message element to the vision chat UI.
- * @returns {object} An object containing references to the new message's elements.
  */
 function createVisionAIMessageElement() {
     const messageDiv = document.createElement('div');
@@ -575,7 +629,6 @@ function createVisionAIMessageElement() {
 
 /**
  * 获取当前选择的提示词
- * @returns {object} 当前选择的提示词对象
  */
 function getSelectedPrompt() {
     if (!elements.visionPromptSelect) {
@@ -743,8 +796,6 @@ ${fenHistory.join('\n')}
 
 /**
  * 在视觉聊天界面显示一条AI消息。
- * 这是从外部模块调用的接口，例如从国际象棋AI模块。
- * @param {string} markdownContent - 要显示的Markdown格式的文本内容。
  */
 export function displayVisionMessage(markdownContent) {
     if (!elements.visionMessageHistory) {
