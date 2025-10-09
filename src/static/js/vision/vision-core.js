@@ -622,11 +622,11 @@ function _convertToChatMLFormat(originalBody) {
             messages.push(userMsg);
         });
 
-        // 返回标准 ChatML 格式
+        // 返回标准 ChatML 格式，并保留所有原始字段
         return {
+            ...originalBody, // 保留所有原始字段（包括 enableReasoning, tools 等）
             model: originalBody.model,
-            messages: messages,
-            stream: true
+            messages: messages
         };
     }
 
@@ -717,6 +717,7 @@ async function _processStreamWithToolSupport(requestBody, selectedModelConfig, a
 
                             // 处理推理内容
                             if (delta.reasoning_content && !toolCallDetected) {
+                                console.log("🔍 [Vision] 收到推理内容:", delta.reasoning_content);
                                 if (!reasoningStarted) {
                                     reasoningContainer.style.display = 'block';
                                     reasoningStarted = true;
@@ -834,7 +835,7 @@ ${text}
     Logger.info(`Requesting vision model: ${selectedModelConfig.name}`, 'system');
 
     try {
-        // 构建初始请求体
+        // 🧩 修复：构建包含 enableReasoning 的完整请求体
         const requestBody = {
             model: selectedModelConfig.name,
             messages: [
@@ -849,10 +850,23 @@ ${text}
             requestBody.tools = selectedModelConfig.tools;
         }
 
-        // 处理Gemini推理能力
+        // 🧩 修复：正确设置 enableReasoning 参数
         if (selectedModelConfig.enableReasoning) {
             requestBody.enableReasoning = true;
+            console.log("🧠 [Vision] 启用思维链推理");
         }
+
+        // 🧩 修复：设置 disableSearch 参数
+        if (selectedModelConfig.disableSearch !== undefined) {
+            requestBody.disableSearch = selectedModelConfig.disableSearch;
+        }
+
+        console.log("🔧 [Vision] 最终请求体配置:", {
+            model: selectedModelConfig.name,
+            enableReasoning: requestBody.enableReasoning,
+            disableSearch: requestBody.disableSearch,
+            hasTools: !!requestBody.tools
+        });
 
         // 处理流式响应，支持工具调用
         let shouldContinue = true;
@@ -1157,6 +1171,13 @@ ${fenHistory.join('\n')}
             ],
             stream: true
         };
+
+        // 🧩 修复：为总结请求也设置 enableReasoning
+        const selectedModelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
+        if (selectedModelConfig && selectedModelConfig.enableReasoning) {
+            summaryRequest.enableReasoning = true;
+            console.log("🧠 [Vision Summary] 启用思维链推理");
+        }
 
         // 处理流式响应
         const result = await _processStreamWithToolSupport(summaryRequest, { tools: [] }, aiMessage);
