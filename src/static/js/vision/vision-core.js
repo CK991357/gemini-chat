@@ -650,6 +650,10 @@ async function _processStreamWithToolSupport(requestBody, selectedModelConfig, a
     let toolCallDetected = false;
     let currentToolCall = null;
     let callId = null;
+    
+    // 🧩 新增：工具调用循环保护
+    let toolCallCount = 0;
+    const maxToolCalls = 3;
 
     markdownContainer.innerHTML = ''; // Clear loading message
 
@@ -659,6 +663,12 @@ async function _processStreamWithToolSupport(requestBody, selectedModelConfig, a
         console.log("🧠 [Vision] 转换后的请求体:", JSON.stringify(convertedBody, null, 2));
 
         const reader = await apiHandler.fetchStream('/api/chat/completions', convertedBody);
+        
+        // 🧩 新增：检查 reader 是否有效
+        if (!reader) {
+            throw new Error("Stream reader 未初始化，可能请求失败");
+        }
+        
         const decoder = new TextDecoder('utf-8');
 
         while (true) {
@@ -689,7 +699,18 @@ async function _processStreamWithToolSupport(requestBody, selectedModelConfig, a
                             // 检查工具调用 (Gemini/Qwen格式)
                             const toolCalls = delta.tool_calls;
                             if (toolCalls && toolCalls.length > 0) {
+                                // 🧩 新增：工具调用次数限制
+                                if (toolCallCount >= maxToolCalls) {
+                                    console.warn(`🛑 [Vision] 工具调用次数超过限制 (${maxToolCalls})，停止处理`);
+                                    return {
+                                        success: false,
+                                        error: `工具调用次数超过限制 (${maxToolCalls})`,
+                                        toolCallDetected: false
+                                    };
+                                }
+                                
                                 toolCallDetected = true;
+                                toolCallCount++;
                                 const toolCall = toolCalls[0];
                                 
                                 if (toolCall.id) {
@@ -766,6 +787,12 @@ async function _processStreamWithToolSupport(requestBody, selectedModelConfig, a
  * Handles sending a message with optional attachments to the vision model.
  */
 async function handleSendVisionMessage() {
+    // 🧩 新增：防止工具调用结果递归触发
+    if (isUsingTool) {
+        console.warn("🛑 [Vision] 检测到工具调用进行中，跳过递归触发");
+        return;
+    }
+
     let text = elements.visionInputText.value.trim();
     const visionAttachedFiles = attachmentManager.getVisionAttachedFiles();
     if (!text && visionAttachedFiles.length === 0) {
@@ -845,10 +872,110 @@ ${text}
             stream: true,
         };
         
-        // 如果模型配置了工具，则添加到请求体中
-        if (selectedModelConfig.tools) {
-            requestBody.tools = selectedModelConfig.tools;
+        // 🧩 修复：动态工具配置 - 只在需要时添加工具
+        const visionMode = selectedPrompt.id;
+        const tools = [
+            {
+                type: "function",
+                function: {
+                    name: "tavily_search",
+                    description: "Uses the Tavily API to perform a web search to find real-time information, answer questions, or research topics.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            query: { type: "string", description: "The search query to execute." }
+                        },
+                        required: ["query"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "python_sandbox",
+                    description: "Executes a snippet of Python code in a sandboxed environment for data analysis and visualization.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            code: { type: "string", description: "The Python code to be executed in the sandbox." }
+                        },
+                        required: ["code"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "firecrawl",
+                    description: "A powerful tool to scrape, crawl, search, map, or extract structured data from web pages.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            mode: { 
+                                type: "string", 
+                                enum: ["scrape", "search", "crawl", "map", "extract", "check_status"],
+                                description: "The function to execute." 
+                            },
+                            parameters: { 
+                                type: "object", 
+                                description: "A dictionary of parameters for the selected mode." 
+                            }
+                        },
+                        required: ["mode", "parameters"]
+                    }
+                }
+            }
+        ];
+
+        // 🧩 修复：只在棋类模式添加 Stockfish 工具
+        if (visionMode === 'chess_realtime_analysis' || visionMode === 'chess_summary') {
+            tools.push({
+                type: "function",
+                function: {
+                    name: "stockfish_analyzer",
+                    description: "一个强大的国际象棋分析工具，使用Stockfish引擎。",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            fen: {
+                                type: "string",
+                                description: "必需。当前棋盘局面的FEN字符串。",
+                            },
+                            mode: {
+                                type: "string",
+                                description: "要执行的分析模式。",
+                                enum: ["get_best_move", "get_top_moves", "evaluate_position"],
+                            },
+                            options: {
+                                type: "object",
+                                description: "可选参数。",
+                                properties: {
+                                    skill_level: {
+                                        type: "number",
+                                        minimum: 0,
+                                        maximum: 20,
+                                        description: "Stockfish技能等级 (0–20)。",
+                                    },
+                                    depth: {
+                                        type: "number",
+                                        minimum: 1,
+                                        maximum: 30,
+                                        description: "分析深度 (1–30)。",
+                                    },
+                                    count: {
+                                        type: "number",
+                                        description: "在 get_top_moves 模式下返回的走法数量。",
+                                    },
+                                },
+                            },
+                        },
+                        required: ["fen", "mode"],
+                    },
+                }
+            });
         }
+
+        requestBody.tools = tools;
 
         // 🧩 修复：正确设置 enableReasoning 参数
         if (selectedModelConfig.enableReasoning) {
@@ -865,7 +992,8 @@ ${text}
             model: selectedModelConfig.name,
             enableReasoning: requestBody.enableReasoning,
             disableSearch: requestBody.disableSearch,
-            hasTools: !!requestBody.tools
+            hasTools: !!requestBody.tools,
+            toolCount: requestBody.tools?.length || 0
         });
 
         // 处理流式响应，支持工具调用
