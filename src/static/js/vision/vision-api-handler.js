@@ -26,39 +26,120 @@ export class VisionApiHandler {
         Logger.info('构建 Gemini Vision 请求体...');
 
         const messages = [];
+        let currentParts = []; // 用于累积当前角色的 parts
 
-        // 添加系统提示词
+        // 预处理 chatHistory，将 systemPrompt 和 attachments 整合进去
+        const processedChatHistory = [];
+
+        // 1. 添加系统提示词作为第一个用户消息的文本部分
         if (systemPrompt) {
-            messages.push({
-                role: 'system',
+            processedChatHistory.push({
+                role: 'user',
                 content: systemPrompt
             });
         }
 
-        // 添加历史消息
-        chatHistory.forEach(msg => {
-            messages.push({
-                role: msg.role,
-                content: msg.content
-            });
-        });
+        // 2. 添加原始聊天历史
+        processedChatHistory.push(...chatHistory);
 
-        // 添加附件（图像）
-        attachments.forEach(attachment => {
-            if (attachment.type === 'image' && attachment.data) {
-                messages.push({
-                    role: 'user', // 图像通常作为用户消息的一部分
-                    parts: [
-                        {
-                            inlineData: {
-                                mimeType: attachment.mimeType,
-                                data: attachment.data // Base64 编码的图像数据
-                            }
+        // 3. 添加附件作为最后一个用户消息的 inlineData 部分
+        if (attachments && attachments.length > 0) {
+            // 找到最后一个用户消息，或者创建一个新的用户消息
+            let lastUserMessage = processedChatHistory.findLast(msg => msg.role === 'user');
+            if (!lastUserMessage) {
+                lastUserMessage = { role: 'user', content: '' };
+                processedChatHistory.push(lastUserMessage);
+            }
+
+            // 确保 content 是字符串，以便后续处理
+            if (typeof lastUserMessage.content !== 'string') {
+                lastUserMessage.content = '';
+            }
+
+            attachments.forEach(attachment => {
+                if (attachment.type === 'image' && attachment.data) {
+                    // 将图像数据添加到最后一个用户消息的 content 中，以便统一处理
+                    // 这里我们暂时将图像信息作为特殊标记添加到 content 字符串中，
+                    // 稍后在构建 messages 数组时再转换为 inlineData
+                    lastUserMessage.content += ` [IMAGE_ATTACHMENT_PLACEHOLDER:${attachment.mimeType}:${attachment.data}]`;
+                }
+            });
+        }
+
+
+        processedChatHistory.forEach(msg => {
+            if (msg.role === 'user') {
+                // 如果是用户消息，累积其 parts
+                if (currentParts.length > 0 && messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+                    // 如果前一条是 assistant 消息，且当前有累积的 userParts，则先将累积的 userParts 推入
+                    messages.push({
+                        role: 'user',
+                        parts: currentParts
+                    });
+                    currentParts = []; // 重置
+                }
+
+                if (msg.content) {
+                    // 检查是否有图像占位符
+                    const imagePlaceholderRegex = / \[IMAGE_ATTACHMENT_PLACEHOLDER:(.*?):(.*?)]/g;
+                    let lastIndex = 0;
+                    let match;
+
+                    while ((match = imagePlaceholderRegex.exec(msg.content)) !== null) {
+                        const textBefore = msg.content.substring(lastIndex, match.index).trim();
+                        if (textBefore) {
+                            currentParts.push({ type: 'text', text: textBefore });
                         }
-                    ]
-                });
+                        currentParts.push({
+                            inlineData: {
+                                mimeType: match,
+                                data: match
+                            },
+                            type: 'image_data'
+                        });
+                        lastIndex = imagePlaceholderRegex.lastIndex;
+                    }
+                    const remainingText = msg.content.substring(lastIndex).trim();
+                    if (remainingText) {
+                        currentParts.push({ type: 'text', text: remainingText });
+                    }
+                } else if (msg.parts) {
+                    // 如果消息本身已经有 parts 字段（例如工具调用后的用户消息）
+                    currentParts.push(...msg.parts);
+                }
+
+            } else if (msg.role === 'assistant' || msg.role === 'tool') {
+                // 如果是 assistant 或 tool 消息，先将累积的 userParts 推入（如果存在）
+                if (currentParts.length > 0) {
+                    messages.push({
+                        role: 'user',
+                        parts: currentParts
+                    });
+                    currentParts = []; // 重置
+                }
+
+                // 然后添加 assistant 或 tool 消息
+                if (msg.content) {
+                    messages.push({
+                        role: msg.role,
+                        parts: [{ type: 'text', text: msg.content }]
+                    });
+                } else if (msg.parts) {
+                    messages.push({
+                        role: msg.role,
+                        parts: msg.parts
+                    });
+                }
             }
         });
+
+        // 处理循环结束后可能剩余的 userParts
+        if (currentParts.length > 0) {
+            messages.push({
+                role: 'user',
+                parts: currentParts
+            });
+        }
 
         return {
             model: modelName,
