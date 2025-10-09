@@ -1,5 +1,3 @@
-[file name]: vision-core.js
-[file content begin]
 import { getChessGameInstance } from '../chess/chess-core.js'; // 导入获取棋局实例的函数
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
