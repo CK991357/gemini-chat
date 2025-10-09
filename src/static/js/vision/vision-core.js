@@ -2,7 +2,6 @@ import { getChessGameInstance } from '../chess/chess-core.js'; // 导入获取�
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
-import { VisionApiHandler } from './vision-api-handler.js'; // 引入 VisionApiHandler
 
 /**
  * @fileoverview Core logic for the Vision feature.
@@ -15,7 +14,10 @@ let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
 const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
-const visionApiHandler = new VisionApiHandler(); // 创建 VisionApiHandler 实例
+
+// 新增：工具调用状态
+let currentToolCall = null;
+let toolCallContainer = null;
 
 /**
  * Initializes the Vision feature.
@@ -554,26 +556,15 @@ ${text}
     Logger.info(`Requesting vision model: ${selectedModelConfig.name}`, 'system');
 
     try {
-        let requestBody;
-
-        // 根据模型类型调用 VisionApiHandler 中对应的构建函数
-        if (selectedModelConfig.isGemini) { // 假设模型配置中有一个 isGemini 标志
-            requestBody = visionApiHandler.buildGeminiVisionRequestBody({
-                chatHistory: visionChatHistory,
-                modelName: selectedModelConfig.name,
-                systemPrompt: selectedPrompt.systemPrompt,
-                attachments: visionAttachedFiles // 传递附件
-            });
-        } else {
-            // 默认使用通用构建器，适用于 GLM 和其他非 Gemini 模型
-            requestBody = visionApiHandler.buildGenericVisionRequestBody({
-                chatHistory: visionChatHistory,
-                modelName: selectedModelConfig.name,
-                systemPrompt: selectedPrompt.systemPrompt,
-                attachments: visionAttachedFiles // 传递附件
-            });
-        }
-
+        const requestBody = {
+            model: selectedModelConfig.name,
+            messages: [
+                { role: 'system', content: selectedPrompt.systemPrompt },
+                ...visionChatHistory
+            ],
+            stream: true,
+        };
+        
         // 如果模型配置了工具，则添加到请求体中
         if (selectedModelConfig.tools) {
             requestBody.tools = selectedModelConfig.tools;
@@ -871,29 +862,32 @@ async function generateGameSummary() {
         const systemPrompt = summaryPromptConfig ? summaryPromptConfig.systemPrompt : `你是一位国际象棋特级大师。请基于提供的完整对局历史（FEN格式）生成一份详细的对局总结和分析。`;
 
         // 构建基于FEN历史的总结请求
-        const summaryRequest = visionApiHandler.buildGenericVisionRequestBody({
-            chatHistory: [
-                {
-                    role: 'user',
+        const summaryRequest = {
+            model: selectedModel,
+            messages: [
+                { 
+                    role: 'system', 
+                    content: systemPrompt
+                },
+                { 
+                    role: 'user', 
                     content: [
-                        {
-                            type: 'text',
+                        { 
+                            type: 'text', 
                             text: `请分析以下国际象棋对局历史（共${fenHistory.length}步）：
- 
+
 完整FEN历史：
 ${fenHistory.join('\n')}
- 
+
 当前局面：${fenHistory[fenHistory.length - 1]}
- 
-请基于这个完整的对局历史，生成一份专业的对局分析总结。`
+
+请基于这个完整的对局历史，生成一份专业的对局分析总结。` 
                         }
                     ]
                 }
             ],
-            modelName: selectedModel,
-            systemPrompt: systemPrompt,
-            attachments: [] // 总结请求不包含附件
-        });
+            stream: true
+        };
 
         // 发送请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', summaryRequest);
@@ -1030,6 +1024,6 @@ function _displayVisionMessage(markdownContent, options = {}) {
  * 这是从外部模块调用的接口，例如从国际象棋AI模块。
  * @param {string} markdownContent - 要显示的Markdown格式的文本内容。
  */
-export function displayVisionMessage(markdownContent, options = {}) {
-    _displayVisionMessage(markdownContent, options);
+export function displayVisionMessage(markdownContent) {
+    _displayVisionMessage(markdownContent);
 }
