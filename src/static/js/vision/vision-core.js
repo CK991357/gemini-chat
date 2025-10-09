@@ -116,6 +116,10 @@ function attachEventListeners() {
 /**
  * Handles sending a message with optional attachments to the vision model.
  */
+/**
+ * Handles sending a message with optional attachments to the vision model.
+ * 基础版：支持 Gemini 模型、工具调用、流式输出。
+ */
 async function handleSendVisionMessage() {
     const text = elements.visionInputText.value.trim();
     const visionAttachedFiles = attachmentManager.getVisionAttachedFiles();
@@ -127,32 +131,31 @@ async function handleSendVisionMessage() {
     const selectedModel = elements.visionModelSelect.value;
     const selectedPrompt = getSelectedPrompt();
 
-    // Display user message in the UI
+    // 显示用户消息
     displayVisionUserMessage(text, visionAttachedFiles);
 
-    // Add user message to history
+    // 构建聊天内容
     const userContent = [];
-    if (text) {
-        userContent.push({ type: 'text', text });
-    }
+    if (text) userContent.push({ type: 'text', text });
     visionAttachedFiles.forEach(file => {
         userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
     });
     visionChatHistory.push({ role: 'user', content: userContent });
 
-    // Clear inputs
+    // 清空输入区
     elements.visionInputText.value = '';
     attachmentManager.clearAttachedFile('vision');
 
-    // Set loading state
+    // 设置加载状态
     elements.visionSendButton.disabled = true;
-    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; // 使用 Font Awesome 加载图标
+    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
     Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
 
     try {
+        // ========= 🧩 构建基础请求体 =========
         const requestBody = {
             model: selectedModel,
             messages: [
@@ -160,9 +163,69 @@ async function handleSendVisionMessage() {
                 ...visionChatHistory
             ],
             stream: true,
+            enable_reasoning: true,
         };
 
-        // 使用升级后的 ApiHandler 发送流式请求
+        // ========= 🧠 注入可用工具 =========
+        requestBody.tools = [
+            {
+                type: "function",
+                function: {
+                    name: "tavily_search",
+                    description: "Web search via Tavily API",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            query: { type: "string", description: "Search query" }
+                        },
+                        required: ["query"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "python_sandbox",
+                    description: "Run Python code securely in a sandbox",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            code: { type: "string", description: "Python code to execute" }
+                        },
+                        required: ["code"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "firecrawl",
+                    description: "Web scraping/crawling/extraction tool",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            mode: {
+                                type: "string",
+                                enum: ["scrape", "search", "crawl", "map", "extract", "check_status"]
+                            },
+                            parameters: { type: "object" }
+                        },
+                        required: ["mode", "parameters"]
+                    }
+                }
+            }
+        ];
+
+        // ========= ⚙️ Gemini 模型兼容性处理 =========
+        if (selectedModel.includes('gemini')) {
+            Logger.info('Detected Gemini model, applying ChatML compatibility mode.');
+            requestBody.enableReasoning = true;
+            requestBody.disableSearch = true;
+        }
+
+        console.log("🚀 [Vision] Final requestBody:", requestBody);
+
+        // ========= 🚀 发起流式请求 =========
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
         const decoder = new TextDecoder('utf-8');
         let finalContent = '';
@@ -170,61 +233,61 @@ async function handleSendVisionMessage() {
         let answerStarted = false;
         let buffer = '';
 
-        markdownContainer.innerHTML = ''; // Clear loading message
+        markdownContainer.innerHTML = ''; // 清空占位内容
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-
             const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
-            
+
             const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const jsonStr = line.substring(6);
-                    if (jsonStr === '[DONE]') return;
-                    
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (delta) {
-                            if (delta.reasoning_content) {
-                                if (!reasoningStarted) {
-                                    reasoningContainer.style.display = 'block';
-                                    reasoningStarted = true;
-                                }
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                if (!line.startsWith('data: ')) continue;
+                const jsonStr = line.substring(6);
+                if (jsonStr === '[DONE]') return;
+
+                try {
+                    const data = JSON.parse(jsonStr);
+                    const delta = data.choices?.[0]?.delta;
+
+                    if (delta) {
+                        if (delta.reasoning_content) {
+                            if (!reasoningStarted) {
+                                reasoningContainer.style.display = 'block';
+                                reasoningStarted = true;
                             }
-                            if (delta.content) {
-                                if (reasoningStarted && !answerStarted) {
-                                    const separator = document.createElement('hr');
-                                    separator.className = 'answer-separator';
-                                    reasoningContainer.after(separator);
-                                    answerStarted = true;
-                                }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
-                            }
+                            reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
                         }
-                    } catch (e) {
-                        // 忽略解析错误，继续处理下一行
-                        console.warn('Skipping invalid SSE data:', jsonStr);
+                        if (delta.content) {
+                            if (reasoningStarted && !answerStarted) {
+                                const separator = document.createElement('hr');
+                                separator.className = 'answer-separator';
+                                reasoningContainer.after(separator);
+                                answerStarted = true;
+                            }
+                            finalContent += delta.content;
+                            markdownContainer.innerHTML = marked.parse(finalContent);
+                        }
                     }
+                } catch {
+                    console.warn('Skipping invalid SSE data line');
                 }
             }
             elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
         }
 
+        // ========= ✅ 渲染数学公式 =========
         if (typeof MathJax !== 'undefined' && MathJax.startup) {
             MathJax.startup.promise.then(() => {
                 MathJax.typeset([markdownContainer, reasoningContainer]);
-            }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }).catch(err => console.error('MathJax typesetting failed:', err));
         }
 
         visionChatHistory.push({ role: 'assistant', content: finalContent });
+        Logger.info('✅ Vision AI response completed', 'system');
 
     } catch (error) {
         console.error('Error sending vision message:', error);
@@ -232,7 +295,7 @@ async function handleSendVisionMessage() {
         Logger.info(`视觉模型请求失败: ${error.message}`, 'system');
     } finally {
         elements.visionSendButton.disabled = false;
-        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>'; // 恢复为 Font Awesome 发送图标
+        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>';
     }
 }
 
