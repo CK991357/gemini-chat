@@ -1,5 +1,5 @@
 import { CONFIG } from '../config/config.js';
-import { ApiHandler } from '../core/api-handler.js';
+import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -12,23 +12,18 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
-let toolManager = null;
-let logMessageHandler = null;
-const apiHandler = new ApiHandler();
+const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
 
 /**
  * Initializes the Vision feature.
  * @param {object} el - A collection of DOM elements required by the vision module.
  * @param {object} manager - The global attachment manager instance.
  * @param {object} handlers - A collection of handler functions from other modules.
- * @param {object} toolManagerInstance - The tool manager instance for handling function calls.
  */
-export function initializeVisionCore(el, manager, handlers, toolManagerInstance) {
+export function initializeVisionCore(el, manager, handlers) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
-    toolManager = toolManagerInstance;
-    logMessageHandler = handlers.logMessage;
 
     populateModelSelect();
     populatePromptSelect();
@@ -66,7 +61,7 @@ function populatePromptSelect() {
         const option = document.createElement('option');
         option.value = prompt.id;
         option.textContent = prompt.name;
-        option.title = prompt.description;
+        option.title = prompt.description; // 添加描述作为悬停提示
         if (prompt.id === CONFIG.VISION.DEFAULT_PROMPT_ID) {
             option.selected = true;
         }
@@ -132,295 +127,112 @@ async function handleSendVisionMessage() {
     const selectedModel = elements.visionModelSelect.value;
     const selectedPrompt = getSelectedPrompt();
 
-    // 显示用户消息
+    // Display user message in the UI
     displayVisionUserMessage(text, visionAttachedFiles);
 
-    // 构建聊天内容
+    // Add user message to history
     const userContent = [];
-    if (text) userContent.push({ type: 'text', text });
+    if (text) {
+        userContent.push({ type: 'text', text });
+    }
     visionAttachedFiles.forEach(file => {
         userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
     });
     visionChatHistory.push({ role: 'user', content: userContent });
 
-    // 清空输入区
+    // Clear inputs
     elements.visionInputText.value = '';
     attachmentManager.clearAttachedFile('vision');
 
-    // 设置加载状态
+    // Set loading state
     elements.visionSendButton.disabled = true;
-    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    
-    try {
-        await processVisionCompletion(selectedModel, selectedPrompt, visionChatHistory);
-        Logger.info('✅ Vision AI response completed', 'system');
-    } catch (error) {
-        console.error('Error sending vision message:', error);
-        if (logMessageHandler) {
-            logMessageHandler(`视觉模型请求失败: ${error.message}`, 'system');
-        }
-    } finally {
-        elements.visionSendButton.disabled = false;
-        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>';
-    }
-}
-
-/**
- * 处理视觉模型的完整请求流程，包括工具调用
- * @param {string} selectedModel - 选择的模型名称
- * @param {object} selectedPrompt - 选择的提示词
- * @param {Array} currentHistory - 当前聊天历史
- */
-async function processVisionCompletion(selectedModel, selectedPrompt, currentHistory) {
-    // ========= 🧩 构建基础请求体 =========
-    const requestBody = {
-        model: selectedModel,
-        messages: [
-            { role: 'system', content: selectedPrompt.systemPrompt },
-            ...currentHistory
-        ],
-        stream: true,
-        enable_reasoning: true,
-    };
-
-    // ========= 🧠 注入可用工具 =========
-    requestBody.tools = [
-        {
-            type: "function",
-            function: {
-                name: "tavily_search",
-                description: "Web search via Tavily API",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        query: { type: "string", description: "Search query" }
-                    },
-                    required: ["query"]
-                }
-            }
-        },
-        {
-            type: "function",
-            function: {
-                name: "python_sandbox",
-                description: "Run Python code securely in a sandbox",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        code: { type: "string", description: "Python code to execute" }
-                    },
-                    required: ["code"]
-                }
-            }
-        },
-        {
-            type: "function",
-            function: {
-                name: "firecrawl",
-                description: "Web scraping/crawling/extraction tool",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        mode: {
-                            type: "string",
-                            enum: ["scrape", "search", "crawl", "map", "extract", "check_status"]
-                        },
-                        parameters: { type: "object" }
-                    },
-                    required: ["mode", "parameters"]
-                }
-            }
-        }
-    ];
-
-    // ========= ⚙️ Gemini 模型兼容性处理 =========
-    if (selectedModel.includes('gemini')) {
-        Logger.info('Detected Gemini model, applying ChatML compatibility mode.');
-        requestBody.enableReasoning = true;
-        requestBody.disableSearch = true;
-    }
-
-    console.log("🚀 [Vision] Final requestBody:", requestBody);
+    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; // 使用 Font Awesome 加载图标
+    const aiMessage = createVisionAIMessageElement();
+    const { markdownContainer, reasoningContainer } = aiMessage;
+    markdownContainer.innerHTML = '<p>正在请求模型...</p>';
+    Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
 
     try {
-        // ========= 🚀 发起流式请求 =========
+        const requestBody = {
+            model: selectedModel,
+            messages: [
+                { role: 'system', content: selectedPrompt.systemPrompt },
+                ...visionChatHistory
+            ],
+            stream: true,
+        };
+
+        // 使用升级后的 ApiHandler 发送流式请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
         const decoder = new TextDecoder('utf-8');
-        
-        let aiMessage = createVisionAIMessageElement();
-        let buffer = '';
-        let functionCallDetected = false;
-        let currentFunctionCall = null;
+        let finalContent = '';
         let reasoningStarted = false;
         let answerStarted = false;
+        let buffer = '';
 
-        aiMessage.markdownContainer.innerHTML = ''; // 清空占位内容
+        markdownContainer.innerHTML = ''; // Clear loading message
 
         while (true) {
             const { done, value } = await reader.read();
-            if (done) {
-                Logger.info('Vision HTTP Stream finished.');
-                break;
-            }
+            if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            let boundary = buffer.indexOf('\n\n');
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+            
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
 
-            while (boundary !== -1) {
-                const message = buffer.substring(0, boundary);
-                buffer = buffer.substring(boundary + 2);
-
-                if (message.startsWith('data: ')) {
-                    const jsonStr = message.substring(6);
-                    if (jsonStr === '[DONE]') {
-                        boundary = buffer.indexOf('\n\n');
-                        continue;
-                    }
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
+                    if (jsonStr === '[DONE]') return;
                     
                     try {
                         const data = JSON.parse(jsonStr);
-                        if (data.choices && data.choices.length > 0) {
-                            const choice = data.choices[0];
-                            const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
-
-                            if (functionCallPart) {
-                                // 检测到工具调用
-                                functionCallDetected = true;
-                                currentFunctionCall = functionCallPart.functionCall;
-                                Logger.info('Vision Function call detected:', currentFunctionCall);
-                                if (logMessageHandler) {
-                                    logMessageHandler(`模型请求工具: ${currentFunctionCall.name}`, 'system');
+                        const delta = data.choices?.[0]?.delta;
+                        if (delta) {
+                            if (delta.reasoning_content) {
+                                if (!reasoningStarted) {
+                                    reasoningContainer.style.display = 'block';
+                                    reasoningStarted = true;
                                 }
-                                
-                                // 保存当前文本内容
-                                if (aiMessage && aiMessage.rawMarkdownBuffer) {
-                                    visionChatHistory.push({
-                                        role: 'assistant',
-                                        content: aiMessage.rawMarkdownBuffer
-                                    });
+                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                            }
+                            if (delta.content) {
+                                if (reasoningStarted && !answerStarted) {
+                                    const separator = document.createElement('hr');
+                                    separator.className = 'answer-separator';
+                                    reasoningContainer.after(separator);
+                                    answerStarted = true;
                                 }
-                                aiMessage = null;
-                                break; // 跳出内层循环处理工具调用
-
-                            } else if (choice.delta && !functionCallDetected) {
-                                // 处理推理内容和普通内容
-                                if (choice.delta.reasoning_content) {
-                                    if (!reasoningStarted) {
-                                        aiMessage.reasoningContainer.style.display = 'block';
-                                        reasoningStarted = true;
-                                    }
-                                    aiMessage.rawReasoningBuffer += choice.delta.reasoning_content;
-                                    aiMessage.reasoningContainer.querySelector('.reasoning-content').innerHTML += choice.delta.reasoning_content.replace(/\n/g, '<br>');
-                                }
-                                
-                                if (choice.delta.content) {
-                                    if (reasoningStarted && !answerStarted) {
-                                        const separator = document.createElement('hr');
-                                        separator.className = 'answer-separator';
-                                        aiMessage.markdownContainer.before(separator);
-                                        answerStarted = true;
-                                    }
-
-                                    aiMessage.rawMarkdownBuffer += choice.delta.content || '';
-                                    aiMessage.markdownContainer.innerHTML = marked.parse(aiMessage.rawMarkdownBuffer);
-                                    
-                                    // 应用数学公式渲染
-                                    if (typeof MathJax !== 'undefined' && MathJax.startup) {
-                                        MathJax.startup.promise.then(() => {
-                                            MathJax.typeset([aiMessage.markdownContainer, aiMessage.reasoningContainer]);
-                                        }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                    }
-                                    
-                                    // 滚动到底部
-                                    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
-                                }
+                                finalContent += delta.content;
+                                markdownContainer.innerHTML = marked.parse(finalContent);
                             }
                         }
                     } catch (e) {
-                        Logger.error('Error parsing SSE chunk:', e, jsonStr);
+                        // 忽略解析错误，继续处理下一行
+                        console.warn('Skipping invalid SSE data:', jsonStr);
                     }
                 }
-                boundary = buffer.indexOf('\n\n');
             }
-
-            // 如果检测到工具调用，跳出主循环
-            if (functionCallDetected) break;
+            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
         }
 
-        // ========= 🛠️ 处理工具调用 =========
-        if (functionCallDetected && currentFunctionCall) {
-            await handleVisionToolCall(currentFunctionCall, selectedModel, selectedPrompt);
-            return; // 工具调用会递归处理后续流程
+        if (typeof MathJax !== 'undefined' && MathJax.startup) {
+            MathJax.startup.promise.then(() => {
+                MathJax.typeset([markdownContainer, reasoningContainer]);
+            }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
-        // ========= ✅ 完成普通响应 =========
-        if (aiMessage && aiMessage.rawMarkdownBuffer) {
-            visionChatHistory.push({ 
-                role: 'assistant', 
-                content: aiMessage.rawMarkdownBuffer,
-                reasoning: aiMessage.rawReasoningBuffer 
-            });
-        }
-
-        if (logMessageHandler) {
-            logMessageHandler('Vision turn complete', 'system');
-        }
+        visionChatHistory.push({ role: 'assistant', content: finalContent });
 
     } catch (error) {
-        console.error('Error in vision stream processing:', error);
-        throw error;
-    }
-}
-
-/**
- * 处理视觉模块的工具调用（与Chat模式保持一致）
- * @param {object} functionCall - 函数调用对象
- * @param {string} selectedModel - 模型名称
- * @param {object} selectedPrompt - 提示词对象
- */
-async function handleVisionToolCall(functionCall, selectedModel, selectedPrompt) {
-    try {
-        if (logMessageHandler) {
-            logMessageHandler(`执行工具: ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
-        }
-        
-        // 执行工具调用
-        const toolResult = await toolManager.handleToolCall(functionCall);
-        const toolResponsePart = toolResult.functionResponses[0].response.output;
-
-        // 将工具调用和响应添加到历史记录（与Chat模式相同的格式）
-        visionChatHistory.push({
-            role: 'assistant',
-            parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
-        });
-
-        visionChatHistory.push({
-            role: 'tool',
-            parts: [{ functionResponse: { name: functionCall.name, response: toolResponsePart } }]
-        });
-
-        // 递归处理后续响应
-        await processVisionCompletion(selectedModel, selectedPrompt, visionChatHistory);
-
-    } catch (toolError) {
-        Logger.error('Vision tool execution failed:', toolError);
-        if (logMessageHandler) {
-            logMessageHandler(`工具执行失败: ${toolError.message}`, 'system');
-        }
-        
-        // 即使失败也要将错误信息添加到历史记录
-        visionChatHistory.push({
-            role: 'assistant',
-            parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
-        });
-
-        visionChatHistory.push({
-            role: 'tool',
-            parts: [{ functionResponse: { name: functionCall.name, response: { error: toolError.message } } }]
-        });
-
-        // 继续处理，让模型知道工具调用失败
-        await processVisionCompletion(selectedModel, selectedPrompt, visionChatHistory);
+        console.error('Error sending vision message:', error);
+        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
+        Logger.info(`视觉模型请求失败: ${error.message}`, 'system');
+    } finally {
+        elements.visionSendButton.disabled = false;
+        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>'; // 恢复为 Font Awesome 发送图标
     }
 }
 
@@ -454,9 +266,9 @@ function displayVisionUserMessage(text, files) {
             if (file.type.startsWith('image/')) {
                 attachmentElement = document.createElement('img');
                 attachmentElement.src = file.base64;
-                attachmentElement.style.maxWidth = '200px';
-                attachmentElement.style.maxHeight = '200px';
-                attachmentElement.style.borderRadius = '8px';
+                attachmentElement.style.maxWidth = '200px'; // 限制图片最大宽度
+                attachmentElement.style.maxHeight = '200px'; // 限制图片最大高度
+                attachmentElement.style.borderRadius = '8px'; // 添加圆角
             } else if (file.type.startsWith('video/')) {
                 attachmentElement = document.createElement('video');
                 attachmentElement.src = file.base64;
@@ -534,9 +346,7 @@ function createVisionAIMessageElement() {
     return {
         container: messageDiv,
         markdownContainer,
-        reasoningContainer,
-        rawMarkdownBuffer: '',
-        rawReasoningBuffer: ''
+        reasoningContainer
     };
 }
 
@@ -546,7 +356,7 @@ function createVisionAIMessageElement() {
  */
 function getSelectedPrompt() {
     if (!elements.visionPromptSelect) {
-        return CONFIG.VISION.PROMPTS[0];
+        return CONFIG.VISION.PROMPTS[0]; // 默认返回第一个提示词
     }
     
     const selectedId = elements.visionPromptSelect.value;
@@ -557,13 +367,16 @@ function getSelectedPrompt() {
  * 生成对局总结 - 基于FEN历史而不是聊天历史
  */
 async function generateGameSummary() {
+    // 检查是否能获取到国际象棋实例
     let chessGame = null;
     
+    // 尝试多种方式获取国际象棋实例
     if (typeof window.chessGame !== 'undefined') {
         chessGame = window.chessGame;
     } else if (typeof getChessGameInstance === 'function') {
         chessGame = getChessGameInstance();
     } else {
+        // 最后尝试通过DOM事件或其他全局访问方式
         chessGame = window.chessGameInstance;
     }
     
@@ -572,6 +385,7 @@ async function generateGameSummary() {
         return;
     }
 
+    // 获取完整的FEN历史
     const fenHistory = chessGame.getFullGameHistory();
     if (!fenHistory || fenHistory.length === 0) {
         showToastHandler('没有对局历史可以总结。');
@@ -581,19 +395,23 @@ async function generateGameSummary() {
     const selectedModel = elements.visionModelSelect.value;
     const summaryButton = elements.visionSummaryButton;
     
+    // 设置按钮加载状态
     if (summaryButton) {
         summaryButton.disabled = true;
         summaryButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 分析中...';
     }
     
+    // 创建总结消息元素
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在分析对局历史...</p>';
 
     try {
+        // 获取chess_summary提示词
         const summaryPromptConfig = CONFIG.VISION.PROMPTS.find(prompt => prompt.id === 'chess_summary');
         const systemPrompt = summaryPromptConfig ? summaryPromptConfig.systemPrompt : `你是一位国际象棋特级大师。请基于提供的完整对局历史（FEN格式）生成一份详细的对局总结和分析。`;
 
+        // 构建基于FEN历史的总结请求
         const summaryRequest = {
             model: selectedModel,
             messages: [
@@ -621,6 +439,7 @@ ${fenHistory.join('\n')}
             stream: true
         };
 
+        // 发送请求
         const reader = await apiHandler.fetchStream('/api/chat/completions', summaryRequest);
         const decoder = new TextDecoder('utf-8');
         let finalContent = '';
@@ -628,7 +447,7 @@ ${fenHistory.join('\n')}
         let answerStarted = false;
         let buffer = '';
 
-        markdownContainer.innerHTML = '';
+        markdownContainer.innerHTML = ''; // Clear loading message
 
         while (true) {
             const { done, value } = await reader.read();
@@ -638,7 +457,7 @@ ${fenHistory.join('\n')}
             buffer += chunk;
             
             const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
 
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
@@ -668,6 +487,7 @@ ${fenHistory.join('\n')}
                             }
                         }
                     } catch (e) {
+                        // 忽略解析错误，继续处理下一行
                         console.warn('Skipping invalid SSE data:', jsonStr);
                     }
                 }
@@ -675,12 +495,14 @@ ${fenHistory.join('\n')}
             elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
         }
 
+        // 应用数学公式渲染
         if (typeof MathJax !== 'undefined' && MathJax.startup) {
             MathJax.startup.promise.then(() => {
                 MathJax.typeset([markdownContainer, reasoningContainer]);
             }).catch((err) => console.error('MathJax typesetting failed:', err));
         }
 
+        // 将总结添加到视觉聊天历史
         visionChatHistory.push({ role: 'assistant', content: finalContent });
 
         Logger.info('对局总结生成完成', 'system');
@@ -688,10 +510,9 @@ ${fenHistory.join('\n')}
     } catch (error) {
         console.error('Error generating game summary:', error);
         markdownContainer.innerHTML = `<p><strong>总结生成失败:</strong> ${error.message}</p>`;
-        if (logMessageHandler) {
-            logMessageHandler(`对局总结生成失败: ${error.message}`, 'system');
-        }
+        Logger.info(`对局总结生成失败: ${error.message}`, 'system');
     } finally {
+        // 恢复按钮状态
         if (summaryButton) {
             summaryButton.disabled = false;
             summaryButton.innerHTML = '对局总结';
@@ -710,18 +531,24 @@ export function displayVisionMessage(markdownContent) {
         return;
     }
 
+    // 使用现有的函数来创建和渲染AI消息元素
     const { markdownContainer, reasoningContainer } = createVisionAIMessageElement();
     
+    // 渲染 Markdown 内容
+    // 确保 markdownContent 是字符串，以防外部模块传入非字符串类型
     const contentToRender = typeof markdownContent === 'string' ? markdownContent : String(markdownContent);
     markdownContainer.innerHTML = marked.parse(contentToRender);
 
+    // 渲染可能存在的数学公式
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
         MathJax.startup.promise.then(() => {
             MathJax.typeset([markdownContainer, reasoningContainer]);
         }).catch((err) => console.error('MathJax typesetting failed:', err));
     }
 
+    // 将这条消息添加到内部历史记录中，以保持一致性
     visionChatHistory.push({ role: 'assistant', content: contentToRender });
 
+    // 滚动到底部
     elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
 }
