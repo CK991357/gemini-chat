@@ -10,7 +10,7 @@ import { Logger } from '../utils/logger.js';
  */
 export class VisionApiHandler {
     constructor() {
-        this.logger = new Logger('VisionApiHandler');
+        this.logger = Logger.getInstance();
     }
 
     /**
@@ -23,7 +23,7 @@ export class VisionApiHandler {
      * @returns {object} The formatted request body for Gemini Vision.
      */
     buildGeminiVisionRequestBody({ chatHistory, modelName, systemPrompt, attachments }) {
-        this.logger.info('构建 Gemini Vision 请求体...');
+        Logger.info('构建 Gemini Vision 请求体...');
 
         const messages = [];
 
@@ -81,7 +81,7 @@ export class VisionApiHandler {
      * @returns {object} The formatted request body for the generic Vision model.
      */
     buildGenericVisionRequestBody({ chatHistory, modelName, systemPrompt, attachments }) {
-        this.logger.info(`构建通用 Vision 请求体 for model: ${modelName}...`);
+        Logger.info(`构建通用 Vision 请求体 for model: ${modelName}...`);
 
         const messages = [];
 
