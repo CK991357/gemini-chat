@@ -387,6 +387,8 @@ class ChessGame {
 
         this.chessRules.clearLastMoveError();
         this.updateFEN();
+        // 新增：同步影子引擎
+        this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
         return true;
     }
 
