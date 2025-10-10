@@ -8,6 +8,7 @@
 import { handleFirecrawl } from './handlers/firecrawl.js';
 import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
 import { handlePythonSandbox } from './handlers/python-sandbox.js';
+import { handleStockfishAnalyzer } from './handlers/stockfish.js'; // 新增导入
 import { handleTavilySearch } from './handlers/tavily-search.js';
 import { handleZhipuImageAnalysis } from './handlers/zhipu-glm4v.js';
 
@@ -16,8 +17,9 @@ const toolRegistry = {
     'glm4v.analyze_image': handleZhipuImageAnalysis,
     'tavily_search': handleTavilySearch,
     'python_sandbox': handlePythonSandbox,
-    'mcp_tool_catalog': handleMcpToolCatalog, // Add the new tool catalog handler
+    'mcp_tool_catalog': handleMcpToolCatalog,
     'firecrawl': handleFirecrawl,
+    'stockfish_analyzer': handleStockfishAnalyzer, // 新增注册
     // To add a new tool, import its handler and add an entry here.
     // e.g., 'new_tool_name': handleNewTool,
 };
