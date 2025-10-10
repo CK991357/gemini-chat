@@ -857,3 +857,36 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
         }
     }
 }
+let chessAIEnhancedInstance = null;
+
+/**
+ * 初始化国际象棋AI增强模块（单例模式）
+ * @param {ChessGame} chessGame - 国际象棋游戏核心实例
+ * @param {object} options - 配置选项
+ */
+export function initializeChessAIEnhanced(chessGame, options = {}) {
+    if (chessAIEnhancedInstance) {
+        console.warn('ChessAIEnhanced 模块已初始化。正在更新配置。');
+        // 可以在这里添加更新逻辑，例如更新 showToast
+        if (options.showToast) {
+            chessAIEnhancedInstance.showToast = options.showToast;
+        }
+        if (options.chatApiHandler) {
+            chessAIEnhancedInstance.chatApiHandler = options.chatApiHandler;
+        }
+        return;
+    }
+    chessAIEnhancedInstance = new ChessAIEnhanced(chessGame, options);
+    console.log('ChessAIEnhanced 模块初始化成功。');
+}
+
+/**
+ * 获取国际象棋AI增强模块实例
+ * @returns {ChessAIEnhanced|null}
+ */
+export function getChessAIEnhancedInstance() {
+    if (!chessAIEnhancedInstance) {
+        console.error('ChessAIEnhanced 模块尚未初始化！');
+    }
+    return chessAIEnhancedInstance;
+}
