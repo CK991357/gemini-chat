@@ -46,6 +46,9 @@ The `src` directory is the heart of the application, containing all source code 
     -   **职能**: 这是 `firecrawl` 工具的后端处理器。它接收来自 `/api/mcp-proxy` 的请求，验证 `mode` 和 `parameters`，然后将请求转发到外部的 Python 工具集服务 (`https://tools.10110531.xyz/api/v1/execute_tool`) 以执行实际的 Firecrawl 操作（如抓取、搜索或爬取）。
     -   **关键流程**: 验证输入参数，构建请求体，然后使用 `fetch` 将其发送到 Python API，并处理响应。
 
+-   **[`stockfish.js`](src/mcp_proxy/handlers/stockfish.js)**:
+    -   **职能**: 这是 `stockfish_analyzer` 工具的后端处理器。它接收来自 `/api/mcp-proxy` 的请求，验证 `fen` 和 `mode` 参数，然后将请求转发到外部的 Python 工具集服务 (`https://tools.10110531.xyz/api/v1/execute_tool`) 以执行 Stockfish 国际象棋引擎的分析。
+    -   **关键流程**: 验证 `fen` 和 `mode` 参数的有效性（`mode` 必须是 `get_best_move`、`get_top_moves` 或 `evaluate_position` 之一），构建包含 `tool_name: 'stockfish_analyzer'` 和完整 `parameters` 的请求体，然后使用 `fetch` 将其发送到 Python API，并处理响应。
 
 ### 2.1.2 External Tool Services (Backend)
 
