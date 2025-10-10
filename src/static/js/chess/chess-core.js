@@ -1228,7 +1228,13 @@ export function initializeChessCore(options = {}) {
         if (options.showToast) {
             chessGame.showToast = options.showToast;
         }
-        // 可以在这里添加其他需要更新的配置
+        // 新增：确保 chatApiHandler 被更新
+        if (options.chatApiHandler && chessGame.chatApiHandler !== options.chatApiHandler) {
+            Logger.info('Updating chatApiHandler for existing chess module.');
+            chessGame.chatApiHandler = options.chatApiHandler;
+            // 重新初始化AI模块以传递新的handler
+            chessGame.initializeAI(options.chatApiHandler);
+        }
         return;
     }
     try {
