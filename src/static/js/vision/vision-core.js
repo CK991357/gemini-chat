@@ -1,4 +1,5 @@
-import { getChessAIEnhancedInstance } from '../chess/chess-ai-enhanced.js';
+import { getChessAIEnhancedInstance, initializeChessAIEnhanced } from '../chess/chess-ai-enhanced.js';
+import { getChessGameInstance } from '../chess/chess-core.js';
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
 import { Logger } from '../utils/logger.js';
@@ -30,6 +31,25 @@ export function initializeVisionCore(el, manager, handlers) {
     populatePromptSelect();
     createChessButtons(); // 新增一个函数来创建按钮
     attachEventListeners();
+
+    // 新增：初始化 Chess AI 模块，确保在事件监听器附加之后，但在模块完全准备好之前
+    try {
+        const chessGame = getChessGameInstance();
+        if (chessGame) {
+            initializeChessAIEnhanced(chessGame, {
+                showToast: showToastHandler,
+                logMessage: Logger.info,
+                displayVisionMessage: displayVisionMessage,
+                // showMoveChoiceModal 将使用 chess-ai-enhanced.js 中的默认实现
+            });
+            Logger.info('ChessAIEnhanced module initialized successfully.');
+        } else {
+            Logger.warn('Could not get chessGame instance to initialize ChessAIEnhanced.');
+        }
+    } catch (error) {
+        console.error('Failed to initialize ChessAIEnhanced:', error);
+        showToastHandler(`错误：无法初始化国际象棋AI模块: ${error.message}`);
+    }
 
     Logger.info('Vision module initialized.');
 }

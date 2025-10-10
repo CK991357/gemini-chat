@@ -187,6 +187,37 @@ async function sendAndProcessAIRequest(messages, model, tools, onStreamUpdate) {
 }
 
 
+// =====================================================================
+// == Singleton Pattern for ChessAIEnhanced                           ==
+// =====================================================================
+let instance = null;
+
+/**
+ * Initializes the ChessAIEnhanced singleton instance.
+ * This must be called once after the main chess game is ready.
+ * @param {object} chessGame - The main chess game instance from chess-core.js.
+ * @param {object} options - Configuration options for the AI.
+ */
+export function initializeChessAIEnhanced(chessGame, options = {}) {
+    if (!instance) {
+        instance = new ChessAIEnhanced(chessGame, options);
+    }
+    return instance;
+}
+
+/**
+ * Gets the singleton instance of the ChessAIEnhanced class.
+ * @returns {ChessAIEnhanced} The singleton instance.
+ * @throws {Error} If the instance has not been initialized yet.
+ */
+export function getChessAIEnhancedInstance() {
+    if (!instance) {
+        throw new Error('ChessAIEnhanced has not been initialized. Call initializeChessAIEnhanced() first.');
+    }
+    return instance;
+}
+
+
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
         this.chessGame = chessGame;
