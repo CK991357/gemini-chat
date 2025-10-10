@@ -894,7 +894,7 @@ class ChessGame {
         // 使用新的单例初始化方法
         initializeChessAIEnhanced(this, {
             showToast: this.showToast,
-            logMessage: Logger.info,
+            logMessage: Logger.info.bind(Logger), // 修复：绑定Logger上下文
             showMoveChoiceModal: (analysis, moves) => this.showAIMoveChoiceModal(analysis, moves),
             displayVisionMessage: (content, opts) => {
                 // 确保 displayVisionMessage 函数存在
@@ -964,7 +964,8 @@ class ChessGame {
 
         try {
             this.showToast('正在获取AI建议的走法...');
-            const success = await this.chessAI.askAIForMove();
+            const chessAI = getChessAIEnhancedInstance(); // 修复：从单例获取AI实例
+            const success = await chessAI.askAIForMove();
             
             if (success) {
                 this.showToast('AI走法执行成功！');
