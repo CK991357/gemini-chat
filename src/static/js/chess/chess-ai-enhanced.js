@@ -6,217 +6,6 @@ if (typeof window.Chess === 'undefined') {
 }
 const Chess = window.Chess;
 
-// ✅ 新增：引入普通聊天的流式处理逻辑
-import { ChatApiHandler } from '../chat/chat-api-handler.js';
-// 新增：导入全局配置，以便访问 chat 模式的模型列表
-import { CONFIG } from '../config/config.js';
-
-// ✅ 提供一个安全的空依赖对象，避免 undefined 报错
-const chatApiHandler = new ChatApiHandler({
-    toolManager: null,
-    historyManager: null,
-    state: {},
-    libs: {},
-    config: { API: { AVAILABLE_MODELS: [] } } // 避免 .config.API 报错
-});
-
-// =====================================================================
-// == 新增的辅助函数 (可以放在文件顶部或 ChessAIEnhanced 类外部) ==
-// =====================================================================
-
-/**
- * 辅助函数：调用后端的 MCP Proxy
- */
-async function executeMcpTool(toolName, parameters) {
-    const response = await fetch('/api/mcp-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool_name: toolName, parameters }),
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`工具执行失败: ${errorText}`);
-    }
-    return await response.json();
-}
-
-/**
- * @private
- * @description Attempts to parse a JSON string that may have minor syntax errors,
- * which can sometimes be output by language models.
- * @param {string} jsonString - The JSON string to parse.
- * @returns {object} The parsed JavaScript object.
- * @throws {Error} If the string cannot be parsed even after cleanup attempts.
- */
-function _robustJsonParse(jsonString) {
-    try {
-        // First, try the standard parser.
-        return JSON.parse(jsonString);
-    } catch (e) {
-        console.warn("[MCP] Standard JSON.parse failed, attempting robust parsing...", e);
-        let cleanedString = jsonString;
-
-        // 1. Remove trailing commas from objects and arrays.
-        cleanedString = cleanedString.replace(/,\s*([}\]])/g, '$1');
-
-        // 2. Escape unescaped newlines and carriage returns within string literals, but not within JSON structure.
-        // This is a heuristic and might not cover all cases, but should help with common code snippets.
-        cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\n/g, '$1\\n');
-        cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\r/g, '$1\\r');
-
-
-        // 3. Fix issue where a quote is added after a number or boolean.
-        // e.g., "max_results": 5" -> "max_results": 5
-        cleanedString = cleanedString.replace(/:( *[0-9\.]+)\"/g, ':$1');
-        cleanedString = cleanedString.replace(/:( *(?:true|false))\"/g, ':$1');
-
-        try {
-            // Retry parsing with the cleaned string.
-            return JSON.parse(cleanedString);
-        } catch (finalError) {
-            console.error("[MCP] Robust JSON parsing failed after cleanup.", finalError);
-            // Throw the original error for better context if the final one is not informative.
-            throw finalError || e;
-        }
-    }
-}
-
-/**
- * 升级版：发送AI请求并处理完整的工具调用流程
- */
-async function sendAndProcessAIRequest(messages, model, tools, onStreamUpdate) {
-    const requestBody = { model, messages, stream: true, enableReasoning: true, tools };
-
-    const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let accumulatedText = '';
-    let toolCalls = [];
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop();
-
-        for (const part of parts) {
-            if (!part.startsWith('data: ')) continue;
-            const dataStr = part.slice(6).trim();
-            if (dataStr === '[DONE]') continue;
-
-            try {
-                const data = JSON.parse(dataStr);
-                const choiceDelta = data.choices?.[0]?.delta;
-                let currentContent = choiceDelta?.content || choiceDelta?.reasoning_content || '';
-                if (currentContent) {
-                    accumulatedText += currentContent;
-                    onStreamUpdate(accumulatedText);
-                }
-                if (choiceDelta?.tool_calls) {
-                    choiceDelta.tool_calls.forEach((tc, index) => {
-                        if (!toolCalls[index]) {
-                            toolCalls[index] = tc;
-                        } else {
-                            if (tc.function && tc.function.arguments) {
-                                toolCalls[index].function.arguments += tc.function.arguments;
-                            }
-                        }
-                    });
-                }
-            } catch (e) { console.warn('SSE解析错误:', e); }
-        }
-    }
-
-    if (toolCalls.length === 0) {
-        return accumulatedText.trim();
-    }
-
-    onStreamUpdate(accumulatedText + "\n\n`正在执行工具: stockfish_analyzer...`");
-    
-    // ✅ 修正：toolCalls 是一个数组，我们处理第一个工具调用
-    const toolCall = toolCalls[0]; // ✅ 修正：确保只取数组的第一个工具调用
-    const toolName = toolCall.function.name;
-    
-    // 1. 引入健壮的参数解析
-    const toolArgs = _robustJsonParse(toolCall.function.arguments);
-    
-    // 2. 生成唯一的 callId
-    const callId = toolCall.id || `call_${Date.now()}`;
-    
-    // 3. 执行工具
-    const toolRawResult = await executeMcpTool(toolName, toolArgs);
-    
-    // 4. 统一工具结果包装：stockfish 结果需要包装在 {"output": ...} 中
-    const toolResultContent = { output: toolRawResult };
-
-    const newMessages = [
-        ...messages,
-        // 5. 统一历史记录格式 (Assistant Message)
-        {
-            role: 'assistant',
-            content: null,
-            tool_calls: [{
-                id: callId,
-                type: 'function',
-                function: {
-                    name: toolName,
-                    arguments: JSON.stringify(toolArgs)
-                }
-            }]
-        },
-        // 6. 统一历史记录格式 (Tool Message)
-        {
-            role: 'tool',
-            tool_call_id: callId,
-            content: JSON.stringify(toolResultContent)
-        }
-    ];
-    
-    // 递归调用，将工具结果发回给AI
-    return await sendAndProcessAIRequest(newMessages, model, tools, onStreamUpdate);
-}
-
-
-// =====================================================================
-// == Singleton Pattern for ChessAIEnhanced                           ==
-// =====================================================================
-let instance = null;
-
-/**
- * Initializes the ChessAIEnhanced singleton instance.
- * This must be called once after the main chess game is ready.
- * @param {object} chessGame - The main chess game instance from chess-core.js.
- * @param {object} options - Configuration options for the AI.
- */
-export function initializeChessAIEnhanced(chessGame, options = {}) {
-    if (!instance) {
-        instance = new ChessAIEnhanced(chessGame, options);
-    }
-    return instance;
-}
-
-/**
- * Gets the singleton instance of the ChessAIEnhanced class.
- * @returns {ChessAIEnhanced} The singleton instance.
- * @throws {Error} If the instance has not been initialized yet.
- */
-export function getChessAIEnhancedInstance() {
-    if (!instance) {
-        throw new Error('ChessAIEnhanced has not been initialized. Call initializeChessAIEnhanced() first.');
-    }
-    return instance;
-}
-
 
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
@@ -226,6 +15,7 @@ export class ChessAIEnhanced {
         this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
         // 新增：视觉聊天区消息显示函数
         this.displayVisionMessage = options.displayVisionMessage || console.log;
+        this.chatApiHandler = options.chatApiHandler; // ✅ 接收注入的 handler
         // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
 
@@ -427,7 +217,7 @@ export class ChessAIEnhanced {
      * 第一阶段：构建分析提示词 (已修复和优化)
      */
     buildAnalysisPrompt(history, currentFEN) {
-    const turnColor = currentFEN.split(' ')[1];
+     const turnColor = currentFEN.split(' ')[1];
     const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
     
     // 🚨 明确棋子颜色与大小写规则
@@ -986,86 +776,84 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
         // 返回相似度比例（0~1）
         return matches / longer.length;
     }
-
     /**
-     * 新增：使用你提供的、更专业的提示词
-     */
-    buildStockfishPrompt(currentFEN, history) {
-        const turn = currentFEN.split(' ')[1] === 'w' ? '白方' : '黑方';
-        const historyContext = history.length > 1
-            ? `这是历史局面，仅供参考：\n${history.slice(-3).join('\n')}`
-            : '这是棋局的第一步。';
-
-        // 这里我们直接使用你提供的、已经验证过的 chess_realtime_analysis 提示词内容
-        // 并将 FEN 和历史动态插入
-        return `你是一位顶级的国际象棋AI助教。你的核心任务是作为用户和强大的 "stockfish_analyzer" 工具之间的智能桥梁。你 **不自己下棋**，而是 **调用工具** 并 **解释结果**。
-
-当前局面 FEN: \`${currentFEN}\`
-当前轮到: **${turn}**
-${historyContext}
-
-**核心工作流程:**
-1.  **理解用户意图**: 用户的意图是找到最佳走法。
-2.  **调用正确工具**: **必须** 调用 \`stockfish_analyzer\` 工具，并为 \`mode\` 参数选择 \`get_best_move\`。
-3.  **解释工具结果**: 在收到工具返回的精确JSON数据后，你的任务是将其 **翻译** 成富有洞察力、易于理解的教学式语言。
-
-**结果解释规则:**
-*   **解释最佳走法**: 工具会返回UCI格式的走法（如 "e2e4"）。你 **必须** 将其转化为用户能看懂的标准代数记谱法（SAN），并解释这一步的战略意图。例如，对于 \`"best_move": "g1f3"\`，你应该说：“引擎推荐的最佳走法是 **Nf3**。这一步控制了中心，并为王车易位做好了准备。”
-
-**严格禁止:**
-*   **禁止自己创造走法**: 你的所有走法建议都 **必须** 来自 \`stockfish_analyzer\` 工具的输出。
-*   **禁止显示原始数据**: 不要在给用户的最终回复中展示JSON或UCI走法。
-
-请立即为当前局面调用工具并返回解释。`;
-    }
-
-    /**
-     * 新增：使用 Stockfish 工具请求AI走法的主函数
+     * 新增：使用注入的 ChatApiHandler 和 stockfish 工具请求AI走法
      */
     async askAIWithStockfish() {
-        const modelName = 'gemini-2.5-flash-preview-09-2025';
-        const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
-
-        if (!modelConfig || !modelConfig.tools) {
-            const errorMsg = `错误：在 config.js 的 chat 模型列表中未找到 "${modelName}" 或其未配置 'tools'。`;
-            this.displayVisionMessage(errorMsg);
-            throw new Error(errorMsg);
+        if (!this.chatApiHandler) {
+            const errorMsg = "ChatApiHandler 未被正确注入，无法使用 Stockfish 工具";
+            this.showToast(errorMsg, 'error');
+            this.logMessage(errorMsg, 'error');
+            this.displayVisionMessage(`**💥 内部错误**\n\n${errorMsg}`);
+            return;
         }
 
-        const currentFEN = this.chessGame.getCurrentFEN();
-        const history = this.chessGame.getFullGameHistory();
-        const prompt = this.buildStockfishPrompt(currentFEN, history);
-        const messages = [{ role: 'user', content: prompt }];
-
-        const messageId = `vision-message-${Date.now()}`;
-        this.displayVisionMessage(`正在请求最优解 (模型: ${modelConfig.displayName})...`, { id: messageId, create: true });
-
         try {
-            const finalResponse = await sendAndProcessAIRequest(
-                messages,
-                modelConfig.name,
-                modelConfig.tools,
-                (streamedText) => {
-                    this.displayVisionMessage(streamedText, { id: messageId, append: true });
-                }
-            );
+            this.logMessage('🚀 开始使用 Stockfish 工具请求AI走法...', 'system');
+            this.displayVisionMessage('**🐟 正在调用 Stockfish 工具获取最佳走法...**');
 
-            const moves = this.extractAllSANFromText(finalResponse);
-            if (moves.length > 0) {
-                const bestMove = moves; // 理论上只有一个
-                this.displayVisionMessage(`AI推荐的最优解是: **${bestMove}**。`, { id: `vision-exec-${Date.now()}`, create: true });
-                
-                // 复用现有的模态框让用户确认
-                const chosenMove = await this.showMoveChoiceModal(finalResponse, [bestMove]);
-                if (chosenMove) {
-                    await this.executeSANMove(chosenMove, currentFEN);
+            const currentFEN = this.chessGame.getCurrentFEN();
+            const turnColor = currentFEN.split(' ') === 'w' ? '白方' : '黑方';
+
+            // 1. 构建请求体
+            const requestBody = {
+                model: 'gemini-2.5-flash-preview-09-2025', // 指定使用工具的模型
+                messages: [
+                    {
+                        role: 'system',
+                        content: '你是一个国际象棋助手。你的唯一任务是使用 `stockfish_analyzer` 工具来分析给定的FEN棋盘局面，并获取最佳走法。在你的最终回复中，只包含工具返回的最佳走法(SAN格式)，不要添加任何额外的解释或文字。'
+                    },
+                    {
+                        role: 'user',
+                        content: `当前局面 (FEN): ${currentFEN}\n当前回合方: ${turnColor}。请找出最佳走法。`
+                    }
+                ]
+            };
+
+            // 2. 定义UI重定向
+            // 我们需要一个 createAIMessageElement 的替代品，这里我们用 displayVisionMessage 的 create 选项来模拟
+            const uiOverrides = {
+                logMessage: this.logMessage,
+                createAIMessageElement: () => {
+                    const id = `stockfish-response-${Date.now()}`;
+                    // 创建一个空的占位符消息
+                    this.displayVisionMessage('', { id, create: true });
+                    // 返回一个模拟的DOM元素引用，以便handler可以更新它
+                    // 注意：这部分依赖于 displayVisionMessage 的代理实现
+                    return {
+                        rawMarkdownBuffer: '',
+                        markdownContainer: {
+                            set innerHTML(html) {
+                                const msgElement = document.querySelector(`[data-msg-id="${id}"] .markdown-container`);
+                                if (msgElement) {
+                                    msgElement.innerHTML = html;
+                                }
+                            }
+                        },
+                        // 提供一个空的 reasoningContainer 以避免错误
+                        reasoningContainer: { style: {} }
+                    };
+                },
+                displayToolCallStatus: (toolName, args) => {
+                     this.displayVisionMessage(`**调用工具:** \`${toolName}\`\n**参数:** \`${args}\``);
+                },
+                scrollToBottom: () => {
+                    const container = document.getElementById('vision-chat-fullscreen');
+                    if (container) container.scrollTop = container.scrollHeight;
                 }
-            } else {
-                throw new Error('无法从AI的最终回复中提取有效走法。');
-            }
+            };
+
+            // 3. 调用 streamChatCompletion
+            await this.chatApiHandler.streamChatCompletion(requestBody, null, uiOverrides);
+
+            this.logMessage('✅ Stockfish 工具流程顺利完成。', 'system');
+
         } catch (error) {
-            console.error('askAIWithStockfish 流程出错:', error);
-            this.displayVisionMessage(`请求最优解时发生错误: ${error.message}`, { id: messageId, append: true });
+            const errorMsg = `调用 Stockfish 工具时出错: ${error.message}`;
+            this.showToast(errorMsg, 'error');
+            this.logMessage(errorMsg, 'error');
+            this.displayVisionMessage(`**💥 Stockfish 调用失败**\n\n${errorMsg}`);
+            console.error("Stockfish AI Error:", error);
         }
     }
 }

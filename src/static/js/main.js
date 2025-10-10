@@ -489,7 +489,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         initializeChessCore({
             showToast: showToast,
-            displayVisionMessage: displayVisionMessage // 注入渲染函数
+            displayVisionMessage: displayVisionMessage, // 注入渲染函数
+            chatApiHandler: chatApiHandler // ✅ 步骤1: 注入 chatApiHandler 实例
         });
         
         // 手动添加切换按钮事件监听器作为备份

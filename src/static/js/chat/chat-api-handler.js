@@ -38,7 +38,10 @@ export class ChatApiHandler {
      * @param {string} apiKey - The API key for authorization.
      * @returns {Promise<void>}
      */
-    async streamChatCompletion(requestBody, apiKey) {
+    async streamChatCompletion(requestBody, apiKey, uiOverrides = null) {
+        // ✅ 步骤2: 接收 uiOverrides 参数
+        const ui = uiOverrides || chatUI; // ✅ 如果有覆盖则使用，否则回退到默认的 chatUI
+
         let currentMessages = requestBody.messages;
         const selectedModelName = requestBody.model; // 获取当前模型名称
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
@@ -87,7 +90,7 @@ export class ChatApiHandler {
 
             const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
             if (!isToolResponseFollowUp) {
-                this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
+                this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
             }
 
             let buffer = '';
@@ -126,7 +129,7 @@ export class ChatApiHandler {
                                             if (!qwenToolCallAssembler) {
                                                 qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
                                                 Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
-                                                chatUI.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
+                                                ui.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
                                                 if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
                                             } else {
                                                 qwenToolCallAssembler.arguments += func.arguments || '';
@@ -142,13 +145,13 @@ export class ChatApiHandler {
                                     functionCallDetected = true;
                                     currentFunctionCall = functionCallPart.functionCall;
                                     Logger.info('Function call detected:', currentFunctionCall);
-                                    chatUI.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
+                                    ui.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
                                     if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
 
                                 } else if (choice.delta && !functionCallDetected && !qwenToolCallAssembler) {
                                     // Process reasoning and content only if no tool call is active
                                     if (choice.delta.reasoning_content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
+                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
                                         if (!reasoningStarted) {
                                             this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
                                             reasoningStarted = true;
@@ -159,7 +162,7 @@ export class ChatApiHandler {
                                     }
                                     
                                     if (choice.delta.content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = chatUI.createAIMessageElement();
+                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
                                         
                                         if (reasoningStarted && !answerStarted) {
                                             const separator = document.createElement('hr');
@@ -176,7 +179,7 @@ export class ChatApiHandler {
                                                 this.libs.MathJax.typeset([this.state.currentAIMessageContentDiv.markdownContainer, this.state.currentAIMessageContentDiv.reasoningContainer]);
                                             }).catch((err) => console.error('MathJax typesetting failed:', err));
                                         }
-                                        chatUI.scrollToBottom();
+                                        ui.scrollToBottom();
                                     }
                                 }
                             }
@@ -231,12 +234,12 @@ export class ChatApiHandler {
                         : { tool_name: currentFunctionCall.name, arguments: JSON.stringify(currentFunctionCall.args || {}) };
                     
                     console.log(`[${timestamp()}] [DISPATCH] Detected Qwen/Zhipu/Gemini MCP tool call. Routing to _handleMcpToolCall...`);
-                    await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey);
+                    await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey, uiOverrides);
 
                 } else {
                     // 否则，处理为标准的、前端执行的 Gemini 函数调用（例如默认的 Google 搜索）
                     console.log(`[${timestamp()}] [DISPATCH] Model is not configured for MCP. Routing to _handleGeminiToolCall...`);
-                    await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey);
+                    await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey, uiOverrides);
                 }
                 console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
 
@@ -249,13 +252,13 @@ export class ChatApiHandler {
                     });
                 }
                 this.state.currentAIMessageContentDiv = null;
-                chatUI.logMessage('Turn complete (HTTP)', 'system');
+                ui.logMessage('Turn complete (HTTP)', 'system');
                 this.historyManager.saveHistory();
             }
      
         } catch (error) {
             Logger.error('处理 HTTP 流失败:', error);
-            chatUI.logMessage(`处理流失败: ${error.message}`, 'system');
+            ui.logMessage(`处理流失败: ${error.message}`, 'system');
             if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
                 this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
             }
@@ -272,10 +275,11 @@ export class ChatApiHandler {
      * @param {string} apiKey - The API key.
      * @returns {Promise<void>}
      */
-    _handleGeminiToolCall = async (functionCall, requestBody, apiKey) => {
+    _handleGeminiToolCall = async (functionCall, requestBody, apiKey, uiOverrides = null) => {
+        const ui = uiOverrides || chatUI;
         try {
             this.state.isUsingTool = true;
-            chatUI.logMessage(`执行 Gemini 工具: ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
+            ui.logMessage(`执行 Gemini 工具: ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
             const toolResult = await this.toolManager.handleToolCall(functionCall);
             const toolResponsePart = toolResult.functionResponses[0].response.output;
 
@@ -294,11 +298,11 @@ export class ChatApiHandler {
                 messages: this.state.chatHistory,
                 tools: this.toolManager.getToolDeclarations(),
                 sessionId: this.state.currentSessionId
-            }, apiKey);
-
+            }, apiKey, uiOverrides);
+ 
         } catch (toolError) {
             Logger.error('Gemini 工具执行失败:', toolError);
-            chatUI.logMessage(`Gemini 工具执行失败: ${toolError.message}`, 'system');
+            ui.logMessage(`Gemini 工具执行失败: ${toolError.message}`, 'system');
             this.state.chatHistory.push({
                 role: 'assistant',
                 parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
@@ -312,7 +316,7 @@ export class ChatApiHandler {
                 messages: this.state.chatHistory,
                 tools: this.toolManager.getToolDeclarations(),
                 sessionId: this.state.currentSessionId
-            }, apiKey);
+            }, apiKey, uiOverrides);
         } finally {
             this.state.isUsingTool = false;
         }
@@ -326,7 +330,8 @@ export class ChatApiHandler {
      * @param {string} apiKey - The API key.
      * @returns {Promise<void>}
      */
-    _handleMcpToolCall = async (toolCode, requestBody, apiKey) => {
+    _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
+        const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
         let callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
@@ -337,10 +342,10 @@ export class ChatApiHandler {
 
             // 显示工具调用状态UI
             console.log(`[${timestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
-            chatUI.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
-            chatUI.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
+            ui.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
+            ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
             console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
-
+ 
             // 从配置中动态查找当前模型的 MCP 服务器 URL
             const modelName = requestBody.model;
             console.log(`[${timestamp()}] [MCP] Searching for model config for: '${modelName}'`);
@@ -421,11 +426,11 @@ export class ChatApiHandler {
                             toolResultContent = { output: stdoutContent };
                         }
                     }
-                }
-                if (toolRawResult && toolRawResult.stderr) {
-                    chatUI.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
-                    if (toolResultContent && toolResultContent.output) {
-                        toolResultContent.output += `\nError: ${toolRawResult.stderr}`;
+                 }
+                 if (toolRawResult && toolRawResult.stderr) {
+                     ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
+                     if (toolResultContent && toolResultContent.output) {
+                         toolResultContent.output += `\nError: ${toolRawResult.stderr}`;
                     } else {
                         toolResultContent = { output: `Error: ${toolRawResult.stderr}` };
                     }
@@ -491,13 +496,13 @@ export class ChatApiHandler {
                 messages: this.state.chatHistory,
                 // 确保再次传递工具定义，以防需要连续调用
                 tools: requestBody.tools // Now 'requestBody.tools' might be updated with newly discovered tools
-            }, apiKey);
+            }, apiKey, uiOverrides);
             console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
-
+ 
         } catch (toolError) {
             console.error(`[${timestamp()}] [MCP] --- CATCH BLOCK ERROR ---`, toolError);
             Logger.error('MCP 工具执行失败:', toolError);
-            chatUI.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
+            ui.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
             
             // 即使失败，也要将失败信息以正确的格式加入历史记录
             const callId = `call_${Date.now()}`; // 统一生成 ID
@@ -510,7 +515,7 @@ export class ChatApiHandler {
                     type: 'function',
                     function: {
                         name: toolCode.tool_name,
-                        arguments: JSON.stringify(parsedArguments) // 使用 parsedArguments
+                        arguments: toolCode.arguments // 保持原始字符串格式
                     }
                 }]
             });
@@ -527,7 +532,7 @@ export class ChatApiHandler {
                 ...requestBody,
                 messages: this.state.chatHistory,
                 tools: requestBody.tools
-            }, apiKey);
+            }, apiKey, uiOverrides);
             console.log(`[${timestamp()}] [MCP] Chat completion stream after error finished.`);
         } finally {
             this.state.isUsingTool = false;

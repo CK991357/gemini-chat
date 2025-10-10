@@ -17,16 +17,17 @@ const Chess = window.Chess;
 class ChessGame {
     constructor(options = {}) {
         this.showToast = options.showToast || console.log;
+        this.chatApiHandler = options.chatApiHandler || null; // ✅ 保存 handler
         
         // 等待DOM完全加载
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => this.initialize());
+            document.addEventListener('DOMContentLoaded', () => this.initialize(this.chatApiHandler));
             return;
         }
-        this.initialize();
+        this.initialize(this.chatApiHandler);
     }
 
-    initialize() {
+    initialize(chatApiHandler) {
         // 直接使用全局DOM元素，不通过容器传递
         this.boardElement = document.getElementById('chess-board');
         this.fenOutput = document.getElementById('fen-output');
@@ -74,7 +75,7 @@ class ChessGame {
         this.setupInitialPosition();
         this.createGameOverModal(); // 新增：创建游戏结束模态框
         this.createAIMoveChoiceModal(); // 新增：创建AI走法选择模态框
-        this.initializeAI();
+        this.initializeAI(chatApiHandler);
         this.addAIButton();
         this.addStockfishAIButton(); // 新增：添加Stockfish AI按钮
     }
@@ -889,7 +890,7 @@ class ChessGame {
     }
 
     // --- AI 功能集成 (集成增强的按钮状态管理) ---
-    initializeAI() {
+    initializeAI(chatApiHandler = null) { // ✅ 接收 chatApiHandler
         // 使用新的单例初始化方法
         initializeChessAIEnhanced(this, {
             showToast: this.showToast,
@@ -902,7 +903,8 @@ class ChessGame {
                 } else {
                     console.warn('displayVisionMessage not found on window object.');
                 }
-            }
+            },
+            chatApiHandler: chatApiHandler // ✅ 将其传递给 AI 模块
         });
         console.log('Chess AI Enhanced module initialized via singleton.');
     }
