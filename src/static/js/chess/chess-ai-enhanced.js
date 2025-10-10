@@ -427,7 +427,7 @@ export class ChessAIEnhanced {
      * 第一阶段：构建分析提示词 (已修复和优化)
      */
     buildAnalysisPrompt(history, currentFEN) {
-     const turnColor = currentFEN.split(' ')[1];
+    const turnColor = currentFEN.split(' ')[1];
     const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
     
     // 🚨 明确棋子颜色与大小写规则
@@ -991,7 +991,7 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
      * 新增：使用你提供的、更专业的提示词
      */
     buildStockfishPrompt(currentFEN, history) {
-        const turn = currentFEN.split(' ') === 'w' ? '白方' : '黑方';
+        const turn = currentFEN.split(' ')[1] === 'w' ? '白方' : '黑方';
         const historyContext = history.length > 1
             ? `这是历史局面，仅供参考：\n${history.slice(-3).join('\n')}`
             : '这是棋局的第一步。';
