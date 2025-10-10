@@ -5,7 +5,7 @@
  */
 
 import { Logger } from '../utils/logger.js';
-import { ChessAIEnhanced } from './chess-ai-enhanced.js';
+import { getChessAIEnhancedInstance, initializeChessAIEnhanced } from './chess-ai-enhanced.js';
 import { ChessRules, PIECES, VALID_CASTLING, VALID_PIECES } from './chess-rule.js';
 
 // 风险缓解：确保 chess.js 已加载
@@ -76,6 +76,7 @@ class ChessGame {
         this.createAIMoveChoiceModal(); // 新增：创建AI走法选择模态框
         this.initializeAI();
         this.addAIButton();
+        this.addStockfishAIButton(); // 新增：添加Stockfish AI按钮
     }
 
     initBoard() {
@@ -889,27 +890,21 @@ class ChessGame {
 
     // --- AI 功能集成 (集成增强的按钮状态管理) ---
     initializeAI() {
-        this.chessAI = new ChessAIEnhanced(this, {
+        // 使用新的单例初始化方法
+        initializeChessAIEnhanced(this, {
             showToast: this.showToast,
-            // 传入UI日志记录器和模态框显示器
-            logMessage: (message, type = 'info') => {
-                if (typeof chatUI !== 'undefined' && chatUI.logMessage) {
-                    chatUI.logMessage(message, type);
-                } else {
-                    console.log(`[ChessAI ${type}]: ${message}`);
-                }
-            },
+            logMessage: Logger.info,
             showMoveChoiceModal: (analysis, moves) => this.showAIMoveChoiceModal(analysis, moves),
-            // 新增：传递视觉聊天区消息显示函数
-            displayVisionMessage: (message) => {
-                // 这里需要调用视觉聊天区的显示函数
-                // 由于模块间依赖，我们需要通过全局变量或事件来通信
+            displayVisionMessage: (content, opts) => {
+                // 确保 displayVisionMessage 函数存在
                 if (typeof window.displayVisionMessage === 'function') {
-                    window.displayVisionMessage(message);
+                    window.displayVisionMessage(content, opts);
+                } else {
+                    console.warn('displayVisionMessage not found on window object.');
                 }
             }
         });
-        console.log('Chess AI Enhanced module initialized.');
+        console.log('Chess AI Enhanced module initialized via singleton.');
     }
 
     addAIButton() {
@@ -929,6 +924,24 @@ class ChessGame {
         aiButton.addEventListener('click', () => this.handleAskAI());
         
         fenActions.appendChild(aiButton);
+    }
+
+    addStockfishAIButton() {
+        const fenActions = document.querySelector('.fen-actions');
+        if (!fenActions) {
+            console.error('.fen-actions container not found for Stockfish AI button.');
+            return;
+        }
+
+        if (document.getElementById('ask-ai-stockfish-button')) return;
+
+        const stockfishButton = document.createElement('button');
+        stockfishButton.id = 'ask-ai-stockfish-button';
+        stockfishButton.className = 'action-button chess-ai-button';
+        stockfishButton.innerHTML = '<i class="fas fa-cogs"></i> 问AI最优解';
+        stockfishButton.addEventListener('click', () => this.handleAskAIWithStockfish());
+        
+        fenActions.appendChild(stockfishButton);
     }
 
     async handleAskAI() {
@@ -963,6 +976,35 @@ class ChessGame {
             // 确保按钮状态在任何情况下都能恢复
             aiButton.disabled = false;
             aiButton.innerHTML = originalText;
+        }
+    }
+
+    async handleAskAIWithStockfish() {
+        if (this.gameOver) {
+            this.showToast('游戏已结束，无法询问AI');
+            return;
+        }
+        if (this.pendingPromotion) {
+            this.showToast('请先完成兵的升变选择');
+            return;
+        }
+
+        const stockfishButton = document.getElementById('ask-ai-stockfish-button');
+        const originalText = stockfishButton.innerHTML;
+        
+        stockfishButton.disabled = true;
+        stockfishButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> AI计算中...';
+
+        try {
+            this.showToast('正在获取AI最优解...');
+            const chessAI = getChessAIEnhancedInstance();
+            await chessAI.askAIWithStockfish();
+        } catch (error) {
+            console.error('AI最优解处理异常:', error);
+            this.showToast(`AI最优解处理失败: ${error.message}`);
+        } finally {
+            stockfishButton.disabled = false;
+            stockfishButton.innerHTML = originalText;
         }
     }
 

@@ -1,4 +1,4 @@
-import { getChessAIEnhancedInstance, initializeChessAIEnhanced } from '../chess/chess-ai-enhanced.js';
+import { initializeChessAIEnhanced } from '../chess/chess-ai-enhanced.js';
 import { getChessGameInstance } from '../chess/chess-core.js';
 import { CONFIG } from '../config/config.js';
 import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
@@ -29,7 +29,6 @@ export function initializeVisionCore(el, manager, handlers) {
 
     populateModelSelect();
     populatePromptSelect();
-    createChessButtons(); // 新增一个函数来创建按钮
     attachEventListeners();
 
     // 新增：初始化 Chess AI 模块，确保在事件监听器附加之后，但在模块完全准备好之前
@@ -92,27 +91,6 @@ function populatePromptSelect() {
 }
 
 /**
- * 新增：动态创建国际象棋控制按钮
- */
-function createChessButtons() {
-    // 假设按钮的容器有一个ID，例如 'chess-controls'
-    const controlsContainer = document.getElementById('chess-controls');
-    if (!controlsContainer) {
-        console.warn('未找到国际象棋按钮容器 #chess-controls');
-        return;
-    }
-
-    // 创建我们的新按钮，并确保它不存在
-    if (!document.getElementById('ask-ai-stockfish-button')) {
-        const stockfishButton = document.createElement('button');
-        stockfishButton.id = 'ask-ai-stockfish-button';
-        stockfishButton.className = 'chess-button';
-        stockfishButton.textContent = '问AI最优解'; // 使用你指定的按钮文本
-        controlsContainer.appendChild(stockfishButton);
-    }
-}
-
-/**
  * Attaches all necessary event listeners for the vision UI.
  */
 function attachEventListeners() {
@@ -120,29 +98,6 @@ function attachEventListeners() {
     elements.visionAttachmentButton?.addEventListener('click', () => elements.visionFileInput.click());
     elements.visionFileInput?.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'vision'));
     elements.visionSummaryButton?.addEventListener('click', () => generateGameSummary());
-
-    // 为新按钮绑定事件
-    const askAIStockfishButton = document.getElementById('ask-ai-stockfish-button');
-    if (askAIStockfishButton) {
-        askAIStockfishButton.addEventListener('click', async () => {
-            const chessAI = getChessAIEnhancedInstance();
-            if (chessAI) {
-                askAIStockfishButton.disabled = true;
-                askAIStockfishButton.textContent = 'AI思考中...';
-                try {
-                    await chessAI.askAIWithStockfish();
-                } catch (error) {
-                    console.error('Error asking AI with Stockfish:', error);
-                    if (chessAI.displayVisionMessage) {
-                       chessAI.displayVisionMessage(`请求AI时出错: ${error.message}`);
-                    }
-                } finally {
-                    askAIStockfishButton.disabled = false;
-                    askAIStockfishButton.textContent = '问AI最优解';
-                }
-            }
-        });
-    }
     
     // 监听提示词模式切换
     elements.visionPromptSelect?.addEventListener('change', () => {
