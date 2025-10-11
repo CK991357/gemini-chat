@@ -449,18 +449,19 @@ function prepareUserContent(text, files) {
  */
 function buildGeminiRequestBody(modelName, userContent) {
     const selectedPrompt = getSelectedPrompt();
-    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    // 修正：从 CONFIG.VISION.MODELS 中查找模型配置
+    const modelConfig = CONFIG.VISION.MODELS.find(m => m.name === modelName);
     
     const requestBody = {
         model: modelName,
         messages: [
-            { 
-                role: 'system', 
-                content: [{ type: 'text', text: selectedPrompt.systemPrompt }] 
+            {
+                role: 'system',
+                content: [{ type: 'text', text: selectedPrompt.systemPrompt }]
             },
-            { 
-                role: 'user', 
-                content: userContent 
+            {
+                role: 'user',
+                content: userContent
             }
         ],
         stream: true,
@@ -472,9 +473,18 @@ function buildGeminiRequestBody(modelName, userContent) {
         ]
     };
 
-    // Add tools if available for this model
+    // 1. 添加工具 (使用 Vision 模块的配置)
     if (modelConfig && modelConfig.tools) {
         requestBody.tools = modelConfig.tools;
+    }
+
+    // 2. 添加思维链 (从 localStorage 或模型配置中获取)
+    // 检查 localStorage 中的全局设置，或模型配置中的特定设置
+    const enableReasoningFromStorage = localStorage.getItem('geminiEnableReasoning') === 'true';
+    const enableReasoningFromConfig = modelConfig?.enableReasoning === true;
+    
+    if (enableReasoningFromStorage || enableReasoningFromConfig) {
+        requestBody.enableReasoning = true;
     }
 
     return requestBody;
