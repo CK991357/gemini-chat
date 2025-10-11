@@ -471,7 +471,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 定义 visionHandlers
     const visionHandlers = {
         showToast: showToast,
-        showSystemMessage: showSystemMessage
+        showSystemMessage: showSystemMessage,
+        chatApiHandler: chatApiHandler // 新增：注入 chatApiHandler 实例
     };
 
     // 初始化视觉功能

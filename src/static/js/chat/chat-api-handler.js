@@ -152,34 +152,80 @@ export class ChatApiHandler {
                                     // Process reasoning and content only if no tool call is active
                                     if (choice.delta.reasoning_content) {
                                         if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                                        if (!reasoningStarted) {
-                                            this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                            reasoningStarted = true;
+                                        
+                                        // 兼容性检查：确保 reasoningContainer 存在
+                                        if (this.state.currentAIMessageContentDiv.reasoningContainer) {
+                                            if (!reasoningStarted) {
+                                                this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
+                                                reasoningStarted = true;
+                                            }
+                                            const reasoningText = choice.delta.reasoning_content;
+                                            
+                                            // 兼容性检查：确保 rawReasoningBuffer 存在
+                                            if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string') {
+                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
+                                            } else {
+                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer = reasoningText;
+                                            }
+                                            
+                                            // 兼容性检查：确保 reasoning-content 元素存在
+                                            const reasoningContentEl = this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
+                                            if (reasoningContentEl) {
+                                                reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
+                                            }
                                         }
-                                        const reasoningText = choice.delta.reasoning_content;
-                                        this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
-                                        this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content').innerHTML += reasoningText.replace(/\n/g, '<br>');
                                     }
                                     
                                     if (choice.delta.content) {
                                         if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
                                         
-                                        if (reasoningStarted && !answerStarted) {
+                                        // 兼容性检查：确保 reasoningContainer 存在且需要添加分隔线
+                                        if (this.state.currentAIMessageContentDiv.reasoningContainer &&
+                                            reasoningStarted && !answerStarted) {
                                             const separator = document.createElement('hr');
                                             separator.className = 'answer-separator';
-                                            this.state.currentAIMessageContentDiv.markdownContainer.before(separator);
+                                            // 兼容性检查：确保 markdownContainer 存在
+                                            if (this.state.currentAIMessageContentDiv.markdownContainer) {
+                                                this.state.currentAIMessageContentDiv.markdownContainer.before(separator);
+                                            }
                                             answerStarted = true;
                                         }
 
-                                        this.state.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                        this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(this.state.currentAIMessageContentDiv.rawMarkdownBuffer);
+                                        // 兼容性处理：确保 rawMarkdownBuffer 存在
+                                        if (typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string') {
+                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
+                                        } else {
+                                            // 如果不存在，初始化
+                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer = choice.delta.content || '';
+                                        }
+
+                                        // 兼容性检查：确保 markdownContainer 存在
+                                        if (this.state.currentAIMessageContentDiv.markdownContainer) {
+                                            this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(
+                                                this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+                                            );
+                                        }
                                         
+                                        // 应用数学公式渲染 - 兼容性处理
                                         if (typeof this.libs.MathJax !== 'undefined' && this.libs.MathJax.startup) {
                                             this.libs.MathJax.startup.promise.then(() => {
-                                                this.libs.MathJax.typeset([this.state.currentAIMessageContentDiv.markdownContainer, this.state.currentAIMessageContentDiv.reasoningContainer]);
+                                                const containersToTypeset = [];
+                                                if (this.state.currentAIMessageContentDiv.markdownContainer) {
+                                                    containersToTypeset.push(this.state.currentAIMessageContentDiv.markdownContainer);
+                                                }
+                                                if (this.state.currentAIMessageContentDiv.reasoningContainer) {
+                                                    containersToTypeset.push(this.state.currentAIMessageContentDiv.reasoningContainer);
+                                                }
+                                                if (containersToTypeset.length > 0) {
+                                                    this.libs.MathJax.typeset(containersToTypeset);
+                                                }
                                             }).catch((err) => console.error('MathJax typesetting failed:', err));
                                         }
-                                        ui.scrollToBottom();
+                                        
+                                        // 调用滚动函数
+                                        if (ui.scrollToBottom) {
+                                            ui.scrollToBottom();
+                                        }
                                     }
                                 }
                             }
@@ -208,8 +254,12 @@ export class ChatApiHandler {
             const timestamp = () => new Date().toISOString();
             if (functionCallDetected && currentFunctionCall) {
                 console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
-                // 将最终的文本部分（如果有）保存到历史记录
-                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
+                
+                // 兼容性处理：保存最终文本到历史记录
+                if (this.state.currentAIMessageContentDiv &&
+                    typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
+                    this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {
+                    
                     console.log(`[${timestamp()}] [DISPATCH] Saving final text part to history.`);
                     this.state.chatHistory.push({
                         role: 'assistant',
@@ -244,16 +294,34 @@ export class ChatApiHandler {
                 console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
 
             } else {
-                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.rawMarkdownBuffer) {
-                    this.state.chatHistory.push({
+                // 兼容性处理：保存非工具调用的响应
+                if (this.state.currentAIMessageContentDiv &&
+                    typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
+                    this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {
+                    
+                    const historyEntry = {
                         role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer,
-                        reasoning: this.state.currentAIMessageContentDiv.rawReasoningBuffer
-                    });
+                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+                    };
+                    
+                    // 兼容性检查：如果有思维链内容也保存
+                    if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string' &&
+                        this.state.currentAIMessageContentDiv.rawReasoningBuffer.trim() !== '') {
+                        historyEntry.reasoning = this.state.currentAIMessageContentDiv.rawReasoningBuffer;
+                    }
+                    
+                    this.state.chatHistory.push(historyEntry);
                 }
                 this.state.currentAIMessageContentDiv = null;
-                ui.logMessage('Turn complete (HTTP)', 'system');
-                this.historyManager.saveHistory();
+                
+                if (ui.logMessage) {
+                    ui.logMessage('Turn complete (HTTP)', 'system');
+                }
+                
+                // 保存历史记录
+                if (this.historyManager && this.historyManager.saveHistory) {
+                    this.historyManager.saveHistory();
+                }
             }
      
         } catch (error) {

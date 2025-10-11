@@ -1,12 +1,13 @@
 import { initializeChessAIEnhanced } from '../chess/chess-ai-enhanced.js';
 import { getChessGameInstance } from '../chess/chess-core.js';
 import { CONFIG } from '../config/config.js';
-import { ApiHandler } from '../core/api-handler.js'; // 引入 ApiHandler
+import { ApiHandler } from '../core/api-handler.js'; // 用于 GLM 模型
 import { Logger } from '../utils/logger.js';
 
 /**
  * @fileoverview Core logic for the Vision feature.
  * Handles UI initialization, API calls, and message display for multimodal vision chat.
+ * Now supports both GLM models (via ApiHandler) and Gemini models (via ChatApiHandler).
  */
 
 // Module-level state
@@ -14,7 +15,8 @@ let elements = {};
 let visionChatHistory = [];
 let attachmentManager = null;
 let showToastHandler = null;
-const apiHandler = new ApiHandler(); // 创建 ApiHandler 实例
+let chatApiHandlerInstance = null; // 新增：存储注入的 ChatApiHandler 实例
+const apiHandler = new ApiHandler(); // 用于 GLM 模型
 
 /**
  * Initializes the Vision feature.
@@ -26,12 +28,18 @@ export function initializeVisionCore(el, manager, handlers) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
+    chatApiHandlerInstance = handlers.chatApiHandler; // 接收注入的 ChatApiHandler 实例
+
+    // 检查关键依赖是否就绪
+    if (!chatApiHandlerInstance) {
+        console.warn('ChatApiHandler instance not provided to Vision module. Gemini models will not be available.');
+    }
 
     populateModelSelect();
     populatePromptSelect();
     attachEventListeners();
 
-    // 新增：初始化 Chess AI 模块，确保在事件监听器附加之后，但在模块完全准备好之前
+    // 初始化 Chess AI 模块
     try {
         const chessGame = getChessGameInstance();
         if (chessGame) {
@@ -39,7 +47,6 @@ export function initializeVisionCore(el, manager, handlers) {
                 showToast: showToastHandler,
                 logMessage: Logger.info,
                 displayVisionMessage: displayVisionMessage,
-                // showMoveChoiceModal 将使用 chess-ai-enhanced.js 中的默认实现
             });
             Logger.info('ChessAIEnhanced module initialized successfully.');
         } else {
@@ -50,7 +57,7 @@ export function initializeVisionCore(el, manager, handlers) {
         showToastHandler(`错误：无法初始化国际象棋AI模块: ${error.message}`);
     }
 
-    Logger.info('Vision module initialized.');
+    Logger.info('Vision module initialized with dual-model support.');
 }
 
 /**
@@ -82,7 +89,7 @@ function populatePromptSelect() {
         const option = document.createElement('option');
         option.value = prompt.id;
         option.textContent = prompt.name;
-        option.title = prompt.description; // 添加描述作为悬停提示
+        option.title = prompt.description;
         if (prompt.id === CONFIG.VISION.DEFAULT_PROMPT_ID) {
             option.selected = true;
         }
@@ -136,6 +143,7 @@ function attachEventListeners() {
 
 /**
  * Handles sending a message with optional attachments to the vision model.
+ * Routes to appropriate handler based on model type.
  */
 async function handleSendVisionMessage() {
     const text = elements.visionInputText.value.trim();
@@ -146,36 +154,191 @@ async function handleSendVisionMessage() {
     }
 
     const selectedModel = elements.visionModelSelect.value;
-    const selectedPrompt = getSelectedPrompt();
+    const modelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
 
     // Display user message in the UI
     displayVisionUserMessage(text, visionAttachedFiles);
-
-    // Add user message to history
-    const userContent = [];
-    if (text) {
-        userContent.push({ type: 'text', text });
-    }
-    visionAttachedFiles.forEach(file => {
-        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-    });
-    visionChatHistory.push({ role: 'user', content: userContent });
 
     // Clear inputs
     elements.visionInputText.value = '';
     attachmentManager.clearAttachedFile('vision');
 
+    // Route to appropriate handler based on model type
+    if (modelConfig && modelConfig.isGemini && chatApiHandlerInstance) {
+        // Use ChatApiHandler for Gemini models
+        await handleGeminiVisionRequest(selectedModel, text, visionAttachedFiles);
+    } else {
+        // Use original ApiHandler for GLM models
+        await handleGlmVisionRequest(selectedModel, text, visionAttachedFiles);
+    }
+}
+
+/**
+ * Handles Gemini model requests using the injected ChatApiHandler.
+ * @param {string} modelName - The selected model name.
+ * @param {string} text - The text message.
+ * @param {Array} files - Array of attached files.
+ */
+async function handleGeminiVisionRequest(modelName, text, files) {
     // Set loading state
     elements.visionSendButton.disabled = true;
-    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; // 使用 Font Awesome 加载图标
+    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    try {
+        // Create UI adapter for vision interface
+        const visionUiAdapter = createVisionUIAdapter();
+        
+        // Prepare message content
+        const userContent = prepareUserContent(text, files);
+        visionChatHistory.push({ role: 'user', content: userContent });
+
+        // Build request body
+        const requestBody = buildGeminiRequestBody(modelName, userContent);
+        
+        // Get API key
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            throw new Error('请先在设置中配置 API Key');
+        }
+
+        // Use ChatApiHandler to process the request
+        await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
+
+        // Extract final response and add to vision history
+        const finalResponse = extractFinalResponseFromVisionUI();
+        if (finalResponse) {
+            visionChatHistory.push({ role: 'assistant', content: finalResponse });
+        }
+
+        Logger.info(`Gemini vision request completed for model: ${modelName}`, 'system');
+
+    } catch (error) {
+        console.error('Error processing Gemini vision request:', error);
+        // Display error in vision interface
+        const { markdownContainer } = createVisionAIMessageElement();
+        markdownContainer.innerHTML = `<p><strong>Gemini 请求失败:</strong> ${error.message}</p>`;
+        showToastHandler(`Gemini 请求失败: ${error.message}`);
+    } finally {
+        // Restore button state
+        elements.visionSendButton.disabled = false;
+        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>';
+    }
+}
+
+/**
+ * Creates a UI adapter that redirects ChatApiHandler output to Vision interface.
+ * @returns {object} UI adapter object.
+ */
+function createVisionUIAdapter() {
+    return {
+        // Core message functions
+        createAIMessageElement: () => {
+            const element = createVisionAIMessageElement();
+            // 确保返回的对象包含所有必要的属性
+            return {
+                container: element.container,
+                markdownContainer: element.markdownContainer,
+                reasoningContainer: element.reasoningContainer,
+                contentDiv: element.contentDiv,
+                rawMarkdownBuffer: element.rawMarkdownBuffer || '',
+                rawReasoningBuffer: element.rawReasoningBuffer || ''
+            };
+        },
+        displayUserMessage: (text, files) => {
+            // User message is already displayed, but we implement for completeness
+            if (files && files.length > 0) {
+                displayVisionUserMessage(text || '', files);
+            }
+        },
+        
+        // Logging and status
+        logMessage: (message, type = 'system') => {
+            Logger.info(`[Vision-Gemini] ${type}: ${message}`);
+            // Optional: Display system messages in vision interface
+            if (type === 'system' && message.includes('错误') || message.includes('失败')) {
+                showToastHandler(message);
+            }
+        },
+        
+        // Tool call status
+        displayToolCallStatus: (toolName, args) => {
+            if (!elements.visionMessageHistory) return;
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'tool-call-status vision-tool-call';
+            statusDiv.innerHTML = `
+                <i class="fas fa-cog fa-spin"></i>
+                <span>正在调用工具: ${toolName}...</span>
+            `;
+            elements.visionMessageHistory.appendChild(statusDiv);
+            scrollVisionToBottom();
+        },
+        
+        // Image result display with vision context
+        displayImageResult: (base64Image, altText = 'Generated Image', fileName = 'generated_image.png') => {
+            // Create a dedicated vision message for the image
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'ai');
+            
+            const avatarDiv = document.createElement('div');
+            avatarDiv.classList.add('avatar');
+            avatarDiv.textContent = '🤖';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('content', 'image-result-content');
+            
+            const imageElement = document.createElement('img');
+            imageElement.src = `data:image/png;base64,${base64Image}`;
+            imageElement.alt = altText;
+            imageElement.classList.add('chat-image-result');
+            imageElement.style.maxWidth = '100%';
+            imageElement.style.borderRadius = '8px';
+            
+            // Add click handler for modal view
+            imageElement.addEventListener('click', () => {
+                if (typeof openImageModal === 'function') {
+                    openImageModal(imageElement.src, altText, '未知尺寸', '未知大小', 'image/png');
+                }
+            });
+            
+            contentDiv.appendChild(imageElement);
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(contentDiv);
+            
+            if (elements.visionMessageHistory) {
+                elements.visionMessageHistory.appendChild(messageDiv);
+                scrollVisionToBottom();
+            }
+        },
+        
+        // Scrolling
+        scrollToBottom: () => scrollVisionToBottom()
+    };
+}
+
+/**
+ * Handles GLM model requests using the original ApiHandler.
+ * @param {string} modelName - The selected model name.
+ * @param {string} text - The text message.
+ * @param {Array} files - Array of attached files.
+ */
+async function handleGlmVisionRequest(modelName, text, files) {
+    const selectedPrompt = getSelectedPrompt();
+
+    // Prepare user content
+    const userContent = prepareUserContent(text, files);
+    visionChatHistory.push({ role: 'user', content: userContent });
+
+    // Set loading state
+    elements.visionSendButton.disabled = true;
+    elements.visionSendButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
     const aiMessage = createVisionAIMessageElement();
     const { markdownContainer, reasoningContainer } = aiMessage;
     markdownContainer.innerHTML = '<p>正在请求模型...</p>';
-    Logger.info(`Requesting vision model: ${selectedModel}`, 'system');
+    Logger.info(`Requesting GLM vision model: ${modelName}`, 'system');
 
     try {
         const requestBody = {
-            model: selectedModel,
+            model: modelName,
             messages: [
                 { role: 'system', content: selectedPrompt.systemPrompt },
                 ...visionChatHistory
@@ -183,7 +346,7 @@ async function handleSendVisionMessage() {
             stream: true,
         };
 
-        // 使用升级后的 ApiHandler 发送流式请求
+        // Use original ApiHandler for GLM models
         const reader = await apiHandler.fetchStream('/api/chat/completions', requestBody);
         const decoder = new TextDecoder('utf-8');
         let finalContent = '';
@@ -201,7 +364,7 @@ async function handleSendVisionMessage() {
             buffer += chunk;
             
             const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
+            buffer = lines.pop() || ''; // Keep incomplete data
 
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
@@ -231,14 +394,14 @@ async function handleSendVisionMessage() {
                             }
                         }
                     } catch (e) {
-                        // 忽略解析错误，继续处理下一行
                         console.warn('Skipping invalid SSE data:', jsonStr);
                     }
                 }
             }
-            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+            scrollVisionToBottom();
         }
 
+        // Apply MathJax rendering
         if (typeof MathJax !== 'undefined' && MathJax.startup) {
             MathJax.startup.promise.then(() => {
                 MathJax.typeset([markdownContainer, reasoningContainer]);
@@ -248,14 +411,109 @@ async function handleSendVisionMessage() {
         visionChatHistory.push({ role: 'assistant', content: finalContent });
 
     } catch (error) {
-        console.error('Error sending vision message:', error);
-        markdownContainer.innerHTML = `<p><strong>请求失败:</strong> ${error.message}</p>`;
-        Logger.info(`视觉模型请求失败: ${error.message}`, 'system');
+        console.error('Error sending GLM vision message:', error);
+        markdownContainer.innerHTML = `<p><strong>GLM 请求失败:</strong> ${error.message}</p>`;
+        Logger.info(`GLM 视觉模型请求失败: ${error.message}`, 'system');
+        showToastHandler(`GLM 请求失败: ${error.message}`);
     } finally {
         elements.visionSendButton.disabled = false;
-        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>'; // 恢复为 Font Awesome 发送图标
+        elements.visionSendButton.innerHTML = '<i class="fa-solid fa-paper-plane"></i>';
     }
 }
+
+/**
+ * Prepares user content array from text and files.
+ * @param {string} text - The text message.
+ * @param {Array} files - Array of attached files.
+ * @returns {Array} Formatted user content array.
+ */
+function prepareUserContent(text, files) {
+    const userContent = [];
+    if (text) {
+        userContent.push({ type: 'text', text });
+    }
+    files.forEach(file => {
+        if (file.type.startsWith('image/')) {
+            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+        }
+        // Add support for other file types if needed
+    });
+    return userContent;
+}
+
+/**
+ * Builds request body for Gemini models.
+ * @param {string} modelName - The model name.
+ * @param {Array} userContent - The user content array.
+ * @returns {object} Request body object.
+ */
+function buildGeminiRequestBody(modelName, userContent) {
+    const selectedPrompt = getSelectedPrompt();
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    
+    const requestBody = {
+        model: modelName,
+        messages: [
+            { 
+                role: 'system', 
+                content: [{ type: 'text', text: selectedPrompt.systemPrompt }] 
+            },
+            { 
+                role: 'user', 
+                content: userContent 
+            }
+        ],
+        stream: true,
+        safetySettings: CONFIG.API.SAFETY_SETTINGS || [
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
+        ]
+    };
+
+    // Add tools if available for this model
+    if (modelConfig && modelConfig.tools) {
+        requestBody.tools = modelConfig.tools;
+    }
+
+    return requestBody;
+}
+
+/**
+ * Extracts the final response text from the vision UI.
+ * @returns {string} The final response text.
+ */
+function extractFinalResponseFromVisionUI() {
+    if (!elements.visionMessageHistory) return '';
+    
+    const lastAIMessage = elements.visionMessageHistory.querySelector('.message.ai:last-child');
+    if (!lastAIMessage) return '';
+    
+    const markdownContainer = lastAIMessage.querySelector('.markdown-container');
+    return markdownContainer ? markdownContainer.innerText : '';
+}
+
+/**
+ * Gets the API key from main interface.
+ * @returns {string} The API key.
+ */
+function getApiKey() {
+    // Try to get API key from main interface
+    const apiKeyInput = document.getElementById('api-key');
+    return apiKeyInput ? apiKeyInput.value : localStorage.getItem('gemini_api_key');
+}
+
+/**
+ * Scrolls the vision message history to bottom.
+ */
+function scrollVisionToBottom() {
+    if (elements.visionMessageHistory) {
+        elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+    }
+}
+
+// ========== EXISTING VISION UI FUNCTIONS (保持原样) ==========
 
 /**
  * Displays a user's message in the vision chat UI.
@@ -287,9 +545,9 @@ function displayVisionUserMessage(text, files) {
             if (file.type.startsWith('image/')) {
                 attachmentElement = document.createElement('img');
                 attachmentElement.src = file.base64;
-                attachmentElement.style.maxWidth = '200px'; // 限制图片最大宽度
-                attachmentElement.style.maxHeight = '200px'; // 限制图片最大高度
-                attachmentElement.style.borderRadius = '8px'; // 添加圆角
+                attachmentElement.style.maxWidth = '200px';
+                attachmentElement.style.maxHeight = '200px';
+                attachmentElement.style.borderRadius = '8px';
             } else if (file.type.startsWith('video/')) {
                 attachmentElement = document.createElement('video');
                 attachmentElement.src = file.base64;
@@ -306,7 +564,7 @@ function displayVisionUserMessage(text, files) {
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
     elements.visionMessageHistory.appendChild(messageDiv);
-    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+    scrollVisionToBottom();
 }
 
 /**
@@ -362,12 +620,15 @@ function createVisionAIMessageElement() {
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
     elements.visionMessageHistory.appendChild(messageDiv);
-    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+    scrollVisionToBottom();
 
     return {
         container: messageDiv,
         markdownContainer,
-        reasoningContainer
+        reasoningContainer,
+        contentDiv,
+        rawMarkdownBuffer: '',
+        rawReasoningBuffer: ''
     };
 }
 
@@ -377,7 +638,7 @@ function createVisionAIMessageElement() {
  */
 function getSelectedPrompt() {
     if (!elements.visionPromptSelect) {
-        return CONFIG.VISION.PROMPTS[0]; // 默认返回第一个提示词
+        return CONFIG.VISION.PROMPTS[0];
     }
     
     const selectedId = elements.visionPromptSelect.value;
@@ -397,7 +658,6 @@ async function generateGameSummary() {
     } else if (typeof getChessGameInstance === 'function') {
         chessGame = getChessGameInstance();
     } else {
-        // 最后尝试通过DOM事件或其他全局访问方式
         chessGame = window.chessGameInstance;
     }
     
@@ -414,6 +674,7 @@ async function generateGameSummary() {
     }
 
     const selectedModel = elements.visionModelSelect.value;
+    const modelConfig = CONFIG.VISION.MODELS.find(m => m.name === selectedModel);
     const summaryButton = elements.visionSummaryButton;
     
     // 设置按钮加载状态
@@ -428,103 +689,121 @@ async function generateGameSummary() {
     markdownContainer.innerHTML = '<p>正在分析对局历史...</p>';
 
     try {
-        // 获取chess_summary提示词
-        const summaryPromptConfig = CONFIG.VISION.PROMPTS.find(prompt => prompt.id === 'chess_summary');
-        const systemPrompt = summaryPromptConfig ? summaryPromptConfig.systemPrompt : `你是一位国际象棋特级大师。请基于提供的完整对局历史（FEN格式）生成一份详细的对局总结和分析。`;
+        // 根据模型类型选择处理方式
+        if (modelConfig && modelConfig.isGemini && chatApiHandlerInstance) {
+            // 使用 Gemini 处理方式
+            const visionUiAdapter = createVisionUIAdapter();
+            const summaryPromptConfig = CONFIG.VISION.PROMPTS.find(prompt => prompt.id === 'chess_summary');
+            const systemPrompt = summaryPromptConfig ? summaryPromptConfig.systemPrompt : `你是一位国际象棋特级大师。请基于提供的完整对局历史（FEN格式）生成一份详细的对局总结和分析。`;
 
-        // 构建基于FEN历史的总结请求
-        const summaryRequest = {
-            model: selectedModel,
-            messages: [
-                { 
-                    role: 'system', 
-                    content: systemPrompt
-                },
-                { 
-                    role: 'user', 
-                    content: [
-                        { 
-                            type: 'text', 
-                            text: `请分析以下国际象棋对局历史（共${fenHistory.length}步）：
-
-完整FEN历史：
-${fenHistory.join('\n')}
-
-当前局面：${fenHistory[fenHistory.length - 1]}
-
-请基于这个完整的对局历史，生成一份专业的对局分析总结。` 
-                        }
-                    ]
-                }
-            ],
-            stream: true
-        };
-
-        // 发送请求
-        const reader = await apiHandler.fetchStream('/api/chat/completions', summaryRequest);
-        const decoder = new TextDecoder('utf-8');
-        let finalContent = '';
-        let reasoningStarted = false;
-        let answerStarted = false;
-        let buffer = '';
-
-        markdownContainer.innerHTML = ''; // Clear loading message
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
-            
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // 保留最后一行不完整的数据
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const jsonStr = line.substring(6);
-                    if (jsonStr === '[DONE]') return;
-                    
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        const delta = data.choices?.[0]?.delta;
-                        if (delta) {
-                            if (delta.reasoning_content) {
-                                if (!reasoningStarted) {
-                                    reasoningContainer.style.display = 'block';
-                                    reasoningStarted = true;
-                                }
-                                reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+            const requestBody = {
+                model: selectedModel,
+                messages: [
+                    { role: 'system', content: [{ type: 'text', text: systemPrompt }] },
+                    { 
+                        role: 'user', 
+                        content: [
+                            { 
+                                type: 'text', 
+                                text: `请分析以下国际象棋对局历史（共${fenHistory.length}步）：\n\n完整FEN历史：\n${fenHistory.join('\n')}\n\n当前局面：${fenHistory[fenHistory.length - 1]}\n\n请基于这个完整的对局历史，生成一份专业的对局分析总结。` 
                             }
-                            if (delta.content) {
-                                if (reasoningStarted && !answerStarted) {
-                                    const separator = document.createElement('hr');
-                                    separator.className = 'answer-separator';
-                                    reasoningContainer.after(separator);
-                                    answerStarted = true;
-                                }
-                                finalContent += delta.content;
-                                markdownContainer.innerHTML = marked.parse(finalContent);
+                        ]
+                    }
+                ],
+                stream: true
+            };
+
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                throw new Error('请先在设置中配置 API Key');
+            }
+
+            await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
+
+        } else {
+            // 使用 GLM 处理方式（原有逻辑）
+            const summaryPromptConfig = CONFIG.VISION.PROMPTS.find(prompt => prompt.id === 'chess_summary');
+            const systemPrompt = summaryPromptConfig ? summaryPromptConfig.systemPrompt : `你是一位国际象棋特级大师。请基于提供的完整对局历史（FEN格式）生成一份详细的对局总结和分析。`;
+
+            const summaryRequest = {
+                model: selectedModel,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { 
+                        role: 'user', 
+                        content: [
+                            { 
+                                type: 'text', 
+                                text: `请分析以下国际象棋对局历史（共${fenHistory.length}步）：\n\n完整FEN历史：\n${fenHistory.join('\n')}\n\n当前局面：${fenHistory[fenHistory.length - 1]}\n\n请基于这个完整的对局历史，生成一份专业的对局分析总结。` 
                             }
+                        ]
+                    }
+                ],
+                stream: true
+            };
+
+            const reader = await apiHandler.fetchStream('/api/chat/completions', summaryRequest);
+            const decoder = new TextDecoder('utf-8');
+            let finalContent = '';
+            let reasoningStarted = false;
+            let answerStarted = false;
+            let buffer = '';
+
+            markdownContainer.innerHTML = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+                
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const jsonStr = line.substring(6);
+                        if (jsonStr === '[DONE]') return;
+                        
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            const delta = data.choices?.[0]?.delta;
+                            if (delta) {
+                                if (delta.reasoning_content) {
+                                    if (!reasoningStarted) {
+                                        reasoningContainer.style.display = 'block';
+                                        reasoningStarted = true;
+                                    }
+                                    reasoningContainer.querySelector('.reasoning-content').innerHTML += delta.reasoning_content.replace(/\n/g, '<br>');
+                                }
+                                if (delta.content) {
+                                    if (reasoningStarted && !answerStarted) {
+                                        const separator = document.createElement('hr');
+                                        separator.className = 'answer-separator';
+                                        reasoningContainer.after(separator);
+                                        answerStarted = true;
+                                    }
+                                    finalContent += delta.content;
+                                    markdownContainer.innerHTML = marked.parse(finalContent);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Skipping invalid SSE data:', jsonStr);
                         }
-                    } catch (e) {
-                        // 忽略解析错误，继续处理下一行
-                        console.warn('Skipping invalid SSE data:', jsonStr);
                     }
                 }
+                scrollVisionToBottom();
             }
-            elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
-        }
 
-        // 应用数学公式渲染
-        if (typeof MathJax !== 'undefined' && MathJax.startup) {
-            MathJax.startup.promise.then(() => {
-                MathJax.typeset([markdownContainer, reasoningContainer]);
-            }).catch((err) => console.error('MathJax typesetting failed:', err));
-        }
+            if (typeof MathJax !== 'undefined' && MathJax.startup) {
+                MathJax.startup.promise.then(() => {
+                    MathJax.typeset([markdownContainer, reasoningContainer]);
+                }).catch((err) => console.error('MathJax typesetting failed:', err));
+            }
 
-        // 将总结添加到视觉聊天历史
-        visionChatHistory.push({ role: 'assistant', content: finalContent });
+            visionChatHistory.push({ role: 'assistant', content: finalContent });
+        }
 
         Logger.info('对局总结生成完成', 'system');
 
@@ -532,8 +811,8 @@ ${fenHistory.join('\n')}
         console.error('Error generating game summary:', error);
         markdownContainer.innerHTML = `<p><strong>总结生成失败:</strong> ${error.message}</p>`;
         Logger.info(`对局总结生成失败: ${error.message}`, 'system');
+        showToastHandler(`总结生成失败: ${error.message}`);
     } finally {
-        // 恢复按钮状态
         if (summaryButton) {
             summaryButton.disabled = false;
             summaryButton.innerHTML = '对局总结';
@@ -552,24 +831,17 @@ export function displayVisionMessage(markdownContent) {
         return;
     }
 
-    // 使用现有的函数来创建和渲染AI消息元素
     const { markdownContainer, reasoningContainer } = createVisionAIMessageElement();
     
-    // 渲染 Markdown 内容
-    // 确保 markdownContent 是字符串，以防外部模块传入非字符串类型
     const contentToRender = typeof markdownContent === 'string' ? markdownContent : String(markdownContent);
     markdownContainer.innerHTML = marked.parse(contentToRender);
 
-    // 渲染可能存在的数学公式
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
         MathJax.startup.promise.then(() => {
             MathJax.typeset([markdownContainer, reasoningContainer]);
         }).catch((err) => console.error('MathJax typesetting failed:', err));
     }
 
-    // 将这条消息添加到内部历史记录中，以保持一致性
     visionChatHistory.push({ role: 'assistant', content: contentToRender });
-
-    // 滚动到底部
-    elements.visionMessageHistory.scrollTop = elements.visionMessageHistory.scrollHeight;
+    scrollVisionToBottom();
 }
