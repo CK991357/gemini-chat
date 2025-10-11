@@ -8,6 +8,7 @@ let elements = {};
 let attachmentManager = null;
 let showToastHandler = null;
 let chatApiHandlerInstance = null; // 这个实例现在是 Vision 模式专属的
+let isVisionActive = false; // 跟踪视觉模式是否激活
 
 /**
  * [新增] 导出函数，用于从外部（如 main.js）清空 Vision 模式的聊天历史。
@@ -24,6 +25,13 @@ export function clearVisionHistory() {
         elements.visionMessageHistory.innerHTML = '';
     }
     Logger.info('Vision chat history cleared.');
+}
+
+/**
+ * 设置视觉模式激活状态
+ */
+export function setVisionActive(active) {
+    isVisionActive = active;
 }
 
 /**
@@ -161,6 +169,22 @@ function attachEventListeners() {
         if (defaultVisionTab) {
             defaultVisionTab.click();
         }
+    }
+
+    // 确保视觉模式主容器的显示状态正确
+    const visionModeButton = document.getElementById('vision-mode-button');
+    const visionContainer = document.querySelector('.vision-container');
+    
+    if (visionModeButton && visionContainer) {
+        visionModeButton.addEventListener('click', () => {
+            // 切换视觉模式激活状态
+            const isActive = visionContainer.classList.contains('active');
+            if (!isActive) {
+                visionContainer.classList.add('active');
+                visionModeButton.classList.add('active');
+                setVisionActive(true);
+            }
+        });
     }
 
     Logger.info('Vision event listeners attached');

@@ -649,6 +649,7 @@ let historyManager = null; // T10: 提升作用域
 let videoHandler = null; // T3: 新增 VideoHandler 实例
 let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
+let visionApiHandler = null; // 确保这里声明了 visionApiHandler
 
 
 /**
