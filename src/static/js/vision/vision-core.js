@@ -193,7 +193,7 @@ async function handleGeminiVisionRequest(modelName, text, files) {
         visionChatHistory.push({ role: 'user', content: userContent });
 
         // Build request body
-        const requestBody = buildGeminiRequestBody(modelName, userContent);
+        const requestBody = buildGeminiRequestBody(modelName);
         
         // Get API key
         const apiKey = getApiKey();
@@ -447,10 +447,11 @@ function prepareUserContent(text, files) {
  * @param {Array} userContent - The user content array.
  * @returns {object} Request body object.
  */
-function buildGeminiRequestBody(modelName, userContent) {
+function buildGeminiRequestBody(modelName) { // 移除 userContent 参数
     const selectedPrompt = getSelectedPrompt();
-    // 修正：从 CONFIG.VISION.MODELS 中查找模型配置
-    const modelConfig = CONFIG.VISION.MODELS.find(m => m.name === modelName);
+    
+    // 修正：从 API 配置中查找模型配置（因为工具定义在这里，与 Chat 模式对齐）
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
     
     const requestBody = {
         model: modelName,
@@ -459,10 +460,7 @@ function buildGeminiRequestBody(modelName, userContent) {
                 role: 'system',
                 content: [{ type: 'text', text: selectedPrompt.systemPrompt }]
             },
-            {
-                role: 'user',
-                content: userContent
-            }
+            ...visionChatHistory // 使用完整的历史记录
         ],
         stream: true,
         safetySettings: CONFIG.API.SAFETY_SETTINGS || [
@@ -473,19 +471,32 @@ function buildGeminiRequestBody(modelName, userContent) {
         ]
     };
 
-    // 1. 添加工具 (使用 Vision 模块的配置)
+    // 1. 添加工具配置（从 API 配置中获取）
     if (modelConfig && modelConfig.tools) {
+        console.log(`[Vision] 为模型 ${modelName} 添加工具:`, modelConfig.tools);
         requestBody.tools = modelConfig.tools;
+    } else {
+        console.log(`[Vision] 模型 ${modelName} 未配置工具`);
     }
 
-    // 2. 添加思维链 (从 localStorage 或模型配置中获取)
-    // 检查 localStorage 中的全局设置，或模型配置中的特定设置
-    const enableReasoningFromStorage = localStorage.getItem('geminiEnableReasoning') === 'true';
-    const enableReasoningFromConfig = modelConfig?.enableReasoning === true;
-    
-    if (enableReasoningFromStorage || enableReasoningFromConfig) {
+    // 2. 精确的思维链启用逻辑
+    const enableReasoning = shouldEnableReasoning(modelName, modelConfig);
+    if (enableReasoning) {
+        console.log(`[Vision] 为模型 ${modelName} 启用思维链`);
         requestBody.enableReasoning = true;
     }
+
+    // 3. 添加搜索禁用配置（如果模型配置了）
+    if (modelConfig && modelConfig.disableSearch) {
+        requestBody.disableSearch = true;
+    }
+
+    console.log(`[Vision] 最终请求体配置:`, {
+        model: modelName,
+        hasTools: !!(modelConfig && modelConfig.tools),
+        enableReasoning: enableReasoning,
+        disableSearch: !!(modelConfig && modelConfig.disableSearch)
+    });
 
     return requestBody;
 }
@@ -854,4 +865,30 @@ export function displayVisionMessage(markdownContent) {
 
     visionChatHistory.push({ role: 'assistant', content: contentToRender });
     scrollVisionToBottom();
+}
+/**
+ * 判断是否应该为指定模型启用思维链
+ * @param {string} modelName - 模型名称
+ * @param {object} modelConfig - 模型配置对象
+ * @returns {boolean} 是否启用思维链
+ */
+function shouldEnableReasoning(modelName, modelConfig) {
+    // 优先检查模型特定配置
+    if (modelConfig && modelConfig.enableReasoning !== undefined) {
+        return modelConfig.enableReasoning;
+    }
+    
+    // 其次检查全局设置（从主界面继承）
+    try {
+        // 尝试从主界面的 localStorage 获取设置
+        const globalReasoningSetting = localStorage.getItem('geminiEnableReasoning');
+        if (globalReasoningSetting !== null) {
+            return globalReasoningSetting === 'true';
+        }
+    } catch (e) {
+        console.warn('[Vision] 无法读取全局思维链设置:', e);
+    }
+    
+    // 默认不启用思维链
+    return false;
 }
