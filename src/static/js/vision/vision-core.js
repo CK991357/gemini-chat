@@ -1,4 +1,4 @@
-// vision-core.js - 优化版本
+// vision-core.js - 采用专属 API Handler 的最终架构版本
 import { getChessGameInstance } from '../chess/chess-core.js';
 import { CONFIG } from '../config/config.js';
 import { Logger } from '../utils/logger.js';
@@ -7,18 +7,35 @@ import { Logger } from '../utils/logger.js';
 let elements = {};
 let attachmentManager = null;
 let showToastHandler = null;
-let chatApiHandlerInstance = null;
+let chatApiHandlerInstance = null; // 这个实例现在是 Vision 模式专属的
 
 /**
- * Initializes the Vision feature as a simplified mapping to Chat functionality.
+ * [新增] 导出函数，用于从外部（如 main.js）清空 Vision 模式的聊天历史。
+ */
+export function clearVisionHistory() {
+    if (chatApiHandlerInstance) {
+        // 清空专属 handler 内部的状态
+        chatApiHandlerInstance.state.chatHistory = [];
+        chatApiHandlerInstance.state.currentSessionId = null;
+        chatApiHandlerInstance.state.currentAIMessageContentDiv = null;
+        chatApiHandlerInstance.state.isUsingTool = false;
+    }
+    if (elements.visionMessageHistory) {
+        elements.visionMessageHistory.innerHTML = '';
+    }
+    Logger.info('Vision chat history cleared.');
+}
+
+/**
+ * Initializes the Vision feature.
  */
 export function initializeVisionCore(el, manager, handlers) {
     elements = el;
     attachmentManager = manager;
     showToastHandler = handlers.showToast;
+    // [关键] 接收专属的 chatApiHandler 实例
     chatApiHandlerInstance = handlers.chatApiHandler;
 
-    // 验证关键配置
     if (!validateConfig()) {
         Logger.error('Vision configuration validation failed');
         return;
@@ -28,7 +45,7 @@ export function initializeVisionCore(el, manager, handlers) {
     populatePromptSelect();
     attachEventListeners();
 
-    Logger.info('Vision module initialized as chat mapping.');
+    Logger.info('Vision module initialized with a dedicated API handler.');
 }
 
 /**
@@ -150,7 +167,7 @@ function attachEventListeners() {
 }
 
 /**
- * Handles sending vision messages by delegating to chatApiHandler.
+ * Handles sending vision messages using its dedicated chatApiHandler.
  */
 async function handleSendVisionMessage() {
     if (!validateUIElements()) return;
@@ -163,42 +180,62 @@ async function handleSendVisionMessage() {
         return;
     }
 
-    const selectedModel = elements.visionModelSelect.value;
-    const selectedPrompt = getSelectedPrompt();
-
-    // 验证模型配置
-    const modelConfig = getModelConfig(selectedModel);
-    if (!modelConfig) {
-        showToastHandler(`模型配置不存在: ${selectedModel}`);
-        return;
-    }
-
-    // Display user message in vision UI
-    displayVisionUserMessage(text, visionAttachedFiles);
-
-    // Clear inputs
-    elements.visionInputText.value = '';
-    attachmentManager.clearAttachedFile('vision');
-
-    // 设置加载状态
-    setSendButtonLoading(true);
-
     try {
-        // Build request body using chat format
-        const requestBody = buildVisionRequestBody(selectedModel, selectedPrompt, text, visionAttachedFiles);
+        const selectedModel = elements.visionModelSelect.value;
+        const selectedPrompt = getSelectedPrompt();
+
+        const modelConfig = getModelConfig(selectedModel);
+        if (!modelConfig) {
+            showToastHandler(`模型配置不存在: ${selectedModel}`);
+            return;
+        }
+
+        // 准备用户消息内容
+        const userContent = prepareUserContent(text, visionAttachedFiles);
+        
+        // 构建完整的消息历史 - 确保格式正确
+        const messages = [];
+        
+        // 添加系统指令（如果存在）
+        if (selectedPrompt && selectedPrompt.systemPrompt) {
+            messages.push({
+                role: 'system',
+                content: [{ type: 'text', text: selectedPrompt.systemPrompt }]
+            });
+        }
+        
+        // 添加用户消息
+        messages.push({
+            role: 'user',
+            content: userContent
+        });
+
+        // 在UI上显示用户消息并清空输入
+        displayVisionUserMessage(text, visionAttachedFiles);
+        elements.visionInputText.value = '';
+        attachmentManager.clearAttachedFile('vision');
+
+        setSendButtonLoading(true);
+
+        // 使用构建的消息数组构建请求体
+        const requestBody = buildVisionRequestBody(
+            selectedModel, 
+            selectedPrompt, 
+            messages // 传递完整的消息数组，而不是历史记录
+        );
 
         const apiKey = getApiKey();
         if (!apiKey) {
             throw new Error('请先在设置中配置 API Key');
         }
-
-        // Use vision UI adapter to redirect output to vision interface
+        
         const visionUiAdapter = createVisionUIAdapter();
         
         if (!chatApiHandlerInstance) {
-            throw new Error('Chat API Handler 未初始化，无法发送请求。');
+            throw new Error('Vision Chat API Handler 未初始化。');
         }
         
+        // 直接调用，无需任何状态切换
         await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
 
         Logger.info(`Vision request completed for model: ${selectedModel}`, 'system');
@@ -207,8 +244,6 @@ async function handleSendVisionMessage() {
         console.error('Vision request failed:', error);
         const errorMessage = getErrorMessage(error);
         showToastHandler(`Vision 请求失败: ${errorMessage}`);
-        
-        // 显示错误消息
         displayErrorMessage(errorMessage);
     } finally {
         setSendButtonLoading(false);
@@ -289,51 +324,56 @@ function displayErrorMessage(message) {
 
 /**
  * Builds request body for vision requests.
+ * @param {string} modelName
+ * @param {object} selectedPrompt
+ * @param {Array} messages - The complete message array for this request.
  */
-function buildVisionRequestBody(modelName, selectedPrompt, text, files) {
+function buildVisionRequestBody(modelName, selectedPrompt, messages) {
     const modelConfig = getModelConfig(modelName);
     
-    const userContent = prepareUserContent(text, files);
-    
-    // 构建基础消息数组
-    const messages = [];
-    
-    // 添加系统指令（如果存在）
-    if (selectedPrompt && selectedPrompt.systemPrompt) {
-        messages.push({
-            role: 'system',
-            content: [{ type: 'text', text: selectedPrompt.systemPrompt }]
-        });
-    }
-    
-    // 添加用户消息
-    messages.push({
-        role: 'user',
-        content: userContent
-    });
-
     const requestBody = {
         model: modelName,
-        messages: messages,
+        messages: messages, // 使用传入的消息数组
         stream: true
     };
 
-    // 2. 添加工具配置
+    // 添加系统指令（如果存在）- 使用正确的格式
+    if (selectedPrompt && selectedPrompt.systemPrompt) {
+        requestBody.systemInstruction = {
+            parts: [{ text: selectedPrompt.systemPrompt }]
+        };
+    }
+
+    // 添加必要的配置字段，确保与 chat 模式一致
+    requestBody.generationConfig = {
+        responseModalities: ['text']
+    };
+
+    requestBody.safetySettings = [
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
+    ];
+
+    // 动态添加工具配置
     if (modelConfig?.tools) {
         requestBody.tools = modelConfig.tools;
         Logger.info(`Added tools for model: ${modelName}`);
     }
 
-    // 3. 添加思维链配置 (直接使用 modelConfig 中的配置)
+    // 动态添加思维链配置
     if (modelConfig?.enableReasoning) {
         requestBody.enableReasoning = true;
         Logger.info(`Enabled reasoning for model: ${modelName}`);
     }
 
-    // 4. 添加搜索禁用配置
+    // 动态添加搜索配置
     if (modelConfig?.disableSearch) {
         requestBody.disableSearch = true;
         Logger.info(`Disabled search for model: ${modelName}`);
+    } else {
+        requestBody.enableGoogleSearch = true;
     }
 
     Logger.info(`Built request body for model: ${modelName}`, {
@@ -501,7 +541,6 @@ async function generateGameSummary() {
         const requestBody = {
             model: selectedModel,
             messages: [
-                { role: 'system', content: [{ type: 'text', text: systemPrompt }] },
                 { 
                     role: 'user', 
                     content: [
@@ -514,6 +553,13 @@ async function generateGameSummary() {
             ],
             stream: true
         };
+
+        // 添加系统指令
+        if (systemPrompt) {
+            requestBody.systemInstruction = {
+                parts: [{ text: systemPrompt }]
+            };
+        }
 
         const apiKey = getApiKey();
         if (!apiKey) {

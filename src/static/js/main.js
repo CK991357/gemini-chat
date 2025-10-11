@@ -549,11 +549,35 @@ document.addEventListener('DOMContentLoaded', () => {
        toggleToVisionButton: document.getElementById('toggle-to-vision-button')
    };
 
+   // 初始化 Vision 模式的 ChatApiHandler
+   // 它有自己独立的、不与全局共享的 state
+   visionApiHandler = new ChatApiHandler({
+       toolManager: toolManager, // ToolManager 可以共享，因为它是无状态的
+       historyManager: null, // Vision 模式不使用 HistoryManager
+       state: {
+           // 这是一个全新的、独立的 state 对象
+           chatHistory: [],
+           currentSessionId: null,
+           currentAIMessageContentDiv: null,
+           isUsingTool: false
+       },
+       libs: {
+           marked: window.marked,
+           MathJax: window.MathJax
+       },
+       config: CONFIG,
+       // [新增] 确保传递正确的元素引用
+       elements: {
+           messageHistory: visionElements.visionMessageHistory,
+           logsContainer: document.getElementById('logs-container')
+       }
+   });
+
    // 定义 visionHandlers
    const visionHandlers = {
        showToast: showToast,
        showSystemMessage: showSystemMessage,
-       chatApiHandler: chatApiHandler // 新增：注入 chatApiHandler 实例
+       chatApiHandler: visionApiHandler // 修改为使用 visionApiHandler
    };
 
    // 初始化视觉功能 - 确保在 chatApiHandler 初始化后调用
@@ -564,7 +588,7 @@ document.addEventListener('DOMContentLoaded', () => {
        initializeChessCore({
            showToast: showToast,
            displayVisionMessage: displayVisionMessage, // 注入渲染函数
-           chatApiHandler: chatApiHandler // ✅ 步骤1: 注入 chatApiHandler 实例
+           chatApiHandler: visionApiHandler // 修改为使用 visionApiHandler
        });
        
        // 手动添加切换按钮事件监听器作为备份
