@@ -305,8 +305,8 @@ function createVisionUIAdapter() {
             let imageType = 'image/png';
 
             const mimeMatch = base64Image.match(/^data:(image\/[a-zA-Z0-9-.+]+);base64,/);
-            if (mimeMatch && mimeMatch) {
-                imageType = mimeMatch;
+            if (mimeMatch && mimeMatch[1]) {
+                imageType = mimeMatch[1];
             } else if (base64Image.startsWith('/9j/')) {
                 imageType = 'image/jpeg';
             } else if (base64Image.startsWith('iVBORw0KGgo')) {
