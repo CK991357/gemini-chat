@@ -18,6 +18,173 @@ const chatApiHandler = new ChatApiHandler({
     config: { API: { AVAILABLE_MODELS: [] } } // 避免 .config.API 报错
 });
 
+// =====================================================================
+// == 新增的辅助函数 (可以放在文件顶部或 ChessAIEnhanced 类外部) ==
+// =====================================================================
+
+/**
+ * 辅助函数：调用后端的 MCP Proxy
+ */
+async function executeMcpTool(toolName, parameters) {
+    const response = await fetch('/api/mcp-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_name: toolName, parameters }),
+    });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`工具执行失败: ${errorText}`);
+    }
+    return await response.json();
+}
+
+/**
+ * @private
+ * @description Attempts to parse a JSON string that may have minor syntax errors,
+ * which can sometimes be output by language models.
+ * @param {string} jsonString - The JSON string to parse.
+ * @returns {object} The parsed JavaScript object.
+ * @throws {Error} If the string cannot be parsed even after cleanup attempts.
+ */
+function _robustJsonParse(jsonString) {
+    try {
+        // First, try the standard parser.
+        return JSON.parse(jsonString);
+    } catch (e) {
+        console.warn("[MCP] Standard JSON.parse failed, attempting robust parsing...", e);
+        let cleanedString = jsonString;
+
+        // 1. Remove trailing commas from objects and arrays.
+        cleanedString = cleanedString.replace(/,\s*([}\]])/g, '$1');
+
+        // 2. Escape unescaped newlines and carriage returns within string literals, but not within JSON structure.
+        // This is a heuristic and might not cover all cases, but should help with common code snippets.
+        cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\n/g, '$1\\n');
+        cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\r/g, '$1\\r');
+
+
+        // 3. Fix issue where a quote is added after a number or boolean.
+        // e.g., "max_results": 5" -> "max_results": 5
+        cleanedString = cleanedString.replace(/:( *[0-9\.]+)\"/g, ':$1');
+        cleanedString = cleanedString.replace(/:( *(?:true|false))\"/g, ':$1');
+
+        try {
+            // Retry parsing with the cleaned string.
+            return JSON.parse(cleanedString);
+        } catch (finalError) {
+            console.error("[MCP] Robust JSON parsing failed after cleanup.", finalError);
+            // Throw the original error for better context if the final one is not informative.
+            throw finalError || e;
+        }
+    }
+}
+
+/**
+ * 升级版：发送AI请求并处理完整的工具调用流程
+ */
+async function sendAndProcessAIRequest(messages, model, tools, onStreamUpdate) {
+    const requestBody = { model, messages, stream: true, enableReasoning: true, tools };
+
+    const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let accumulatedText = '';
+    let toolCalls = [];
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+
+        for (const part of parts) {
+            if (!part.startsWith('data: ')) continue;
+            const dataStr = part.slice(6).trim();
+            if (dataStr === '[DONE]') continue;
+
+            try {
+                const data = JSON.parse(dataStr);
+                const choiceDelta = data.choices?.[0]?.delta;
+                let currentContent = choiceDelta?.content || choiceDelta?.reasoning_content || '';
+                if (currentContent) {
+                    accumulatedText += currentContent;
+                    onStreamUpdate(accumulatedText);
+                }
+                if (choiceDelta?.tool_calls) {
+                    choiceDelta.tool_calls.forEach((tc, index) => {
+                        if (!toolCalls[index]) {
+                            toolCalls[index] = tc;
+                        } else {
+                            if (tc.function && tc.function.arguments) {
+                                toolCalls[index].function.arguments += tc.function.arguments;
+                            }
+                        }
+                    });
+                }
+            } catch (e) { console.warn('SSE解析错误:', e); }
+        }
+    }
+
+    if (toolCalls.length === 0) {
+        return accumulatedText.trim();
+    }
+
+    onStreamUpdate(accumulatedText + "\n\n`正在执行工具: stockfish_analyzer...`");
+    
+    // ✅ 修正：toolCalls 是一个数组，我们处理第一个工具调用
+    const toolCall = toolCalls[0]; // ✅ 修正：确保只取数组的第一个工具调用
+    const toolName = toolCall.function.name;
+    
+    // 1. 引入健壮的参数解析
+    const toolArgs = _robustJsonParse(toolCall.function.arguments);
+    
+    // 2. 生成唯一的 callId
+    const callId = toolCall.id || `call_${Date.now()}`;
+    
+    // 3. 执行工具
+    const toolRawResult = await executeMcpTool(toolName, toolArgs);
+    
+    // 4. 统一工具结果包装：stockfish 结果需要包装在 {"output": ...} 中
+    const toolResultContent = { output: toolRawResult };
+
+    const newMessages = [
+        ...messages,
+        // 5. 统一历史记录格式 (Assistant Message)
+        {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{
+                id: callId,
+                type: 'function',
+                function: {
+                    name: toolName,
+                    arguments: JSON.stringify(toolArgs)
+                }
+            }]
+        },
+        // 6. 统一历史记录格式 (Tool Message)
+        {
+            role: 'tool',
+            tool_call_id: callId,
+            content: JSON.stringify(toolResultContent)
+        }
+    ];
+    
+    // 递归调用，将工具结果发回给AI
+    return await sendAndProcessAIRequest(newMessages, model, tools, onStreamUpdate);
+}
+
+
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
         this.chessGame = chessGame;
