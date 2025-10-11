@@ -295,6 +295,7 @@ class ChessGame {
                 this.chessRules.clearLastMoveError();
                 this.updateFEN();
                 this.renderBoard();
+                // 修复：在状态更新后同步影子引擎
                 this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
                 return true;
             } else {
@@ -386,8 +387,9 @@ class ChessGame {
 
         this.chessRules.clearLastMoveError();
         this.updateFEN();
-        // 新增：同步影子引擎
+        // 修复：在所有状态更新完成后，再同步影子引擎
         this.syncAndVerifyShadowEngine({ from: this.getSquareName(fromRow, fromCol), to: this.getSquareName(toRow, toCol) });
+        this.renderBoard();
         return true;
     }
 
