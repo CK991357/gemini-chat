@@ -104,6 +104,14 @@ export class ChessAIEnhanced {
     }
 
     /**
+     * 辅助函数：从 localStorage 获取 API Key
+     * @returns {string} API Key
+     */
+    _getApiKey() {
+        return localStorage.getItem('gemini_api_key') || '';
+    }
+
+    /**
      * 内部辅助函数：将 FEN 字符串转换为 ASCII 文本棋盘
      * @param {string} fen - FEN 字符串
      * @returns {string} ASCII 棋盘表示
@@ -853,7 +861,36 @@ ${historyContext}
             };
 
             // 使用 chatApiHandler 发送请求
-            const analysisResponse = await this.chatApiHandler.sendRequest(requestBody, analysisId);
+            // 修正：将 sendRequest 替换为 streamChatCompletion，并传入 API Key 和 UI 适配器
+            const analysisResponse = await this.chatApiHandler.streamChatCompletion(
+                requestBody,
+                this._getApiKey(), // 传入 API Key
+                { // UI 适配器：将流式输出重定向到 vision 容器
+                    createAIMessageElement: (messageId) => {
+                        // 调用代理函数创建 DOM，并返回 ChatApiHandler 期望的结构
+                        const msgElement = this.displayVisionMessage('', { id: messageId, create: true });
+                        return {
+                            markdownContainer: msgElement.querySelector('.markdown-container') || msgElement.querySelector('.content') || msgElement,
+                            reasoningContainer: msgElement.querySelector('.reasoning-container') || msgElement.querySelector('.content') || msgElement,
+                            rawMarkdownBuffer: this._visionMsgCache[messageId] || '',
+                            rawReasoningBuffer: ''
+                        };
+                    },
+                    appendMarkdown: (messageId, markdownChunk) => {
+                        // 调用代理函数追加 Markdown 内容
+                        this.displayVisionMessage(markdownChunk, { id: messageId, append: true });
+                    },
+                    appendReasoning: (messageId, reasoningChunk) => {
+                        // 调用代理函数追加 Reasoning 内容
+                        this.displayVisionMessage(reasoningChunk, { id: messageId, append: true });
+                    },
+                    logMessage: this.logMessage,
+                    scrollToBottom: () => {
+                        const container = document.getElementById('vision-message-history');
+                        if (container) container.scrollTop = container.scrollHeight;
+                    }
+                }
+            );
             
             const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
             this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
