@@ -295,16 +295,26 @@ function buildVisionRequestBody(modelName, selectedPrompt, text, files) {
     
     const userContent = prepareUserContent(text, files);
     
+    // 构建基础消息数组
+    const messages = [];
+    
+    // 添加系统指令（如果存在）
+    if (selectedPrompt && selectedPrompt.systemPrompt) {
+        messages.push({
+            role: 'system',
+            content: [{ type: 'text', text: selectedPrompt.systemPrompt }]
+        });
+    }
+    
+    // 添加用户消息
+    messages.push({
+        role: 'user',
+        content: userContent
+    });
+
     const requestBody = {
         model: modelName,
-        // 1. 将系统提示词转换为顶层 systemInstruction
-        systemInstruction: selectedPrompt.systemPrompt,
-        messages: [
-            {
-                role: 'user',
-                content: userContent
-            }
-        ],
+        messages: messages,
         stream: true
     };
 
@@ -329,7 +339,8 @@ function buildVisionRequestBody(modelName, selectedPrompt, text, files) {
     Logger.info(`Built request body for model: ${modelName}`, {
         hasTools: !!modelConfig?.tools,
         enableReasoning: !!modelConfig?.enableReasoning,
-        disableSearch: !!modelConfig?.disableSearch
+        disableSearch: !!modelConfig?.disableSearch,
+        messagesCount: messages.length
     });
 
     return requestBody;
