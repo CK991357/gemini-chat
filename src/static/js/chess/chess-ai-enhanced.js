@@ -6,184 +6,6 @@ if (typeof window.Chess === 'undefined') {
 }
 const Chess = window.Chess;
 
-// ✅ 新增：引入普通聊天的流式处理逻辑
-import { ChatApiHandler } from '../chat/chat-api-handler.js';
-
-// ✅ 提供一个安全的空依赖对象，避免 undefined 报错
-const chatApiHandler = new ChatApiHandler({
-    toolManager: null,
-    historyManager: null,
-    state: {},
-    libs: {},
-    config: { API: { AVAILABLE_MODELS: [] } } // 避免 .config.API 报错
-});
-
-// =====================================================================
-// == 新增的辅助函数 (可以放在文件顶部或 ChessAIEnhanced 类外部) ==
-// =====================================================================
-
-/**
- * 辅助函数：调用后端的 MCP Proxy
- */
-async function executeMcpTool(toolName, parameters) {
-    const response = await fetch('/api/mcp-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool_name: toolName, parameters }),
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`工具执行失败: ${errorText}`);
-    }
-    return await response.json();
-}
-
-/**
- * @private
- * @description Attempts to parse a JSON string that may have minor syntax errors,
- * which can sometimes be output by language models.
- * @param {string} jsonString - The JSON string to parse.
- * @returns {object} The parsed JavaScript object.
- * @throws {Error} If the string cannot be parsed even after cleanup attempts.
- */
-function _robustJsonParse(jsonString) {
-    try {
-        // First, try the standard parser.
-        return JSON.parse(jsonString);
-    } catch (e) {
-        console.warn("[MCP] Standard JSON.parse failed, attempting robust parsing...", e);
-        let cleanedString = jsonString;
-
-        // 1. Remove trailing commas from objects and arrays.
-        cleanedString = cleanedString.replace(/,\s*([}\]])/g, '$1');
-
-        // 2. Escape unescaped newlines and carriage returns within string literals, but not within JSON structure.
-        // This is a heuristic and might not cover all cases, but should help with common code snippets.
-        cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\n/g, '$1\\n');
-        cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\r/g, '$1\\r');
-
-
-        // 3. Fix issue where a quote is added after a number or boolean.
-        // e.g., "max_results": 5" -> "max_results": 5
-        cleanedString = cleanedString.replace(/:( *[0-9\.]+)\"/g, ':$1');
-        cleanedString = cleanedString.replace(/:( *(?:true|false))\"/g, ':$1');
-
-        try {
-            // Retry parsing with the cleaned string.
-            return JSON.parse(cleanedString);
-        } catch (finalError) {
-            console.error("[MCP] Robust JSON parsing failed after cleanup.", finalError);
-            // Throw the original error for better context if the final one is not informative.
-            throw finalError || e;
-        }
-    }
-}
-
-/**
- * 升级版：发送AI请求并处理完整的工具调用流程
- */
-async function sendAndProcessAIRequest(messages, model, tools, onStreamUpdate) {
-    const requestBody = { model, messages, stream: true, enableReasoning: true, tools };
-
-    const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let accumulatedText = '';
-    let toolCalls = [];
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop();
-
-        for (const part of parts) {
-            if (!part.startsWith('data: ')) continue;
-            const dataStr = part.slice(6).trim();
-            if (dataStr === '[DONE]') continue;
-
-            try {
-                const data = JSON.parse(dataStr);
-                const choiceDelta = data.choices?.[0]?.delta;
-                let currentContent = choiceDelta?.content || choiceDelta?.reasoning_content || '';
-                if (currentContent) {
-                    accumulatedText += currentContent;
-                    onStreamUpdate(accumulatedText);
-                }
-                if (choiceDelta?.tool_calls) {
-                    choiceDelta.tool_calls.forEach((tc, index) => {
-                        if (!toolCalls[index]) {
-                            toolCalls[index] = tc;
-                        } else {
-                            if (tc.function && tc.function.arguments) {
-                                toolCalls[index].function.arguments += tc.function.arguments;
-                            }
-                        }
-                    });
-                }
-            } catch (e) { console.warn('SSE解析错误:', e); }
-        }
-    }
-
-    if (toolCalls.length === 0) {
-        return accumulatedText.trim();
-    }
-
-    onStreamUpdate(accumulatedText + "\n\n`正在执行工具: stockfish_analyzer...`");
-    
-    // ✅ 修正：toolCalls 是一个数组，我们处理第一个工具调用
-    const toolCall = toolCalls[0]; // ✅ 修正：确保只取数组的第一个工具调用
-    const toolName = toolCall.function.name;
-    
-    // 1. 引入健壮的参数解析
-    const toolArgs = _robustJsonParse(toolCall.function.arguments);
-    
-    // 2. 生成唯一的 callId
-    const callId = toolCall.id || `call_${Date.now()}`;
-    
-    // 3. 执行工具
-    const toolRawResult = await executeMcpTool(toolName, toolArgs);
-    
-    // 4. 统一工具结果包装：stockfish 结果需要包装在 {"output": ...} 中
-    const toolResultContent = { output: toolRawResult };
-
-    const newMessages = [
-        ...messages,
-        // 5. 统一历史记录格式 (Assistant Message)
-        {
-            role: 'assistant',
-            content: null,
-            tool_calls: [{
-                id: callId,
-                type: 'function',
-                function: {
-                    name: toolName,
-                    arguments: JSON.stringify(toolArgs)
-                }
-            }]
-        },
-        // 6. 统一历史记录格式 (Tool Message)
-        {
-            role: 'tool',
-            tool_call_id: callId,
-            content: JSON.stringify(toolResultContent)
-        }
-    ];
-    
-    // 递归调用，将工具结果发回给AI
-    return await sendAndProcessAIRequest(newMessages, model, tools, onStreamUpdate);
-}
-
 
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
@@ -193,6 +15,7 @@ export class ChessAIEnhanced {
         this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
         // 新增：视觉聊天区消息显示函数
         this.displayVisionMessage = options.displayVisionMessage || console.log;
+        this.chatApiHandler = options.chatApiHandler; // ✅ 接收注入的 handler
         // chess.js 实例，用于验证和解析走法
         this.chess = new Chess();
 
@@ -280,6 +103,14 @@ export class ChessAIEnhanced {
     }
 
     /**
+     * 辅助函数：从 localStorage 获取 API Key
+     * @returns {string} API Key
+     */
+    _getApiKey() {
+        return localStorage.getItem('gemini_api_key') || '';
+    }
+
+    /**
      * 内部辅助函数：将 FEN 字符串转换为 ASCII 文本棋盘
      * @param {string} fen - FEN 字符串
      * @returns {string} ASCII 棋盘表示
@@ -318,13 +149,12 @@ export class ChessAIEnhanced {
             // --- 第一阶段：获取AI的详细分析 ---
             this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
             const analysisPrompt = this.buildAnalysisPrompt(history, currentFEN);
-// 使用固定 id 来把流追加到同一条消息中（阶段一）
+            // 使用固定 id 来把流追加到同一条消息中（阶段一）
             const analysisId = `chess-analysis-${Date.now()}`;
             this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, create: true });
             const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash', analysisId);
             const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
             this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
-            // （不要在这里再次调用 displayVisionMessage 插入完整文本 —— sendToAI 已经把整段追加到了同一条消息）
 
             // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
             this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
@@ -394,26 +224,26 @@ export class ChessAIEnhanced {
      * 第一阶段：构建分析提示词 (已修复和优化)
      */
     buildAnalysisPrompt(history, currentFEN) {
-     const turnColor = currentFEN.split(' ')[1];
-    const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
-    
-    // 🚨 明确棋子颜色与大小写规则
-    const pieceConstraints = turnColor === 'w' 
-        ? '🚨🚨 极其关键：当前为白方回合，所有推荐走法必须使用大写字母（K、Q、R、B、N、P），且必须是白方棋子的合法移动。'
-        : '🚨🚨 极其关键：当前为黑方回合，所有推荐走法必须使用小写字母（k、q、r、b、n、p），且必须是黑方棋子的合法移动。';
+        const turnColor = currentFEN.split(' ')[1];
+        const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
+        
+        // 🚨 明确棋子颜色与大小写规则
+        const pieceConstraints = turnColor === 'w' 
+            ? '🚨🚨 极其关键：当前为白方回合，所有推荐走法必须使用大写字母（K、Q、R、B、N、P），且必须是白方棋子的合法移动。'
+            : '🚨🚨 极其关键：当前为黑方回合，所有推荐走法必须使用小写字母（k、q、r、b、n、p），且必须是黑方棋子的合法移动。';
 
-    // 📜 最近3个FEN局面，最后一行为当前状态
-    const historyContext = history.length > 1
-        ? `📜 以下为最近 3 个局面（FEN 快照），最后一行为当前局面：
+        // 📜 最近3个FEN局面，最后一行为当前状态
+        const historyContext = history.length > 1
+            ? `📜 以下为最近 3 个局面（FEN 快照），最后一行为当前局面：
 <fen_snapshots>
 ${history.slice(-3).join('\n')}
 </fen_snapshots>
 请仅以最后一个 FEN 作为分析依据。`
-        : '🆕 这是一个新的棋局（无历史记录）';
+            : '🆕 这是一个新的棋局（无历史记录）';
 
-    const asciiBoard = this._fenToAscii(currentFEN);
+        const asciiBoard = this._fenToAscii(currentFEN);
 
-    return `你是一位国际象棋特级大师兼规则验证专家。请基于精确的棋盘状态进行分析。
+        return `你是一位国际象棋特级大师兼规则验证专家。请基于精确的棋盘状态进行分析。
 
 ## 🎯 核心目标
 1.  **首先，极其严格地确认当前回合方。**
@@ -501,15 +331,14 @@ ${pieceConstraints}
 - ❌ 推荐错误颜色方的走法  
 
 请基于精确的棋盘验证与规则逻辑，输出专业、合法、可执行的最佳走法建议。`;
-}
+    }
 
-
-/**
- * 第二阶段：构建精确提取提示词 - 优化版本
- * 专门针对第一阶段输出的结构化格式设计
- */
-buildPreciseExtractionPrompt(analysisResponse) {
-    return `你是一个专业的国际象棋走法提取引擎。你的任务是从下面的AI分析文本中，找出所有被明确推荐的走法。
+    /**
+     * 第二阶段：构建精确提取提示词 - 优化版本
+     * 专门针对第一阶段输出的结构化格式设计
+     */
+    buildPreciseExtractionPrompt(analysisResponse) {
+        return `你是一个专业的国际象棋走法提取引擎。你的任务是从下面的AI分析文本中，找出所有被明确推荐的走法。
 
 ## 🎯 提取目标
 从以下结构化分析文本中提取**所有**被推荐的SAN走法：
@@ -576,164 +405,164 @@ text
 5. 输出是纯SAN列表，没有其他文字
 
 现在，请从上面的分析文本中提取所有推荐的SAN走法：`;
-}
-
-/**
- * 解析并执行AI返回的SAN走法（含智能降级和详细诊断）
- */
-async executeSANMove(sanMove, currentFEN) {
-    if (!sanMove) {
-        throw new Error('最终确定的走法为空');
     }
 
-    // 初始清理
-    let cleanedMove = sanMove.replace(/^["'\s]+|["'\s.,;:]+$/g, '').trim();
-    this.logMessage(`执行走法: 原始="${sanMove}" -> 清理="${cleanedMove}"`, 'debug');
-
-    // 王车易位标准化
-    cleanedMove = cleanedMove
-        .replace(/\b0-0-0\b/g, 'O-O-O')
-        .replace(/\b0-0\b/g, 'O-O')
-        .replace(/\bo-o-o\b/gi, 'O-O-O')
-        .replace(/\bo-o\b/gi, 'O-O');
-
-    // 特殊处理：单独的"O"自动修正
-    if (cleanedMove === 'O') {
-        this.logMessage('检测到单独"O"，尝试自动修正为王车易位', 'warn');
-        this.chess.load(currentFEN); // 确保内部棋局状态正确
-        
-        let foundCastlingMove = false;
-        // 检查短易位 O-O 是否合法
-        if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O')) {
-            cleanedMove = 'O-O';
-            this.logMessage(`自动修正: "O" -> "${cleanedMove}" (短易位)`, 'info');
-            foundCastlingMove = true;
-        } else if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O-O')) { // 检查长易位 O-O-O 是否合法
-            cleanedMove = 'O-O-O';
-            this.logMessage(`自动修正: "O" -> "${cleanedMove}" (长易位)`, 'info');
-            foundCastlingMove = true;
+    /**
+     * 解析并执行AI返回的SAN走法（含智能降级和详细诊断）
+     */
+    async executeSANMove(sanMove, currentFEN) {
+        if (!sanMove) {
+            throw new Error('最终确定的走法为空');
         }
-        
-        if (!foundCastlingMove) {
-             this.logMessage('无法将单独"O"修正为合法的王车易位', 'warn');
-             // 如果修正失败，就让它继续尝试原始的 'O'，因为后续的降级策略可能会处理
-        }
-    }
 
-    // 加载局面并尝试执行
-    this.chess.load(currentFEN);
-    let moveObject = this.chess.move(cleanedMove, { sloppy: true });
+        // 初始清理
+        let cleanedMove = sanMove.replace(/^["'\s]+|["'\s.,;:]+$/g, '').trim();
+        this.logMessage(`执行走法: 原始="${sanMove}" -> 清理="${cleanedMove}"`, 'debug');
 
-    // 如果失败，启动智能降级尝试
-    if (moveObject === null) {
-        this.logMessage(`初始执行失败: "${cleanedMove}"，启动降级策略...`, 'warn');
-        
-        const alternativeMoves = this.generateAlternativeMoves(cleanedMove, currentFEN);
-        
-        for (const altMove of alternativeMoves) {
-            this.logMessage(`尝试替代走法: "${altMove}"`, 'debug');
-            this.chess.load(currentFEN); // 重置局面
-            moveObject = this.chess.move(altMove, { sloppy: true });
-            
-            if (moveObject !== null) {
-                cleanedMove = altMove;
-                this.logMessage(`降级成功: 使用"${cleanedMove}"`, 'info');
-                break;
-            }
-        }
-    }
-
-    // 最终验证
-    if (moveObject === null) {
-        const availableMoves = this.chess.moves();
-        this.logMessage(`所有执行尝试失败。可用走法: [${availableMoves.join(', ')}]`, 'error');
-        throw new Error(`无法执行走法: "${sanMove}"。请检查走法是否合法。`);
-    }
-
-    // 执行物理移动
-    const from = this.squareToIndices(moveObject.from);
-    const to = this.squareToIndices(moveObject.to);
-
-    this.showToast(`AI走法: ${cleanedMove} (${moveObject.from} → ${moveObject.to})`);
-
-    const moveResult = this.chessGame.movePiece(from.row, from.col, to.row, to.col);
-    this.chessGame.renderBoard();
-
-    return moveResult;
-}
-
-/**
- * 使用健壮的正则从文本中提取所有SAN走法，并进行全面规范化
- */
-extractAllSANFromText(text) {
-    if (!text || typeof text !== 'string') {
-        this.logMessage('提取走法：输入文本为空或非字符串', 'warn');
-        return [];
-    }
-
-    this.logMessage(`原始提取文本: ${text.substring(0, 200)}...`, 'debug');
-
-    // 全面文本预处理
-    let normalized = text
-        // ✅ 合并优点：从您的版本中借鉴的增强预处理
-        .replace(/[\uFEFF\xA0]/g, ' ')             // 清理不可见字符
-        .replace(/[🤖🤔👤🎊]/g, ' ')                // 移除特定 Emoji
-        .replace(/[，、；：]/g, ',')                // 标准化中文标点
-        // 保留现有版本的优点
-        .replace(/（/g, '(').replace(/）/g, ')')    // 全角括号转半角
-        .replace(/\b0-0-0\b/g, 'O-O-O')            // 数字零写法标准化
-        .replace(/\b0-0\b/g, 'O-O')
-        .replace(/\b(o-o-o)\b/gi, 'O-O-O')         // 小写字母标准化
-        .replace(/\b(o-o)\b/gi, 'O-O')
-        // 移除常见注释和标点
-        .replace(/\([^)]*\)/g, ' ')                // 移除括号内容
-        .replace(/\[[^\]]*\]/g, ' ')               // 移除方括号内容
-        .replace(/[!?{}]/g, ' ')                   // 移除特殊标点
-        // 压缩空白
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    this.logMessage(`预处理后文本: ${normalized.substring(0, 200)}...`, 'debug');
-
-    // 进一步优化的SAN正则表达式，避免重复匹配 (✅ 合并优点：增加 i 标志变为大小写不敏感)
-    const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)|[a-h][1-8])\b/gi;
-
-    const rawMatches = normalized.match(sanPattern) || [];
-    this.logMessage(`原始匹配: [${rawMatches.join(', ')}]`, 'debug');
-
-    // 深度清理和规范化
-    const cleaned = rawMatches.map(s => {
-        let move = s
-            .replace(/^[,.;:"'!?()\s]+|[,.;:"'!?()\s]+$/g, '') // 移除两端标点
-            .trim()
-            // 二次标准化（保险）
+        // 王车易位标准化
+        cleanedMove = cleanedMove
             .replace(/\b0-0-0\b/g, 'O-O-O')
             .replace(/\b0-0\b/g, 'O-O')
             .replace(/\bo-o-o\b/gi, 'O-O-O')
             .replace(/\bo-o\b/gi, 'O-O');
 
-        return move;
-    }).filter(move => {
-        // 过滤掉明显无效的走法
-        if (!move || move.length === 0) return false;
-        if (move.length === 1 && move !== 'O') return false; // 单独的字符（除了O）都无效
-        if (move === '-' || move === 'x') return false; // 单独的符号无效
-        return true;
-    });
-
-    // 去重并保留顺序
-    const seen = new Set();
-    const unique = [];
-    for (const mv of cleaned) {
-        if (mv && !seen.has(mv)) {
-            seen.add(mv);
-            unique.push(mv);
+        // 特殊处理：单独的"O"自动修正
+        if (cleanedMove === 'O') {
+            this.logMessage('检测到单独"O"，尝试自动修正为王车易位', 'warn');
+            this.chess.load(currentFEN); // 确保内部棋局状态正确
+            
+            let foundCastlingMove = false;
+            // 检查短易位 O-O 是否合法
+            if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O')) {
+                cleanedMove = 'O-O';
+                this.logMessage(`自动修正: "O" -> "${cleanedMove}" (短易位)`, 'info');
+                foundCastlingMove = true;
+            } else if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O-O')) { // 检查长易位 O-O-O 是否合法
+                cleanedMove = 'O-O-O';
+                this.logMessage(`自动修正: "O" -> "${cleanedMove}" (长易位)`, 'info');
+                foundCastlingMove = true;
+            }
+            
+            if (!foundCastlingMove) {
+                 this.logMessage('无法将单独"O"修正为合法的王车易位', 'warn');
+                 // 如果修正失败，就让它继续尝试原始的 'O'，因为后续的降级策略可能会处理
+            }
         }
+
+        // 加载局面并尝试执行
+        this.chess.load(currentFEN);
+        let moveObject = this.chess.move(cleanedMove, { sloppy: true });
+
+        // 如果失败，启动智能降级尝试
+        if (moveObject === null) {
+            this.logMessage(`初始执行失败: "${cleanedMove}"，启动降级策略...`, 'warn');
+            
+            const alternativeMoves = this.generateAlternativeMoves(cleanedMove, currentFEN);
+            
+            for (const altMove of alternativeMoves) {
+                this.logMessage(`尝试替代走法: "${altMove}"`, 'debug');
+                this.chess.load(currentFEN); // 重置局面
+                moveObject = this.chess.move(altMove, { sloppy: true });
+                
+                if (moveObject !== null) {
+                    cleanedMove = altMove;
+                    this.logMessage(`降级成功: 使用"${cleanedMove}"`, 'info');
+                    break;
+                }
+            }
+        }
+
+        // 最终验证
+        if (moveObject === null) {
+            const availableMoves = this.chess.moves();
+            this.logMessage(`所有执行尝试失败。可用走法: [${availableMoves.join(', ')}]`, 'error');
+            throw new Error(`无法执行走法: "${sanMove}"。请检查走法是否合法。`);
+        }
+
+        // 执行物理移动
+        const from = this.squareToIndices(moveObject.from);
+        const to = this.squareToIndices(moveObject.to);
+
+        this.showToast(`AI走法: ${cleanedMove} (${moveObject.from} → ${moveObject.to})`);
+
+        const moveResult = this.chessGame.movePiece(from.row, from.col, to.row, to.col);
+        this.chessGame.renderBoard();
+
+        return moveResult;
     }
 
-    this.logMessage(`最终提取走法: [${unique.join(', ')}]`, 'info');
-    return unique;
-}
+    /**
+     * 使用健壮的正则从文本中提取所有SAN走法，并进行全面规范化
+     */
+    extractAllSANFromText(text) {
+        if (!text || typeof text !== 'string') {
+            this.logMessage('提取走法：输入文本为空或非字符串', 'warn');
+            return [];
+        }
+
+        this.logMessage(`原始提取文本: ${text.substring(0, 200)}...`, 'debug');
+
+        // 全面文本预处理
+        let normalized = text
+            // ✅ 合并优点：从您的版本中借鉴的增强预处理
+            .replace(/[\uFEFF\xA0]/g, ' ')             // 清理不可见字符
+            .replace(/[🤖🤔👤🎊]/g, ' ')                // 移除特定 Emoji
+            .replace(/[，、；：]/g, ',')                // 标准化中文标点
+            // 保留现有版本的优点
+            .replace(/（/g, '(').replace(/）/g, ')')    // 全角括号转半角
+            .replace(/\b0-0-0\b/g, 'O-O-O')            // 数字零写法标准化
+            .replace(/\b0-0\b/g, 'O-O')
+            .replace(/\b(o-o-o)\b/gi, 'O-O-O')         // 小写字母标准化
+            .replace(/\b(o-o)\b/gi, 'O-O')
+            // 移除常见注释和标点
+            .replace(/\([^)]*\)/g, ' ')                // 移除括号内容
+            .replace(/\[[^\]]*\]/g, ' ')               // 移除方括号内容
+            .replace(/[!?{}]/g, ' ')                   // 移除特殊标点
+            // 压缩空白
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        this.logMessage(`预处理后文本: ${normalized.substring(0, 200)}...`, 'debug');
+
+        // 进一步优化的SAN正则表达式，避免重复匹配 (✅ 合并优点：增加 i 标志变为大小写不敏感)
+        const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)|[a-h][1-8])\b/gi;
+
+        const rawMatches = normalized.match(sanPattern) || [];
+        this.logMessage(`原始匹配: [${rawMatches.join(', ')}]`, 'debug');
+
+        // 深度清理和规范化
+        const cleaned = rawMatches.map(s => {
+            let move = s
+                .replace(/^[,.;:"'!?()\s]+|[,.;:"'!?()\s]+$/g, '') // 移除两端标点
+                .trim()
+                // 二次标准化（保险）
+                .replace(/\b0-0-0\b/g, 'O-O-O')
+                .replace(/\b0-0\b/g, 'O-O')
+                .replace(/\bo-o-o\b/gi, 'O-O-O')
+                .replace(/\bo-o\b/gi, 'O-O');
+
+            return move;
+        }).filter(move => {
+            // 过滤掉明显无效的走法
+            if (!move || move.length === 0) return false;
+            if (move.length === 1 && move !== 'O') return false; // 单独的字符（除了O）都无效
+            if (move === '-' || move === 'x') return false; // 单独的符号无效
+            return true;
+        });
+
+        // 去重并保留顺序
+        const seen = new Set();
+        const unique = [];
+        for (const mv of cleaned) {
+            if (mv && !seen.has(mv)) {
+                seen.add(mv);
+                unique.push(mv);
+            }
+        }
+
+        this.logMessage(`最终提取走法: [${unique.join(', ')}]`, 'info');
+        return unique;
+    }
 
     /**
      * 将棋盘坐标（如 'e4'）转换为行列索引 (已修复)
@@ -753,111 +582,111 @@ extractAllSANFromText(text) {
         return { row, col };
     }
 
-/**
- * 改进版：SSE 流式解析，支持按 messageId 更新同一条消息（避免重复气泡）
- * @param {string} prompt
- * @param {string} model
- * @param {string|null} messageId - 可选：用于将流追加到已有消息块
- */
-async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
-    try {
-        this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
+    /**
+     * 改进版：SSE 流式解析，支持按 messageId 更新同一条消息（避免重复气泡）
+     * @param {string} prompt
+     * @param {string} model
+     * @param {string|null} messageId - 可选：用于将流追加到已有消息块
+     */
+    async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
+        try {
+            this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
 
-        // ==== 占位消息安全创建 ====
-        const msgId = messageId || `ai-${Date.now()}`;
-        const existingMsg = document.querySelector(`[data-msg-id="${msgId}"]`);
-        if (!existingMsg) {
-            this.displayVisionMessage('', { id: msgId, create: true });
-        }
+            // ==== 占位消息安全创建 ====
+            const msgId = messageId || `ai-${Date.now()}`;
+            const existingMsg = document.querySelector(`[data-msg-id="${msgId}"]`);
+            if (!existingMsg) {
+                this.displayVisionMessage('', { id: msgId, create: true });
+            }
 
-        const requestBody = {
-            model,
-            messages: [{ role: 'user', content: prompt }],
-            stream: true,
-            enableReasoning: true,  // ✅ 改成 worker.mjs 能识别的字段
-            temperature: 1.0,
-            top_p: 0.9
-        };
+            const requestBody = {
+                model,
+                messages: [{ role: 'user', content: prompt }],
+                stream: true,
+                enableReasoning: true,  // ✅ 改成 worker.mjs 能识别的字段
+                temperature: 1.0,
+                top_p: 0.9
+            };
 
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-        });
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody),
+            });
 
-        if (!response.ok) {
-            const errText = await response.text().catch(() => '');
-            throw new Error(`API请求失败: ${response.status} ${errText}`);
-        }
+            if (!response.ok) {
+                const errText = await response.text().catch(() => '');
+                throw new Error(`API请求失败: ${response.status} ${errText}`);
+            }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
 
-        let buffer = '';
-        let accumulatedText = '';
+            let buffer = '';
+            let accumulatedText = '';
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-            // 处理片段（可能不是完整 JSON）
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
+                // 处理片段（可能不是完整 JSON）
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
 
-            // 将 buffer 按 SSE 的空行分段，保留最后一段（可能不完整）
-            const parts = buffer.split('\n\n');
-            buffer = parts.pop(); // 不完整部分留给下轮
+                // 将 buffer 按 SSE 的空行分段，保留最后一段（可能不完整）
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop(); // 不完整部分留给下轮
 
-            for (const part of parts) {
-                if (!part || !part.startsWith('data: ')) continue;
-                const dataStr = part.slice(6).trim();
-                if (dataStr === '[DONE]') {
-                    // 流结束
-                    break;
-                }
-                try {
-                    const data = JSON.parse(dataStr);
-                    const delta = data.choices?.[0]?.delta;
-                    // delta 里可能是 content、reasoning_content 等
-                    const newText = delta?.content || delta?.reasoning_content || '';
-                    if (newText) {
-                        accumulatedText += newText;
-                        // 立即更新同一个消息块（不会创建新气泡）
-                        this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
+                for (const part of parts) {
+                    if (!part || !part.startsWith('data: ')) continue;
+                    const dataStr = part.slice(6).trim();
+                    if (dataStr === '[DONE]') {
+                        // 流结束
+                        break;
                     }
-                } catch (e) {
-                    // 忽略解析错误（可能是分片）
+                    try {
+                        const data = JSON.parse(dataStr);
+                        const delta = data.choices?.[0]?.delta;
+                        // delta 里可能是 content、reasoning_content 等
+                        const newText = delta?.content || delta?.reasoning_content || '';
+                        if (newText) {
+                            accumulatedText += newText;
+                            // 立即更新同一个消息块（不会创建新气泡）
+                            this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
+                        }
+                    } catch (e) {
+                        // 忽略解析错误（可能是分片）
+                    }
                 }
             }
-        }
 
-        // 流结束之后，buffer 里可能有尾部
-        if (buffer && buffer.startsWith('data: ')) {
-            const tail = buffer.slice(6).trim();
-            if (tail !== '[DONE]') {
-                try {
-                    const data = JSON.parse(tail);
-                    const delta = data.choices?.[0]?.delta;
-                    const newText = delta?.content || delta?.reasoning_content || '';
-                    if (newText) {
-                        accumulatedText += newText;
-                        this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
+            // 流结束之后，buffer 里可能有尾部
+            if (buffer && buffer.startsWith('data: ')) {
+                const tail = buffer.slice(6).trim();
+                if (tail !== '[DONE]') {
+                    try {
+                        const data = JSON.parse(tail);
+                        const delta = data.choices?.[0]?.delta;
+                        const newText = delta?.content || delta?.reasoning_content || '';
+                        if (newText) {
+                            accumulatedText += newText;
+                            this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
+                        }
+                    } catch (e) {
+                        // ignore
                     }
-                } catch (e) {
-                    // ignore
                 }
             }
-        }
 
-        return accumulatedText.trim();
-    } catch (error) {
-        this.logMessage(`AI请求错误: ${error.message}`, 'error');
-        // 显示错误到该占位（如果没指定 id，就创建一个新消息显示错误）
-        const errId = `ai-err-${Date.now()}`;
-        this.displayVisionMessage(`💥 AI请求失败: ${error.message}`, { id: errId, create: true });
-        throw error;
+            return accumulatedText.trim();
+        } catch (error) {
+            this.logMessage(`AI请求错误: ${error.message}`, 'error');
+            // 显示错误到该占位（如果没指定 id，就创建一个新消息显示错误）
+            const errId = `ai-err-${Date.now()}`;
+            this.displayVisionMessage(`💥 AI请求失败: ${error.message}`, { id: errId, create: true });
+            throw error;
+        }
     }
-}
 
     /**
      * 默认的模态框处理器（以防外部未提供）
@@ -953,4 +782,38 @@ async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
         // 返回相似度比例（0~1）
         return matches / longer.length;
     }
+}
+
+let chessAIEnhancedInstance = null;
+
+/**
+ * 初始化国际象棋AI增强模块（单例模式）
+ * @param {ChessGame} chessGame - 国际象棋游戏核心实例
+ * @param {object} options - 配置选项
+ */
+export function initializeChessAIEnhanced(chessGame, options = {}) {
+    if (chessAIEnhancedInstance) {
+        console.warn('ChessAIEnhanced 模块已初始化。正在更新配置。');
+        // 可以在这里添加更新逻辑，例如更新 showToast
+        if (options.showToast) {
+            chessAIEnhancedInstance.showToast = options.showToast;
+        }
+        if (options.chatApiHandler) {
+            chessAIEnhancedInstance.chatApiHandler = options.chatApiHandler;
+        }
+        return;
+    }
+    chessAIEnhancedInstance = new ChessAIEnhanced(chessGame, options);
+    console.log('ChessAIEnhanced 模块初始化成功。');
+}
+
+/**
+ * 获取国际象棋AI增强模块实例
+ * @returns {ChessAIEnhanced|null}
+ */
+export function getChessAIEnhancedInstance() {
+    if (!chessAIEnhancedInstance) {
+        console.error('ChessAIEnhanced 模块尚未初始化！');
+    }
+    return chessAIEnhancedInstance;
 }
