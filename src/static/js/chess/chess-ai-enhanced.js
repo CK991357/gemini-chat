@@ -6,6 +6,8 @@ if (typeof window.Chess === 'undefined') {
 }
 const Chess = window.Chess;
 
+import { CONFIG } from '../config/config.js';
+
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
         this.chessGame = chessGame;
