@@ -234,7 +234,7 @@ function createVisionUIAdapter() {
         // Core message functions
         createAIMessageElement: () => {
             const element = createVisionAIMessageElement();
-            // 确保返回的对象包含所有必要的属性
+            // 确保返回的对象包含所有必要的属性，与 chat-ui.js 完全一致
             return {
                 container: element.container,
                 markdownContainer: element.markdownContainer,
@@ -255,59 +255,83 @@ function createVisionUIAdapter() {
         logMessage: (message, type = 'system') => {
             Logger.info(`[Vision-Gemini] ${type}: ${message}`);
             // Optional: Display system messages in vision interface
-            if (type === 'system' && message.includes('错误') || message.includes('失败')) {
+            if (type === 'system' && (message.includes('错误') || message.includes('失败'))) {
                 showToastHandler(message);
             }
         },
         
-        // Tool call status
+        // Tool call status - 确保与 chat-ui.js 中的 displayToolCallStatus 一致
         displayToolCallStatus: (toolName, args) => {
             if (!elements.visionMessageHistory) return;
             const statusDiv = document.createElement('div');
             statusDiv.className = 'tool-call-status vision-tool-call';
-            statusDiv.innerHTML = `
-                <i class="fas fa-cog fa-spin"></i>
-                <span>正在调用工具: ${toolName}...</span>
-            `;
+            
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-cog fa-spin';
+            
+            const text = document.createElement('span');
+            text.textContent = `正在调用工具: ${toolName}...`;
+            
+            statusDiv.appendChild(icon);
+            statusDiv.appendChild(text);
+            
             elements.visionMessageHistory.appendChild(statusDiv);
             scrollVisionToBottom();
         },
         
         // Image result display with vision context
         displayImageResult: (base64Image, altText = 'Generated Image', fileName = 'generated_image.png') => {
-            // Create a dedicated vision message for the image
+            // 使用与 chat-ui.js 完全一致的逻辑
+            if (!elements.visionMessageHistory) return;
+
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message', 'ai');
-            
+
             const avatarDiv = document.createElement('div');
             avatarDiv.classList.add('avatar');
             avatarDiv.textContent = '🤖';
-            
+
             const contentDiv = document.createElement('div');
             contentDiv.classList.add('content', 'image-result-content');
-            
+
             const imageElement = document.createElement('img');
             imageElement.src = `data:image/png;base64,${base64Image}`;
             imageElement.alt = altText;
             imageElement.classList.add('chat-image-result');
-            imageElement.style.maxWidth = '100%';
-            imageElement.style.borderRadius = '8px';
-            
-            // Add click handler for modal view
-            imageElement.addEventListener('click', () => {
-                if (typeof openImageModal === 'function') {
-                    openImageModal(imageElement.src, altText, '未知尺寸', '未知大小', 'image/png');
-                }
-            });
-            
             contentDiv.appendChild(imageElement);
+
+            // 获取图片尺寸和类型
+            let dimensions = 'N/A';
+            let imageType = 'image/png';
+
+            const mimeMatch = base64Image.match(/^data:(image\/[a-zA-Z0-9-.+]+);base64,/);
+            if (mimeMatch && mimeMatch) {
+                imageType = mimeMatch;
+            } else if (base64Image.startsWith('/9j/')) {
+                imageType = 'image/jpeg';
+            } else if (base64Image.startsWith('iVBORw0KGgo')) {
+                imageType = 'image/png';
+            }
+
+            imageElement.onload = () => {
+                dimensions = `${imageElement.naturalWidth}x${imageElement.naturalHeight} px`;
+                const base64Length = base64Image.length;
+                const sizeInBytes = (base64Length * 0.75) - (base64Image.endsWith('==') ? 2 : (base64Image.endsWith('=') ? 1 : 0));
+                const sizeInKB = (sizeInBytes / 1024).toFixed(2);
+                const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
+                let size = sizeInKB < 1024 ? `${sizeInKB} KB` : `${sizeInMB} MB`;
+
+                imageElement.addEventListener('click', () => {
+                    if (typeof openImageModal === 'function') {
+                        openImageModal(imageElement.src, altText, dimensions, size, imageType);
+                    }
+                });
+            };
+
             messageDiv.appendChild(avatarDiv);
             messageDiv.appendChild(contentDiv);
-            
-            if (elements.visionMessageHistory) {
-                elements.visionMessageHistory.appendChild(messageDiv);
-                scrollVisionToBottom();
-            }
+            elements.visionMessageHistory.appendChild(messageDiv);
+            scrollVisionToBottom();
         },
         
         // Scrolling
@@ -444,14 +468,22 @@ function prepareUserContent(text, files) {
 /**
  * Builds request body for Gemini models.
  * @param {string} modelName - The model name.
- * @param {Array} userContent - The user content array.
  * @returns {object} Request body object.
  */
-function buildGeminiRequestBody(modelName) { // 移除 userContent 参数
+function buildGeminiRequestBody(modelName) {
     const selectedPrompt = getSelectedPrompt();
     
-    // 修正：从 API 配置中查找模型配置（因为工具定义在这里，与 Chat 模式对齐）
-    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    // 修正：从 API 配置和 VISION 配置中查找模型配置
+    let modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    if (!modelConfig) {
+        modelConfig = CONFIG.VISION.MODELS.find(m => m.name === modelName);
+    }
+    
+    // 确保获取到正确的模型配置
+    if (!modelConfig) {
+        console.warn(`[Vision] 未找到模型配置: ${modelName}`);
+        modelConfig = {};
+    }
     
     const requestBody = {
         model: modelName,
@@ -460,7 +492,7 @@ function buildGeminiRequestBody(modelName) { // 移除 userContent 参数
                 role: 'system',
                 content: [{ type: 'text', text: selectedPrompt.systemPrompt }]
             },
-            ...visionChatHistory // 使用完整的历史记录
+            ...visionChatHistory
         ],
         stream: true,
         safetySettings: CONFIG.API.SAFETY_SETTINGS || [
@@ -471,31 +503,32 @@ function buildGeminiRequestBody(modelName) { // 移除 userContent 参数
         ]
     };
 
-    // 1. 添加工具配置（从 API 配置中获取）
-    if (modelConfig && modelConfig.tools) {
+    // 1. 添加工具配置
+    if (modelConfig.tools) {
         console.log(`[Vision] 为模型 ${modelName} 添加工具:`, modelConfig.tools);
         requestBody.tools = modelConfig.tools;
     } else {
         console.log(`[Vision] 模型 ${modelName} 未配置工具`);
     }
 
-    // 2. 精确的思维链启用逻辑
+    // 2. 精确的思维链启用逻辑 - 与 chat-api-handler.js 保持一致
     const enableReasoning = shouldEnableReasoning(modelName, modelConfig);
     if (enableReasoning) {
         console.log(`[Vision] 为模型 ${modelName} 启用思维链`);
         requestBody.enableReasoning = true;
     }
 
-    // 3. 添加搜索禁用配置（如果模型配置了）
-    if (modelConfig && modelConfig.disableSearch) {
+    // 3. 添加搜索禁用配置
+    if (modelConfig.disableSearch) {
+        console.log(`[Vision] 为模型 ${modelName} 禁用搜索`);
         requestBody.disableSearch = true;
     }
 
     console.log(`[Vision] 最终请求体配置:`, {
         model: modelName,
-        hasTools: !!(modelConfig && modelConfig.tools),
+        hasTools: !!modelConfig.tools,
         enableReasoning: enableReasoning,
-        disableSearch: !!(modelConfig && modelConfig.disableSearch)
+        disableSearch: !!modelConfig.disableSearch
     });
 
     return requestBody;
@@ -873,22 +906,26 @@ export function displayVisionMessage(markdownContent) {
  * @returns {boolean} 是否启用思维链
  */
 function shouldEnableReasoning(modelName, modelConfig) {
-    // 优先检查模型特定配置
+    // 与 chat-api-handler.js 完全一致的逻辑
+    const isCurrentModelGeminiType = modelName.includes('gemini');
+    const isReasoningEnabledGlobally = localStorage.getItem('geminiEnableReasoning') === 'true';
+    
+    let enableReasoning;
     if (modelConfig && modelConfig.enableReasoning !== undefined) {
-        return modelConfig.enableReasoning;
+        // 如果模型配置中明确设置了 enableReasoning，则以其为准
+        enableReasoning = modelConfig.enableReasoning;
+    } else {
+        // 否则，回退到 localStorage 中的全局开关状态，但仅限于 Gemini 类型模型
+        enableReasoning = isCurrentModelGeminiType && isReasoningEnabledGlobally;
     }
     
-    // 其次检查全局设置（从主界面继承）
-    try {
-        // 尝试从主界面的 localStorage 获取设置
-        const globalReasoningSetting = localStorage.getItem('geminiEnableReasoning');
-        if (globalReasoningSetting !== null) {
-            return globalReasoningSetting === 'true';
-        }
-    } catch (e) {
-        console.warn('[Vision] 无法读取全局思维链设置:', e);
-    }
+    console.log(`[Vision] 思维链判断:`, {
+        modelName,
+        isGemini: isCurrentModelGeminiType,
+        globalSetting: isReasoningEnabledGlobally,
+        modelConfig: modelConfig?.enableReasoning,
+        finalDecision: enableReasoning
+    });
     
-    // 默认不启用思维链
-    return false;
+    return enableReasoning;
 }
