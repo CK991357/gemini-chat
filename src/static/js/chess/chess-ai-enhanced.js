@@ -775,6 +775,37 @@ text
         // 返回相似度比例（0~1）
         return matches / longer.length;
     }
+    /**
+     * 新增：构建 Stockfish 工具调用的专业提示词
+     */
+    buildStockfishPrompt(currentFEN, history) {
+        const turnColor = currentFEN.split(' ')[1];
+        const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
+        const historyContext = history.length > 1
+            ? `这是历史局面，仅供参考：\n${history.slice(-3).join('\n')}`
+            : '这是棋局的第一步。';
+
+        return `你是一位顶级的国际象棋AI助教。你的核心任务是作为用户和强大的 "stockfish_analyzer" 工具之间的智能桥梁。你 **不自己下棋**，而是 **调用工具** 并 **解释结果**。
+
+当前局面 FEN: \`${currentFEN}\`
+当前轮到: **${turn}**
+${historyContext}
+
+**核心工作流程:**
+1.  **理解用户意图**: 用户的意图是找到最佳走法。
+2.  **调用正确工具**: **必须** 调用 \`stockfish_analyzer\` 工具，并为 \`mode\` 参数选择 \`get_best_move\`。
+3.  **解释工具结果**: 在收到工具返回的精确JSON数据后，你的任务是将其 **翻译** 成富有洞察力、易于理解的教学式语言。
+
+**结果解释规则:**
+*   **解释最佳走法**: 工具会返回UCI格式的走法（如 "e2e4"）。你 **必须** 将其转化为用户能看懂的标准代数记谱法（SAN），并解释这一步的战略意图。例如，对于 \`"best_move": "g1f3"\`，你应该说："引擎推荐的最佳走法是 **Nf3**。这一步控制了中心，并为王车易位做好了准备。"
+
+**严格禁止:**
+*   **禁止自己创造走法**: 你的所有走法建议都 **必须** 来自 \`stockfish_analyzer\` 工具的输出。
+*   **禁止显示原始数据**: 不要在给用户的最终回复中展示JSON或UCI走法。
+
+请立即为当前局面调用工具并返回解释。`;
+
+    }
 
     /**
      * 重写：使用 Stockfish 工具请求AI走法的主函数
