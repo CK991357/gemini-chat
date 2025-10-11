@@ -453,31 +453,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateMediaPreviewsDisplay
     };
     initializeTranslationCore(translationElements, mediaHandlers, showToast);
-    // 视觉模型相关 DOM 元素 - 更新为新的结构
-    const visionElements = {
-        visionModelSelect: document.getElementById('vision-model-select'),
-        visionPromptSelect: document.getElementById('vision-prompt-select'),
-        visionSendButton: document.getElementById('vision-send-button'),
-        visionSummaryButton: document.getElementById('vision-summary-button'),
-        visionAttachmentButton: document.getElementById('vision-attachment-button'),
-        visionFileInput: document.getElementById('vision-file-input'),
-        visionInputText: document.getElementById('vision-input-text'),
-        visionMessageHistory: document.getElementById('vision-message-history'),
-        // 新增：切换按钮
-        toggleToChessButton: document.getElementById('toggle-to-chess-button'),
-        toggleToVisionButton: document.getElementById('toggle-to-vision-button')
-    };
-
-    // 定义 visionHandlers
-    const visionHandlers = {
-        showToast: showToast,
-        showSystemMessage: showSystemMessage,
-        chatApiHandler: chatApiHandler // 新增：注入 chatApiHandler 实例
-    };
-
-    // 初始化视觉功能
-    initializeVisionCore(visionElements, attachmentManager, visionHandlers);
-    
     // 建立象棋模块和视觉模块的通信桥梁
     window.displayVisionMessage = (message) => {
         // 调用 vision-core 中的显示函数
@@ -486,44 +461,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
-    setTimeout(() => {
-        initializeChessCore({
-            showToast: showToast,
-            displayVisionMessage: displayVisionMessage, // 注入渲染函数
-            chatApiHandler: chatApiHandler // ✅ 步骤1: 注入 chatApiHandler 实例
-        });
-        
-        // 手动添加切换按钮事件监听器作为备份
-        const toggleToChessBtn = document.getElementById('toggle-to-chess-button');
-        const toggleToVisionBtn = document.getElementById('toggle-to-vision-button');
-        
-        if (toggleToChessBtn) {
-            toggleToChessBtn.addEventListener('click', () => {
-                const chessFullscreen = document.getElementById('chess-fullscreen');
-                const visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
-                if (chessFullscreen && visionChatFullscreen) {
-                    visionChatFullscreen.classList.remove('active');
-                    chessFullscreen.classList.add('active');
-                    console.log('Switched to chess view');
-                }
-            });
-        }
-        
-        if (toggleToVisionBtn) {
-            toggleToVisionBtn.addEventListener('click', () => {
-                const chessFullscreen = document.getElementById('chess-fullscreen');
-                const visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
-                if (chessFullscreen && visionChatFullscreen) {
-                    chessFullscreen.classList.remove('active');
-                    visionChatFullscreen.classList.add('active');
-                    console.log('Switched to vision chat view');
-                }
-            });
-        }
-    }, 500);
-   // 初始化指令模式选择
-   initializePromptSelect(promptSelect, systemInstructionInput);
+    // 初始化指令模式选择
+    initializePromptSelect(promptSelect, systemInstructionInput);
 
    // T11: 初始化聊天UI模块并注入依赖
    const transcribeAudioHandler = async (audioBlob, buttonElement) => {
@@ -594,8 +533,71 @@ document.addEventListener('DOMContentLoaded', () => {
        },
        config: CONFIG // 注入完整的配置对象
    });
-    // 初始化 ImageManager (模态框)
-    initImageManager();
+   
+   // 视觉模型相关 DOM 元素 - 更新为新的结构
+   const visionElements = {
+       visionModelSelect: document.getElementById('vision-model-select'),
+       visionPromptSelect: document.getElementById('vision-prompt-select'),
+       visionSendButton: document.getElementById('vision-send-button'),
+       visionSummaryButton: document.getElementById('vision-summary-button'),
+       visionAttachmentButton: document.getElementById('vision-attachment-button'),
+       visionFileInput: document.getElementById('vision-file-input'),
+       visionInputText: document.getElementById('vision-input-text'),
+       visionMessageHistory: document.getElementById('vision-message-history'),
+       // 新增：切换按钮
+       toggleToChessButton: document.getElementById('toggle-to-chess-button'),
+       toggleToVisionButton: document.getElementById('toggle-to-vision-button')
+   };
+
+   // 定义 visionHandlers
+   const visionHandlers = {
+       showToast: showToast,
+       showSystemMessage: showSystemMessage,
+       chatApiHandler: chatApiHandler // 新增：注入 chatApiHandler 实例
+   };
+
+   // 初始化视觉功能 - 确保在 chatApiHandler 初始化后调用
+   initializeVisionCore(visionElements, attachmentManager, visionHandlers);
+   
+   // 初始化国际象棋 - 确保在所有DOM元素就绪后调用
+   setTimeout(() => {
+       initializeChessCore({
+           showToast: showToast,
+           displayVisionMessage: displayVisionMessage, // 注入渲染函数
+           chatApiHandler: chatApiHandler // ✅ 步骤1: 注入 chatApiHandler 实例
+       });
+       
+       // 手动添加切换按钮事件监听器作为备份
+       const toggleToChessBtn = document.getElementById('toggle-to-chess-button');
+       const toggleToVisionBtn = document.getElementById('toggle-to-vision-button');
+       
+       if (toggleToChessBtn) {
+           toggleToChessBtn.addEventListener('click', () => {
+               const chessFullscreen = document.getElementById('chess-fullscreen');
+               const visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
+               if (chessFullscreen && visionChatFullscreen) {
+                   visionChatFullscreen.classList.remove('active');
+                   chessFullscreen.classList.add('active');
+                   console.log('Switched to chess view');
+               }
+           });
+       }
+       
+       if (toggleToVisionBtn) {
+           toggleToVisionBtn.addEventListener('click', () => {
+               const chessFullscreen = document.getElementById('chess-fullscreen');
+               const visionChatFullscreen = document.getElementById('vision-chat-fullscreen');
+               if (chessFullscreen && visionChatFullscreen) {
+                   chessFullscreen.classList.remove('active');
+                   visionChatFullscreen.classList.add('active');
+                   console.log('Switched to vision chat view');
+               }
+           });
+       }
+   }, 500);
+   
+   // 初始化 ImageManager (模态框)
+   initImageManager();
 });
 
 // State variables

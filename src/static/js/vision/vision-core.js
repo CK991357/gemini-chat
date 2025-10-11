@@ -194,6 +194,11 @@ async function handleSendVisionMessage() {
 
         // Use vision UI adapter to redirect output to vision interface
         const visionUiAdapter = createVisionUIAdapter();
+        
+        if (!chatApiHandlerInstance) {
+            throw new Error('Chat API Handler 未初始化，无法发送请求。');
+        }
+        
         await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
 
         Logger.info(`Vision request completed for model: ${selectedModel}`, 'system');
@@ -505,6 +510,11 @@ async function generateGameSummary() {
         }
 
         const visionUiAdapter = createVisionUIAdapter();
+        
+        if (!chatApiHandlerInstance) {
+            throw new Error('Chat API Handler 未初始化，无法发送请求。');
+        }
+        
         await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
 
         Logger.info('对局总结生成完成', 'system');
