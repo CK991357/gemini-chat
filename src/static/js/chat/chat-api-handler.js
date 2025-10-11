@@ -321,8 +321,8 @@ export class ChatApiHandler {
                     ui.logMessage('Turn complete (HTTP)', 'system');
                 }
                 
-                // 保存历史记录
-                if (this.historyManager && this.historyManager.saveHistory) {
+                // 保存历史记录 - 只在有 historyManager 时保存
+                if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
                     this.historyManager.saveHistory();
                 }
             }
@@ -334,7 +334,10 @@ export class ChatApiHandler {
                 this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
             }
             this.state.currentAIMessageContentDiv = null;
-            this.historyManager.saveHistory(); // Ensure history is saved even on failure
+            // 确保在失败时也保存历史记录（如果 historyManager 存在）
+            if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
+                this.historyManager.saveHistory(); // Ensure history is saved even on failure
+            }
         }
     }
 
@@ -390,6 +393,10 @@ export class ChatApiHandler {
             }, apiKey, uiOverrides);
         } finally {
             this.state.isUsingTool = false;
+            // 保存工具调用的历史记录（如果 historyManager 存在）
+            if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
+                this.historyManager.saveHistory();
+            }
         }
     }
 
@@ -609,6 +616,10 @@ export class ChatApiHandler {
             this.state.isUsingTool = false;
             console.log(`[${timestamp()}] [MCP] State isUsingTool set to false.`);
             console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall END ---`);
+            // 保存工具调用的历史记录（如果 historyManager 存在）
+            if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
+                this.historyManager.saveHistory();
+            }
         }
     }
 
