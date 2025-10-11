@@ -60,6 +60,9 @@ export class ChatApiHandler {
         }
         
         const disableSearch = modelConfig ? modelConfig.disableSearch : false;
+        
+        // 提取 tools 字段，它可能来自 vision-core.js 或 chat-ui.js
+        const tools = requestBody.tools;
 
         try {
             const response = await fetch('/api/chat/completions', {
@@ -68,8 +71,8 @@ export class ChatApiHandler {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                // 将 enableReasoning 和 disableSearch 参数添加到请求体中
-                body: JSON.stringify({ ...requestBody, enableReasoning, disableSearch })
+                // 将 tools, enableReasoning 和 disableSearch 参数添加到请求体中
+                body: JSON.stringify({ ...requestBody, tools, enableReasoning, disableSearch })
             });
 
             if (!response.ok) {
