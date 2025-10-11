@@ -77,7 +77,6 @@ class ChessGame {
         this.createAIMoveChoiceModal(); // 新增：创建AI走法选择模态框
         this.initializeAI(chatApiHandler);
         this.addAIButton();
-        this.addStockfishAIButton(); // 新增：添加Stockfish AI按钮
     }
 
     initBoard() {
@@ -929,25 +928,6 @@ class ChessGame {
         
         fenActions.appendChild(aiButton);
     }
-
-    addStockfishAIButton() {
-        const fenActions = document.querySelector('.fen-actions');
-        if (!fenActions) {
-            console.error('.fen-actions container not found for Stockfish AI button.');
-            return;
-        }
-
-        if (document.getElementById('ask-ai-stockfish-button')) return;
-
-        const stockfishButton = document.createElement('button');
-        stockfishButton.id = 'ask-ai-stockfish-button';
-        stockfishButton.className = 'action-button chess-ai-button';
-        stockfishButton.innerHTML = '<i class="fas fa-cogs"></i> 问AI最优解';
-        stockfishButton.addEventListener('click', () => this.handleAskAIWithStockfish());
-        
-        fenActions.appendChild(stockfishButton);
-    }
-
     async handleAskAI() {
         if (this.gameOver) {
             this.showToast('游戏已结束，无法询问AI');
@@ -983,36 +963,6 @@ class ChessGame {
             aiButton.innerHTML = originalText;
         }
     }
-
-    async handleAskAIWithStockfish() {
-        if (this.gameOver) {
-            this.showToast('游戏已结束，无法询问AI');
-            return;
-        }
-        if (this.pendingPromotion) {
-            this.showToast('请先完成兵的升变选择');
-            return;
-        }
-
-        const stockfishButton = document.getElementById('ask-ai-stockfish-button');
-        const originalText = stockfishButton.innerHTML;
-        
-        stockfishButton.disabled = true;
-        stockfishButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> AI计算中...';
-
-        try {
-            this.showToast('正在获取AI最优解...');
-            const chessAI = getChessAIEnhancedInstance();
-            await chessAI.askAIWithStockfish();
-        } catch (error) {
-            console.error('AI最优解处理异常:', error);
-            this.showToast(`AI最优解处理失败: ${error.message}`);
-        } finally {
-            stockfishButton.disabled = false;
-            stockfishButton.innerHTML = originalText;
-        }
-    }
-
     /**
      * 创建AI走法选择模态框
      */

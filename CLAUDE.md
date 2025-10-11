@@ -121,7 +121,7 @@ The `src` directory is the heart of the application, containing all source code 
             -   [`video-manager.js`](src/static/js/video/video-manager.js): Manages video capture and processing from a camera, including motion detection and frame preview. It orchestrates the `VideoRecorder` to capture frames, applies motion detection to optimize frame sending, and handles camera toggling (front/rear).
             -   [`video-recorder.js`](src/static/js/video/video-recorder.js): Implements a video recorder for capturing and processing video frames from a camera. It supports previewing the video stream and sending frames as base64 encoded JPEG data to a callback function, with configurable FPS and quality.
         -   **Vision Module (`src/static/js/vision/`)**: Contains core logic for vision-related functionalities, now enhanced with **Chess Master AI** capabilities.
-            -   [`vision-core.js`](src/static/js/vision/vision-core.js): Provides the core logic for the Vision feature, handling UI initialization, API calls to the backend for multimodal vision chat, and message display. It manages vision model selection, integrates with the `AttachmentManager` for handling image/video attachments, and processes streaming responses from the AI model, including reasoning content。**增强**: `displayVisionMessage()` 函数现在支持 `id`、`create` 和 `append` 选项，允许将流式响应追加到同一个 UI 消息气泡中，显著改善了用户体验。**NEW**: 现在包括专门的国际象棋分析功能，带有 `generateGameSummary()` 函数。
+            -   [`vision-core.js`](src/static/js/vision/vision-core.js): **架构简化** - 提供了 Vision 功能的核心逻辑，**现在完全复用 `ChatApiHandler`**，实现了与 Chat 模式统一的 API 调用和流式处理体验。它处理 UI 初始化、多模态视觉聊天的 API 调用和消息显示。它管理视觉模型选择，与 `AttachmentManager` 集成处理图像/视频附件，并处理来自 AI 模型的流式响应，包括思维链内容。**关键增强**: 现在完全支持 Gemini 模型的工具调用、思维链 (`enableReasoning`) 和搜索禁用 (`disableSearch`) 等高级功能。`displayVisionMessage()` 函数支持 `id`、`create` 和 `append` 选项，允许将流式响应追加到同一个 UI 消息气泡中。**NEW**: 现在包括专门的国际象棋分析功能，带有 `generateGameSummary()` 函数。
         -   **Utils Module Enhanced**: New image compression capabilities added.
             -   [`image-compressor.js`](src/static/js/utils/image-compressor.js): **NEW MODULE** - Implements intelligent image compression with 1MB threshold using Canvas API. Features include format preservation, configurable quality settings, and automatic compression for all modes (not just vision). Supports both JPEG conversion and original format retention.
 
@@ -345,7 +345,7 @@ This project implements a sophisticated tool management and invocation mechanism
         -   **健壮的清理与标准化**: 对 AI 返回的 SAN 走法进行初始清理，并标准化王车易位记法（如 `0-0-0` 修正为 `O-O-O`）。
         -   **“O”的智能修正**: 特别处理单独的字符 "O"，根据当前棋局的合法性自动修正为短易位 (`O-O`) 或长易位 (`O-O-O`)。
         -   **强大的“降级修正”机制**: 如果 AI 返回的 SAN 格式有轻微错误（如多余符号、大小写错误），`generateAlternativeMoves()` 会尝试多种替代格式进行修正，大大提高了对 AI 输出的容错性。
-    -   **流式 UI 更新 (`sendToAI`)**: `sendToAI()` 方法完全支持 SSE 流式响应，并且能够通过 `messageId` 将所有流式内容追加到**同一个 UI 消息气泡**中。这为 AI 的分析和思考过程提供了实时的、连贯的视觉反馈，显著改善了用户体验。同时，请求体中新增 `enableReasoning: true` 字段，以更好地利用模型推理能力。
+    -   **流式 UI 更新 (`sendToAI`)**: `sendToAI()` 方法现在通过统一的 `ChatApiHandler` 接口发送请求，完全支持 SSE 流式响应，并且能够通过 `messageId` 将所有流式内容追加到**同一个 UI 消息气泡**中。这为 AI 的分析和思考过程提供了实时的、连贯的视觉反馈，显著改善了用户体验。同时，请求体中新增 `enableReasoning: true` 字段，以更好地利用模型推理能力。
     -   **深度优化的提示词**:
         -   **分析提示词 (`buildAnalysisPrompt`)**: 明确当前回合方，并新增 `pieceConstraints` 严格约束棋子颜色和大小写规则。提示词内容更加详细，强调棋盘精确匹配、合法性检查和标准化格式。
         -   **提取提示词 (`buildPreciseExtractionPrompt`)**: 专门针对第一阶段输出的结构化格式设计，明确提取“候选走法”和“最终推荐”中的所有 SAN 走法。新增了详细的提取规则、格式处理规则、去重处理、特殊情形处理（如多个候选走法、散落的推荐、格式偏差修正）和严格禁止项，确保提取的准确性和规范性。
