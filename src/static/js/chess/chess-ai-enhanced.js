@@ -6,7 +6,6 @@ if (typeof window.Chess === 'undefined') {
 }
 const Chess = window.Chess;
 
-import { CONFIG } from '../config/config.js';
 export class ChessAIEnhanced {
     constructor(chessGame, options = {}) {
         this.chessGame = chessGame;
@@ -776,185 +775,104 @@ text
     }
 
     /**
-     * 新增：构建 Stockfish 工具调用的专业提示词
-     */
-    buildStockfishPrompt(currentFEN, history) {
-        const turn = currentFEN.split(' ')[1] === 'w' ? '白方' : '黑方';
-        const historyContext = history.length > 1
-            ? `这是历史局面，仅供参考：\n${history.slice(-3).join('\n')}`
-            : '这是棋局的第一步。';
-
-        return `你是一位顶级的国际象棋AI助教。你的核心任务是作为用户和强大的 "stockfish_analyzer" 工具之间的智能桥梁。你 **不自己下棋**，而是 **调用工具** 并 **解释结果**。
-
-当前局面 FEN: \`${currentFEN}\`
-当前轮到: **${turn}**
-${historyContext}
-
-**核心工作流程:**
-1.  **理解用户意图**: 用户的意图是找到最佳走法。
-2.  **调用正确工具**: **必须** 调用 \`stockfish_analyzer\` 工具，并为 \`mode\` 参数选择 \`get_best_move\`。
-3.  **解释工具结果**: 在收到工具返回的精确JSON数据后，你的任务是将其 **翻译** 成富有洞察力、易于理解的教学式语言。
-
-**结果解释规则:**
-*   **解释最佳走法**: 工具会返回UCI格式的走法（如 "e2e4"）。你 **必须** 将其转化为用户能看懂的标准代数记谱法（SAN），并解释这一步的战略意图。例如，对于 \`"best_move": "g1f3"\`，你应该说："引擎推荐的最佳走法是 **Nf3**。这一步控制了中心，并为王车易位做好了准备。"
-
-**严格禁止:**
-*   **禁止自己创造走法**: 你的所有走法建议都 **必须** 来自 \`stockfish_analyzer\` 工具的输出。
-*   **禁止显示原始数据**: 不要在给用户的最终回复中展示JSON或UCI走法。
-
-请立即为当前局面调用工具并返回解释。`;
-    }
-
-    /**
      * 重写：使用 Stockfish 工具请求AI走法的主函数
      * 现在会展示完整的思考过程和工具调用，最终提取走法到模态框
      */
     async askAIWithStockfish() {
-        if (!this.chatApiHandler) {
-            const errorMsg = "ChatApiHandler 未被正确注入，无法使用 Stockfish 工具";
-            this.showToast(errorMsg, 'error');
-            this.logMessage(errorMsg, 'error');
-            this.displayVisionMessage(`**💥 内部错误**\n\n${errorMsg}`);
-            return false;
-        }
-
         try {
-            this.logMessage('🚀 开始使用 Stockfish 工具请求AI最优解...', 'system');
-            
+            // 1. 查找包含 stockfish_analyzer 工具的模型配置
+            const stockfishModelConfig = CONFIG.API.AVAILABLE_MODELS.find(model =>
+                model.tools && model.tools.some(tool => tool.function.name === 'stockfish_analyzer')
+            );
+
+            if (!stockfishModelConfig) {
+                throw new Error('未找到支持 stockfish_analyzer 工具的模型配置。请检查 CONFIG.API.AVAILABLE_MODELS。');
+            }
+
+            const modelName = stockfishModelConfig.name;
+            const modelTools = stockfishModelConfig.tools;
+
+            // 在获取FEN前确保影子引擎同步
             this.chessGame.forceShadowSync();
             
-            const currentFEN = this.chessGame.getCurrentFEN();
             const history = this.chessGame.getFullGameHistory();
+            const currentFEN = this.chessGame.getCurrentFEN();
 
-            // ========================= FIX START =========================
-            // 1. 明确定义此功能需要的工具
-            const stockfishTool = {
-                name: 'stockfish_analyzer',
-                description: '使用 Stockfish 引擎分析国际象棋局面',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        fen: { type: 'string', description: '国际象棋局面的 FEN 字符串' },
-                        mode: {
-                            type: 'string',
-                            description: '分析模式：get_best_move（获取最佳走法）或 analyze_position（分析局面）',
-                            enum: ['get_best_move', 'analyze_position']
-                        },
-                        depth: { type: 'integer', description: '分析深度，默认为 15', default: 15 }
-                    },
-                    required: ['fen', 'mode']
-                }
-            };
+            // --- 第一阶段：请求AI进行工具调用 ---
+            this.logMessage(`第一阶段：向AI请求棋局分析 (模型: ${modelName})`, 'system');
             
-            // 2. 获取基础模型配置
-            const modelName = 'gemini-2.5-flash-preview-09-2025';
-            let modelConfig = {};
-            if (typeof CONFIG !== 'undefined' && CONFIG.API && CONFIG.API.AVAILABLE_MODELS) {
-                modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName) || {};
-            }
-
-            // 3. 构造本次请求的工具列表，确保 stockfish_analyzer 存在
-            const requestTools = (modelConfig.tools && Array.isArray(modelConfig.tools)) ? [...modelConfig.tools] : [];
-            if (!requestTools.some(t => t.name === 'stockfish_analyzer')) {
-                requestTools.push(stockfishTool);
-                this.logMessage('已将 stockfish_analyzer 工具动态添加到本次请求中。', 'debug');
-            }
-
-            // 4. 构建专业的提示词和最终的请求体
-            const prompt = this.buildStockfishPrompt(currentFEN, history);
+            // 提示词：要求AI调用 stockfish_analyzer 工具
+            const analysisPrompt = this.buildAnalysisPrompt(history, currentFEN);
             
+            // 使用固定 id 来把流追加到同一条消息中（阶段一）
+            const analysisId = `chess-analysis-${Date.now()}`;
+            this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, create: true });
+
+            // 构建请求体，动态使用模型名称和工具列表
             const requestBody = {
                 model: modelName,
-                messages: [{ role: 'user', content: prompt }],
-                tools: requestTools // 使用确保包含我们工具的列表
-            };
-            // ========================== FIX END ==========================
-
-            // 5. 创建专用的消息ID用于流式更新
-            const analysisId = `stockfish-analysis-${Date.now()}`;
-            this.displayVisionMessage('**🤖 正在分析局面并调用 Stockfish 引擎...**', { id: analysisId, create: true });
-
-            // 6. 存储最终响应文本的变量
-            let finalResponseText = '';
-
-            // 7. 定义UI重定向，确保消息显示在视觉聊天区
-            const uiOverrides = {
-                logMessage: this.logMessage,
-                createAIMessageElement: () => {
-                    // 创建一个模拟的消息元素来捕获流式响应
-                    const element = {
-                        rawMarkdownBuffer: '',
-                        markdownContainer: {
-                            innerHTML: ''
-                        },
-                        reasoningContainer: { 
-                            style: { display: 'none' },
-                            querySelector: () => ({ innerHTML: '' })
-                        }
-                    };
-
-                    // 拦截 markdownContainer 的更新来捕获内容
-                    Object.defineProperty(element.markdownContainer, 'innerHTML', {
-                        set: (value) => {
-                            finalResponseText = value; // 捕获最终的HTML内容
-                            // 同时更新视觉聊天区的显示
-                            this.displayVisionMessage(value, { id: analysisId, append: true });
-                            return value;
-                        },
-                        get: () => finalResponseText
-                    });
-
-                    return element;
-                },
-                displayToolCallStatus: (toolName, args) => {
-                    this.displayVisionMessage(`**🛠️ 调用工具:** \`${toolName}\`\n**参数:** \`${JSON.stringify(args)}\``, { id: analysisId, append: true });
-                },
-                scrollToBottom: () => {
-                    const container = document.getElementById('vision-chat-fullscreen');
-                    if (container) container.scrollTop = container.scrollHeight;
-                }
+                messages: [{ role: 'user', content: analysisPrompt }],
+                stream: true,
+                enableReasoning: stockfishModelConfig.enableReasoning || false,
+                temperature: 1.0,
+                top_p: 0.9,
+                tools: modelTools, // 动态注入工具列表
             };
 
-            // 8. 调用 chatApiHandler 进行完整的工具调用流程
-            await this.chatApiHandler.streamChatCompletion(requestBody, null, uiOverrides);
-
-            // 9. 从最终响应中提取走法
-            this.logMessage('开始从AI响应中提取走法...', 'system');
+            // 使用 chatApiHandler 发送请求
+            const analysisResponse = await this.chatApiHandler.sendRequest(requestBody, analysisId);
             
-            // 将HTML转换回纯文本进行走法提取
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = finalResponseText;
-            const plainText = tempDiv.textContent || tempDiv.innerText || '';
-            
-            const extractedMoves = this.extractAllSANFromText(plainText);
-            this.logMessage(`从AI响应中提取到走法: [${extractedMoves.join(', ')}]`, 'info');
+            const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
+            this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
 
-            if (extractedMoves.length === 0) {
-                throw new Error('AI分析完成，但未能提取出有效的走法');
-            }
+            // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
+            // 注意：这里仍然使用第二个模型进行提取，以确保走法格式的纯净性
+            this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
+            const extractionPrompt = this.buildPreciseExtractionPrompt(analysisResponse);
+            // 阶段二：走法提取，使用不同 id
+            const extractionId = `chess-extract-${Date.now()}`;
+            this.displayVisionMessage('**🎯 推荐走法**', { id: extractionId, create: true });
+            // 提取模型使用默认的 gemini-2.0-flash
+            const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash', extractionId);
+            const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
+            this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
 
-            // 10. 显示选择模态框（即使只有一个走法也显示，让用户确认）
-            this.logMessage(`找到 ${extractedMoves.length} 个推荐走法，显示选择模态框...`, 'system');
-            
+            // --- 第三阶段：验证并决策 ---
+            this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
+            const finalMoves = this.extractAllSANFromText(extractedResponse);
+            this.logMessage(`最终提取并验证了 ${finalMoves.length} 个走法: [${finalMoves.join(', ')}]`, 'debug');
+
             let chosenMove = null;
-            try {
-                chosenMove = await this.showMoveChoiceModal(
-                    `Stockfish 引擎分析完成：\n\n${plainText.substring(0, 1000)}${plainText.length > 1000 ? '...' : ''}`, 
-                    extractedMoves
-                );
-                this.logMessage(`用户选择了走法: "${chosenMove}"`, 'user-choice');
-                this.displayVisionMessage(`**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
-            } catch (error) {
-                this.showToast('用户取消了选择');
-                this.logMessage('用户取消了AI走法选择', 'info');
-                this.displayVisionMessage(`**❌ 操作取消**\n\n用户取消了走法选择`);
-                return false;
+
+            if (finalMoves.length === 0) {
+                throw new Error('AI未能提取出任何有效走法');
+            } else {
+                // 修改：无论有多少个选项，都显示选择模态框
+                this.logMessage(`决策：找到 ${finalMoves.length} 个推荐走法，请求用户选择...`, 'system');
+                
+                // 在视觉聊天区显示选项
+                const optionsText = finalMoves.length === 1
+                    ? `唯一推荐走法: **${finalMoves[0]}**`
+                    : `请从以下走法中选择: ${finalMoves.join(', ')}`;
+                this.displayVisionMessage(`**🤔 走法选择**\n\n${optionsText}`);
+                
+                try {
+                    chosenMove = await this.showMoveChoiceModal(analysisResponse, finalMoves);
+                    this.logMessage(`用户选择了走法: "${chosenMove}"`, 'user-choice');
+                    this.displayVisionMessage(`**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
+                } catch (error) {
+                    this.showToast('用户取消了选择');
+                    this.logMessage('用户取消了AI走法选择', 'info');
+                    this.displayVisionMessage(`**❌ 操作取消**\n\n用户取消了走法选择`);
+                    return false;
+                }
             }
 
-            // 11. 执行最终确定的走法
-            this.logMessage(`执行最终确定的走法 "${chosenMove}"`, 'system');
+            // --- 第四阶段：执行 ---
+            this.logMessage(`第四阶段：执行最终确定的走法 "${chosenMove}"`, 'system');
             const moveResult = await this.executeSANMove(chosenMove, currentFEN);
             
+            // 新增：在视觉聊天区显示执行结果
             if (moveResult) {
                 this.displayVisionMessage(`**🎊 执行成功**\n\n走法 **${chosenMove}** 已成功执行`);
             } else {
@@ -964,11 +882,11 @@ ${historyContext}
             return moveResult;
 
         } catch (error) {
-            const errorMsg = `Stockfish AI流程失败: ${error.message}`;
-            this.showToast(errorMsg, 'error');
-            this.logMessage(errorMsg, 'error');
-            this.displayVisionMessage(`**💥 错误信息**\n\n${errorMsg}`);
-            console.error('Stockfish AI Error:', error);
+            this.showToast(`AI走法获取失败: ${error.message}`);
+            this.logMessage(`AI处理流程错误: ${error.message}`, 'error');
+            // 新增：在视觉聊天区显示错误信息
+            this.displayVisionMessage(`**💥 错误信息**\n\nAI走法获取失败: ${error.message}`);
+            console.error('AI Error:', error);
             return false;
         }
     }
