@@ -249,9 +249,10 @@ async function handleSendVisionMessage() {
 
         // 保存用户消息到历史
         if (handlers.historyManager && handlers.historyManager.addMessage) {
+            // 确保保存完整的 userContent 数组，以便历史记录可以正确加载图片等附件
             handlers.historyManager.addMessage({
                 role: 'user',
-                content: text,
+                content: userContent, // 修改为保存完整的 userContent 数组
                 files: visionAttachedFiles,
                 timestamp: new Date().toISOString()
             });

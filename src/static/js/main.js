@@ -8,6 +8,7 @@ import { CONFIG } from './config/config.js';
 import { initializePromptSelect } from './config/prompt-manager.js';
 import { MultimodalLiveClient } from './core/websocket-client.js';
 import { HistoryManager } from './history/history-manager.js';
+import { createVisionHistoryManager } from './history/vision-history-manager.js'; // 修复：导入 Vision 历史管理器创建函数
 import { initImageManager } from './image-gallery/image-manager.js'; // 导入 ImageManager 的初始化函数
 import { ScreenHandler } from './media/screen-handlers.js'; // T4: 导入 ScreenHandler
 import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHandler
