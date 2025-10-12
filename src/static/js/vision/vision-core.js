@@ -225,22 +225,17 @@ async function handleSendVisionMessage() {
         // 准备用户消息内容
         const userContent = prepareUserContent(text, visionAttachedFiles);
         
-        // 构建完整的消息历史 - 确保格式正确
-        const messages = [];
+        // 1. 从专属 Vision API Handler 的状态中获取当前完整的历史记录，并创建一个副本
+        //    Vision API Handler 的 chatHistory 状态已在 main.js 中初始化为 visionHistoryManager 的消息
+        const messages = [...chatApiHandlerInstance.state.chatHistory];
         
-        // 添加系统指令（如果存在）
-        if (selectedPrompt && selectedPrompt.systemPrompt) {
-            messages.push({
-                role: 'system',
-                content: [{ type: 'text', text: selectedPrompt.systemPrompt }]
-            });
-        }
-        
-        // 添加用户消息
+        // 2. 仅添加当前的用户新消息
         messages.push({
             role: 'user',
             content: userContent
         });
+        
+        // 3. 移除此处多余的 system prompt 添加逻辑，系统指令将由 buildVisionRequestBody 统一处理。
 
         // 在UI上显示用户消息并清空输入
         displayVisionUserMessage(text, visionAttachedFiles);
