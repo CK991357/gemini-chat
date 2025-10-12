@@ -15,7 +15,7 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
-import { displayVisionMessage } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
+import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage 和 initializeVisionCore
 
 /**
  * @fileoverview Main entry point for the application.
