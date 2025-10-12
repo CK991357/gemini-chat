@@ -928,16 +928,27 @@ class ChessGame {
             return;
         }
 
-        // 防止重复添加
-        if (document.getElementById('ask-ai-button')) return;
+        // --- 原有的 “问AI走法” 按钮 ---
+        if (!document.getElementById('ask-ai-button')) {
+            const aiButton = document.createElement('button');
+            aiButton.id = 'ask-ai-button';
+            aiButton.className = 'action-button chess-ai-button';
+            aiButton.innerHTML = '<i class="fas fa-robot"></i> 问AI走法';
+            aiButton.title = '让AI选择并执行一步棋';
+            aiButton.addEventListener('click', () => this.handleAskAI());
+            fenActions.appendChild(aiButton);
+        }
 
-        const aiButton = document.createElement('button');
-        aiButton.id = 'ask-ai-button';
-        aiButton.className = 'action-button chess-ai-button';
-        aiButton.innerHTML = '<i class="fas fa-robot"></i> 问AI走法';
-        aiButton.addEventListener('click', () => this.handleAskAI());
-        
-        fenActions.appendChild(aiButton);
+        // --- 新增的 “问AI最优解” 按钮 ---
+        if (!document.getElementById('ask-ai-best-move-button')) {
+            const bestMoveButton = document.createElement('button');
+            bestMoveButton.id = 'ask-ai-best-move-button';
+            bestMoveButton.className = 'action-button chess-ai-button';
+            bestMoveButton.innerHTML = '<i class="fas fa-brain"></i> 问AI最优解';
+            bestMoveButton.title = '切换到聊天视图并请求AI进行详细局面分析';
+            bestMoveButton.addEventListener('click', () => this.handleAskAIBestMove());
+            fenActions.appendChild(bestMoveButton);
+        }
     }
     async handleAskAI() {
         if (this.gameOver) {
@@ -972,6 +983,63 @@ class ChessGame {
             // 确保按钮状态在任何情况下都能恢复
             aiButton.disabled = false;
             aiButton.innerHTML = originalText;
+        }
+    }
+    /**
+     * [新增] 处理“问AI最优解”按钮点击事件，采纳您的优化方案
+     */
+    async handleAskAIBestMove() {
+        if (this.gameOver) {
+            this.showToast('游戏已结束，无法进行分析');
+            return;
+        }
+        if (this.pendingPromotion) {
+            this.showToast('请先完成兵的升变选择');
+            return;
+        }
+
+        const currentFEN = this.getCurrentFEN();
+        if (!currentFEN) {
+            this.showToast('无法获取当前棋局信息');
+            return;
+        }
+
+        // 构建分析消息
+        const analysisMessage = `请使用当前配置的“国际象棋实时分析”提示词和工具，分析以下局面并给出最优解。\n\n当前FEN: \`${currentFEN}\``;
+
+        // 切换到Vision视图
+        this.showChatView();
+        
+        // 延迟执行，确保视图切换和Vision模块的UI已准备就绪
+        setTimeout(() => {
+            this.sendMessageToVision(analysisMessage);
+        }, 300); // 300ms 延迟通常足够
+        
+        this.showToast('已切换到AI分析视图，正在发送请求...');
+    }
+
+    /**
+     * [新增] 辅助函数，用于将消息发送到Vision模块
+     */
+    sendMessageToVision(message) {
+        // 优先使用全局函数，这是最直接可靠的方式
+        if (typeof window.sendVisionMessageDirectly === 'function') {
+            window.sendVisionMessageDirectly(message);
+            return;
+        }
+        
+        // 如果全局函数不存在，则使用您建议的备用方案：手动填充输入框并点击
+        const visionInput = document.getElementById('vision-input-text');
+        const sendButton = document.getElementById('vision-send-button');
+        
+        if (visionInput && sendButton) {
+            console.warn('全局函数 sendVisionMessageDirectly 未找到，执行备用方案。');
+            visionInput.value = message;
+            sendButton.disabled = false; // 确保按钮可用
+            sendButton.click();
+        } else {
+            console.error('Vision模块UI元素未找到，无法发送消息。');
+            this.showToast('AI分析模块未就绪，请稍后重试');
         }
     }
     /**

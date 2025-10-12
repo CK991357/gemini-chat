@@ -1,5 +1,4 @@
 // vision-core.js - 采用专属 API Handler 的最终架构版本
-import { getChessGameInstance } from '../chess/chess-core.js';
 import { CONFIG } from '../config/config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -199,19 +198,19 @@ function attachEventListeners() {
 }
 
 /**
- * Handles sending vision messages using its dedicated chatApiHandler.
+ * 内部核心函数，处理消息发送逻辑。
+ * @param {string} text - 用户输入的文本。
+ * @param {Array} files - 附加的文件。
  */
-async function handleSendVisionMessage() {
+async function _sendMessage(text, files) {
     if (!validateUIElements()) return;
 
-    const text = elements.visionInputText.value.trim();
-    const visionAttachedFiles = attachmentManager.getVisionAttachedFiles();
-    
-    if (!text && visionAttachedFiles.length === 0) {
+    if (!text && (!files || files.length === 0)) {
         showToastHandler('请输入文本或添加附件。');
         return;
     }
 
+    setSendButtonLoading(true);
     try {
         const selectedModel = elements.visionModelSelect.value;
         const selectedPrompt = getSelectedPrompt();
@@ -219,14 +218,13 @@ async function handleSendVisionMessage() {
         const modelConfig = getModelConfig(selectedModel);
         if (!modelConfig) {
             showToastHandler(`模型配置不存在: ${selectedModel}`);
-            return;
+            throw new Error(`模型配置不存在: ${selectedModel}`);
         }
 
         // 准备用户消息内容
-        const userContent = prepareUserContent(text, visionAttachedFiles);
+        const userContent = prepareUserContent(text, files);
         
         // 1. 从专属 Vision API Handler 的状态中获取当前完整的历史记录，并创建一个副本
-        //    Vision API Handler 的 chatHistory 状态已在 main.js 中初始化为 visionHistoryManager 的消息
         const messages = [...chatApiHandlerInstance.state.chatHistory];
         
         // 2. 仅添加当前的用户新消息
@@ -235,31 +233,24 @@ async function handleSendVisionMessage() {
             content: userContent
         });
         
-        // 3. 移除此处多余的 system prompt 添加逻辑，系统指令将由 buildVisionRequestBody 统一处理。
-
-        // 在UI上显示用户消息并清空输入
-        displayVisionUserMessage(text, visionAttachedFiles);
-        elements.visionInputText.value = '';
-        attachmentManager.clearAttachedFile('vision');
+        // 在UI上显示用户消息
+        displayVisionUserMessage(text, files);
 
         // 保存用户消息到历史
         if (handlers.historyManager && handlers.historyManager.addMessage) {
-            // 确保保存完整的 userContent 数组，以便历史记录可以正确加载图片等附件
             handlers.historyManager.addMessage({
                 role: 'user',
-                content: userContent, // 修改为保存完整的 userContent 数组
-                files: visionAttachedFiles,
+                content: userContent,
+                files: files,
                 timestamp: new Date().toISOString()
             });
         }
-
-        setSendButtonLoading(true);
 
         // 使用构建的消息数组构建请求体
         const requestBody = buildVisionRequestBody(
             selectedModel,
             selectedPrompt,
-            messages // 传递完整的消息数组，而不是历史记录
+            messages
         );
 
         const apiKey = getApiKey();
@@ -273,10 +264,7 @@ async function handleSendVisionMessage() {
             throw new Error('Vision Chat API Handler 未初始化。');
         }
         
-        // 直接调用，无需任何状态切换
         await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
-
-        // AI回复会自动保存到 chatApiHandlerInstance.state.chatHistory 中
 
         Logger.info(`Vision request completed for model: ${selectedModel}`, 'system');
 
@@ -288,6 +276,28 @@ async function handleSendVisionMessage() {
     } finally {
         setSendButtonLoading(false);
     }
+}
+
+/**
+ * Handles sending vision messages using its dedicated chatApiHandler.
+ */
+async function handleSendVisionMessage() {
+    if (!validateUIElements()) return;
+
+    const text = elements.visionInputText.value.trim();
+    const visionAttachedFiles = attachmentManager.getVisionAttachedFiles();
+    
+    if (!text && visionAttachedFiles.length === 0) {
+        showToastHandler('请输入文本或添加附件。');
+        return;
+    }
+    
+    // 调用核心发送逻辑
+    await _sendMessage(text, visionAttachedFiles);
+
+    // 发送后清空输入框和附件
+    elements.visionInputText.value = '';
+    attachmentManager.clearAttachedFile('vision');
 }
 
 /**
@@ -328,12 +338,47 @@ function setSendButtonLoading(isLoading) {
  * Gets model configuration
  */
 function getModelConfig(modelName) {
-    // 优先从 API 配置查找，确保与 Chat 模式一致
     let modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
     if (!modelConfig) {
         modelConfig = CONFIG.VISION.MODELS.find(m => m.name === modelName);
     }
     return modelConfig;
+}
+
+/**
+ * Gets the selected prompt
+ */
+function getSelectedPrompt() {
+    if (!elements.visionPromptSelect) {
+        return CONFIG.VISION.PROMPTS[0];
+    }
+    
+    const selectedId = elements.visionPromptSelect.value;
+    return CONFIG.VISION.PROMPTS.find(prompt => prompt.id === selectedId) || CONFIG.VISION.PROMPTS[0];
+}
+
+/**
+ * Prepares user content array from text and files
+ */
+function prepareUserContent(text, files) {
+    const userContent = [];
+    if (text) {
+        userContent.push({ type: 'text', text });
+    }
+    files.forEach(file => {
+        if (file.type.startsWith('image/')) {
+            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+        }
+    });
+    return userContent;
+}
+
+/**
+ * Gets the API key
+ */
+function getApiKey() {
+    const apiKeyInput = document.getElementById('api-key');
+    return apiKeyInput ? apiKeyInput.value.trim() : localStorage.getItem('gemini_api_key');
 }
 
 /**
@@ -363,28 +408,88 @@ function displayErrorMessage(message) {
 }
 
 /**
+ * Creates vision UI adapter
+ */
+function createVisionUIAdapter() {
+    return {
+        createAIMessageElement: createVisionAIMessageElement,
+        displayUserMessage: displayVisionUserMessage,
+        displayToolCallStatus: (toolName, args) => {
+            if (!elements.visionMessageHistory) return;
+            
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'tool-call-status vision-tool-call';
+            
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-cog fa-spin';
+            
+            const text = document.createElement('span');
+            text.textContent = `正在调用工具: ${toolName}...`;
+            
+            statusDiv.appendChild(icon);
+            statusDiv.appendChild(text);
+            
+            elements.visionMessageHistory.appendChild(statusDiv);
+            scrollVisionToBottom();
+
+            Logger.info(`Tool call started: ${toolName}`);
+        },
+        displayImageResult: (base64Image, altText = 'Generated Image', fileName = 'generated_image.png') => {
+            if (!elements.visionMessageHistory) return;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'ai');
+
+            const avatarDiv = document.createElement('div');
+            avatarDiv.classList.add('avatar');
+            avatarDiv.textContent = '🤖';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('content', 'image-result-content');
+
+            const imageElement = document.createElement('img');
+            imageElement.src = `data:image/png;base64,${base64Image}`;
+            imageElement.alt = altText;
+            imageElement.classList.add('chat-image-result');
+            contentDiv.appendChild(imageElement);
+
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(contentDiv);
+            elements.visionMessageHistory.appendChild(messageDiv);
+            scrollVisionToBottom();
+
+            Logger.info('Image result displayed in vision interface');
+        },
+        scrollToBottom: scrollVisionToBottom,
+        logMessage: (message, type = 'system') => {
+            Logger.info(`[Vision] ${type}: ${message}`);
+            if (type === 'system' && (message.includes('错误') || message.includes('失败'))) {
+                showToastHandler(message);
+            }
+        }
+    };
+}
+
+/**
  * Builds request body for vision requests.
- * @param {string} modelName
- * @param {object} selectedPrompt
- * @param {Array} messages - The complete message array for this request.
  */
 function buildVisionRequestBody(modelName, selectedPrompt, messages) {
     const modelConfig = getModelConfig(modelName);
     
     const requestBody = {
         model: modelName,
-        messages: messages, // 使用传入的消息数组
+        messages: messages,
         stream: true
     };
 
-    // 添加系统指令（如果存在）- 使用正确的格式
+    // 添加系统指令（如果存在）
     if (selectedPrompt && selectedPrompt.systemPrompt) {
         requestBody.systemInstruction = {
             parts: [{ text: selectedPrompt.systemPrompt }]
         };
     }
 
-    // 添加必要的配置字段，确保与 chat 模式一致
+    // 添加必要的配置字段
     requestBody.generationConfig = {
         responseModalities: ['text']
     };
@@ -427,106 +532,6 @@ function buildVisionRequestBody(modelName, selectedPrompt, messages) {
 }
 
 /**
- * Creates a UI adapter that redirects ChatApiHandler output to Vision interface.
- */
-function createVisionUIAdapter() {
-    return {
-        // Core message functions
-        createAIMessageElement: createVisionAIMessageElement,
-        displayUserMessage: displayVisionUserMessage,
-        
-        // Tool call status
-        displayToolCallStatus: (toolName, args) => {
-            if (!elements.visionMessageHistory) return;
-            
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'tool-call-status vision-tool-call';
-            
-            const icon = document.createElement('i');
-            icon.className = 'fas fa-cog fa-spin';
-            
-            const text = document.createElement('span');
-            text.textContent = `正在调用工具: ${toolName}...`;
-            
-            statusDiv.appendChild(icon);
-            statusDiv.appendChild(text);
-            
-            elements.visionMessageHistory.appendChild(statusDiv);
-            scrollVisionToBottom();
-
-            Logger.info(`Tool call started: ${toolName}`);
-        },
-        
-        // Image result display
-        displayImageResult: (base64Image, altText = 'Generated Image', fileName = 'generated_image.png') => {
-            if (!elements.visionMessageHistory) return;
-
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message', 'ai');
-
-            const avatarDiv = document.createElement('div');
-            avatarDiv.classList.add('avatar');
-            avatarDiv.textContent = '🤖';
-
-            const contentDiv = document.createElement('div');
-            contentDiv.classList.add('content', 'image-result-content');
-
-            const imageElement = document.createElement('img');
-            imageElement.src = `data:image/png;base64,${base64Image}`;
-            imageElement.alt = altText;
-            imageElement.classList.add('chat-image-result');
-            contentDiv.appendChild(imageElement);
-
-            // Get image dimensions and type
-            let dimensions = 'N/A';
-            let imageType = 'image/png';
-
-            const mimeMatch = base64Image.match(/^data:(image\/[a-zA-Z0-9-.+]+);base64,/);
-            if (mimeMatch && mimeMatch[1]) {
-                imageType = mimeMatch[1];
-            } else if (base64Image.startsWith('/9j/')) {
-                imageType = 'image/jpeg';
-            } else if (base64Image.startsWith('iVBORw0KGgo')) {
-                imageType = 'image/png';
-            }
-
-            imageElement.onload = () => {
-                dimensions = `${imageElement.naturalWidth}x${imageElement.naturalHeight} px`;
-                const base64Length = base64Image.length;
-                const sizeInBytes = (base64Length * 0.75) - (base64Image.endsWith('==') ? 2 : (base64Image.endsWith('=') ? 1 : 0));
-                const sizeInKB = (sizeInBytes / 1024).toFixed(2);
-                const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
-                let size = sizeInKB < 1024 ? `${sizeInKB} KB` : `${sizeInMB} MB`;
-
-                imageElement.addEventListener('click', () => {
-                    if (typeof openImageModal === 'function') {
-                        openImageModal(imageElement.src, altText, dimensions, size, imageType);
-                    }
-                });
-            };
-
-            messageDiv.appendChild(avatarDiv);
-            messageDiv.appendChild(contentDiv);
-            elements.visionMessageHistory.appendChild(messageDiv);
-            scrollVisionToBottom();
-
-            Logger.info('Image result displayed in vision interface');
-        },
-        
-        // Scrolling
-        scrollToBottom: scrollVisionToBottom,
-        
-        // Logging
-        logMessage: (message, type = 'system') => {
-            Logger.info(`[Vision] ${type}: ${message}`);
-            if (type === 'system' && (message.includes('错误') || message.includes('失败'))) {
-                showToastHandler(message);
-            }
-        }
-    };
-}
-
-/**
  * 生成对局总结 - 复用Chat模块逻辑
  */
 async function generateGameSummary() {
@@ -540,8 +545,8 @@ async function generateGameSummary() {
     // 尝试多种方式获取国际象棋实例
     if (typeof window.chessGame !== 'undefined') {
         chessGame = window.chessGame;
-    } else if (typeof getChessGameInstance === 'function') {
-        chessGame = getChessGameInstance();
+    } else if (typeof window.getChessGameInstance === 'function') {
+        chessGame = window.getChessGameInstance();
     } else {
         chessGame = window.chessGameInstance;
     }
@@ -778,43 +783,6 @@ export function displayVisionMessage(markdownContent) {
 // ========== UTILITY FUNCTIONS ==========
 
 /**
- * 获取当前选择的提示词
- */
-function getSelectedPrompt() {
-    if (!elements.visionPromptSelect) {
-        return CONFIG.VISION.PROMPTS[0];
-    }
-    
-    const selectedId = elements.visionPromptSelect.value;
-    return CONFIG.VISION.PROMPTS.find(prompt => prompt.id === selectedId) || CONFIG.VISION.PROMPTS[0];
-}
-
-/**
- * Prepares user content array from text and files.
- */
-function prepareUserContent(text, files) {
-    const userContent = [];
-    if (text) {
-        userContent.push({ type: 'text', text });
-    }
-    files.forEach(file => {
-        if (file.type.startsWith('image/')) {
-            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-        }
-        // Add support for other file types if needed
-    });
-    return userContent;
-}
-
-/**
- * Gets the API key from main interface.
- */
-function getApiKey() {
-    const apiKeyInput = document.getElementById('api-key');
-    return apiKeyInput ? apiKeyInput.value.trim() : localStorage.getItem('gemini_api_key');
-}
-
-/**
  * Scrolls the vision message history to bottom.
  */
 function scrollVisionToBottom() {
@@ -824,3 +792,36 @@ function scrollVisionToBottom() {
         });
     }
 }
+
+// ========== GLOBAL FUNCTION FOR EXTERNAL ACCESS ==========
+
+/**
+ * 供外部模块调用的直接消息发送函数。
+ * 它会直接调用内部的发送逻辑，比模拟点击更高效、更可靠。
+ * @param {string} messageText - 要作为消息发送的文本
+ * @returns {Promise<boolean>} - 发送是否成功启动
+ */
+window.sendVisionMessageDirectly = async function(messageText) {
+    if (!chatApiHandlerInstance || !elements.visionMessageHistory) {
+        console.error('Vision模块尚未完全初始化，无法发送消息。');
+        if (showToastHandler) {
+            showToastHandler('AI分析模块未就绪，请稍后重试');
+        }
+        return false;
+    }
+    
+    if (typeof messageText !== 'string' || !messageText.trim()) {
+        console.error('无效的消息文本:', messageText);
+        return false;
+    }
+    
+    // 直接调用核心发送函数，不带附件
+    await _sendMessage(messageText.trim(), []);
+    
+    // 清空输入框（即使是程序化填充的）以保持UI一致性
+    if (elements.visionInputText) {
+        elements.visionInputText.value = '';
+    }
+    
+    return true;
+};
