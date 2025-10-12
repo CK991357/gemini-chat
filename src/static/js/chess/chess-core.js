@@ -288,9 +288,9 @@ class ChessGame {
             if (this.chessRules.handleCastling(fromRow, fromCol, toRow, toCol)) {
                 this.showToast('王车易位！');
                 // 王车易位成功，更新游戏状态
-                // 捕获吃子信息
-                const capturedPiece = this.pieces[`${toRow},${toCol}`] || null;
-                this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece);
+                // 王车易位没有吃子，capturedPiece 必须为 null
+                const capturedPiece = null;
+                this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece, false, true);
                 this.recordMoveToHistory();
                 this.chessRules.clearLastMoveError();
                 this.updateFEN();
@@ -340,13 +340,14 @@ class ChessGame {
             delete this.pieces[fromKey];
             this.pieces[toKey] = piece;
             
-            // 设置等待升变状态 - 修复：添加 fromRow 和 fromCol
+            // 设置等待升变状态 - 修复：添加 capturedPiece
             this.pendingPromotion = {
-                fromRow: fromRow,    // 添加这行
-                fromCol: fromCol,    // 添加这行
+                fromRow: fromRow,
+                fromCol: fromCol,
                 row: toRow,
                 col: toCol,
-                piece: piece
+                piece: piece,
+                capturedPiece: this.pieces[toKey] || null // 提前保存目标格子的棋子
             };
             
             console.log('触发兵升变:', this.pendingPromotion);
@@ -376,7 +377,7 @@ class ChessGame {
             this.pieces[toKey] = piece;
             
             // 更新游戏状态
-            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece, isEnPassantCapture);
+            this.updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece, isEnPassantCapture, false);
             this.recordMoveToHistory();
             
             // 更新易位权利
@@ -396,7 +397,7 @@ class ChessGame {
     /**
      * 更新游戏状态
      */
-    updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece = null, enPassantCapture = false) {
+    updateGameState(piece, fromRow, fromCol, toRow, toCol, capturedPiece = null, enPassantCapture = false, isCastling = false) {
         // 切换回合
         this.currentTurn = this.currentTurn === 'w' ? 'b' : 'w';
         
@@ -405,7 +406,8 @@ class ChessGame {
             this.fullMoveNumber++;
         }
 
-        // 更新半回合计数（用于50步规则） - 已根据测试报告修复
+        // 更新半回合计数（用于50步规则）
+        // 兵走法、吃子、吃过路兵都会重置半步计数器。王车易位不重置。
         if (piece.toLowerCase() === 'p' || capturedPiece || enPassantCapture) {
             this.halfMoveClock = 0;
         } else {
@@ -614,7 +616,7 @@ class ChessGame {
             return;
         }
         
-        const { fromRow, fromCol, row, col, piece } = this.pendingPromotion;
+        const { fromRow, fromCol, row, col, piece, capturedPiece } = this.pendingPromotion;
         const isWhite = piece === 'P';
         const newPiece = isWhite ? pieceType.toUpperCase() : pieceType.toLowerCase();
         
@@ -622,7 +624,8 @@ class ChessGame {
             fromPosition: `${fromRow},${fromCol}`,
             toPosition: `${row},${col}`,
             fromPiece: piece,
-            toPiece: newPiece
+            toPiece: newPiece,
+            capturedPiece: capturedPiece
         });
         
         // 更新棋子
@@ -634,9 +637,9 @@ class ChessGame {
         // 清除升变选择显示
         this.clearPromotionDisplay();
         
-        // 修复：使用标准的 updateGameState，并传递吃子信息（升变时总是有吃子）
-        const capturedPiece = this.pieces[`${row},${col}`] || piece; // 升变总是覆盖一个兵
-        this.updateGameState(piece, fromRow, fromCol, row, col, capturedPiece, false);
+        // 修复：使用标准的 updateGameState，并传递正确的吃子信息
+        // 传递升变后的新棋子 (newPiece) 作为移动的棋子
+        this.updateGameState(newPiece, fromRow, fromCol, row, col, capturedPiece, false, false);
         this.recordMoveToHistory();
         
         this.updateFEN();
