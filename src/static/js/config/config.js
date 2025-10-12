@@ -914,11 +914,7 @@ print(image_base64)
     },
     VISION: {
         MODELS: [
-            {
-                name: 'glm-4.1v-thinking-flash',
-                displayName: 'GLM-4.1V-Thinking-Flash',
-                isZhipu: true, // 标记为智谱模型
-            },
+            
             {
                 name: 'gemini-2.5-flash-preview-09-2025',
                 displayName: 'gemini-2.5-flash-preview-09-2025 (工具调用)',
@@ -930,12 +926,17 @@ print(image_base64)
                 mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
             },
             {
+                name: 'glm-4.1v-thinking-flash',
+                displayName: 'GLM-4.1V-Thinking-Flash',
+                isZhipu: true, // 标记为智谱模型
+            },
+            {
                 name: 'glm-4v-flash',
                 displayName: 'GLM-4V-Flash',
                 isZhipu: true // 标记为智谱模型
             }
         ],
-        DEFAULT_MODEL: 'glm-4.1v-thinking-flash',
+        DEFAULT_MODEL: 'gemini-2.5-flash-preview-09-2025',
         // 提示词模式列表
         PROMPTS: [
             {
