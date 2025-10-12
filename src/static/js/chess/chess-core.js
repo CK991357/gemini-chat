@@ -1005,7 +1005,7 @@ class ChessGame {
         }
 
         // 构建分析消息
-        const analysisMessage = `请使用当前配置的“国际象棋实时分析”提示词和工具，分析以下局面并给出最优解。\n\n当前FEN: \`${currentFEN}\``;
+        const analysisMessage = `请使用当前配置的“国际象棋实时分析”提示词和工具，分析以下局面并给出Top 3 走法分析。\n\n当前FEN: \`${currentFEN}\``;
 
         // 切换到Vision视图
         this.showChatView();
