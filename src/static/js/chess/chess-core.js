@@ -331,6 +331,12 @@ class ChessGame {
             return false;
         }
 
+        // 最终合法性检查：确保移动后自己的王不会被将军
+        if (this.chessRules.wouldBeInCheckAfterMove(fromRow, fromCol, toRow, toCol, this.currentTurn)) {
+            this.showToast('移动非法：会导致你的王被将军');
+            return false;
+        }
+
         // 保存当前 FEN 到历史记录
         this.moveHistory.push(this.generateFEN());
 
