@@ -14,7 +14,7 @@ import { VideoHandler } from './media/video-handlers.js'; // T3: 导入 VideoHan
 import { ToolManager } from './tools/tool-manager.js'; // 确保导入 ToolManager
 import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
-import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
+import { displayVisionMessage } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage
 
 /**
  * @fileoverview Main entry point for the application.
@@ -549,15 +549,16 @@ document.addEventListener('DOMContentLoaded', () => {
        toggleToVisionButton: document.getElementById('toggle-to-vision-button')
    };
 
+   // 创建 Vision 历史管理器
+   const visionHistoryManager = createVisionHistoryManager();
+
    // 初始化 Vision 模式的 ChatApiHandler
-   // 它有自己独立的、不与全局共享的 state
    visionApiHandler = new ChatApiHandler({
-       toolManager: toolManager, // ToolManager 可以共享，因为它是无状态的
-       historyManager: null, // Vision 模式不使用 HistoryManager
+       toolManager: toolManager,
+       historyManager: visionHistoryManager,
        state: {
-           // 这是一个全新的、独立的 state 对象
-           chatHistory: [],
-           currentSessionId: null,
+           chatHistory: visionHistoryManager.getCurrentSessionMessages(), // 从历史管理器获取消息
+           currentSessionId: visionHistoryManager.getCurrentSessionId(),
            currentAIMessageContentDiv: null,
            isUsingTool: false
        },
@@ -573,14 +574,15 @@ document.addEventListener('DOMContentLoaded', () => {
        }
    });
 
-   // 定义 visionHandlers
+   // 定义 visionHandlers - 确保包含历史管理器
    const visionHandlers = {
        showToast: showToast,
        showSystemMessage: showSystemMessage,
-       chatApiHandler: visionApiHandler // 修改为使用 visionApiHandler
+       chatApiHandler: visionApiHandler,
+       historyManager: visionHistoryManager // 添加历史管理器到 handlers
    };
 
-   // 初始化视觉功能 - 确保在 chatApiHandler 初始化后调用
+   // 初始化视觉功能
    initializeVisionCore(visionElements, attachmentManager, visionHandlers);
    
    // 初始化国际象棋 - 确保在所有DOM元素就绪后调用

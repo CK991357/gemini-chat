@@ -9,6 +9,7 @@ let attachmentManager = null;
 let showToastHandler = null;
 let chatApiHandlerInstance = null; // 这个实例现在是 Vision 模式专属的
 let isVisionActive = false; // 跟踪视觉模式是否激活
+let handlers = {}; // T16: 新增，保存 handlers 对象
 
 /**
  * [新增] 导出函数，用于从外部（如 main.js）清空 Vision 模式的聊天历史。
@@ -24,6 +25,12 @@ export function clearVisionHistory() {
     if (elements.visionMessageHistory) {
         elements.visionMessageHistory.innerHTML = '';
     }
+    
+    // 同时清除历史管理器中的当前会话
+    if (handlers.historyManager && handlers.historyManager.clearCurrentSession) {
+        handlers.historyManager.clearCurrentSession();
+    }
+    
     Logger.info('Vision chat history cleared.');
 }
 
@@ -37,9 +44,10 @@ export function setVisionActive(active) {
 /**
  * Initializes the Vision feature.
  */
-export function initializeVisionCore(el, manager, handlers) {
+export function initializeVisionCore(el, manager, handlersObj) { // 重命名参数以避免冲突
     elements = el;
     attachmentManager = manager;
+    handlers = handlersObj; // T16: 保存 handlers 对象
     showToastHandler = handlers.showToast;
     // [关键] 接收专属的 chatApiHandler 实例
     chatApiHandlerInstance = handlers.chatApiHandler;
@@ -239,12 +247,22 @@ async function handleSendVisionMessage() {
         elements.visionInputText.value = '';
         attachmentManager.clearAttachedFile('vision');
 
+        // 保存用户消息到历史
+        if (handlers.historyManager && handlers.historyManager.addMessage) {
+            handlers.historyManager.addMessage({
+                role: 'user',
+                content: text,
+                files: visionAttachedFiles,
+                timestamp: new Date().toISOString()
+            });
+        }
+
         setSendButtonLoading(true);
 
         // 使用构建的消息数组构建请求体
         const requestBody = buildVisionRequestBody(
-            selectedModel, 
-            selectedPrompt, 
+            selectedModel,
+            selectedPrompt,
             messages // 传递完整的消息数组，而不是历史记录
         );
 
@@ -261,6 +279,8 @@ async function handleSendVisionMessage() {
         
         // 直接调用，无需任何状态切换
         await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
+
+        // AI回复会自动保存到 chatApiHandlerInstance.state.chatHistory 中
 
         Logger.info(`Vision request completed for model: ${selectedModel}`, 'system');
 
