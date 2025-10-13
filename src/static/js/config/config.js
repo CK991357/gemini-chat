@@ -31,12 +31,6 @@ export const CONFIG = {
                 isWebSocket: false
             },
             {
-                name: 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
-                displayName: 'Qwen3-Coder-480B-A35B-Instruct (HTTP)',
-                isWebSocket: false,
-                isQwen: true, // 标记为通义千问模型
-            },
-            {
                 name: 'models/gemini-2.5-flash',
                 displayName: 'gemini-2.5-flash (工具调用)',
                 isWebSocket: false,

@@ -25,46 +25,46 @@ The `src` directory is the heart of the application, containing all source code 
             -   `/api/transcribe-audio`: Handles audio transcription requests, primarily via SiliconFlow.
             -   `/api/translate`: Orchestrates translation tasks, leveraging chat completion endpoints of various providers.
             -   `/api/generate-image`: Manages image generation requests, typically routed to SiliconFlow.
-            -   `/api/mcp-proxy`: A dedicated proxy for Multi-Cloud Platform (MCP) tool invocations. It receives tool call requests (containing `tool_name` and `parameters`) from the frontend (via `src/static/js/chat/chat-api-handler.js` and `src/static/js/agent/qwen-agent-adapter.js`) and dispatches them to specific backend tool handlers (e.g., `src/mcp_proxy/handlers/tavily-search.js`).
+            -   `/api/mcp-proxy`: A dedicated proxy for Multi-Cloud Platform (MCP) tool invocations. It receives tool call requests (containing `tool_name` and `parameters`) from the frontend and dispatches them to specific backend tool handlers.
         -   **History API**: Routes prefixed with `/api/history/` manage user chat sessions, including saving, loading, pinning, editing titles, and deleting. It uses Cloudflare KV storage (`env.GEMINICHAT_HISTORY_KV`) for persistence. A notable feature is `/api/history/generate-title`, which leverages a Gemini model to automatically summarize chat content into a title.
 
 ### 2.1.1 MCP Tool Handlers (`src/mcp_proxy/handlers/`)
 
 -   **[`tavily-search.js`](src/mcp_proxy/handlers/tavily-search.js)**:
-    -   **职能**: 这是 `tavily_search` 工具的后端处理器。它从 `/api/mcp-proxy` 接收 `tool_name` 和 `parameters`，然后将请求转发到外部的 Python 工具集服务 (`https://tools.10110531.xyz/api/v1/execute_tool`) 以执行实际的 Tavily 搜索。
-    -   **关键流程**: 构建包含 `tool_name` 和 `parameters` 的请求体，然后使用 `fetch` 将其发送到 Python API，并处理响应。
+    -   **Function**: This is the backend processor for the `tavily_search` tool. It receives `tool_name` and `parameters` from `/api/mcp-proxy`, then forwards the request to an external Python toolset service (`https://tools.10110531.xyz/api/v1/execute_tool`) to execute the actual Tavily search.
+    -   **Key Process**: Builds a request body containing `tool_name` and `parameters`, then sends it to the Python API using `fetch` and processes the response.
 
 -   **[`python-sandbox.js`](src/mcp_proxy/handlers/python-sandbox.js)**:
-    -   **职能**: 这是 `python_sandbox` 工具的后端处理器。它负责接收来自模型的代码执行请求，并将其安全地转发到外部独立的 Python 沙箱服务。
-    -   **关键实现**: 此文件的核心是一个“永不崩溃”的参数解析器 (`parseWithRepair`)。由于 AI 模型有时会生成格式错误的 JSON 参数，此函数通过多层防御机制来确保健壮性：
-        1.  **标准解析**: 尝试将输入作为标准 JSON 解析，并能处理多层嵌套的字符串化问题。
-        2.  **正则救援**: 如果标准解析失败，它会使用正则表达式尝试从混乱的字符串中“抢救”出核心的 `code` 字段内容。
-        3.  **安全回退**: 如果所有解析和救援尝试都失败，它会生成一个包含错误信息的 Python 代码对象返回给模型，而不是抛出异常。
-    -   **设计目的**: 这种设计确保了 Cloudflare Worker 永远不会因为模型参数格式问题而崩溃，从而解决了导致模型陷入重试循环的根源问题。它将错误处理的循环限制在了前端和模型之间。
+    -   **Function**: This is the backend processor for the `python_sandbox` tool. It receives code execution requests from models and safely forwards them to an external standalone Python sandbox service.
+    -   **Key Implementation**: The core of this file is a "never-crash" parameter parser (`parseWithRepair`). Since AI models sometimes generate malformed JSON parameters, this function ensures robustness through multi-layer defense mechanisms:
+        1.  **Standard Parsing**: Attempts to parse input as standard JSON and can handle multi-level nested stringification issues.
+        2.  **Regex Rescue**: If standard parsing fails, it uses regular expressions to try to "rescue" the core `code` field content from chaotic strings.
+        3.  **Safe Fallback**: If all parsing and rescue attempts fail, it generates a Python code object containing error information to return to the model instead of throwing an exception.
+    -   **Design Purpose**: This design ensures the Cloudflare Worker never crashes due to model parameter format issues, solving the root cause that leads models into retry loops. It confines the error handling loop between the frontend and the model.
 
 -   **[`firecrawl.js`](src/mcp_proxy/handlers/firecrawl.js)**:
-    -   **职能**: 这是 `firecrawl` 工具的后端处理器。它接收来自 `/api/mcp-proxy` 的请求，验证 `mode` 和 `parameters`，然后将请求转发到外部的 Python 工具集服务 (`https://tools.10110531.xyz/api/v1/execute_tool`) 以执行实际的 Firecrawl 操作（如抓取、搜索或爬取）。
-    -   **关键流程**: 验证输入参数，构建请求体，然后使用 `fetch` 将其发送到 Python API，并处理响应。
+    -   **Function**: This is the backend processor for the `firecrawl` tool. It receives requests from `/api/mcp-proxy`, validates `mode` and `parameters`, then forwards the request to an external Python toolset service (`https://tools.10110531.xyz/api/v1/execute_tool`) to execute actual Firecrawl operations (such as scraping, searching, or crawling).
+    -   **Key Process**: Validates input parameters, builds the request body, then sends it to the Python API using `fetch` and processes the response.
 
 -   **[`stockfish.js`](src/mcp_proxy/handlers/stockfish.js)**:
-    -   **职能**: 这是 `stockfish_analyzer` 工具的后端处理器。它接收来自 `/api/mcp-proxy` 的请求，验证 `fen` 和 `mode` 参数，然后将请求转发到外部的 Python 工具集服务 (`https://tools.10110531.xyz/api/v1/execute_tool`) 以执行 Stockfish 国际象棋引擎的分析。
-    -   **关键流程**: 验证 `fen` 和 `mode` 参数的有效性（`mode` 必须是 `get_best_move`、`get_top_moves` 或 `evaluate_position` 之一），构建包含 `tool_name: 'stockfish_analyzer'` 和完整 `parameters` 的请求体，然后使用 `fetch` 将其发送到 Python API，并处理响应。
+    -   **Function**: This is the backend processor for the `stockfish_analyzer` tool. It receives requests from `/api/mcp-proxy`, validates `fen` and `mode` parameters, then forwards the request to an external Python toolset service (`https://tools.10110531.xyz/api/v1/execute_tool`) to execute Stockfish chess engine analysis.
+    -   **Key Process**: Validates the validity of `fen` and `mode` parameters (`mode` must be one of `get_best_move`, `get_top_moves`, or `evaluate_position`), builds a request body containing `tool_name: 'stockfish_analyzer'` and complete `parameters`, then sends it to the Python API using `fetch` and processes the response.
 
 ### 2.1.2 External Tool Services (Backend)
 
-除了在 Cloudflare Worker 中处理的逻辑外，一些工具还依赖于在独立服务器上运行的外部后端服务。
+In addition to the logic processed in the Cloudflare Worker, some tools rely on external backend services running on independent servers.
 
 -   **Python Sandbox Service (`/tools/`)**
-    -   **职能**: 这是一个基于 FastAPI 和 Docker 的独立后端服务，提供一个安全的、隔离的环境来执行由 AI 模型生成的任意 Python 代码。现在它已升级为一个功能齐全的 **数据科学代码解释器**，支持使用 [`matplotlib`](https://matplotlib.org/) 和 [`seaborn`](https://seaborn.pydata.org/) 等库进行数据可视化，并能生成 Base64 编码的 PNG 图像。
-    -   **关键文件**:
-        -   **[`code_interpreter.py`](tools/code_interpreter.py)**: 包含 FastAPI 应用的核心逻辑。它接收代码片段，使用 Docker SDK 创建一个临时的、一次性的 Docker 容器来执行代码，捕获 `stdout`, `stderr`，并现在特别处理 Base64 编码的图像输出。为了解决 `matplotlib` 在只读文件系统中无法创建缓存的问题，它配置了 `MPLCONFIGDIR` 环境变量为 `/tmp`，并使用 `tmpfs` 将 `/tmp` 目录挂载为内存文件系统。
-        -   **[`docker-compose.yml`](tools/docker-compose.yml)**: 用于定义和运行沙箱服务。配置了 `restart: unless-stopped` 策略，以确保服务在服务器重启或意外崩溃后能自动恢复。
-        -   **[`Dockerfile`](tools/Dockerfile)**: 自定义了 Docker 镜像，在 `python:3.11-slim` 的基础上预装了一系列关键的数据科学库，包括 `numpy`, `pandas`, `matplotlib`, `seaborn`, 和 `openpyxl`。
-    -   **关键升级**:
-        -   **数据科学库预装**: 服务现在预装了 `numpy`, `pandas`, `matplotlib`, `seaborn`, 和 `openpyxl`，极大地增强了其在数据分析、处理和可视化方面的能力。
-        -   **资源增加与环境配置**: 为支持这些库和 `matplotlib` 缓存，每个容器的内存限制已从 `512MB` 提高到 `1GB`。同时，通过 `MPLCONFIGDIR=/tmp` 环境变量和 `tmpfs={'/tmp': 'size=100M,mode=1777'}` 挂载，确保 `matplotlib` 拥有可写的工作空间。
-        -   **同步执行**: 最初的实现使用了异步的 Docker `run(detach=True)`，这导致了一个竞态条件：应用有时会在容器执行完毕并被自动删除后才去尝试获取日志，从而导致 "404 Container Not Found" 错误。
-        -   **解决方案**: 我们将其修改为同步执行 `run(detach=False)`。这简化了逻辑，程序会等待代码执行完成并直接从 `run` 命令的返回值中获得输出，从而彻底解决了该竞态条件。
+    -   **Function**: This is an independent backend service based on FastAPI and Docker, providing a secure, isolated environment to execute arbitrary Python code generated by AI models. It has now been upgraded to a fully-featured **data science code interpreter**, supporting data visualization using libraries like [`matplotlib`](https://matplotlib.org/) and [`seaborn`](https://seaborn.pydata.org/), and can generate Base64-encoded PNG images.
+    -   **Key Files**:
+        -   **[`code_interpreter.py`](tools/code_interpreter.py)**: Contains the core logic of the FastAPI application. It receives code snippets, uses the Docker SDK to create a temporary, disposable Docker container to execute the code, captures `stdout`, `stderr`, and now specifically handles Base64-encoded image output. To solve the issue of `matplotlib` being unable to create cache in a read-only filesystem, it configures the `MPLCONFIGDIR` environment variable to `/tmp` and uses `tmpfs` to mount the `/tmp` directory as a memory filesystem.
+        -   **[`docker-compose.yml`](tools/docker-compose.yml)**: Used to define and run the sandbox service. Configured with `restart: unless-stopped` policy to ensure the service automatically recovers after server restarts or unexpected crashes.
+        -   **[`Dockerfile`](tools/Dockerfile)**: Customizes the Docker image, pre-installing a series of key data science libraries on top of `python:3.11-slim`, including `numpy`, `pandas`, `matplotlib`, `seaborn`, and `openpyxl`.
+    -   **Key Upgrades**:
+        -   **Data Science Library Pre-installation**: The service now comes pre-installed with `numpy`, `pandas`, `matplotlib`, `seaborn`, and `openpyxl`, significantly enhancing its capabilities in data analysis, processing, and visualization.
+        -   **Resource Increase and Environment Configuration**: To support these libraries and `matplotlib` caching, the memory limit for each container has been increased from `512MB` to `1GB`. Simultaneously, through the `MPLCONFIGDIR=/tmp` environment variable and `tmpfs={'/tmp': 'size=100M,mode=1777'}` mount, `matplotlib` is ensured to have a writable workspace.
+        -   **Synchronous Execution**: The initial implementation used asynchronous Docker `run(detach=True)`, which caused a race condition: the application sometimes tried to fetch logs after the container had finished executing and was automatically deleted, resulting in a "404 Container Not Found" error.
+        -   **Solution**: We modified it to synchronous execution `run(detach=False)`. This simplifies the logic, as the program waits for code execution to complete and directly obtains output from the return value of the `run` command, completely resolving this race condition.
 
 ### 2.2 Frontend (Static Assets)
 
@@ -81,7 +81,6 @@ The `src` directory is the heart of the application, containing all source code 
             -   `worklets/`: Contains Web Audio API Worklet processors that run in a separate thread, preventing UI blocking during intensive audio operations.
                 -   [`audio-processing.js`](src/static/js/audio/worklets/audio-processing.js): A custom AudioWorkletProcessor used by `audio-recorder.js` to convert raw microphone audio (Float32Array) to Int16Array format and chunk it for efficient transmission.
                 -   [`vol-meter.js`](src/static/js/audio/worklets/vol-meter.js): An AudioWorkletProcessor that calculates the real-time volume level (RMS) of an audio stream, useful for visual feedback during recording or playback.
-        -   `src/static/js/main.js`: The main client-side application logic.
         -   **Agent Module (`src/static/js/agent/`)**: Contains logic for integrating with AI agents and proxying their tool calls.
             -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): Acts as a client-side adapter for Multi-Cloud Platform (MCP) tool calls initiated by Qwen models. It receives tool call requests (containing `tool_name` and `parameters`) from `chat-api-handler.js` and proxies them to the `/api/mcp-proxy` endpoint in the backend. This is crucial for enabling flexible AI agent capabilities within the application.
         -   `src/static/js/attachments/`: Handles file attachment functionalities, like `file-attachment.js`.
@@ -99,6 +98,7 @@ The `src` directory is the heart of the application, containing all source code 
             -   [`worklet-registry.js`](src/static/js/core/worklet-registry.js): Provides a registry for managing Web Audio API worklets. It facilitates the dynamic creation of worklet URLs from source code, enabling the loading and use of custom audio processors in a separate thread to prevent UI blocking.
         -   **History Module (`src/static/js/history/`)**: Manages client-side chat history interactions with the backend history API.
             -   [`history-manager.js`](src/static/js/history/history-manager.js): Encapsulates all functionality related to chat history management, including loading, saving, pinning, editing titles, and deleting chat sessions. It interacts with both `localStorage` for session metadata and the backend API for full chat history data, ensuring persistence and proper display of chat sessions.
+            -   **[`vision-history-manager.js`](src/static/js/history/vision-history-manager.js)**: **NEW MODULE** - Dedicated history manager for Vision mode, providing independent session management, message storage, and local storage functionality. Created via the `createVisionHistoryManager()` factory function, working in conjunction with the Vision mode `ChatApiHandler` instance.
         -   **Image Gallery Module (`src/static/js/image-gallery/`)**: Manages image display and modal interactions.
             -   [`image-manager.js`](src/static/js/image-gallery/image-manager.js): Provides functions to initialize the image modal, open it with specific image data (Base64 source, title, dimensions, size, type), and handle actions like copying image URL and downloading.
         -   **Media Module (`src/static/js/media/`)**: Deals with screen and video handling.
@@ -109,9 +109,9 @@ The `src` directory is the heart of the application, containing all source code 
             -   [`tool-manager.js`](src/static/js/tools/tool-manager.js): Manages the registration and execution of various tools. It registers default tools like Google Search and Weather, provides their declarations to the Gemini API, and handles incoming tool call requests from the API by executing the corresponding tool's logic.
             -   [`weather-tool.js`](src/static/js/tools/weather-tool.js): Represents a mock tool for retrieving weather forecasts. It defines a function `get_weather_on_date` with parameters for location and date, and returns simulated weather data for demonstration purposes.
         -   **Translation Module (`src/static/js/translation/`)**: Contains logic for translation, including OCR capabilities.
-            -   [`translation-core.js`](src/static/js/translation/translation-core.js): 提供翻译功能的核心逻辑，处理 UI 初始化、对后端翻译端点的 API 调用以及应用程序内的模式切换。它管理语言和模型选择，并协调语音输入以在翻译前进行转录。
-            -   [`translation-audio.js`](src/static/js/translation/translation-audio.js): **新增模块** - 负责翻译模式下的语音输入处理。它提供与聊天模式相同的用户体验，支持按住录音、将 PCM 数据转换为 WAV 格式，并将音频发送到 `/api/transcribe-audio` 后端 API 进行语音转文字。
-            -   [`translation-ocr.js`](src/static/js/translation/translation-ocr.js): 管理翻译功能的 OCR（光学字符识别）过程。它处理用户图像上传，将图像转换为 Base64，发送到后端使用 Gemini 模型进行文本识别，并在输入区域显示提取的文本。它还根据所选的翻译模型控制 OCR 按钮的可见性。
+            -   [`translation-core.js`](src/static/js/translation/translation-core.js): Provides the core logic for translation functionality, handling UI initialization, API calls to backend translation endpoints, and mode switching within the application. It manages language and model selection, and coordinates voice input for transcription before translation.
+            -   [`translation-audio.js`](src/static/js/translation/translation-audio.js): **NEW MODULE** - Responsible for voice input processing in translation mode. It provides the same user experience as chat mode, supporting hold-to-record, converting PCM data to WAV format, and sending audio to the `/api/transcribe-audio` backend API for speech-to-text conversion.
+            -   [`translation-ocr.js`](src/static/js/translation/translation-ocr.js): Manages the OCR (Optical Character Recognition) process for translation functionality. It handles user image uploads, converts images to Base64, sends them to the backend for text recognition using Gemini models, and displays the extracted text in the input area. It also controls the visibility of the OCR button based on the selected translation model.
         -   **Utils Module (`src/static/js/utils/`)**: Contains general utility functions, error handling, and logging.
             -   [`error-boundary.js`](src/static/js/utils/error-boundary.js): Defines an error boundary for handling various types of application errors. It provides a set of predefined `ErrorCodes` and a custom `ApplicationError` class for consistent and structured error reporting throughout the application.
             -   [`logger.js`](src/static/js/utils/logger.js): A singleton logger that logs messages to the console and emits events for real-time logging. It also stores a limited number of logs in memory and provides a method to export them, aiding in debugging and monitoring.
@@ -121,7 +121,29 @@ The `src` directory is the heart of the application, containing all source code 
             -   [`video-manager.js`](src/static/js/video/video-manager.js): Manages video capture and processing from a camera, including motion detection and frame preview. It orchestrates the `VideoRecorder` to capture frames, applies motion detection to optimize frame sending, and handles camera toggling (front/rear).
             -   [`video-recorder.js`](src/static/js/video/video-recorder.js): Implements a video recorder for capturing and processing video frames from a camera. It supports previewing the video stream and sending frames as base64 encoded JPEG data to a callback function, with configurable FPS and quality.
         -   **Vision Module (`src/static/js/vision/`)**: Contains core logic for vision-related functionalities, now enhanced with **Chess Master AI** capabilities.
-            -   [`vision-core.js`](src/static/js/vision/vision-core.js): **架构简化** - 提供了 Vision 功能的核心逻辑，**现在完全复用 `ChatApiHandler`**，实现了与 Chat 模式统一的 API 调用和流式处理体验。它处理 UI 初始化、多模态视觉聊天的 API 调用和消息显示。它管理视觉模型选择，与 `AttachmentManager` 集成处理图像/视频附件，并处理来自 AI 模型的流式响应，包括思维链内容。**关键增强**: 现在完全支持 Gemini 模型的工具调用、思维链 (`enableReasoning`) 和搜索禁用 (`disableSearch`) 等高级功能。`displayVisionMessage()` 函数支持 `id`、`create` 和 `append` 选项，允许将流式响应追加到同一个 UI 消息气泡中。**NEW**: 现在包括专门的国际象棋分析功能，带有 `generateGameSummary()` 函数。
+            -   **[`vision-core.js`](src/static/js/vision/vision-core.js)**: **MAJOR ARCHITECTURAL UPDATE** - Now fully reuses the `ChatApiHandler` class to handle Vision mode API calls, achieving a unified streaming experience with Chat mode. Key features include:
+                - **Dedicated API Handler**: Uses an independent `ChatApiHandler` instance (`visionApiHandler`) to handle Vision mode requests
+                - **Independent History Management**: Integrates `vision-history-manager.js` to provide independent session and message storage
+                - **Unified Tool Calling**: Supports complete tool calling, reasoning chains, and search functionality through `ChatApiHandler`
+                - **Chess Integration**: Retains complete Chess Master AI functionality, including game summarization and analysis
+                - **UI Adapter**: Provides Vision-specific UI update interface through `createVisionUIAdapter()`
+                - **History Cleanup**: New `clearVisionHistory()` function for external cleanup of Vision chat history
+        -   **Chess Module (`src/static/js/chess/`)**: **NEW MODULE** - Complete chess functionality implementation, including board rendering, rule engine, and AI enhancement.
+            -   **[`chess-core.js`](src/static/js/chess/chess-core.js)**: Core logic for chess functionality, handling board rendering, piece movement, and FEN generation. Refactored to use separate ChessRules module for game rules.
+                - **Shadow Engine**: Introduces chess.js as a shadow engine for validation and state synchronization
+                - **AI Integration**: Integrates with `chess-ai-enhanced.js` to provide AI move analysis and execution
+                - **Game State Management**: Complete game state management, including history, undo/redo, and local storage
+                - **User Interface**: Complete board UI, including piece selection, move highlighting, and game end detection
+            -   **[`chess-ai-enhanced.js`](src/static/js/chess/chess-ai-enhanced.js)**: Enhanced chess AI module providing multi-stage AI analysis and move execution.
+                - **Multi-stage Analysis**: First stage gets AI detailed analysis, second stage precisely extracts best moves
+                - **Intelligent Degradation**: Generates alternative moves when preferred moves fail
+                - **Move Validation**: Comprehensive move validation and legality checking
+                - **Vision Integration**: Deep integration with Vision module to display analysis process in visual chat
+            -   **[`chess-rule.js`](src/static/js/chess/chess-rule.js)**: Chess rules module containing all chess rule logic, including piece movement, special moves, and game state validation.
+                - **Piece Movement Rules**: Legal move rule validation for all pieces
+                - **Special Moves**: Special rules like castling, en passant, pawn promotion
+                - **Game State Checking**: Check, checkmate, draw condition detection
+                - **FEN Generation**: Generate and validate standard FEN strings
         -   **Utils Module Enhanced**: New image compression capabilities added.
             -   [`image-compressor.js`](src/static/js/utils/image-compressor.js): **NEW MODULE** - Implements intelligent image compression with 1MB threshold using Canvas API. Features include format preservation, configurable quality settings, and automatic compression for all modes (not just vision). Supports both JPEG conversion and original format retention.
 
@@ -145,7 +167,7 @@ The [`src/worker.js`](src/worker.js:1) script manages several key functionalitie
         -   **Gemini**: For models like `gemini-1.5-pro-latest`, `gemini-2.5-pro`, `gemini-2.5-flash-preview-05-20`, `gemini-2.5-flash-lite-preview-06-17`, `gemini-2.0-flash`.
         -   **ZhipuAI**: For models like `glm-4v`, `glm-4.1v-thinking-flash`, `glm-4v-flash`, `GLM-4.5-Flash`.
         -   **SiliconFlow**: For models like `THUDM/GLM-4-9B-Chat`, `THUDM/GLM-4.1V-9B-Thinking`.
-        -   **ModelScope**: For models like `qwen/qwen-max`, `Qwen/Qwen3-Coder-480B-A35B-Instruct`, `Qwen/Qwen3-235B-A22B-Thinking-2507`.
+        -   **ModelScope**: For models like `Qwen/Qwen3-235B-A22B-Thinking-2507`.
     -   **Audio Transcription**: `/api/transcribe-audio`
         -   Forwards audio data to the **SiliconFlow** transcription API (model: `FunAudioLLM/SenseVoiceSmall`).
     -   **Translation**: `/api/translate`
@@ -205,11 +227,258 @@ All commands are run using Node.js and npm.
     npm run deploy
     ```
     This command first builds the CSS and then deploys the application to your Cloudflare account using `wrangler`.
-## 6. Tool Management Mechanism and Connection Differences
+
+## 6. Vision Module Architecture Update
+
+### 6.1 Unified API Processing Architecture
+
+**MAJOR ARCHITECTURAL CHANGE**: The Vision module now fully reuses the `ChatApiHandler` class, achieving a unified API calling and streaming experience with Chat mode.
+
+#### 6.1.1 Core Architecture Components
+
+-   **Dedicated API Handler**: Vision mode uses an independent `ChatApiHandler` instance (`visionApiHandler`)
+-   **Independent History Management**: Provides independent session and message storage through `vision-history-manager.js`
+-   **Unified Tool Calling**: Supports complete tool calling, reasoning chains, and search functionality through `ChatApiHandler`
+-   **UI Adapter**: Provides Vision-specific UI update interface through `createVisionUIAdapter()`
+
+#### 6.1.2 Initialization Process
+
+Initialization process in `main.js`:
+
+```javascript
+// 1. Create Vision History Manager
+const visionHistoryManager = createVisionHistoryManager();
+
+// 2. Initialize Vision mode ChatApiHandler
+visionApiHandler = new ChatApiHandler({
+    toolManager: toolManager,
+    historyManager: visionHistoryManager,
+    state: {
+        chatHistory: visionHistoryManager.getCurrentSessionMessages(),
+        currentSessionId: visionHistoryManager.getCurrentSessionId(),
+        currentAIMessageContentDiv: null,
+        isUsingTool: false
+    },
+    libs: {
+        marked: window.marked,
+        MathJax: window.MathJax
+    },
+    config: CONFIG,
+    elements: {
+        messageHistory: visionElements.visionMessageHistory,
+        logsContainer: document.getElementById('logs-container')
+    }
+});
+
+// 3. Define visionHandlers
+const visionHandlers = {
+    showToast: showToast,
+    showSystemMessage: showSystemMessage,
+    chatApiHandler: visionApiHandler,
+    historyManager: visionHistoryManager
+};
+
+// 4. Initialize vision functionality
+initializeVisionCore(visionElements, attachmentManager, visionHandlers);
+```
+
+#### 6.1.3 UI Adapter System
+
+The `createVisionUIAdapter()` function creates a Vision-specific UI adapter:
+
+```javascript
+function createVisionUIAdapter() {
+    return {
+        createAIMessageElement: createVisionAIMessageElement,
+        displayUserMessage: displayVisionUserMessage,
+        displayToolCallStatus: (toolName, args) => {
+            // Vision-specific tool call status display
+        },
+        displayImageResult: (base64Image, altText, fileName) => {
+            // Vision-specific image result display
+        },
+        scrollToBottom: scrollVisionToBottom,
+        logMessage: (message, type) => {
+            // Vision-specific logging
+        }
+    };
+}
+```
+
+### 6.2 Chess Master AI Feature
+
+#### 6.2.1 Core Architecture Update
+
+The chess functionality is now fully integrated into the unified Vision architecture:
+
+-   **API Calls**: All chess-related AI requests are handled through `visionApiHandler.streamChatCompletion()`
+-   **Tool Calling**: Supports complete tool calling functionality, including `python_sandbox` image generation
+-   **Streaming Responses**: Displays AI analysis and move recommendations through unified SSE streaming processing
+-   **History Management**: Uses Vision-specific history manager to store chess sessions
+
+#### 6.2.2 Game Summary Function
+
+The `generateGameSummary()` function now uses unified API processing:
+
+```javascript
+async function generateGameSummary() {
+    // Get complete game history
+    const fenHistory = chessGame.getFullGameHistory();
+    
+    // Use visionApiHandler to send request
+    await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
+}
+```
+
+#### 6.2.3 History Cleanup Function
+
+New `clearVisionHistory()` function for external cleanup of Vision chat history:
+
+```javascript
+export function clearVisionHistory() {
+    if (chatApiHandlerInstance) {
+        // Clear internal state of dedicated handler
+        chatApiHandlerInstance.state.chatHistory = [];
+        chatApiHandlerInstance.state.currentSessionId = null;
+        // ... other state resets
+    }
+    // Also clear current session in history manager
+    if (handlers.historyManager && handlers.historyManager.clearCurrentSession) {
+        handlers.historyManager.clearCurrentSession();
+    }
+}
+```
+
+### 6.3 Advantages and Improvements
+
+#### 6.3.1 Architectural Advantages
+
+-   **Code Reuse**: Eliminates duplicate API processing logic, reducing code maintenance costs
+-   **Consistency**: Vision and Chat modes use the same tool calling and streaming processing logic
+-   **Maintainability**: Unified error handling and state management
+-   **Scalability**: New features can benefit in both modes simultaneously
+
+#### 6.3.2 Functional Improvements
+
+-   **Complete Tool Support**: Vision mode now supports all tools available in Chat mode
+-   **Reasoning Chain Display**: Supports real-time display of reasoning chain content for Gemini models
+-   **Image Generation**: Supports data visualization image generation through `python_sandbox` tool
+-   **Search Functionality**: Supports enabling or disabling Google search functionality
+
+#### 6.3.3 Performance Optimization
+
+-   **Independent State**: Vision and Chat mode states are completely isolated, avoiding mutual interference
+-   **Dedicated History**: Independent session storage, improving data management efficiency
+-   **Memory Optimization**: Resource initialization on demand, reducing memory footprint
+
+## 7. Chess Module Technical Implementation
+
+### 7.1 Core Architecture Components
+
+#### 7.1.1 Board Engine System
+
+The chess functionality adopts a dual-engine architecture to ensure rule accuracy:
+
+-   **Custom Rule Engine**: [`chess-rule.js`](src/static/js/chess/chess-rule.js) implements complete chess rules
+-   **Shadow Engine**: Uses chess.js library as an authoritative source for validation and synchronization
+-   **State Synchronization**: Ensures consistent state between both engines through `syncAndVerifyShadowEngine()`
+
+#### 7.1.2 AI Enhancement System
+
+[`chess-ai-enhanced.js`](src/static/js/chess/chess-ai-enhanced.js) implements multi-stage AI analysis:
+
+```javascript
+// Four-stage AI analysis process
+1. First stage: Get detailed AI analysis
+2. Second stage: Use second AI to precisely extract best moves
+3. Third stage: Verify and decide (user selection)
+4. Fourth stage: Execute the finalized move
+```
+
+#### 7.1.3 User Interface Integration
+
+-   **Board Rendering**: Complete HTML5 chess board interface supporting click and drag
+-   **Game State Management**: Complete game lifecycle management
+-   **Multi-mode Interaction**: Supports manual moves and AI-assisted analysis
+
+### 7.2 Key Functional Features
+
+#### 7.2.1 Complete Rule Support
+
+-   **Basic Movement**: Standard movement rules for all pieces
+-   **Special Moves**: Castling, en passant, pawn promotion
+-   **Game States**: Check, checkmate, draw condition detection
+-   **FEN Support**: Complete FEN string generation and parsing
+
+#### 7.2.2 AI Analysis Features
+
+-   **Multi-model Analysis**: Supports using different AI models for position analysis
+-   **Move Recommendations**: Intelligent move extraction and validation
+-   **User Selection**: Provides multiple candidate moves for user selection
+-   **Execution Verification**: Complete legality checking before move execution
+
+#### 7.2.3 History and Persistence
+
+-   **Complete History**: Records complete game history
+-   **Local Storage**: Automatically saves game state to localStorage
+-   **Undo/Redo**: Complete move history management
+-   **Session Recovery**: Automatically restores game state after page refresh
+
+### 7.3 Deep Integration with Vision Module
+
+#### 7.3.1 Unified Message System
+
+Chess AI analysis is displayed through the Vision module's message system:
+
+```javascript
+// Display AI analysis process in visual chat area
+this.displayVisionMessage('**♟️ Chess AI Analysis**', { id: analysisId, create: true });
+```
+
+#### 7.3.2 Tool Calling Support
+
+Supports advanced functionality through Vision module's tool calling system:
+
+-   **Python Sandbox**: For data visualization and complex calculations
+-   **Search Integration**: Supports game background and history queries
+-   **Image Generation**: Generates position analysis diagrams through tool calls
+
+#### 7.3.3 Unified API Processing
+
+All chess-related AI requests are processed through the Vision module's dedicated `ChatApiHandler`, ensuring:
+
+-   **Consistent Error Handling**
+-   **Unified Streaming Responses**
+-   **Tool Calling Compatibility**
+-   **History Management Consistency**
+
+### 7.4 Developer Experience
+
+#### 7.4.1 Modular Design
+
+-   **Clear Separation of Responsibilities**: Rules, AI, UI logic separation
+-   **Easy Testing**: Independent modules facilitate unit testing
+-   **Scalability**: Easy to add new features or modify existing behavior
+
+#### 7.4.2 Debugging Support
+
+-   **Detailed Logging**: Complete move and state change logs
+-   **Shadow Engine Verification**: Automatically detects and fixes state inconsistencies
+-   **Error Recovery**: Robust error handling and state recovery mechanisms
+
+#### 7.4.3 Configuration Flexibility
+
+-   **Model Configuration**: Supports using different AI models for analysis
+-   **Prompt Management**: Configurable analysis prompts and system instructions
+-   **UI Customization**: Customizable board appearance and interaction behavior
+
+This chess module provides a complete, robust, and user-friendly chess experience, while being deeply integrated into the application's unified architecture, fully leveraging existing AI infrastructure and tool calling capabilities.
+
+## 8. Tool Management Mechanism and Connection Differences
 
 This project implements a sophisticated tool management and invocation mechanism tailored for different AI models and connection types. The core principle is that the `ToolManager` class (defined in [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js)) is a universal wrapper for tool declaration and execution logic. However, it is instantiated twice in the frontend code, serving both WebSocket and HTTP connection paths, thereby forming two logically distinct "systems."
 
-#### 6.1 WebSocket Connection Method (Gemini WebSocket API)
+#### 8.1 WebSocket Connection Method (Gemini WebSocket API)
 
 *   **Models**: Primarily used for Gemini models connected via WebSocket, such as `models/gemini-2.0-flash-exp`.
 *   **Core Modules and Files**:
@@ -229,9 +498,9 @@ This project implements a sophisticated tool management and invocation mechanism
     *   **Modify Tool Declarations**: Adjust the `getDeclaration()` method in the respective tool class (e.g., `src/static/js/tools/google-search.js`).
     *   **Modify Tool Execution Logic**: Adjust the `execute()` method in the respective tool class.
 
-#### 6.2 HTTP Connection Method (Gemini HTTP API & Qwen HTTP API)
+#### 8.2 HTTP Connection Method (Gemini HTTP API & Qwen HTTP API)
 
-*   **Models**: Primarily used for HTTP models like `models/gemini-2.5-flash` and Qwen models such as `Qwen/Qwen3-Coder-480B-A35B-Instruct`. This path is designed for maximum flexibility, allowing different models to use different sets of tools.
+*   **Models**: Primarily used for HTTP models like `models/gemini-2.5-flash` and Qwen models such as `Qwen/Qwen3-235B-A22B-Thinking-2507`. This path is designed for maximum flexibility, allowing different models to use different sets of tools.
 *   **Core Modules and Files**:
     *   [`src/static/js/main.js`](src/static/js/main.js) ([`src/static/js/main.js:24`](src/static/js/main.js:24)): Frontend entry point; **here, a global `ToolManager` instance is instantiated** (`const toolManager = new ToolManager();`). This global instance is injected into `ChatApiHandler`.
     *   [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js): The core module for handling HTTP SSE streams. It is injected with the **global `ToolManager` instance** and is responsible for merging and forwarding tool declarations, as well as dispatching tool calls to the appropriate handlers.
@@ -264,301 +533,127 @@ This project implements a sophisticated tool management and invocation mechanism
     *   **Modify Tool Declaration or Execution Logic**: Adjust the `getDeclaration()` or `execute()` methods in the respective tool class (e.g., `src/static/js/tools/google-search.js` or tools defined in `src/static/js/tools_mcp/tool-definitions.js`).
     *   **Modify Frontend Tool Merging Logic**: If the merging strategy for tool declarations under HTTP connections needs adjustment, modify the relevant logic in [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js).
 
-## 6. 国际象棋大师 AI 功能 (Chess Master AI Feature)
+## 9. Vision Module Technical Implementation Details
 
-### 6.1 概述
+### 9.1 Core Functions and Architecture
 
-视觉模块已通过专业的 **国际象棋大师 AI 系统** 得到显著增强，该系统提供智能的国际象棋指导、分析和教练功能。此功能将应用程序转变为一个全面的国际象棋学习平台，同时保留了现有的视觉能力。
-
-### 6.2 核心组件
-
-#### 6.2.1 双提示词架构
-
-国际象棋功能建立在一个复杂的双提示词系统之上：
-
--   **`chess_teacher` 提示词** (`id: 'chess_teacher'`):
-    -   **目的**: 实时对弈指导和局面分析
-    -   **显示名称**: '国际象棋老师' (Chess Master)
-    -   **功能**:
-        -   **默认模式**: 提供单一最佳走法推荐及简洁解释
-        -   **分析模式**: 通过关键词如 "实况分析", "局面分析" 触发 - 提供详细的局面分析
-    -   **关键特性**:
-        -   **注重精确**: 只给出最佳走法，不提供多种选择
-        -   **FEN 集成**: 始终提供 Forsyth-Edwards Notation (FEN) 以跟踪局面
-        -   **新手友好**: 使用简单语言和类比
-        -   **关键词智能**: 自动在指导和分析模式之间切换
-
--   **`chess_summary` 提示词** (`id: 'chess_summary'`):
-    -   **目的**: 全面的赛后分析和改进建议
-    -   **显示名称**: '赛后总结（仅用于总结按钮）' (Post-Game Summary - Button Only)
-    -   **功能**: 对整个对局历史进行深入分析，提供个性化教练
-    -   **关键特性**:
-        -   **整体分析**: 回顾关键转折点和战略主题
-        -   **技术深入**: 识别错失的战术机会
-        -   **学习导向**: 提供具体的改进建议和训练计划
-        -   **技能评估**: 评估开局、中局、残局的表现
-
-#### 6.2.2 国际象棋棋盘 UI 与交互
-
--   **文件**: [`src/static/index.html`](src/static/index.html), [`src/static/js/chess/chess-core.js`](src/static/js/chess/chess-core.js), [`src/static/css/style.css`](src/static/css/style.css)
--   **目的**: 提供一个可交互的国际象棋棋盘界面，支持棋子移动、FEN 记录和游戏控制。
--   **关键特性**:
-    -   **双视图模式**: 在视觉聊天 (`vision-chat-fullscreen`) 和国际象棋棋盘 (`chess-fullscreen`) 之间无缝切换。
-        -   通过导航栏的国际象棋图标 (<i class="fas fa-chess-king"></i>) 或视觉模式内的 "切换到棋盘" 按钮 (`#toggle-to-chess-button`) 进入棋盘视图。
-        -   在棋盘视图中，通过 "切换到聊天" 按钮 (`#toggle-to-vision-button`) 返回视觉聊天。
-    -   **棋盘渲染**:
-        -   使用 `div` 元素动态生成 8x8 的棋盘格子，并根据行和列的奇偶性应用 `light` 或 `dark` 样式。
-        -   棋子通过 Unicode 字符 (`PIECES` 对象) 渲染，并支持拖放移动。
-        -   选中格子和可移动目标格子会进行高亮显示。
-    -   **FEN 管理**:
-        -   实时生成并显示当前棋局的 FEN (Forsyth-Edwards Notation) 字符串在 `#fen-output` 文本区域。
-        -   提供 "复制 FEN" (`#copy-fen-button`)、"新游戏" (`#reset-chess-button`) 和 "上一步" (`#undo-move-button`) 按钮，方便用户操作。
-        -   `loadFEN()` 方法支持从 FEN 字符串加载棋局状态。
-    -   **游戏逻辑**:
-        -   `ChessGame` 类 (`chess-core.js`) 封装了所有游戏状态和逻辑，包括当前回合、易位权利、过路兵、半回合计数和完整回合数。
-        -   **[`chess-rule.js`](src/static/js/chess/chess-rule.js)**: **新增模块** - 独立封装了所有国际象棋规则逻辑，包括棋子移动验证、特殊走法（如王车易位、吃过路兵、兵升变）和游戏状态验证。它通过 `ChessRules` 类提供了一套全面的规则检查方法，与 `chess-core.js` 解耦，提升了模块化和可维护性。
-        -   支持棋子点击移动和拖放移动。
-        -   实现了全面的走法验证，包括不能吃己方棋子、王车易位、兵升变和过路兵规则。
-        -   **影子引擎验证**: **重大升级** - 内部集成 `chess.js` 库作为“影子引擎”。自定义引擎的每一步走法都会与 `chess.js` 引擎进行交叉验证。`syncAndVerifyShadowEngine()` 方法确保了两种逻辑生成的 FEN 始终保持一致，从根本上杜绝了状态不同步的 Bug，极大地提升了系统的健壮性。
-        -   **游戏结束条件**: `checkGameEndConditions()` 方法现在能准确检查**王被吃掉**、**50步规则**和**三次重复局面**，并在游戏结束时显示相应的模态框。
-        -   **兵升变处理**: 优化了兵升变逻辑，`pendingPromotion` 状态现在包含 `fromRow` 和 `fromCol` 以便更准确地追踪。升变棋子选择（后、车、象、马）的顺序已修正为国际象棋标准顺序，并修复了 `completePromotion` 方法以正确更新游戏状态。
-        -   **FEN 管理健壮性**: `generateFEN()` 和 `loadFEN()` 方法增加了更严格的验证和修正逻辑，包括 `countSquaresInFENRow()`、`fixFENRowLength()`、`validateFEN()` 和 `validateFinalFEN()`，确保生成的 FEN 字符串始终合法且棋盘布局正确。
-        -   **错误提示**: 通过 `lastMoveError` 属性，为不合法走法提供更具体的错误信息。
-        -   `isSquareAttacked()` 方法用于检查某个格子是否被敌方棋子攻击，为王车易位等复杂规则提供支持。
-        -   **游戏完全重置 (`completelyResetGame`)**: 新增 `completelyResetGame()` 方法，用于彻底重置游戏状态，包括重新初始化棋盘格子和事件监听器，确保新游戏开始时环境干净。
-        -   **本地存储**: 新增 `saveGameToLocalStorage()` 和 `loadGameFromLocalStorage()` 方法，用于将游戏状态（包括完整的对局历史和当前 FEN）保存到浏览器的 `localStorage`，并在页面加载时自动恢复，提供持久化的游戏体验。
-    -   **响应式设计**:
-        -   棋盘和信息面板的布局在桌面、平板和手机端进行了优化，确保在不同屏幕尺寸下都能良好显示和交互。
-        -   棋盘尺寸会根据视口宽度自适应调整。
-
-#### 6.2.3 增强的 AI 对弈引擎
-
--   **文件**: [`src/static/js/chess/chess-ai-enhanced.js`](src/static/js/chess/chess-ai-enhanced.js)
--   **目的**: 提供一个高度智能、健壮且用户体验良好的 AI 对手。
--   **关键特性**:
-    -   **增强的 `displayVisionMessage` 代理**: 在 `ChessAIEnhanced` 构造函数中，`displayVisionMessage` 函数被代理，以支持 `id`、`create` 和 `append` 选项。这使得 AI 的流式响应能够被追加到**同一个 UI 消息气泡**中，显著改善了用户在接收实时分析和走法推荐时的体验。
-    -   **三阶段 AI 走法生成**:
-        1.  **分析阶段**: 使用强大的 `gemini-2.5-flash` 模型对当前局面进行深入的战术和战略分析，生成包含多种候选走法的详细报告。此阶段的流式响应通过 `messageId` 实时更新到 UI。
-        2.  **提取阶段**: 使用速度更快的 `gemini-2.0-flash` 模型，从第一阶段的分析报告中精确、可靠地提取所有推荐的 SAN (标准代数记法) 走法。此阶段的流式响应也通过独立的 `messageId` 实时更新到 UI。
-        3.  **决策与执行阶段**: 将提取出的走法通过一个模态框呈现给用户选择。用户确认后，系统会以极高的容错率执行该走法。用户选择和执行结果也会通过 `displayVisionMessage` 更新到 UI。
-    -   **智能走法执行 (`executeSANMove`)**:
-        -   **健壮的清理与标准化**: 对 AI 返回的 SAN 走法进行初始清理，并标准化王车易位记法（如 `0-0-0` 修正为 `O-O-O`）。
-        -   **“O”的智能修正**: 特别处理单独的字符 "O"，根据当前棋局的合法性自动修正为短易位 (`O-O`) 或长易位 (`O-O-O`)。
-        -   **强大的“降级修正”机制**: 如果 AI 返回的 SAN 格式有轻微错误（如多余符号、大小写错误），`generateAlternativeMoves()` 会尝试多种替代格式进行修正，大大提高了对 AI 输出的容错性。
-    -   **流式 UI 更新 (`sendToAI`)**: `sendToAI()` 方法现在通过统一的 `ChatApiHandler` 接口发送请求，完全支持 SSE 流式响应，并且能够通过 `messageId` 将所有流式内容追加到**同一个 UI 消息气泡**中。这为 AI 的分析和思考过程提供了实时的、连贯的视觉反馈，显著改善了用户体验。同时，请求体中新增 `enableReasoning: true` 字段，以更好地利用模型推理能力。
-    -   **深度优化的提示词**:
-        -   **分析提示词 (`buildAnalysisPrompt`)**: 明确当前回合方，并新增 `pieceConstraints` 严格约束棋子颜色和大小写规则。提示词内容更加详细，强调棋盘精确匹配、合法性检查和标准化格式。
-        -   **提取提示词 (`buildPreciseExtractionPrompt`)**: 专门针对第一阶段输出的结构化格式设计，明确提取“候选走法”和“最终推荐”中的所有 SAN 走法。新增了详细的提取规则、格式处理规则、去重处理、特殊情形处理（如多个候选走法、散落的推荐、格式偏差修正）和严格禁止项，确保提取的准确性和规范性。
-    -   **健壮的 SAN 走法提取 (`extractAllSANFromText`)**:
-        -   **全面文本预处理**: 清理不可见字符、特定 Emoji、标准化中文标点、全角括号转半角、数字零写法标准化、移除常见注释和标点、压缩空白。
-        -   **优化正则表达式**: 使用更全面且大小写不敏感的正则表达式 (`gi` 标志) 匹配 SAN 走法。
-        -   **深度清理与去重**: 对匹配到的走法进行二次清理、过滤无效走法，并使用 `Set` 进行去重，确保最终列表的准确性和唯一性。
-    -   **修复 `squareToIndices`**: 确保棋盘坐标到行列索引的转换准确无误。
-    -   **智能替代走法生成 (`generateAlternativeMoves`)**: 结合移除后缀、大小写修正、移除空格、自然语言解析（针对王车易位）以及基于当前局面合法走法的相似度匹配，生成更全面的替代走法列表。
-    -   **走法相似度计算 (`moveSimilarity`)**: 辅助 `generateAlternativeMoves`，通过字符交集比例计算走法相似度。
-
-#### 6.2.4 智能图像压缩系统
-
--   **文件**: [`src/static/js/utils/image-compressor.js`](src/static/js/utils/image-compressor.js)
--   **目的**: 优化国际象棋棋盘图像，以实现更快的分析，同时保持图像质量。
--   **关键特性**:
-    -   **1MB 阈值**: 自动压缩大于 1MB 的图像。
-    -   **格式保留**: 默认保留原始图像格式（可配置）。
-    -   **质量控制**: 可配置的压缩质量（默认为 80%）。
-    -   **全局应用**: 适用于所有模式（聊天、视觉、翻译）。
-    -   **基于 Canvas**: 使用浏览器 Canvas API 进行客户端处理。
-    -   **渐进增强**: 如果压缩失败，则优雅地回退。
-
-#### 6.2.4 智能历史记录管理
-
--   **函数**: [`generateGameSummary()`](src/static/js/vision/vision-core.js) 在 [`vision-core.js`](src/static/js/vision/vision-core.js) 中
--   **目的**: **重大升级** - 生成全面、专业的赛后分析报告。
--   **算法**:
-    -   **数据源**: 不再使用聊天历史或采样的 FEN，而是直接从 `chessGame` 实例调用 `getFullGameHistory()` 方法，获取**完整的、未经删减的 FEN 对局历史记录**。
-    -   **分析**: 将完整的 FEN 历史提交给 AI，并使用 `chess_summary` 专用提示词，要求 AI 进行全局性的、连贯的战略和战术复盘。
--   **优势**:
-    -   **准确性**: 基于完整的官方对局记录，分析结果精准可靠。
-    -   **专业性**: AI 能够洞察整个对局的演变、关键转折点和玩家的风格，提供特级大师水平的复盘。
-    -   **简洁高效**: 架构得到简化，不再需要复杂的历史采样逻辑。
-
-### 6.3 用户界面增强
-
-#### 6.3.1 响应式布局设计
-
--   **两行布局**:
-    -   **第 1 行**: 模型选择 (GLM-4.1V-Thinking-Flash 等)。
-    -   **第 2 行**: 模式选择 (国际象棋老师) + 赛后总结按钮。
--   **移动端优化**: 防止在小屏幕上 UI 破裂。
--   **CSS 类**:
-    -   `.vision-control-row`: 单独的行容器。
-    -   `.vision-controls`: 带有 flexbox 列布局的父容器。
-
-#### 6.3.2 按钮集成
-
--   **总结按钮**: `#vision-summary-button`
-    -   **位置**: 模式选择器旁边的第二行。
-    -   **功能**: 触发全面的赛后分析。
-    -   **状态管理**: 在分析期间显示加载指示器。
-    -   **错误处理**: 优雅回退并提供用户反馈。
-
-### 6.4 技术实现
-
-#### 6.4.1 核心函数
+#### 9.1.1 Initialization System
 
 ```javascript
-// vision-core.js 中的关键函数:
+// Key functions in vision-core.js:
 
-// 生成全面的赛后分析
-async function generateGameSummary()
+// Initialize Vision functionality core
+export function initializeVisionCore(el, manager, handlersObj)
 
-// 管理提示词选择和切换
-function getSelectedPrompt()
+// Set vision mode activation status
+export function setVisionActive(active)
 
-// 填充国际象棋专用提示词选项
-function populatePromptSelect()
+// Clear Vision chat history
+export function clearVisionHistory()
 
-// 在视觉聊天界面显示一条AI消息，支持按ID更新
-export function displayVisionMessage(markdownContent, opts = {})
+// Internal core message sending logic
+async function _sendMessage(text, files)
 
-// chess-core.js 中的关键函数:
-
-// 初始化国际象棋核心功能 (单例模式)
-export function initializeChessCore(options = {})
-
-// 获取当前 FEN 字符串
-export function getCurrentFEN()
-
-// 加载 FEN 字符串
-export function loadFEN(fen)
-
-// 获取国际象棋游戏实例
-export function getChessGameInstance()
-
-// chess-ai-enhanced.js 中的关键函数:
-
-// 请求AI并执行其返回的最佳走法 (三阶段流程)
-async function askAIForMove()
-
-// 构建AI分析提示词
-function buildAnalysisPrompt(history, currentFEN)
-
-// 构建精确提取走法的提示词
-function buildPreciseExtractionPrompt(analysisResponse)
-
-// 从文本中提取所有SAN走法
-function extractAllSANFromText(text)
-
-// 执行SAN走法 (含智能降级和详细诊断)
-async function executeSANMove(sanMove, currentFEN)
-
-// 将走法同步到影子引擎并验证FEN是否一致
-function syncAndVerifyShadowEngine(moveObject)
-
-// 强制同步影子引擎到当前自定义引擎状态
-function forceShadowSync()
-
-// 发送AI请求 (SSE 流式解析，支持按 messageId 更新)
-async function sendToAI(prompt, model, messageId)
+// Handle vision message sending
+async function handleSendVisionMessage()
 ```
 
-#### 6.4.2 配置结构
+#### 9.1.2 UI Adapter System
 
 ```javascript
-// 在 config.js 中:
+// Create Vision-specific UI adapter
+function createVisionUIAdapter() {
+    return {
+        createAIMessageElement: createVisionAIMessageElement,
+        displayUserMessage: displayVisionUserMessage,
+        displayToolCallStatus: (toolName, args) => {
+            // Vision-specific tool call status display
+        },
+        displayImageResult: (base64Image, altText, fileName) => {
+            // Vision-specific image result display
+        },
+        scrollToBottom: scrollVisionToBottom,
+        logMessage: (message, type) => {
+            // Vision-specific logging
+        }
+    };
+}
+```
+
+#### 9.1.3 Chess Integration
+
+```javascript
+// Generate game summary - reuse ChatApiHandler
+async function generateGameSummary()
+
+// Display message in visual chat interface
+export function displayVisionMessage(markdownContent)
+
+// Direct message sending function for external modules
+window.sendVisionMessageDirectly = async function(messageText)
+```
+
+### 9.2 Configuration and State Management
+
+#### 9.2.1 Model Configuration
+
+Vision mode uses dedicated model configuration:
+
+```javascript
+// Vision configuration in config.js
 VISION: {
+    MODELS: [
+        // Dedicated vision model list
+    ],
     PROMPTS: [
+        // Including chess-specific prompts
         {
             id: 'chess_teacher',
-            name: '国际象棋老师',
-            description: '对弈指导和局面分析',
-            systemPrompt: '...' // 专业的国际象棋指导提示词
+            name: 'Chess Master',
+            description: 'Game guidance and position analysis'
         },
         {
             id: 'chess_summary',
-            name: '赛后总结（仅用于总结按钮）',
-            description: '专门的赛后分析和总结',
-            systemPrompt: '...' // 全面分析提示词
+            name: 'Post-Game Summary (Button Only)',
+            description: 'Dedicated post-game analysis and summary'
         }
     ]
 }
 ```
 
-### 6.5 使用工作流程
+#### 9.2.2 State Isolation
 
-1.  **设置**: 用户在视觉界面中选择 "国际象棋老师" 模式。
-2.  **对弈指导**:
-    -   上传棋盘图像 → 接收最佳走法推荐。
-    -   输入 "实况分析" → 获取详细局面分析。
-3.  **赛后分析**: 点击 "对局总结" 按钮 → 全面对局回顾。
-4.  **图像优化**: 大图像自动压缩以加快处理速度。
-5.  **棋盘交互**:
-    -   在棋盘视图中，用户可以点击或拖放棋子进行移动。
-    -   随时复制当前 FEN，开始新游戏或撤销上一步。
+Vision mode maintains completely independent state:
 
-### 6.6 优势
+```javascript
+// Module-level state for Vision
+let elements = {};
+let attachmentManager = null;
+let showToastHandler = null;
+let chatApiHandlerInstance = null; // Vision mode exclusive API Handler
+let isVisionActive = false; // Vision mode activation status
+let handlers = {}; // Save handlers object
+```
 
--   **教育性**: 通过 AI 驱动的教练功能，改变国际象棋学习方式。
--   **高效性**: 智能压缩和历史记录管理优化性能。
--   **用户友好**: 直观的界面和响应式设计。
--   **全面性**: 涵盖从逐步指导到战略分析的所有方面。
--   **可扩展性**: 通过智能采样处理任意长度的对局。
--   **交互性**: 提供完整的国际象棋棋盘交互体验。
+### 9.3 Advantages Summary
 
-## 7（zh-CN）. 工具管理机制与连接差异
+#### 9.3.1 Architectural Advantages
 
-本项目针对不同 AI 模型和连接方式，实现了精妙的工具管理和调用机制。核心在于，`ToolManager` 类（定义在 [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js)）本身是一个通用的工具声明和执行逻辑封装，但在前端代码中被实例化了两次，分别服务于 WebSocket 和 HTTP 连接路径，从而构成了逻辑上的“两套系统”。
+-   **Unification**: Vision and Chat modes use the same underlying API processing mechanism
+-   **Modularity**: Clear separation of responsibilities, easy to maintain and extend
+-   **Consistency**: Unified error handling, tool calling, and streaming responses
+-   **Performance**: Independent state management, avoiding interference between modes
 
-#### 6.1 WebSocket 连接方式 (Gemini WebSocket API)
+#### 9.3.2 Functional Completeness
 
-*   **模型**：主要用于 `models/gemini-2.0-flash-exp` 等通过 WebSocket 连接的 Gemini 模型。
-*   **核心模块与文件**：
-    *   [`src/static/js/main.js`](src/static/js/main.js): 前端入口，**不直接处理 WebSocket 工具管理**，但初始化了 `MultimodalLiveClient`。
-    *   [`src/static/js/core/websocket-client.js`](src/static/js/core/websocket-client.js) ([`src/static/js/core/websocket-client.js:28`](src/static/js/core/websocket-client.js:28)): WebSocket 连接的核心客户端，负责与 `generativelanguage.googleapis.com` 建立实时通信。**在此模块内部实例化了一个独立的 `ToolManager` 实例**（`this.toolManager = new ToolManager();`）。
-    *   [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js): 定义 `ToolManager` 类及其默认工具（Google Search, Weather）的注册和执行逻辑。
-    *   [`src/static/js/tools/google-search.js`](src/static/js/tools/google-search.js), [`src/static/js/tools/weather-tool.js`](src/static/js/tools/weather-tool.js): `ToolManager` 默认注册的工具。
-    *   [`src/worker.js`](src/worker.js): 充当 WebSocket 代理 ([`src/worker.js:10`](src/worker.js:10) `handleWebSocket(request, env);`)，将 WebSocket 连接直接转发给 `generativelanguage.googleapis.com`。
-*   **工作调用机制**：
-    1.  `MultimodalLiveClient` ([`src/static/js/core/websocket-client.js`](src/static/js/core/websocket-client.js)) 在建立 WebSocket 连接时，会将**其内部 `ToolManager` 实例**通过 `this.toolManager.getToolDeclarations()` ([`src/static/js/core/websocket-client.js:62`](src/static/js/core/websocket-client.js:62)) 获取的工具声明，作为 `setup` 消息的一部分发送给 Gemini WebSocket API。
-    2.  当 Gemini WebSocket API 返回 `functionCall`（例如调用 `googleSearch` 或 `get_weather_on_date`）时，`MultimodalLiveClient` 的 `receive` 方法会捕获该调用。
-    3.  `MultimodalLiveClient` 随后调用其内部 `ToolManager` 实例的 `handleToolCall()` 方法 ([`src/static/js/core/websocket-client.js:285`](src/static/js/core/websocket-client.js:285)) **在前端本地执行**相应的工具逻辑。
-    4.  工具执行的结果通过 `MultimodalLiveClient.sendToolResponse()` 发送回 Gemini WebSocket API，完成工具调用循环。
-*   **默认工具集**：`GoogleSearchTool`, `WeatherTool`。
-*   **如何改进 WebSocket 连接下的工具**：
-    *   **添加/修改新工具**：需要修改 [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js) 来注册新的工具类，并创建对应的工具实现文件（例如 `src/static/js/tools/new-tool.js`）。
-    *   **修改工具声明**：修改对应工具类（例如 `src/static/js/tools/google-search.js`）中的 `getDeclaration()` 方法。
-    *   **修改工具执行逻辑**：修改对应工具类中的 `execute()` 方法。
+-   **Complete Tool Chain**: Supports all MCP tool calls
+-   **Chess Integration**: Complete Chess Master AI functionality
+-   **Multimodal Support**: Multimodal processing of images, video, text
+-   **History Management**: Independent session storage and recovery
 
-#### 6.2 HTTP 连接方式 (Gemini HTTP API & Qwen HTTP API)
+#### 9.3.3 Developer Experience
 
-*   **模型**：主要用于 `models/gemini-2.5-flash` 等 HTTP 模型，以及 `Qwen/Qwen3-Coder-480B-A35B-Instruct` 等 Qwen 模型。此路径经过精心设计，具有高度灵活性，允许不同模型使用不同的工具集。
-*   **核心模块与文件**：
-    *   [`src/static/js/main.js`](src/static/js/main.js) ([`src/static/js/main.js:24`](src/static/js/main.js:24)): 前端入口，**在此处实例化了一个全局的 `ToolManager` 实例**（`const toolManager = new ToolManager();`）。这个全局实例被注入 `ChatApiHandler`。
-    *   [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js): 处理 HTTP SSE 流的核心模块。它被注入**全局 `ToolManager` 实例**，负责合并与转发工具声明，并将工具调用分派给相应的处理器。
-    *   [`src/static/js/config/config.js`](src/static/js/config/config.js): 定义模型配置。每个模型条目下的 `tools` 属性指向一个特定的工具集数组，实现了精细化的控制。该文件还定义了模型专用的**系统提示词**（例如 `Tool_gemini`），这对于指导模型行为（尤其是在处理图像生成等复杂任务时）至关重要。
-    *   [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js): 同上，其类定义是通用的。**在此路径下，全局 `ToolManager` 实例也管理 `GoogleSearchTool` 和 `WeatherTool`。**
-    *   [`src/static/js/tools_mcp/tool-definitions.js`](src/static/js/tools_mcp/tool-definitions.js): 定义了多个 MCP 工具集。现在包括了供 Qwen 使用的通用 `mcpTools`，以及一个为 Gemini 模型定制的、兼容其 Schema 的 `geminiMcpTools` 数组。
-    *   [`src/worker.js`](src/worker.js): Cloudflare Worker 后端，充当 HTTP API 代理。现在，它采用统一的逻辑路径，将来自 Gemini 和 Qwen 的工具调用请求都路由到 `/api/mcp-proxy` 端点。
-*   **工作调用机制 (Gemini & Qwen)**：
-    1.  **前端请求构建**：`ChatApiHandler` 在发送 HTTP 请求时，会从 `config.js` 读取所选模型的配置。然后，它将全局 `ToolManager` 提供的默认工具声明（Google Search, Weather）与该模型指定的特定工具集（例如 `geminiMcpTools` 或 `mcpTools`）进行**合并**。这个合并后的完整列表被包含在请求中。
-    2.  请求由 `worker.js` 转发到相应的下游服务。
-    3.  当模型返回工具调用时，`ChatApiHandler` 会捕获它。
-    4.  **统一分派**：现在，`ChatApiHandler` 使用一个统一的 `_handleMcpToolCall` 方法来处理 Gemini 和 Qwen 的工具调用。它构建一个包含 `tool_name` 和 `parameters` 的请求，并将其发送到 `/api/mcp-proxy` 端点。这极大地简化了前端逻辑。
-    5.  后端 MCP 代理 (`/api/mcp-proxy`) 将请求路由到正确的处理器（例如 `python-sandbox.js`）来执行工具。
-    6.  工具执行的结果以流式方式返回给前端，`ChatApiHandler` 再将其发送回模型，以继续对话。
-*   **针对 Gemini 图像渲染的特殊处理**：
-    *   **问题**：`python_sandbox` 工具能够生成 Base64 编码的图像。最初，Gemini 模型无法渲染这些图像，因为默认的系统提示词 (`Tool_assistant`) 为了节省 token 而指示模型**不要**在最终回复中包含完整的 Base64 字符串。Qwen 的架构可以处理这种指令，但 Gemini 的架构不行。
-    *   **解决方案**：我们在 `config.js` 中创建了一个专用的系统提示词 `Tool_gemini`。这个提示词**移除了那条限制性指令**，使得 Gemini 模型能够正确地在其最终的 Markdown 输出中包含完整的 Base64 图像数据，从而让前端可以成功渲染。这凸显了提示词工程在管理模型特定行为方面的重要性。
-*   **完整工具集 (依赖于模型)**：
-    *   **默认工具 (所有模型)**：`GoogleSearchTool`, `WeatherTool`。
-    *   **Qwen 模型**：完整的 `mcpTools` 集合，包括 `tavily_search`, `python_sandbox`, `firecrawl` 等。
-    *   **Gemini 模型 (`gemini-2.5-flash`)**：一个经过筛选的 `geminiMcpTools` 集合，仅包含 `tavily_search`, `python_sandbox`, 和 `firecrawl`。
-*   **如何改进 HTTP 连接下的工具**：
-    *   **添加/修改新工具 (例如 MCP 工具)**：
-        1.  在 [`src/static/js/tools_mcp/tool-definitions.js`](src/static/js/tools_mcp/tool-definitions.js) 中定义新的工具声明，并添加到 `mcpTools` 数组。
-        2.  在 [`src/static/js/config/config.js`](src/static/js/config/config.js) 中，为目标 HTTP 模型（例如 `gemini-2.5-flash-lite-preview-06-17`）的配置对象添加或修改 `tools: mcpTools` 属性。
-        3.  如果新的 MCP 工具需要自定义的后端处理，可能需要修改 `src/mcp_proxy/mcp-handler.js` 或在 `src/mcp_proxy/handlers/` 下添加新的处理器。
-    *   **添加/修改默认工具 (Google Search, Weather)**：
-        1.  修改 [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js) 来注册新的工具类，并创建对应的工具实现文件（例如 `src/static/js/tools/new-tool.js`）。
-        2.  修改对应工具类（例如 `src/static/js/tools/google-search.js`）中的 `getDeclaration()` 和 `execute()` 方法。
-    *   **修改工具声明或执行逻辑**：修改对应工具类（例如 `src/static/js/tools/google-search.js` 或 `src/static/js/tools_mcp/tool-definitions.js` 中定义的工具）的 `getDeclaration()` 或 `execute()` 方法。
-    *   **修改前端工具合并逻辑**：若需调整 HTTP 连接下工具声明的合并方式，则修改 [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js) 中的相关逻辑。
+-   **Clear Documentation**: Comprehensive code comments and architectural explanations
+-   **Easy Extension**: Modular design facilitates adding new features
+-   **Debugging Friendly**: Unified logging system and error handling
+-   **Flexible Configuration**: Supports dynamic configuration of models and prompts
