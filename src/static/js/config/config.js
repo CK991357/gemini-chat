@@ -473,36 +473,9 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`sympy==1.12\`
 -   \`matplotlib==3.8.4\`
 -   \`seaborn==0.13.2\`
--   \`python-docx==1.1.2\` (支持生成 Word 文档)
--   \`reportlab==4.0.7\` (支持生成 PDF 文档)
--   \`python-pptx==0.6.23\` (支持生成 PPT 文档)
 
-**文件生成与输出关键规则 (CRITICAL RULE FOR FILE GENERATION AND OUTPUT):**
-当您使用 python_sandbox 生成文件（包括图片、Word、Excel、PPT、PDF）时，必须使用统一的 JSON 输出格式。系统会自动处理文件显示和下载。
-
-*   **图片输出格式**：
-  \`\`\`python
-    output_data = {
-        "type": "image",
-        "title": "图表标题",
-        "image_base64": "iVBORw0KGgoAAAANSUhEUg..."
-    }
-    print(json.dumps(output_data))
-\`\`\`
-
-*   **文件输出格式**：
-\`\`\`python
-    output_data = {
-        "type": "excel",  # 可以是: excel, word, ppt, pdf
-        "filename": "报告.xlsx",
-        "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "data_base64": "UEsDBBQAAAAIAEh2NVc..."
-    }
-    print(json.dumps(output_data))
-\`\`\`
-
-*   **最终回复规则**：**绝对禁止 (ABSOLUTELY FORBIDDEN)** 在最终的用户回复中包含 Base64 字符串、Markdown 图片链接、文件 URL 或任何技术细节。您的最终回复应该只对文件内容进行简要总结或确认任务完成即可。
-
+**图像生成关键规则 (CRITICAL RULE FOR IMAGE GENERATION):**
+当您使用 python_sandbox 生成图片时，您的思考过程可以确认图片已生成，但**最终的用户回复中绝对禁止 (ABSOLUTELY FORBIDDEN) 包含 base64 字符串、Markdown 图片链接或任何图片 URL**。图片将由前端系统自动显示。您的最终回复应该只对图表内容进行简要总结或确认任务完成即可。
 
 *   **✅ 正确的最终回复示例:** "图表已成功生成。数据显示，在2021年11月15日至19日期间，每日数值波动较大，其中11月17日达到峰值。"
 *   **❌ 错误的最终回复示例:** "这是您的图表：![图表](data:image/png;base64,iVBORw0KGgo...)"
@@ -522,7 +495,7 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **参数名错误:** \`{"script": "print('hello')"}\` (错误：参数名必须是 "code")。
 -   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。
 
-**➡️ 场景2: 数据可视化与文件生成**
+**➡️ 场景2: 数据可视化与绘图**
 
 当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
 
@@ -579,63 +552,6 @@ buf.close()
 plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
-
-**Excel文件生成示例：**
-\`\`\`python
-import pandas as pd
-import io
-import base64
-import json
-
-# 生成数据
-df = pd.DataFrame({
-    '姓名': ['张三', '李四', '王五'],
-    '成绩': [85, 92, 78]
-})
-
-# 保存到内存
-excel_buffer = io.BytesIO()
-df.to_excel(excel_buffer, index=False)
-excel_buffer.seek(0)
-file_base64 = base64.b64encode(excel_buffer.read()).decode('utf-8')
-excel_buffer.close()
-
-output_data = {
-    "type": "excel",
-    "filename": "学生成绩.xlsx",
-    "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "data_base64": file_base64
-}
-print(json.dumps(output_data))
-\`\`\`
-
-**Word文件生成示例：**
-\`\`\`python
-from docx import Document
-import io
-import base64
-import json
-
-doc = Document()
-doc.add_heading('报告标题', 0)
-doc.add_paragraph('这是报告内容。')
-
-# 保存到内存
-doc_buffer = io.BytesIO()
-doc.save(doc_buffer)
-doc_buffer.seek(0)
-file_base64 = base64.b64encode(doc_buffer.read()).decode('utf-8')
-doc_buffer.close()
-
-output_data = {
-    "type": "word",
-    "filename": "报告.docx",
-    "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "data_base64": file_base64
-}
-print(json.dumps(output_data))
-\`\`\`
-
 
 现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
 
