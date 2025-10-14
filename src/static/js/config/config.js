@@ -650,7 +650,7 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`numpy==1.26.4\`
 -   \`scipy==1.14.1\`
 -   \`pandas==2.2.2\`
--   \`openpyxl==3.1.2\`(支持生成 Excel 文档)
+-   \`openpyxl==3.1.2\` (支持生成 Excel 文档)
 -   \`sympy==1.12\`
 -   \`matplotlib==3.8.4\`
 -   \`seaborn==0.13.2\`
@@ -659,8 +659,8 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`python-pptx==0.6.23\` (支持生成 PPT 文档)
 
 **文件生成与下载关键规则 (CRITICAL RULE FOR FILE GENERATION AND DOWNLOAD):**
-当您使用 python_sandbox 生成文件（包括图片、Word、Excel、PPT、PDF）时，您的代码必须将文件保存到 /tmp 目录。后端将自动捕获这些文件，并以 Base64 格式返回给前端，由前端自动触发下载。
-*   **支持的文件类型**：图片 (.png)，Excel (.xlsx)，Word (.docx)，PPT (.pptx)，PDF (.pdf)。
+当您使用 python_sandbox 生成文件（包括图片、Word、Excel、PPT、PDF）时，您的代码必须将文件保存到 **/tmp** 目录。后端将自动捕获这些文件，并以 Base64 格式返回给前端，由前端自动触发下载。
+*   **支持的文件类型**：图片 (.png, .jpg, .jpeg)，Excel (.xlsx)，Word (.docx)，PPT (.pptx)，PDF (.pdf)。
 *   **图表中文支持**：已安装中文字体，图表标题和标签可使用中文。
 *   **最终回复规则**：**绝对禁止 (ABSOLUTELY FORBIDDEN)** 在最终的用户回复中包含 Base64 字符串、Markdown 图片链接或任何文件 URL。您的最终回复应该只对文件内容进行简要总结或确认任务完成即可。
 
@@ -683,27 +683,17 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
 
-# --- 以下是用于将图片转为 Base64 并输出的固定模板代码部分，请每次都直接包含，不要修改，确保内存释放，运行成功。
-
-\`\`\`python
-buf = io.BytesIO()
-plt.savefig(buf, format='png', bbox_inches='tight')
-buf.seek(0)
-image_base64 = base64.b64encode(buf.read()).decode('utf-8')
-buf.close()
-plt.close('all') # 关闭所有图表以释放内存，重要！
-print(image_base64)
-\`\`\`
-
 **请严格遵循以下代码生成规范：**
 
 1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
 2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
-3.  **无文件保存**: **绝不**将图表保存为物理文件。
-4.  **Base64 输出**:
-    *   绘图完成后，**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
-    *   最后，**必须**将字节流中的图片数据进行 Base64 编码，并将编码后的字符串作为**唯一的输出**打印到标准输出 (\`stdout\`)。
-    *   **不要**打印其他任何额外文本（例如 "Here is your chart:"）。
+3.  **文件/图表输出**:
+    *   **生成文件 (Office/PDF)**: 必须将文件保存到 /tmp 目录，例如  \`doc.save('/tmp/report.docx') \`。
+    *   **生成图表 (图片)**: 必须将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG，并进行 Base64 编码，然后将编码后的 **JSON 结构** 打印到标准输出 (\`stdout\`)。
+    *   **图表中文支持**：在绘图代码中，如果用户有需求可以设置中文字体以支持中文显示，例如：\`plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP']\`。
+4.  **Base64 输出 (仅用于图片)**:
+    *   绘图完成后，**必须**将 Base64 字符串包装成 JSON 结构并打印到标准输出，例如：\`print(json.dumps({"type": "image", "image_base64": image_base64, "title": "图表标题"}))\`。
+    *   **不要**打印其他任何额外文本。
 
 **以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
 
@@ -715,12 +705,14 @@ import seaborn as sns
 import pandas as pd
 import io
 import base64
+import json # 导入 json 库
 
 # --- 在此区域编写你的数据处理和绘图代码 ---
 # 示例：假设用户提供了以下数据
 # data = {'产品': ['A', 'B', 'C'], '销量': [150, 200, 100]}
 # df = pd.DataFrame(data)
 # plt.figure(figsize=(8, 6)) # 设置图表大小
+# plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP'] # 设置中文支持
 # sns.barplot(x='产品', y='销量', data=df)
 # plt.title('产品销量柱状图')
 # plt.xlabel('产品类型')
@@ -734,7 +726,14 @@ buf.seek(0)
 image_base64 = base64.b64encode(buf.read()).decode('utf-8')
 buf.close()
 plt.close('all') # 关闭所有图表以释放内存，重要！
-print(image_base64)
+
+# 打印 JSON 结构
+output_data = {
+    "type": "image",
+    "image_base64": image_base64,
+    "title": plt.gca().get_title() or "Generated Chart" # 尝试获取标题
+}
+print(json.dumps(output_data))
 \`\`\`
 
 现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
