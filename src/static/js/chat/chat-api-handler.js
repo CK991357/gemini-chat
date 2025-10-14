@@ -480,58 +480,68 @@ export class ChatApiHandler {
             let toolResultContent; // Declare without initializing
 
             // Special handling for python_sandbox output to detect and display images/files
+            // Special handling for python_sandbox output to detect and display images/files
             if (toolCode.tool_name === 'python_sandbox') {
-                let isFileHandled = false;
-                
-                // 修复：直接处理 toolRawResult.stdout，因为它已经是解析后的对象
-                if (toolRawResult && toolRawResult.stdout) {
-                    const stdoutContent = toolRawResult.stdout;
+                let isHandled = false;
+                if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
+                    const stdoutContent = toolRawResult.stdout.trim();
                     
-                    // 1. 检查是否是新的文件/Office/PDF输出格式 (data_base64)
-                    if (stdoutContent.data_base64 && stdoutContent.filename && stdoutContent.mime_type) {
-                        const fileType = stdoutContent.type || 'file';
-                        ui.logMessage(`检测到 ${fileType.toUpperCase()} 文件: ${stdoutContent.filename}，正在触发下载...`, 'system');
+                    try {
+                        const outputData = JSON.parse(stdoutContent);
                         
-                        // 调用下载函数
-                        downloadFromBase64(stdoutContent.data_base64, stdoutContent.filename, stdoutContent.mime_type);
-                        
-                        toolResultContent = { output: `${fileType.toUpperCase()} 文件 "${stdoutContent.filename}" 已生成并触发下载。` };
-                        isFileHandled = true;
-                    }
-                    
-                    // 2. 检查是否是新的图片输出格式 (image_base64)
-                    else if (stdoutContent.type === 'image' && stdoutContent.image_base64) {
-                        const title = stdoutContent.title || 'Generated Chart';
-                        const imageUrl = `data:image/png;base64,${stdoutContent.image_base64}`;
-                        displayImageResult(imageUrl, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
-                        toolResultContent = { output: `Image "${title}" generated and displayed.` };
-                        isFileHandled = true;
-                    }
-                    
-                    // 3. 检查是否是文本输出
-                    else if (stdoutContent.type === 'text') {
-                        let outputText = stdoutContent.stdout || '';
-                        if (stdoutContent.stderr) {
-                            outputText += `\nError: ${stdoutContent.stderr}`;
+                        // 1. 检查是否是图片输出格式 (image_base64)
+                        if (outputData.type === 'image' && outputData.image_base64) {
+                            const title = outputData.title || 'Generated Chart';
+                            const imageUrl = `data:image/png;base64,${outputData.image_base64}`;
+                            displayImageResult(imageUrl, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
+                            toolResultContent = { output: `图片 "${title}" 已生成并显示。` };
+                            isHandled = true;
                         }
-                        toolResultContent = { output: outputText };
-                        isFileHandled = true;
+                        // 2. 检查是否是文件输出格式 (data_base64) - 新增逻辑
+                        else if (outputData.type && outputData.data_base64 && outputData.filename) {
+                            const fileType = outputData.type; // excel, word, ppt, pdf
+                            const filename = outputData.filename;
+                            const mimeType = outputData.mime_type || getMimeTypeFromExtension(filename);
+                            
+                            ui.logMessage(`检测到 ${fileType.toUpperCase()} 文件: ${filename}，正在触发下载...`, 'system');
+                            
+                            // 调用下载函数
+                            downloadFromBase64(outputData.data_base64, filename, mimeType);
+                            
+                            toolResultContent = { output: `${fileType.toUpperCase()} 文件 "${filename}" 已生成并触发下载。` };
+                            isHandled = true;
+                        }
+                    } catch (e) {
+                        // Not a JSON object, fall back to legacy raw base64 check
+                    }
+
+                    // 3. 检查是否是旧版图片输出格式 (raw base64 string) - 保持原有逻辑
+                    if (!isHandled) {
+                        if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
+                            const imageUrl = `data:image/png;base64,${stdoutContent}`;
+                            displayImageResult(imageUrl, 'Generated Chart', `chart_${Date.now()}.png`);
+                            toolResultContent = { output: '图片已生成并显示。' };
+                            isHandled = true;
+                        } else if (stdoutContent) {
+                            toolResultContent = { output: stdoutContent };
+                            isHandled = true;
+                        }
+                    }
+                 }
+                 
+                 // 4. 处理 stderr - 保持原有逻辑
+                 if (toolRawResult && toolRawResult.stderr) {
+                     ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
+                     if (toolResultContent && toolResultContent.output) {
+                         toolResultContent.output += `\n错误: ${toolRawResult.stderr}`;
+                    } else if (!isHandled) {
+                        toolResultContent = { output: `错误: ${toolRawResult.stderr}` };
                     }
                 }
                 
-                // 4. 处理 stderr（独立于文件处理）
-                if (toolRawResult && toolRawResult.stderr && toolRawResult.stderr.trim() !== '') {
-                    ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
-                    if (toolResultContent && toolResultContent.output) {
-                        toolResultContent.output += `\nError: ${toolRawResult.stderr}`;
-                    } else if (!isFileHandled) {
-                        toolResultContent = { output: `Error: ${toolRawResult.stderr}` };
-                    }
-                }
-                
-                // 5. 默认无输出处理
+                // 5. 默认无输出处理 - 保持原有逻辑
                 if (!toolResultContent) {
-                    toolResultContent = { output: "Tool executed successfully with no output." };
+                    toolResultContent = { output: "工具执行成功，无输出。" };
                 }
             } else {
                 // For ALL other tools, wrap the raw result consistently to ensure a predictable
@@ -680,6 +690,21 @@ export class ChatApiHandler {
                 // Throw the original error for better context if the final one is not informative.
                 throw finalError || e;
             }
+        }
+        
+        // 辅助函数：根据文件扩展名获取MIME类型
+        function getMimeTypeFromExtension(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const mimeTypes = {
+                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'pdf': 'application/pdf',
+                'png': 'image/png',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg'
+            };
+            return mimeTypes[ext] || 'application/octet-stream';
         }
     }
 }

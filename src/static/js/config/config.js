@@ -477,11 +477,32 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`reportlab==4.0.7\` (支持生成 PDF 文档)
 -   \`python-pptx==0.6.23\` (支持生成 PPT 文档)
 
-**文件生成与下载关键规则 (CRITICAL RULE FOR FILE GENERATION AND DOWNLOAD):**
-当您使用 python_sandbox 生成文件（包括图片、Word、Excel、PPT、PDF）时，您的代码必须将文件保存到 /tmp 目录。后端将自动捕获这些文件，并以 Base64 格式返回给前端，由前端自动触发下载。
-*   **支持的文件类型**：图片 (.png)，Excel (.xlsx)，Word (.docx)，PPT (.pptx)，PDF (.pdf)。
-*   **图表中文支持**：已安装中文字体，图表标题和标签可使用中文。
-*   **最终回复规则**：**绝对禁止 (ABSOLUTELY FORBIDDEN)** 在最终的用户回复中包含 Base64 字符串、Markdown 图片链接或任何文件 URL。您的最终回复应该只对文件内容进行简要总结或确认任务完成即可。
+**文件生成与输出关键规则 (CRITICAL RULE FOR FILE GENERATION AND OUTPUT):**
+当您使用 python_sandbox 生成文件（包括图片、Word、Excel、PPT、PDF）时，必须使用统一的 JSON 输出格式。系统会自动处理文件显示和下载。
+
+*   **图片输出格式**：
+  \`\`\`python
+    output_data = {
+        "type": "image",
+        "title": "图表标题",
+        "image_base64": "iVBORw0KGgoAAAANSUhEUg..."
+    }
+    print(json.dumps(output_data))
+\`\`\`
+
+*   **文件输出格式**：
+\`\`\`python
+    output_data = {
+        "type": "excel",  # 可以是: excel, word, ppt, pdf
+        "filename": "报告.xlsx",
+        "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "data_base64": "UEsDBBQAAAAIAEh2NVc..."
+    }
+    print(json.dumps(output_data))
+\`\`\`
+
+*   **最终回复规则**：**绝对禁止 (ABSOLUTELY FORBIDDEN)** 在最终的用户回复中包含 Base64 字符串、Markdown 图片链接、文件 URL 或任何技术细节。您的最终回复应该只对文件内容进行简要总结或确认任务完成即可。
+
 
 *   **✅ 正确的最终回复示例:** "图表已成功生成。数据显示，在2021年11月15日至19日期间，每日数值波动较大，其中11月17日达到峰值。"
 *   **❌ 错误的最终回复示例:** "这是您的图表：![图表](data:image/png;base64,iVBORw0KGgo...)"
@@ -501,7 +522,7 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **参数名错误:** \`{"script": "print('hello')"}\` (错误：参数名必须是 "code")。
 -   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。
 
-**➡️ 场景2: 数据可视化与绘图**
+**➡️ 场景2: 数据可视化与文件生成**
 
 当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
 
@@ -521,13 +542,11 @@ print(image_base64)
 
 1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
 2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
-3.  **文件/图表输出**:
-    *   **生成文件 (Office/PDF)**: 必须将文件保存到 /tmp 目录，例如  \`doc.save(/tmp/report.docx) \`。
-    *   **生成图表 (图片)**: 必须将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG，并进行 Base64 编码，然后将编码后的 JSON 结构打印到标准输出 (\`stdout\`)。
-    *   **图表中文支持**：在绘图代码中，请确保设置中文字体以支持中文显示，例如：\`plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP']\`。
-4.  **Base64 输出 (仅用于图片)**:
-    *   绘图完成后，**必须**将 Base64 字符串包装成 JSON 结构并打印到标准输出，例如：\`print(json.dumps({"type": "image", "image_base64": image_base64, "title": "图表标题"}))\`。
-    *   **不要**打印其他任何额外文本。
+3.  **无文件保存**: **绝不**将图表保存为物理文件。
+4.  **Base64 输出**:
+    *   绘图完成后，**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
+    *   最后，**必须**将字节流中的图片数据进行 Base64 编码，并将编码后的字符串作为**唯一的输出**打印到标准输出 (\`stdout\`)。
+    *   **不要**打印其他任何额外文本（例如 "Here is your chart:"）。
 
 **以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
 
@@ -560,6 +579,63 @@ buf.close()
 plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
+
+**Excel文件生成示例：**
+\`\`\`python
+import pandas as pd
+import io
+import base64
+import json
+
+# 生成数据
+df = pd.DataFrame({
+    '姓名': ['张三', '李四', '王五'],
+    '成绩': [85, 92, 78]
+})
+
+# 保存到内存
+excel_buffer = io.BytesIO()
+df.to_excel(excel_buffer, index=False)
+excel_buffer.seek(0)
+file_base64 = base64.b64encode(excel_buffer.read()).decode('utf-8')
+excel_buffer.close()
+
+output_data = {
+    "type": "excel",
+    "filename": "学生成绩.xlsx",
+    "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "data_base64": file_base64
+}
+print(json.dumps(output_data))
+\`\`\`
+
+**Word文件生成示例：**
+\`\`\`python
+from docx import Document
+import io
+import base64
+import json
+
+doc = Document()
+doc.add_heading('报告标题', 0)
+doc.add_paragraph('这是报告内容。')
+
+# 保存到内存
+doc_buffer = io.BytesIO()
+doc.save(doc_buffer)
+doc_buffer.seek(0)
+file_base64 = base64.b64encode(doc_buffer.read()).decode('utf-8')
+doc_buffer.close()
+
+output_data = {
+    "type": "word",
+    "filename": "报告.docx",
+    "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "data_base64": file_base64
+}
+print(json.dumps(output_data))
+\`\`\`
+
 
 现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
 
@@ -654,15 +730,6 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`sympy==1.12\`
 -   \`matplotlib==3.8.4\`
 -   \`seaborn==0.13.2\`
--   \`python-docx==1.1.2\` (支持生成 Word 文档)
--   \`reportlab==4.0.7\` (支持生成 PDF 文档)
--   \`python-pptx==0.6.23\` (支持生成 PPT 文档)
-
-**文件生成与下载关键规则 (CRITICAL RULE FOR FILE GENERATION AND DOWNLOAD):**
-当您使用 python_sandbox 生成文件（包括图片、Word、Excel、PPT、PDF）时，您的代码必须将文件保存到 **/tmp** 目录。后端将自动捕获这些文件，并以 Base64 格式返回给前端，由前端自动触发下载。
-*   **支持的文件类型**：图片 (.png, .jpg, .jpeg)，Excel (.xlsx)，Word (.docx)，PPT (.pptx)，PDF (.pdf)。
-*   **图表中文支持**：已安装中文字体，图表标题和标签可使用中文。
-*   **最终回复规则**：**绝对禁止 (ABSOLUTELY FORBIDDEN)** 在最终的用户回复中包含 Base64 字符串、Markdown 图片链接或任何文件 URL。您的最终回复应该只对文件内容进行简要总结或确认任务完成即可。
 
 **➡️ 场景1: 常规代码执行**
 
@@ -679,21 +746,35 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **参数名错误:** \`{"script": "print('hello')"}\` (错误：参数名必须是 "code")。
 -   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。
 
-**➡️ 场景2: 数据可视化与文件生成**
+**➡️ 场景2: 数据可视化与绘图**
 
-当用户明确要求数据可视化或生成文档时，你必须使用 python_sandbox 工具生成 Python 代码。
+当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
+
+# --- 以下是用于将图片转为 Base64 并输出的固定模板代码部分，请每次都直接包含，不要修改，确保内存释放，运行成功。
+
+\`\`\`python
+buf = io.BytesIO()
+plt.savefig(buf, format='png', bbox_inches='tight')
+buf.seek(0)
+image_base64 = base64.b64encode(buf.read()).decode('utf-8')
+buf.close()
+plt.close('all') # 关闭所有图表以释放内存，重要！
+print(image_base64)
+\`\`\`
 
 **请严格遵循以下代码生成规范：**
 
-1.  **文件输出路径**：所有生成的文件必须保存到 /tmp 目录
-2.  **自动文件检测**：系统会自动扫描 /tmp 目录并处理以下文件类型：
-    - 图片文件：自动渲染显示
-    - 文档文件：自动触发下载（Word/Excel/PPT/PDF）
-3.  **图表生成**：使用 matplotlib 或 seaborn 生成图表
-4.  **文档生成**：使用相应的库生成办公文档
+1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
+2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
+3.  **无文件保存**: **绝不**将图表保存为物理文件。
+4.  **Base64 输出**:
+    *   绘图完成后，**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
+    *   最后，**必须**将字节流中的图片数据进行 Base64 编码，并将编码后的字符串作为**唯一的输出**打印到标准输出 (\`stdout\`)。
+    *   **不要**打印其他任何额外文本（例如 "Here is your chart:"）。
 
-**图片生成完整模板：**
-python
+**以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
+
+\`\`\`python
 import matplotlib
 matplotlib.use('Agg') # 确保在无头服务器环境正常运行
 import matplotlib.pyplot as plt
@@ -701,74 +782,27 @@ import seaborn as sns
 import pandas as pd
 import io
 import base64
-import json
 
-# 设置中文字体（如需中文显示）
-plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP']
+# --- 在此区域编写你的数据处理和绘图代码 ---
+# 示例：假设用户提供了以下数据
+# data = {'产品': ['A', 'B', 'C'], '销量': [150, 200, 100]}
+# df = pd.DataFrame(data)
+# plt.figure(figsize=(8, 6)) # 设置图表大小
+# sns.barplot(x='产品', y='销量', data=df)
+# plt.title('产品销量柱状图')
+# plt.xlabel('产品类型')
+# plt.ylabel('销量')
+# --- 绘图代码结束 ---
 
-# --- 数据处理和绘图代码 ---
-plt.figure(figsize=(10, 6))
-# 您的绘图代码在这里
-plt.plot([1, 2, 3, 4], [1, 4, 2, 3])
-plt.title('示例图表')
-
-# --- 图片输出处理 ---
+# --- 以下是用于将图片转为 Base64 并输出的固定模板代码，请直接包含，不要修改 ---
 buf = io.BytesIO()
 plt.savefig(buf, format='png', bbox_inches='tight')
 buf.seek(0)
 image_base64 = base64.b64encode(buf.read()).decode('utf-8')
 buf.close()
-plt.close('all')
-
-# 输出图片数据
-output_data = {
-    "type": "image",
-    "image_base64": image_base64,
-    "title": plt.gca().get_title() or "Generated Chart"
-}
-print(json.dumps(output_data))
-
-
-**文档生成示例：**
-
-Word 文档：
-python
-from docx import Document
-doc = Document()
-doc.add_heading('报告标题', 0)
-doc.add_paragraph('报告内容')
-doc.save('/tmp/report.docx')
-
-
-Excel 文件：
-python
-import pandas as pd
-df = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
-df.to_excel('/tmp/data.xlsx', index=False)
-
-
-PDF 文件：
-python
-from reportlab.pdfgen import canvas
-c = canvas.Canvas('/tmp/report.pdf')
-c.drawString(100, 750, "PDF报告")
-c.save()
-
-
-PPT 演示文稿：
-python
-from pptx import Presentation
-prs = Presentation()
-slide = prs.slides.add_slide(prs.slide_layouts[0])
-slide.shapes.title.text = "演示文稿"
-prs.save('/tmp/presentation.pptx')
-
-
-**重要提示：**
-- 文件保存路径必须是 /tmp/ 目录
-- 系统会自动检测和处理生成的文件
-- 无需手动处理 Base64 编码，系统会自动完成
-- 前端会自动渲染图片或触发文件下载
+plt.close('all') # 关闭所有图表以释放内存，重要！
+print(image_base64)
+\`\`\`
 
 现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
 
