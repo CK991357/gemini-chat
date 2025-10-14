@@ -462,6 +462,18 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 ### 工具调用示例（Code Interpreter / python_sandbox）
 
+可用的 Python 库及其版本（用于 Code Interpreter / python_sandbox）：
+-   \`fastapi\`
+-   \`uvicorn\`
+-   \`docker\`
+-   \`numpy==1.26.4\`
+-   \`scipy==1.14.1\`
+-   \`pandas==2.2.2\`
+-   \`openpyxl==3.1.2\`
+-   \`sympy==1.12\`
+-   \`matplotlib==3.8.4\`
+-   \`seaborn==0.13.2\`
+
 **图像生成关键规则 (CRITICAL RULE FOR IMAGE GENERATION):**
 当您使用 python_sandbox 生成图片时，您的思考过程可以确认图片已生成，但**最终的用户回复中绝对禁止 (ABSOLUTELY FORBIDDEN) 包含 base64 字符串、Markdown 图片链接或任何图片 URL**。图片将由前端系统自动显示。您的最终回复应该只对图表内容进行简要总结或确认任务完成即可。
 
@@ -622,6 +634,18 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   所有参数名和枚举值必须与工具的 \`Input Schema\` 严格匹配.
 
 ### 工具调用示例（Code Interpreter / python_sandbox）
+
+可用的 Python 库及其版本（用于 Code Interpreter / python_sandbox）：
+-   \`fastapi\`
+-   \`uvicorn\`
+-   \`docker\`
+-   \`numpy==1.26.4\`
+-   \`scipy==1.14.1\`
+-   \`pandas==2.2.2\`
+-   \`openpyxl==3.1.2\`
+-   \`sympy==1.12\`
+-   \`matplotlib==3.8.4\`
+-   \`seaborn==0.13.2\`
 
 **➡️ 场景1: 常规代码执行**
 
