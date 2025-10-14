@@ -650,7 +650,7 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`numpy==1.26.4\`
 -   \`scipy==1.14.1\`
 -   \`pandas==2.2.2\`
--   \`openpyxl==3.1.2\` (支持生成 Excel 文档)
+-   \`openpyxl==3.1.2\`
 -   \`sympy==1.12\`
 -   \`matplotlib==3.8.4\`
 -   \`seaborn==0.13.2\`
@@ -679,25 +679,21 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **参数名错误:** \`{"script": "print('hello')"}\` (错误：参数名必须是 "code")。
 -   **参数值类型错误:** \`{"code": 123}\` (错误：\`code\` 的值必须是字符串)。
 
-**➡️ 场景2: 数据可视化与绘图**
+**➡️ 场景2: 数据可视化与文件生成**
 
-当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
+当用户明确要求数据可视化或生成文档时，你必须使用 python_sandbox 工具生成 Python 代码。
 
 **请严格遵循以下代码生成规范：**
 
-1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
-2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
-3.  **文件/图表输出**:
-    *   **生成文件 (Office/PDF)**: 必须将文件保存到 /tmp 目录，例如  \`doc.save('/tmp/report.docx') \`。
-    *   **生成图表 (图片)**: 必须将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG，并进行 Base64 编码，然后将编码后的 **JSON 结构** 打印到标准输出 (\`stdout\`)。
-    *   **图表中文支持**：在绘图代码中，如果用户有需求可以设置中文字体以支持中文显示，例如：\`plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP']\`。
-4.  **Base64 输出 (仅用于图片)**:
-    *   绘图完成后，**必须**将 Base64 字符串包装成 JSON 结构并打印到标准输出，例如：\`print(json.dumps({"type": "image", "image_base64": image_base64, "title": "图表标题"}))\`。
-    *   **不要**打印其他任何额外文本。
+1.  **文件输出路径**：所有生成的文件必须保存到 /tmp 目录
+2.  **自动文件检测**：系统会自动扫描 /tmp 目录并处理以下文件类型：
+    - 图片文件：自动渲染显示
+    - 文档文件：自动触发下载（Word/Excel/PPT/PDF）
+3.  **图表生成**：使用 matplotlib 或 seaborn 生成图表
+4.  **文档生成**：使用相应的库生成办公文档
 
-**以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
-
-\`\`\`python
+**图片生成完整模板：**
+python
 import matplotlib
 matplotlib.use('Agg') # 确保在无头服务器环境正常运行
 import matplotlib.pyplot as plt
@@ -705,36 +701,74 @@ import seaborn as sns
 import pandas as pd
 import io
 import base64
-import json # 导入 json 库
+import json
 
-# --- 在此区域编写你的数据处理和绘图代码 ---
-# 示例：假设用户提供了以下数据
-# data = {'产品': ['A', 'B', 'C'], '销量': [150, 200, 100]}
-# df = pd.DataFrame(data)
-# plt.figure(figsize=(8, 6)) # 设置图表大小
-# plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP'] # 设置中文支持
-# sns.barplot(x='产品', y='销量', data=df)
-# plt.title('产品销量柱状图')
-# plt.xlabel('产品类型')
-# plt.ylabel('销量')
-# --- 绘图代码结束 ---
+# 设置中文字体（如需中文显示）
+plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP']
 
-# --- 以下是用于将图片转为 Base64 并输出的固定模板代码，请直接包含，不要修改 ---
+# --- 数据处理和绘图代码 ---
+plt.figure(figsize=(10, 6))
+# 您的绘图代码在这里
+plt.plot([1, 2, 3, 4], [1, 4, 2, 3])
+plt.title('示例图表')
+
+# --- 图片输出处理 ---
 buf = io.BytesIO()
 plt.savefig(buf, format='png', bbox_inches='tight')
 buf.seek(0)
 image_base64 = base64.b64encode(buf.read()).decode('utf-8')
 buf.close()
-plt.close('all') # 关闭所有图表以释放内存，重要！
+plt.close('all')
 
-# 打印 JSON 结构
+# 输出图片数据
 output_data = {
     "type": "image",
     "image_base64": image_base64,
-    "title": plt.gca().get_title() or "Generated Chart" # 尝试获取标题
+    "title": plt.gca().get_title() or "Generated Chart"
 }
 print(json.dumps(output_data))
-\`\`\`
+
+
+**文档生成示例：**
+
+Word 文档：
+python
+from docx import Document
+doc = Document()
+doc.add_heading('报告标题', 0)
+doc.add_paragraph('报告内容')
+doc.save('/tmp/report.docx')
+
+
+Excel 文件：
+python
+import pandas as pd
+df = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
+df.to_excel('/tmp/data.xlsx', index=False)
+
+
+PDF 文件：
+python
+from reportlab.pdfgen import canvas
+c = canvas.Canvas('/tmp/report.pdf')
+c.drawString(100, 750, "PDF报告")
+c.save()
+
+
+PPT 演示文稿：
+python
+from pptx import Presentation
+prs = Presentation()
+slide = prs.slides.add_slide(prs.slide_layouts[0])
+slide.shapes.title.text = "演示文稿"
+prs.save('/tmp/presentation.pptx')
+
+
+**重要提示：**
+- 文件保存路径必须是 /tmp/ 目录
+- 系统会自动检测和处理生成的文件
+- 无需手动处理 Base64 编码，系统会自动完成
+- 前端会自动渲染图片或触发文件下载
 
 现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
 
