@@ -473,9 +473,15 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`sympy==1.12\`
 -   \`matplotlib==3.8.4\`
 -   \`seaborn==0.13.2\`
+-   \`python-docx==1.1.2\` (支持生成 Word 文档)
+-   \`reportlab==4.0.7\` (支持生成 PDF 文档)
+-   \`python-pptx==0.6.23\` (支持生成 PPT 文档)
 
-**图像生成关键规则 (CRITICAL RULE FOR IMAGE GENERATION):**
-当您使用 python_sandbox 生成图片时，您的思考过程可以确认图片已生成，但**最终的用户回复中绝对禁止 (ABSOLUTELY FORBIDDEN) 包含 base64 字符串、Markdown 图片链接或任何图片 URL**。图片将由前端系统自动显示。您的最终回复应该只对图表内容进行简要总结或确认任务完成即可。
+**文件生成与下载关键规则 (CRITICAL RULE FOR FILE GENERATION AND DOWNLOAD):**
+当您使用 python_sandbox 生成文件（包括图片、Word、Excel、PPT、PDF）时，您的代码必须将文件保存到 `/tmp` 目录。后端将自动捕获这些文件，并以 Base64 格式返回给前端，由前端自动触发下载。
+*   **支持的文件类型**：图片 (.png, .jpg, .jpeg)，Excel (.xlsx)，Word (.docx)，PPT (.pptx)，PDF (.pdf)。
+*   **图表中文支持**：已安装中文字体，图表标题和标签可使用中文。
+*   **最终回复规则**：**绝对禁止 (ABSOLUTELY FORBIDDEN)** 在最终的用户回复中包含 Base64 字符串、Markdown 图片链接或任何文件 URL。您的最终回复应该只对文件内容进行简要总结或确认任务完成即可。
 
 *   **✅ 正确的最终回复示例:** "图表已成功生成。数据显示，在2021年11月15日至19日期间，每日数值波动较大，其中11月17日达到峰值。"
 *   **❌ 错误的最终回复示例:** "这是您的图表：![图表](data:image/png;base64,iVBORw0KGgo...)"
@@ -515,11 +521,13 @@ print(image_base64)
 
 1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
 2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
-3.  **无文件保存**: **绝不**将图表保存为物理文件。
-4.  **Base64 输出**:
-    *   绘图完成后，**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
-    *   最后，**必须**将字节流中的图片数据进行 Base64 编码，并将编码后的字符串作为**唯一的输出**打印到标准输出 (\`stdout\`)。
-    *   **不要**打印其他任何额外文本（例如 "Here is your chart:"）。
+3.  **文件/图表输出**:
+    *   **生成文件 (Office/PDF)**: 必须将文件保存到 `/tmp` 目录，例如  \`doc.save('/tmp/report.docx') \`。
+    *   **生成图表 (图片)**: 必须将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG，并进行 Base64 编码，然后将编码后的 JSON 结构打印到标准输出 (\`stdout\`)。
+    *   **图表中文支持**：在绘图代码中，请确保设置中文字体以支持中文显示，例如：\`plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP']\`。
+4.  **Base64 输出 (仅用于图片)**:
+    *   绘图完成后，**必须**将 Base64 字符串包装成 JSON 结构并打印到标准输出，例如：\`print(json.dumps({"type": "image", "image_base64": image_base64, "title": "图表标题"}))\`。
+    *   **不要**打印其他任何额外文本。
 
 **以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
 
