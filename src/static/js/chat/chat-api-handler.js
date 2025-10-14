@@ -478,33 +478,50 @@ export class ChatApiHandler {
 
             let toolResultContent; // Declare without initializing
 
-            // Special handling for python_sandbox output to detect and display images
+            // Enhanced handling for python_sandbox output to detect and display images and download files
             if (toolCode.tool_name === 'python_sandbox') {
-                let isImageHandled = false;
+                let isFileHandled = false;
                 if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
                     const stdoutContent = toolRawResult.stdout.trim();
+                    
+                    // 尝试解析为JSON对象（新格式：包含文件类型信息）
                     try {
-                        const imageData = JSON.parse(stdoutContent);
-                        if (imageData && imageData.type === 'image' && imageData.image_base64) {
-                            const title = imageData.title || 'Generated Chart';
-                            displayImageResult(imageData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
+                        const fileData = JSON.parse(stdoutContent);
+                        
+                        // 处理图片类型（保持原有逻辑不变）
+                        if (fileData && fileData.type === 'image' && fileData.image_base64) {
+                            const title = fileData.title || 'Generated Chart';
+                            displayImageResult(fileData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
                             toolResultContent = { output: `Image "${title}" generated and displayed.` };
-                            isImageHandled = true;
+                            isFileHandled = true;
+                        }
+                        // 处理Office文档和PDF类型
+                        else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
+                            const fileExtension = fileData.type;
+                            const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
+                            
+                            // 创建下载链接
+                            this._createFileDownload(fileData.data_base64, fileName, fileData.type);
+                            toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
+                            isFileHandled = true;
                         }
                     } catch (e) {
-                        // Not a JSON object, fall back to legacy raw base64 check
+                        // 不是JSON对象，回退到原有的图片检测逻辑
                     }
 
-                    if (!isImageHandled) {
+                    // 如果不是JSON格式，继续原有的图片检测逻辑
+                    if (!isFileHandled) {
                         if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
                             displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
                             toolResultContent = { output: 'Image generated and displayed.' };
-                            isImageHandled = true; // BUG FIX: Set flag to prevent fall-through
+                            isFileHandled = true;
                         } else if (stdoutContent) {
                             toolResultContent = { output: stdoutContent };
                         }
                     }
                  }
+                 
+                 // 处理stderr
                  if (toolRawResult && toolRawResult.stderr) {
                      ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
                      if (toolResultContent && toolResultContent.output) {
@@ -513,6 +530,7 @@ export class ChatApiHandler {
                         toolResultContent = { output: `Error: ${toolRawResult.stderr}` };
                     }
                 }
+                
                 if (!toolResultContent) {
                     toolResultContent = { output: "Tool executed successfully with no output." };
                 }
@@ -619,6 +637,103 @@ export class ChatApiHandler {
             // 保存工具调用的历史记录（如果 historyManager 存在）
             if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
                 this.historyManager.saveHistory();
+            }
+        }
+    }
+
+    /**
+     * @private
+     * @description Creates a file download link for Office documents and PDFs
+     * @param {string} base64Data - The base64 encoded file data
+     * @param {string} fileName - The name of the file to download
+     * @param {string} fileType - The type of file (excel, word, ppt, pdf)
+     */
+    _createFileDownload(base64Data, fileName, fileType) {
+        const timestamp = () => new Date().toISOString();
+        console.log(`[${timestamp()}] [FILE] Creating download for ${fileType} file: ${fileName}`);
+        
+        try {
+            // 解码base64数据
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            // 创建Blob对象
+            const mimeTypes = {
+                'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'ppt': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'pdf': 'application/pdf'
+            };
+            
+            const mimeType = mimeTypes[fileType] || 'application/octet-stream';
+            const blob = new Blob([bytes], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            
+            // 创建下载链接
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = fileName;
+            downloadLink.textContent = `📥 Download ${fileType.toUpperCase()}: ${fileName}`;
+            downloadLink.className = 'file-download-link';
+            downloadLink.style.display = 'inline-block';
+            downloadLink.style.margin = '10px 0';
+            downloadLink.style.padding = '8px 12px';
+            downloadLink.style.backgroundColor = '#f0f8ff';
+            downloadLink.style.border = '1px solid #007acc';
+            downloadLink.style.borderRadius = '4px';
+            downloadLink.style.color = '#007acc';
+            downloadLink.style.textDecoration = 'none';
+            downloadLink.style.fontWeight = 'bold';
+            
+            // 添加到当前AI消息内容中
+            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
+                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(downloadLink);
+                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(document.createElement('br'));
+            } else {
+                // 如果没有当前消息容器，创建新的消息显示下载链接
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'file-download-message';
+                messageDiv.style.padding = '10px';
+                messageDiv.style.margin = '10px 0';
+                messageDiv.style.backgroundColor = '#f9f9f9';
+                messageDiv.style.border = '1px solid #ddd';
+                messageDiv.style.borderRadius = '4px';
+                
+                const messageText = document.createElement('p');
+                messageText.textContent = `Generated ${fileType.toUpperCase()} file:`;
+                messageText.style.margin = '0 0 8px 0';
+                messageText.style.fontWeight = 'bold';
+                
+                messageDiv.appendChild(messageText);
+                messageDiv.appendChild(downloadLink);
+                
+                // 添加到聊天容器中
+                const chatContainer = document.querySelector('#chat-container') || document.querySelector('.chat-messages');
+                if (chatContainer) {
+                    chatContainer.appendChild(messageDiv);
+                }
+            }
+            
+            // 清理URL对象
+            downloadLink.addEventListener('click', () => {
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                }, 100);
+            });
+            
+            console.log(`[${timestamp()}] [FILE] Download link created successfully for ${fileName}`);
+            
+        } catch (error) {
+            console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
+            // 显示错误信息
+            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
+                const errorElement = document.createElement('p');
+                errorElement.textContent = `Error creating download for ${fileType} file: ${error.message}`;
+                errorElement.style.color = 'red';
+                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(errorElement);
             }
         }
     }

@@ -642,10 +642,15 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   \`numpy==1.26.4\`
 -   \`scipy==1.14.1\`
 -   \`pandas==2.2.2\`
--   \`openpyxl==3.1.2\`
+-   \`openpyxl==3.1.2\`(Excel文件操作)
 -   \`sympy==1.12\`
 -   \`matplotlib==3.8.4\`
 -   \`seaborn==0.13.2\`
+-   \`python-docx==1.1.2\`(Word文档操作)
+-   \`reportlab==4.0.7\` (PDF生成)
+-   \`python-pptx==0.6.23\` (PPT操作)
+
+###  工具调用格式规范
 
 **➡️ 场景1: 常规代码执行**
 
@@ -720,7 +725,171 @@ plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
 
-现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。
+### 场景3: 生成Office文档和PDF文件
+
+**新增功能**：现在支持生成Excel、Word、PPT和PDF文件，前端会自动提供下载链接。
+
+**生成Office文档和PDF的规范：**
+
+1. **输出格式要求**：
+   - 必须输出一个JSON对象，包含以下字段：
+     - type: 文件类型，必须是 "excel"、"word"、"ppt" 或 "pdf" 之一
+     - data_base64: 文件的Base64编码字符串
+     - title: 文件的标题（可选，但建议提供）
+
+2. **完整示例（生成Excel文件）：**
+\`\`\`python
+import pandas as pd
+import io
+import base64
+import json
+
+# 创建数据
+data = {
+    '产品': ['A', 'B', 'C', 'D'],
+    '销量': [150, 200, 100, 250],
+    '利润': [45, 60, 30, 75]
+}
+df = pd.DataFrame(data)
+
+# 将DataFrame保存到内存字节流
+output = io.BytesIO()
+with pd.ExcelWriter(output, engine='openpyxl') as writer:
+    df.to_excel(writer, sheet_name='销售数据', index=False)
+output.seek(0)
+
+# 编码为Base64
+excel_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
+output.close()
+
+# 输出JSON对象
+result = {
+    "type": "excel",
+    "title": "销售报告",
+    "data_base64": excel_base64
+}
+print(json.dumps(result))
+\`\`\`
+
+3. **Word文档生成示例：**
+\`\`\`python
+from docx import Document
+import io
+import base64
+import json
+
+# 创建Word文档
+doc = Document()
+doc.add_heading('项目报告', 0)
+doc.add_paragraph('这是自动生成的报告内容。')
+doc.add_paragraph('包含详细的分析和总结。')
+
+# 保存到内存字节流
+output = io.BytesIO()
+doc.save(output)
+output.seek(0)
+
+# 编码为Base64
+word_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
+output.close()
+
+# 输出JSON对象
+result = {
+    "type": "word",
+    "title": "项目报告",
+    "data_base64": word_base64
+}
+print(json.dumps(result))
+\`\`\`
+
+4. **PDF生成示例：**
+\`\`\`python
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import io
+import base64
+import json
+
+# 创建PDF
+buffer = io.BytesIO()
+c = canvas.Canvas(buffer, pagesize=letter)
+c.drawString(100, 750, "PDF报告标题")
+c.drawString(100, 730, "这是通过Python自动生成的PDF文档")
+c.save()
+
+buffer.seek(0)
+pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+buffer.close()
+
+# 输出JSON对象
+result = {
+    "type": "pdf",
+    "title": "数据分析报告",
+    "data_base64": pdf_base64
+}
+print(json.dumps(result))
+\`\`\`
+
+5. **PPT生成示例：**
+\`\`\`python
+from pptx import Presentation
+import io
+import base64
+import json
+
+# 创建PPT
+prs = Presentation()
+slide_layout = prs.slide_layouts[0]  # 标题幻灯片
+slide = prs.slides.add_slide(slide_layout)
+title = slide.shapes.title
+subtitle = slide.placeholders[1]
+
+title.text = "演示文稿标题"
+subtitle.text = "自动生成的PPT内容"
+
+# 保存到内存字节流
+output = io.BytesIO()
+prs.save(output)
+output.seek(0)
+
+# 编码为Base64
+ppt_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
+output.close()
+
+# 输出JSON对象
+result = {
+    "type": "ppt",
+    "title": "业务演示",
+    "data_base64": ppt_base64
+}
+print(json.dumps(result))
+\`\`\`
+
+## 前端处理逻辑说明
+
+### 图片处理（保持不变）
+- **Base64图片**：自动在聊天界面中显示
+- **支持格式**：PNG、JPEG等
+- **显示方式**：内嵌在消息流中
+
+### 文件下载（新增功能）
+- **支持格式**：Excel (.xlsx)、Word (.docx)、PPT (.pptx)、PDF (.pdf)
+- **处理方式**：自动生成下载链接，用户点击即可下载
+- **用户体验**：带有文件类型图标和清晰的文件名
+
+### 错误处理
+- 如果代码执行出错，错误信息会显示在聊天界面
+- 文件生成失败时会显示具体的错误原因
+
+## 重要提醒
+
+1. **内存管理**：使用 \`plt.close('all')\` 释放图表内存
+2. **编码规范**：确保Base64编码正确，避免数据损坏
+3. **输出纯净**：除Base64字符串或JSON对象外，不要输出其他文本
+4. **性能考虑**：大型文件可能会影响性能，建议控制文件大小
+5. **格式验证**：生成的Office文档和PDF应确保格式正确
+
+现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。记住前端会自动处理图片显示和文件下载，你只需要专注于生成正确的代码和输出格式。
 
 ### 工具调用示例（Tavily Search）
 
