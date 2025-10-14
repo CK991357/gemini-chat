@@ -912,6 +912,58 @@ print(image_base64)
      - type: 文件类型，必须是 "excel"、"word"、"ppt" 或 "pdf" 之一
      - data_base64: 文件的Base64编码字符串
      - title: 文件的标题（可选，但建议提供）
+**重要**：必须使用 json.dumps() 将对象转换为JSON字符串输出，不要直接输出纯base64字符串。
+
+**示例代码**：
+\`\`\`python
+from docx import Document
+import io
+import base64
+import json  # 必须导入json
+
+# 创建Word文档
+doc = Document()
+doc.add_paragraph('hello word')  # 按用户要求的内容
+
+# 保存到内存字节流
+output = io.BytesIO()
+doc.save(output)
+output.seek(0)
+
+# 编码为Base64并输出JSON格式
+result = {
+    "type": "word",
+    "title": "测试文档", 
+    "data_base64": base64.b64encode(output.read()).decode('utf-8')
+}
+print(json.dumps(result))  # 关键：必须使用json.dumps()\`\`\`
+
+**注意**：请勿直接输出纯base64字符串，必须使用json.dumps()将对象转换为JSON字符串并输出。
+
+**关键注意事项**：
+
+必须使用JSON格式：所有文件输出都必须包装在JSON对象中
+
+必须导入json模块：import json 并在最后使用 json.dumps()
+
+不要直接打印base64：直接打印base64字符串不会被前端识别为文件
+
+确保指针重置：在读取BytesIO内容前使用 .seek(0)
+
+错误示例 vs 正确示例：
+
+❌ 错误（不会被前端识别）：
+python
+print(base64.b64encode(buffer.read()).decode('utf-8'))
+
+✅ 正确（会被前端识别并创建下载链接）：
+python
+result = {
+    "type": "word",
+    "title": "测试文档",
+    "data_base64": base64.b64encode(buffer.read()).decode('utf-8')
+}
+print(json.dumps(result))
 
 2. **完整示例（生成Excel文件）：**
 \`\`\`python
