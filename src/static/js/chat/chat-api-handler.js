@@ -488,28 +488,89 @@ export class ChatApiHandler {
                     try {
                         const fileData = JSON.parse(stdoutContent);
                         
-                        // 处理图片类型（保持原有逻辑不变）
+                        // 处理图片类型（保持原有逻辑完全不变）
                         if (fileData && fileData.type === 'image' && fileData.image_base64) {
                             const title = fileData.title || 'Generated Chart';
                             displayImageResult(fileData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
                             toolResultContent = { output: `Image "${title}" generated and displayed.` };
                             isFileHandled = true;
                         }
-                        // 处理Office文档和PDF类型
+                        // 处理Office文档和PDF类型（原有标准格式）
                         else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
                             const fileExtension = fileData.type;
                             const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
+                            
+                            // 确保有消息容器来显示下载链接
+                            if (!this.state.currentAIMessageContentDiv) {
+                                this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                            }
                             
                             // 创建下载链接
                             this._createFileDownload(fileData.data_base64, fileName, fileData.type);
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
                             isFileHandled = true;
+                            
+                            // 立即显示成功消息
+                            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
+                                const successMsg = document.createElement('p');
+                                successMsg.textContent = `✅ ${fileData.type.toUpperCase()}文件已生成，请点击上方链接下载`;
+                                successMsg.style.color = 'green';
+                                successMsg.style.margin = '10px 0';
+                                successMsg.style.fontWeight = 'bold';
+                                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
+                            }
+                            
+                            // 触发滚动
+                            if (ui.scrollToBottom) {
+                                ui.scrollToBottom();
+                            }
                         }
+                        // 新增：处理您自定义的 {"file": ...} 结构
+                        else if (fileData && fileData.file && fileData.file.name && fileData.file.content) {
+                            const { name, content } = fileData.file;
+                            const fileExtension = name.split('.').pop().toLowerCase();
+                            
+                            const fileTypeMap = {
+                                'docx': 'word',
+                                'xlsx': 'excel',
+                                'pptx': 'ppt',
+                                'pdf': 'pdf'
+                            };
+
+                            const fileType = fileTypeMap[fileExtension];
+                            if (fileType) {
+                                // 确保有消息容器来显示下载链接
+                                if (!this.state.currentAIMessageContentDiv) {
+                                    this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                }
+                                
+                                // 创建下载链接
+                                this._createFileDownload(content, name, fileType);
+                                toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
+                                isFileHandled = true;
+                                
+                                // 立即显示成功消息
+                                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
+                                    const successMsg = document.createElement('p');
+                                    successMsg.textContent = `✅ ${fileType.toUpperCase()}文件已生成，请点击上方链接下载`;
+                                    successMsg.style.color = 'green';
+                                    successMsg.style.margin = '10px 0';
+                                    successMsg.style.fontWeight = 'bold';
+                                    this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
+                                }
+                                
+                                // 触发滚动
+                                if (ui.scrollToBottom) {
+                                    ui.scrollToBottom();
+                                }
+                            }
+                        }
+
                     } catch (e) {
-                        // 不是JSON对象，回退到原有的图片检测逻辑
+                        console.log('不是JSON格式，继续其他处理逻辑:', e);
                     }
 
-                    // 如果不是JSON格式，继续原有的图片检测逻辑
+                    // 如果不是JSON格式，继续原有的图片检测逻辑（完全不变）
                     if (!isFileHandled) {
                         if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
                             displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
@@ -521,7 +582,7 @@ export class ChatApiHandler {
                     }
                  }
                  
-                 // 处理stderr
+                 // 处理stderr（完全不变）
                  if (toolRawResult && toolRawResult.stderr) {
                      ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
                      if (toolResultContent && toolResultContent.output) {
