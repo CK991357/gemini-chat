@@ -999,7 +999,7 @@ class ChessGame {
         }
 
         // 构建分析消息
-        const analysisMessage = `请使用当前配置的“国际象棋实时分析”提示词和工具，分析以下局面并给出Top 3 走法分析。\n\n当前FEN: \`${currentFEN}\``;
+        const analysisMessage = `分析以下局面并给出Top 3 走法分析。\n\n当前FEN: \`${currentFEN}\``;
 
         // 切换到Vision视图
         this.showChatView();
@@ -1007,7 +1007,7 @@ class ChessGame {
         // 延迟执行，确保视图切换和Vision模块的UI已准备就绪
         setTimeout(() => {
             this.sendMessageToVision(analysisMessage);
-        }, 300); // 300ms 延迟通常足够
+        }, 500); // 500ms 延迟通常足够
         
         this.showToast('已切换到AI分析视图，正在发送请求...');
     }
