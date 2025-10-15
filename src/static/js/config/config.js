@@ -504,7 +504,7 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 1. **导入和后端设置**: 你的 Python 代码必须在开头包含  \`import matplotlib; matplotlib.use('Agg')\`以确保在无头服务器环境正常运行
 2. **库使用**: 优先使用  \`matplotlib.pyplot \` 和 \`seaborn \` 进行绘图。 \`pandas \`可用于数据处理
-3. **无文件保存**: **绝不**将图表保存为物理文件。**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
+3. **无文件保存**: **绝不**将图表保存为物理文件。**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。最终回复中只需要向用户确认图片已经生成，**绝不**在最终回复中重复完整的Base64字符串。
 4. **输出格式要求**：
    - **推荐使用JSON格式**（与文件输出保持一致）：
       - **推荐使用JSON格式**（与文件输出保持一致）：
@@ -907,7 +907,7 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 1. **导入和后端设置**: 你的 Python 代码必须在开头包含  \`import matplotlib; matplotlib.use('Agg')\`以确保在无头服务器环境正常运行
 2. **库使用**: 优先使用  \`matplotlib.pyplot \` 和 \`seaborn \` 进行绘图。 \`pandas \`可用于数据处理
-3. **无文件保存**: **绝不**将图表保存为物理文件。**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
+3. **无文件保存**: **绝不**将图表保存为物理文件。**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。最终回复中只需要向用户确认图片已经生成，**绝不**在最终回复中重复完整的Base64字符串。
 4. **输出格式要求**：
    - **推荐使用JSON格式**（与文件输出保持一致）：
       - **推荐使用JSON格式**（与文件输出保持一致）：
