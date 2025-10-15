@@ -501,10 +501,18 @@ export class ChatApiHandler {
                 if (actualStdout) {
                     // 尝试解析为JSON对象
                     try {
-                        const fileData = JSON.parse(actualStdout);
-                        console.log(`[${timestamp()}] [MCP] Successfully parsed JSON:`, fileData);
+                        let fileData = JSON.parse(actualStdout);
+                        console.log(`[${timestamp()}] [MCP] First level JSON parsed:`, fileData);
                         
-                        // 处理图片类型（保持原有逻辑完全不变）
+                        // 关键修复：如果解析出来的是包装结构，提取实际的stdout内容
+                        if (fileData && fileData.type === 'text' && fileData.stdout) {
+                            console.log(`[${timestamp()}] [MCP] Detected wrapped structure, extracting stdout`);
+                            actualStdout = fileData.stdout;
+                            fileData = JSON.parse(actualStdout); // 重新解析实际的Python输出
+                            console.log(`[${timestamp()}] [MCP] Second level JSON parsed:`, fileData);
+                        }
+                        
+                        // 处理图片类型
                         if (fileData && fileData.type === 'image' && fileData.image_base64) {
                             console.log(`[${timestamp()}] [MCP] Detected image file`);
                             const title = fileData.title || 'Generated Chart';
@@ -617,7 +625,7 @@ export class ChatApiHandler {
                  
                  console.log(`[${timestamp()}] [MCP] File handling completed, isFileHandled:`, isFileHandled);
                  
-                 // 处理stderr（完全不变）
+                 // 处理stderr
                  if (toolRawResult && toolRawResult.stderr) {
                      ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
                      if (toolResultContent && toolResultContent.output) {
