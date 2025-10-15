@@ -92,7 +92,8 @@ export class ChatApiHandler {
             // ---
 
             const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-            if (!isToolResponseFollowUp) {
+            // 关键修改：只有在不是工具响应跟随 且 不在工具使用过程中时，才创建新的消息容器
+            if (!isToolResponseFollowUp && !this.state.isUsingTool) {
                 this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
             }
 
