@@ -460,15 +460,6 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 -   **参数名错误:** \`{"img_url": "https://path/to/image.jpg"}\` (应为 "image_url" 而非 "img_url")
 -   **模型名称错误:** \`{"model": "glm4v-flash", ...}\` (应为 "glm-4v-flash")
 
-## Tool Usage Guidelines
-
-**重要提示**：当你决定调用工具时，\`arguments\` 字段**必须**是一个严格有效的 JSON 字符串.
--   **不要**添加额外的引号或逗号.
--   **不要**在 JSON 字符串内部包含任何非 JSON 格式的文本（如Markdown代码块的分隔符 \`\`\`）.
--   确保所有键和字符串值都用双引号 \`"\` 包裹.
--   确保 JSON 对象以 \`{\` 开始，以 \`}\` 结束.
--   所有参数名和枚举值必须与工具的 \`Input Schema\` 严格匹配.
-
 ### 工具调用示例（Code Interpreter / python_sandbox）
 
 可用的 Python 库及其版本（用于 Code Interpreter / python_sandbox）：
@@ -493,7 +484,9 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 当调用 \`python_sandbox\` 工具时，你生成的 \`tool_calls\` 中 \`function.arguments\` 字段**必须**是一个**JSON 字符串**。该字符串在被解析后，必须是一个只包含 "code" 键的 JSON 对象。
 
 **✅ 正确的 \`arguments\` 字符串内容示例:**
-\`{"code": "print('Hello, world!')"}\`
+\`\`\`json
+{"code": "print('Hello, world!')"}
+\`\`\`
 
 *重要提示：模型实际生成的 \`arguments\` 值是一个字符串，例如：\`"{\\"code\\": \\"print('Hello!')\\"}"\`。*
 
@@ -507,7 +500,23 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
 
-**绝不**在最终回复中重复返回的Base64 编码，前端回自动处理。只需告诉用户图片已生成！
+**请严格遵循以下代码生成规范：**
+
+1. **导入和后端设置**: 你的 Python 代码必须在开头包含  \`import matplotlib; matplotlib.use('Agg')\`以确保在无头服务器环境正常运行
+2. **库使用**: 优先使用  \`matplotlib.pyplot \` 和 \`seaborn \` 进行绘图。 \`pandas \`可用于数据处理
+3. **无文件保存**: **绝不**将图表保存为物理文件。**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
+4. **输出格式要求**：
+   - **推荐使用JSON格式**（与文件输出保持一致）：
+      - **推荐使用JSON格式**（与文件输出保持一致）：
+    \`\`\`python
+     result = {
+         "type": "image",
+         "title": "图表标题",
+         "image_base64": "iVBORw0KGgoAAAANSUhEUg..."
+     }
+     print(json.dumps(result))
+     \`\`\`
+   - **或者继续使用纯Base64字符串**（保持向后兼容）
 
 # --- 以下是用于将图片转为 Base64 并输出的固定模板代码部分，请每次都直接包含，不要修改，确保内存释放，运行成功。
 
@@ -521,16 +530,6 @@ plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
 
-**请严格遵循以下代码生成规范：**
-
-1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
-2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
-3.  **无文件保存**: **绝不**将图表保存为物理文件。
-4.  **Base64 输出**:
-    *   绘图完成后，**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
-    *   最后，**必须**将字节流中的图片数据进行 Base64 编码，并将编码后的字符串作为**唯一的输出**打印到标准输出 (\`stdout\`)。
-    *   **不要**打印其他任何额外文本（例如 "Here is your chart:"）。
-
 **以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
 
 \`\`\`python
@@ -541,6 +540,7 @@ import seaborn as sns
 import pandas as pd
 import io
 import base64
+import json  # 必须导入json
 
 # --- 在此区域编写你的数据处理和绘图代码 ---
 # 示例：假设用户提供了以下数据
@@ -553,29 +553,87 @@ import base64
 # plt.ylabel('销量')
 # --- 绘图代码结束 ---
 
-# --- 以下是用于将图片转为 Base64 并输出的固定模板代码，请直接包含，不要修改 ---
+# --- 以下是用于将图片转为 Base64 并输出的固定模板代码，请直接包含 ---
 buf = io.BytesIO()
 plt.savefig(buf, format='png', bbox_inches='tight')
 buf.seek(0)
 image_base64 = base64.b64encode(buf.read()).decode('utf-8')
 buf.close()
 plt.close('all') # 关闭所有图表以释放内存，重要！
+
+# 使用JSON格式输出（推荐）
+result = {
+    "type": "image",
+    "title": "产品销量柱状图",
+    "image_base64": image_base64
+}
+print(json.dumps(result))
+\`\`\`
+
+**传统Base64格式（仍然支持）：**
+\`\`\`python
+# 如果使用传统Base64格式，直接输出字符串
 print(image_base64)
 \`\`\`
 
 ### 场景3: 生成Office文档和PDF文件
 
-**新增功能**：现在支持生成Excel、Word、PPT和PDF文件，前端会自动提供下载链接。
+**功能说明**：支持生成Excel、Word、PPT和PDF文件，前端会自动提供下载链接。
 
 **生成Office文档和PDF的规范：**
 
 1. **输出格式要求**：
-   - 必须输出一个JSON对象，包含以下字段：
-     - type: 文件类型，必须是 "excel"、"word"、"ppt" 或 "pdf" 之一
-     - data_base64: 文件的Base64编码字符串
-     - title: 文件的标题（可选，但建议提供）
+   - **必须使用JSON格式输出**，前端支持以下两种格式：
 
-2. **完整示例（生成Excel文件）：**
+   **格式一（标准格式 - 推荐）：**
+   \`\`\`python
+   {
+       "type": "word",  // 必须是 "excel", "word", "ppt", "pdf" 之一
+       "title": "文档标题", 
+       "data_base64": "UEsDBBQAAAA..."
+   }
+   \`\`\`
+
+   **格式二（自定义格式 - 也支持）：**
+   \`\`\`python
+      {
+       "file": {
+           "name": "hello.docx",
+           "content": "UEsDBBQAAAA...",
+           "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+       }
+   }
+   \`\`\`
+
+   - **重要**：必须使用 \`json.dumps()\` 将对象转换为JSON字符串输出
+   - **不要**直接输出纯base64字符串
+
+2. **完整示例（生成Word文档 - 标准格式）：**
+\`\`\`python
+from docx import Document
+import io
+import base64
+import json  # 必须导入json
+
+# 创建Word文档
+doc = Document()
+doc.add_paragraph('hello word')  # 按用户要求的内容
+
+# 保存到内存字节流
+output = io.BytesIO()
+doc.save(output)
+output.seek(0)
+
+# 编码为Base64并输出JSON格式
+result = {
+    "type": "word",
+    "title": "测试文档", 
+    "data_base64": base64.b64encode(output.read()).decode('utf-8')
+}
+print(json.dumps(result))  # 关键：必须使用json.dumps()
+\`\`\`
+
+3. **Excel文件生成示例：**
 \`\`\`python
 import pandas as pd
 import io
@@ -605,37 +663,6 @@ result = {
     "type": "excel",
     "title": "销售报告",
     "data_base64": excel_base64
-}
-print(json.dumps(result))
-\`\`\`
-
-3. **Word文档生成示例：**
-\`\`\`python
-from docx import Document
-import io
-import base64
-import json
-
-# 创建Word文档
-doc = Document()
-doc.add_heading('项目报告', 0)
-doc.add_paragraph('这是自动生成的报告内容。')
-doc.add_paragraph('包含详细的分析和总结。')
-
-# 保存到内存字节流
-output = io.BytesIO()
-doc.save(output)
-output.seek(0)
-
-# 编码为Base64
-word_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
-output.close()
-
-# 输出JSON对象
-result = {
-    "type": "word",
-    "title": "项目报告",
-    "data_base64": word_base64
 }
 print(json.dumps(result))
 \`\`\`
@@ -705,29 +732,58 @@ print(json.dumps(result))
 
 ## 前端处理逻辑说明
 
-### 图片处理（保持不变）
-- **Base64图片**：自动在聊天界面中显示
+### 图片处理
+- **JSON格式图片**：自动解析并在聊天界面中显示
+- **纯Base64图片**：自动检测并在聊天界面中显示（向后兼容）
 - **支持格式**：PNG、JPEG等
 - **显示方式**：内嵌在消息流中
 
-### 文件下载（新增功能）
+### 文件下载
 - **支持格式**：Excel (.xlsx)、Word (.docx)、PPT (.pptx)、PDF (.pdf)
 - **处理方式**：自动生成下载链接，用户点击即可下载
-- **用户体验**：带有文件类型图标和清晰的文件名
+- **用户体验**：带有文件类型图标、清晰的文件名和成功提示消息
+- **支持格式**：标准JSON格式和自定义JSON格式
 
 ### 错误处理
 - 如果代码执行出错，错误信息会显示在聊天界面
 - 文件生成失败时会显示具体的错误原因
+- 前端会自动滚动到最新内容
 
 ## 重要提醒
 
-1. **内存管理**：使用 \`plt.close('all')\` 释放图表内存
+1. **内存管理**：使用 \`plt.close('all')\` 释放图表内存，及时关闭文件流
 2. **编码规范**：确保Base64编码正确，避免数据损坏
 3. **输出纯净**：除Base64字符串或JSON对象外，不要输出其他文本
 4. **性能考虑**：大型文件可能会影响性能，建议控制文件大小
 5. **格式验证**：生成的Office文档和PDF应确保格式正确
+6. **指针重置**：在读取BytesIO内容前使用 \`.seek(0)\`
+7. **JSON输出**：所有文件输出都必须使用 \`json.dumps()\` 包装
+
+### 错误示例 vs 正确示例：
+
+**❌ 错误（不会被前端识别为文件）：**
+\`\`\`python
+print(base64.b64encode(buffer.read()).decode('utf-8'))
+\`\`\`
+
+**✅ 正确（会被前端识别并创建下载链接）：**
+\`\`\`python
+result = {
+    "type": "word",
+    "title": "测试文档",
+    "data_base64": base64.b64encode(buffer.read()).decode('utf-8')
+}
+print(json.dumps(result))
+\`\`\`
 
 现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。记住前端会自动处理图片显示和文件下载，你只需要专注于生成正确的代码和输出格式。
+
+**统一输出策略建议**：
+为了保持一致性，建议所有输出都使用JSON格式：
+- **图片**：\`{"type": "image", "title": "...", "image_base64": "..."}\`
+- **文件**：\`{"type": "word", "title": "...", "data_base64": "..."}\`
+
+这样前端处理逻辑会更加统一和清晰。
 
 ### 工具调用示例（Firecrawl）
 
@@ -831,7 +887,9 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 当调用 \`python_sandbox\` 工具时，你生成的 \`tool_calls\` 中 \`function.arguments\` 字段**必须**是一个**JSON 字符串**。该字符串在被解析后，必须是一个只包含 "code" 键的 JSON 对象。
 
 **✅ 正确的 \`arguments\` 字符串内容示例:**
-\`{"code": "print('Hello, world!')"}\`
+\`\`\`json
+{"code": "print('Hello, world!')"}
+\`\`\`
 
 *重要提示：模型实际生成的 \`arguments\` 值是一个字符串，例如：\`"{\\"code\\": \\"print('Hello!')\\"}"\`。*
 
@@ -845,7 +903,23 @@ When dealing with mathematics, physics, chemistry, biology, and other science ex
 
 当用户明确要求数据可视化，或你认为通过图表展示数据更清晰时，你必须使用 \`python_sandbox\` 工具生成 Python 代码来创建图表。
 
-**绝不**在最终回复中重复返回的Base64 编码，前端回自动处理。只需告诉用户图片已生成！
+**请严格遵循以下代码生成规范：**
+
+1. **导入和后端设置**: 你的 Python 代码必须在开头包含  \`import matplotlib; matplotlib.use('Agg')\`以确保在无头服务器环境正常运行
+2. **库使用**: 优先使用  \`matplotlib.pyplot \` 和 \`seaborn \` 进行绘图。 \`pandas \`可用于数据处理
+3. **无文件保存**: **绝不**将图表保存为物理文件。**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
+4. **输出格式要求**：
+   - **推荐使用JSON格式**（与文件输出保持一致）：
+      - **推荐使用JSON格式**（与文件输出保持一致）：
+    \`\`\`python
+     result = {
+         "type": "image",
+         "title": "图表标题",
+         "image_base64": "iVBORw0KGgoAAAANSUhEUg..."
+     }
+     print(json.dumps(result))
+     \`\`\`
+   - **或者继续使用纯Base64字符串**（保持向后兼容）
 
 # --- 以下是用于将图片转为 Base64 并输出的固定模板代码部分，请每次都直接包含，不要修改，确保内存释放，运行成功。
 
@@ -859,16 +933,6 @@ plt.close('all') # 关闭所有图表以释放内存，重要！
 print(image_base64)
 \`\`\`
 
-**请严格遵循以下代码生成规范：**
-
-1.  **导入和后端设置**: 你的 Python 代码必须在开头包含 \`import matplotlib; matplotlib.use('Agg')\` 以确保在无头服务器环境正常运行。
-2.  **库使用**: 优先使用 \`matplotlib.pyplot\` 和 \`seaborn\` 进行绘图。\`pandas\` 可用于数据处理。
-3.  **无文件保存**: **绝不**将图表保存为物理文件。
-4.  **Base64 输出**:
-    *   绘图完成后，**必须**将图表保存到一个内存字节流（\`io.BytesIO\`）中，格式为 PNG。
-    *   最后，**必须**将字节流中的图片数据进行 Base64 编码，并将编码后的字符串作为**唯一的输出**打印到标准输出 (\`stdout\`)。
-    *   **不要**打印其他任何额外文本（例如 "Here is your chart:"）。
-
 **以下是一个完整且正确的代码结构示例，请严格遵守来生成你的 Python 代码：**
 
 \`\`\`python
@@ -879,6 +943,7 @@ import seaborn as sns
 import pandas as pd
 import io
 import base64
+import json  # 必须导入json
 
 # --- 在此区域编写你的数据处理和绘图代码 ---
 # 示例：假设用户提供了以下数据
@@ -891,30 +956,62 @@ import base64
 # plt.ylabel('销量')
 # --- 绘图代码结束 ---
 
-# --- 以下是用于将图片转为 Base64 并输出的固定模板代码，请直接包含，不要修改 ---
+# --- 以下是用于将图片转为 Base64 并输出的固定模板代码，请直接包含 ---
 buf = io.BytesIO()
 plt.savefig(buf, format='png', bbox_inches='tight')
 buf.seek(0)
 image_base64 = base64.b64encode(buf.read()).decode('utf-8')
 buf.close()
 plt.close('all') # 关闭所有图表以释放内存，重要！
+
+# 使用JSON格式输出（推荐）
+result = {
+    "type": "image",
+    "title": "产品销量柱状图",
+    "image_base64": image_base64
+}
+print(json.dumps(result))
+\`\`\`
+
+**传统Base64格式（仍然支持）：**
+\`\`\`python
+# 如果使用传统Base64格式，直接输出字符串
 print(image_base64)
 \`\`\`
 
 ### 场景3: 生成Office文档和PDF文件
 
-**新增功能**：现在支持生成Excel、Word、PPT和PDF文件，前端会自动提供下载链接。
+**功能说明**：支持生成Excel、Word、PPT和PDF文件，前端会自动提供下载链接。
 
 **生成Office文档和PDF的规范：**
 
 1. **输出格式要求**：
-   - 必须输出一个JSON对象，包含以下字段：
-     - type: 文件类型，必须是 "excel"、"word"、"ppt" 或 "pdf" 之一
-     - data_base64: 文件的Base64编码字符串
-     - title: 文件的标题（可选，但建议提供）
-**重要**：必须使用 json.dumps() 将对象转换为JSON字符串输出，不要直接输出纯base64字符串。
+   - **必须使用JSON格式输出**，前端支持以下两种格式：
 
-**示例代码**：
+   **格式一（标准格式 - 推荐）：**
+   \`\`\`python
+   {
+       "type": "word",  // 必须是 "excel", "word", "ppt", "pdf" 之一
+       "title": "文档标题", 
+       "data_base64": "UEsDBBQAAAA..."
+   }
+   \`\`\`
+
+   **格式二（自定义格式 - 也支持）：**
+   \`\`\`python
+      {
+       "file": {
+           "name": "hello.docx",
+           "content": "UEsDBBQAAAA...",
+           "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+       }
+   }
+   \`\`\`
+
+   - **重要**：必须使用 \`json.dumps()\` 将对象转换为JSON字符串输出
+   - **不要**直接输出纯base64字符串
+
+2. **完整示例（生成Word文档 - 标准格式）：**
 \`\`\`python
 from docx import Document
 import io
@@ -936,36 +1033,10 @@ result = {
     "title": "测试文档", 
     "data_base64": base64.b64encode(output.read()).decode('utf-8')
 }
-print(json.dumps(result))  # 关键：必须使用json.dumps()\`\`\`
+print(json.dumps(result))  # 关键：必须使用json.dumps()
+\`\`\`
 
-**注意**：请勿直接输出纯base64字符串，必须使用json.dumps()将对象转换为JSON字符串并输出。
-
-**关键注意事项**：
-
-必须使用JSON格式：所有文件输出都必须包装在JSON对象中
-
-必须导入json模块：import json 并在最后使用 json.dumps()
-
-不要直接打印base64：直接打印base64字符串不会被前端识别为文件
-
-确保指针重置：在读取BytesIO内容前使用 .seek(0)
-
-错误示例 vs 正确示例：
-
-❌ 错误（不会被前端识别）：
-python
-print(base64.b64encode(buffer.read()).decode('utf-8'))
-
-✅ 正确（会被前端识别并创建下载链接）：
-python
-result = {
-    "type": "word",
-    "title": "测试文档",
-    "data_base64": base64.b64encode(buffer.read()).decode('utf-8')
-}
-print(json.dumps(result))
-
-2. **完整示例（生成Excel文件）：**
+3. **Excel文件生成示例：**
 \`\`\`python
 import pandas as pd
 import io
@@ -995,37 +1066,6 @@ result = {
     "type": "excel",
     "title": "销售报告",
     "data_base64": excel_base64
-}
-print(json.dumps(result))
-\`\`\`
-
-3. **Word文档生成示例：**
-\`\`\`python
-from docx import Document
-import io
-import base64
-import json
-
-# 创建Word文档
-doc = Document()
-doc.add_heading('项目报告', 0)
-doc.add_paragraph('这是自动生成的报告内容。')
-doc.add_paragraph('包含详细的分析和总结。')
-
-# 保存到内存字节流
-output = io.BytesIO()
-doc.save(output)
-output.seek(0)
-
-# 编码为Base64
-word_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
-output.close()
-
-# 输出JSON对象
-result = {
-    "type": "word",
-    "title": "项目报告",
-    "data_base64": word_base64
 }
 print(json.dumps(result))
 \`\`\`
@@ -1095,29 +1135,58 @@ print(json.dumps(result))
 
 ## 前端处理逻辑说明
 
-### 图片处理（保持不变）
-- **Base64图片**：自动在聊天界面中显示
+### 图片处理
+- **JSON格式图片**：自动解析并在聊天界面中显示
+- **纯Base64图片**：自动检测并在聊天界面中显示（向后兼容）
 - **支持格式**：PNG、JPEG等
 - **显示方式**：内嵌在消息流中
 
-### 文件下载（新增功能）
+### 文件下载
 - **支持格式**：Excel (.xlsx)、Word (.docx)、PPT (.pptx)、PDF (.pdf)
 - **处理方式**：自动生成下载链接，用户点击即可下载
-- **用户体验**：带有文件类型图标和清晰的文件名
+- **用户体验**：带有文件类型图标、清晰的文件名和成功提示消息
+- **支持格式**：标准JSON格式和自定义JSON格式
 
 ### 错误处理
 - 如果代码执行出错，错误信息会显示在聊天界面
 - 文件生成失败时会显示具体的错误原因
+- 前端会自动滚动到最新内容
 
 ## 重要提醒
 
-1. **内存管理**：使用 \`plt.close('all')\` 释放图表内存
+1. **内存管理**：使用 \`plt.close('all')\` 释放图表内存，及时关闭文件流
 2. **编码规范**：确保Base64编码正确，避免数据损坏
 3. **输出纯净**：除Base64字符串或JSON对象外，不要输出其他文本
 4. **性能考虑**：大型文件可能会影响性能，建议控制文件大小
 5. **格式验证**：生成的Office文档和PDF应确保格式正确
+6. **指针重置**：在读取BytesIO内容前使用 \`.seek(0)\`
+7. **JSON输出**：所有文件输出都必须使用 \`json.dumps()\` 包装
+
+### 错误示例 vs 正确示例：
+
+**❌ 错误（不会被前端识别为文件）：**
+\`\`\`python
+print(base64.b64encode(buffer.read()).decode('utf-8'))
+\`\`\`
+
+**✅ 正确（会被前端识别并创建下载链接）：**
+\`\`\`python
+result = {
+    "type": "word",
+    "title": "测试文档",
+    "data_base64": base64.b64encode(buffer.read()).decode('utf-8')
+}
+print(json.dumps(result))
+\`\`\`
 
 现在，请根据用户的需求和提供的任何数据，选择合适的工具并生成响应。记住前端会自动处理图片显示和文件下载，你只需要专注于生成正确的代码和输出格式。
+
+**统一输出策略建议**：
+为了保持一致性，建议所有输出都使用JSON格式：
+- **图片**：\`{"type": "image", "title": "...", "image_base64": "..."}\`
+- **文件**：\`{"type": "word", "title": "...", "data_base64": "..."}\`
+
+这样前端处理逻辑会更加统一和清晰。
 
 ### 工具调用示例（Tavily Search）
 

@@ -2,658 +2,151 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 1. Project Overview
+## Project Overview
 
-This project is a sophisticated **AI Gateway and Web Application** built entirely on **Cloudflare Workers**. It serves a single-page frontend application and provides a robust backend that acts as a multi-provider API proxy for various AI services.
+This is an **AI Gateway and Web Application** built entirely on **Cloudflare Workers** that serves as a unified interface for multiple AI services (Gemini, Qwen, ZhipuAI, SiliconFlow) with capabilities for chat completions, audio transcription, translation, image generation, and advanced chess AI.
 
-The primary goal is to offer a unified interface for interacting with different AI models for tasks like chat completions, audio transcription, translation, and image generation.
+## Core Architecture
 
-## 2. Core Architecture & Key Files
+### Entry Point
+- **`src/worker.js`** - Cloudflare Worker entry point and central router
+  - WebSocket proxy for Gemini real-time communication
+  - Static file server from `src/static/`
+  - AI Gateway API proxy routing to downstream services
+  - History management API with KV storage
+  - MCP tool proxy endpoint (`/api/mcp-proxy`)
 
-The `src` directory is the heart of the application, containing all source code for both the Cloudflare Worker backend and the frontend static assets. Its structure is modular, organizing functionalities into logical subdirectories for clarity and maintainability.
+### Frontend Structure
+- **`src/static/`** - Single-page application assets
+  - **`index.html`** - Main UI entry point (Font Awesome icons)
+  - **`src/static/js/main.js`** - Main application logic and orchestrator
 
-### 2.1 Backend (Cloudflare Worker)
+## Key Modules & Features
 
--   **Entry Point**: [`src/worker.js`](src/worker.js:1)
-    -   This is the primary entry point for the Cloudflare Worker. It acts as the central router and orchestrator for all incoming requests.
-    -   **Core Functionality**: The `fetch` method within `worker.js` dispatches requests to specialized handler functions based on URL paths and request methods.
-    -   **Routing Logic**:
-        -   **WebSocket Proxy**: Handles `Upgrade: websocket` headers for real-time communication directly with `generativelanguage.googleapis.com` (Gemini models), enabling streaming responses.
-        -   **Static File Server**: Serves frontend assets from `src/static/`, dynamically retrieving `index.html` and other static files from the `env.__STATIC_CONTENT` KV namespace binding.
-        -   **AI Gateway (API Proxy)**: Routes diverse API requests to various downstream AI service providers. This is a crucial component for interoperability with different AI models. Key routes include:
-            -   `/chat/completions` or `/api/request`: Forwards chat completion and general AI requests.
-            -   `/api/transcribe-audio`: Handles audio transcription requests, primarily via SiliconFlow.
-            -   `/api/translate`: Orchestrates translation tasks, leveraging chat completion endpoints of various providers.
-            -   `/api/generate-image`: Manages image generation requests, typically routed to SiliconFlow.
-            -   `/api/mcp-proxy`: A dedicated proxy for Multi-Cloud Platform (MCP) tool invocations. It receives tool call requests (containing `tool_name` and `parameters`) from the frontend and dispatches them to specific backend tool handlers.
-        -   **History API**: Routes prefixed with `/api/history/` manage user chat sessions, including saving, loading, pinning, editing titles, and deleting. It uses Cloudflare KV storage (`env.GEMINICHAT_HISTORY_KV`) for persistence. A notable feature is `/api/history/generate-title`, which leverages a Gemini model to automatically summarize chat content into a title.
+### Backend (Cloudflare Worker)
 
-### 2.1.1 MCP Tool Handlers (`src/mcp_proxy/handlers/`)
+#### MCP Tool Handlers (`src/mcp_proxy/handlers/`)
+- **`tavily-search.js`** - Web search proxy
+- **`python-sandbox.js`** - Secure code execution with robust JSON parsing
+- **`firecrawl.js`** - Web scraping/crawling proxy
+- **`stockfish.js`** - Chess engine analysis proxy
 
--   **[`tavily-search.js`](src/mcp_proxy/handlers/tavily-search.js)**:
-    -   **Function**: This is the backend processor for the `tavily_search` tool. It receives `tool_name` and `parameters` from `/api/mcp-proxy`, then forwards the request to an external Python toolset service (`https://tools.10110531.xyz/api/v1/execute_tool`) to execute the actual Tavily search.
-    -   **Key Process**: Builds a request body containing `tool_name` and `parameters`, then sends it to the Python API using `fetch` and processes the response.
+#### External Tool Services
+- **Python Sandbox Service (`/tools/`)** - FastAPI/Docker service for secure code execution
+  - `code_interpreter.py` - Core FastAPI logic with matplotlib support
+  - `docker-compose.yml` - Service configuration
+  - `Dockerfile` - Data science libraries pre-installed
 
--   **[`python-sandbox.js`](src/mcp_proxy/handlers/python-sandbox.js)**:
-    -   **Function**: This is the backend processor for the `python_sandbox` tool. It receives code execution requests from models and safely forwards them to an external standalone Python sandbox service.
-    -   **Key Implementation**: The core of this file is a "never-crash" parameter parser (`parseWithRepair`). Since AI models sometimes generate malformed JSON parameters, this function ensures robustness through multi-layer defense mechanisms:
-        1.  **Standard Parsing**: Attempts to parse input as standard JSON and can handle multi-level nested stringification issues.
-        2.  **Regex Rescue**: If standard parsing fails, it uses regular expressions to try to "rescue" the core `code` field content from chaotic strings.
-        3.  **Safe Fallback**: If all parsing and rescue attempts fail, it generates a Python code object containing error information to return to the model instead of throwing an exception.
-    -   **Design Purpose**: This design ensures the Cloudflare Worker never crashes due to model parameter format issues, solving the root cause that leads models into retry loops. It confines the error handling loop between the frontend and the model.
+### Frontend JavaScript Modules
 
--   **[`firecrawl.js`](src/mcp_proxy/handlers/firecrawl.js)**:
-    -   **Function**: This is the backend processor for the `firecrawl` tool. It receives requests from `/api/mcp-proxy`, validates `mode` and `parameters`, then forwards the request to an external Python toolset service (`https://tools.10110531.xyz/api/v1/execute_tool`) to execute actual Firecrawl operations (such as scraping, searching, or crawling).
-    -   **Key Process**: Validates input parameters, builds the request body, then sends it to the Python API using `fetch` and processes the response.
+#### Core Communication
+- **`src/static/js/chat/chat-api-handler.js`** - HTTP SSE stream processing, unified tool calling
+- **`src/static/js/core/websocket-client.js`** - Gemini WebSocket real-time communication
+- **`src/static/js/core/api-handler.js`** - Centralized HTTP API handler
 
--   **[`stockfish.js`](src/mcp_proxy/handlers/stockfish.js)**:
-    -   **Function**: This is the backend processor for the `stockfish_analyzer` tool. It receives requests from `/api/mcp-proxy`, validates `fen` and `mode` parameters, then forwards the request to an external Python toolset service (`https://tools.10110531.xyz/api/v1/execute_tool`) to execute Stockfish chess engine analysis.
-    -   **Key Process**: Validates the validity of `fen` and `mode` parameters (`mode` must be one of `get_best_move`, `get_top_moves`, or `evaluate_position`), builds a request body containing `tool_name: 'stockfish_analyzer'` and complete `parameters`, then sends it to the Python API using `fetch` and processes the response.
+#### Audio Processing (`src/static/js/audio/`)
+- **`audio-recorder.js`** - Microphone capture with worklet processing
+- **`audio-streamer.js`** - Real-time audio playback
+- **`worklets/audio-processing.js`** - Audio format conversion worklet
+- **`worklets/vol-meter.js`** - Volume visualization worklet
 
-### 2.1.2 External Tool Services (Backend)
+#### Vision Module (`src/static/js/vision/`)
+- **`vision-core.js`** - **MAJOR UPDATE**: Now uses unified `ChatApiHandler` for API calls
+  - Dedicated `ChatApiHandler` instance for Vision mode
+  - Independent history management via `vision-history-manager.js`
+  - Complete tool calling and reasoning chain support
+  - Chess Master AI integration
 
-In addition to the logic processed in the Cloudflare Worker, some tools rely on external backend services running on independent servers.
+#### Chess Module (`src/static/js/chess/`) - **NEW**
+- **`chess-core.js`** - Board rendering, UI, game state management
+- **`chess-ai-enhanced.js`** - Multi-stage AI analysis and move execution
+- **`chess-rule.js`** - Complete chess rules engine with FEN support
+- Shadow engine using chess.js for validation
 
--   **Python Sandbox Service (`/tools/`)**
-    -   **Function**: This is an independent backend service based on FastAPI and Docker, providing a secure, isolated environment to execute arbitrary Python code generated by AI models. It has now been upgraded to a fully-featured **data science code interpreter**, supporting data visualization using libraries like [`matplotlib`](https://matplotlib.org/) and [`seaborn`](https://seaborn.pydata.org/), and can generate Base64-encoded PNG images.
-    -   **Key Files**:
-        -   **[`code_interpreter.py`](tools/code_interpreter.py)**: Contains the core logic of the FastAPI application. It receives code snippets, uses the Docker SDK to create a temporary, disposable Docker container to execute the code, captures `stdout`, `stderr`, and now specifically handles Base64-encoded image output. To solve the issue of `matplotlib` being unable to create cache in a read-only filesystem, it configures the `MPLCONFIGDIR` environment variable to `/tmp` and uses `tmpfs` to mount the `/tmp` directory as a memory filesystem.
-        -   **[`docker-compose.yml`](tools/docker-compose.yml)**: Used to define and run the sandbox service. Configured with `restart: unless-stopped` policy to ensure the service automatically recovers after server restarts or unexpected crashes.
-        -   **[`Dockerfile`](tools/Dockerfile)**: Customizes the Docker image, pre-installing a series of key data science libraries on top of `python:3.11-slim`, including `numpy`, `pandas`, `matplotlib`, `seaborn`, and `openpyxl`.
-    -   **Key Upgrades**:
-        -   **Data Science Library Pre-installation**: The service now comes pre-installed with `numpy`, `pandas`, `matplotlib`, `seaborn`, and `openpyxl`, significantly enhancing its capabilities in data analysis, processing, and visualization.
-        -   **Resource Increase and Environment Configuration**: To support these libraries and `matplotlib` caching, the memory limit for each container has been increased from `512MB` to `1GB`. Simultaneously, through the `MPLCONFIGDIR=/tmp` environment variable and `tmpfs={'/tmp': 'size=100M,mode=1777'}` mount, `matplotlib` is ensured to have a writable workspace.
-        -   **Synchronous Execution**: The initial implementation used asynchronous Docker `run(detach=True)`, which caused a race condition: the application sometimes tried to fetch logs after the container had finished executing and was automatically deleted, resulting in a "404 Container Not Found" error.
-        -   **Solution**: We modified it to synchronous execution `run(detach=False)`. This simplifies the logic, as the program waits for code execution to complete and directly obtains output from the return value of the `run` command, completely resolving this race condition.
+#### Tool Management
+- **`src/static/js/tools/tool-manager.js`** - Universal tool manager (instantiated twice)
+  - **WebSocket Tools**: Local execution (Google Search, Weather)
+  - **HTTP Tools**: MCP proxy execution (Python Sandbox, Tavily, Firecrawl, Stockfish)
+- **`src/static/js/tools_mcp/tool-definitions.js`** - MCP tool definitions
 
-### 2.2 Frontend (Static Assets)
+#### History Management
+- **`src/static/js/history/history-manager.js`** - Chat mode history
+- **`src/static/js/history/vision-history-manager.js`** - Independent Vision history
 
--   **Root Directory**: `src/static/`
-    -   This directory contains all static files for the single-page application, which are served directly by the Cloudflare Worker.
-    -   **Main Page**: [`index.html`](src/static/index.html:1) is the entry point for the user interface.
-     -   **Icons**: The user interface now uses [Font Awesome](https://fontawesome.com/) for all icons, loaded via a reliable CDN link in [`index.html`](src/static/index.html:1). This replaces the previous dependency on Google Fonts (Material Symbols) to ensure stable and fast icon loading in all network environments.
-    -   **CSS**: `src/static/css/` holds compiled CSS files, with `style.css` being the main stylesheet. If Sass is used, `src/static/scss` is the source.
-    -   **JavaScript Modules**: `src/static/js/` is a highly modularized directory containing the client-side logic.
-        -   [`main.js`](src/static/js/main.js): The main client-side application logic and entry point for the frontend. This file is responsible for initializing and managing the core UI components, handling user interactions, and orchestrating communication with the backend. It integrates various modules such as `AttachmentManager`, `AudioRecorder`, `AudioStreamer`, `ChatApiHandler`, `chatUI`, `CONFIG`, `initializePromptSelect`, `MultimodalLiveClient`, `HistoryManager`, `ScreenHandler`, `VideoHandler`, `ToolManager`, `initializeTranslationCore`, `Logger`, and `initializeVisionCore`. It also manages global event listeners, connection status (WebSocket and HTTP), UI state updates, and handles the overall application flow.
-        -   **Audio Module (`src/static/js/audio/`)**: Manages all client-side audio functionalities, crucial for voice input/output in the application.
-            -   [`audio-recorder.js`](src/static/js/audio/audio-recorder.js): Handles microphone audio capture, processing, and encoding. It uses Web Audio API and `audio-processing.js` worklet to prepare audio chunks (e.g., as Base64 or raw ArrayBuffer) for sending to the backend, especially relevant for WebSocket-based transcription services.
-            -   [`audio-streamer.js`](src/static/js/audio/audio-streamer.js): Manages the playback of streamed audio data received from the backend. It queues, schedules, and plays audio buffers, and can integrate with audio worklets like `vol-meter.js` for real-time effects or visualization. This is key for playing back AI-generated speech.
-            -   `worklets/`: Contains Web Audio API Worklet processors that run in a separate thread, preventing UI blocking during intensive audio operations.
-                -   [`audio-processing.js`](src/static/js/audio/worklets/audio-processing.js): A custom AudioWorkletProcessor used by `audio-recorder.js` to convert raw microphone audio (Float32Array) to Int16Array format and chunk it for efficient transmission.
-                -   [`vol-meter.js`](src/static/js/audio/worklets/vol-meter.js): An AudioWorkletProcessor that calculates the real-time volume level (RMS) of an audio stream, useful for visual feedback during recording or playback.
-        -   **Agent Module (`src/static/js/agent/`)**: Contains logic for integrating with AI agents and proxying their tool calls.
-            -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): Acts as a client-side adapter for Multi-Cloud Platform (MCP) tool calls initiated by Qwen models. It receives tool call requests (containing `tool_name` and `parameters`) from `chat-api-handler.js` and proxies them to the `/api/mcp-proxy` endpoint in the backend. This is crucial for enabling flexible AI agent capabilities within the application.
-        -   `src/static/js/attachments/`: Handles file attachment functionalities, like `file-attachment.js`.
-            -   [`file-attachment.js`](src/static/js/attachments/file-attachment.js): Defines the `AttachmentManager` class, which manages all logic for file attachments (selection, validation, Base64 conversion, and UI preview display) for both single-file ("chat" mode) and multi-file ("vision" mode) scenarios. **ENHANCED**: Now integrates with `ImageCompressor` to automatically compress images >1MB across all modes, providing compression feedback and maintaining file type consistency. Features `toggleCompression()` method for runtime control.
-        -   **Chat Module (`src/static/js/chat/`)**: Contains the core logic for managing chat UI, API interactions, and processing AI responses, including tool calls.
-            -   [`chat-api.js`](src/static/js/chat/chat-api.js): Serves as the high-level interface for all frontend-to-backend chat API communications. It handles sending messages, initiating and processing Server-Sent Events (SSE) streams from the AI gateway, and recursively managing conversational turns, especially after tool executions. It's decoupled from the UI.
-            -   [`chat-api-handler.js`](src/static/js/chat/chat-api-handler.js): Implements the business logic for processing streaming chat completion responses. It parses streamed data, detects and dispatches both Gemini function calls and Qwen Multi-Cloud Platform (MCP) tool calls. For Qwen MCP tool calls, it robustly parses the tool arguments and constructs a `tool_name` and `parameters` payload before sending it to the `/api/mcp-proxy` backend proxy via `QwenAgentAdapter`. It orchestrates UI updates and manages the chat history state.
-            -   [`chat-ui.js`](src/static/js/chat/chat-ui.js): Dedicated to rendering and managing the visual elements of the chat interface. It handles displaying user and AI messages (including streamed content, reasoning, and tool call statuses), audio messages, and system logs. It provides functions for UI initialization, message logging, and scrolling.
-        -   **Config Module (`src/static/js/config/`)**: Contains configuration files and prompt management logic.
-            -   [`config.js`](src/static/js/config/config.js): Defines the application's global configurations, including available AI models (Gemini, Qwen, etc.), API versions, default models, system prompt options, audio settings, translation models, and vision models. **ENHANCED**: Now includes specialized `VISION.PROMPTS` array with chess-specific prompt configurations: `chess_teacher` (for gameplay guidance) and `chess_summary` (for post-game analysis). Features intelligent prompt switching and dual-mode chess instruction capabilities.
-            -   [`prompt-manager.js`](src/static/js/config/prompt-manager.js): Manages the frontend's prompt mode selection and system instruction updates. It retrieves the appropriate system prompt from `config.js` based on the user's selection in a dropdown menu, updates a hidden textarea with this prompt, and handles local storage to remember user preferences.
-        -   **Core Module (`src/static/js/core/`)**: Contains core utility functions, API handlers, and WebSocket client logic.
-            -   [`api-handler.js`](src/static/js/core/api-handler.js): Provides a centralized handler for making HTTP API requests, standardizing JSON POST requests and handling streaming responses (Server-Sent Events). It manages headers, error responses, and ensures robust communication with backend services.
-            -   [`websocket-client.js`](src/static/js/core/websocket-client.js): Manages WebSocket connections for real-time interaction with the Gemini 2.0 Flash Multimodal Live API. It handles connection setup, sending and receiving messages (including audio and video chunks), processing tool calls, and emitting various connection-related events.
-            -   [`worklet-registry.js`](src/static/js/core/worklet-registry.js): Provides a registry for managing Web Audio API worklets. It facilitates the dynamic creation of worklet URLs from source code, enabling the loading and use of custom audio processors in a separate thread to prevent UI blocking.
-        -   **History Module (`src/static/js/history/`)**: Manages client-side chat history interactions with the backend history API.
-            -   [`history-manager.js`](src/static/js/history/history-manager.js): Encapsulates all functionality related to chat history management, including loading, saving, pinning, editing titles, and deleting chat sessions. It interacts with both `localStorage` for session metadata and the backend API for full chat history data, ensuring persistence and proper display of chat sessions.
-            -   **[`vision-history-manager.js`](src/static/js/history/vision-history-manager.js)**: **NEW MODULE** - Dedicated history manager for Vision mode, providing independent session management, message storage, and local storage functionality. Created via the `createVisionHistoryManager()` factory function, working in conjunction with the Vision mode `ChatApiHandler` instance.
-        -   **Image Gallery Module (`src/static/js/image-gallery/`)**: Manages image display and modal interactions.
-            -   [`image-manager.js`](src/static/js/image-gallery/image-manager.js): Provides functions to initialize the image modal, open it with specific image data (Base64 source, title, dimensions, size, type), and handle actions like copying image URL and downloading.
-        -   **Media Module (`src/static/js/media/`)**: Deals with screen and video handling.
-            -   [`screen-handlers.js`](src/static/js/media/screen-handlers.js): Manages screen sharing logic, including starting/stopping screen capture and updating the UI. It uses `ScreenRecorder` to capture frames and sends them to the WebSocket client, with throttling to control the frame rate.
-            -   [`video-handlers.js`](src/static/js/media/video-handlers.js): Manages camera control logic, including starting/stopping video streams and updating the UI. It utilizes `VideoManager` to handle video capture and streaming, and supports toggling between front and rear cameras on mobile devices.
-        -   **Tools Module (`src/static/js/tools/`)**: Implements client-side tools and their management.
-            -   [`google-search.js`](src/static/js/tools/google-search.js): Represents a placeholder tool for performing Google searches. It provides the tool declaration for the Gemini API, but the actual search functionality is handled server-side by the Gemini API itself.
-            -   [`tool-manager.js`](src/static/js/tools/tool-manager.js): Manages the registration and execution of various tools. It registers default tools like Google Search and Weather, provides their declarations to the Gemini API, and handles incoming tool call requests from the API by executing the corresponding tool's logic.
-            -   [`weather-tool.js`](src/static/js/tools/weather-tool.js): Represents a mock tool for retrieving weather forecasts. It defines a function `get_weather_on_date` with parameters for location and date, and returns simulated weather data for demonstration purposes.
-        -   **Translation Module (`src/static/js/translation/`)**: Contains logic for translation, including OCR capabilities.
-            -   [`translation-core.js`](src/static/js/translation/translation-core.js): Provides the core logic for translation functionality, handling UI initialization, API calls to backend translation endpoints, and mode switching within the application. It manages language and model selection, and coordinates voice input for transcription before translation.
-            -   [`translation-audio.js`](src/static/js/translation/translation-audio.js): **NEW MODULE** - Responsible for voice input processing in translation mode. It provides the same user experience as chat mode, supporting hold-to-record, converting PCM data to WAV format, and sending audio to the `/api/transcribe-audio` backend API for speech-to-text conversion.
-            -   [`translation-ocr.js`](src/static/js/translation/translation-ocr.js): Manages the OCR (Optical Character Recognition) process for translation functionality. It handles user image uploads, converts images to Base64, sends them to the backend for text recognition using Gemini models, and displays the extracted text in the input area. It also controls the visibility of the OCR button based on the selected translation model.
-        -   **Utils Module (`src/static/js/utils/`)**: Contains general utility functions, error handling, and logging.
-            -   [`error-boundary.js`](src/static/js/utils/error-boundary.js): Defines an error boundary for handling various types of application errors. It provides a set of predefined `ErrorCodes` and a custom `ApplicationError` class for consistent and structured error reporting throughout the application.
-            -   [`logger.js`](src/static/js/utils/logger.js): A singleton logger that logs messages to the console and emits events for real-time logging. It also stores a limited number of logs in memory and provides a method to export them, aiding in debugging and monitoring.
-            -   [`utils.js`](src/static/js/utils/utils.js): Provides common utility functions, such as converting Blob objects to JSON and base64 strings to ArrayBuffers, which are essential for data manipulation within the frontend.
-        -   **Video Module (`src/static/js/video/`)**: Manages video recording and streaming.
-            -   [`screen-recorder.js`](src/static/js/video/screen-recorder.js): Implements a screen recorder for capturing and processing screen frames. It supports previewing the screen capture and sending frames to a callback function, with configurable FPS, quality, and frame size.
-            -   [`video-manager.js`](src/static/js/video/video-manager.js): Manages video capture and processing from a camera, including motion detection and frame preview. It orchestrates the `VideoRecorder` to capture frames, applies motion detection to optimize frame sending, and handles camera toggling (front/rear).
-            -   [`video-recorder.js`](src/static/js/video/video-recorder.js): Implements a video recorder for capturing and processing video frames from a camera. It supports previewing the video stream and sending frames as base64 encoded JPEG data to a callback function, with configurable FPS and quality.
-        -   **Vision Module (`src/static/js/vision/`)**: Contains core logic for vision-related functionalities, now enhanced with **Chess Master AI** capabilities.
-            -   **[`vision-core.js`](src/static/js/vision/vision-core.js)**: **MAJOR ARCHITECTURAL UPDATE** - Now fully reuses the `ChatApiHandler` class to handle Vision mode API calls, achieving a unified streaming experience with Chat mode. Key features include:
-                - **Dedicated API Handler**: Uses an independent `ChatApiHandler` instance (`visionApiHandler`) to handle Vision mode requests
-                - **Independent History Management**: Integrates `vision-history-manager.js` to provide independent session and message storage
-                - **Unified Tool Calling**: Supports complete tool calling, reasoning chains, and search functionality through `ChatApiHandler`
-                - **Chess Integration**: Retains complete Chess Master AI functionality, including game summarization and analysis
-                - **UI Adapter**: Provides Vision-specific UI update interface through `createVisionUIAdapter()`
-                - **History Cleanup**: New `clearVisionHistory()` function for external cleanup of Vision chat history
-        -   **Chess Module (`src/static/js/chess/`)**: **NEW MODULE** - Complete chess functionality implementation, including board rendering, rule engine, and AI enhancement.
-            -   **[`chess-core.js`](src/static/js/chess/chess-core.js)**: Core logic for chess functionality, handling board rendering, piece movement, and FEN generation. Refactored to use separate ChessRules module for game rules.
-                - **Shadow Engine**: Introduces chess.js as a shadow engine for validation and state synchronization
-                - **AI Integration**: Integrates with `chess-ai-enhanced.js` to provide AI move analysis and execution
-                - **Game State Management**: Complete game state management, including history, undo/redo, and local storage
-                - **User Interface**: Complete board UI, including piece selection, move highlighting, and game end detection
-            -   **[`chess-ai-enhanced.js`](src/static/js/chess/chess-ai-enhanced.js)**: Enhanced chess AI module providing multi-stage AI analysis and move execution.
-                - **Multi-stage Analysis**: First stage gets AI detailed analysis, second stage precisely extracts best moves
-                - **Intelligent Degradation**: Generates alternative moves when preferred moves fail
-                - **Move Validation**: Comprehensive move validation and legality checking
-                - **Vision Integration**: Deep integration with Vision module to display analysis process in visual chat
-            -   **[`chess-rule.js`](src/static/js/chess/chess-rule.js)**: Chess rules module containing all chess rule logic, including piece movement, special moves, and game state validation.
-                - **Piece Movement Rules**: Legal move rule validation for all pieces
-                - **Special Moves**: Special rules like castling, en passant, pawn promotion
-                - **Game State Checking**: Check, checkmate, draw condition detection
-                - **FEN Generation**: Generate and validate standard FEN strings
-        -   **Utils Module Enhanced**: New image compression capabilities added.
-            -   [`image-compressor.js`](src/static/js/utils/image-compressor.js): **NEW MODULE** - Implements intelligent image compression with 1MB threshold using Canvas API. Features include format preservation, configurable quality settings, and automatic compression for all modes (not just vision). Supports both JPEG conversion and original format retention.
+#### Media Processing
+- **`src/static/js/video/video-manager.js`** - Camera capture with motion detection
+- **`src/static/js/video/screen-recorder.js`** - Screen sharing functionality
 
-### 2.3 Cloudflare Configuration & Dependencies
+#### Utilities
+- **`src/static/js/utils/image-compressor.js`** - **NEW**: Intelligent image compression (>1MB)
+- **`src/static/js/attachments/file-attachment.js`** - Enhanced with compression integration
 
--   **Cloudflare Configuration**: [`wrangler.toml`](wrangler.toml:1)
-    -   Defines the project name, the `src/worker.js` as the entry point, compatibility settings, and the `src/static` directory as the asset directory for Cloudflare deployment. This file is crucial for how the Worker is deployed and interacts with Cloudflare services like KV storage.
+## API Endpoints
 
--   **Dependencies**: [`package.json`](package.json:1)
-    -   Lists all Node.js dependencies required for development, testing, and building assets. This includes `wrangler` for local development and deployment, `vitest` for testing, and potentially `sass` for CSS pre-processing.
+### Core Gateway
+- **`/chat/completions`** or **`/api/request`** - Chat completions
+  - Supports: Gemini, ZhipuAI, SiliconFlow, ModelScope models
+- **`/api/transcribe-audio`** - Audio transcription (SiliconFlow)
+- **`/api/translate`** - Translation via chat completions
+- **`/api/generate-image`** - Image generation (SiliconFlow)
+- **`/api/mcp-proxy`** - Unified MCP tool execution endpoint
+- **`/api/history/*`** - Session management, title generation, pinning
 
+### WebSocket Proxy
+- Direct proxy to `generativelanguage.googleapis.com` for Gemini 2.0 Flash
 
-## 3. Key Features & API Endpoints
+## Configuration
 
-The [`src/worker.js`](src/worker.js:1) script manages several key functionalities:
+### Environment Variables
+- `SF_API_TOKEN` - SiliconFlow API key
+- `AUTH_KEY` - Gemini proxy API key
+- `ZHIPUAI_API_KEY` - ZhipuAI API key
+- `QWEN_API_KEY` - ModelScope API key
+- `GEMINICHAT_HISTORY_KV` - KV namespace binding
 
--   **Static File Server**: Serves the frontend application from the `src/static` directory.
--   **WebSocket Proxy**: Proxies WebSocket connections directly to `generativelanguage.googleapis.com` for real-time communication with Gemini models.
--   **AI Gateway (API Proxy)**: Routes API requests to the appropriate downstream AI service based on the `model` specified in the request body.
-    -   **Chat Completions**: `/chat/completions` or `/api/request`
-        -   **Gemini**: For models like `gemini-1.5-pro-latest`, `gemini-2.5-pro`, `gemini-2.5-flash-preview-05-20`, `gemini-2.5-flash-lite-preview-06-17`, `gemini-2.0-flash`.
-        -   **ZhipuAI**: For models like `glm-4v`, `glm-4.1v-thinking-flash`, `glm-4v-flash`, `GLM-4.5-Flash`.
-        -   **SiliconFlow**: For models like `THUDM/GLM-4-9B-Chat`, `THUDM/GLM-4.1V-9B-Thinking`.
-        -   **ModelScope**: For models like `Qwen/Qwen3-235B-A22B-Thinking-2507`.
-    -   **Audio Transcription**: `/api/transcribe-audio`
-        -   Forwards audio data to the **SiliconFlow** transcription API (model: `FunAudioLLM/SenseVoiceSmall`).
-    -   **Translation**: `/api/translate`
-        -   Uses the chat completion endpoints of various providers (Gemini, Zhipu, SiliconFlow) for translation tasks.
-    -   **Image Generation**: `/api/generate-image`
-        -   Forwards requests to the **SiliconFlow** image generation API.
-    -   **History Management**: `/api/history/*`
-        -   Provides endpoints for saving, loading, pinning, unpinning, editing titles, deleting chat sessions, and generating titles for sessions using an AI model.
-    -   **MCP Proxy**: `/api/mcp-proxy`
-        -   Proxies requests for Multi-Cloud Platform (MCP) tool invocations.
+### Key Config Files
+- **`wrangler.toml`** - Cloudflare deployment configuration
+- **`package.json`** - Dependencies (wrangler, vitest, sass)
+- **`src/static/js/config/config.js`** - Models, prompts, tool mappings
+  - Includes chess-specific prompts (`chess_teacher`, `chess_summary`)
+  - Model-specific system prompts (`Tool_gemini` for image rendering)
 
-## 4. Configuration & Secrets
+## Development Commands
 
-The application relies on environment variables for API keys and other secrets. These must be configured in your Cloudflare project's settings (or in a `.dev.vars` file for local development).
-
--   `SF_API_TOKEN`: API key for SiliconFlow.
--   `AUTH_KEY`: API key for the Gemini API proxy (`geminiapim.10110531.xyz`).
--   `ZHIPUAI_API_KEY`: API key for ZhipuAI (bigmodel.cn).
--   `QWEN_API_KEY`: API key for ModelScope (qwen).
--   `GEMINICHAT_HISTORY_KV`: KV namespace binding for chat history storage.
-
-## 5. Common Development Commands
-
-All commands are run using Node.js and npm.
-
--   **Install dependencies**:
-    ```bash
-    npm install
-    ```
-
--   **Run the application locally**:
-    ```bash
-    npm run dev
-    ```
-    This command starts a local development server using `wrangler`, simulating the Cloudflare environment.
-
--   **Run all tests**:
-    ```bash
-    npm test
-    ```
-    This executes the test suite using Vitest (configuration in [`vitest.config.js`](vitest.config.js:1)).
-
--   **Run a single test**:
-    ```bash
-    npm test <path/to/your/test/file.spec.js>
-    ```
-    Replace `<path/to/your/test/file.spec.js>` with the actual path to the test file you want to run.
-
--   **Build CSS (if using Sass)**:
-    ```bash
-    npm run build:css
-    ```
-    This compiles Sass files from `src/static/scss` to `src/static/css`.
-
--   **Deploy to Cloudflare**:
-    ```bash
-    npm run deploy
-    ```
-    This command first builds the CSS and then deploys the application to your Cloudflare account using `wrangler`.
-
-## 6. Vision Module Architecture Update
-
-### 6.1 Unified API Processing Architecture
-
-**MAJOR ARCHITECTURAL CHANGE**: The Vision module now fully reuses the `ChatApiHandler` class, achieving a unified API calling and streaming experience with Chat mode.
-
-#### 6.1.1 Core Architecture Components
-
--   **Dedicated API Handler**: Vision mode uses an independent `ChatApiHandler` instance (`visionApiHandler`)
--   **Independent History Management**: Provides independent session and message storage through `vision-history-manager.js`
--   **Unified Tool Calling**: Supports complete tool calling, reasoning chains, and search functionality through `ChatApiHandler`
--   **UI Adapter**: Provides Vision-specific UI update interface through `createVisionUIAdapter()`
-
-#### 6.1.2 Initialization Process
-
-Initialization process in `main.js`:
-
-```javascript
-// 1. Create Vision History Manager
-const visionHistoryManager = createVisionHistoryManager();
-
-// 2. Initialize Vision mode ChatApiHandler
-visionApiHandler = new ChatApiHandler({
-    toolManager: toolManager,
-    historyManager: visionHistoryManager,
-    state: {
-        chatHistory: visionHistoryManager.getCurrentSessionMessages(),
-        currentSessionId: visionHistoryManager.getCurrentSessionId(),
-        currentAIMessageContentDiv: null,
-        isUsingTool: false
-    },
-    libs: {
-        marked: window.marked,
-        MathJax: window.MathJax
-    },
-    config: CONFIG,
-    elements: {
-        messageHistory: visionElements.visionMessageHistory,
-        logsContainer: document.getElementById('logs-container')
-    }
-});
-
-// 3. Define visionHandlers
-const visionHandlers = {
-    showToast: showToast,
-    showSystemMessage: showSystemMessage,
-    chatApiHandler: visionApiHandler,
-    historyManager: visionHistoryManager
-};
-
-// 4. Initialize vision functionality
-initializeVisionCore(visionElements, attachmentManager, visionHandlers);
+```bash
+npm install              # Install dependencies
+npm run dev              # Local development with wrangler
+npm test                 # Run tests with vitest
+npm run build:css        # Compile Sass to CSS (if applicable)
+npm run deploy           # Deploy to Cloudflare
 ```
 
-#### 6.1.3 UI Adapter System
-
-The `createVisionUIAdapter()` function creates a Vision-specific UI adapter:
-
-```javascript
-function createVisionUIAdapter() {
-    return {
-        createAIMessageElement: createVisionAIMessageElement,
-        displayUserMessage: displayVisionUserMessage,
-        displayToolCallStatus: (toolName, args) => {
-            // Vision-specific tool call status display
-        },
-        displayImageResult: (base64Image, altText, fileName) => {
-            // Vision-specific image result display
-        },
-        scrollToBottom: scrollVisionToBottom,
-        logMessage: (message, type) => {
-            // Vision-specific logging
-        }
-    };
-}
-```
-
-### 6.2 Chess Master AI Feature
-
-#### 6.2.1 Core Architecture Update
-
-The chess functionality is now fully integrated into the unified Vision architecture:
-
--   **API Calls**: All chess-related AI requests are handled through `visionApiHandler.streamChatCompletion()`
--   **Tool Calling**: Supports complete tool calling functionality, including `python_sandbox` image generation
--   **Streaming Responses**: Displays AI analysis and move recommendations through unified SSE streaming processing
--   **History Management**: Uses Vision-specific history manager to store chess sessions
-
-#### 6.2.2 Game Summary Function
-
-The `generateGameSummary()` function now uses unified API processing:
-
-```javascript
-async function generateGameSummary() {
-    // Get complete game history
-    const fenHistory = chessGame.getFullGameHistory();
-    
-    // Use visionApiHandler to send request
-    await chatApiHandlerInstance.streamChatCompletion(requestBody, apiKey, visionUiAdapter);
-}
-```
-
-#### 6.2.3 History Cleanup Function
-
-New `clearVisionHistory()` function for external cleanup of Vision chat history:
-
-```javascript
-export function clearVisionHistory() {
-    if (chatApiHandlerInstance) {
-        // Clear internal state of dedicated handler
-        chatApiHandlerInstance.state.chatHistory = [];
-        chatApiHandlerInstance.state.currentSessionId = null;
-        // ... other state resets
-    }
-    // Also clear current session in history manager
-    if (handlers.historyManager && handlers.historyManager.clearCurrentSession) {
-        handlers.historyManager.clearCurrentSession();
-    }
-}
-```
-
-### 6.3 Advantages and Improvements
-
-#### 6.3.1 Architectural Advantages
-
--   **Code Reuse**: Eliminates duplicate API processing logic, reducing code maintenance costs
--   **Consistency**: Vision and Chat modes use the same tool calling and streaming processing logic
--   **Maintainability**: Unified error handling and state management
--   **Scalability**: New features can benefit in both modes simultaneously
-
-#### 6.3.2 Functional Improvements
-
--   **Complete Tool Support**: Vision mode now supports all tools available in Chat mode
--   **Reasoning Chain Display**: Supports real-time display of reasoning chain content for Gemini models
--   **Image Generation**: Supports data visualization image generation through `python_sandbox` tool
--   **Search Functionality**: Supports enabling or disabling Google search functionality
-
-#### 6.3.3 Performance Optimization
-
--   **Independent State**: Vision and Chat mode states are completely isolated, avoiding mutual interference
--   **Dedicated History**: Independent session storage, improving data management efficiency
--   **Memory Optimization**: Resource initialization on demand, reducing memory footprint
-
-## 7. Chess Module Technical Implementation
-
-### 7.1 Core Architecture Components
-
-#### 7.1.1 Board Engine System
-
-The chess functionality adopts a dual-engine architecture to ensure rule accuracy:
-
--   **Custom Rule Engine**: [`chess-rule.js`](src/static/js/chess/chess-rule.js) implements complete chess rules
--   **Shadow Engine**: Uses chess.js library as an authoritative source for validation and synchronization
--   **State Synchronization**: Ensures consistent state between both engines through `syncAndVerifyShadowEngine()`
-
-#### 7.1.2 AI Enhancement System
-
-[`chess-ai-enhanced.js`](src/static/js/chess/chess-ai-enhanced.js) implements multi-stage AI analysis:
-
-```javascript
-// Four-stage AI analysis process
-1. First stage: Get detailed AI analysis
-2. Second stage: Use second AI to precisely extract best moves
-3. Third stage: Verify and decide (user selection)
-4. Fourth stage: Execute the finalized move
-```
-
-#### 7.1.3 User Interface Integration
-
--   **Board Rendering**: Complete HTML5 chess board interface supporting click and drag
--   **Game State Management**: Complete game lifecycle management
--   **Multi-mode Interaction**: Supports manual moves and AI-assisted analysis
-
-### 7.2 Key Functional Features
-
-#### 7.2.1 Complete Rule Support
-
--   **Basic Movement**: Standard movement rules for all pieces
--   **Special Moves**: Castling, en passant, pawn promotion
--   **Game States**: Check, checkmate, draw condition detection
--   **FEN Support**: Complete FEN string generation and parsing
-
-#### 7.2.2 AI Analysis Features
-
--   **Multi-model Analysis**: Supports using different AI models for position analysis
--   **Move Recommendations**: Intelligent move extraction and validation
--   **User Selection**: Provides multiple candidate moves for user selection
--   **Execution Verification**: Complete legality checking before move execution
-
-#### 7.2.3 History and Persistence
-
--   **Complete History**: Records complete game history
--   **Local Storage**: Automatically saves game state to localStorage
--   **Undo/Redo**: Complete move history management
--   **Session Recovery**: Automatically restores game state after page refresh
-
-### 7.3 Deep Integration with Vision Module
-
-#### 7.3.1 Unified Message System
-
-Chess AI analysis is displayed through the Vision module's message system:
-
-```javascript
-// Display AI analysis process in visual chat area
-this.displayVisionMessage('**♟️ Chess AI Analysis**', { id: analysisId, create: true });
-```
-
-#### 7.3.2 Tool Calling Support
-
-Supports advanced functionality through Vision module's tool calling system:
-
--   **Python Sandbox**: For data visualization and complex calculations
--   **Search Integration**: Supports game background and history queries
--   **Image Generation**: Generates position analysis diagrams through tool calls
-
-#### 7.3.3 Unified API Processing
-
-All chess-related AI requests are processed through the Vision module's dedicated `ChatApiHandler`, ensuring:
-
--   **Consistent Error Handling**
--   **Unified Streaming Responses**
--   **Tool Calling Compatibility**
--   **History Management Consistency**
-
-### 7.4 Developer Experience
-
-#### 7.4.1 Modular Design
-
--   **Clear Separation of Responsibilities**: Rules, AI, UI logic separation
--   **Easy Testing**: Independent modules facilitate unit testing
--   **Scalability**: Easy to add new features or modify existing behavior
-
-#### 7.4.2 Debugging Support
-
--   **Detailed Logging**: Complete move and state change logs
--   **Shadow Engine Verification**: Automatically detects and fixes state inconsistencies
--   **Error Recovery**: Robust error handling and state recovery mechanisms
-
-#### 7.4.3 Configuration Flexibility
-
--   **Model Configuration**: Supports using different AI models for analysis
--   **Prompt Management**: Configurable analysis prompts and system instructions
--   **UI Customization**: Customizable board appearance and interaction behavior
-
-This chess module provides a complete, robust, and user-friendly chess experience, while being deeply integrated into the application's unified architecture, fully leveraging existing AI infrastructure and tool calling capabilities.
-
-## 8. Tool Management Mechanism and Connection Differences
-
-This project implements a sophisticated tool management and invocation mechanism tailored for different AI models and connection types. The core principle is that the `ToolManager` class (defined in [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js)) is a universal wrapper for tool declaration and execution logic. However, it is instantiated twice in the frontend code, serving both WebSocket and HTTP connection paths, thereby forming two logically distinct "systems."
-
-#### 8.1 WebSocket Connection Method (Gemini WebSocket API)
-
-*   **Models**: Primarily used for Gemini models connected via WebSocket, such as `models/gemini-2.0-flash-exp`.
-*   **Core Modules and Files**:
-    *   [`src/static/js/main.js`](src/static/js/main.js): Frontend entry point; **does not directly handle WebSocket tool management** but initializes `MultimodalLiveClient`.
-    *   [`src/static/js/core/websocket-client.js`](src/static/js/core/websocket-client.js) ([`src/static/js/core/websocket-client.js:28`](src/static/js/core/websocket-client.js:28)): The core WebSocket client, responsible for establishing real-time communication with `generativelanguage.googleapis.com`. **Within this module, an independent `ToolManager` instance is instantiated** (`this.toolManager = new ToolManager();`).
-    *   [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js): Defines the `ToolManager` class and its logic for registering and executing default tools (Google Search, Weather).
-    *   [`src/static/js/tools/google-search.js`](src/static/js/tools/google-search.js), [`src/static/js/tools/weather-tool.js`](src/static/js/tools/weather-tool.js): Default tools registered by `ToolManager`.
-    *   [`src/worker.js`](src/worker.js): Acts as a WebSocket proxy ([`src/worker.js:10`](src/worker.js:10) `handleWebSocket(request, env);`), directly forwarding WebSocket connections to `generativelanguage.googleapis.com`.
-*   **Workflow for Tool Invocation**:
-    1.  The `MultimodalLiveClient` ([`src/static/js/core/websocket-client.js`](src/static/js/core/websocket-client.js)), upon establishing a WebSocket connection, sends tool declarations obtained via `this.toolManager.getToolDeclarations()` ([`src/static/js/core/websocket-client.js:62`](src/static/js/core/websocket-client.js:62)) from its **internal `ToolManager` instance** as part of a `setup` message to the Gemini WebSocket API.
-    2.  When the Gemini WebSocket API returns a `functionCall` (e.g., calling `googleSearch` or `get_weather_on_date`), the `MultimodalLiveClient`'s `receive` method captures this invocation.
-    3.  The `MultimodalLiveClient` then invokes the `handleToolCall()` method ([`src/static/js/core/websocket-client.js:285`](src/static/js/core/websocket-client.js:285)) of its internal `ToolManager` instance to **execute the corresponding tool logic locally in the frontend**.
-    4.  The result of the tool's execution is sent back to the Gemini WebSocket API via `MultimodalLiveClient.sendToolResponse()`, completing the tool invocation cycle.
-*   **Default Toolset**: `GoogleSearchTool`, `WeatherTool`.
-*   **How to Improve Tools for WebSocket Connections**:
-    *   **Add/Modify New Tools**: Modify [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js) to register new tool classes and create corresponding tool implementation files (e.g., `src/static/js/tools/new-tool.js`).
-    *   **Modify Tool Declarations**: Adjust the `getDeclaration()` method in the respective tool class (e.g., `src/static/js/tools/google-search.js`).
-    *   **Modify Tool Execution Logic**: Adjust the `execute()` method in the respective tool class.
-
-#### 8.2 HTTP Connection Method (Gemini HTTP API & Qwen HTTP API)
-
-*   **Models**: Primarily used for HTTP models like `models/gemini-2.5-flash` and Qwen models such as `Qwen/Qwen3-235B-A22B-Thinking-2507`. This path is designed for maximum flexibility, allowing different models to use different sets of tools.
-*   **Core Modules and Files**:
-    *   [`src/static/js/main.js`](src/static/js/main.js) ([`src/static/js/main.js:24`](src/static/js/main.js:24)): Frontend entry point; **here, a global `ToolManager` instance is instantiated** (`const toolManager = new ToolManager();`). This global instance is injected into `ChatApiHandler`.
-    *   [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js): The core module for handling HTTP SSE streams. It is injected with the **global `ToolManager` instance** and is responsible for merging and forwarding tool declarations, as well as dispatching tool calls to the appropriate handlers.
-    *   [`src/static/js/config/config.js`](src/static/js/config/config.js): Defines model configurations. The `tools` property for each model entry points to a specific toolset array, enabling fine-grained control. This file also defines model-specific **system prompts** (e.g., `Tool_gemini`), which are crucial for guiding model behavior, especially for complex tasks like image generation.
-    *   [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js): As above, its class definition is universal. **In this path, the global `ToolManager` instance also manages `GoogleSearchTool` and `WeatherTool`.**
-    *   [`src/static/js/tools_mcp/tool-definitions.js`](src/static/js/tools_mcp/tool-definitions.js): Defines various MCP toolsets. This now includes the general `mcpTools` for Qwen and a specialized, schema-compatible `geminiMcpTools` array for Gemini models.
-    *   [`src/worker.js`](src/worker.js): Cloudflare Worker backend, acting as an HTTP API proxy. It now has a unified logic path where both Gemini and Qwen tool calls are routed through the `/api/mcp-proxy` endpoint.
-*   **Workflow for Tool Invocation (Gemini & Qwen)**:
-    1.  **Frontend Request Construction**: When `ChatApiHandler` sends an HTTP request, it reads the selected model's configuration from `config.js`. It then **merges** the default tool declarations (Google Search, Weather) from the global `ToolManager` with the specific toolset (e.g., `geminiMcpTools` or `mcpTools`) assigned to that model. This combined list is sent in the request.
-    2.  The request is forwarded by `worker.js` to the appropriate downstream service.
-    3.  When the model returns a tool call, `ChatApiHandler` captures it.
-    4.  **Unified Dispatch**: `ChatApiHandler` now uses a unified `_handleMcpToolCall` method to process tool calls for both Gemini and Qwen. It constructs a request containing the `tool_name` and `parameters` and sends it to the `/api/mcp-proxy` endpoint. This simplifies the frontend logic significantly.
-    5.  The backend MCP proxy (`/api/mcp-proxy`) routes the request to the correct handler (e.g., `python-sandbox.js`), which executes the tool.
-    6.  The tool result is streamed back to the frontend, and `ChatApiHandler` sends it back to the model to continue the conversation.
-*   **Special Considerations for Gemini Image Rendering**:
-    *   **Problem**: The `python_sandbox` tool can generate Base64 images. Initially, Gemini models failed to render these images because the default system prompt (`Tool_assistant`) instructed models *not* to include the full Base64 string in the final reply to save tokens, an instruction that Qwen's architecture could handle but Gemini's could not.
-    *   **Solution**: A dedicated system prompt, `Tool_gemini`, was created in `config.js`. This prompt **omits the restrictive instruction**, allowing the Gemini model to correctly include the full Base64 image data in its final Markdown output, which the frontend can then render. This highlights the importance of prompt engineering for managing model-specific behaviors.
-*   **Complete Toolset (Model-Dependent)**:
-    *   **Default Tools (All Models)**: `GoogleSearchTool`, `WeatherTool`.
-    *   **Qwen Models**: The full `mcpTools` set, including `tavily_search`, `python_sandbox`, `firecrawl`, etc.
-    *   **Gemini Models (`gemini-2.5-flash`)**: A curated `geminiMcpTools` set containing only `tavily_search`, `python_sandbox`, and `firecrawl`.
-*   **How to Improve Tools for HTTP Connections**:
-    *   **Add/Modify New Tools (e.g., MCP Tools)**:
-        1.  Define new tool declarations in [`src/static/js/tools_mcp/tool-definitions.js`](src/static/js/tools_mcp/tool-definitions.js) and add them to the `mcpTools` array.
-        2.  In [`src/static/js/config/config.js`](src/static/js/config/config.js), add or modify the `tools: mcpTools` property for the target HTTP model's configuration object (e.g., `gemini-2.5-flash-lite-preview-06-17`).
-        3.  If new MCP tools require custom backend handling, it may be necessary to modify `src/mcp_proxy/mcp-handler.js` or add new handlers under `src/mcp_proxy/handlers/`.
-    *   **Add/Modify Default Tools (Google Search, Weather)**:
-        1.  Modify [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js) to register new tool classes and create corresponding tool implementation files (e.g., `src/static/js/tools/new-tool.js`).
-        2.  Modify the `getDeclaration()` and `execute()` methods in the respective tool class (e.g., `src/static/js/tools/google-search.js`).
-    *   **Modify Tool Declaration or Execution Logic**: Adjust the `getDeclaration()` or `execute()` methods in the respective tool class (e.g., `src/static/js/tools/google-search.js` or tools defined in `src/static/js/tools_mcp/tool-definitions.js`).
-    *   **Modify Frontend Tool Merging Logic**: If the merging strategy for tool declarations under HTTP connections needs adjustment, modify the relevant logic in [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js).
-
-## 9. Vision Module Technical Implementation Details
-
-### 9.1 Core Functions and Architecture
-
-#### 9.1.1 Initialization System
-
-```javascript
-// Key functions in vision-core.js:
-
-// Initialize Vision functionality core
-export function initializeVisionCore(el, manager, handlersObj)
-
-// Set vision mode activation status
-export function setVisionActive(active)
-
-// Clear Vision chat history
-export function clearVisionHistory()
-
-// Internal core message sending logic
-async function _sendMessage(text, files)
-
-// Handle vision message sending
-async function handleSendVisionMessage()
-```
-
-#### 9.1.2 UI Adapter System
-
-```javascript
-// Create Vision-specific UI adapter
-function createVisionUIAdapter() {
-    return {
-        createAIMessageElement: createVisionAIMessageElement,
-        displayUserMessage: displayVisionUserMessage,
-        displayToolCallStatus: (toolName, args) => {
-            // Vision-specific tool call status display
-        },
-        displayImageResult: (base64Image, altText, fileName) => {
-            // Vision-specific image result display
-        },
-        scrollToBottom: scrollVisionToBottom,
-        logMessage: (message, type) => {
-            // Vision-specific logging
-        }
-    };
-}
-```
-
-#### 9.1.3 Chess Integration
-
-```javascript
-// Generate game summary - reuse ChatApiHandler
-async function generateGameSummary()
-
-// Display message in visual chat interface
-export function displayVisionMessage(markdownContent)
-
-// Direct message sending function for external modules
-window.sendVisionMessageDirectly = async function(messageText)
-```
-
-### 9.2 Configuration and State Management
-
-#### 9.2.1 Model Configuration
-
-Vision mode uses dedicated model configuration:
-
-```javascript
-// Vision configuration in config.js
-VISION: {
-    MODELS: [
-        // Dedicated vision model list
-    ],
-    PROMPTS: [
-        // Including chess-specific prompts
-        {
-            id: 'chess_teacher',
-            name: 'Chess Master',
-            description: 'Game guidance and position analysis'
-        },
-        {
-            id: 'chess_summary',
-            name: 'Post-Game Summary (Button Only)',
-            description: 'Dedicated post-game analysis and summary'
-        }
-    ]
-}
-```
-
-#### 9.2.2 State Isolation
-
-Vision mode maintains completely independent state:
-
-```javascript
-// Module-level state for Vision
-let elements = {};
-let attachmentManager = null;
-let showToastHandler = null;
-let chatApiHandlerInstance = null; // Vision mode exclusive API Handler
-let isVisionActive = false; // Vision mode activation status
-let handlers = {}; // Save handlers object
-```
-
-### 9.3 Advantages Summary
-
-#### 9.3.1 Architectural Advantages
-
--   **Unification**: Vision and Chat modes use the same underlying API processing mechanism
--   **Modularity**: Clear separation of responsibilities, easy to maintain and extend
--   **Consistency**: Unified error handling, tool calling, and streaming responses
--   **Performance**: Independent state management, avoiding interference between modes
-
-#### 9.3.2 Functional Completeness
-
--   **Complete Tool Chain**: Supports all MCP tool calls
--   **Chess Integration**: Complete Chess Master AI functionality
--   **Multimodal Support**: Multimodal processing of images, video, text
--   **History Management**: Independent session storage and recovery
-
-#### 9.3.3 Developer Experience
-
--   **Clear Documentation**: Comprehensive code comments and architectural explanations
--   **Easy Extension**: Modular design facilitates adding new features
--   **Debugging Friendly**: Unified logging system and error handling
--   **Flexible Configuration**: Supports dynamic configuration of models and prompts
+## Key Architectural Patterns
+
+### Tool Management Dual System
+1. **WebSocket Path** - Local tool execution (Gemini WebSocket models)
+2. **HTTP Path** - MCP proxy execution (Gemini HTTP & Qwen models)
+
+### Vision Module Unification
+- Vision mode now fully reuses `ChatApiHandler`
+- Unified streaming, tool calling, and error handling with Chat mode
+- Independent state and history management
+- Chess AI integration through Vision interface
+
+### Chess Master AI
+- Multi-stage analysis: AI analysis → move extraction → user selection → execution
+- Dual engine: Custom rules + chess.js shadow validation
+- Deep Vision module integration for visual analysis display
+
+### Error Resilience
+- Python sandbox "never-crash" parameter parser with regex rescue
+- WebSocket reconnection handling
+- Comprehensive error boundary system
+
+## Important Notes
+
+- All code modifications must pass tests and maintain functionality
+- The application uses Cloudflare KV for persistent chat history
+- Image compression automatically applied to files >1MB across all modes
+- Chess module provides complete FEN support and game state persistence
+- MCP tool calls support both Gemini and Qwen models through unified proxy
