@@ -482,16 +482,29 @@ export class ChatApiHandler {
             if (toolCode.tool_name === 'python_sandbox') {
                 console.log(`[${timestamp()}] [MCP] Processing python_sandbox output`);
                 let isFileHandled = false;
+                
+                // 关键修复：处理MCP代理返回的嵌套结构
+                let actualStdout = '';
                 if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
-                    const stdoutContent = toolRawResult.stdout.trim();
-                    console.log(`[${timestamp()}] [MCP] Raw stdout content:`, stdoutContent.substring(0, 100) + '...');
-
+                    // 如果toolRawResult.stdout是字符串，直接使用
+                    actualStdout = toolRawResult.stdout.trim();
+                } else if (toolRawResult && toolRawResult.type === 'text' && toolRawResult.stdout) {
+                    // 如果toolRawResult是对象且包含stdout字段
+                    actualStdout = toolRawResult.stdout.trim();
+                } else if (toolRawResult && typeof toolRawResult === 'string') {
+                    // 如果toolRawResult本身就是字符串
+                    actualStdout = toolRawResult.trim();
+                }
+                
+                console.log(`[${timestamp()}] [MCP] Actual stdout content:`, actualStdout.substring(0, 200) + '...');
+                
+                if (actualStdout) {
                     // 尝试解析为JSON对象
                     try {
-                        const fileData = JSON.parse(stdoutContent);
+                        const fileData = JSON.parse(actualStdout);
                         console.log(`[${timestamp()}] [MCP] Successfully parsed JSON:`, fileData);
-
-                        // 处理图片类型
+                        
+                        // 处理图片类型（保持原有逻辑完全不变）
                         if (fileData && fileData.type === 'image' && fileData.image_base64) {
                             console.log(`[${timestamp()}] [MCP] Detected image file`);
                             const title = fileData.title || 'Generated Chart';
@@ -504,19 +517,19 @@ export class ChatApiHandler {
                             console.log(`[${timestamp()}] [MCP] Detected standard format office file:`, fileData.type);
                             const fileExtension = fileData.type;
                             const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
-
+                            
                             // 确保有消息容器来显示下载链接
                             if (!this.state.currentAIMessageContentDiv) {
                                 console.log(`[${timestamp()}] [MCP] Creating new message container`);
                                 this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
                             }
-
+                            
                             console.log(`[${timestamp()}] [MCP] Creating download link for:`, fileName);
                             // 创建下载链接
                             this._createFileDownload(fileData.data_base64, fileName, fileData.type);
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
                             isFileHandled = true;
-
+                            
                             // 立即显示成功消息
                             if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
                                 const successMsg = document.createElement('p');
@@ -527,7 +540,7 @@ export class ChatApiHandler {
                                 this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
                                 console.log(`[${timestamp()}] [MCP] Success message added to container`);
                             }
-
+                            
                             // 触发滚动
                             if (ui.scrollToBottom) {
                                 ui.scrollToBottom();
@@ -539,7 +552,7 @@ export class ChatApiHandler {
                             console.log(`[${timestamp()}] [MCP] Detected custom format file:`, fileData.file.name);
                             const { name, content } = fileData.file;
                             const fileExtension = name.split('.').pop().toLowerCase();
-
+                            
                             const fileTypeMap = {
                                 'docx': 'word',
                                 'xlsx': 'excel',
@@ -554,13 +567,13 @@ export class ChatApiHandler {
                                     console.log(`[${timestamp()}] [MCP] Creating new message container for custom format`);
                                     this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
                                 }
-
+                                
                                 console.log(`[${timestamp()}] [MCP] Creating download link for custom format:`, name);
                                 // 创建下载链接
                                 this._createFileDownload(content, name, fileType);
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
-
+                                
                                 // 立即显示成功消息
                                 if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
                                     const successMsg = document.createElement('p');
@@ -571,7 +584,7 @@ export class ChatApiHandler {
                                     this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
                                     console.log(`[${timestamp()}] [MCP] Success message added for custom format`);
                                 }
-
+                                
                                 // 触发滚动
                                 if (ui.scrollToBottom) {
                                     ui.scrollToBottom();
@@ -584,24 +597,24 @@ export class ChatApiHandler {
 
                     } catch (e) {
                         console.log(`[${timestamp()}] [MCP] JSON parse failed:`, e.message);
-                        console.log(`[${timestamp()}] [MCP] Raw content that failed to parse:`, stdoutContent.substring(0, 200));
+                        console.log(`[${timestamp()}] [MCP] Raw content that failed to parse:`, actualStdout.substring(0, 200));
                     }
 
                     // 如果不是JSON格式，继续原有的图片检测逻辑
                     if (!isFileHandled) {
                         console.log(`[${timestamp()}] [MCP] Checking for image format`);
-                        if (stdoutContent.startsWith('iVBORw0KGgo') || stdoutContent.startsWith('/9j/')) {
+                        if (actualStdout.startsWith('iVBORw0KGgo') || actualStdout.startsWith('/9j/')) {
                             console.log(`[${timestamp()}] [MCP] Detected image format`);
-                            displayImageResult(stdoutContent, 'Generated Chart', `chart_${Date.now()}.png`);
+                            displayImageResult(actualStdout, 'Generated Chart', `chart_${Date.now()}.png`);
                             toolResultContent = { output: 'Image generated and displayed.' };
                             isFileHandled = true;
-                        } else if (stdoutContent) {
+                        } else if (actualStdout) {
                             console.log(`[${timestamp()}] [MCP] Treating as plain text output`);
-                            toolResultContent = { output: stdoutContent };
+                            toolResultContent = { output: actualStdout };
                         }
                     }
                  }
-
+                 
                  console.log(`[${timestamp()}] [MCP] File handling completed, isFileHandled:`, isFileHandled);
                  
                  // 处理stderr（完全不变）
