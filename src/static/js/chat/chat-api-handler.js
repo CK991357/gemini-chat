@@ -527,34 +527,11 @@ export class ChatApiHandler {
                             const fileExtension = fileData.type;
                             const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
                             
-                            // 确保有消息容器来显示下载链接
-                            if (!this.state.currentAIMessageContentDiv) {
-                                console.log(`[${timestamp()}] [MCP] Creating new message container`);
-                                this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                            }
-                            
                             console.log(`[${timestamp()}] [MCP] Creating download link for:`, fileName);
-                            // 创建下载链接
-                            this._createFileDownload(fileData.data_base64, fileName, fileData.type);
+                            // 创建下载链接 - 关键修改：创建独立的消息容器
+                            this._createPersistentFileDownload(fileData.data_base64, fileName, fileData.type);
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
                             isFileHandled = true;
-                            
-                            // 立即显示成功消息
-                            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                                const successMsg = document.createElement('p');
-                                successMsg.textContent = `✅ ${fileData.type.toUpperCase()}文件已生成，请点击上方链接下载`;
-                                successMsg.style.color = 'green';
-                                successMsg.style.margin = '10px 0';
-                                successMsg.style.fontWeight = 'bold';
-                                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
-                                console.log(`[${timestamp()}] [MCP] Success message added to container`);
-                            }
-                            
-                            // 触发滚动
-                            if (ui.scrollToBottom) {
-                                ui.scrollToBottom();
-                                console.log(`[${timestamp()}] [MCP] Scroll to bottom triggered`);
-                            }
                         }
                         // 处理自定义格式
                         else if (fileData && fileData.file && fileData.file.name && fileData.file.content) {
@@ -571,34 +548,11 @@ export class ChatApiHandler {
 
                             const fileType = fileTypeMap[fileExtension];
                             if (fileType) {
-                                // 确保有消息容器来显示下载链接
-                                if (!this.state.currentAIMessageContentDiv) {
-                                    console.log(`[${timestamp()}] [MCP] Creating new message container for custom format`);
-                                    this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                                }
-                                
                                 console.log(`[${timestamp()}] [MCP] Creating download link for custom format:`, name);
-                                // 创建下载链接
-                                this._createFileDownload(content, name, fileType);
+                                // 创建下载链接 - 关键修改：创建独立的消息容器
+                                this._createPersistentFileDownload(content, name, fileType);
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
-                                
-                                // 立即显示成功消息
-                                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                                    const successMsg = document.createElement('p');
-                                    successMsg.textContent = `✅ ${fileType.toUpperCase()}文件已生成，请点击上方链接下载`;
-                                    successMsg.style.color = 'green';
-                                    successMsg.style.margin = '10px 0';
-                                    successMsg.style.fontWeight = 'bold';
-                                    this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
-                                    console.log(`[${timestamp()}] [MCP] Success message added for custom format`);
-                                }
-                                
-                                // 触发滚动
-                                if (ui.scrollToBottom) {
-                                    ui.scrollToBottom();
-                                    console.log(`[${timestamp()}] [MCP] Scroll to bottom triggered for custom format`);
-                                }
                             }
                         } else {
                             console.log(`[${timestamp()}] [MCP] JSON parsed but format not recognized:`, Object.keys(fileData));
@@ -839,6 +793,139 @@ export class ChatApiHandler {
                 errorElement.textContent = `Error creating download for ${fileType} file: ${error.message}`;
                 errorElement.style.color = 'red';
                 this.state.currentAIMessageContentDiv.markdownContainer.appendChild(errorElement);
+            }
+        }
+    }
+
+    /**
+     * @private
+     * @description Creates a persistent file download link that won't be overwritten by subsequent messages
+     * @param {string} base64Data - The base64 encoded file data
+     * @param {string} fileName - The name of the file to download
+     * @param {string} fileType - The type of file (excel, word, ppt, pdf)
+     */
+    _createPersistentFileDownload(base64Data, fileName, fileType) {
+        const timestamp = () => new Date().toISOString();
+        console.log(`[${timestamp()}] [FILE] Creating PERSISTENT download for ${fileType} file: ${fileName}`);
+        
+        try {
+            // 解码base64数据
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            // 创建Blob对象
+            const mimeTypes = {
+                'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'ppt': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'pdf': 'application/pdf'
+            };
+            
+            const mimeType = mimeTypes[fileType] || 'application/octet-stream';
+            const blob = new Blob([bytes], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            
+            // 创建独立的永久消息容器
+            const persistentMessageDiv = document.createElement('div');
+            persistentMessageDiv.className = 'persistent-file-download-message';
+            persistentMessageDiv.style.padding = '15px';
+            persistentMessageDiv.style.margin = '15px 0';
+            persistentMessageDiv.style.backgroundColor = '#f0f8ff';
+            persistentMessageDiv.style.border = '2px solid #007acc';
+            persistentMessageDiv.style.borderRadius = '8px';
+            persistentMessageDiv.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+            
+            // 创建标题
+            const titleText = document.createElement('h4');
+            titleText.textContent = `📄 ${fileType.toUpperCase()} 文件生成成功`;
+            titleText.style.margin = '0 0 10px 0';
+            titleText.style.color = '#007acc';
+            titleText.style.fontSize = '16px';
+            
+            // 创建文件信息
+            const fileInfo = document.createElement('p');
+            fileInfo.textContent = `文件名称: ${fileName}`;
+            fileInfo.style.margin = '0 0 10px 0';
+            fileInfo.style.fontSize = '14px';
+            fileInfo.style.color = '#666';
+            
+            // 创建下载链接
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = fileName;
+            downloadLink.textContent = `⬇️ 下载 ${fileType.toUpperCase()} 文件`;
+            downloadLink.className = 'persistent-file-download-link';
+            downloadLink.style.display = 'inline-block';
+            downloadLink.style.padding = '10px 16px';
+            downloadLink.style.backgroundColor = '#007acc';
+            downloadLink.style.color = 'white';
+            downloadLink.style.textDecoration = 'none';
+            downloadLink.style.borderRadius = '4px';
+            downloadLink.style.fontWeight = 'bold';
+            downloadLink.style.margin = '5px 0';
+            
+            // 创建提示信息
+            const hintText = document.createElement('p');
+            hintText.textContent = '此下载链接将永久保存，不会被后续对话覆盖';
+            hintText.style.margin = '8px 0 0 0';
+            hintText.style.fontSize = '12px';
+            hintText.style.color = '#999';
+            hintText.style.fontStyle = 'italic';
+            
+            // 组装消息
+            persistentMessageDiv.appendChild(titleText);
+            persistentMessageDiv.appendChild(fileInfo);
+            persistentMessageDiv.appendChild(downloadLink);
+            persistentMessageDiv.appendChild(hintText);
+            
+            // 添加到聊天容器中
+            const chatContainer = document.querySelector('#chat-container') || document.querySelector('.chat-messages');
+            if (chatContainer) {
+                // 插入到当前消息之后，确保不会被后续消息覆盖
+                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
+                    this.state.currentAIMessageContentDiv.markdownContainer.parentNode.insertBefore(
+                        persistentMessageDiv, 
+                        this.state.currentAIMessageContentDiv.markdownContainer.nextSibling
+                    );
+                } else {
+                    // 如果没有当前消息容器，直接添加到聊天容器末尾
+                    chatContainer.appendChild(persistentMessageDiv);
+                }
+            }
+            
+            // 清理URL对象
+            downloadLink.addEventListener('click', () => {
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                }, 100);
+            });
+            
+            console.log(`[${timestamp()}] [FILE] Persistent download link created successfully for ${fileName}`);
+            
+        } catch (error) {
+            console.error(`[${timestamp()}] [FILE] Error creating persistent download link:`, error);
+            // 显示错误信息
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'file-download-error';
+            errorDiv.style.padding = '10px';
+            errorDiv.style.margin = '10px 0';
+            errorDiv.style.backgroundColor = '#ffe6e6';
+            errorDiv.style.border = '1px solid #ff4444';
+            errorDiv.style.borderRadius = '4px';
+            errorDiv.style.color = '#ff4444';
+            
+            const errorText = document.createElement('p');
+            errorText.textContent = `创建下载链接失败: ${error.message}`;
+            errorText.style.margin = '0';
+            
+            errorDiv.appendChild(errorText);
+            
+            const chatContainer = document.querySelector('#chat-container') || document.querySelector('.chat-messages');
+            if (chatContainer) {
+                chatContainer.appendChild(errorDiv);
             }
         }
     }
