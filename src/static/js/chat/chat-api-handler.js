@@ -755,15 +755,13 @@ export class ChatApiHandler {
     _createFileDownload(base64Data, fileName, fileType) {
         const timestamp = () => new Date().toISOString();
         console.log(`[${timestamp()}] [FILE] Creating download for ${fileType} file: ${fileName}`);
-        
+
         try {
             // 解码base64数据
             const binaryString = atob(base64Data);
             const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            
+            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+
             // 创建Blob对象
             const mimeTypes = {
                 'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -771,65 +769,62 @@ export class ChatApiHandler {
                 'ppt': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
                 'pdf': 'application/pdf'
             };
-            
-            const mimeType = mimeTypes[fileType] || 'application/octet-stream';
-            const blob = new Blob([bytes], { type: mimeType });
+
+            const blob = new Blob([bytes], { type: mimeTypes[fileType] || 'application/octet-stream' });
             const url = URL.createObjectURL(blob);
-            
-            // 创建下载链接
-            const downloadLink = document.createElement('a');
-            downloadLink.href = url;
-            downloadLink.download = fileName;
-            downloadLink.textContent = `📥 Download ${fileType.toUpperCase()}: ${fileName}`;
-            downloadLink.className = 'file-download-link';
-            downloadLink.style.display = 'inline-block';
-            downloadLink.style.margin = '10px 0';
-            downloadLink.style.padding = '8px 12px';
-            downloadLink.style.backgroundColor = '#f0f8ff';
-            downloadLink.style.border = '1px solid #007acc';
-            downloadLink.style.borderRadius = '4px';
-            downloadLink.style.color = '#007acc';
-            downloadLink.style.textDecoration = 'none';
-            downloadLink.style.fontWeight = 'bold';
-            
-            // 添加到当前AI消息内容中
-            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(downloadLink);
-                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(document.createElement('br'));
-            } else {
-                // 如果没有当前消息容器，创建新的消息显示下载链接
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'file-download-message';
-                messageDiv.style.padding = '10px';
-                messageDiv.style.margin = '10px 0';
-                messageDiv.style.backgroundColor = '#f9f9f9';
-                messageDiv.style.border = '1px solid #ddd';
-                messageDiv.style.borderRadius = '4px';
-                
-                const messageText = document.createElement('p');
-                messageText.textContent = `Generated ${fileType.toUpperCase()} file:`;
-                messageText.style.margin = '0 0 8px 0';
-                messageText.style.fontWeight = 'bold';
-                
-                messageDiv.appendChild(messageText);
-                messageDiv.appendChild(downloadLink);
-                
-                // 添加到聊天容器中
+
+            // ✅ 独立文件下载容器
+            let fileContainer = document.querySelector('#file-download-container');
+            if (!fileContainer) {
+                fileContainer = document.createElement('div');
+                fileContainer.id = 'file-download-container';
+                fileContainer.style.margin = '15px 0';
+                fileContainer.style.padding = '12px';
+                fileContainer.style.borderTop = '2px solid #e0e0e0';
+                fileContainer.style.background = '#fafafa';
+                fileContainer.style.borderRadius = '8px';
+                fileContainer.style.maxWidth = '90%';
+                fileContainer.style.wordBreak = 'break-all';
+                fileContainer.style.boxShadow = '0 2px 6px rgba(0,0,0,0.05)';
+
                 const chatContainer = document.querySelector('#chat-container') || document.querySelector('.chat-messages');
-                if (chatContainer) {
-                    chatContainer.appendChild(messageDiv);
+                if (chatContainer)  {
+                    // ✅ 始终把文件下载区插在聊天底部
+                    chatContainer.insertAdjacentElement('beforeend', fileContainer);
                 }
+
             }
-            
-            // 清理URL对象
-            downloadLink.addEventListener('click', () => {
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 100);
+
+            // ✅ 单独文件块
+            const fileBlock = document.createElement('div');
+            fileBlock.className = 'file-block';
+            fileBlock.style.marginBottom = '10px';
+
+            const title = document.createElement('p');
+            title.textContent = `📎 ${fileName}`;
+            title.style.fontWeight = 'bold';
+            title.style.margin = '0 0 5px 0';
+            title.style.color = '#333';
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            link.textContent = `📥 点击下载 ${fileType.toUpperCase()} 文件`;
+            link.style.textDecoration = 'none';
+            link.style.color = '#007acc';
+            link.style.fontWeight = 'bold';
+            link.style.display = 'inline-block';
+            link.style.marginBottom = '8px';
+
+            link.addEventListener('click', () => {
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
             });
-            
-            console.log(`[${timestamp()}] [FILE] Download link created successfully for ${fileName}`);
-            
+
+            fileBlock.appendChild(title);
+            fileBlock.appendChild(link);
+            fileContainer.appendChild(fileBlock);
+
+            console.log(`[${timestamp()}] [FILE] Independent download link created for ${fileName}`);
         } catch (error) {
             console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
             // 显示错误信息
