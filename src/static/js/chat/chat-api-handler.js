@@ -556,6 +556,12 @@ export class ChatApiHandler {
                                 this._createPersistentFileDownload(fileBase64, finalFileName, finalFileType);
                                 toolResultContent = { output: `${finalFileType.toUpperCase()} file "${finalFileName}" generated and available for download.` };
                                 isFileHandled = true;
+                                
+                                // 触发滚动
+                                if (ui.scrollToBottom) {
+                                    ui.scrollToBottom();
+                                    console.log(`[${timestamp()}] [MCP] Scroll to bottom triggered`);
+                                }
                             } else {
                                 console.log(`[${timestamp()}] [MCP] JSON parsed but format not recognized:`, Object.keys(fileData));
                             }
