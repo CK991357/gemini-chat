@@ -523,18 +523,19 @@ export class ChatApiHandler {
                         // 处理Office文档和PDF类型（标准格式）
                         else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
                             console.log(`[${timestamp()}] [MCP] Detected standard format office file:`, fileData.type);
-                            
                             const extensionMap = { 'word': 'docx', 'excel': 'xlsx', 'ppt': 'pptx', 'pdf': 'pdf' };
                             const fileExtension = extensionMap[fileData.type] || fileData.type;
                             const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
                             
-                            // *** MODIFICATION START ***
-                            // Create a persistent download link in a new, independent message container
-                            this._createFileDownload(fileData.data_base64, fileName, fileData.type);
-                            // Set current message div to null so the next text message creates a new container
-                            this.state.currentAIMessageContentDiv = null; 
-                            // *** MODIFICATION END ***
-
+                            // *** KEY FIX START ***
+                            // 1. Create the persistent download link in its own, new message container.
+                            this._createFileDownload(fileData.data_base64, fileName, fileData.type, ui);
+                            // 2. Explicitly set the current message div to null. This FORCES the subsequent
+                            //    text stream to create a brand new container for itself, instead of reusing
+                            //    the one we might have had before or the one the file link is in.
+                            this.state.currentAIMessageContentDiv = null;
+                            // *** KEY FIX END ***
+                            
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
                             isFileHandled = true;
                         }
@@ -548,12 +549,10 @@ export class ChatApiHandler {
                             const fileType = fileTypeMap[fileExtension];
 
                             if (fileType) {
-                               // *** MODIFICATION START ***
-                               // Create a persistent download link in a new, independent message container
-                               this._createFileDownload(content, name, fileType);
-                               // Set current message div to null so the next text message creates a new container
-                               this.state.currentAIMessageContentDiv = null;
-                               // *** MODIFICATION END ***
+                                // *** KEY FIX START ***
+                                this._createFileDownload(content, name, fileType, ui);
+                                this.state.currentAIMessageContentDiv = null;
+                                // *** KEY FIX END ***
 
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
@@ -704,21 +703,21 @@ export class ChatApiHandler {
         }
     }
 
-   /**
+    /**
      * @private
      * @description Creates a self-contained, persistent message element for a file download link.
-     * This element is appended directly to the chat container and is not affected by subsequent streaming messages.
-     * @param {string} base64Data - The base64 encoded file data.
-     * @param {string} fileName - The name of the file to download (e.g., "report.docx").
-     * @param {string} fileType - The general type of file ('excel', 'word', 'ppt', 'pdf').
+     * This function is purely for UI creation and does NOT modify the handler's state.
+     * @param {string} base64Data - The base64 encoded file data
+     * @param {string} fileName - The name of the file to download
+     * @param {string} fileType - The type of file (excel, word, ppt, pdf)
+     * @param {object} ui - The UI adapter (passed from the caller)
      */
-    _createFileDownload(base64Data, fileName, fileType) {
-        const ui = chatUI;
+    _createFileDownload(base64Data, fileName, fileType, ui) {
+        // *** KEY FIX: This function is now self-contained and does not touch `this.state` ***
         const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [FILE] Creating persistent download container for ${fileType} file: ${fileName}`);
+        console.log(`[${timestamp()}] [FILE] Creating persistent download for ${fileType} file: ${fileName}`);
         
         try {
-            // 1. Decode base64 and create a Blob
             const binaryString = atob(base64Data);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) {
@@ -736,15 +735,13 @@ export class ChatApiHandler {
             const blob = new Blob([bytes], { type: mimeType });
             const url = URL.createObjectURL(blob);
             
-            // 2. Create the download link element
             const downloadLink = document.createElement('a');
             downloadLink.href = url;
             downloadLink.download = fileName;
             downloadLink.textContent = `📥 Download ${fileType.toUpperCase()}: ${fileName}`;
             downloadLink.className = 'file-download-link';
-            // Styling for the link
             downloadLink.style.display = 'inline-block';
-            downloadLink.style.margin = '10px 0 5px';
+            downloadLink.style.margin = '10px 0';
             downloadLink.style.padding = '8px 12px';
             downloadLink.style.backgroundColor = '#f0f8ff';
             downloadLink.style.border = '1px solid #007acc';
@@ -753,46 +750,42 @@ export class ChatApiHandler {
             downloadLink.style.textDecoration = 'none';
             downloadLink.style.fontWeight = 'bold';
 
-            // 3. Create a success message element
-            const successMsg = document.createElement('p');
-            successMsg.textContent = `✅ ${fileType.toUpperCase()}-Datei wurde erfolgreich generiert. Klicken Sie zum Herunterladen auf den Link.`;
-            successMsg.style.color = 'green';
-            successMsg.style.margin = '5px 0';
-            successMsg.style.fontWeight = 'bold';
+            // Create a new, independent AI message container just for this download.
+            // We pass `false` to the vision-core version to prevent it from being globally assigned,
+            // but for the standard chatUI, it just creates the element.
+            const messageContainer = ui.createAIMessageElement(false);
 
-            // 4. Create a new, complete AI message container.
-            // This is the key change: we use the UI library function to create the standard message structure.
-            const newAiMessageDiv = ui.createAIMessageElement(false); // Pass false to prevent it from being set as the global current message
-            
-            // 5. Append the success message and download link to the new container's markdown area
-            if (newAiMessageDiv && newAiMessageDiv.markdownContainer) {
-                newAiMessageDiv.markdownContainer.appendChild(successMsg);
-                newAiMessageDiv.markdownContainer.appendChild(downloadLink);
+            // Append the link to the new, isolated container's content area
+            if (messageContainer && messageContainer.markdownContainer) {
+                // You can add a success message here too if you want
+                const successMsg = document.createElement('p');
+                successMsg.textContent = `✅ 文件 ${fileName} 已生成并可供下载。`;
+                successMsg.style.fontWeight = 'bold';
+                successMsg.style.margin = '5px 0';
+
+                messageContainer.markdownContainer.appendChild(successMsg);
+                messageContainer.markdownContainer.appendChild(downloadLink);
+                messageContainer.markdownContainer.appendChild(document.createElement('br'));
             }
-
-            // 6. Clean up the URL object after the link is clicked
+            
             downloadLink.addEventListener('click', () => {
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 100);
+                setTimeout(() => { URL.revokeObjectURL(url); }, 100);
             });
             
-            console.log(`[${timestamp()}] [FILE] Download link container created successfully for ${fileName}`);
+            console.log(`[${timestamp()}] [FILE] Download link created successfully in its own container for ${fileName}`);
             
-            // 7. Scroll to the bottom to make the new message visible
             if (ui.scrollToBottom) {
                 ui.scrollToBottom();
             }
             
         } catch (error) {
             console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
-            // Display an error message in a new container if something goes wrong
-            const errorElement = document.createElement('p');
-            errorElement.textContent = `Error creating download for ${fileType} file: ${error.message}`;
-            errorElement.style.color = 'red';
-            const errorMsgDiv = ui.createAIMessageElement(false);
-            if(errorMsgDiv && errorMsgDiv.markdownContainer) {
-                errorMsgDiv.markdownContainer.appendChild(errorElement);
+            const errorContainer = ui.createAIMessageElement(false);
+            if (errorContainer && errorContainer.markdownContainer) {
+                const errorElement = document.createElement('p');
+                errorElement.textContent = `创建文件下载时出错 ${fileName}: ${error.message}`;
+                errorElement.style.color = 'red';
+                errorContainer.markdownContainer.appendChild(errorElement);
             }
         }
     }
