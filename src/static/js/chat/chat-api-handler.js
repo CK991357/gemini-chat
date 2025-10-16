@@ -523,37 +523,20 @@ export class ChatApiHandler {
                         // 处理Office文档和PDF类型（标准格式）
                         else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
                             console.log(`[${timestamp()}] [MCP] Detected standard format office file:`, fileData.type);
-                            const fileExtension = fileData.type;
+                            
+                            const extensionMap = { 'word': 'docx', 'excel': 'xlsx', 'ppt': 'pptx', 'pdf': 'pdf' };
+                            const fileExtension = extensionMap[fileData.type] || fileData.type;
                             const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
                             
-                            // 确保有消息容器来显示下载链接
-                            if (!this.state.currentAIMessageContentDiv) {
-                                console.log(`[${timestamp()}] [MCP] Creating new message container`);
-                                this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                            }
-                            
-                            console.log(`[${timestamp()}] [MCP] Creating download link for:`, fileName);
-                            // 创建下载链接
+                            // *** MODIFICATION START ***
+                            // Create a persistent download link in a new, independent message container
                             this._createFileDownload(fileData.data_base64, fileName, fileData.type);
+                            // Set current message div to null so the next text message creates a new container
+                            this.state.currentAIMessageContentDiv = null; 
+                            // *** MODIFICATION END ***
+
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
                             isFileHandled = true;
-                            
-                            // 立即显示成功消息
-                            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                                const successMsg = document.createElement('p');
-                                successMsg.textContent = `✅ ${fileData.type.toUpperCase()}文件已生成，请点击上方链接下载`;
-                                successMsg.style.color = 'green';
-                                successMsg.style.margin = '10px 0';
-                                successMsg.style.fontWeight = 'bold';
-                                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
-                                console.log(`[${timestamp()}] [MCP] Success message added to container`);
-                            }
-                            
-                            // 触发滚动
-                            if (ui.scrollToBottom) {
-                                ui.scrollToBottom();
-                                console.log(`[${timestamp()}] [MCP] Scroll to bottom triggered`);
-                            }
                         }
                         // 处理自定义格式
                         else if (fileData && fileData.file && fileData.file.name && fileData.file.content) {
@@ -561,43 +544,19 @@ export class ChatApiHandler {
                             const { name, content } = fileData.file;
                             const fileExtension = name.split('.').pop().toLowerCase();
                             
-                            const fileTypeMap = {
-                                'docx': 'word',
-                                'xlsx': 'excel',
-                                'pptx': 'ppt',
-                                'pdf': 'pdf'
-                            };
-
+                            const fileTypeMap = { 'docx': 'word', 'xlsx': 'excel', 'pptx': 'ppt', 'pdf': 'pdf' };
                             const fileType = fileTypeMap[fileExtension];
+
                             if (fileType) {
-                                // 确保有消息容器来显示下载链接
-                                if (!this.state.currentAIMessageContentDiv) {
-                                    console.log(`[${timestamp()}] [MCP] Creating new message container for custom format`);
-                                    this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                                }
-                                
-                                console.log(`[${timestamp()}] [MCP] Creating download link for custom format:`, name);
-                                // 创建下载链接
-                                this._createFileDownload(content, name, fileType);
+                               // *** MODIFICATION START ***
+                               // Create a persistent download link in a new, independent message container
+                               this._createFileDownload(content, name, fileType);
+                               // Set current message div to null so the next text message creates a new container
+                               this.state.currentAIMessageContentDiv = null;
+                               // *** MODIFICATION END ***
+
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
-                                
-                                // 立即显示成功消息
-                                if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                                    const successMsg = document.createElement('p');
-                                    successMsg.textContent = `✅ ${fileType.toUpperCase()}文件已生成，请点击上方链接下载`;
-                                    successMsg.style.color = 'green';
-                                    successMsg.style.margin = '10px 0';
-                                    successMsg.style.fontWeight = 'bold';
-                                    this.state.currentAIMessageContentDiv.markdownContainer.appendChild(successMsg);
-                                    console.log(`[${timestamp()}] [MCP] Success message added for custom format`);
-                                }
-                                
-                                // 触发滚动
-                                if (ui.scrollToBottom) {
-                                    ui.scrollToBottom();
-                                    console.log(`[${timestamp()}] [MCP] Scroll to bottom triggered for custom format`);
-                                }
                             }
                         } else {
                             console.log(`[${timestamp()}] [MCP] JSON parsed but format not recognized:`, Object.keys(fileData));
@@ -745,26 +704,27 @@ export class ChatApiHandler {
         }
     }
 
-    /**
+   /**
      * @private
-     * @description Creates a file download link for Office documents and PDFs
-     * @param {string} base64Data - The base64 encoded file data
-     * @param {string} fileName - The name of the file to download
-     * @param {string} fileType - The type of file (excel, word, ppt, pdf)
+     * @description Creates a self-contained, persistent message element for a file download link.
+     * This element is appended directly to the chat container and is not affected by subsequent streaming messages.
+     * @param {string} base64Data - The base64 encoded file data.
+     * @param {string} fileName - The name of the file to download (e.g., "report.docx").
+     * @param {string} fileType - The general type of file ('excel', 'word', 'ppt', 'pdf').
      */
     _createFileDownload(base64Data, fileName, fileType) {
+        const ui = chatUI;
         const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [FILE] Creating download for ${fileType} file: ${fileName}`);
+        console.log(`[${timestamp()}] [FILE] Creating persistent download container for ${fileType} file: ${fileName}`);
         
         try {
-            // 解码base64数据
+            // 1. Decode base64 and create a Blob
             const binaryString = atob(base64Data);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
             }
             
-            // 创建Blob对象
             const mimeTypes = {
                 'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -776,14 +736,15 @@ export class ChatApiHandler {
             const blob = new Blob([bytes], { type: mimeType });
             const url = URL.createObjectURL(blob);
             
-            // 创建下载链接
+            // 2. Create the download link element
             const downloadLink = document.createElement('a');
             downloadLink.href = url;
             downloadLink.download = fileName;
             downloadLink.textContent = `📥 Download ${fileType.toUpperCase()}: ${fileName}`;
             downloadLink.className = 'file-download-link';
+            // Styling for the link
             downloadLink.style.display = 'inline-block';
-            downloadLink.style.margin = '10px 0';
+            downloadLink.style.margin = '10px 0 5px';
             downloadLink.style.padding = '8px 12px';
             downloadLink.style.backgroundColor = '#f0f8ff';
             downloadLink.style.border = '1px solid #007acc';
@@ -791,53 +752,47 @@ export class ChatApiHandler {
             downloadLink.style.color = '#007acc';
             downloadLink.style.textDecoration = 'none';
             downloadLink.style.fontWeight = 'bold';
+
+            // 3. Create a success message element
+            const successMsg = document.createElement('p');
+            successMsg.textContent = `✅ ${fileType.toUpperCase()}-Datei wurde erfolgreich generiert. Klicken Sie zum Herunterladen auf den Link.`;
+            successMsg.style.color = 'green';
+            successMsg.style.margin = '5px 0';
+            successMsg.style.fontWeight = 'bold';
+
+            // 4. Create a new, complete AI message container.
+            // This is the key change: we use the UI library function to create the standard message structure.
+            const newAiMessageDiv = ui.createAIMessageElement(false); // Pass false to prevent it from being set as the global current message
             
-            // 添加到当前AI消息内容中
-            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(downloadLink);
-                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(document.createElement('br'));
-            } else {
-                // 如果没有当前消息容器，创建新的消息显示下载链接
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'file-download-message';
-                messageDiv.style.padding = '10px';
-                messageDiv.style.margin = '10px 0';
-                messageDiv.style.backgroundColor = '#f9f9f9';
-                messageDiv.style.border = '1px solid #ddd';
-                messageDiv.style.borderRadius = '4px';
-                
-                const messageText = document.createElement('p');
-                messageText.textContent = `Generated ${fileType.toUpperCase()} file:`;
-                messageText.style.margin = '0 0 8px 0';
-                messageText.style.fontWeight = 'bold';
-                
-                messageDiv.appendChild(messageText);
-                messageDiv.appendChild(downloadLink);
-                
-                // 添加到聊天容器中
-                const chatContainer = document.querySelector('#chat-container') || document.querySelector('.chat-messages');
-                if (chatContainer) {
-                    chatContainer.appendChild(messageDiv);
-                }
+            // 5. Append the success message and download link to the new container's markdown area
+            if (newAiMessageDiv && newAiMessageDiv.markdownContainer) {
+                newAiMessageDiv.markdownContainer.appendChild(successMsg);
+                newAiMessageDiv.markdownContainer.appendChild(downloadLink);
             }
-            
-            // 清理URL对象
+
+            // 6. Clean up the URL object after the link is clicked
             downloadLink.addEventListener('click', () => {
                 setTimeout(() => {
                     URL.revokeObjectURL(url);
                 }, 100);
             });
             
-            console.log(`[${timestamp()}] [FILE] Download link created successfully for ${fileName}`);
+            console.log(`[${timestamp()}] [FILE] Download link container created successfully for ${fileName}`);
+            
+            // 7. Scroll to the bottom to make the new message visible
+            if (ui.scrollToBottom) {
+                ui.scrollToBottom();
+            }
             
         } catch (error) {
             console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
-            // 显示错误信息
-            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                const errorElement = document.createElement('p');
-                errorElement.textContent = `Error creating download for ${fileType} file: ${error.message}`;
-                errorElement.style.color = 'red';
-                this.state.currentAIMessageContentDiv.markdownContainer.appendChild(errorElement);
+            // Display an error message in a new container if something goes wrong
+            const errorElement = document.createElement('p');
+            errorElement.textContent = `Error creating download for ${fileType} file: ${error.message}`;
+            errorElement.style.color = 'red';
+            const errorMsgDiv = ui.createAIMessageElement(false);
+            if(errorMsgDiv && errorMsgDiv.markdownContainer) {
+                errorMsgDiv.markdownContainer.appendChild(errorElement);
             }
         }
     }
