@@ -530,9 +530,7 @@ export class ChatApiHandler {
                             // *** KEY FIX START ***
                             // 1. Create the persistent download link in its own, new message container.
                             this._createFileDownload(fileData.data_base64, fileName, fileData.type, ui);
-                            // 2. Explicitly set the current message div to null. This FORCES the subsequent
-                            //    text stream to create a brand new container for itself, instead of reusing
-                            //    the one we might have had before or the one the file link is in.
+                            // 2. 强制状态重置：明确设置当前消息容器为 null，确保后续文本响应创建新的容器。
                             this.state.currentAIMessageContentDiv = null;
                             // *** KEY FIX END ***
                             
@@ -549,10 +547,9 @@ export class ChatApiHandler {
                             const fileType = fileTypeMap[fileExtension];
 
                             if (fileType) {
-                                // *** KEY FIX START ***
+                                // 关键修复：创建独立下载链接并强制状态重置
                                 this._createFileDownload(content, name, fileType, ui);
                                 this.state.currentAIMessageContentDiv = null;
-                                // *** KEY FIX END ***
 
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
@@ -710,10 +707,9 @@ export class ChatApiHandler {
      * @param {string} base64Data - The base64 encoded file data
      * @param {string} fileName - The name of the file to download
      * @param {string} fileType - The type of file (excel, word, ppt, pdf)
-     * @param {object} ui - The UI adapter (passed from the caller)
+     * @param {object} ui - The UI adapter (必须从调用者传递)
      */
     _createFileDownload(base64Data, fileName, fileType, ui) {
-        // *** KEY FIX: This function is now self-contained and does not touch `this.state` ***
         const timestamp = () => new Date().toISOString();
         console.log(`[${timestamp()}] [FILE] Creating persistent download for ${fileType} file: ${fileName}`);
         
@@ -750,14 +746,15 @@ export class ChatApiHandler {
             downloadLink.style.textDecoration = 'none';
             downloadLink.style.fontWeight = 'bold';
 
-            // Create a new, independent AI message container just for this download.
-            // We pass `false` to the vision-core version to prevent it from being globally assigned,
-            // but for the standard chatUI, it just creates the element.
-            const messageContainer = ui.createAIMessageElement(false);
-
-            // Append the link to the new, isolated container's content area
+            // 关键修复：创建独立的消息容器，不依赖状态
+            // 注意：这里不传递任何参数，让 UI 库创建标准消息容器
+            const messageContainer = ui.createAIMessageElement();
+            
+            // 关键：确保这个新容器不会被设置为全局当前消息
+            // 通过不将其赋值给 this.state.currentAIMessageContentDiv 来实现
+            
+            // 添加到新容器的内容区域
             if (messageContainer && messageContainer.markdownContainer) {
-                // You can add a success message here too if you want
                 const successMsg = document.createElement('p');
                 successMsg.textContent = `✅ 文件 ${fileName} 已生成并可供下载。`;
                 successMsg.style.fontWeight = 'bold';
@@ -766,6 +763,8 @@ export class ChatApiHandler {
                 messageContainer.markdownContainer.appendChild(successMsg);
                 messageContainer.markdownContainer.appendChild(downloadLink);
                 messageContainer.markdownContainer.appendChild(document.createElement('br'));
+                
+                console.log(`[${timestamp()}] [FILE] Download link added to independent container for ${fileName}`);
             }
             
             downloadLink.addEventListener('click', () => {
@@ -780,7 +779,7 @@ export class ChatApiHandler {
             
         } catch (error) {
             console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
-            const errorContainer = ui.createAIMessageElement(false);
+            const errorContainer = ui.createAIMessageElement();
             if (errorContainer && errorContainer.markdownContainer) {
                 const errorElement = document.createElement('p');
                 errorElement.textContent = `创建文件下载时出错 ${fileName}: ${error.message}`;
