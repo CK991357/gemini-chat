@@ -521,24 +521,9 @@ export class ChatApiHandler {
                             toolResultContent = { output: `Image "${title}" generated and displayed.` };
                             isFileHandled = true;
                         }
-                        // 处理Office文档和PDF类型（标准格式）
-                        else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
-                            console.log(`[${timestamp()}] [MCP] Detected standard format office file:`, fileData.type);
-                            const fileExtension = fileData.type;
-                            const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
-                            
-                            console.log(`[${timestamp()}] [MCP] Creating download link for:`, fileName);
-                            // 创建下载链接 - 关键修改：创建独立的消息容器
-                            this._createPersistentFileDownload(fileData.data_base64, fileName, fileData.type);
-                            toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
-                            isFileHandled = true;
-                        }
-                        // 处理自定义格式
-                        else if (fileData && fileData.file && fileData.file.name && fileData.file.content) {
-                            console.log(`[${timestamp()}] [MCP] Detected custom format file:`, fileData.file.name);
-                            const { name, content } = fileData.file;
-                            const fileExtension = name.split('.').pop().toLowerCase();
-                            
+                        // --- 处理Office文档和PDF类型（合并标准格式和自定义格式） ---
+                        else if (fileData) {
+                            let fileBase64, finalFileName, finalFileType;
                             const fileTypeMap = {
                                 'docx': 'word',
                                 'xlsx': 'excel',
@@ -546,16 +531,34 @@ export class ChatApiHandler {
                                 'pdf': 'pdf'
                             };
 
-                            const fileType = fileTypeMap[fileExtension];
-                            if (fileType) {
-                                console.log(`[${timestamp()}] [MCP] Creating download link for custom format:`, name);
-                                // 创建下载链接 - 关键修改：创建独立的消息容器
-                                this._createPersistentFileDownload(content, name, fileType);
-                                toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
-                                isFileHandled = true;
+                            // 检查标准格式
+                            if (fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
+                                fileBase64 = fileData.data_base64;
+                                finalFileName = fileData.title ? `${fileData.title}.${fileData.type}` : `download.${fileData.type}`;
+                                finalFileType = fileData.type;
                             }
-                        } else {
-                            console.log(`[${timestamp()}] [MCP] JSON parsed but format not recognized:`, Object.keys(fileData));
+                            // 检查自定义格式
+                            else if (fileData.file && fileData.file.name && fileData.file.content) {
+                                const { name, content } = fileData.file;
+                                const fileExtension = name.split('.').pop().toLowerCase();
+                                finalFileType = fileTypeMap[fileExtension];
+                                if (finalFileType) {
+                                    fileBase64 = content;
+                                    finalFileName = name;
+                                }
+                            }
+
+                            // 如果检测到有效的Office/PDF文件
+                            if (fileBase64 && finalFileName && finalFileType) {
+                                console.log(`[${timestamp()}] [MCP] Detected file: ${finalFileName} (${finalFileType})`);
+                                console.log(`[${timestamp()}] [MCP] Creating download link for:`, finalFileName);
+                                // 创建下载链接 - 关键修改：创建独立的消息容器
+                                this._createPersistentFileDownload(fileBase64, finalFileName, finalFileType);
+                                toolResultContent = { output: `${finalFileType.toUpperCase()} file "${finalFileName}" generated and available for download.` };
+                                isFileHandled = true;
+                            } else {
+                                console.log(`[${timestamp()}] [MCP] JSON parsed but format not recognized:`, Object.keys(fileData));
+                            }
                         }
 
                     } catch (e) {
