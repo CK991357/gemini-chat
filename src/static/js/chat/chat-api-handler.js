@@ -747,9 +747,9 @@ export class ChatApiHandler {
 
     /**
      * @private
-     * @description Creates a persistent file download area (不会被聊天刷新覆盖)
+     * @description Creates a persistent file download link inside chat area (不会被新消息覆盖)
      * @param {string} base64Data - Base64 encoded file content
-     * @param {string} fileName - File name
+     * @param {string} fileName - File name without extension
      * @param {string} fileType - File type (excel, word, ppt, pdf)
      */
     _createFileDownload(base64Data, fileName, fileType) {
@@ -757,74 +757,90 @@ export class ChatApiHandler {
         console.log(`[${timestamp()}] [FILE] Creating download for ${fileType} file: ${fileName}`);
 
         try {
-            // === Base64 decode ===
+            // === Decode base64 ===
             const binaryString = atob(base64Data);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
 
-            // 创建Blob对象
-            const mimeTypes = {
-                excel: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                word: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                ppt: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                pdf: 'application/pdf'
+            // === MIME + Extension map ===
+            const fileMeta = {
+                excel: {
+                    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    ext: '.xlsx'
+                },
+                word: {
+                    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    ext: '.docx'
+                },
+                ppt: {
+                    mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    ext: '.pptx'
+                },
+                pdf: {
+                    mime: 'application/pdf',
+                    ext: '.pdf'
+                }
             };
-            const blob = new Blob([bytes], { type: mimeTypes[fileType] || 'application/octet-stream' });
+            const mimeInfo = fileMeta[fileType] || { mime: 'application/octet-stream', ext: '' };
+            const finalFileName = fileName.endsWith(mimeInfo.ext) ? fileName : fileName + mimeInfo.ext;
+
+            // === Create Blob ===
+            const blob = new Blob([bytes], { type: mimeInfo.mime });
             const url = URL.createObjectURL(blob);
 
-            // === Persistent global container ===
-            let fileContainer = document.querySelector('#file-download-container');
+            // === Chat-level independent container ===
+            let fileContainer = document.querySelector('#chat-file-container');
             if (!fileContainer) {
                 fileContainer = document.createElement('div');
-                fileContainer.id = 'file-download-container';
-                fileContainer.style.position = 'relative';
-                fileContainer.style.margin = '20px auto';
-                fileContainer.style.padding = '15px';
-                fileContainer.style.border = '1px solid #e0e0e0';
-                fileContainer.style.background = '#fafafa';
-                fileContainer.style.borderRadius = '10px';
-                fileContainer.style.maxWidth = '900px';
-                fileContainer.style.boxShadow = '0 2px 6px rgba(0,0,0,0.1)';
-                fileContainer.style.fontFamily = 'system-ui, sans-serif';
-                fileContainer.style.transition = 'all 0.3s ease';
+                fileContainer.id = 'chat-file-container';
+                fileContainer.style.margin = '12px 0';
+                fileContainer.style.padding = '10px';
+                fileContainer.style.borderTop = '1px solid #e0e0e0';
+                fileContainer.style.background = '#f9f9f9';
+                fileContainer.style.borderRadius = '8px';
+                fileContainer.style.maxWidth = '95%';
                 fileContainer.style.wordBreak = 'break-all';
+                fileContainer.style.transition = 'all 0.3s ease';
 
-                // ✅ append to global root, not chat
-                const appRoot = document.querySelector('#app') || document.body;
-                appRoot.insertAdjacentElement('beforeend', fileContainer);
+                // ✅ attach to chat area (same as images)
+                const chatArea = document.querySelector('.chat-messages') || document.querySelector('#chat-container');
+                if (chatArea) chatArea.appendChild(fileContainer);
             }
 
-            // === Add new file block ===
+            // === Create file block ===
             const fileBlock = document.createElement('div');
             fileBlock.className = 'file-block';
-            fileBlock.style.marginBottom = '10px';
+            fileBlock.style.margin = '10px 0';
             fileBlock.style.padding = '10px';
             fileBlock.style.border = '1px solid #ddd';
-            fileBlock.style.borderRadius = '8px';
+            fileBlock.style.borderRadius = '6px';
             fileBlock.style.background = '#fff';
+            fileBlock.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
 
             const title = document.createElement('p');
-            title.textContent = `📎 ${fileName}`;
+            title.textContent = `📎 ${finalFileName}`;
             title.style.fontWeight = 'bold';
-            title.style.margin = '0 0 5px 0';
+            title.style.margin = '0 0 6px 0';
             title.style.color = '#333';
 
             const link = document.createElement('a');
             link.href = url;
-            link.download = fileName;
+            link.download = finalFileName;
             link.textContent = `📥 点击下载 ${fileType.toUpperCase()} 文件`;
             link.style.textDecoration = 'none';
             link.style.color = '#0078d7';
             link.style.fontWeight = 'bold';
             link.style.display = 'inline-block';
             link.style.marginBottom = '5px';
-            link.addEventListener('click', () => setTimeout(() => URL.revokeObjectURL(url), 3000));
+            link.addEventListener('click', () => {
+                setTimeout(() => URL.revokeObjectURL(url), 3000);
+            });
 
             fileBlock.appendChild(title);
             fileBlock.appendChild(link);
             fileContainer.appendChild(fileBlock);
 
-            console.log(`[${timestamp()}] [FILE] Persistent download link created for ${fileName}`);
+            console.log(`[${timestamp()}] [FILE] File link displayed inside chat for ${finalFileName}`);
         } catch (error) {
             console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
             if (this.state.currentAIMessageContentDiv?.markdownContainer) {
