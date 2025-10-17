@@ -64,6 +64,11 @@ export class ChatApiHandler {
         // 提取 tools 字段，它可能来自 vision-core.js 或 chat-ui.js
         const tools = requestBody.tools;
 
+        // 添加token统计变量
+        let promptTokens = 0;
+        let completionTokens = 0;
+        let totalTokens = 0;
+
         try {
             const response = await fetch('/api/chat/completions', {
                 method: 'POST',
@@ -119,6 +124,15 @@ export class ChatApiHandler {
                         }
                         try {
                             const data = JSON.parse(jsonStr);
+                            
+                            // 收集token使用情况
+                            if (data.usage) {
+                                promptTokens = data.usage.prompt_tokens || 0;
+                                completionTokens = data.usage.completion_tokens || 0;
+                                totalTokens = data.usage.total_tokens || 0;
+                                Logger.info('Usage:', data.usage);
+                            }
+                            
                             if (data.choices && data.choices.length > 0) {
                                 const choice = data.choices[0];
                                 const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
@@ -232,9 +246,6 @@ export class ChatApiHandler {
                                     }
                                 }
                             }
-                            if (data.usage) {
-                                Logger.info('Usage:', data.usage);
-                            }
                         } catch (e) {
                             Logger.error('Error parsing SSE chunk:', e, jsonStr);
                         }
@@ -258,7 +269,11 @@ export class ChatApiHandler {
             if (functionCallDetected && currentFunctionCall) {
                 console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
                 
-                // 兼容性处理：保存最终文本到历史记录
+                // 在工具调用情况下也显示token使用情况
+                if (this.state.currentAIMessageContentDiv && totalTokens > 0) {
+                    this._displayTokenUsage(this.state.currentAIMessageContentDiv, promptTokens, completionTokens, totalTokens);
+                }
+                
                 if (this.state.currentAIMessageContentDiv &&
                     typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
                     this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {
@@ -271,33 +286,32 @@ export class ChatApiHandler {
                 }
                 this.state.currentAIMessageContentDiv = null;
 
-                // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
                 console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call for model: ${requestBody.model}`);
                 const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
 
                 const isQwenModel = modelConfig && modelConfig.isQwen;
                 const isZhipuModel = modelConfig && modelConfig.isZhipu;
-                const isGeminiToolModel = modelConfig && modelConfig.isGemini; // 新增：检查Gemini工具模型标签
+                const isGeminiToolModel = modelConfig && modelConfig.isGemini;
 
-                // 为 Qwen、Zhipu 和启用了工具的 Gemini 模型统一路由到 MCP 处理器
                 if (isQwenModel || isZhipuModel || isGeminiToolModel) {
-                    // 对于 Gemini 风格的 functionCall，我们将其标准化为 MCP 期望的格式
                     const mcpToolCall = currentFunctionCall.tool_name
                         ? currentFunctionCall
                         : { tool_name: currentFunctionCall.name, arguments: JSON.stringify(currentFunctionCall.args || {}) };
                     
                     console.log(`[${timestamp()}] [DISPATCH] Detected Qwen/Zhipu/Gemini MCP tool call. Routing to _handleMcpToolCall...`);
                     await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey, uiOverrides);
-
                 } else {
-                    // 否则，处理为标准的、前端执行的 Gemini 函数调用（例如默认的 Google 搜索）
                     console.log(`[${timestamp()}] [DISPATCH] Model is not configured for MCP. Routing to _handleGeminiToolCall...`);
                     await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey, uiOverrides);
                 }
                 console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
 
             } else {
-                // 兼容性处理：保存非工具调用的响应
+                // 在非工具调用情况下显示token使用情况
+                if (this.state.currentAIMessageContentDiv && totalTokens > 0) {
+                    this._displayTokenUsage(this.state.currentAIMessageContentDiv, promptTokens, completionTokens, totalTokens);
+                }
+                
                 if (this.state.currentAIMessageContentDiv &&
                     typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
                     this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {

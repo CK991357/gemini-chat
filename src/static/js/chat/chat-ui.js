@@ -377,3 +377,42 @@ export function displayImageResult(base64Image, altText = 'Generated Image', fil
 
     scrollToBottom();
 }
+
+/**
+ * @description 在 AI 消息末尾显示 Token 使用信息。
+ * @param {object} messageContainer - AI 消息容器对象。
+ * @param {number} promptTokens - prompt 的 Token 数量。
+ * @param {number} completionTokens - completion 的 Token 数量。
+ * @param {number} totalTokens - 总 Token 数量。
+ */
+export function displayTokenUsage(messageContainer, promptTokens, completionTokens, totalTokens) {
+    if (!messageContainer || !messageContainer.contentDiv) return;
+
+    // 创建token使用情况显示元素
+    const tokenUsageEl = document.createElement('div');
+    tokenUsageEl.className = 'token-usage-info';
+    tokenUsageEl.style.cssText = `
+        margin-top: 15px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #6c757d;
+        text-align: center;
+    `;
+
+    tokenUsageEl.innerHTML = `
+        <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
+            <span><strong>总Token数:</strong> ${totalTokens.toLocaleString()}</span>
+            <span><strong>上行Token:</strong> ${promptTokens.toLocaleString()}</span>
+            <span><strong>下行Token:</strong> ${completionTokens.toLocaleString()}</span>
+        </div>
+    `;
+
+    // 将token信息添加到消息容器的末尾
+    messageContainer.contentDiv.appendChild(tokenUsageEl);
+
+    // 滚动到底部
+    scrollToBottom();
+}
