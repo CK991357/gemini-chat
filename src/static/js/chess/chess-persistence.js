@@ -104,6 +104,9 @@ class ChessPersistence {
     /**
      * 准备游戏数据用于保存 - 修复版本
      */
+    /**
+     * 准备游戏数据用于保存 - 【已修复】
+     */
     prepareGameData(gameName) {
         // 数据验证
         if (!this.chessGame.getCurrentFEN) {
@@ -115,28 +118,27 @@ class ChessPersistence {
             throw new Error('当前棋局状态不完整，无法保存');
         }
 
-        // 修复：确保所有数组字段都序列化为 JSON 字符串
-        // 修复：字段名与数据库表结构匹配
+        // FIX: 统一使用驼峰命名(camelCase)，与JS对象保持一致
         return {
             name: gameName.substring(0, 100),
             fen: fen,
-            full_history: JSON.stringify(this.chessGame.getFullGameHistory ? this.chessGame.getFullGameHistory() : []), // 序列化为 JSON
-            move_history: JSON.stringify(this.chessGame.moveHistory || []), // 序列化为 JSON
-            current_turn: this.chessGame.currentTurn || 'w',
+            fullHistory: this.chessGame.getFullGameHistory ? this.chessGame.getFullGameHistory() : [],
+            moveHistory: this.chessGame.moveHistory || [],
+            currentTurn: this.chessGame.currentTurn || 'w',
             castling: this.chessGame.castling || 'KQkq',
-            en_passant: this.chessGame.enPassant || '-',
-            half_move_clock: this.chessGame.halfMoveClock || 0,
-            full_move_number: this.chessGame.fullMoveNumber || 1,
-            metadata: JSON.stringify({ // 序列化为 JSON
+            enPassant: this.chessGame.enPassant || '-',
+            halfMoveClock: this.chessGame.halfMoveClock || 0,
+            fullMoveNumber: this.chessGame.fullMoveNumber || 1,
+            metadata: { // metadata本身是一个对象
                 saveTime: new Date().toISOString(),
                 totalMoves: (this.chessGame.fullGameHistory ? this.chessGame.fullGameHistory.length - 1 : 0),
                 gameVersion: '1.0'
-            })
+            }
         };
     }
 
     /**
-     * 从保存的数据恢复游戏 - 修复版本
+     * 从保存的数据恢复游戏 - 【已修复】
      */
     restoreGame(gameData) {
         try {
@@ -149,23 +151,13 @@ class ChessPersistence {
                 throw new Error('FEN格式无效，无法恢复棋局');
             }
 
-            // 修复：解析 JSON 字符串恢复历史记录
+            // FIX: 后端返回的是下划线命名，在这里正确解析
             if (gameData.full_history) {
-                try {
-                    this.chessGame.fullGameHistory = JSON.parse(gameData.full_history);
-                } catch (e) {
-                    console.warn('解析 full_history 失败:', e);
-                    this.chessGame.fullGameHistory = [gameData.fen];
-                }
+                this.chessGame.fullGameHistory = gameData.full_history; // 后端已解析
             }
             
             if (gameData.move_history) {
-                try {
-                    this.chessGame.moveHistory = JSON.parse(gameData.move_history);
-                } catch (e) {
-                    console.warn('解析 move_history 失败:', e);
-                    this.chessGame.moveHistory = [];
-                }
+                this.chessGame.moveHistory = gameData.move_history; // 后端已解析
             }
 
             this.showToast(`✅ 棋局 "${gameData.name}" 加载成功`);
@@ -173,7 +165,9 @@ class ChessPersistence {
 
         } catch (error) {
             Logger.error('Restore game failed:', error);
-            throw new Error(`恢复棋局失败: ${error.message}`);
+            // 将详细错误抛出，以便在 toast 中显示
+            this.showToast(`❌ 恢复棋局失败: ${error.message}`);
+            return false;
         }
     }
 }
