@@ -271,7 +271,7 @@ export class ChatApiHandler {
                 
                 // 在工具调用情况下也显示token使用情况
                 if (this.state.currentAIMessageContentDiv && totalTokens > 0) {
-                    this._displayTokenUsage(this.state.currentAIMessageContentDiv, promptTokens, completionTokens, totalTokens);
+                    ui.displayTokenUsage(this.state.currentAIMessageContentDiv, promptTokens, completionTokens, totalTokens);
                 }
                 
                 if (this.state.currentAIMessageContentDiv &&
@@ -309,7 +309,7 @@ export class ChatApiHandler {
             } else {
                 // 在非工具调用情况下显示token使用情况
                 if (this.state.currentAIMessageContentDiv && totalTokens > 0) {
-                    this._displayTokenUsage(this.state.currentAIMessageContentDiv, promptTokens, completionTokens, totalTokens);
+                    ui.displayTokenUsage(this.state.currentAIMessageContentDiv, promptTokens, completionTokens, totalTokens);
                 }
                 
                 if (this.state.currentAIMessageContentDiv &&
