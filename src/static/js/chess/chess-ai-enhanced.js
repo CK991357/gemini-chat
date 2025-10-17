@@ -111,6 +111,14 @@ export class ChessAIEnhanced {
     }
 
     /**
+     * 辅助函数：设置延时
+     * @param {number} ms - 延时毫秒数
+     */
+    _delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
      * 内部辅助函数：将 FEN 字符串转换为 ASCII 文本棋盘
      * @param {string} fen - FEN 字符串
      * @returns {string} ASCII 棋盘表示
@@ -155,6 +163,11 @@ export class ChessAIEnhanced {
             const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash', analysisId);
             const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
             this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
+
+            // 🚨 关键：在两次模型请求之间设置延时，避免 429 速率限制
+            const delayMs = 1000; // 1 秒延时
+            this.logMessage(`等待 ${delayMs}ms 后进行第二次模型请求...`, 'system');
+            await this._delay(delayMs);
 
             // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
             this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
