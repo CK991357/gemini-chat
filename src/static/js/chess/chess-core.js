@@ -6,7 +6,6 @@
 
 import { Logger } from '../utils/logger.js';
 import { getChessAIEnhancedInstance, initializeChessAIEnhanced } from './chess-ai-enhanced.js';
-import { initializeChessPersistence } from './chess-persistence.js';
 import { ChessRules, PIECES, VALID_CASTLING, VALID_PIECES } from './chess-rule.js';
 
 // 风险缓解：确保 chess.js 已加载
@@ -63,7 +62,6 @@ class ChessGame {
 
         this.fullGameHistory = []; // 完整对局历史
         this.chessAI = null; // AI实例
-        this.persistence = null; // 初始化 persistence
 
         // 第一阶段重构：引入chess.js作为影子引擎
         this.game = new Chess(); // chess.js 实例
@@ -78,13 +76,7 @@ class ChessGame {
         this.createGameOverModal(); // 新增：创建游戏结束模态框
         this.createAIMoveChoiceModal(); // 新增：创建AI走法选择模态框
         this.initializeAI(chatApiHandler);
-        this.addControlButtons();
-        
-        // 初始化持久化模块
-        this.persistence = initializeChessPersistence(this, this.showToast);
-        if (this.persistence) {
-            Logger.info('Chess persistence integrated successfully');
-        }
+        this.addAIButton();
     }
 
     initBoard() {
@@ -923,298 +915,35 @@ class ChessGame {
         console.log('Chess AI Enhanced module initialized via singleton.');
     }
 
-    /**
-     * 添加控制按钮（整合AI按钮和保存加载按钮）
-     */
-    addControlButtons() {
+    addAIButton() {
         const fenActions = document.querySelector('.fen-actions');
         if (!fenActions) {
-            console.error('.fen-actions container not found for control buttons.');
+            console.error('.fen-actions container not found for AI button.');
             return;
         }
 
-        // 清空容器，防止重复添加
-        fenActions.innerHTML = '';
-
-        const buttons = [
-            // 原有的 AI 按钮
-            { 
-                id: 'ask-ai-button', 
-                icon: 'fa-robot', 
-                text: '问AI走法', 
-                title: '让AI选择并执行一步棋', 
-                handler: () => this.handleAskAI() 
-            },
-            { 
-                id: 'ask-ai-best-move-button', 
-                icon: 'fa-brain', 
-                text: '问AI最优解', 
-                title: '请求AI进行详细局面分析', 
-                handler: () => this.handleAskAIBestMove() 
-            },
-            // 新增的保存和加载按钮
-            { 
-                id: 'save-game-button', 
-                icon: 'fa-save', 
-                text: '保存棋局', 
-                title: '保存当前棋局进度', 
-                handler: () => this.handleSaveGame() 
-            },
-            { 
-                id: 'load-game-button', 
-                icon: 'fa-folder-open', 
-                text: '加载棋局', 
-                title: '加载已保存的棋局', 
-                handler: () => this.handleLoadGame() 
-            }
-        ];
-
-        buttons.forEach(btnInfo => {
-            const button = document.createElement('button');
-            button.id = btnInfo.id;
-            button.className = 'action-button';
-            button.innerHTML = `<i class="fas ${btnInfo.icon}"></i> ${btnInfo.text}`;
-            button.title = btnInfo.title;
-            button.addEventListener('click', btnInfo.handler);
-            fenActions.appendChild(button);
-        });
-
-        // 重新附加原有的按钮事件（如果它们被清空了）
-        this.attachOriginalButtonEvents();
-    }
-
-    /**
-     * 重新附加原有按钮事件
-     */
-    attachOriginalButtonEvents() {
-        const copyButton = document.getElementById('copy-fen-button');
-        const resetButton = document.getElementById('reset-chess-button');
-        const undoButton = document.getElementById('undo-move-button');
-
-        if (copyButton) {
-            copyButton.addEventListener('click', () => {
-                if (this.fenOutput) {
-                    this.fenOutput.select();
-                    try {
-                        navigator.clipboard.writeText(this.fenOutput.value);
-                        this.showToast('FEN已复制到剪贴板');
-                    } catch (err) {
-                        document.execCommand('copy');
-                    }
-                }
-            });
+        // --- 原有的 “问AI走法” 按钮 ---
+        if (!document.getElementById('ask-ai-button')) {
+            const aiButton = document.createElement('button');
+            aiButton.id = 'ask-ai-button';
+            aiButton.className = 'action-button chess-ai-button';
+            aiButton.innerHTML = '<i class="fas fa-robot"></i> 问AI走法';
+            aiButton.title = '让AI选择并执行一步棋';
+            aiButton.addEventListener('click', () => this.handleAskAI());
+            fenActions.appendChild(aiButton);
         }
 
-        if (resetButton) {
-            resetButton.addEventListener('click', () => {
-                if (confirm('开始新游戏？当前进度将丢失。')) {
-                    this.completelyResetGame();
-                }
-            });
-        }
-
-        if (undoButton) {
-            undoButton.addEventListener('click', () => {
-                this.undoMove();
-            });
+        // --- 新增的 “问AI最优解” 按钮 ---
+        if (!document.getElementById('ask-ai-best-move-button')) {
+            const bestMoveButton = document.createElement('button');
+            bestMoveButton.id = 'ask-ai-best-move-button';
+            bestMoveButton.className = 'action-button chess-ai-button';
+            bestMoveButton.innerHTML = '<i class="fas fa-brain"></i> 问AI最优解';
+            bestMoveButton.title = '切换到聊天视图并请求AI进行详细局面分析';
+            bestMoveButton.addEventListener('click', () => this.handleAskAIBestMove());
+            fenActions.appendChild(bestMoveButton);
         }
     }
-
-    /**
-     * 处理保存棋局
-     */
-    async handleSaveGame() {
-        if (this.gameOver) {
-            this.showToast('游戏已结束，无需保存');
-            return;
-        }
-
-        if (!this.persistence) {
-            this.showToast('保存功能未初始化');
-            return;
-        }
-
-        const gameName = prompt('请输入棋局名称:', `棋局 - ${new Date().toLocaleString()}`);
-        if (!gameName || gameName.trim() === '') {
-            this.showToast('取消保存');
-            return;
-        }
-
-        const saveButton = document.getElementById('save-game-button');
-        const originalHtml = saveButton.innerHTML;
-        saveButton.disabled = true;
-        saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
-
-        try {
-            await this.persistence.saveGame(gameName.trim());
-        } finally {
-            saveButton.disabled = false;
-            saveButton.innerHTML = originalHtml;
-        }
-    }
-
-    /**
-     * 处理加载棋局
-     */
-    async handleLoadGame() {
-        if (!this.persistence) {
-            this.showToast('加载功能未初始化');
-            return;
-        }
-
-        const loadButton = document.getElementById('load-game-button');
-        const originalHtml = loadButton.innerHTML;
-        loadButton.disabled = true;
-        loadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
-
-        try {
-            const games = await this.persistence.loadGameList();
-            this.showGameLoadModal(games);
-        } finally {
-            loadButton.disabled = false;
-            loadButton.innerHTML = originalHtml;
-        }
-    }
-
-    /**
-     * 创建加载棋局的模态框
-     */
-    createLoadGameModal() {
-        if (document.getElementById('chess-load-game-modal')) return;
-
-        const modal = document.createElement('div');
-        modal.id = 'chess-load-game-modal';
-        modal.className = 'chess-modal';
-        modal.style.display = 'none';
-
-        modal.innerHTML = `
-            <div class="chess-modal-content">
-                <h2>加载棋局</h2>
-                <div class="search-container">
-                    <input type="text" id="chess-load-search" placeholder="搜索棋局名称..." />
-                </div>
-                <div id="chess-load-list" class="chess-load-list"></div>
-                <div class="chess-modal-buttons">
-                    <button id="chess-load-close-btn" class="chess-btn-secondary">关闭</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-
-        // 关闭按钮事件
-        document.getElementById('chess-load-close-btn').addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
-
-        // 点击模态框外部关闭
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        });
-    }
-
-    /**
-     * 显示加载棋局模态框
-     */
-    showGameLoadModal(games = []) {
-        const modal = document.getElementById('chess-load-game-modal');
-        const listContainer = document.getElementById('chess-load-list');
-        if (!modal || !listContainer) return;
-
-        // 渲染游戏列表
-        this.renderGameList(listContainer, games);
-        
-        // 搜索功能
-        const searchInput = document.getElementById('chess-load-search');
-        searchInput.value = '';
-        searchInput.addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            const filteredGames = games.filter(game => 
-                game.name.toLowerCase().includes(searchTerm)
-            );
-            this.renderGameList(listContainer, filteredGames);
-        });
-
-        modal.style.display = 'flex';
-        searchInput.focus();
-    }
-
-    /**
-     * 渲染游戏列表
-     */
-    renderGameList(container, games) {
-        container.innerHTML = '';
-
-        if (games.length === 0) {
-            container.innerHTML = '<p class="no-games">没有找到保存的棋局。</p>';
-            return;
-        }
-
-        games.forEach(game => {
-            const item = document.createElement('div');
-            item.className = 'chess-load-item';
-            item.innerHTML = `
-                <div class="game-info">
-                    <span class="game-name">${this.escapeHtml(game.name)}</span>
-                    <span class="game-date">保存于: ${new Date(game.updated_at).toLocaleString()}</span>
-                </div>
-                <div class="game-actions">
-                    <button class="load-game-btn" data-id="${game.id}">加载</button>
-                </div>
-            `;
-            
-            const loadBtn = item.querySelector('.load-game-btn');
-            loadBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.handleLoadSelectedGame(game.id);
-            });
-
-            // 整个项目点击也可加载
-            item.addEventListener('click', () => {
-                this.handleLoadSelectedGame(game.id);
-            });
-
-            container.appendChild(item);
-        });
-    }
-
-    /**
-     * HTML转义防止XSS
-     */
-    escapeHtml(unsafe) {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-
-    /**
-     * 加载选中的棋局
-     */
-    async handleLoadSelectedGame(gameId) {
-        const modal = document.getElementById('chess-load-game-modal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-
-        if (confirm('确定要加载这个棋局吗？当前进度将丢失。')) {
-            const loadButton = document.getElementById('load-game-button');
-            const originalHtml = loadButton.innerHTML;
-            loadButton.disabled = true;
-            loadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
-
-            try {
-                await this.persistence.loadGame(gameId);
-            } finally {
-                loadButton.disabled = false;
-                loadButton.innerHTML = originalHtml;
-            }
-        }
-    }
-
     async handleAskAI() {
         if (this.gameOver) {
             this.showToast('游戏已结束，无法询问AI');
@@ -1250,9 +979,8 @@ class ChessGame {
             aiButton.innerHTML = originalText;
         }
     }
-
     /**
-     * [新增] 处理"问AI最优解"按钮点击事件，采纳您的优化方案
+     * [新增] 处理“问AI最优解”按钮点击事件，采纳您的优化方案
      */
     async handleAskAIBestMove() {
         if (this.gameOver) {
@@ -1308,7 +1036,6 @@ class ChessGame {
             this.showToast('AI分析模块未就绪，请稍后重试');
         }
     }
-
     /**
      * 创建AI走法选择模态框
      */
