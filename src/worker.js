@@ -948,6 +948,7 @@ async function handleChessRequest(request, env) {
   if (path === '/api/chess/save' && request.method === 'POST') {
     try {
       const gameData = await request.json();
+      console.log('收到棋局保存请求:', gameData); // 调试日志
 
       // 数据校验
       if (!gameData.name || !gameData.fen) {
@@ -963,35 +964,64 @@ async function handleChessRequest(request, env) {
         });
       }
 
-      const { meta } = await env.CHAT_DB.prepare(`
+      // 修复：处理字段名不匹配问题
+      // 前端发送的是驼峰命名，我们需要映射到下划线命名
+      const insertData = {
+        name: gameData.name,
+        fen: gameData.fen,
+        full_history: gameData.full_history || gameData.fullHistory || '[]',
+        move_history: gameData.move_history || gameData.moveHistory || '[]',
+        current_turn: gameData.current_turn || gameData.currentTurn || 'w',
+        castling: gameData.castling || 'KQkq',
+        en_passant: gameData.en_passant || gameData.enPassant || '-',
+        half_move_clock: gameData.half_move_clock || gameData.halfMoveClock || 0,
+        full_move_number: gameData.full_move_number || gameData.fullMoveNumber || 1,
+        metadata: gameData.metadata ? JSON.stringify(gameData.metadata) : '{}'
+      };
+
+      console.log('准备插入的数据:', insertData); // 调试日志
+
+      // 修复：使用正确的D1数据库插入方法
+      const result = await env.CHAT_DB.prepare(`
         INSERT INTO chess_games (name, fen, full_history, move_history, current_turn,
                                castling, en_passant, half_move_clock, full_move_number, metadata)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
-        gameData.name,
-        gameData.fen,
-        JSON.stringify(gameData.fullHistory || []),
-        JSON.stringify(gameData.moveHistory || []),
-        gameData.currentTurn || 'w',
-        gameData.castling || 'KQkq',
-        gameData.enPassant || '-',
-        gameData.halfMoveClock || 0,
-        gameData.fullMoveNumber || 1,
-        JSON.stringify(gameData.metadata || {})
+        insertData.name,
+        insertData.fen,
+        typeof insertData.full_history === 'string' ? insertData.full_history : JSON.stringify(insertData.full_history),
+        typeof insertData.move_history === 'string' ? insertData.move_history : JSON.stringify(insertData.move_history),
+        insertData.current_turn,
+        insertData.castling,
+        insertData.en_passant,
+        insertData.half_move_clock,
+        insertData.full_move_number,
+        insertData.metadata
       ).run();
 
-      return new Response(JSON.stringify({
-        success: true,
-        gameId: meta.last_row_id
-      }), {
-        headers: { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
+      console.log('数据库插入结果:', result); // 调试日志
+
+      // 修复：正确获取插入的ID
+      if (result && result.success) {
+        // 尝试获取最后插入的ID
+        const idResult = await env.CHAT_DB.prepare("SELECT last_insert_rowid() as id").first();
+        const gameId = idResult ? idResult.id : null;
+
+        return new Response(JSON.stringify({
+          success: true,
+          gameId: gameId
+        }), {
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      } else {
+        throw new Error('数据库插入操作失败');
+      }
 
     } catch (error) {
-      console.error('Save game failed:', error);
+      console.error('保存棋局失败:', error);
       return new Response(JSON.stringify({
         success: false,
         error: '服务器内部错误: ' + error.message
@@ -1012,6 +1042,8 @@ async function handleChessRequest(request, env) {
         "SELECT id, name, fen, metadata, created_at, updated_at FROM chess_games ORDER BY updated_at DESC LIMIT 50"
       ).all();
 
+      console.log('获取棋局列表，数量:', results?.length || 0); // 调试日志
+
       return new Response(JSON.stringify({
         success: true,
         games: results || []
@@ -1023,7 +1055,7 @@ async function handleChessRequest(request, env) {
       });
 
     } catch (error) {
-      console.error('List games failed:', error);
+      console.error('获取棋局列表失败:', error);
       return new Response(JSON.stringify({
         success: false,
         error: '服务器内部错误: ' + error.message
@@ -1055,6 +1087,8 @@ async function handleChessRequest(request, env) {
         });
       }
 
+      console.log('加载棋局 ID:', gameId); // 调试日志
+
       const game = await env.CHAT_DB.prepare(
         "SELECT * FROM chess_games WHERE id = ?"
       ).bind(gameId).first();
@@ -1072,13 +1106,15 @@ async function handleChessRequest(request, env) {
         });
       }
 
+      console.log('找到棋局:', game.name); // 调试日志
+
       // 解析 JSON 字符串字段
       try {
         game.full_history = JSON.parse(game.full_history || '[]');
         game.move_history = JSON.parse(game.move_history || '[]');
         game.metadata = JSON.parse(game.metadata || '{}');
       } catch (parseError) {
-        console.error('Parse JSON fields failed:', parseError);
+        console.error('解析JSON字段失败:', parseError);
         // 如果解析失败，使用默认值
         game.full_history = [];
         game.move_history = [];
@@ -1096,7 +1132,7 @@ async function handleChessRequest(request, env) {
       });
 
     } catch (error) {
-      console.error('Load game failed:', error);
+      console.error('加载棋局失败:', error);
       return new Response(JSON.stringify({
         success: false,
         error: '服务器内部错误: ' + error.message
