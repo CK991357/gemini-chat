@@ -3031,3 +3031,54 @@ input:checked + .slider:before {
 .action-button .fa-spinner {
     margin-right: 8px;
 }
+
+/* --- 国际象棋加载模态框按钮样式优化 --- */
+
+/* 1. 为所有按钮设置一个统一的基础样式 */
+.game-actions .load-game-btn,
+.game-actions .rename-game-btn,
+.game-actions .delete-game-btn {
+    padding: 8px 16px;       /* 统一内边距 */
+    border: none;            /* 移除边框 */
+    border-radius: 5px;      /* 统一圆角 */
+    color: white;            /* 统一文字颜色 */
+    font-size: 14px;         /* 统一字体大小 */
+    font-weight: bold;       /* 字体加粗 */
+    cursor: pointer;
+    margin-left: 8px;        /* 按钮之间的间距 */
+    transition: background-color 0.2s ease, transform 0.1s ease; /* 平滑过渡效果 */
+    white-space: nowrap;     /* 防止文字换行 */
+}
+
+/* 鼠标悬停时轻微放大效果 */
+.game-actions .load-game-btn:hover,
+.game-actions .rename-game-btn:hover,
+.game-actions .delete-game-btn:hover {
+    transform: scale(1.05);
+}
+
+/* 2. 定义不同按钮的功能性颜色 */
+
+/* 加载按钮 (主操作) - 使用您已有的 .chess-btn-primary 类 */
+.game-actions .chess-btn-primary {
+    background-color: #007bff; /* 蓝色 */
+}
+.game-actions .chess-btn-primary:hover {
+    background-color: #0056b3; /* 深蓝色 */
+}
+
+/* 重命名按钮 (次要操作) - 使用您已有的 .chess-btn-secondary 类 */
+.game-actions .chess-btn-secondary {
+    background-color: #6c757d; /* 灰色 */
+}
+.game-actions .chess-btn-secondary:hover {
+    background-color: #5a6268; /* 深灰色 */
+}
+
+/* 删除按钮 (危险操作) - 使用您已有的 .chess-btn-danger 类 */
+.game-actions .chess-btn-danger {
+    background-color: #dc3545; /* 红色 */
+}
+.game-actions .chess-btn-danger:hover {
+    background-color: #c82333; /* 深红色 */
+}
