@@ -120,6 +120,11 @@ export default {
     if (url.pathname === '/api/mcp-proxy') {
       return handleMcpProxyRequest(request, env);
     }
+
+    // 新增：处理国际象棋保存功能
+    if (url.pathname.startsWith('/api/chess/')) {
+      return handleChessRequest(request, env);
+    }
  
     // 处理静态资源
     if (url.pathname === '/' || url.pathname === '/index.html') {
@@ -142,17 +147,13 @@ export default {
       });
     }
 
+    // 添加文生图API路由
+    if (url.pathname === '/api/generate-image') {
+        return handleImageGenerationRequest(request, env);
+    }
 
-
-        // 添加文生图API路由
-        if (url.pathname === '/api/generate-image') {
-            return handleImageGenerationRequest(request, env);
-        }
-
-        // ... 其他路由 ...
-
-        return new Response('Not found', { status: 404 });
-    },
+    return new Response('Not found', { status: 404 });
+  },
 };
 
 function getContentType(path) {
@@ -171,122 +172,120 @@ function getContentType(path) {
 }
 
 async function handleWebSocket(request, env) {
-
-
   if (request.headers.get("Upgrade") !== "websocket") {
-		return new Response("Expected WebSocket connection", { status: 400 });
-	}
+    return new Response("Expected WebSocket connection", { status: 400 });
+  }
   
-	const url = new URL(request.url);
-	const pathAndQuery = url.pathname + url.search;
-	const targetUrl = `wss://generativelanguage.googleapis.com${pathAndQuery}`;
-	  
-	console.log('Target URL:', targetUrl);
+  const url = new URL(request.url);
+  const pathAndQuery = url.pathname + url.search;
+  const targetUrl = `wss://generativelanguage.googleapis.com${pathAndQuery}`;
+    
+  console.log('Target URL:', targetUrl);
   
   const [client, proxy] = new WebSocketPair();
   proxy.accept();
   
-   // 用于存储在连接建立前收到的消息
-   let pendingMessages = [];
+  // 用于存储在连接建立前收到的消息
+  let pendingMessages = [];
   
-   const targetWebSocket = new WebSocket(targetUrl);
+  const targetWebSocket = new WebSocket(targetUrl);
  
-   console.log('Initial targetWebSocket readyState:', targetWebSocket.readyState);
+  console.log('Initial targetWebSocket readyState:', targetWebSocket.readyState);
  
-   targetWebSocket.addEventListener("open", () => {
-     console.log('Connected to target server');
-     console.log('targetWebSocket readyState after open:', targetWebSocket.readyState);
-     
-     // 连接建立后，发送所有待处理的消息
-     console.log(`Processing ${pendingMessages.length} pending messages`);
-     for (const message of pendingMessages) {
+  targetWebSocket.addEventListener("open", () => {
+    console.log('Connected to target server');
+    console.log('targetWebSocket readyState after open:', targetWebSocket.readyState);
+    
+    // 连接建立后，发送所有待处理的消息
+    console.log(`Processing ${pendingMessages.length} pending messages`);
+    for (const message of pendingMessages) {
       try {
         targetWebSocket.send(message);
         console.log('Sent pending message:', message);
       } catch (error) {
         console.error('Error sending pending message:', error);
       }
-     }
-     pendingMessages = []; // 清空待处理消息队列
-   });
+    }
+    pendingMessages = []; // 清空待处理消息队列
+  });
  
-   proxy.addEventListener("message", async (event) => {
-     console.log('Received message from client:', {
-       dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
-       dataType: typeof event.data,
-       timestamp: new Date().toISOString()
-     });
-     
-     console.log("targetWebSocket.readyState"+targetWebSocket.readyState)
-     if (targetWebSocket.readyState === WebSocket.OPEN) {
-        try {
-          targetWebSocket.send(event.data);
-          console.log('Successfully sent message to gemini');
-        } catch (error) {
-          console.error('Error sending to gemini:', error);
-        }
-     } else {
-       // 如果连接还未建立，将消息加入待处理队列
-       console.log('Connection not ready, queueing message');
-       pendingMessages.push(event.data);
-     }
-   });
+  proxy.addEventListener("message", async (event) => {
+    console.log('Received message from client:', {
+      dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
+      dataType: typeof event.data,
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log("targetWebSocket.readyState"+targetWebSocket.readyState)
+    if (targetWebSocket.readyState === WebSocket.OPEN) {
+      try {
+        targetWebSocket.send(event.data);
+        console.log('Successfully sent message to gemini');
+      } catch (error) {
+        console.error('Error sending to gemini:', error);
+      }
+    } else {
+      // 如果连接还未建立，将消息加入待处理队列
+      console.log('Connection not ready, queueing message');
+      pendingMessages.push(event.data);
+    }
+  });
  
-   targetWebSocket.addEventListener("message", (event) => {
-     console.log('Received message from gemini:', {
-     dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
-     dataType: typeof event.data,
-     timestamp: new Date().toISOString()
-     });
-     
-     try {
-     if (proxy.readyState === WebSocket.OPEN) {
-       proxy.send(event.data);
-       console.log('Successfully forwarded message to client');
-     }
-     } catch (error) {
-     console.error('Error forwarding to client:', error);
-     }
-   });
+  targetWebSocket.addEventListener("message", (event) => {
+    console.log('Received message from gemini:', {
+    dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
+    dataType: typeof event.data,
+    timestamp: new Date().toISOString()
+    });
+    
+    try {
+    if (proxy.readyState === WebSocket.OPEN) {
+      proxy.send(event.data);
+      console.log('Successfully forwarded message to client');
+    }
+    } catch (error) {
+    console.error('Error forwarding to client:', error);
+    }
+  });
  
-   targetWebSocket.addEventListener("close", (event) => {
-     console.log('Gemini connection closed:', {
-     code: event.code,
-     reason: event.reason || 'No reason provided',
-     wasClean: event.wasClean,
-     timestamp: new Date().toISOString(),
-     readyState: targetWebSocket.readyState
-     });
-     if (proxy.readyState === WebSocket.OPEN) {
-     proxy.close(event.code, event.reason);
-     }
-   });
+  targetWebSocket.addEventListener("close", (event) => {
+    console.log('Gemini connection closed:', {
+    code: event.code,
+    reason: event.reason || 'No reason provided',
+    wasClean: event.wasClean,
+    timestamp: new Date().toISOString(),
+    readyState: targetWebSocket.readyState
+    });
+    if (proxy.readyState === WebSocket.OPEN) {
+    proxy.close(event.code, event.reason);
+    }
+  });
  
-   proxy.addEventListener("close", (event) => {
-     console.log('Client connection closed:', {
-     code: event.code,
-     reason: event.reason || 'No reason provided',
-     wasClean: event.wasClean,
-     timestamp: new Date().toISOString()
-     });
-     if (targetWebSocket.readyState === WebSocket.OPEN) {
-     targetWebSocket.close(event.code, event.reason);
-     }
-   });
+  proxy.addEventListener("close", (event) => {
+    console.log('Client connection closed:', {
+    code: event.code,
+    reason: event.reason || 'No reason provided',
+    wasClean: event.wasClean,
+    timestamp: new Date().toISOString()
+    });
+    if (targetWebSocket.readyState === WebSocket.OPEN) {
+    targetWebSocket.close(event.code, event.reason);
+    }
+  });
  
-   targetWebSocket.addEventListener("error", (error) => {
-     console.error('Gemini WebSocket error:', {
-     error: error.message || 'Unknown error',
-     timestamp: new Date().toISOString(),
-     readyState: targetWebSocket.readyState
-     });
-   });
+  targetWebSocket.addEventListener("error", (error) => {
+    console.error('Gemini WebSocket error:', {
+    error: error.message || 'Unknown error',
+    timestamp: new Date().toISOString(),
+    readyState: targetWebSocket.readyState
+    });
+  });
 
  
-   return new Response(null, {
-   status: 101,
-   webSocket: client,
-   });
+  return new Response(null, {
+  status: 101,
+  webSocket: client,
+  });
 }
 
 async function handleAPIRequest(request, env) {
@@ -298,13 +297,13 @@ async function handleAPIRequest(request, env) {
             const model = body.model || '';
 
             // 路由到新的聊天/搜索请求处理器
-             if (
+            if (
                 model === 'models/gemini-2.5-pro' ||
                 model === 'models/gemini-2.5-flash-preview-05-20' ||
                 model === 'models/gemini-2.5-flash-lite-preview-06-17' ||
                 model === 'models/gemini-2.0-flash'||
-                 model === 'models/gemini-2.5-flash' ||
-                 model === 'gemini-2.5-flash-preview-09-2025'
+                model === 'models/gemini-2.5-flash' ||
+                model === 'gemini-2.5-flash-preview-09-2025'
 
             ) {                
                 console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
@@ -418,7 +417,7 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-                            } else if (model === 'Qwen/Qwen3-Next-80B-A3B-Thinking') {
+            } else if (model === 'Qwen/Qwen3-Next-80B-A3B-Thinking') {
                 console.log(`DEBUG: Routing to ModelScope chat proxy for model: ${model}`);
                 const targetUrl = 'https://api-inference.modelscope.cn/v1/chat/completions';
                 const apiKey = env.QWEN_API_KEY;
@@ -920,4 +919,206 @@ async function handleHistoryRequest(request, env) {
      status: 404,
      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
    });
+}
+
+/**
+ * @function handleChessRequest
+ * @description 处理国际象棋相关的API请求（保存、列表、加载）
+ * @param {Request} request - 传入的请求对象
+ * @param {Object} env - 环境变量对象，包含D1数据库绑定等
+ * @returns {Promise<Response>} - 返回处理后的响应
+ */
+async function handleChessRequest(request, env) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  // 处理预检请求
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400',
+      }
+    });
+  }
+
+  // 路由: 保存棋局
+  if (path === '/api/chess/save' && request.method === 'POST') {
+    try {
+      const gameData = await request.json();
+
+      // 数据校验
+      if (!gameData.name || !gameData.fen) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: '缺少必要参数：name 和 fen' 
+        }), { 
+          status: 400,
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      const { meta } = await env.CHAT_DB.prepare(`
+        INSERT INTO chess_games (name, fen, full_history, move_history, current_turn,
+                               castling, en_passant, half_move_clock, full_move_number, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        gameData.name,
+        gameData.fen,
+        JSON.stringify(gameData.fullHistory || []),
+        JSON.stringify(gameData.moveHistory || []),
+        gameData.currentTurn || 'w',
+        gameData.castling || 'KQkq',
+        gameData.enPassant || '-',
+        gameData.halfMoveClock || 0,
+        gameData.fullMoveNumber || 1,
+        JSON.stringify(gameData.metadata || {})
+      ).run();
+
+      return new Response(JSON.stringify({
+        success: true,
+        gameId: meta.last_row_id
+      }), {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+
+    } catch (error) {
+      console.error('Save game failed:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: '服务器内部错误: ' + error.message
+      }), { 
+        status: 500, 
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        } 
+      });
+    }
+  }
+
+  // 路由: 获取棋局列表
+  if (path === '/api/chess/list' && request.method === 'GET') {
+    try {
+      const { results } = await env.CHAT_DB.prepare(
+        "SELECT id, name, fen, metadata, created_at, updated_at FROM chess_games ORDER BY updated_at DESC LIMIT 50"
+      ).all();
+
+      return new Response(JSON.stringify({
+        success: true,
+        games: results || []
+      }), {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+
+    } catch (error) {
+      console.error('List games failed:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: '服务器内部错误: ' + error.message
+      }), { 
+        status: 500, 
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        } 
+      });
+    }
+  }
+
+  // 路由: 加载指定棋局
+  const loadMatch = path.match(/^\/api\/chess\/load\/(.+)$/);
+  if (loadMatch && request.method === 'GET') {
+    try {
+      const gameId = loadMatch[1];
+      if (!gameId) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: '缺少棋局ID' 
+        }), { 
+          status: 400,
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      const game = await env.CHAT_DB.prepare(
+        "SELECT * FROM chess_games WHERE id = ?"
+      ).bind(gameId).first();
+
+      if (!game) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: '未找到指定棋局' 
+        }), { 
+          status: 404,
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      // 解析 JSON 字符串字段
+      try {
+        game.full_history = JSON.parse(game.full_history || '[]');
+        game.move_history = JSON.parse(game.move_history || '[]');
+        game.metadata = JSON.parse(game.metadata || '{}');
+      } catch (parseError) {
+        console.error('Parse JSON fields failed:', parseError);
+        // 如果解析失败，使用默认值
+        game.full_history = [];
+        game.move_history = [];
+        game.metadata = {};
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        game: game
+      }), {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+
+    } catch (error) {
+      console.error('Load game failed:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: '服务器内部错误: ' + error.message
+      }), { 
+        status: 500, 
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        } 
+      });
+    }
+  }
+
+  // 未匹配的路由
+  return new Response(JSON.stringify({ 
+    success: false, 
+    error: '国际象棋API路由未找到' 
+  }), {
+    status: 404,
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
 }
