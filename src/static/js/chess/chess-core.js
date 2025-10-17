@@ -1430,23 +1430,41 @@ class ChessGame {
         games.forEach(game => {
             const item = document.createElement('div');
             item.className = 'chess-load-item';
+            // 添加重命名和删除按钮
             item.innerHTML = `
                 <div class="game-info">
                     <span class="game-name">${this.escapeHtml(game.name)}</span>
                     <span class="game-date">保存于: ${new Date(game.updated_at).toLocaleString()}</span>
                 </div>
                 <div class="game-actions">
-                    <button class="load-game-btn" data-id="${game.id}">加载</button>
+                    <button class="load-game-btn chess-btn-primary" data-id="${game.id}">加载</button>
+                    <button class="rename-game-btn chess-btn-secondary" data-id="${game.id}">重命名</button>
+                    <button class="delete-game-btn chess-btn-danger" data-id="${game.id}">删除</button>
                 </div>
             `;
             
+            // 绑定加载按钮事件
             const loadBtn = item.querySelector('.load-game-btn');
             loadBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.handleLoadSelectedGame(game.id);
             });
 
-            // 整个项目点击也可加载
+            // 【新增】绑定重命名按钮事件
+            const renameBtn = item.querySelector('.rename-game-btn');
+            renameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleRenameGame(game.id, game.name, item);
+            });
+
+            // 【新增】绑定删除按钮事件
+            const deleteBtn = item.querySelector('.delete-game-btn');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleDeleteGame(game.id, item);
+            });
+
+            // 整个项目点击也可加载 (保留原逻辑，但点击按钮时已阻止冒泡)
             item.addEventListener('click', () => {
                 this.handleLoadSelectedGame(game.id);
             });
@@ -1472,6 +1490,7 @@ class ChessGame {
      */
     async handleLoadSelectedGame(gameId) {
         const modal = document.getElementById('chess-load-game-modal');
+        
         if (modal) {
             modal.style.display = 'none';
         }
@@ -1490,6 +1509,47 @@ class ChessGame {
             }
         }
     }
+/**
+ * 【新增】处理删除棋局
+ */
+async handleDeleteGame(gameId, itemElement) {
+    if (!this.persistence) {
+        this.showToast('删除功能未初始化');
+        return;
+    }
+
+    if (confirm(`确定要永久删除棋局 "${itemElement.querySelector('.game-name').textContent}" 吗？此操作无法撤销。`)) {
+        const success = await this.persistence.deleteGame(gameId);
+        if (success) {
+            // 从UI上移除该项
+            itemElement.remove();
+            this.showToast('棋局已删除');
+        }
+    }
+}
+
+/**
+ * 【新增】处理重命名棋局
+ */
+async handleRenameGame(gameId, currentName, itemElement) {
+    if (!this.persistence) {
+        this.showToast('重命名功能未初始化');
+        return;
+    }
+
+    const newName = prompt('请输入新的棋局名称:', currentName);
+
+    if (newName && newName.trim() !== '' && newName.trim() !== currentName) {
+        const success = await this.persistence.renameGame(gameId, newName.trim());
+        if (success) {
+            // 更新UI上的名称
+            itemElement.querySelector('.game-name').textContent = newName.trim();
+            this.showToast('重命名成功');
+        }
+    } else if (newName !== null) {
+        this.showToast('名称无效或未更改');
+    }
+}
 }
 
 let chessGame = null;

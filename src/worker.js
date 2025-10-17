@@ -1059,6 +1059,54 @@ async function handleChessRequest(request, env) {
     }
   }
 
+  // 【新增】路由: 删除指定棋局
+  const deleteMatch = path.match(/^\/api\/chess\/delete\/(.+)$/);
+  if (deleteMatch && request.method === 'DELETE') {
+    try {
+      const gameId = deleteMatch[1];
+      if (!gameId) {
+        return new Response(JSON.stringify({ success: false, error: '缺少棋局ID' }), { status: 400 });
+      }
+
+      await env.CHAT_DB.prepare("DELETE FROM chess_games WHERE id = ?").bind(gameId).run();
+
+      return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*' } }); // 204 No Content 表示成功
+
+    } catch (error) {
+      console.error('删除棋局失败:', error);
+      return new Response(JSON.stringify({
+        success: false, error: '服务器内部错误: ' + error.message
+      }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  // 【新增】路由: 重命名指定棋局
+  const renameMatch = path.match(/^\/api\/chess\/rename\/(.+)$/);
+  if (renameMatch && request.method === 'PATCH') {
+    try {
+      const gameId = renameMatch[1];
+      const { name } = await request.json();
+
+      if (!gameId || !name || name.trim() === '') {
+        return new Response(JSON.stringify({ success: false, error: '缺少棋局ID或新名称' }), { status: 400 });
+      }
+
+      await env.CHAT_DB.prepare(
+        "UPDATE chess_games SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind(name.trim(), gameId).run();
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+
+    } catch (error) {
+      console.error('重命名棋局失败:', error);
+      return new Response(JSON.stringify({
+        success: false, error: '服务器内部错误: ' + error.message
+      }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   // 未匹配的路由
   return new Response(JSON.stringify({ success: false, error: '国际象棋API路由未找到' }), {
     status: 404,

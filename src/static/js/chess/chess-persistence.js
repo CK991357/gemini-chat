@@ -100,6 +100,58 @@ class ChessPersistence {
             return false;
         }
     }
+    /**
+     * 【新增】删除指定棋局
+     * @param {string|number} gameId - 棋局ID
+     */
+    async deleteGame(gameId) {
+        try {
+            const response = await fetch(`/api/chess/delete/${gameId}`, {
+                method: 'DELETE',
+            });
+
+            if (!response.ok) {
+                const result = await response.json();
+                throw new Error(result.error || `HTTP error! status: ${response.status}`);
+            }
+
+            return true;
+        } catch (error) {
+            Logger.error('Delete game failed:', error);
+            this.showToast(`❌ 删除失败: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * 【新增】重命名指定棋局
+     * @param {string|number} gameId - 棋局ID
+     * @param {string} newName - 新的棋局名称
+     */
+    async renameGame(gameId, newName) {
+        try {
+            const response = await fetch(`/api/chess/rename/${gameId}`, {
+                method: 'PATCH', // 使用 PATCH 表示部分更新
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name: newName }),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || `HTTP error! status: ${response.status}`);
+            }
+
+            return true;
+        } catch (error) {
+            Logger.error('Rename game failed:', error);
+            this.showToast(`❌ 重命名失败: ${error.message}`);
+            return false;
+        }
+    }
+
 
     /**
      * 准备游戏数据用于保存 - 修复版本
