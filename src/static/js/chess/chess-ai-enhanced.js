@@ -151,12 +151,11 @@ export class ChessAIEnhanced {
             // 在获取FEN前确保影子引擎同步
             this.chessGame.forceShadowSync();
             
-            const history = this.chessGame.getFullGameHistory();
             const currentFEN = this.chessGame.getCurrentFEN();
 
             // --- 第一阶段：获取AI的详细分析 ---
             this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
-            const analysisPrompt = this.buildAnalysisPrompt(history, currentFEN);
+            const analysisPrompt = this.buildAnalysisPrompt(currentFEN);
             // 使用固定 id 来把流追加到同一条消息中（阶段一）
             const analysisId = `chess-analysis-${Date.now()}`;
             this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, create: true });
@@ -234,10 +233,10 @@ export class ChessAIEnhanced {
     }
 
     /**
-     * 第一阶段：构建分析提示词 (已修复和优化)
+     * 第一阶段：构建分析提示词 (已优化：移除历史FEN，增强当前局面分析)
      */
-    buildAnalysisPrompt(history, currentFEN) {
-        const turnColor = currentFEN.split(' ')[1];
+    buildAnalysisPrompt(currentFEN) {
+        const [piecePlacement, turnColor, castling, enPassant, halfMove, fullMove] = currentFEN.split(' ');
         const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
         
         // 🚨 明确棋子颜色与大小写规则
@@ -245,26 +244,23 @@ export class ChessAIEnhanced {
             ? '🚨🚨 极其关键：当前为白方回合，所有推荐走法必须使用大写字母（K、Q、R、B、N、P），且必须是白方棋子的合法移动。'
             : '🚨🚨 极其关键：当前为黑方回合，所有推荐走法必须使用小写字母（k、q、r、b、n、p），且必须是黑方棋子的合法移动。';
 
-        // 📜 最近3个FEN局面，最后一行为当前状态
-        const historyContext = history.length > 1
-            ? `📜 以下为最近 3 个局面（FEN 快照），最后一行为当前局面：
-<fen_snapshots>
-${history.slice(-3).join('\n')}
-</fen_snapshots>
-请仅以最后一个 FEN 作为分析依据。`
-            : '🆕 这是一个新的棋局（无历史记录）';
-
         const asciiBoard = this._fenToAscii(currentFEN);
 
-        return `你是一位国际象棋特级大师兼规则验证专家。请基于精确的棋盘状态进行分析。
+        // 局面阶段判断
+        const pieceCount = (piecePlacement.match(/[KQRBNPkqrbnp]/g) || []).length;
+        let gamePhase = '';
+        if (pieceCount > 30) gamePhase = '开局';
+        else if (pieceCount > 20) gamePhase = '中局';
+        else gamePhase = '残局';
+
+        return `你是一位国际象棋特级大师兼规则验证专家。请基于精确的当前棋盘状态进行分析。
 
 ## 🎯 核心目标
 1.  **首先，极其严格地确认当前回合方。**
-2.  分析当前局面 → 评估优劣势 → 推荐**合法且最优的 1–3 个走法**。
+2.  深度分析当前局面 → 评估优劣势 → 推荐**合法且最优的 1–3 个走法**。
 3.  **绝对禁止推荐非当前回合方的走法。**
 
 ## 📋 输入信息
-${historyContext}
 
 ### 📊 当前棋盘 (ASCII 视图)
 \`\`\`
@@ -273,6 +269,9 @@ ${asciiBoard}
 
 🎯 当前局面 FEN: \`${currentFEN}\`
 ⚡ 当前回合方: ${turn}
+📈 局面阶段: ${gamePhase} (基于棋子数量: ${pieceCount})
+🏰 易位权利: ${castling || '无'}
+🎯 吃过路兵目标格: ${enPassant !== '-' ? enPassant : '无'}
 
 ${pieceConstraints}
 
@@ -296,17 +295,26 @@ ${pieceConstraints}
    
 ---
 
-## 🧠 分析框架
-### 局面评估
-- 阶段识别：判断为开局 / 中局 / 残局，并说明依据。
-- 子力对比与兵形结构。
-- 关键格与线路控制。
-- 王的安全性与潜在威胁。
+## 🧠 深度分析框架
 
-### 走法推荐标准
-- **战术机会**：吃子、将军、双重攻击、战术组合。
-- **战略价值**：控制中心、改善子力位置、破坏对方结构。
-- **可行性**：必须是当前局面下可立即执行的合法走法。
+### 局面评估要素
+- **子力对比**: 计算双方棋子价值差异
+- **兵形结构**: 分析孤兵、联兵、通路兵等
+- **王的安全**: 评估王周围防御和潜在威胁
+- **控制中心**: 分析对d4、d5、e4、e5格的控制
+- **子力活跃度**: 评估棋子位置和活动范围
+- **战术机会**: 识别牵制、双重攻击、闪击等
+
+### 走法推荐优先级
+1. **强制战术**: 将军、得子、致命威胁
+2. **战略发展**: 控制关键格、改善子力位置
+3. **局面巩固**: 加强防御、消除弱点
+
+### 特殊局面识别
+- 检查是否有王车易位机会
+- 识别可能的战术组合
+- 评估兵升变可能性
+- 分析关键格的争夺
 
 ---
 
@@ -316,16 +324,19 @@ ${pieceConstraints}
 \`\`\`
 ### 局面分析
 **当前回合方确认：[在此处明确声明当前是白方或黑方回合]**
-[你的专业分析，包含阶段判断、局面优劣与战术要点。]
+**局面阶段判断**: ${gamePhase}
+[你的专业分析，包含子力对比、兵形结构、王的安全性与战术要点。]
 
 ### 候选走法
 1. **走法1** (如: Nf3)
    - 战略意图: [简要说明此走法的核心目标]
    - 预期效果: [此走法对局面的直接影响]
+   - 风险评估: [可能的不利因素]
 
 2. **走法2** (如: e4)
    - 战略意图: [简要说明]
    - 预期效果: [影响描述]
+   - 风险评估: [可能的不利因素]
 
 [如有第三个走法...]
 
@@ -342,6 +353,7 @@ ${pieceConstraints}
 - ❌ 建议非法或导致己方被将军的走法  
 - ❌ 使用模糊描述代替 SAN 记法  
 - ❌ 推荐错误颜色方的走法  
+- ❌ 依赖历史局面信息 - 只基于当前FEN分析
 
 请基于精确的棋盘验证与规则逻辑，输出专业、合法、可执行的最佳走法建议。`;
     }
