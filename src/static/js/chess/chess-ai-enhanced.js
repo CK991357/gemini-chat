@@ -716,17 +716,31 @@ text
     /**
      * 默认的模态框处理器（以防外部未提供）
      */
+    /**
+     * 默认的模态框处理器（修复版，支持单个选项）
+     */
     defaultMoveChoiceModal(analysis, moves) {
         return new Promise((resolve, reject) => {
-            // 在实际项目中，这里应该是一个更美观的UI组件
-            const choice = prompt(
-                `AI分析:\n${analysis}\n\nAI提供了多个选项，请输入您想执行的走法:\n${moves.join(', ')}`,
-                moves
-            );
-            if (choice && moves.includes(choice)) {
-                resolve(choice);
+            // 对于单个选项，提供更友好的提示
+            if (moves.length === 1) {
+                const confirmMessage = `AI分析:\n${analysis}\n\nAI推荐唯一走法: ${moves[0]}\n\n点击"确定"执行此走法，或"取消"放弃。`;
+                const confirmed = confirm(confirmMessage);
+                if (confirmed) {
+                    resolve(moves[0]);
+                } else {
+                    reject(new Error('用户取消了选择'));
+                }
             } else {
-                reject(new Error('用户取消或输入了无效的选择'));
+                // 多个选项的原始逻辑
+                const choice = prompt(
+                    `AI分析:\n${analysis}\n\nAI提供了多个选项，请输入您想执行的走法:\n${moves.join(', ')}`,
+                    moves[0] // 默认选择第一个
+                );
+                if (choice && moves.includes(choice)) {
+                    resolve(choice);
+                } else {
+                    reject(new Error('用户取消或输入了无效的选择'));
+                }
             }
         });
     }
