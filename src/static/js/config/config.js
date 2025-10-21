@@ -790,28 +790,109 @@ print(json.dumps(result))
 \`firecrawl\` 是一个多功能网页抓取和数据提取工具，通过 \`mode\` 参数调用不同功能。其 \`parameters\` 结构是嵌套的。
 
 **✅ 正确的调用结构:**
-\`{"mode": "<功能模式>", "parameters": {"<参数名>": "<参数值>"}}\`
+\`\`\`json
+{"mode": "<功能模式>", "parameters": {"<参数名>": "<参数值>"}}
+\`\`\`
+
+**💡 重要提示:**
+- \`scrape\`、\`search\`、\`map\` 是同步操作，立即返回结果
+- \`crawl\`、\`extract\` 是异步操作，返回 \`job_id\` 用于后续状态检查
+- 所有参数都必须在 \`parameters\` 对象内，不要放在顶层
+- URL 必须以 \`http://\` 或 \`https://\` 开头
 
 **➡️ 示例 1: 抓取单个网页 (\`scrape\`)**
 
 **✅ 正确示例:**
-\`{"mode": "scrape", "parameters": {"url": "https://docs.firecrawl.dev/"}}\`
+\`\`\`json
+{
+  "mode": "scrape", 
+  "parameters": {
+    "url": "https://docs.firecrawl.dev/",
+    "formats": ["markdown"]  // 可选：["markdown", "html"]，默认markdown
+  }
+}
+\`\`\`
 
-**➡️ 示例 2: 异步爬取网站 (\`crawl\`) 与检查状态 (\`check_status\`)**
+**➡️ 示例 2: 网页搜索 (\`search\`)**
 
-**步骤 1: 启动爬取任务**
 **✅ 正确示例:**
-\`{"mode": "crawl", "parameters": {"url": "https://firecrawl.dev", "limit": 5}}\`
+\`\`\`json
+{
+  "mode": "search", 
+  "parameters": {
+    "query": "人工智能最新发展",
+    "limit": 5
+  }
+}
+\`\`\`
+
+**➡️ 示例 3: 获取网站地图 (\`map\`)**
+
+**✅ 正确示例:**
+\`\`\`json
+{
+  "mode": "map", 
+  "parameters": {
+    "url": "https://example.com"
+  }
+}
+\`\`\`
+
+**➡️ 示例 4: 异步爬取网站 (\`crawl\`)**
+
+**✅ 正确示例:**
+\`\`\`json
+{
+  "mode": "crawl", 
+  "parameters": {
+    "url": "https://firecrawl.dev", 
+    "limit": 5
+  }
+}
+\`\`\`
 *此调用会返回一个 \`job_id\`，用于后续查询。*
 
-**步骤 2: 使用 \`job_id\` 检查任务状态**
+**➡️ 示例 5: 结构化数据提取 (\`extract\`)**
+
 **✅ 正确示例:**
-\`{"mode": "check_status", "parameters": {"job_id": "some-unique-job-identifier"}}\`
+\`\`\`json
+{
+  "mode": "extract", 
+  "parameters": {
+    "urls": ["https://news.example.com/article"],
+    "prompt": "提取文章标题、作者和发布时间",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string"},
+        "author": {"type": "string"}, 
+        "publish_time": {"type": "string"}
+      }
+    }
+  }
+}
+\`\`\`
+
+**➡️ 示例 6: 检查异步任务状态 (\`check_status\`)**
+
+**✅ 正确示例:**
+\`\`\`json
+{
+  "mode": "check_status", 
+  "parameters": {
+    "job_id": "some-unique-job-identifier"
+  }
+}
+\`\`\`
 
 **❌ 错误示例 (请避免以下常见错误):**
--   **缺少 \`mode\` 参数:** \`{"parameters": {"url": "..."}}\`
--   **缺少嵌套的 \`parameters\` 对象:** \`{"mode": "scrape", "url": "..."}\`
--   **将参数放在顶层:** \`{"url": "..."}\` (错误：所有模式的参数都必须在嵌套的 \`parameters\` 对象内)`
+
+- **缺少 \`mode\` 参数:** \`{"parameters": {"url": "..."}}\`
+- **缺少嵌套的 \`parameters\` 对象:** \`{"mode": "scrape", "url": "..."}\`
+- **将参数放在顶层:** \`{"url": "..."}\` 
+- **使用无效的URL格式:** \`{"mode": "scrape", "parameters": {"url": "example.com"}}\` (缺少协议)
+- **错误的参数类型:** \`{"mode": "extract", "parameters": {"urls": "https://example.com"}}\` (urls应该是数组)
+`
         },
                 {
             id: 'Tool_gemini',
@@ -1203,33 +1284,114 @@ print(json.dumps(result))
 -   **参数名错误:** \`{"q": "latest AI news"}\` (应为 "query" 而非 "q")
 -   **参数值错误:** \`{"query": 123}\` (query 参数值应为字符串，而不是数字)
 
+
 ### 工具调用示例（Firecrawl）
 
 \`firecrawl\` 是一个多功能网页抓取和数据提取工具，通过 \`mode\` 参数调用不同功能。其 \`parameters\` 结构是嵌套的。
 
 **✅ 正确的调用结构:**
-\`{"mode": "<功能模式>", "parameters": {"<参数名>": "<参数值>"}}\`
+\`\`\`json
+{"mode": "<功能模式>", "parameters": {"<参数名>": "<参数值>"}}
+\`\`\`
+
+**💡 重要提示:**
+- \`scrape\`、\`search\`、\`map\` 是同步操作，立即返回结果
+- \`crawl\`、\`extract\` 是异步操作，返回 \`job_id\` 用于后续状态检查
+- 所有参数都必须在 \`parameters\` 对象内，不要放在顶层
+- URL 必须以 \`http://\` 或 \`https://\` 开头
 
 **➡️ 示例 1: 抓取单个网页 (\`scrape\`)**
 
 **✅ 正确示例:**
-\`{"mode": "scrape", "parameters": {"url": "https://docs.firecrawl.dev/"}}\`
+\`\`\`json
+{
+  "mode": "scrape", 
+  "parameters": {
+    "url": "https://docs.firecrawl.dev/",
+    "formats": ["markdown"]  // 可选：["markdown", "html"]，默认markdown
+  }
+}
+\`\`\`
 
-**➡️ 示例 2: 异步爬取网站 (\`crawl\`) 与检查状态 (\`check_status\`)**
+**➡️ 示例 2: 网页搜索 (\`search\`)**
 
-**步骤 1: 启动爬取任务**
 **✅ 正确示例:**
-\`{"mode": "crawl", "parameters": {"url": "https://firecrawl.dev", "limit": 5}}\`
+\`\`\`json
+{
+  "mode": "search", 
+  "parameters": {
+    "query": "人工智能最新发展",
+    "limit": 5
+  }
+}
+\`\`\`
+
+**➡️ 示例 3: 获取网站地图 (\`map\`)**
+
+**✅ 正确示例:**
+\`\`\`json
+{
+  "mode": "map", 
+  "parameters": {
+    "url": "https://example.com"
+  }
+}
+\`\`\`
+
+**➡️ 示例 4: 异步爬取网站 (\`crawl\`)**
+
+**✅ 正确示例:**
+\`\`\`json
+{
+  "mode": "crawl", 
+  "parameters": {
+    "url": "https://firecrawl.dev", 
+    "limit": 5
+  }
+}
+\`\`\`
 *此调用会返回一个 \`job_id\`，用于后续查询。*
 
-**步骤 2: 使用 \`job_id\` 检查任务状态**
+**➡️ 示例 5: 结构化数据提取 (\`extract\`)**
+
 **✅ 正确示例:**
-\`{"mode": "check_status", "parameters": {"job_id": "some-unique-job-identifier"}}\`
+\`\`\`json
+{
+  "mode": "extract", 
+  "parameters": {
+    "urls": ["https://news.example.com/article"],
+    "prompt": "提取文章标题、作者和发布时间",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string"},
+        "author": {"type": "string"}, 
+        "publish_time": {"type": "string"}
+      }
+    }
+  }
+}
+\`\`\`
+
+**➡️ 示例 6: 检查异步任务状态 (\`check_status\`)**
+
+**✅ 正确示例:**
+\`\`\`json
+{
+  "mode": "check_status", 
+  "parameters": {
+    "job_id": "some-unique-job-identifier"
+  }
+}
+\`\`\`
 
 **❌ 错误示例 (请避免以下常见错误):**
--   **缺少 \`mode\` 参数:** \`{"parameters": {"url": "..."}}\`
--   **缺少嵌套的 \`parameters\` 对象:** \`{"mode": "scrape", "url": "..."}\`
--   **将参数放在顶层:** \`{"url": "..."}\` (错误：所有模式的参数都必须在嵌套的 \`parameters\` 对象内)
+
+- **缺少 \`mode\` 参数:** \`{"parameters": {"url": "..."}}\`
+- **缺少嵌套的 \`parameters\` 对象:** \`{"mode": "scrape", "url": "..."}\`
+- **将参数放在顶层:** \`{"url": "..."}\` 
+- **使用无效的URL格式:** \`{"mode": "scrape", "parameters": {"url": "example.com"}}\` (缺少协议)
+- **错误的参数类型:** \`{"mode": "extract", "parameters": {"urls": "https://example.com"}}\` (urls应该是数组)
 `
         },
                         {
