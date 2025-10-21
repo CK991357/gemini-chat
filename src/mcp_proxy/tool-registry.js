@@ -5,7 +5,7 @@
  */
 
 // Import all available tool handlers
-import { handleCrawl4AI } from './handlers/craw4ai.js'; // 新增导入
+import { handleCrawl4AI } from './handlers/crawl4ai.js'; // 新增导入
 import { handleFirecrawl } from './handlers/firecrawl.js';
 import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
 import { handlePythonSandbox } from './handlers/python-sandbox.js';
