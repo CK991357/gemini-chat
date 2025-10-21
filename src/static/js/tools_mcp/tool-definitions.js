@@ -170,6 +170,30 @@ const stockfish_analyzer = {
     }
 };
 
+// Crawl4AI tool definition - UPDATED with all 7 modes
+const crawl4ai = {
+    "type": "function",
+    "function": {
+        "name": "crawl4ai",
+        "description": "A powerful open-source tool to scrape, crawl, extract structured data, export PDFs, and capture screenshots from web pages. Supports deep crawling with multiple strategies (BFS, DFS, BestFirst), batch URL processing, AI-powered extraction, and advanced content filtering. All outputs are returned as memory streams (base64 for binary data).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["scrape", "crawl", "deep_crawl", "extract", "batch_crawl", "pdf_export", "screenshot"],
+                    "description": "The Crawl4AI function to execute."
+                },
+                "parameters": {
+                    "type": "object",
+                    "description": "Parameters for the selected mode, matching the respective schema."
+                }
+            },
+            "required": ["mode", "parameters"]
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
@@ -177,7 +201,8 @@ export const mcpTools = [
     python_sandbox,
     mcp_tool_catalog, // 添加新工具
     firecrawl,
-    stockfish_analyzer
+    stockfish_analyzer,
+    crawl4ai
     // Future tools can be added here
 ];
 
@@ -188,7 +213,8 @@ export const mcpToolsMap = {
     'python_sandbox': python_sandbox,
     'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
     'firecrawl': firecrawl,
-    'stockfish_analyzer': stockfish_analyzer
+    'stockfish_analyzer': stockfish_analyzer,
+    'crawl4ai': crawl4ai
 };
 
 // Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
@@ -199,11 +225,17 @@ delete python_sandbox_gemini.function.output_schema;
 const firecrawl_gemini = JSON.parse(JSON.stringify(firecrawl));
 delete firecrawl_gemini.function.output_schema;
 
+// Create a deep copy of crawl4ai and remove any output_schema for Gemini compatibility
+const crawl4ai_gemini = JSON.parse(JSON.stringify(crawl4ai));
+if (crawl4ai_gemini.function.output_schema) {
+    delete crawl4ai_gemini.function.output_schema;
+}
 
 // Gemini-specific toolset without output_schema
 export const geminiMcpTools = [
     tavily_search,
     python_sandbox_gemini,
     firecrawl_gemini,
-    stockfish_analyzer
+    stockfish_analyzer,
+    crawl4ai_gemini
 ];

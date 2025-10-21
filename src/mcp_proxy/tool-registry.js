@@ -5,6 +5,7 @@
  */
 
 // Import all available tool handlers
+import { handleCrawl4AI } from './handlers/craw4ai.js'; // 新增导入
 import { handleFirecrawl } from './handlers/firecrawl.js';
 import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
 import { handlePythonSandbox } from './handlers/python-sandbox.js';
@@ -20,6 +21,7 @@ const toolRegistry = {
     'mcp_tool_catalog': handleMcpToolCatalog,
     'firecrawl': handleFirecrawl,
     'stockfish_analyzer': handleStockfishAnalyzer, // 新增注册
+    'crawl4ai': handleCrawl4AI, // 新增注册
     // To add a new tool, import its handler and add an entry here.
     // e.g., 'new_tool_name': handleNewTool,
 };
