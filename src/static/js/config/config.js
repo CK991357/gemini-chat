@@ -935,7 +935,6 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "parameters": {
     "url": "https://example.com",
     "format": "markdown",
-    "css_selector": ".main-content",
     "return_screenshot": true,
     "return_pdf": false,
     "screenshot_quality": 80,
@@ -1773,7 +1772,6 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "parameters": {
     "url": "https://example.com",
     "format": "markdown",
-    "css_selector": ".main-content",
     "return_screenshot": true,
     "return_pdf": false,
     "screenshot_quality": 80,
