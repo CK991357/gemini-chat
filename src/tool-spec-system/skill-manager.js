@@ -1,18 +1,23 @@
 /**
  * @file Worker环境专用技能管理器
- * @description 数据源于构建时生成的 SKILLS_REGISTRY，提供技能匹配、注入等运行时逻辑
+ * @description 数据源于预构建的 generated-skills.js，提供技能匹配、注入等运行时逻辑
  */
-import { SKILLS_REGISTRY } from './skill-registry.js';
+
+// 导入自动生成的技能数据
+import { getSkillsRegistry } from './generated-skills.js';
 
 class WorkerSkillManager {
   constructor() {
-    // 直接从构建好的注册表获取技能数据
-    this.skills = SKILLS_REGISTRY;
+    // 直接从预构建的注册表获取技能数据
+    this.skills = getSkillsRegistry();
     this.initialized = this.skills.size > 0;
 
     if (this.initialized) {
       console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个。`);
-      console.log(`📋 可用工具: ${Array.from(this.skills.keys()).join(', ')}`);
+      // 生产环境减少详细日志
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📋 可用工具: ${Array.from(this.skills.keys()).join(', ')}`);
+      }
     } else {
       console.warn(`⚠️ [运行时] 未加载任何技能，技能注入功能将不可用。`);
     }
@@ -32,7 +37,7 @@ class WorkerSkillManager {
       return [];
     }
     
-    console.log(`🔍 [技能匹配] 开始匹配，查询: "${query}"`);
+    console.log(`🔍 [技能匹配] 查询: "${query}"`);
     const matches = [];
     
     for (const [toolName, skill] of this.skills) {
@@ -220,8 +225,8 @@ ${callingFormat}
   /**
    * 检查是否已初始化
    */
-  get initialized() {
-    return this._initialized;
+  get isInitialized() {
+    return this.initialized;
   }
 
   /**

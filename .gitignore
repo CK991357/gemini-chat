@@ -188,3 +188,6 @@ bmain.js
 /mcp
 
 /backendserver_Tools
+
+# 自动生成的文件
+src/tool-spec-system/generated-skills.js

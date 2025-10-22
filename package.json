@@ -2,20 +2,24 @@
   "name": "gemini-playground",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "deploy": "npm run build:css && wrangler deploy",
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
+    "deploy": "npm run build:skills && npm run build:css && wrangler deploy",
+    "dev": "npm run build:skills && wrangler dev",
+    "start": "npm run build:skills && wrangler dev",
     "test": "vitest",
-    "build:css": "sass src/static/scss/style.scss src/static/css/style.css"
+    "build:css": "sass src/static/scss/style.scss src/static/css/style.css",
+    "build:skills": "node ./scripts/build-skills.js",
+    "build:skills:watch": "chokidar 'src/skills/**/*.md' -c 'npm run build:skills'",
+    "build:all": "npm run build:skills && npm run build:css"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.2",
+    "glob": "^11.0.3",
+    "gray-matter": "^4.0.3",
     "sass": "^1.77.6",
     "vitest": "2.1.8",
-    "wrangler": "^3.60.3"
-  },
-  "dependencies": {
-    "gray-matter": "^4.0.3"
+    "wrangler": "^3.60.3",
+    "chokidar-cli": "^3.0.0"
   }
 }
