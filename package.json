@@ -11,8 +11,11 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.2",
-    "wrangler": "^3.60.3",
+    "sass": "^1.77.6",
     "vitest": "2.1.8",
-    "sass": "^1.77.6"
+    "wrangler": "^3.60.3"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3"
   }
 }

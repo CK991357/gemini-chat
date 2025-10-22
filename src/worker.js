@@ -1,4 +1,6 @@
 import { handleMcpProxyRequest } from './mcp_proxy/mcp-handler.js';
+// ✅ 引入技能管理器 - 构建时已初始化完成
+import { skillManager } from './tool-spec-system/skill-manager.js';
 
 const assetManifest = {};
 
@@ -102,6 +104,11 @@ export default {
     // 添加 API 请求处理
     if (url.pathname === '/api/translate') {
       return handleTranslationRequest(request, env);
+    }
+
+    // 技能系统状态检查端点
+    if (url.pathname === '/api/skills/status' && request.method === 'GET') {
+      return handleSkillsStatus(request);
     }
 
     if (url.pathname.endsWith("/chat/completions") ||
@@ -294,6 +301,13 @@ async function handleAPIRequest(request, env) {
         // 仅当请求是 POST 且包含 JSON 体时才尝试解析
         if (clonedRequest.method === 'POST' && clonedRequest.headers.get('content-type')?.includes('application/json')) {
             const body = await clonedRequest.json();
+            
+            // 🔥🔥🔥 技能注入核心逻辑 🔥🔥🔥
+            if (skillManager.initialized && body.messages) {
+                await injectSkillsIntoRequest(body);
+            }
+            // 🔥🔥🔥 技能注入结束 🔥🔥🔥
+
             const model = body.model || '';
 
             // 路由到新的聊天/搜索请求处理器
@@ -494,6 +508,86 @@ async function handleAPIRequest(request, env) {
                 'Access-Control-Allow-Origin': '*'
             }
         });
+    }
+}
+
+// ✅ 技能系统状态检查端点
+async function handleSkillsStatus(request) {
+  const status = skillManager.getSystemStatus();
+  
+  return new Response(JSON.stringify({
+    success: true,
+    data: status,
+    message: skillManager.initialized ? 
+      `技能系统运行正常，已加载 ${status.skillCount} 个技能` : 
+      '技能系统未初始化'
+  }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}
+
+// ✅ 独立的技能注入函数
+async function injectSkillsIntoRequest(body) {
+    try {
+        const userMessages = body.messages.filter(m => m.role === 'user');
+        const latestUserMessage = userMessages[userMessages.length - 1]?.content;
+
+        // 检查是否有用户消息，并且是字符串类型
+        if (!latestUserMessage || typeof latestUserMessage !== 'string') {
+            return;
+        }
+
+        // 检查是否已注入，避免重复
+        const hasInjection = body.messages.some(m => m.metadata?.skill_injection === true);
+        if (hasInjection) {
+            console.log('🔁 [技能注入] 检测到已有技能注入，跳过重复注入');
+            return;
+        }
+
+        // 智能匹配技能
+        const relevantSkills = skillManager.findRelevantSkills(latestUserMessage, {
+            model: body.model,
+            timestamp: new Date().toISOString()
+        });
+
+        if (relevantSkills.length > 0) {
+            const primarySkill = relevantSkills[0];
+            const injectionContent = skillManager.generateSkillInjection(primarySkill.skill, 'precise');
+            
+            const skillMessage = {
+                role: 'system',
+                content: injectionContent,
+                metadata: { 
+                    skill_injection: true, 
+                    tool_name: primarySkill.toolName,
+                    match_score: primarySkill.score,
+                    injected_at: new Date().toISOString()
+                }
+            };
+            
+            // 智能插入消息 - 在最后一个系统消息之后插入
+            let insertIndex = body.messages.length;
+            for (let i = body.messages.length - 1; i >= 0; i--) {
+                if (body.messages[i].role === 'system') {
+                    insertIndex = i + 1;
+                    break;
+                }
+            }
+            
+            body.messages.splice(insertIndex, 0, skillMessage);
+            console.log(`🎯 [技能注入] 已为请求注入技能指南: ${primarySkill.name} (匹配度: ${(primarySkill.score * 100).toFixed(1)}%)`);
+            
+            // 记录注入统计
+            console.log(`📝 [技能注入] 消息结构: 系统消息 ${body.messages.filter(m => m.role === 'system').length} 条，用户消息 ${body.messages.filter(m => m.role === 'user').length} 条`);
+        } else {
+            console.log('🔍 [技能注入] 未找到相关技能匹配，使用默认系统提示词');
+        }
+    } catch (error) {
+        console.error('❌ [技能注入] 过程中出错:', error);
+        // 不抛出错误，避免影响主要功能
     }
 }
 
