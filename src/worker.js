@@ -297,14 +297,18 @@ async function handleWebSocket(request, env) {
 
 async function handleAPIRequest(request, env) {
     const clonedRequest = request.clone();
+    
+    // 生成请求ID
+    const requestId = crypto.randomUUID();
+    
     try {
         // 仅当请求是 POST 且包含 JSON 体时才尝试解析
         if (clonedRequest.method === 'POST' && clonedRequest.headers.get('content-type')?.includes('application/json')) {
             const body = await clonedRequest.json();
             
             // 🔥🔥🔥 技能注入核心逻辑 🔥🔥🔥
-            if (skillManager.initialized && body.messages) {
-                await injectSkillsIntoRequest(body);
+            if (skillManager.isInitialized && body.messages) {
+                await injectSkillsIntoRequest(body, requestId);
             }
             // 🔥🔥🔥 技能注入结束 🔥🔥🔥
 
@@ -498,7 +502,7 @@ async function handleAPIRequest(request, env) {
         });
 
     } catch (error) {
-        console.error('API request error in handleAPIRequest:', error);
+        console.error(`❌ [API请求] 请求 ${requestId} 处理失败:`, error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         const errorStatus = error.status || 500;
         return new Response(JSON.stringify({ error: errorMessage }), {
@@ -518,7 +522,7 @@ async function handleSkillsStatus(request) {
   return new Response(JSON.stringify({
     success: true,
     data: status,
-    message: skillManager.initialized ? 
+    message: skillManager.isInitialized ? 
       `技能系统运行正常，已加载 ${status.skillCount} 个技能` : 
       '技能系统未初始化'
   }), {
@@ -529,13 +533,12 @@ async function handleSkillsStatus(request) {
   });
 }
 
-// ✅ 独立的技能注入函数
-async function injectSkillsIntoRequest(body) {
+// ✅ 独立的技能注入函数 - 更新版本
+async function injectSkillsIntoRequest(body, requestId) {
     try {
         const userMessages = body.messages.filter(m => m.role === 'user');
         const latestUserMessage = userMessages[userMessages.length - 1]?.content;
 
-        // 检查是否有用户消息，并且是字符串类型
         if (!latestUserMessage || typeof latestUserMessage !== 'string') {
             return;
         }
@@ -547,24 +550,25 @@ async function injectSkillsIntoRequest(body) {
             return;
         }
 
-        // 智能匹配技能
+        // 使用增强的匹配算法
         const relevantSkills = skillManager.findRelevantSkills(latestUserMessage, {
             model: body.model,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            requestId: requestId
         });
 
         if (relevantSkills.length > 0) {
-            const primarySkill = relevantSkills[0];
-            const injectionContent = skillManager.generateSkillInjection(primarySkill.skill, 'precise');
+            const injectionContent = skillManager.generateMultiSkillInjection(relevantSkills, latestUserMessage);
             
             const skillMessage = {
                 role: 'system',
                 content: injectionContent,
                 metadata: { 
-                    skill_injection: true, 
-                    tool_name: primarySkill.toolName,
-                    match_score: primarySkill.score,
-                    injected_at: new Date().toISOString()
+                    skill_injection: true,
+                    injected_skills: relevantSkills.map(s => s.toolName),
+                    match_scores: relevantSkills.map(s => s.score),
+                    injected_at: new Date().toISOString(),
+                    request_id: requestId
                 }
             };
             
@@ -578,16 +582,27 @@ async function injectSkillsIntoRequest(body) {
             }
             
             body.messages.splice(insertIndex, 0, skillMessage);
-            console.log(`🎯 [技能注入] 已为请求注入技能指南: ${primarySkill.name} (匹配度: ${(primarySkill.score * 100).toFixed(1)}%)`);
             
-            // 记录注入统计
-            console.log(`📝 [技能注入] 消息结构: 系统消息 ${body.messages.filter(m => m.role === 'system').length} 条，用户消息 ${body.messages.filter(m => m.role === 'user').length} 条`);
+            // 记录监控日志
+            console.log('📊 [技能监控]', JSON.stringify({
+                request_id: requestId,
+                user_query: latestUserMessage.substring(0, 200), // 截取前200字符
+                matched_skills: relevantSkills.map(s => ({
+                    name: s.name,
+                    tool_name: s.toolName,
+                    score: s.score
+                })),
+                injection_strategy: relevantSkills.length > 1 ? 'multi' : 'single',
+                timestamp: new Date().toISOString()
+            }));
+            
+            console.log(`🎯 [技能注入] 已为请求 ${requestId} 注入 ${relevantSkills.length} 个技能指南`);
+            
         } else {
-            console.log('🔍 [技能注入] 未找到相关技能匹配，使用默认系统提示词');
+            console.log(`🔍 [技能注入] 请求 ${requestId} 未找到相关技能匹配`);
         }
     } catch (error) {
-        console.error('❌ [技能注入] 过程中出错:', error);
-        // 不抛出错误，避免影响主要功能
+        console.error(`❌ [技能注入] 请求 ${requestId} 过程中出错:`, error);
     }
 }
 

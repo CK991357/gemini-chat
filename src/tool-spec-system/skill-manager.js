@@ -1,53 +1,36 @@
-/**
- * @file Worker环境专用技能管理器
- * @description 数据源于预构建的 generated-skills.js，提供技能匹配、注入等运行时逻辑
- */
-
-// 导入自动生成的技能数据
+// src/tool-spec-system/skill-manager.js
 import { getSkillsRegistry } from './generated-skills.js';
+import synonyms from './synonyms.json' assert { type: 'json' };
 
-class WorkerSkillManager {
+class EnhancedSkillManager {
   constructor() {
-    // 直接从预构建的注册表获取技能数据
     this.skills = getSkillsRegistry();
-    this.initialized = this.skills.size > 0;
-
-    if (this.initialized) {
-      console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个。`);
-      // 生产环境减少详细日志
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`📋 可用工具: ${Array.from(this.skills.keys()).join(', ')}`);
-      }
-    } else {
-      console.warn(`⚠️ [运行时] 未加载任何技能，技能注入功能将不可用。`);
-    }
+    this.synonymMap = synonyms;
+    console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
   }
 
   /**
-   * 根据用户查询匹配相关技能
+   * 增强的技能匹配算法
    */
   findRelevantSkills(userQuery, context = {}) {
-    if (!this.initialized) {
-      console.warn('⚠️ 技能系统未初始化，无法匹配技能');
-      return [];
-    }
-    
     const query = userQuery.toLowerCase().trim();
-    if (!query || query.length < 3) {
+    if (!query || query.length < 2) {
       return [];
     }
     
     console.log(`🔍 [技能匹配] 查询: "${query}"`);
-    const matches = [];
     
-    for (const [toolName, skill] of this.skills) {
-      const relevanceScore = this.calculateRelevanceScore(query, skill, context);
+    const matches = [];
+    const expandedQuery = this.expandQuery(query);
+    
+    for (const [skillName, skill] of this.skills) {
+      const relevanceScore = this.calculateEnhancedRelevanceScore(expandedQuery, skill, context);
       
       if (relevanceScore >= 0.15) {
         matches.push({
           skill,
           score: relevanceScore,
-          toolName,
+          toolName: skill.metadata.tool_name,
           name: skill.metadata.name,
           description: skill.metadata.description,
           category: skill.metadata.category
@@ -70,13 +53,19 @@ class WorkerSkillManager {
   }
 
   /**
-   * 计算查询与技能的相关性分数
+   * 增强的相关性计算
    */
-  calculateRelevanceScore(query, skill, context) {
+  calculateEnhancedRelevanceScore(query, skill, context) {
     let score = 0;
     const { metadata, content } = skill;
     
-    // 构建搜索文本
+    // 1. 工具名精确匹配（最高权重）
+    const cleanToolName = metadata.tool_name.replace(/^default_api:/, '');
+    if (query.includes(cleanToolName) || query.includes(metadata.name.replace('-', '_'))) {
+      score += 0.6;
+    }
+    
+    // 2. 描述关键词匹配
     const searchText = `
       ${metadata.name || ''}
       ${metadata.description || ''}
@@ -84,11 +73,7 @@ class WorkerSkillManager {
       ${(metadata.tags || []).join(' ')}
     `.toLowerCase();
     
-    // 关键词匹配
-    const keywords = query.split(/\s+/)
-      .filter(k => k.length > 1)
-      .filter(k => !['请', '帮', '我', '怎么', '如何', '什么', '为什么', 'the', 'and', 'for'].includes(k));
-    
+    const keywords = this.extractKeywords(query);
     keywords.forEach(keyword => {
       const regex = new RegExp(keyword, 'gi');
       const matches = searchText.match(regex);
@@ -97,63 +82,160 @@ class WorkerSkillManager {
       }
     });
     
-    // 类别匹配
+    // 3. 同义词扩展匹配
+    const synonymScore = this.calculateSynonymScore(query, skill);
+    score += synonymScore * 0.3;
+    
+    // 4. 类别匹配
     if (context.category && metadata.category === context.category) {
       score += 0.25;
     }
     
-    // 标签匹配
-    if (metadata.tags && Array.isArray(metadata.tags)) {
-      metadata.tags.forEach(tag => {
-        if (query.includes(tag)) {
-          score += 0.15;
-        }
-      });
-    }
-    
-    // 优先级调整
+    // 5. 优先级调整
     if (metadata.priority) {
       score += (metadata.priority / 10) * 0.15;
     }
     
-    // 工具名称完全匹配（最高优先级）
-    if (query.includes(metadata.tool_name) || query.includes(metadata.name)) {
-      score += 0.6;
-    }
-    
-    // 确保分数在合理范围内
     return Math.min(Math.max(score, 0), 1.0);
   }
 
   /**
-   * 生成技能注入内容
+   * 扩展查询词
    */
-  generateSkillInjection(skill, injectionType = 'precise') {
-    const { metadata, content } = skill;
+  expandQuery(query) {
+    const words = query.toLowerCase().split(/\s+/);
+    const expanded = new Set(words);
     
-    const keyInstructions = this.extractKeyInstructions(content);
-    const callingFormat = this.extractCallingFormat(content);
+    words.forEach(word => {
+      if (this.synonymMap[word]) {
+        this.synonymMap[word].forEach(synonym => expanded.add(synonym));
+      }
+    });
     
-    return `## 🛠️ 工具指南: ${metadata.name}
-
-${metadata.description}
-
-**关键指令:**
-${keyInstructions}
-
-**调用格式:**
-\`\`\`json
-${callingFormat}
-\`\`\`
-
-请严格遵循上述指南使用 **${metadata.tool_name}** 工具。`;
+    return Array.from(expanded).join(' ');
   }
 
   /**
-   * 提取关键指令
+   * 同义词匹配得分
+   */
+  calculateSynonymScore(query, skill) {
+    let score = 0;
+    const searchText = skill.metadata.description.toLowerCase();
+    
+    Object.entries(this.synonymMap).forEach(([key, synonyms]) => {
+      if (query.includes(key)) {
+        synonyms.forEach(synonym => {
+          if (searchText.includes(synonym)) {
+            score += 0.1;
+          }
+        });
+      }
+    });
+    
+    return score;
+  }
+
+  /**
+   * 提取关键词
+   */
+  extractKeywords(text) {
+    const stopWords = ['请', '帮', '我', '怎么', '如何', '什么', '为什么', 'the', 'and', 'for'];
+    return text.split(/\s+/)
+      .filter(k => k.length > 1 && !stopWords.includes(k));
+  }
+
+  /**
+   * 智能生成注入内容
+   */
+  generateSkillInjection(skill, userQuery = '') {
+    const { metadata, content } = skill;
+    
+    // 智能提取相关内容片段
+    const relevantContent = this.extractRelevantContent(content, userQuery);
+    const keyInstructions = this.extractKeyInstructions(content);
+    const callingFormat = this.extractCallingFormat(content);
+    
+    let injectionContent = `## 🛠️ 工具指南: ${metadata.name}\n\n`;
+    injectionContent += `${metadata.description}\n\n`;
+    
+    if (keyInstructions) {
+      injectionContent += `**关键指令:**\n${keyInstructions}\n\n`;
+    }
+    
+    injectionContent += `**调用格式:**\n\`\`\`json\n${callingFormat}\n\`\`\`\n\n`;
+    
+    if (relevantContent) {
+      injectionContent += `${relevantContent}\n\n`;
+    }
+    
+    injectionContent += `请严格遵循上述指南使用 **${metadata.tool_name}** 工具。`;
+    
+    return injectionContent;
+  }
+
+  /**
+   * 提取相关内容片段
+   */
+  extractRelevantContent(content, userQuery) {
+    if (!userQuery || !content) return '';
+    
+    // 按章节分割内容
+    const sections = content.split(/\n## /);
+    let bestSection = '';
+    let bestScore = 0;
+    
+    const queryKeywords = this.extractKeywords(userQuery.toLowerCase());
+    
+    sections.forEach(section => {
+      let score = 0;
+      const sectionLower = section.toLowerCase();
+      
+      queryKeywords.forEach(keyword => {
+        if (sectionLower.includes(keyword)) {
+          score += 1;
+        }
+      });
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestSection = section;
+      }
+    });
+    
+    return bestScore > 0 ? `**相关指导:**\n## ${bestSection}` : '';
+  }
+
+  /**
+   * 多技能注入内容生成
+   */
+  generateMultiSkillInjection(skills, userQuery) {
+    if (skills.length === 1) {
+      return this.generateSkillInjection(skills[0].skill, userQuery);
+    }
+    
+    let content = `## 🎯 多个相关工具推荐\n\n`;
+    content += `基于您的查询，以下工具可能有用：\n\n`;
+    
+    skills.forEach((skill, index) => {
+      content += `### ${index + 1}. ${skill.skill.metadata.name} (匹配度: ${(skill.score * 100).toFixed(1)}%)\n`;
+      content += `**用途**: ${skill.skill.metadata.description}\n`;
+      
+      const keyInstructions = this.extractKeyInstructions(skill.skill.content);
+      if (keyInstructions) {
+        content += `${keyInstructions}\n`;
+      }
+      
+      content += `\n`;
+    });
+    
+    content += `💡 **提示**: 您可以根据具体需求选择合适的工具，或组合使用多个工具完成复杂任务。`;
+    return content;
+  }
+
+  /**
+   * 提取关键指令 (保持原有逻辑)
    */
   extractKeyInstructions(content) {
-    // 尝试多种方式提取关键指令
     const instructionMatch = content.match(/## 关键指令[\s\S]*?(?=##|$)/i);
     if (instructionMatch) {
       return instructionMatch[0]
@@ -165,17 +247,16 @@ ${callingFormat}
         .join('\n');
     }
     
-    // 回退：提取所有编号列表
     const numberedItems = content.match(/\d+\.\s+[^\n]+/g);
     if (numberedItems && numberedItems.length > 0) {
       return numberedItems.slice(0, 5).map(item => `- ${item}`).join('\n');
     }
     
-    return '请参考完整指南中的说明。';
+    return '';
   }
 
   /**
-   * 提取调用格式
+   * 提取调用格式 (保持原有逻辑)
    */
   extractCallingFormat(content) {
     const formatMatch = content.match(/```json\n([\s\S]*?)\n```/);
@@ -183,7 +264,6 @@ ${callingFormat}
       return formatMatch[1];
     }
     
-    // 回退：查找JSON对象
     const jsonMatch = content.match(/\{[^{}]*"tool_name"[^{}]*\}/);
     if (jsonMatch) {
       try {
@@ -197,23 +277,12 @@ ${callingFormat}
     return '{"tool_name": "tool_name", "parameters": {}}';
   }
 
-  /**
-   * 获取特定工具的技能
-   */
-  getSkill(toolName) {
-    if (!this.initialized) {
-      return null;
-    }
-    return this.skills.get(toolName);
+  // 保持向后兼容的方法
+  get isInitialized() {
+    return this.skills.size > 0;
   }
 
-  /**
-   * 获取所有可用技能
-   */
   getAllSkills() {
-    if (!this.initialized) {
-      return [];
-    }
     return Array.from(this.skills.values()).map(skill => ({
       tool_name: skill.metadata.tool_name,
       name: skill.metadata.name,
@@ -222,27 +291,10 @@ ${callingFormat}
     }));
   }
 
-  /**
-   * 检查是否已初始化
-   */
-  get isInitialized() {
-    return this.initialized;
-  }
-
-  /**
-   * 获取技能数量
-   */
-  getSkillCount() {
-    return this.skills.size;
-  }
-
-  /**
-   * 获取系统状态
-   */
   getSystemStatus() {
     return {
-      initialized: this.initialized,
-      skillCount: this.getSkillCount(),
+      initialized: this.isInitialized,
+      skillCount: this.skills.size,
       tools: this.getAllSkills().map(t => t.tool_name),
       timestamp: new Date().toISOString()
     };
@@ -250,4 +302,4 @@ ${callingFormat}
 }
 
 // 创建单例实例
-export const skillManager = new WorkerSkillManager();
+export const skillManager = new EnhancedSkillManager();

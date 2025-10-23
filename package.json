@@ -11,7 +11,9 @@
     "build:css": "sass src/static/scss/style.scss src/static/css/style.css",
     "build:skills": "node ./scripts/build-skills.js",
     "build:skills:watch": "chokidar 'src/skills/**/*.md' -c 'npm run build:skills'",
-    "build:all": "npm run build:skills && npm run build:css"
+    "build:all": "npm run build:skills && npm run build:css",
+    "analyze:logs": "node ./scripts/analyze-logs.js",
+    "validate:skills": "node ./scripts/validate-skills.js"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.2",
@@ -20,6 +22,8 @@
     "sass": "^1.77.6",
     "vitest": "2.1.8",
     "wrangler": "^3.60.3",
-    "chokidar-cli": "^3.0.0"
-  }
+    "chokidar-cli": "^3.0.0",
+    "js-yaml": "^4.1.0"
+  },
+  "dependencies": {}
 }

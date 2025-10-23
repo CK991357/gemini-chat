@@ -1,101 +1,170 @@
+// scripts/build-skills.js
 import fs from 'fs';
-import { globSync } from 'glob';
-import matter from 'gray-matter';
+import yaml from 'js-yaml';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-// 更健壮的路径处理
-const skillsDir = path.resolve(process.cwd(), 'src', 'skills');
-const outputDir = path.resolve(process.cwd(), 'src', 'tool-spec-system');
-const outputFile = path.join(outputDir, 'generated-skills.js');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// 确保输出目录存在
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
-}
-
-console.log('🚀 Starting skills build process...');
-console.log(`🔍 Scanning for skills in: ${skillsDir}`);
-
-try {
-  // 查找所有 SKILL.md 文件
-  const skillFiles = globSync(`${skillsDir}/**/SKILL.md`);
+/**
+ * 构建技能注册表 - ESM版本
+ */
+async function buildSkills() {
+  const skillsDir = path.join(__dirname, '../src/skills');
+  const outputFile = path.join(__dirname, '../src/tool-spec-system/generated-skills.js');
   
-  if (skillFiles.length === 0) {
-    console.warn('⚠️ No skill files found. Creating empty registry.');
-    // 创建空的注册表而不是退出
-  }
-
-  console.log(`✅ Found ${skillFiles.length} skill files.`);
-
+  console.log('🚀 开始构建技能系统...');
+  
   const skillsData = {};
+  const skillFolders = fs.readdirSync(skillsDir).filter(item => {
+    const itemPath = path.join(skillsDir, item);
+    return fs.statSync(itemPath).isDirectory();
+  });
 
-  // 读取和解析每个技能文件
-  skillFiles.forEach(file => {
-    try {
-      const markdownContent = fs.readFileSync(file, 'utf8');
-      const { data: metadata, content } = matter(markdownContent);
+  console.log(`📁 发现 ${skillFolders.length} 个技能文件夹`);
 
-      if (!metadata.tool_name) {
-        console.warn(`  ⚠️ Skipping ${file}: Missing 'tool_name' in frontmatter.`);
-        return;
-      }
-      
-      // 自动填充缺失的必需字段
-      metadata.name = metadata.name || metadata.tool_name;
-      metadata.description = metadata.description || '暂无描述';
-      metadata.category = metadata.category || 'general';
-      metadata.tags = metadata.tags || [];
+  // 并行处理所有技能文件夹
+  const results = await Promise.allSettled(
+    skillFolders.map(folder => {
+      const skillPath = path.join(skillsDir, folder);
+      return processSkillFolder(skillPath);
+    })
+  );
 
-      skillsData[metadata.tool_name] = {
-        metadata,
-        content: content.trim(),
-        filePath: path.relative(process.cwd(), file)
-      };
-      
-      console.log(`  ✅ Processed: ${metadata.name} (${metadata.tool_name})`);
-    } catch (error) {
-      console.error(`  ❌ Failed to process ${file}:`, error.message);
+  // 处理结果
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value) {
+      const skillData = result.value;
+      skillsData[skillData.metadata.name] = skillData;
+      console.log(`✅ 处理完成: ${skillData.metadata.name}`);
+    } else {
+      console.warn(`⚠️ 处理失败: ${skillFolders[index]}`, result.reason?.message);
     }
   });
 
-  // 生成文件内容 - 使用更安全的序列化
-  const fileContent = `/**
+  // 生成输出文件
+  const outputContent = `/**
  * @file 自动生成的技能注册表 - 由 build-skills.js 脚本生成
  * !!! 请勿直接编辑此文件 !!!
- * 请在 /src/skills/ 目录中编辑 .md 文件
- * 
  * 生成时间: ${new Date().toISOString()}
  * 技能数量: ${Object.keys(skillsData).length}
  */
 
 export const SKILLS_DATA = ${JSON.stringify(skillsData, null, 2)};
 
-// 辅助函数：将对象转换为 Map
 export function getSkillsRegistry() {
   const map = new Map();
   Object.entries(SKILLS_DATA).forEach(([key, value]) => {
     map.set(key, value);
   });
   return map;
-}
-`;
+}`;
 
-  // 写入文件
-  fs.writeFileSync(outputFile, fileContent, 'utf8');
+  fs.writeFileSync(outputFile, outputContent);
+  console.log(`🎉 技能构建完成! 共生成 ${Object.keys(skillsData).length} 个技能`);
+  console.log(`📄 输出文件: ${outputFile}`);
+}
+
+/**
+ * 处理单个技能文件夹
+ */
+async function processSkillFolder(skillPath) {
+  const skillMdPath = path.join(skillPath, 'SKILL.md');
   
-  const skillCount = Object.keys(skillsData).length;
-  console.log(`\n🎉 Successfully generated skills registry!`);
-  console.log(`📦 ${skillCount} skills bundled into: ${outputFile}`);
+  if (!fs.existsSync(skillMdPath)) {
+    throw new Error(`缺少SKILL.md文件: ${skillPath}`);
+  }
+
+  const { metadata, content } = parseSkillMarkdown(skillMdPath);
+  const resources = scanSkillResources(skillPath);
   
-  // 输出技能列表
-  if (skillCount > 0) {
-    console.log(`\n📋 Available skills:`);
-    Object.values(skillsData).forEach(skill => {
-      console.log(`   - ${skill.metadata.name} (${skill.metadata.tool_name})`);
+  return {
+    metadata: {
+      ...metadata,
+      // 保持向后兼容
+      tool_name: metadata.allowed_tools?.[0] || metadata.name.replace('-', '_')
+    },
+    content,
+    resources,
+    filePath: skillPath,
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+/**
+ * 解析SKILL.md文件
+ */
+function parseSkillMarkdown(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  
+  if (!frontmatterMatch) {
+    throw new Error('无效的SKILL.md格式: 缺少YAML frontmatter');
+  }
+
+  const frontmatter = yaml.load(frontmatterMatch[1]);
+  const markdownContent = frontmatterMatch[2].trim();
+
+  // 验证必需字段
+  if (!frontmatter.name) {
+    throw new Error('SKILL.md必须包含name字段');
+  }
+  if (!frontmatter.description) {
+    throw new Error('SKILL.md必须包含description字段');
+  }
+
+  return {
+    metadata: frontmatter,
+    content: markdownContent
+  };
+}
+
+/**
+ * 扫描资源文件
+ */
+function scanSkillResources(skillPath) {
+  const resourceTypes = ['scripts', 'references', 'assets'];
+  const resources = {};
+
+  resourceTypes.forEach(type => {
+    const typePath = path.join(skillPath, type);
+    if (fs.existsSync(typePath)) {
+      resources[type] = scanDirectory(typePath);
+    }
+  });
+
+  return resources;
+}
+
+/**
+ * 递归扫描目录
+ */
+function scanDirectory(dirPath) {
+  const files = [];
+  
+  function scanRecursive(currentPath) {
+    const items = fs.readdirSync(currentPath);
+    
+    items.forEach(item => {
+      const fullPath = path.join(currentPath, item);
+      const stat = fs.statSync(fullPath);
+      
+      if (stat.isDirectory()) {
+        scanRecursive(fullPath);
+      } else {
+        const relativePath = path.relative(dirPath, fullPath);
+        files.push(relativePath);
+      }
     });
   }
   
-} catch (error) {
-  console.error('❌ Build process failed:', error);
-  process.exit(1);
+  scanRecursive(dirPath);
+  return files;
 }
+
+// 执行构建
+buildSkills().catch(error => {
+  console.error('❌ 构建失败:', error);
+  process.exit(1);
+});

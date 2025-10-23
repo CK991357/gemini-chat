@@ -202,11 +202,17 @@
     npm install
     ```
 
+-   **构建动态技能系统**:
+    ```bash
+    npm run build:skills
+    ```
+    此命令运行 [`scripts/build-skills.js`](scripts/build-skills.js)，扫描 `src/skills/` 目录下的 `SKILL.md` 文件，并生成 [`src/tool-spec-system/generated-skills.js`](src/tool-spec-system/generated-skills.js)。
+
 -   **在本地运行应用程序**:
     ```bash
     npm run dev
     ```
-    此命令使用 `wrangler` 启动本地开发服务器，模拟 Cloudflare 环境。
+    此命令首先运行技能构建，然后使用 `wrangler` 启动本地开发服务器，模拟 Cloudflare 环境。
 
 -   **运行所有测试**:
     ```bash
@@ -230,7 +236,7 @@
     ```bash
     npm run deploy
     ```
-    此命令首先构建 CSS，然后使用 `wrangler` 将应用程序部署到您的 Cloudflare 帐户。
+    此命令首先运行技能构建，然后构建 CSS，最后使用 `wrangler` 将应用程序部署到您的 Cloudflare 帐户。
 
 ## 6. Vision 模块架构更新
 
@@ -478,11 +484,42 @@ this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, c
 
 这个国际象棋模块提供了一个完整、健壮且用户友好的国际象棋体验，同时深度集成到应用程序的统一架构中，充分利用了现有的 AI 基础设施和工具调用能力。
 
-## 8. 工具管理机制和连接差异
+## 8. 动态技能系统 (Dynamic Skill System)
+
+本次架构升级引入了动态技能系统，旨在将工具使用指南从硬编码的系统提示词中解耦，实现按需、动态地为大语言模型（LLM）提供精准的上下文指令，从而大幅提升工具调用的成功率和准确性。
+
+### 8.1 核心组件与工作流
+
+1.  **技能文件**:
+    *   所有工具的详细使用指南以独立的 `SKILL.md` 文件形式存储在 [`src/skills/<tool_name>/`](src/skills/) 目录中。
+    *   每个 `SKILL.md` 包含结构化的元数据（frontmatter）和为模型优化的 Markdown 内容。
+
+2.  **预构建脚本**:
+    *   [`scripts/build-skills.js`](scripts/build-skills.js) 脚本在构建或开发启动前自动运行。
+    *   它扫描 `src/skills/` 目录，解析所有 `SKILL.md` 文件。
+    *   生成一个静态的 [`src/tool-spec-system/generated-skills.js`](src/tool-spec-system/generated-skills.js) 文件，将所有技能数据内联为一个 JavaScript 对象，适配 Cloudflare Workers 的无文件系统环境。
+
+3.  **运行时管理器**:
+    *   [`src/tool-spec-system/skill-manager.js`](src/tool-spec-system/skill-manager.js) 作为纯粹的运行时逻辑单元。它从 `generated-skills.js` 加载数据并完成初始化。
+    *   `SkillManager` 负责根据用户的实时查询，通过一个加权评分算法匹配最相关的技能。
+
+4.  **动态上下文注入**:
+    *   在主入口 [`src/worker.js`](src/worker.js) 的 `handleAPIRequest` 函数中集成了技能注入逻辑。
+    *   对于每个聊天请求，系统会先进行技能匹配。如果匹配成功，会将该技能的核心指令动态地作为一个 `system` 消息插入到发送给 LLM 的 `messages` 数组中。
+
+### 8.2 带来的优势
+
+*   **成功率提升**: 向 LLM 提供高度相关、即时生成的“小抄”，显著降低了其调用工具时的幻觉和错误。
+*   **卓越的可维护性**: 增加或修改工具能力，现在只需编辑对应的 `.md` 文件，无需触碰任何核心业务逻辑代码。
+*   **性能优化**: 所有文件 I/O 都在构建时完成，运行时是零开销的内存操作。
+
+---
+
+## 9. 工具管理机制和连接差异
 
 该项目实现了一个复杂的工具管理和调用机制，针对不同的 AI 模型和连接类型进行了定制。核心原则是 `ToolManager` 类（定义在 [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js)）是工具声明和执行逻辑的通用包装器。然而，它在前端代码中被实例化了两次，服务于 WebSocket 和 HTTP 连接路径，从而形成了两个逻辑上不同的"系统"。
 
-#### 8.1 WebSocket 连接方法 (Gemini WebSocket API)
+#### 9.1 WebSocket 连接方法 (Gemini WebSocket API)
 
 *   **模型**: 主要用于通过 WebSocket 连接的 Gemini 模型，例如 `models/gemini-2.0-flash-exp`。
 *   **核心模块和文件**:
@@ -502,7 +539,7 @@ this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, c
     *   **修改工具声明**: 调整相应工具类（例如 `src/static/js/tools/google-search.js`）中的 `getDeclaration()` 方法。
     *   **修改工具执行逻辑**: 调整相应工具类中的 `execute()` 方法。
 
-#### 8.2 HTTP 连接方法 (Gemini HTTP API & Qwen HTTP API)
+#### 9.2 HTTP 连接方法 (Gemini HTTP API & Qwen HTTP API)
 
 *   **模型**: 主要用于 HTTP 模型，如 `models/gemini-2.5-flash` 和 Qwen 模型，如 `Qwen/Qwen3-235B-A22B-Thinking-2507`。此路径旨在实现最大灵活性，允许不同的模型使用不同的工具集。
 *   **核心模块和文件**:
@@ -537,11 +574,11 @@ this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, c
     *   **修改工具声明或执行逻辑**: 调整相应工具类（例如 `src/static/js/tools/google-search.js` 或在 `src/static/js/tools_mcp/tool-definitions.js` 中定义的工具）中的 `getDeclaration()` 或 `execute()` 方法。
     *   **修改前端工具合并逻辑**: 如果需要调整 HTTP 连接下工具声明的合并策略，请修改 [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js) 中的相关逻辑。
 
-## 9. Vision 模块技术实现细节
+## 10. Vision 模块技术实现细节
 
 ### 9.1 核心函数与架构
 
-#### 9.1.1 初始化系统
+#### 10.1.1 初始化系统
 
 ```javascript
 // vision-core.js 中的关键函数:
@@ -562,7 +599,7 @@ async function _sendMessage(text, files)
 async function handleSendVisionMessage()
 ```
 
-#### 9.1.2 UI 适配器系统
+#### 10.1.2 UI 适配器系统
 
 ```javascript
 // 创建 Vision 专用的 UI 适配器
@@ -584,7 +621,7 @@ function createVisionUIAdapter() {
 }
 ```
 
-#### 9.1.3 国际象棋集成
+#### 10.1.3 国际象棋集成
 
 ```javascript
 // 生成对局总结 - 复用 ChatApiHandler
@@ -597,9 +634,9 @@ export function displayVisionMessage(markdownContent)
 window.sendVisionMessageDirectly = async function(messageText)
 ```
 
-### 9.2 配置与状态管理
+### 10.2 配置与状态管理
 
-#### 9.2.1 模型配置
+#### 10.2.1 模型配置
 
 Vision 模式使用专用的模型配置：
 
@@ -625,7 +662,7 @@ VISION: {
 }
 ```
 
-#### 9.2.2 状态隔离
+#### 10.2.2 状态隔离
 
 Vision 模式维护完全独立的状态：
 
@@ -639,23 +676,23 @@ let isVisionActive = false; // 视觉模式激活状态
 let handlers = {}; // 保存 handlers 对象
 ```
 
-### 9.3 优势总结
+### 10.3 优势总结
 
-#### 9.3.1 架构优势
+#### 10.3.1 架构优势
 
 -   **统一性**: Vision 和 Chat 模式使用相同的底层 API 处理机制
 -   **模块化**: 清晰的职责分离，易于维护和扩展
 -   **一致性**: 统一的错误处理、工具调用和流式响应
 -   **性能**: 独立的状态管理，避免模式间相互干扰
 
-#### 9.3.2 功能完整性
+#### 10.3.2 功能完整性
 
 -   **完整工具链**: 支持所有 MCP 工具调用
 -   **国际象棋集成**: 完整的国际象棋大师 AI 功能
 -   **多模态支持**: 图像、视频、文本的多模态处理
 -   **历史管理**: 独立的会话存储和恢复
 
-#### 9.3.3 开发者体验
+#### 10.3.3 开发者体验
 
 -   **清晰文档**: 完善的代码注释和架构说明
 -   **易于扩展**: 模块化的设计便于添加新功能

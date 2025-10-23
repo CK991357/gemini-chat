@@ -198,11 +198,17 @@ All commands are run using Node.js and npm.
     npm install
     ```
 
+-   **Build Dynamic Skill System**:
+    ```bash
+    npm run build:skills
+    ```
+    This command runs [`scripts/build-skills.js`](scripts/build-skills.js), scans `src/skills/` for `SKILL.md` files, and generates [`src/tool-spec-system/generated-skills.js`](src/tool-spec-system/generated-skills.js).
+
 -   **Run the application locally**:
     ```bash
     npm run dev
     ```
-    This command starts a local development server using `wrangler`, simulating the Cloudflare environment.
+    This command first runs the skill build, then starts a local development server using `wrangler`, simulating the Cloudflare environment.
 
 -   **Run all tests**:
     ```bash
@@ -226,7 +232,7 @@ All commands are run using Node.js and npm.
     ```bash
     npm run deploy
     ```
-    This command first builds the CSS and then deploys the application to your Cloudflare account using `wrangler`.
+    This command first runs the skill build, then builds the CSS, and finally deploys the application to your Cloudflare account using `wrangler`.
 
 ## 6. Vision Module Architecture Update
 
@@ -474,11 +480,42 @@ All chess-related AI requests are processed through the Vision module's dedicate
 
 This chess module provides a complete, robust, and user-friendly chess experience, while being deeply integrated into the application's unified architecture, fully leveraging existing AI infrastructure and tool calling capabilities.
 
-## 8. Tool Management Mechanism and Connection Differences
+## 8. Dynamic Skill System
+
+This architectural upgrade introduces a dynamic skill system, aiming to decouple tool usage guidelines from hardcoded system prompts. This enables on-demand, dynamic provision of precise contextual instructions to the Large Language Model (LLM), significantly boosting the success rate and accuracy of tool calls.
+
+### 8.1 Core Components and Workflow
+
+1.  **Skill Files**:
+    *   Detailed usage guidelines for all tools are stored as individual `SKILL.md` files within the [`src/skills/<tool_name>/`](src/skills/) directory structure.
+    *   Each `SKILL.md` contains structured metadata (frontmatter) and LLM-optimized Markdown content.
+
+2.  **Pre-build Script**:
+    *   The [`scripts/build-skills.js`](scripts/build-skills.js) script runs automatically before build or development startup.
+    *   It scans the `src/skills/` directory and parses all `SKILL.md` files.
+    *   It generates a static [`src/tool-spec-system/generated-skills.js`](src/tool-spec-system/generated-skills.js) file, inlining all skill data into a JavaScript object, which is suited for the filesystem-less Cloudflare Workers environment.
+
+3.  **Runtime Manager**:
+    *   [`src/tool-spec-system/skill-manager.js`](src/tool-spec-system/skill-manager.js) serves as a pure runtime logic unit. It loads data from `generated-skills.js` upon initialization.
+    *   The `SkillManager` is responsible for matching the most relevant skill based on the user's real-time query, using a weighted scoring algorithm.
+
+4.  **Dynamic Context Injection**:
+    *   The skill injection logic is integrated into the `handleAPIRequest` function in the main entry point, [`src/worker.js`](src/worker.js).
+    *   For each chat request, the system performs a skill match. If a match is found, the core instructions of that skill are dynamically injected as a `system` message into the `messages` array sent to the LLM.
+
+### 8.2 Benefits
+
+*   **Improved Success Rate**: Providing the LLM with a highly relevant, just-in-time "cheat sheet" significantly reduces hallucinations and errors in tool invocation.
+*   **Superior Maintainability**: Adding or modifying a tool's capabilities now only requires editing the corresponding `.md` file, without touching any core business logic.
+*   **Performance Optimization**: All file I/O is handled at build-time, and runtime execution is a zero-overhead, in-memory operation.
+
+---
+
+## 9. Tool Management Mechanism and Connection Differences
 
 This project implements a sophisticated tool management and invocation mechanism tailored for different AI models and connection types. The core principle is that the `ToolManager` class (defined in [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js)) is a universal wrapper for tool declaration and execution logic. However, it is instantiated twice in the frontend code, serving both WebSocket and HTTP connection paths, thereby forming two logically distinct "systems."
 
-#### 8.1 WebSocket Connection Method (Gemini WebSocket API)
+#### 9.1 WebSocket Connection Method (Gemini WebSocket API)
 
 *   **Models**: Primarily used for Gemini models connected via WebSocket, such as `models/gemini-2.0-flash-exp`.
 *   **Core Modules and Files**:
@@ -498,7 +535,7 @@ This project implements a sophisticated tool management and invocation mechanism
     *   **Modify Tool Declarations**: Adjust the `getDeclaration()` method in the respective tool class (e.g., `src/static/js/tools/google-search.js`).
     *   **Modify Tool Execution Logic**: Adjust the `execute()` method in the respective tool class.
 
-#### 8.2 HTTP Connection Method (Gemini HTTP API & Qwen HTTP API)
+#### 9.2 HTTP Connection Method (Gemini HTTP API & Qwen HTTP API)
 
 *   **Models**: Primarily used for HTTP models like `models/gemini-2.5-flash` and Qwen models such as `Qwen/Qwen3-235B-A22B-Thinking-2507`. This path is designed for maximum flexibility, allowing different models to use different sets of tools.
 *   **Core Modules and Files**:
@@ -533,11 +570,11 @@ This project implements a sophisticated tool management and invocation mechanism
     *   **Modify Tool Declaration or Execution Logic**: Adjust the `getDeclaration()` or `execute()` methods in the respective tool class (e.g., `src/static/js/tools/google-search.js` or tools defined in `src/static/js/tools_mcp/tool-definitions.js`).
     *   **Modify Frontend Tool Merging Logic**: If the merging strategy for tool declarations under HTTP connections needs adjustment, modify the relevant logic in [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js).
 
-## 9. Vision Module Technical Implementation Details
+## 10. Vision Module Technical Implementation Details
 
 ### 9.1 Core Functions and Architecture
 
-#### 9.1.1 Initialization System
+#### 10.1.1 Initialization System
 
 ```javascript
 // Key functions in vision-core.js:
@@ -558,7 +595,7 @@ async function _sendMessage(text, files)
 async function handleSendVisionMessage()
 ```
 
-#### 9.1.2 UI Adapter System
+#### 10.1.2 UI Adapter System
 
 ```javascript
 // Create Vision-specific UI adapter
@@ -580,7 +617,7 @@ function createVisionUIAdapter() {
 }
 ```
 
-#### 9.1.3 Chess Integration
+#### 10.1.3 Chess Integration
 
 ```javascript
 // Generate game summary - reuse ChatApiHandler
@@ -593,9 +630,9 @@ export function displayVisionMessage(markdownContent)
 window.sendVisionMessageDirectly = async function(messageText)
 ```
 
-### 9.2 Configuration and State Management
+### 10.2 Configuration and State Management
 
-#### 9.2.1 Model Configuration
+#### 10.2.1 Model Configuration
 
 Vision mode uses dedicated model configuration:
 
@@ -621,7 +658,7 @@ VISION: {
 }
 ```
 
-#### 9.2.2 State Isolation
+#### 10.2.2 State Isolation
 
 Vision mode maintains completely independent state:
 
@@ -635,23 +672,23 @@ let isVisionActive = false; // Vision mode activation status
 let handlers = {}; // Save handlers object
 ```
 
-### 9.3 Advantages Summary
+### 10.3 Advantages Summary
 
-#### 9.3.1 Architectural Advantages
+#### 10.3.1 Architectural Advantages
 
 -   **Unification**: Vision and Chat modes use the same underlying API processing mechanism
 -   **Modularity**: Clear separation of responsibilities, easy to maintain and extend
 -   **Consistency**: Unified error handling, tool calling, and streaming responses
 -   **Performance**: Independent state management, avoiding interference between modes
 
-#### 9.3.2 Functional Completeness
+#### 10.3.2 Functional Completeness
 
 -   **Complete Tool Chain**: Supports all MCP tool calls
 -   **Chess Integration**: Complete Chess Master AI functionality
 -   **Multimodal Support**: Multimodal processing of images, video, text
 -   **History Management**: Independent session storage and recovery
 
-#### 9.3.3 Developer Experience
+#### 10.3.3 Developer Experience
 
 -   **Clear Documentation**: Comprehensive code comments and architectural explanations
 -   **Easy Extension**: Modular design facilitates adding new features
