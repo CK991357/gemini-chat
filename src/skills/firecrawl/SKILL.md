@@ -4,7 +4,7 @@ description: 多功能网页抓取和数据提取工具，支持同步抓取、�
 tool_name: firecrawl
 category: web-crawling
 priority: 7
-tags: ["web-scraping", "data-extraction", "crawling", "automation"]
+tags: ["web-scraping", "data-extraction", "crawling", "automation","firecrawl"]
 version: 1.0
 ---
 
