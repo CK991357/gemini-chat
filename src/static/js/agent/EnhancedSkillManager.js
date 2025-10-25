@@ -1,12 +1,23 @@
-import { skillManager } from '../tool-spec-system/skill-manager.js';
+import { skillManagerPromise } from '../tool-spec-system/skill-manager.js';
 
 export class EnhancedSkillManager {
   constructor() {
-    this.baseSkillManager = skillManager;
+    this.baseSkillManager = null; // 初始化为 null
+    this.isInitialized = false;
+    this.initPromise = this.initialize();
     this.executionHistory = this.loadExecutionHistory();
   }
 
+  async initialize() {
+    this.baseSkillManager = await skillManagerPromise; // ✨ 等待 skillManager 准备好
+    this.isInitialized = true;
+    console.log("EnhancedSkillManager initialized with skill manager.");
+  }
+
   async findOptimalSkill(userQuery, context = {}) {
+    if (!this.isInitialized) {
+      await this.initPromise; // 确保在使用前已初始化
+    }
     const basicMatches = this.baseSkillManager.findRelevantSkills(userQuery, context);
     if (!basicMatches.length) return null;
 

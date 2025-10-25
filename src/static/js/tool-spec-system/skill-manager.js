@@ -1,9 +1,8 @@
 // src/tool-spec-system/skill-manager.js
 import { getSkillsRegistry } from './generated-skills.js';
-import synonyms from './synonyms.json' assert { type: 'json' };
 
 class EnhancedSkillManager {
-  constructor() {
+  constructor(synonyms) {
     this.skills = getSkillsRegistry();
     this.synonymMap = synonyms;
     console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
@@ -301,5 +300,27 @@ class EnhancedSkillManager {
   }
 }
 
-// 创建单例实例
-export const skillManager = new EnhancedSkillManager();
+// ✨ 步骤 2: 创建一个异步工厂函数来初始化
+async function createSkillManager() {
+  try {
+    const response = await fetch('./synonyms.json'); // ✨ 使用 fetch 加载
+    if (!response.ok) {
+      throw new Error(`Failed to load synonyms.json: ${response.statusText}`);
+    }
+    const synonymsData = await response.json();
+    return new EnhancedSkillManager(synonymsData);
+  } catch (error) {
+    console.error("Error initializing EnhancedSkillManager:", error);
+    // 在加载失败时，返回一个没有同义词功能的实例，确保程序不崩溃
+    return new EnhancedSkillManager({});
+  }
+}
+
+// ✨ 步骤 3: 导出异步创建的单例实例
+export const skillManagerPromise = createSkillManager();
+export let skillManager; // 导出一个变量，稍后填充
+
+// ✨ 步骤 4: 异步填充 skillManager 实例
+skillManagerPromise.then(instance => {
+  skillManager = instance;
+});
