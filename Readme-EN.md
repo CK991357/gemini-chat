@@ -509,6 +509,70 @@ This architectural upgrade introduces a dynamic skill system, aiming to decouple
 *   **Superior Maintainability**: Adding or modifying a tool's capabilities now only requires editing the corresponding `.md` file, without touching any core business logic.
 *   **Performance Optimization**: All file I/O is handled at build-time, and runtime execution is a zero-overhead, in-memory operation.
 
+### 8.3 Python Sandbox Skill Enhancement and Architectural Refactoring
+
+To significantly enhance the capabilities and maintainability of our AI's code execution skills, the python-sandbox skill has undergone a major architectural and content upgrade. This update transforms the skill from a single instruction file into a comprehensive and modular capability hub.
+
+#### 8.3.1 Key Architectural Changes: Skill as a Module
+
+The most significant change is the adoption of a modular file structure, following the "Progressive Disclosure" design principle. The monolithic SKILL.md has been refactored into a high-level entrypoint supported by a library of detailed reference documents.
+
+The new structure is as follows:
+
+```
+skills/python-sandbox/
+│
+├── SKILL.md                 # Core Guide: The new high-level entrypoint and dispatcher.
+│
+└── references/              # Knowledge Base: A library of detailed "cookbooks" and workflows.
+    ├── matplotlib_cookbook.md # Guide for advanced data visualization.
+    ├── pandas_cheatsheet.md   # Guide for data cleaning and analysis pipelines.
+    ├── report_generator_workflow.md # Guide for automated document generation.
+    ├── ml_workflow.md         # Guide for machine learning model training.
+    └── sympy_cookbook.md      # Guide for symbolic math and formula proving.
+```
+
+**SKILL.md: The Entrypoint & Dispatcher**
+- The main SKILL.md file no longer contains lengthy code examples
+- Provides a high-level overview of the skill's core capabilities
+- Acts as a directory or index, instructing the AI on which reference file to consult for specific, complex tasks
+- Defines the basic tool invocation and output specifications
+
+**references/ Directory: The Knowledge Base**
+- Houses detailed, task-specific guides, or "cookbooks"
+- Allows the AI to load deep knowledge on-demand without cluttering its initial context
+- Each workflow or library guide can be updated independently without altering the core SKILL.md
+
+#### 8.3.2 Enhanced Capabilities
+
+This new architecture formally introduces and supports the following advanced capabilities:
+
+- **Advanced Data Visualization**: Beyond simple plots, with best practices for creating high-quality, standardized business charts
+- **Complex Workflow Automation**: Full examples of multi-step tasks, such as the "Weekly Report Generator" which combines data simulation, chart creation, and Word document assembly
+- **Robust Data Pipelines**: A complete guide to data cleaning and analysis workflows using Pandas
+- **Machine Learning**: A standardized workflow for training, evaluating, and visualizing the results of scikit-learn models
+- **Scientific and Symbolic Computing**: Dedicated guidance on using the Sympy library for advanced mathematical tasks, including solving equations, performing calculus, and formally proving mathematical formulas
+
+#### 8.3.3 New Interaction Model
+
+Interacting with the enhanced python-sandbox skill now follows a more intelligent, multi-step process orchestrated by the AI:
+
+1. **Request Analysis**: The user provides a high-level request (e.g., "Analyze this dataset and create a report" or "Help me prove this trigonometric identity")
+2. **Dispatcher Consultation**: The AI first consults the main SKILL.md to understand the general task category and identify the appropriate reference guide
+3. **Knowledge Base Deep-Dive**: The AI then loads the relevant file from the references/ directory (e.g., report_generator_workflow.md or sympy_cookbook.md) to access detailed code templates and best practices
+4. **Code Generation & Execution**: Armed with expert-level knowledge, the AI generates high-quality, robust code to fulfill the user's request
+
+**Example Walkthrough: Formula Proving**
+- User Prompt: "Prove that sin(x)**2 + cos(x)**2 = 1 using symbolic computation"
+- AI Action:
+  1. The skill-manager identifies python-sandbox as the relevant skill
+  2. The AI reads SKILL.md and sees the section on "Symbolic Math and Formula Proving"
+  3. The instructions direct it to consult references/sympy_cookbook.md
+  4. The AI reads the cookbook, learns the best-practice workflow for formula proving (e.g., using sympy.simplify(LHS - RHS))
+  5. The AI generates the correct Sympy code and provides a step-by-step explanation of the proof
+
+This upgrade represents a significant leap forward in the python-sandbox skill's intelligence and utility. By adopting a modular, knowledge-driven architecture, we have created a platform that is not only more powerful but also more scalable and easier to maintain. This lays the foundation for introducing even more complex expert-level skills in the future.
+
 ---
 
 ## 9. Tool Management Mechanism and Connection Differences
@@ -542,7 +606,7 @@ This project implements a sophisticated tool management and invocation mechanism
     *   [`src/static/js/main.js`](src/static/js/main.js) ([`src/static/js/main.js:24`](src/static/js/main.js:24)): Frontend entry point; **here, a global `ToolManager` instance is instantiated** (`const toolManager = new ToolManager();`). This global instance is injected into `ChatApiHandler`.
     *   [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js): The core module for handling HTTP SSE streams. It is injected with the **global `ToolManager` instance** and is responsible for merging and forwarding tool declarations, as well as dispatching tool calls to the appropriate handlers.
     *   [`src/static/js/config/config.js`](src/static/js/config/config.js): Defines model configurations. The `tools` property for each model entry points to a specific toolset array, enabling fine-grained control. This file also defines model-specific **system prompts** (e.g., `Tool_gemini`), which are crucial for guiding model behavior, especially for complex tasks like image generation.
-    *   [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js): As above, its class definition is universal. **In this path, the global `ToolManager` instance also manages `GoogleSearchTool` and `WeatherTool`.**
+    *   [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js): As above, its class definition is universal. **In this path, the global `ToolManager` instance also manages `GoogleSearchTool` and `WeatherTool`.** 
     *   [`src/static/js/tools_mcp/tool-definitions.js`](src/static/js/tools_mcp/tool-definitions.js): Defines various MCP toolsets. This now includes the general `mcpTools` for Qwen and a specialized, schema-compatible `geminiMcpTools` array for Gemini models.
     *   [`src/worker.js`](src/worker.js): Cloudflare Worker backend, acting as an HTTP API proxy. It now has a unified logic path where both Gemini and Qwen tool calls are routed through the `/api/mcp-proxy` endpoint.
 *   **Workflow for Tool Invocation (Gemini & Qwen)**:
@@ -572,7 +636,7 @@ This project implements a sophisticated tool management and invocation mechanism
 
 ## 10. Vision Module Technical Implementation Details
 
-### 9.1 Core Functions and Architecture
+### 10.1 Core Functions and Architecture
 
 #### 10.1.1 Initialization System
 

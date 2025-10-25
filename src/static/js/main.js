@@ -17,6 +17,9 @@ import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage 和 initializeVisionCore
 
+// 🚀 新增导入：智能代理系统
+import { Orchestrator } from './agent/Orchestrator.js';
+
 /**
  * @fileoverview Main entry point for the application.
  * Initializes and manages the UI, audio, video, and WebSocket interactions.
@@ -70,7 +73,6 @@ const stopScreenButton = document.getElementById('stop-screen-button'); // 确�
 const attachmentButton = document.getElementById('attachment-button');
 const fileInput = document.getElementById('file-input');
 
-
 // 附件预览 DOM 元素
 const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
 
@@ -97,13 +99,14 @@ const visionSendButton = document.getElementById('vision-send-button');
 // T3: 确保 flipCameraButton 存在
 const flipCameraButton = document.getElementById('flip-camera');
 
+// 🚀 新增：智能代理系统开关
+const agentModeToggle = document.getElementById('agent-mode-toggle');
 
 // Load saved values from localStorage
 const savedApiKey = localStorage.getItem('gemini_api_key');
 const savedVoice = localStorage.getItem('gemini_voice');
 const savedFPS = localStorage.getItem('video_fps');
 const savedSystemInstruction = localStorage.getItem('system_instruction');
-
 
 if (savedApiKey) {
     apiKeyInput.value = savedApiKey;
@@ -318,7 +321,6 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.multiple = true; // 允许选择多个文件
    fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
- 
  
    // T10: 初始化 HistoryManager
    historyManager = new HistoryManager({
@@ -625,6 +627,12 @@ document.addEventListener('DOMContentLoaded', () => {
    
    // 初始化 ImageManager (模态框)
    initImageManager();
+
+   // 🚀 新增：初始化智能代理系统
+   initializeEnhancedAgent();
+   
+   // 确保工作流样式加载
+   loadWorkflowStyles();
 });
 
 // State variables
@@ -654,6 +662,172 @@ let screenHandler = null; // T4: 新增 ScreenHandler 实例
 let chatApiHandler = null; // 新增 ChatApiHandler 实例
 let visionApiHandler = null; // 确保这里声明了 visionApiHandler
 
+// 🚀 新增：智能代理系统实例
+let orchestrator = null;
+
+/**
+ * 🚀 智能代理系统初始化函数
+ */
+function initializeEnhancedAgent() {
+  try {
+    // 获取初始状态
+    const isAgentEnabled = localStorage.getItem('agentModeEnabled') !== 'false';
+    
+    orchestrator = new Orchestrator(chatApiHandler, {
+      enabled: isAgentEnabled,
+      containerId: 'workflow-container'
+    });
+    
+    // 挂载到window便于调试
+    window.orchestrator = orchestrator;
+    
+    // 初始化开关状态
+    if (agentModeToggle) {
+      agentModeToggle.checked = isAgentEnabled;
+      
+      // 监听开关变化
+      agentModeToggle.addEventListener('change', (e) => {
+        const enabled = e.target.checked;
+        orchestrator.setEnabled(enabled);
+        localStorage.setItem('agentModeEnabled', enabled);
+        showToast(`智能代理模式已${enabled ? '启用' : '禁用'}`);
+        console.log(`智能代理模式: ${enabled ? '启用' : '禁用'}`);
+      });
+    }
+    
+    console.log('🚀 智能代理系统初始化完成');
+  } catch (error) {
+    console.error('智能代理系统初始化失败:', error);
+  }
+}
+
+/**
+ * 🚀 加载工作流样式
+ */
+function loadWorkflowStyles() {
+  if (!document.querySelector('link[href*="workflow-ui.css"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'css/workflow-ui.css';
+    document.head.appendChild(link);
+    
+    // 添加加载错误处理
+    link.onerror = () => {
+      console.warn('工作流样式加载失败，使用备用样式');
+      injectFallbackStyles();
+    };
+  }
+}
+
+/**
+ * 🚀 备用样式注入
+ */
+function injectFallbackStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .workflow-container { 
+      display: none; 
+      margin: 20px 0; 
+      padding: 16px; 
+      background: #f8f9fa; 
+      border-radius: 8px; 
+      border: 1px solid #ddd; 
+    }
+    .workflow-step { 
+      margin: 8px 0; 
+      padding: 12px; 
+      background: white; 
+      border-radius: 6px; 
+    }
+    .workflow-step-running { background: #f0f8ff; }
+    .workflow-step-success { background: #f0fff0; }
+    .workflow-step-failed { background: #fff0f0; }
+  `;
+  document.head.appendChild(style);
+}
+
+/**
+ * 🚀 显示增强处理结果
+ */
+function displayEnhancedResult(result) {
+  const aiMessage = chatUI.createAIMessageElement();
+  
+  if (result.success) {
+    aiMessage.rawMarkdownBuffer = result.content;
+    aiMessage.markdownContainer.innerHTML = marked.parse(result.content);
+    
+    // 添加增强标识
+    const enhancedBadge = document.createElement('div');
+    enhancedBadge.className = 'enhanced-badge';
+    enhancedBadge.textContent = '🚀 智能处理';
+    enhancedBadge.style.cssText = `
+      background: #007bff;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      margin-bottom: 8px;
+      display: inline-block;
+    `;
+    aiMessage.markdownContainer.prepend(enhancedBadge);
+    
+  } else {
+    aiMessage.markdownContainer.innerHTML = `<p style="color: red;">增强处理失败: ${result.content}</p>`;
+  }
+  
+  // 应用数学公式渲染
+  if (typeof MathJax !== 'undefined' && MathJax.startup) {
+    MathJax.startup.promise.then(() => {
+      MathJax.typeset([aiMessage.markdownContainer]);
+    });
+  }
+  
+  chatUI.scrollToBottom();
+}
+
+/**
+ * 🚀 原有的标准聊天执行逻辑
+ */
+async function executeStandardChat(message, attachedFiles, modelName, apiKey) {
+  const userContent = [];
+  if (message) {
+    userContent.push({ type: 'text', text: message });
+  }
+  
+  attachedFiles.forEach(file => {
+    if (file.type.startsWith('image/')) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: file.base64 }
+      });
+    } else if (file.type === 'application/pdf') {
+      userContent.push({
+        type: 'pdf_url',
+        pdf_url: { url: file.base64 }
+      });
+    } else if (file.type.startsWith('audio/')) {
+      userContent.push({
+        type: 'audio_url',
+        audio_url: { url: file.base64 }
+      });
+    }
+  });
+
+  chatHistory.push({
+    role: 'user',
+    content: userContent
+  });
+
+  const requestBody = {
+    model: modelName,
+    messages: chatHistory,
+    generationConfig: { responseModalities: ['text'] },
+    stream: true,
+    sessionId: currentSessionId
+  };
+
+  await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+}
 
 /**
  * 将PCM数据转换为WAV Blob。
@@ -709,7 +883,6 @@ const client = new MultimodalLiveClient();
 // State variables
 let selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === CONFIG.API.MODEL_NAME); // 初始选中默认模型
 
-
 /**
  * 格式化秒数为 MM:SS 格式。
  * @param {number} seconds - 总秒数。
@@ -733,30 +906,6 @@ function updateMicIcon() {
         micButton.classList.toggle('active', isRecording);
     }
 }
-
-/**
- * Updates the audio visualizer based on the audio volume.
- * @param {number} volume - The audio volume (0.0 to 1.0).
- * @param {boolean} [isInput=false] - Whether the visualizer is for input audio.
- */
-// function updateAudioVisualizer(volume, isInput = false) {
-//     // 移除音频可视化，因为音频模式已删除，且在文字模式下不需要实时显示音频波形
-//     // 如果未来需要，可以考虑在其他地方重新引入
-//     // const visualizer = isInput ? inputAudioVisualizer : audioVisualizer;
-//     // const audioBar = visualizer.querySelector('.audio-bar') || document.createElement('div');
-//
-//     // if (!visualizer.contains(audioBar)) {
-//     //     audioBar.classList.add('audio-bar');
-//     //     visualizer.appendChild(audioBar);
-//     // }
-//
-//     // audioBar.style.width = `${volume * 100}%`;
-//     // if (volume > 0) {
-//     //     audioBar.classList.add('active');
-//     // } else {
-//     //     audioBar.classList.remove('active');
-//     // }
-// }
 
 /**
  * Initializes the audio context and streamer if not already initialized.
@@ -820,11 +969,6 @@ async function handleMicToggle() {
                         data: base64Data
                     }]);
                 }
-                
-                // 移除输入音频可视化
-                // inputAnalyser.getByteFrequencyData(_inputDataArray); // 使用重命名后的变量
-                // const inputVolume = Math.max(..._inputDataArray) / 255;
-                // updateAudioVisualizer(inputVolume, true);
             });
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -891,11 +1035,6 @@ async function connectToWebsocket() {
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
-        /**
-         * @description 根据用户选择的响应类型构建模型生成配置。
-         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
-         * @returns {string[]} 响应模态数组。
-         */
         /**
          * @description 根据用户选择的响应类型构建模型生成配置。
          * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
@@ -1002,7 +1141,7 @@ function disconnectFromWebsocket() {
 }
 
 /**
- * Handles sending a text message.
+ * 🚀 修改后的handleSendMessage函数以使用智能代理
  */
 async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     const message = messageInput.value.trim();
@@ -1011,7 +1150,7 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
     if (!message && attachedFiles.length === 0) return;
 
     // 确保在处理任何消息之前，会话已经存在
-    // 这是修复“新会话第一条消息不显示”问题的关键
+    // 这是修复"新会话第一条消息不显示"问题的关键
     if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
         historyManager.generateNewSession();
     }
@@ -1036,70 +1175,28 @@ async function handleSendMessage(attachmentManager) { // T2: 传入管理器
         try {
             const apiKey = apiKeyInput.value;
             const modelName = selectedModelConfig.name;
-            let systemInstruction = systemInstructionInput.value;
 
-            // 构建消息内容，参考 OCR 项目的成功实践
-            const userContent = [];
-            if (message) {
-                userContent.push({ type: 'text', text: message });
-            }
-            // 将所有附件添加到 userContent
-            attachedFiles.forEach(file => {
-                if (file.type.startsWith('image/')) {
-                    userContent.push({
-                        type: 'image_url',
-                        image_url: { url: file.base64 }
-                    });
-                } else if (file.type === 'application/pdf') {
-                    userContent.push({
-                        type: 'pdf_url',
-                        pdf_url: { url: file.base64 }
-                    });
-                } else if (file.type.startsWith('audio/')) {
-                    userContent.push({
-                        type: 'audio_url',
-                        audio_url: { url: file.base64 }
-                    });
-                }
-            });
-
-            chatHistory.push({
-                role: 'user',
-                content: userContent // 保持为数组，因为可能包含文本和图片
-            });
-
-            // 清除附件（发送后）
-            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
-
-            let requestBody = {
+            // 🚀 使用智能代理系统处理
+            const agentResult = await orchestrator.handleUserRequest(message, attachedFiles, {
                 model: modelName,
+                apiKey: apiKey,
                 messages: chatHistory,
-                generationConfig: {
-                    responseModalities: ['text']
-                },
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }
-                ],
-                enableGoogleSearch: true,
-                stream: true,
-                sessionId: currentSessionId
-            };
+                apiHandler: chatApiHandler  // 传递API处理器
+            });
 
-            if (systemInstruction) {
-                requestBody.systemInstruction = {
-                    parts: [{ text: systemInstruction }]
-                };
+            // 处理代理结果
+            if (agentResult.enhanced) {
+                if (agentResult.skipped) {
+                    // 用户跳过了工作流，使用标准处理
+                    await executeStandardChat(message, attachedFiles, modelName, apiKey);
+                } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
+                    // 显示增强处理的结果
+                    displayEnhancedResult(agentResult);
+                }
+            } else {
+                // 标准处理
+                await executeStandardChat(message, attachedFiles, modelName, apiKey);
             }
-
-            // 动态添加工具定义，统一处理所有 Qwen、Zhipu 和 Gemini 工具模型
-            if (selectedModelConfig && (selectedModelConfig.isQwen || selectedModelConfig.isZhipu || selectedModelConfig.isGemini) && selectedModelConfig.tools) {
-                requestBody.tools = selectedModelConfig.tools;
-            }
-
-            await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 
         } catch (error) {
             Logger.error('发送 HTTP 消息失败:', error);
@@ -1265,7 +1362,6 @@ client.on('error', (error) => {
  */
 // The processHttpStream function has been moved to chat-api-handler.js
 
-
 // 添加全局错误处理
 globalThis.addEventListener('error', (event) => {
     chatUI.logMessage(`系统错误: ${event.message}`, 'system');
@@ -1365,7 +1461,6 @@ mobileConnectButton?.addEventListener('click', () => {
     }
 });
 
-
 // 监听模型选择变化
 const modelSelect = document.getElementById('model-select'); // 确保这里获取到 modelSelect
 modelSelect.addEventListener('change', () => {
@@ -1415,7 +1510,7 @@ function disconnect() {
     if (selectedModelConfig.isWebSocket) {
         disconnectFromWebsocket();
     } else {
-        // 对于 HTTP 模式，没有“断开连接”的概念，但需要重置 UI 状态
+        // 对于 HTTP 模式，没有"断开连接"的概念，但需要重置 UI 状态
         resetUIForDisconnectedState();
         chatUI.logMessage('已断开连接 (HTTP 模式)', 'system');
     }
@@ -1607,12 +1702,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * @function
-     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
-     * @returns {void}
-     */
-    /**
-     * @function
-     * @description 处理“新建聊天”按钮点击事件，根据当前激活的模式清空对应的聊天历史。
+     * @description 处理"新建聊天"按钮点击事件，刷新页面以开始新的聊天。
      * @returns {void}
      */
     newChatButton.addEventListener('click', () => {
@@ -1631,7 +1721,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * @function
-     * @description 处理“新建聊天”按钮点击事件，刷新页面以开始新的聊天。
+     * @description 处理"新建聊天"按钮点击事件，刷新页面以开始新的聊天。
      * @returns {void}
      */
     // 添加视图缩放阻止
@@ -1738,12 +1828,6 @@ function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-
-
-
-
-
-
 /**
  * 检查浏览器兼容性并显示警告。
  * @returns {boolean} 如果浏览器兼容则返回 true，否则返回 false。
@@ -1764,8 +1848,6 @@ function checkBrowserCompatibility() {
     }
     return true;
 }
-
-
 
 /**
  * @function startChatRecording
@@ -1919,8 +2001,6 @@ function resetChatRecordingState() {
   messageInput.placeholder = '输入消息...';
 }
 
-
-
 /**
  * 显示一个 Toast 轻提示。
  * @param {string} message - 要显示的消息。
@@ -1967,3 +2047,14 @@ export function showSystemMessage(message) {
     messageHistory.appendChild(messageDiv);
     chatUI.scrollToBottom();
 }
+
+// 🚀 添加调试工具到控制台
+window.getAgentStatus = () => orchestrator?.getStatus();
+window.getToolStats = () => orchestrator?.getToolStatistics();
+window.toggleAgentMode = (enabled) => {
+    const toggle = document.getElementById('agent-mode-toggle');
+    if (toggle) {
+        toggle.checked = enabled;
+        toggle.dispatchEvent(new Event('change'));
+    }
+};
