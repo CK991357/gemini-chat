@@ -83,8 +83,9 @@ export class Orchestrator {
         return await this.fallbackToStandard(userMessage, files, context);
       }
       
-      // 🎯 通过事件系统显示工作流（UI处理器会处理）
-      await this.callbackManager.onWorkflowStart(this.currentWorkflow);
+      // 🎯 注意：不再手动触发 onWorkflowStart，因为流式引擎会自动触发
+      // 直接显示UI（UI处理器会通过事件系统处理）
+      this.workflowUI.showWorkflow(this.currentWorkflow);
       
       return new Promise((resolve) => {
         this.workflowResolve = resolve;
@@ -164,25 +165,39 @@ export class Orchestrator {
     }
   }
 
+  // 🎯 重构：使用新的流式接口
   async startWorkflowExecution() {
     if (!this.currentWorkflow) return;
     
     try {
-      // 🎯 通过结构化事件系统通知工作流开始
-      await this.callbackManager.onWorkflowStart(this.currentWorkflow);
-      
-      const workflowResult = await this.workflowEngine.executeWorkflow(this.currentWorkflow, {
+      // 🎯 使用新的流式接口
+      const workflowStream = this.workflowEngine.stream(this.currentWorkflow, {
         apiHandler: this.chatApiHandler,
         apiKey: this.currentContext?.apiKey,
         model: this.currentContext?.model,
-        callbackManager: this.callbackManager
+        stepOutputs: {} // 用于步骤间数据传递
       });
       
-      // 🎯 通过结构化事件系统通知工作流结束
-      await this.callbackManager.onWorkflowEnd(this.currentWorkflow, workflowResult);
+      let finalResult = null;
+      
+      // 🎯 统一的事件消费循环
+      for await (const event of workflowStream) {
+        // 转发到结构化事件系统
+        await this.callbackManager.invokeEvent(event.event, {
+          name: event.name,
+          run_id: event.run_id,
+          data: event.data,
+          metadata: event.metadata
+        });
+        
+        // 记录最终结果
+        if (event.event === 'on_workflow_end') {
+          finalResult = event.data.result;
+        }
+      }
       
       if (this.workflowResolve) {
-        this.workflowResolve(this.formatWorkflowResult(workflowResult));
+        this.workflowResolve(this.formatWorkflowResult(finalResult));
       }
       
     } catch (error) {
@@ -190,7 +205,7 @@ export class Orchestrator {
       await this.callbackManager.onError(error, null, {
         workflow: this.currentWorkflow,
         context: this.currentContext,
-        source: 'orchestrator'
+        source: 'orchestrator_stream'
       });
       
       if (this.workflowResolve) {
@@ -271,7 +286,7 @@ export class Orchestrator {
       success: workflowResult.success,
       content: this.extractWorkflowOutput(workflowResult),
       workflow: workflowResult.workflowName,
-      steps: workflowResult.steps.length,
+      steps: workflowResult.steps?.length || 0,
       enhanced: true,
       summary: workflowResult.summary
     };
@@ -287,7 +302,9 @@ export class Orchestrator {
   }
 
   extractWorkflowOutput(workflowResult) {
-    const successfulSteps = workflowResult.steps.filter(step => step.success);
+    if (!workflowResult) return '工作流执行无结果';
+    
+    const successfulSteps = workflowResult.steps?.filter(step => step?.success) || [];
     if (successfulSteps.length === 0) return '工作流执行失败';
     
     // 构建详细的工作流输出
@@ -295,20 +312,20 @@ export class Orchestrator {
     
     // 添加步骤摘要
     output += `## 执行摘要\n`;
-    output += `- 总步骤: ${workflowResult.summary.totalSteps}\n`;
-    output += `- 成功步骤: ${workflowResult.summary.successfulSteps}\n`;
-    output += `- 总耗时: ${(workflowResult.summary.totalExecutionTime / 1000).toFixed(2)}秒\n\n`;
+    output += `- 总步骤: ${workflowResult.summary?.totalSteps || 0}\n`;
+    output += `- 成功步骤: ${workflowResult.summary?.successfulSteps || 0}\n`;
+    output += `- 总耗时: ${((workflowResult.summary?.totalExecutionTime || 0) / 1000).toFixed(2)}秒\n\n`;
     
     // 添加每个步骤的结果
     output += `## 详细步骤\n`;
-    workflowResult.steps.forEach((step, index) => {
-      output += `### 步骤 ${index + 1}: ${step.step}\n`;
-      output += `- 状态: ${step.success ? '✅ 成功' : '❌ 失败'}\n`;
-      output += `- 耗时: ${(step.executionTime / 1000).toFixed(2)}秒\n`;
+    (workflowResult.steps || []).forEach((step, index) => {
+      output += `### 步骤 ${index + 1}: ${step?.step || step?.name || '未知步骤'}\n`;
+      output += `- 状态: ${step?.success ? '✅ 成功' : '❌ 失败'}\n`;
+      output += `- 耗时: ${((step?.executionTime || 0) / 1000).toFixed(2)}秒\n`;
       
-      if (step.success && step.output) {
+      if (step?.success && step?.output) {
         output += `- 输出: ${typeof step.output === 'string' ? step.output : JSON.stringify(step.output, null, 2)}\n`;
-      } else if (step.error) {
+      } else if (step?.error) {
         output += `- 错误: ${step.error}\n`;
       }
       
@@ -403,6 +420,49 @@ export class Orchestrator {
     if (logsHandler) {
       logsHandler.logBuffer = [];
     }
+  }
+
+  // 🎯 新增：获取当前工作流执行状态
+  getWorkflowExecutionState() {
+    if (!this.currentWorkflow) return null;
+    
+    const runStats = this.getCurrentRunStats();
+    const currentEvents = this.callbackManager.getCurrentRunEvents();
+    
+    return {
+      workflow: this.currentWorkflow,
+      runId: runStats?.runId,
+      events: currentEvents,
+      status: runStats ? 'running' : 'idle',
+      progress: this.calculateProgress(currentEvents)
+    };
+  }
+
+  // 🎯 新增：计算执行进度
+  calculateProgress(events = []) {
+    if (!this.currentWorkflow) return 0;
+    
+    const stepStarts = events.filter(e => e.event === 'on_step_start').length;
+    const stepEnds = events.filter(e => e.event === 'on_step_end').length;
+    
+    const totalSteps = this.currentWorkflow.steps.length;
+    
+    if (totalSteps === 0) return 0;
+    
+    // 进度计算：开始步骤占50%，完成步骤占50%
+    const progress = ((stepStarts * 0.5) + (stepEnds * 0.5)) / totalSteps * 100;
+    return Math.min(100, Math.max(0, progress));
+  }
+
+  // 🎯 新增：暂停工作流执行（如果需要的话）
+  async pauseWorkflowExecution() {
+    // 注意：这是一个高级功能，需要 WorkflowEngine 支持可中断的执行
+    console.warn('工作流暂停功能需要 WorkflowEngine 支持可中断执行');
+  }
+
+  // 🎯 新增：恢复工作流执行
+  async resumeWorkflowExecution() {
+    console.warn('工作流恢复功能需要 WorkflowEngine 支持可恢复执行');
   }
 
   // 清理资源
