@@ -1,4 +1,11 @@
+// src/static/js/agent/Orchestrator.js
+
+import { CallbackManager } from './CallbackManager.js';
 import { EnhancedSkillManager } from './EnhancedSkillManager.js';
+import { AnalyticsHandler } from './handlers/AnalyticsHandler.js';
+import { LearningHandler } from './handlers/LearningHandler.js';
+import { LoggingHandler } from './handlers/LoggingHandler.js';
+import { WorkflowUIHandler } from './handlers/WorkflowUIHandler.js';
 import { WorkflowEngine } from './WorkflowEngine.js';
 import { WorkflowUI } from './WorkflowUI.js';
 
@@ -7,16 +14,44 @@ export class Orchestrator {
     this.chatApiHandler = chatApiHandler;
     this.config = config;
     
+    // 🎯 初始化结构化回调管理器
+    this.callbackManager = new CallbackManager();
+    
     this.skillManager = new EnhancedSkillManager();
-    this.workflowEngine = new WorkflowEngine(this.skillManager);
+    this.workflowEngine = new WorkflowEngine(this.skillManager, this.callbackManager);
     this.workflowUI = new WorkflowUI(config.containerId);
+    
+    // 🎯 注册处理器
+    this.setupHandlers();
     
     this.isEnabled = config.enabled !== false;
     this.currentWorkflow = null;
-    this.currentContext = null;
     this.workflowResolve = null;
+    this.currentContext = null;
     
     this.setupEventListeners();
+  }
+
+  setupHandlers() {
+    // UI处理器
+    const uiHandler = new WorkflowUIHandler(this.workflowUI);
+    this.callbackManager.addHandler(uiHandler);
+    
+    // 学习处理器
+    const learningHandler = new LearningHandler(this.skillManager);
+    this.callbackManager.addHandler(learningHandler);
+    
+    // 日志处理器
+    const loggingHandler = new LoggingHandler();
+    this.callbackManager.addHandler(loggingHandler);
+    
+    // 🎯 新增分析处理器
+    const analyticsHandler = new AnalyticsHandler();
+    this.callbackManager.addHandler(analyticsHandler);
+    
+    console.log('🎯 结构化事件处理器已注册:', 
+      this.callbackManager.handlers.map(h => h.name)
+    );
   }
 
   async handleUserRequest(userMessage, files = [], context = {}) {
@@ -41,14 +76,15 @@ export class Orchestrator {
       this.currentWorkflow = await this.workflowEngine.createWorkflow(userMessage, {
         ...context,
         files,
-        onStepUpdate: this.handleStepUpdate.bind(this)
+        callbackManager: this.callbackManager
       });
       
       if (!this.currentWorkflow) {
         return await this.fallbackToStandard(userMessage, files, context);
       }
       
-      this.workflowUI.showWorkflow(this.currentWorkflow);
+      // 🎯 通过事件系统显示工作流（UI处理器会处理）
+      await this.callbackManager.onWorkflowStart(this.currentWorkflow);
       
       return new Promise((resolve) => {
         this.workflowResolve = resolve;
@@ -56,6 +92,10 @@ export class Orchestrator {
       
     } catch (error) {
       console.error('工作流创建失败:', error);
+      await this.callbackManager.onError(error, null, {
+        source: 'workflow_creation',
+        userMessage
+      });
       return await this.fallbackToStandard(userMessage, files, context);
     }
   }
@@ -74,18 +114,44 @@ export class Orchestrator {
     const startTime = Date.now();
     
     try {
+      // 🎯 通知工具开始执行
+      await this.callbackManager.onToolStart(skill.toolName, skill.parameters, 0);
+      
       const result = await this.callTool(skill.toolName, skill.parameters, context);
+      
+      const executionTime = Date.now() - startTime;
+      
+      // 🎯 通知工具执行完成
+      await this.callbackManager.onToolEnd(skill.toolName, result.output, 0, {
+        ...result,
+        executionTime
+      });
+      
+      // 🎯 通知学习更新
+      await this.callbackManager.onLearningUpdate(skill.toolName, true, executionTime);
       
       this.skillManager.recordToolExecution(
         skill.toolName,
         skill.parameters,
         true,
-        { ...result, executionTime: Date.now() - startTime }
+        { ...result, executionTime }
       );
       
       return this.formatToolResult(result, skill);
       
     } catch (error) {
+      const executionTime = Date.now() - startTime;
+      
+      // 🎯 通知错误
+      await this.callbackManager.onError(error, 0, {
+        toolName: skill.toolName,
+        parameters: skill.parameters,
+        source: 'tool_execution'
+      });
+      
+      // 🎯 通知学习更新（失败情况）
+      await this.callbackManager.onLearningUpdate(skill.toolName, false, executionTime);
+      
       this.skillManager.recordToolExecution(
         skill.toolName,
         skill.parameters, 
@@ -102,25 +168,37 @@ export class Orchestrator {
     if (!this.currentWorkflow) return;
     
     try {
+      // 🎯 通过结构化事件系统通知工作流开始
+      await this.callbackManager.onWorkflowStart(this.currentWorkflow);
+      
       const workflowResult = await this.workflowEngine.executeWorkflow(this.currentWorkflow, {
-        apiHandler: this.chatApiHandler,  // 传递正确的API处理器
+        apiHandler: this.chatApiHandler,
         apiKey: this.currentContext?.apiKey,
         model: this.currentContext?.model,
-        onStepUpdate: this.handleStepUpdate.bind(this)
+        callbackManager: this.callbackManager
       });
       
-      this.workflowUI.showCompletion(workflowResult);
+      // 🎯 通过结构化事件系统通知工作流结束
+      await this.callbackManager.onWorkflowEnd(this.currentWorkflow, workflowResult);
       
       if (this.workflowResolve) {
         this.workflowResolve(this.formatWorkflowResult(workflowResult));
       }
       
     } catch (error) {
-      console.error('工作流执行失败:', error);
+      // 🎯 通过结构化事件系统通知错误
+      await this.callbackManager.onError(error, null, {
+        workflow: this.currentWorkflow,
+        context: this.currentContext,
+        source: 'orchestrator'
+      });
       
       if (this.workflowResolve) {
         this.workflowResolve(this.formatErrorResult(error));
       }
+    } finally {
+      // 🎯 清理当前运行状态
+      this.callbackManager.clearCurrentRun();
     }
   }
 
@@ -136,9 +214,7 @@ export class Orchestrator {
     }
   }
 
-  handleStepUpdate(stepIndex, status, step, result = null) {
-    this.workflowUI.updateStep(stepIndex, status, result);
-  }
+  // 🎯 移除原有的handleStepUpdate方法，由事件系统处理
 
   async fallbackToStandard(userMessage, files, context) {
     return { 
@@ -282,7 +358,13 @@ export class Orchestrator {
       currentContext: this.currentContext ? {
         hasApiKey: !!this.currentContext.apiKey,
         model: this.currentContext.model
-      } : null
+      } : null,
+      // 🎯 新增事件系统状态
+      eventSystem: {
+        handlers: this.callbackManager.handlers.map(h => h.name),
+        currentRunId: this.callbackManager.currentRunId,
+        totalEvents: this.callbackManager.eventHistory.length
+      }
     };
   }
 
@@ -290,11 +372,48 @@ export class Orchestrator {
     return this.skillManager.getToolAnalytics();
   }
 
+  // 🎯 增强的调试方法
+  getCurrentRunStats() {
+    return this.callbackManager.getRunStatistics();
+  }
+
+  getAllEventHistory() {
+    return this.callbackManager.getEventHistory();
+  }
+
+  exportEventLogs() {
+    const logsHandler = this.callbackManager.handlers.find(h => h.name === 'LoggingHandler');
+    return logsHandler ? logsHandler.exportLogs() : null;
+  }
+
+  getAnalyticsMetrics() {
+    const analyticsHandler = this.callbackManager.handlers.find(h => h.name === 'AnalyticsHandler');
+    return analyticsHandler ? analyticsHandler.getMetrics() : null;
+  }
+
+  // 🎯 新增：获取结构化事件流
+  getEventStream() {
+    return this.callbackManager.eventHistory;
+  }
+
+  // 🎯 新增：清空事件历史
+  clearEventHistory() {
+    this.callbackManager.eventHistory = [];
+    const logsHandler = this.callbackManager.handlers.find(h => h.name === 'LoggingHandler');
+    if (logsHandler) {
+      logsHandler.logBuffer = [];
+    }
+  }
+
   // 清理资源
   destroy() {
     this.currentWorkflow = null;
     this.currentContext = null;
     this.workflowResolve = null;
+    
+    // 🎯 清理事件系统
+    this.callbackManager.clearCurrentRun();
+    this.callbackManager.handlers = [];
     
     // 移除事件监听器
     document.removeEventListener('workflow:workflow-start', this.startWorkflowExecution);

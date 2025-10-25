@@ -1,3 +1,8 @@
+我将根据您提供的 agent 系统代码，更新 README-ZH_251013.md 文档。主要在第9节"工具管理机制和连接差异"之后添加新的第10节"智能代理系统"。
+
+以下是更新后的完整文档：
+
+```markdown
 # CLAUDE.md
 
 该文件为 Claude Code (claude.ai/code) 在处理此仓库代码时提供指导。
@@ -84,6 +89,17 @@
         -   `src/static/js/main.js`: 主要的客户端应用程序逻辑。
         -   **代理模块 (`src/static/js/agent/`)**: 包含集成 AI 代理和代理其工具调用的逻辑。
             -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): 充当由 Qwen 模型发起的多云平台 (MCP) 工具调用的客户端适配器。它从 `chat-api-handler.js` 接收工具调用请求（包含 `tool_name` 和 `parameters`），并将它们代理到后端的 `/api/mcp-proxy` 端点。这对于在应用程序内启用灵活的 AI 代理功能至关重要。
+            -   **[`CallbackManager.js`](src/static/js/agent/CallbackManager.js)**: **新增模块** - 结构化事件管理器，提供 LangChain 风格的事件流系统，用于协调智能代理工作流的各个组件。
+            -   **[`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js)**: **新增模块** - 增强技能管理器，基于工具执行历史提供智能的技能匹配和优化。
+            -   **[`Orchestrator.js`](src/static/js/agent/Orchestrator.js)**: **新增模块** - 智能代理协调器，负责分析用户请求并决定使用单步工具执行还是复杂工作流。
+            -   **[`WorkflowEngine.js`](src/static/js/agent/WorkflowEngine.js)**: **新增模块** - 工作流引擎，负责创建和执行多步骤的 AI 工作流。
+            -   **[`WorkflowTemplates.js`](src/static/js/agent/WorkflowTemplates.js)**: **新增模块** - 预定义的工作流模板库，包括网页分析、数据可视化和研究报告等模板。
+            -   **[`WorkflowUI.js`](src/static/js/agent/WorkflowUI.js)**: **新增模块** - 工作流用户界面，提供工作流执行的可视化展示和交互控制。
+            -   **处理器模块 (`src/static/js/agent/handlers/`)**: **新增模块** - 结构化事件处理器集合。
+                -   [`AnalyticsHandler.js`](src/static/js/agent/handlers/AnalyticsHandler.js): 分析处理器，收集和报告工作流执行指标。
+                -   [`LearningHandler.js`](src/static/js/agent/handlers/LearningHandler.js): 学习处理器，基于执行结果优化工具使用策略。
+                -   [`LoggingHandler.js`](src/static/js/agent/handlers/LoggingHandler.js): 日志处理器，记录详细的事件流信息。
+                -   [`WorkflowUIHandler.js`](src/static/js/agent/handlers/WorkflowUIHandler.js): UI 处理器，将事件转换为用户界面更新。
         -   `src/static/js/attachments/`: 处理文件附件功能，如 `file-attachment.js`。
             -   [`file-attachment.js`](src/static/js/attachments/file-attachment.js): 定义 `AttachmentManager` 类，该类管理文件附件的所有逻辑（选择、验证、Base64 转换和 UI 预览显示），适用于单文件（"chat" 模式）和多文件（"vision" 模式）场景。**增强**: 现在与 `ImageCompressor` 集成，自动压缩所有模式下大于 1MB 的图像，提供压缩反馈并保持文件类型一致性。具有 `toggleCompression()` 方法用于运行时控制。
         -   **聊天模块 (`src/static/js/chat/`)**: 包含管理聊天 UI、API 交互和处理 AI 响应（包括工具调用）的核心逻辑。
@@ -638,11 +654,148 @@ skills/python-sandbox/
     *   **修改工具声明或执行逻辑**: 调整相应工具类（例如 `src/static/js/tools/google-search.js` 或在 `src/static/js/tools_mcp/tool-definitions.js` 中定义的工具）中的 `getDeclaration()` 或 `execute()` 方法。
     *   **修改前端工具合并逻辑**: 如果需要调整 HTTP 连接下工具声明的合并策略，请修改 [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js) 中的相关逻辑。
 
-## 10. Vision 模块技术实现细节
+## 10. 智能代理系统 (Intelligent Agent System)
 
-### 10.1 核心函数与架构
+本次架构升级引入了一个完整的智能代理系统，能够自动分析用户请求的复杂性，并智能地选择单步工具执行或多步骤工作流来处理复杂任务。
 
-#### 10.1.1 初始化系统
+### 10.1 系统概述
+
+智能代理系统是一个模块化的、事件驱动的架构，旨在：
+
+- **智能任务分析**: 自动识别用户请求的复杂程度
+- **动态工作流编排**: 根据任务复杂度自动创建和执行多步骤工作流
+- **结构化事件流**: 提供 LangChain 风格的统一事件系统
+- **学习优化**: 基于历史执行数据优化工具选择策略
+- **可视化执行**: 实时展示工作流执行状态和进度
+
+### 10.2 核心组件架构
+
+#### 10.2.1 CallbackManager - 结构化事件管理器
+
+[`CallbackManager.js`](src/static/js/agent/CallbackManager.js) 是整个代理系统的事件中枢：
+
+- **LangChain 兼容事件流**: 提供标准化的 `on_workflow_start`, `on_step_start`, `on_tool_start`, `on_ai_start` 等事件
+- **结构化事件数据**: 每个事件包含完整的上下文信息，包括运行ID、时间戳、元数据等
+- **多处理器支持**: 支持注册多个事件处理器，实现关注点分离
+- **事件历史记录**: 自动记录事件历史，支持调试和状态恢复
+
+```javascript
+// 事件系统示例
+await callbackManager.onWorkflowStart(workflow);
+await callbackManager.onStepStart(step, stepIndex);
+await callbackManager.onToolStart(toolName, input, stepIndex);
+```
+
+#### 10.2.2 EnhancedSkillManager - 增强技能管理器
+
+[`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js) 在基础技能管理系统之上提供智能优化：
+
+- **执行历史学习**: 基于工具执行成功率动态调整技能匹配权重
+- **智能评分算法**: 结合基础匹配分数和工具历史性能计算增强分数
+- **性能分析**: 提供工具使用统计和成功率分析
+- **参数优化**: 自动清理和优化工具参数
+
+#### 10.2.3 Orchestrator - 智能代理协调器
+
+[`Orchestrator.js`](src/static/js/agent/Orchestrator.js) 是整个系统的核心协调器：
+
+- **任务复杂度分析**: 自动分析用户请求，识别复杂任务模式
+- **智能路由决策**: 决定使用单步工具执行还是复杂工作流
+- **工作流生命周期管理**: 管理工作流的创建、执行和结果编译
+- **统一错误处理**: 提供标准化的错误处理和降级机制
+
+#### 10.2.4 WorkflowEngine - 工作流引擎
+
+[`WorkflowEngine.js`](src/static/js/agent/WorkflowEngine.js) 负责工作流的创建和执行：
+
+- **模板化工作流**: 基于预定义模板快速创建工作流
+- **动态工作流生成**: 根据任务分析结果动态生成工作流步骤
+- **步骤依赖管理**: 处理步骤间的数据依赖和参数传递
+- **真实工具集成**: 与现有 API 系统深度集成，支持真实工具调用
+
+#### 10.2.5 WorkflowTemplates - 工作流模板
+
+[`WorkflowTemplates.js`](src/static/js/agent/WorkflowTemplates.js) 提供预定义的工作流模板：
+
+- **网页分析工作流**: 自动爬取网页内容并进行分析总结
+- **数据可视化工作流**: 数据处理、分析和可视化生成
+- **研究报告工作流**: 信息收集、分析和报告生成
+- **可扩展架构**: 支持轻松添加新的工作流模板
+
+#### 10.2.6 WorkflowUI - 工作流用户界面
+
+[`WorkflowUI.js`](src/static/js/agent/WorkflowUI.js) 提供工作流的可视化展示：
+
+- **实时进度显示**: 可视化展示工作流执行进度
+- **步骤状态监控**: 实时显示每个步骤的执行状态
+- **交互式控制**: 支持开始、跳过等用户交互
+- **完成状态展示**: 清晰展示工作流执行结果
+
+#### 10.2.7 事件处理器
+
+系统包含四个专门的事件处理器：
+
+- **AnalyticsHandler**: 收集和分析工作流执行指标
+- **LearningHandler**: 基于执行结果优化工具使用策略
+- **LoggingHandler**: 记录详细的事件流信息用于调试
+- **WorkflowUIHandler**: 将事件转换为用户界面更新
+
+### 10.3 工作流程
+
+#### 10.3.1 智能请求处理流程
+
+1. **用户请求分析**: Orchestrator 接收用户请求并分析复杂度
+2. **路由决策**: 
+   - 简单任务: 使用 EnhancedSkillManager 选择最优工具直接执行
+   - 复杂任务: 使用 WorkflowEngine 创建和执行多步骤工作流
+3. **执行监控**: 通过 CallbackManager 实时监控执行状态
+4. **结果编译**: 格式化执行结果返回给用户
+
+#### 10.3.2 工作流执行流程
+
+1. **工作流创建**: 基于模板或动态分析创建工作流
+2. **步骤顺序执行**: 按顺序执行工作流中的每个步骤
+3. **数据传递**: 前一步骤的输出作为后一步骤的输入
+4. **错误处理**: 支持关键步骤失败时的优雅降级
+5. **结果汇总**: 编译所有步骤结果生成最终输出
+
+#### 10.3.3 事件流处理
+
+1. **事件触发**: 各个组件在执行过程中触发结构化事件
+2. **处理器分发**: CallbackManager 将事件分发给所有注册的处理器
+3. **并行处理**: 各个处理器并行处理事件
+4. **状态同步**: 确保所有组件状态一致
+
+### 10.4 集成优势
+
+#### 10.4.1 与现有架构的深度集成
+
+- **统一工具调用**: 复用现有的工具调用基础设施
+- **共享配置系统**: 使用统一的模型配置和 API 密钥管理
+- **兼容现有UI**: 与现有的聊天界面无缝集成
+- **统一错误处理**: 复用现有的错误处理机制
+
+#### 10.4.2 性能优化特性
+
+- **智能缓存**: 基于执行历史的智能缓存策略
+- **并行处理**: 支持工作流步骤的并行执行
+- **资源优化**: 按需加载工作流组件，减少内存占用
+- **快速降级**: 工作流失败时快速降级到单步执行
+
+#### 10.4.3 开发者体验
+
+- **模块化架构**: 清晰的组件边界和职责分离
+- **详细日志**: 完整的执行日志和调试信息
+- **可扩展设计**: 易于添加新的工作流模板和工具
+- **测试友好**: 支持单元测试和集成测试
+
+这个智能代理系统显著提升了应用程序处理复杂任务的能力，通过智能的任务分析、动态的工作流编排和结构化的事件系统，为用户提供了更加智能和高效的AI助手体验。
+
+## 11. Vision 模块技术实现细节
+
+### 11.1 核心函数与架构
+
+#### 11.1.1 初始化系统
 
 ```javascript
 // vision-core.js 中的关键函数:
@@ -663,7 +816,7 @@ async function _sendMessage(text, files)
 async function handleSendVisionMessage()
 ```
 
-#### 10.1.2 UI 适配器系统
+#### 11.1.2 UI 适配器系统
 
 ```javascript
 // 创建 Vision 专用的 UI 适配器
@@ -685,7 +838,7 @@ function createVisionUIAdapter() {
 }
 ```
 
-#### 10.1.3 国际象棋集成
+#### 11.1.3 国际象棋集成
 
 ```javascript
 // 生成对局总结 - 复用 ChatApiHandler
@@ -698,9 +851,9 @@ export function displayVisionMessage(markdownContent)
 window.sendVisionMessageDirectly = async function(messageText)
 ```
 
-### 10.2 配置与状态管理
+### 11.2 配置与状态管理
 
-#### 10.2.1 模型配置
+#### 11.2.1 模型配置
 
 Vision 模式使用专用的模型配置：
 
@@ -726,7 +879,7 @@ VISION: {
 }
 ```
 
-#### 10.2.2 状态隔离
+#### 11.2.2 状态隔离
 
 Vision 模式维护完全独立的状态：
 
@@ -740,23 +893,23 @@ let isVisionActive = false; // 视觉模式激活状态
 let handlers = {}; // 保存 handlers 对象
 ```
 
-### 10.3 优势总结
+### 11.3 优势总结
 
-#### 10.3.1 架构优势
+#### 11.3.1 架构优势
 
 -   **统一性**: Vision 和 Chat 模式使用相同的底层 API 处理机制
 -   **模块化**: 清晰的职责分离，易于维护和扩展
 -   **一致性**: 统一的错误处理、工具调用和流式响应
 -   **性能**: 独立的状态管理，避免模式间相互干扰
 
-#### 10.3.2 功能完整性
+#### 11.3.2 功能完整性
 
 -   **完整工具链**: 支持所有 MCP 工具调用
 -   **国际象棋集成**: 完整的国际象棋大师 AI 功能
 -   **多模态支持**: 图像、视频、文本的多模态处理
 -   **历史管理**: 独立的会话存储和恢复
 
-#### 10.3.3 开发者体验
+#### 11.3.3 开发者体验
 
 -   **清晰文档**: 完善的代码注释和架构说明
 -   **易于扩展**: 模块化的设计便于添加新功能
