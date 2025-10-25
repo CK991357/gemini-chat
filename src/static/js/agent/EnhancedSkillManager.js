@@ -1,4 +1,4 @@
-import { skillManager } from '../../../tool-spec-system/skill-manager.js';
+import { skillManager } from '../tool-spec-system/skill-manager.js';
 
 export class EnhancedSkillManager {
   constructor() {

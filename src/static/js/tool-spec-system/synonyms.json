@@ -1,0 +1,17 @@
+{
+  "搜索": ["查找", "查询", "搜寻", "search", "lookup"],
+  "画图": ["绘图", "生成图表", "数据可视化", "visualization", "plot"],
+  "代码": ["编程", "程序", "script", "programming"],
+  "分析": ["解析", "处理", "analyze", "process"],
+  "网络": ["网页", "网站", "web", "internet"],
+  "数据": ["信息", "资料", "data", "information"],
+  "文件": ["文档", "document", "file"],
+  "创建": ["生成", "制作", "create", "generate"],
+  "编辑": ["修改", "调整", "edit", "modify"],
+  "获取": ["下载", "抓取", "fetch", "download"],
+  "转换": ["转变", "变换", "convert", "transform"],
+  "计算": ["运算", "处理", "calculate", "compute"],
+  "显示": ["展示", "呈现", "display", "show"],
+  "保存": ["存储", "保留", "save", "store"],
+  "上传": ["提交", "传递", "upload", "submit"]
+}
