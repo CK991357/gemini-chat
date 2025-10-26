@@ -668,6 +668,9 @@ let visionApiHandler = null; // 确保这里声明了 visionApiHandler
 // 🚀 新增：智能代理系统实例
 let orchestrator = null;
 
+// ✨ 新增：确保 currentAIMessageContentDiv 在全局作用域中定义
+let currentAIMessageContentDiv = null;
+
 /**
  * 🚀 智能代理系统初始化函数
  */
@@ -844,13 +847,14 @@ async function handleSendMessage(attachmentManager) {
 
     chatUI.displayUserMessage(message, attachedFiles);
     messageInput.value = '';
-    currentAIMessageContentDiv = null;
+    // ✨ 修复：使用全局作用域的 currentAIMessageContentDiv
+    window.currentAIMessageContentDiv = null;
 
     const apiKey = apiKeyInput.value;
     const modelName = selectedModelConfig.name;
 
     // ✨ --- 核心逻辑分支 --- ✨
-    if (orchestrator.isEnabled) {
+    if (orchestrator && orchestrator.isEnabled) {
         // --- 路径 A: 智能代理模式 (开关开启) ---
         console.log("🤖 Agent Mode ON: Routing request to Orchestrator.");
         const agentResult = await orchestrator.handleUserRequest(message, attachedFiles, {
