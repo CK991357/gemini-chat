@@ -424,18 +424,8 @@ export class ChatApiHandler {
             ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
             console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
  
-            // 从配置中动态查找当前模型的 MCP 服务器 URL
-            const modelName = requestBody.model;
-            console.log(`[${timestamp()}] [MCP] Searching for model config for: '${modelName}'`);
-            const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === modelName);
-
-            if (!modelConfig || !modelConfig.mcp_server_url) {
-                const errorMsg = `在 config.js 中未找到模型 '${modelName}' 的 mcp_server_url 配置。`;
-                console.error(`[${timestamp()}] [MCP] ERROR: ${errorMsg}`);
-                throw new Error(errorMsg);
-            }
-            console.log(`[${timestamp()}] [MCP] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
-            const server_url = modelConfig.mcp_server_url;
+            // ✨ 修复：不再查找 mcp_server_url，直接发送到后端代理
+            console.log(`[${timestamp()}] [MCP] Using unified backend proxy for tool: ${toolCode.tool_name}`);
 
             // --- Revert to Standard MCP Request Format for glm4v ---
             // We are no longer using Tavily's non-standard API.
@@ -449,11 +439,11 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
-            // 构建包含 server_url 的请求体
+            // ✨ 修复：构建简化的请求体，不再包含 server_url
             const proxyRequestBody = {
                 tool_name: toolCode.tool_name,
                 parameters: parsedArguments, // Send the full, parsed arguments object
-                server_url: server_url
+                requestId: `tool_call_${Date.now()}`
             };
             console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
 
@@ -833,31 +823,18 @@ export class ChatApiHandler {
     }
 
     /**
-     * ✨ [新增] 独立的工具调用方法
-     * @description 负责将工具调用请求发送到后端的 MCP 代理。
+     * ✨ [最终优化版] 独立的工具调用方法
+     * @description 将所有工具调用统一发送到后端代理，由后端决定如何处理。
      * @param {string} toolName - 要调用的工具名称。
      * @param {object} parameters - 工具所需的参数。
      * @returns {Promise<object>} - 返回工具执行的结果。
      */
     async callTool(toolName, parameters) {
         const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [ChatApiHandler] Calling tool via proxy: ${toolName}`, parameters);
+        console.log(`[${timestamp()}] [ChatApiHandler] Forwarding tool call to backend proxy: ${toolName}`, parameters);
         
         try {
-            // 从配置中动态查找当前模型的 MCP 服务器 URL
-            const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => 
-                m.tools && m.tools.some(tool => tool.function?.name === toolName)
-            );
-
-            if (!modelConfig || !modelConfig.mcp_server_url) {
-                const errorMsg = `在 config.js 中未找到工具 '${toolName}' 对应的 mcp_server_url 配置。`;
-                console.error(`[${timestamp()}] [ChatApiHandler] ERROR: ${errorMsg}`);
-                throw new Error(errorMsg);
-            }
-
-            console.log(`[${timestamp()}] [ChatApiHandler] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
-            const server_url = modelConfig.mcp_server_url;
-
+            // 核心：简单地将请求发送到通用的后端代理端点
             const response = await fetch('/api/mcp-proxy', {
                 method: 'POST',
                 headers: {
@@ -866,8 +843,8 @@ export class ChatApiHandler {
                 body: JSON.stringify({
                     tool_name: toolName,
                     parameters: parameters || {},
-                    server_url: server_url,
                     requestId: `tool_call_${Date.now()}`
+                    // ✨ 注意：不再需要发送任何 server_url
                 }),
             });
 
@@ -877,22 +854,19 @@ export class ChatApiHandler {
             }
 
             const result = await response.json();
-            console.log(`[${timestamp()}] [ChatApiHandler] Tool call successful:`, result);
+            console.log(`[${timestamp()}] [ChatApiHandler] Received result from backend proxy:`, result);
             
             // 适配 Orchestrator 预期的返回格式
             return {
-                success: result.success !== false, // 如果 success 未定义，则默认为 true
-                output: result.output || result.result || JSON.stringify(result),
+                success: result.success !== false,
+                output: result.output || result.result || result.data || JSON.stringify(result),
                 rawResult: result
             };
 
         } catch (error) {
-            console.error(`[${timestamp()}] [ChatApiHandler] Error calling tool ${toolName}:`, error);
-            return {
-                success: false,
-                error: error.message,
-                output: `工具执行出错: ${error.message}`
-            };
+            console.error(`[${timestamp()}] [ChatApiHandler] Error during tool proxy call for ${toolName}:`, error);
+            // 向上抛出错误，让 Orchestrator 能够捕获并处理
+            throw error; 
         }
     }
 }
