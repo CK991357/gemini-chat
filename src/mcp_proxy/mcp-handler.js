@@ -1,28 +1,11 @@
 /**
- * @file Main MCP Proxy Handler (统一名称版本)
+ * @file Main MCP Proxy Handler
  * @description This is the main entry point for all MCP tool proxy requests.
- * It directly imports and dispatches to all available tool handlers.
+ * It receives requests from worker.js, uses the tool registry to find the
+ * appropriate handler, and dispatches the request.
  */
 
-// ✨ 直接、静态地导入所有工具的处理器
-import { handleCrawl4AI } from './handlers/crawl4ai.js';
-import { handleFirecrawl } from './handlers/firecrawl.js';
-import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
-import { handlePythonSandbox } from './handlers/python-sandbox.js';
-import { handleStockfishAnalyzer } from './handlers/stockfish.js';
-import { handleTavilySearch } from './handlers/tavily-search.js';
-import { handleZhipuImageAnalysis } from './handlers/zhipu-glm4v.js';
-
-// ✨ 统一的工具注册表 - 使用一致的 glm4v_analyze_image 名称
-const toolRegistry = {
-    'crawl4ai': handleCrawl4AI,
-    'firecrawl': handleFirecrawl,
-    'mcp_tool_catalog': handleMcpToolCatalog,
-    'python_sandbox': handlePythonSandbox,
-    'stockfish_analyzer': handleStockfishAnalyzer,
-    'tavily_search': handleTavilySearch,
-    'glm4v_analyze_image': handleZhipuImageAnalysis, // ← 统一名称
-};
+import { getToolHandler } from './tool-registry.js';
 
 /**
  * Handles all incoming MCP tool proxy requests.
@@ -67,11 +50,12 @@ export async function handleMcpProxyRequest(request, env) {
             return createJsonResponse({ success: false, error: 'Request body must include a "tool_name".' }, 400);
         }
 
-        // ✨ 直接从内部的注册表中查找处理器
-        const toolHandler = toolRegistry[tool_name];
+        // Find the appropriate handler for the requested tool.
+        const toolHandler = getToolHandler(tool_name);
 
         if (toolHandler) {
-            // 如果找到处理器，执行并返回响应
+            // If a handler is found, execute it and return its response.
+            // The handler is responsible for its own logic and error handling.
             const response = await toolHandler(parameters, env);
             const responseTime = Date.now() - startTime;
 
@@ -86,7 +70,7 @@ export async function handleMcpProxyRequest(request, env) {
 
             return response;
         } else {
-            // 如果未找到处理器，返回404错误
+            // If no handler is found, return a 404 error.
             const responseTime = Date.now() - startTime;
             console.error('❌ [工具调用失败]', JSON.stringify({
                 request_id: requestId,
@@ -97,11 +81,7 @@ export async function handleMcpProxyRequest(request, env) {
                 timestamp: new Date().toISOString()
             }));
             
-            return createJsonResponse({ 
-                success: false, 
-                error: `Tool '${tool_name}' is not registered or supported.`,
-                available_tools: Object.keys(toolRegistry) // 提供可用工具列表便于调试
-            }, 404);
+            return createJsonResponse({ success: false, error: `Tool '${tool_name}' is not registered or supported.` }, 404);
         }
 
     } catch (error) {
