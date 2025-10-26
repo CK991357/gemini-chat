@@ -1,3 +1,6 @@
+我将为您更新文档，在第9节后添加新的"Intelligent Agent and Workflow System"章节。以下是完整的更新后文档：
+
+```markdown
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -83,6 +86,18 @@ In addition to the logic processed in the Cloudflare Worker, some tools rely on 
                 -   [`vol-meter.js`](src/static/js/audio/worklets/vol-meter.js): An AudioWorkletProcessor that calculates the real-time volume level (RMS) of an audio stream, useful for visual feedback during recording or playback.
         -   **Agent Module (`src/static/js/agent/`)**: Contains logic for integrating with AI agents and proxying their tool calls.
             -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): Acts as a client-side adapter for Multi-Cloud Platform (MCP) tool calls initiated by Qwen models. It receives tool call requests (containing `tool_name` and `parameters`) from `chat-api-handler.js` and proxies them to the `/api/mcp-proxy` endpoint in the backend. This is crucial for enabling flexible AI agent capabilities within the application.
+            -   **Intelligent Agent System**: A comprehensive agent framework for workflow automation and tool orchestration, including:
+                -   [`CallbackManager.js`](src/static/js/agent/CallbackManager.js): Structured event management system for workflow execution tracking
+                -   [`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js): Advanced skill matching with execution history and performance analytics
+                -   [`Orchestrator.js`](src/static/js/agent/Orchestrator.js): Main orchestrator coordinating workflows and tool execution
+                -   [`WorkflowEngine.js`](src/static/js/agent/WorkflowEngine.js): Stream-based workflow execution engine with event streaming
+                -   [`WorkflowTemplates.js`](src/static/js/agent/WorkflowTemplates.js): Predefined workflow templates for common tasks
+                -   [`WorkflowUI.js`](src/static/js/agent/WorkflowUI.js): User interface components for workflow visualization
+                -   **Event Handlers**:
+                    -   [`AnalyticsHandler.js`](src/static/js/agent/handlers/AnalyticsHandler.js): Metrics collection and analysis
+                    -   [`LearningHandler.js`](src/static/js/agent/handlers/LearningHandler.js): Performance learning and optimization
+                    -   [`LoggingHandler.js`](src/static/js/agent/handlers/LoggingHandler.js): Structured logging system
+                    -   [`WorkflowUIHandler.js`](src/static/js/agent/handlers/WorkflowUIHandler.js): UI state management for workflows
         -   `src/static/js/attachments/`: Handles file attachment functionalities, like `file-attachment.js`.
             -   [`file-attachment.js`](src/static/js/attachments/file-attachment.js): Defines the `AttachmentManager` class, which manages all logic for file attachments (selection, validation, Base64 conversion, and UI preview display) for both single-file ("chat" mode) and multi-file ("vision" mode) scenarios. **ENHANCED**: Now integrates with `ImageCompressor` to automatically compress images >1MB across all modes, providing compression feedback and maintaining file type consistency. Features `toggleCompression()` method for runtime control.
         -   **Chat Module (`src/static/js/chat/`)**: Contains the core logic for managing chat UI, API interactions, and processing AI responses, including tool calls.
@@ -597,7 +612,7 @@ This project implements a sophisticated tool management and invocation mechanism
 *   **How to Improve Tools for WebSocket Connections**:
     *   **Add/Modify New Tools**: Modify [`src/static/js/tools/tool-manager.js`](src/static/js/tools/tool-manager.js) to register new tool classes and create corresponding tool implementation files (e.g., `src/static/js/tools/new-tool.js`).
     *   **Modify Tool Declarations**: Adjust the `getDeclaration()` method in the respective tool class (e.g., `src/static/js/tools/google-search.js`).
-    *   **Modify Tool Execution Logic**: Adjust the `execute()` method in the respective tool class.
+    *   **Modify Tool Execution Logic**: Adjust the `execute()` method in the respective tool class (e.g., `src/static/js/tools/google-search.js`).
 
 #### 9.2 HTTP Connection Method (Gemini HTTP API & Qwen HTTP API)
 
@@ -634,11 +649,302 @@ This project implements a sophisticated tool management and invocation mechanism
     *   **Modify Tool Declaration or Execution Logic**: Adjust the `getDeclaration()` or `execute()` methods in the respective tool class (e.g., `src/static/js/tools/google-search.js` or tools defined in `src/static/js/tools_mcp/tool-definitions.js`).
     *   **Modify Frontend Tool Merging Logic**: If the merging strategy for tool declarations under HTTP connections needs adjustment, modify the relevant logic in [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js).
 
-## 10. Vision Module Technical Implementation Details
+## 10. Intelligent Agent and Workflow System
 
-### 10.1 Core Functions and Architecture
+This major architectural upgrade introduces a comprehensive intelligent agent system that enables sophisticated workflow automation, tool orchestration, and adaptive task execution. The system leverages the existing skill infrastructure while adding advanced capabilities for complex multi-step operations.
 
-#### 10.1.1 Initialization System
+### 10.1 System Overview
+
+The intelligent agent system is designed to handle complex user requests that require multiple tools, conditional logic, and adaptive execution. It automatically analyzes task complexity and determines whether to use single-step tool execution or multi-step workflows.
+
+#### 10.1.1 Core Architecture Components
+
+- **Orchestrator**: The central coordinator that manages the entire agent lifecycle
+- **WorkflowEngine**: Stream-based workflow execution engine with event streaming
+- **CallbackManager**: Structured event management system for workflow tracking
+- **EnhancedSkillManager**: Advanced skill matching with execution history analytics
+- **WorkflowUI**: User interface components for workflow visualization and interaction
+
+### 10.2 Core Components
+
+#### 10.2.1 Orchestrator (`src/static/js/agent/Orchestrator.js`)
+
+The main orchestrator coordinates all agent activities:
+
+```javascript
+// Key responsibilities:
+- Task complexity analysis and routing
+- Workflow creation and execution management
+- Integration with ChatApiHandler for tool execution
+- Event system coordination through CallbackManager
+- User interface state management
+```
+
+**Key Features:**
+- **Intelligent Routing**: Automatically determines whether to use single-step or workflow execution
+- **Real-time Progress Tracking**: Monitors workflow execution with detailed progress updates
+- **Error Recovery**: Implements sophisticated error handling and fallback mechanisms
+- **Performance Analytics**: Collects execution metrics for continuous improvement
+
+#### 10.2.2 WorkflowEngine (`src/static/js/agent/WorkflowEngine.js`)
+
+Stream-based workflow execution engine:
+
+```javascript
+// Core execution pattern:
+async* stream(workflow, context) {
+  // Event-driven workflow execution with real-time streaming
+  yield { event: 'on_workflow_start', ... };
+  
+  for (const step of workflow.steps) {
+    yield { event: 'on_step_start', ... };
+    // Execute step and stream events
+    yield { event: 'on_step_end', ... };
+  }
+  
+  yield { event: 'on_workflow_end', ... };
+}
+```
+
+**Key Features:**
+- **Event Streaming**: Real-time event emission for UI updates and monitoring
+- **Step Dependencies**: Support for data passing between workflow steps
+- **Conditional Execution**: Dynamic step execution based on previous results
+- **Critical Step Management**: Special handling for mission-critical steps
+
+#### 10.2.3 CallbackManager (`src/static/js/agent/CallbackManager.js`)
+
+Structured event management system aligned with LangChain patterns:
+
+```javascript
+// Event structure:
+const event = {
+  event: 'on_workflow_start', // LangChain-compatible event names
+  name: 'workflow_name',
+  run_id: 'unique_execution_id',
+  timestamp: 'ISO_timestamp',
+  data: { workflow, steps_count, workflow_type },
+  metadata: { source, complexity }
+};
+```
+
+**Supported Event Types:**
+- Workflow lifecycle events (`on_workflow_start`, `on_workflow_end`)
+- Step execution events (`on_step_start`, `on_step_end`)
+- Tool invocation events (`on_tool_start`, `on_tool_end`)
+- AI processing events (`on_ai_start`, `on_ai_stream`, `on_ai_end`)
+- Error handling events (`on_error`)
+- Learning and analytics events (`on_learning_update`)
+
+#### 10.2.4 EnhancedSkillManager (`src/static/js/agent/EnhancedSkillManager.js`)
+
+Advanced skill matching with execution history:
+
+```javascript
+// Enhanced skill matching with performance analytics
+async findOptimalSkill(userQuery, context) {
+  // Multi-factor scoring including:
+  // - Semantic relevance
+  // - Historical success rates
+  // - Execution performance
+  // - Contextual appropriateness
+}
+```
+
+**Key Features:**
+- **Performance-Based Scoring**: Prioritizes tools with higher success rates
+- **Execution History**: Maintains detailed tool execution records
+- **Adaptive Learning**: Improves recommendations based on historical performance
+- **Multi-dimensional Matching**: Considers semantic, contextual, and performance factors
+
+#### 10.2.5 Workflow Templates (`src/static/js/agent/WorkflowTemplates.js`)
+
+Predefined workflow templates for common tasks:
+
+```javascript
+export const WORKFLOW_TEMPLATES = {
+  web_analysis: {
+    name: 'Web Analysis Workflow',
+    steps: [
+      { name: 'Web Content Crawling', toolName: 'firecrawl' },
+      { name: 'Content Analysis', toolName: 'standard_ai' }
+    ]
+  },
+  data_visualization: {
+    name: 'Data Visualization Workflow',
+    steps: [
+      { name: 'Data Preparation', toolName: 'python_sandbox' },
+      { name: 'Result Interpretation', toolName: 'standard_ai' }
+    ]
+  }
+};
+```
+
+### 10.3 Event Handlers System
+
+#### 10.3.1 AnalyticsHandler (`src/static/js/agent/handlers/AnalyticsHandler.js`)
+
+Metrics collection and performance analysis:
+
+- Tracks workflow execution metrics
+- Monitors tool performance and success rates
+- Provides execution analytics and insights
+
+#### 10.3.2 LearningHandler (`src/static/js/agent/handlers/LearningHandler.js`)
+
+Performance optimization and adaptive learning:
+
+- Records tool execution outcomes
+- Updates skill performance metrics
+- Enables continuous system improvement
+
+#### 10.3.3 LoggingHandler (`src/static/js/agent/handlers/LoggingHandler.js`)
+
+Structured logging and event tracking:
+
+- Maintains detailed execution logs
+- Supports debugging and troubleshooting
+- Provides audit trail for workflow executions
+
+#### 10.3.4 WorkflowUIHandler (`src/static/js/agent/handlers/WorkflowUIHandler.js`)
+
+User interface state management:
+
+- Updates workflow visualization in real-time
+- Manages progress indicators and status displays
+- Handles user interactions and controls
+
+### 10.4 Integration with Existing Systems
+
+#### 10.4.1 Skill System Integration
+
+The agent system deeply integrates with the existing dynamic skill system:
+
+```javascript
+// Enhanced skill matching builds upon the base skill manager
+this.skillManager = new EnhancedSkillManager();
+this.baseSkillManager = await skillManagerPromise;
+```
+
+**Integration Benefits:**
+- **Unified Skill Discovery**: Combines static skill definitions with dynamic performance data
+- **Enhanced Recommendations**: Adds execution history and success rates to skill matching
+- **Continuous Improvement**: Learns from tool execution outcomes to improve future recommendations
+
+#### 10.4.2 Tool Execution Integration
+
+Seamless integration with existing tool infrastructure:
+
+```javascript
+// Reuses existing ChatApiHandler for tool execution
+async callTool(toolName, parameters, context = {}) {
+  const result = await this.chatApiHandler.callTool(toolName, parameters);
+  return {
+    success: true,
+    output: result.output || result.content || result.data || 'Tool execution successful',
+    rawResult: result
+  };
+}
+```
+
+### 10.5 Workflow Execution Patterns
+
+#### 10.5.1 Simple Tool Execution
+
+For straightforward requests, the system uses optimized single-step execution:
+
+```javascript
+async handleWithEnhancedSingleStep(userMessage, files, context) {
+  const optimalSkill = await this.skillManager.findOptimalSkill(userMessage, context);
+  if (optimalSkill) {
+    return await this.executeToolWithOptimization(optimalSkill, userMessage, context);
+  }
+}
+```
+
+#### 10.5.2 Complex Workflow Execution
+
+For complex multi-step tasks, the system creates and executes structured workflows:
+
+```javascript
+async handleWithWorkflow(userMessage, taskAnalysis, files, context) {
+  this.currentWorkflow = await this.workflowEngine.createWorkflow(userMessage, {
+    ...context,
+    files,
+    callbackManager: this.callbackManager
+  });
+  
+  // Stream-based workflow execution
+  const workflowStream = this.workflowEngine.stream(this.currentWorkflow, context);
+}
+```
+
+### 10.6 User Experience Features
+
+#### 10.6.1 Real-time Progress Visualization
+
+The WorkflowUI provides comprehensive progress tracking:
+
+- **Step-by-step Progress**: Visual indicators for each workflow step
+- **Real-time Status Updates**: Live updates as steps execute
+- **Execution Metrics**: Performance data and completion statistics
+- **Interactive Controls**: User controls for workflow management
+
+#### 10.6.2 Intelligent Fallback Mechanisms
+
+Robust error handling and recovery:
+
+- **Automatic Fallback**: Falls back to standard processing when workflows fail
+- **Error Recovery**: Attempts to recover from intermediate failures
+- **User Notification**: Clear communication of issues and resolutions
+
+### 10.7 Performance and Scalability
+
+#### 10.7.1 Event-Driven Architecture
+
+The stream-based architecture ensures efficient resource usage:
+
+- **Non-blocking Execution**: Asynchronous event processing
+- **Memory Efficiency**: Stream-based processing minimizes memory footprint
+- **Scalable Event Handling**: Efficient handling of large workflow event streams
+
+#### 10.7.2 Analytics and Optimization
+
+Continuous performance improvement:
+
+- **Execution Analytics**: Detailed metrics on workflow performance
+- **Tool Performance Tracking**: Historical data on tool success rates
+- **Adaptive Routing**: Intelligent routing based on performance data
+
+### 10.8 Development and Debugging
+
+#### 10.8.1 Comprehensive Monitoring
+
+Extensive debugging and monitoring capabilities:
+
+```javascript
+// Debugging utilities
+getCurrentRunStats() // Current execution statistics
+getAllEventHistory() // Complete event history
+exportEventLogs() // Export logs for analysis
+getAnalyticsMetrics() // Performance metrics
+```
+
+#### 10.8.2 Structured Event System
+
+Consistent event structure for easy debugging:
+
+- **Standardized Event Format**: Consistent event structure across all components
+- **Detailed Event Metadata**: Rich context for debugging and analysis
+- **Event Correlation**: Run IDs for correlating related events
+
+This intelligent agent system represents a significant advancement in the application's capabilities, enabling sophisticated workflow automation while maintaining seamless integration with existing tool infrastructure and user interfaces.
+
+## 11. Vision Module Technical Implementation Details
+
+### 11.1 Core Functions and Architecture
+
+#### 11.1.1 Initialization System
 
 ```javascript
 // Key functions in vision-core.js:
@@ -659,7 +965,7 @@ async function _sendMessage(text, files)
 async function handleSendVisionMessage()
 ```
 
-#### 10.1.2 UI Adapter System
+#### 11.1.2 UI Adapter System
 
 ```javascript
 // Create Vision-specific UI adapter
@@ -681,7 +987,7 @@ function createVisionUIAdapter() {
 }
 ```
 
-#### 10.1.3 Chess Integration
+#### 11.1.3 Chess Integration
 
 ```javascript
 // Generate game summary - reuse ChatApiHandler
@@ -694,9 +1000,9 @@ export function displayVisionMessage(markdownContent)
 window.sendVisionMessageDirectly = async function(messageText)
 ```
 
-### 10.2 Configuration and State Management
+### 11.2 Configuration and State Management
 
-#### 10.2.1 Model Configuration
+#### 11.2.1 Model Configuration
 
 Vision mode uses dedicated model configuration:
 
@@ -722,7 +1028,7 @@ VISION: {
 }
 ```
 
-#### 10.2.2 State Isolation
+#### 11.2.2 State Isolation
 
 Vision mode maintains completely independent state:
 
@@ -736,23 +1042,23 @@ let isVisionActive = false; // Vision mode activation status
 let handlers = {}; // Save handlers object
 ```
 
-### 10.3 Advantages Summary
+### 11.3 Advantages Summary
 
-#### 10.3.1 Architectural Advantages
+#### 11.3.1 Architectural Advantages
 
 -   **Unification**: Vision and Chat modes use the same underlying API processing mechanism
 -   **Modularity**: Clear separation of responsibilities, easy to maintain and extend
 -   **Consistency**: Unified error handling, tool calling, and streaming responses
 -   **Performance**: Independent state management, avoiding interference between modes
 
-#### 10.3.2 Functional Completeness
+#### 11.3.2 Functional Completeness
 
 -   **Complete Tool Chain**: Supports all MCP tool calls
 -   **Chess Integration**: Complete Chess Master AI functionality
 -   **Multimodal Support**: Multimodal processing of images, video, text
 -   **History Management**: Independent session storage and recovery
 
-#### 10.3.3 Developer Experience
+#### 11.3.3 Developer Experience
 
 -   **Clear Documentation**: Comprehensive code comments and architectural explanations
 -   **Easy Extension**: Modular design facilitates adding new features

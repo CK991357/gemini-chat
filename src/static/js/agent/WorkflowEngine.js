@@ -251,14 +251,101 @@ export class WorkflowEngine {
     }
   }
 
-  // 🎯 保持现有的分析方法
+  /**
+   * 🎯 智能分析用户请求的复杂度和意图
+   * @param {string} userMessage - 用户的输入消息
+   * @returns {{complexity: 'low'|'high', workflowType: string|null}} - 分析结果对象
+   */
   analyzeTask(userMessage) {
-    // 现有逻辑保持不变
+    const lowerCaseMessage = userMessage.toLowerCase();
+    let complexity = 'low';
+    let workflowType = null;
+    let score = 0;
+
+    // 1. 定义关键词和触发器
+    const highComplexityKeywords = [
+        '分析', '报告', '生成', '创建', '可视化', '爬取', '总结', '流程',
+        'workflow', 'analyze', 'report', 'visualize', 'crawl', 'summarize'
+    ];
+    const workflowTriggers = {
+        web_analysis: ['分析网页', '总结这个网站', '爬取url内容'],
+        data_visualization: ['画图', '生成图表', '可视化数据', '绘制'],
+        research_report: ['研究报告', '做个调研', '收集信息并总结']
+    };
+
+    // 2. 根据关键词计算复杂度分数
+    highComplexityKeywords.forEach(keyword => {
+        if (lowerCaseMessage.includes(keyword)) {
+            score++;
+        }
+    });
+
+    // 检查是否提及多个不同的工具或动作
+    const toolMentions = ['搜索', '画图', '代码', '网络', '文件'].filter(tool => lowerCaseMessage.includes(tool)).length;
+    if (toolMentions > 1) {
+        score += 2;
+    }
+
+    if (score >= 2) {
+        complexity = 'high';
+    }
+
+    // 3. 匹配预定义的工作流触发器
+    for (const [type, triggers] of Object.entries(workflowTriggers)) {
+        if (triggers.some(trigger => lowerCaseMessage.includes(trigger))) {
+            workflowType = type;
+            complexity = 'high'; // 触发工作流意味着高复杂度
+            break;
+        }
+    }
+
+    console.log(`[Task Analysis] Query: "${userMessage}", Complexity: ${complexity}, Workflow: ${workflowType || 'N/A'}`);
+    
+    // 4. 关键：确保始终返回一个有效的对象
+    return {
+        complexity,
+        workflowType
+    };
   }
 
-  // 🎯 保持现有的工作流创建方法
+  /**
+   * @description 根据任务分析结果创建具体的工作流实例
+   * @param {string} userMessage - 用户的原始消息
+   * @param {object} context - 包含任务分析结果等上下文
+   * @returns {object|null} - 返回构建好的工作流对象，如果找不到模板则返回null
+   */
   async createWorkflow(userMessage, context) {
-    // 现有逻辑保持不变
+    const { taskAnalysis } = context;
+    const workflowType = taskAnalysis?.workflowType;
+
+    if (!workflowType || !WORKFLOW_TEMPLATES[workflowType]) {
+        console.warn(`[WorkflowEngine] 未找到与类型 "${workflowType}" 匹配的工作流模板。`);
+        return null;
+    }
+
+    // 从模板深拷贝以避免修改原始模板
+    const workflow = JSON.parse(JSON.stringify(WORKFLOW_TEMPLATES[workflowType]));
+
+    workflow.id = `wf_${Date.now()}`;
+    workflow.type = workflowType;
+
+    // 参数替换：将用户输入注入到工作流步骤中
+    // 这是一个简单的占位符替换，未来可以扩展为更智能的参数提取
+    workflow.steps.forEach(step => {
+        if (step.parameters) {
+            for (const key in step.parameters) {
+                if (typeof step.parameters[key] === 'string' && step.parameters[key].includes('{user_query}')) {
+                    step.parameters[key] = step.parameters[key].replace('{user_query}', userMessage);
+                }
+            }
+        }
+         if (step.prompt && step.prompt.includes('{user_query}')) {
+            step.prompt = step.prompt.replace('{user_query}', userMessage);
+        }
+    });
+    
+    console.log('[WorkflowEngine] 成功创建工作流:', workflow);
+    return workflow;
   }
 
   // 🎯 编译工作流结果
