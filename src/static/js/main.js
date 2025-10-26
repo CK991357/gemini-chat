@@ -18,10 +18,27 @@ import { Logger } from './utils/logger.js';
 import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage 和 initializeVisionCore
 
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
-import { geminiMcpTools, mcpTools } from './tools_mcp/tool-definitions.js';
 
 // 🚀 新增导入：智能代理系统
 import { Orchestrator } from './agent/Orchestrator.js';
+
+// 🎯 获取基础技能管理器的函数
+// 这个函数应该在技能系统初始化后调用
+window.getBaseSkillManager = function() {
+  // 🎯 如果全局有技能管理器，直接返回
+  if (window.skillManager) {
+    return Promise.resolve(window.skillManager);
+  }
+  
+  // 🎯 否则返回一个简单的技能管理器
+  return Promise.resolve({
+    findRelevantSkills: (userQuery, context = {}) => {
+      // 简化的匹配逻辑 - 在实际应用中应该替换为真实的技能匹配
+      console.log(`[BaseSkillManager] 查询: ${userQuery}`);
+      return []; // 返回空数组，让增强管理器使用备用方案
+    }
+  });
+};
 
 /**
  * @fileoverview Main entry point for the application.
@@ -676,6 +693,13 @@ let currentAIMessageContentDiv = null;
  */
 function initializeEnhancedAgent() {
   try {
+    // 🎯 修复：确保在初始化 Orchestrator 之前技能系统可用
+    if (typeof window.getBaseSkillManager !== 'function') {
+      window.getBaseSkillManager = () => Promise.resolve({
+        findRelevantSkills: () => [] // 默认返回空数组
+      });
+    }
+    
     // 获取初始状态
     const isAgentEnabled = localStorage.getItem('agentModeEnabled') !== 'false';
     
@@ -704,6 +728,8 @@ function initializeEnhancedAgent() {
     console.log('🚀 智能代理系统初始化完成');
   } catch (error) {
     console.error('智能代理系统初始化失败:', error);
+    // 🎯 修复：即使代理系统初始化失败，也不影响基础功能
+    showToast('智能代理系统初始化失败，已降级到标准模式');
   }
 }
 
@@ -752,48 +778,33 @@ function injectFallbackStyles() {
   document.head.appendChild(style);
 }
 
+
 /**
- * 🚀 显示增强处理结果
+ * 🎯 显示Agent结果
  */
-function displayEnhancedResult(result) {
-  const aiMessage = chatUI.createAIMessageElement();
-  
-  if (result.success) {
-    aiMessage.rawMarkdownBuffer = result.content;
-    aiMessage.markdownContainer.innerHTML = marked.parse(result.content);
-    
-    // 添加增强标识
-    const enhancedBadge = document.createElement('div');
-    enhancedBadge.className = 'enhanced-badge';
-    enhancedBadge.textContent = '🚀 智能处理';
-    enhancedBadge.style.cssText = `
-      background: #007bff;
-      color: white;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 12px;
-      margin-bottom: 8px;
-      display: inline-block;
-    `;
-    aiMessage.markdownContainer.prepend(enhancedBadge);
-    
-  } else {
-    aiMessage.markdownContainer.innerHTML = `<p style="color: red;">增强处理失败: ${result.content}</p>`;
-  }
-  
-  // 应用数学公式渲染
-  if (typeof MathJax !== 'undefined' && MathJax.startup) {
-    MathJax.startup.promise.then(() => {
-      MathJax.typeset([aiMessage.markdownContainer]);
+async function displayAgentResult(result) {
+  if (result.type === 'workflow_result' && result.success) {
+    // 显示工作流结果
+    await chatUI.addMessage({
+      role: 'assistant',
+      content: result.content
+    });
+  } else if (result.type === 'error') {
+    // 显示错误信息
+    await chatUI.addMessage({
+      role: 'assistant',
+      content: `❌ ${result.content}`
     });
   }
-  
-  chatUI.scrollToBottom();
 }
 
 /**
  * ✨ [新增] 标准聊天请求处理函数 (替代旧的 executeStandardChat)
  * @description 构建包含工具定义的请求，并调用API。这是"Skill模式"的核心。
+ */
+/**
+ * ✨ [修复] 标准聊天请求处理函数
+ * @description 根据模型配置决定是否添加工具定义
  */
 async function handleStandardChatRequest(message, attachedFiles, modelName, apiKey) {
     const userContent = [];
@@ -813,21 +824,26 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
 
     chatHistory.push({ role: 'user', content: userContent });
 
-    // ✨ 关键：根据当前选择的模型，确定要传递给模型的工具集
+    // 🎯 修复：只在模型配置明确要求时才添加工具定义
     const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
     
-    // 确保 modelConfig 存在，如果不存在则给一个安全的回退
-    const toolsForModel = modelConfig?.isGemini ? geminiMcpTools : mcpTools;
-
     const requestBody = {
         model: modelName,
         messages: chatHistory,
-        // ✨ 关键修复：将工具定义添加到请求体中！
-        tools: toolsForModel, 
         generationConfig: { responseModalities: ['text'] },
         stream: true,
         sessionId: currentSessionId
     };
+
+    // 🎯 关键修复：只有配置了 tools 字段的模型才添加工具定义
+    if (modelConfig && modelConfig.tools) {
+        const toolType = modelConfig.isGemini ? 'geminiMcpTools' :
+                        modelConfig.isZhipu ? 'mcpTools' : 'customTools';
+        console.log(`🎯 [工具注入] 为模型 ${modelName} 注入工具定义 (${toolType})`);
+        requestBody.tools = modelConfig.tools;
+    } else {
+        console.log(`🔍 [工具跳过] 模型 ${modelName} 未配置工具，使用标准请求`);
+    }
 
     await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 }
@@ -837,46 +853,73 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
  * @description 根据智能代理开关的状态，选择不同的执行路径。
  */
 async function handleSendMessage(attachmentManager) {
-    const message = messageInput.value.trim();
+    const messageText = messageInput.value.trim();
     const attachedFiles = attachmentManager.getChatAttachedFiles();
-    if (!message && attachedFiles.length === 0) return;
+    if (!messageText && attachedFiles.length === 0) return;
 
     if (!selectedModelConfig.isWebSocket && !currentSessionId) {
         historyManager.generateNewSession();
     }
 
-    chatUI.displayUserMessage(message, attachedFiles);
+    chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
     // ✨ 修复：使用全局作用域的 currentAIMessageContentDiv
     window.currentAIMessageContentDiv = null;
 
     const apiKey = apiKeyInput.value;
     const modelName = selectedModelConfig.name;
+    const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
 
     // ✨ --- 核心逻辑分支 --- ✨
-    if (orchestrator && orchestrator.isEnabled) {
+    if (isAgentModeEnabled) {
         // --- 路径 A: 智能代理模式 (开关开启) ---
-        console.log("🤖 Agent Mode ON: Routing request to Orchestrator.");
-        const agentResult = await orchestrator.handleUserRequest(message, attachedFiles, {
-            model: modelName,
-            apiKey: apiKey,
-            messages: chatHistory,
-            apiHandler: chatApiHandler
-        });
+        console.log("🤖 Agent Mode ON: 智能路由用户请求");
+        
+        try {
+            const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
+                model: modelName,
+                apiKey: apiKey,
+                messages: chatHistory,
+                apiHandler: chatApiHandler
+            });
 
-        if (agentResult.enhanced) {
-            if (agentResult.skipped) {
-                await handleStandardChatRequest(message, attachedFiles, modelName, apiKey);
-            } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
-                displayEnhancedResult(agentResult);
+            if (agentResult.enhanced) {
+                if (agentResult.type === 'workflow_pending') {
+                    console.log("🎯 工作流等待执行");
+                    // 🎯 等待工作流完成
+                    return new Promise((resolve) => {
+                        const handleWorkflowResult = (event) => {
+                            const result = event.detail;
+                            window.removeEventListener('workflow:result', handleWorkflowResult);
+                            
+                            if (result.skipped) {
+                                // 工作流被跳过，继续标准流程
+                                handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).then(resolve);
+                            } else {
+                                // 工作流完成，显示结果
+                                displayAgentResult(result).then(resolve);
+                            }
+                        };
+                        
+                        window.addEventListener('workflow:result', handleWorkflowResult);
+                    });
+                } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
+                    // 立即显示结果 (例如，直接的工具调用结果)
+                    await displayAgentResult(agentResult);
+                }
+            } else {
+                console.log("💬 Agent模式未触发工作流，使用标准对话");
+                // 🎯 重用标准流程
+                await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
             }
-        } else {
-            await handleStandardChatRequest(message, attachedFiles, modelName, apiKey);
+        } catch (error) {
+            console.error("🤖 Agent模式执行失败，降级到标准模式:", error);
+            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
         }
     } else {
         // --- 路径 B: 标准Skill模式 (开关关闭) ---
-        console.log("🛠️ Agent Mode OFF: Executing Standard Skill Mode chat.");
-        await handleStandardChatRequest(message, attachedFiles, modelName, apiKey);
+        console.log("🛠️ Agent Mode OFF: 执行标准工具模式");
+        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
     }
 }
 
