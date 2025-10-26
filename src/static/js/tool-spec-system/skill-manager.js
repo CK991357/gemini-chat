@@ -301,7 +301,7 @@ class EnhancedSkillManager {
 }
 
 // ✨ 步骤 2: 创建一个异步工厂函数来初始化
-async function createSkillManager() {
+async function getBaseSkillManager() {
   try {
     const response = await fetch('./synonyms.json'); // ✨ 使用 fetch 加载
     if (!response.ok) {
@@ -317,10 +317,13 @@ async function createSkillManager() {
 }
 
 // ✨ 步骤 3: 导出异步创建的单例实例
-export const skillManagerPromise = createSkillManager();
+export const skillManagerPromise = getBaseSkillManager();
 export let skillManager; // 导出一个变量，稍后填充
 
 // ✨ 步骤 4: 异步填充 skillManager 实例
 skillManagerPromise.then(instance => {
   skillManager = instance;
 });
+
+// 导出函数以便外部模块可以获取基础技能管理器
+export { getBaseSkillManager };
