@@ -336,6 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
        showToast: showToast,
        showSystemMessage: showSystemMessage
    });
+   window.attachmentManager = attachmentManager; // ✅ 修复：挂载到 window 以便全局访问
 
    // 附件按钮事件监听 (只绑定一次)
    attachmentButton.addEventListener('click', () => fileInput.click());
@@ -846,6 +847,11 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
     }
 
     await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+
+    // ✅ 修复：在 HTTP 模式下，流式响应完成后清理附件
+    if (window.attachmentManager) {
+        window.attachmentManager.clearAttachedFile('chat');
+    }
 }
 
 /**
@@ -1329,6 +1335,11 @@ client.on('turncomplete', () => {
     // T15: 在WebSocket模式对话完成时保存历史
     if (isConnected && !selectedModelConfig.isWebSocket) {
         historyManager.saveHistory();
+    }
+    
+    // ✅ 修复：在聊天回合完成后清理附件 (WebSocket 模式)
+    if (window.attachmentManager) {
+        window.attachmentManager.clearAttachedFile('chat');
     }
 });
 
