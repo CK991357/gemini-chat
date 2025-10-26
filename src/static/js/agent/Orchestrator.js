@@ -58,8 +58,9 @@ export class Orchestrator {
     // 保存当前上下文
     this.currentContext = context;
     
+    // ✨ 修改后的逻辑：如果开关关闭，直接返回一个明确的信号
     if (!this.isEnabled) {
-      return await this.fallbackToStandard(userMessage, files, context);
+      return { enhanced: false, type: 'standard_fallback' };
     }
 
     const taskAnalysis = this.workflowEngine.analyzeTask(userMessage);
@@ -80,7 +81,7 @@ export class Orchestrator {
       });
       
       if (!this.currentWorkflow) {
-        return await this.fallbackToStandard(userMessage, files, context);
+        return { enhanced: false, type: 'standard_fallback' };
       }
       
       // 🎯 注意：不再手动触发 onWorkflowStart，因为流式引擎会自动触发
@@ -97,17 +98,26 @@ export class Orchestrator {
         source: 'workflow_creation',
         userMessage
       });
-      return await this.fallbackToStandard(userMessage, files, context);
+      return { enhanced: false, type: 'standard_fallback' };
     }
   }
 
   async handleWithEnhancedSingleStep(userMessage, files, context) {
-    const optimalSkill = await this.skillManager.findOptimalSkill(userMessage, context);
-    
-    if (optimalSkill) {
-      return await this.executeToolWithOptimization(optimalSkill, userMessage, context);
-    } else {
-      return await this.fallbackToStandard(userMessage, files, context);
+    try {
+      const optimalSkill = await this.skillManager.findOptimalSkill(userMessage, context);
+      
+      if (optimalSkill) {
+        return await this.executeToolWithOptimization(optimalSkill, userMessage, context);
+      } else {
+        return { enhanced: false, type: 'standard_fallback' };
+      }
+    } catch (error) {
+      console.error('增强单步执行失败:', error);
+      await this.callbackManager.onError(error, null, {
+        source: 'enhanced_single_step',
+        userMessage
+      });
+      return { enhanced: false, type: 'standard_fallback' };
     }
   }
 
@@ -227,16 +237,6 @@ export class Orchestrator {
         type: 'workflow_skipped'
       });
     }
-  }
-
-  // 🎯 移除原有的handleStepUpdate方法，由事件系统处理
-
-  async fallbackToStandard(userMessage, files, context) {
-    return { 
-      type: 'standard_fallback',
-      message: '使用标准处理',
-      enhanced: false
-    };
   }
 
   // 真实的工具调用适配器

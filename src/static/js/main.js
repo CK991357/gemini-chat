@@ -17,6 +17,9 @@ import { initializeTranslationCore } from './translation/translation-core.js';
 import { Logger } from './utils/logger.js';
 import { displayVisionMessage, initializeVisionCore } from './vision/vision-core.js'; // T8: 新增, 导入 displayVisionMessage 和 initializeVisionCore
 
+// ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
+import { geminiMcpTools, mcpTools } from './tools_mcp/tool-definitions.js';
+
 // 🚀 新增导入：智能代理系统
 import { Orchestrator } from './agent/Orchestrator.js';
 
@@ -786,47 +789,91 @@ function displayEnhancedResult(result) {
 }
 
 /**
- * 🚀 原有的标准聊天执行逻辑
+ * ✨ [新增] 标准聊天请求处理函数 (替代旧的 executeStandardChat)
+ * @description 构建包含工具定义的请求，并调用API。这是"Skill模式"的核心。
  */
-async function executeStandardChat(message, attachedFiles, modelName, apiKey) {
-  const userContent = [];
-  if (message) {
-    userContent.push({ type: 'text', text: message });
-  }
-  
-  attachedFiles.forEach(file => {
-    if (file.type.startsWith('image/')) {
-      userContent.push({
-        type: 'image_url',
-        image_url: { url: file.base64 }
-      });
-    } else if (file.type === 'application/pdf') {
-      userContent.push({
-        type: 'pdf_url',
-        pdf_url: { url: file.base64 }
-      });
-    } else if (file.type.startsWith('audio/')) {
-      userContent.push({
-        type: 'audio_url',
-        audio_url: { url: file.base64 }
-      });
+async function handleStandardChatRequest(message, attachedFiles, modelName, apiKey) {
+    const userContent = [];
+    if (message) {
+        userContent.push({ type: 'text', text: message });
     }
-  });
 
-  chatHistory.push({
-    role: 'user',
-    content: userContent
-  });
+    attachedFiles.forEach(file => {
+        if (file.type.startsWith('image/')) {
+            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+        } else if (file.type === 'application/pdf') {
+            userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+        } else if (file.type.startsWith('audio/')) {
+            userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+        }
+    });
 
-  const requestBody = {
-    model: modelName,
-    messages: chatHistory,
-    generationConfig: { responseModalities: ['text'] },
-    stream: true,
-    sessionId: currentSessionId
-  };
+    chatHistory.push({ role: 'user', content: userContent });
 
-  await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+    // ✨ 关键：根据当前选择的模型，确定要传递给模型的工具集
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    
+    // 确保 modelConfig 存在，如果不存在则给一个安全的回退
+    const toolsForModel = modelConfig?.isGemini ? geminiMcpTools : mcpTools;
+
+    const requestBody = {
+        model: modelName,
+        messages: chatHistory,
+        // ✨ 关键修复：将工具定义添加到请求体中！
+        tools: toolsForModel, 
+        generationConfig: { responseModalities: ['text'] },
+        stream: true,
+        sessionId: currentSessionId
+    };
+
+    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+}
+
+/**
+ * 🚀 [重构后] 处理用户消息发送的核心函数
+ * @description 根据智能代理开关的状态，选择不同的执行路径。
+ */
+async function handleSendMessage(attachmentManager) {
+    const message = messageInput.value.trim();
+    const attachedFiles = attachmentManager.getChatAttachedFiles();
+    if (!message && attachedFiles.length === 0) return;
+
+    if (!selectedModelConfig.isWebSocket && !currentSessionId) {
+        historyManager.generateNewSession();
+    }
+
+    chatUI.displayUserMessage(message, attachedFiles);
+    messageInput.value = '';
+    currentAIMessageContentDiv = null;
+
+    const apiKey = apiKeyInput.value;
+    const modelName = selectedModelConfig.name;
+
+    // ✨ --- 核心逻辑分支 --- ✨
+    if (orchestrator.isEnabled) {
+        // --- 路径 A: 智能代理模式 (开关开启) ---
+        console.log("🤖 Agent Mode ON: Routing request to Orchestrator.");
+        const agentResult = await orchestrator.handleUserRequest(message, attachedFiles, {
+            model: modelName,
+            apiKey: apiKey,
+            messages: chatHistory,
+            apiHandler: chatApiHandler
+        });
+
+        if (agentResult.enhanced) {
+            if (agentResult.skipped) {
+                await handleStandardChatRequest(message, attachedFiles, modelName, apiKey);
+            } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
+                displayEnhancedResult(agentResult);
+            }
+        } else {
+            await handleStandardChatRequest(message, attachedFiles, modelName, apiKey);
+        }
+    } else {
+        // --- 路径 B: 标准Skill模式 (开关关闭) ---
+        console.log("🛠️ Agent Mode OFF: Executing Standard Skill Mode chat.");
+        await handleStandardChatRequest(message, attachedFiles, modelName, apiKey);
+    }
 }
 
 /**
@@ -1060,11 +1107,8 @@ async function connectToWebsocket() {
                     },
                 }
             },
-
             systemInstruction: {
-                parts: [{
-                    text: systemInstructionInput.value     // You can change system instruction in the config.js file
-                }],
+                parts: [{ text: systemInstructionInput.value }],
             }
         };  
 
@@ -1139,108 +1183,6 @@ function disconnectFromWebsocket() {
         screenHandler.stopScreenSharing();
     }
 }
-
-/**
- * 🚀 修改后的handleSendMessage函数以使用智能代理
- */
-async function handleSendMessage(attachmentManager) { // T2: 传入管理器
-    const message = messageInput.value.trim();
-    const attachedFiles = attachmentManager.getChatAttachedFiles(); // T2: 从管理器获取所有附件
-    // 如果没有文本消息，但有附件，也允许发送
-    if (!message && attachedFiles.length === 0) return;
-
-    // 确保在处理任何消息之前，会话已经存在
-    // 这是修复"新会话第一条消息不显示"问题的关键
-    if (selectedModelConfig && !selectedModelConfig.isWebSocket && !currentSessionId) {
-        historyManager.generateNewSession();
-    }
-
-    // 使用新的函数显示用户消息
-    chatUI.displayUserMessage(message, attachedFiles); // 传递文件数组
-    messageInput.value = ''; // 清空输入框
- 
-    // 在发送用户消息后，重置 currentAIMessageContentDiv，确保下一个AI响应会创建新气泡
-    currentAIMessageContentDiv = null;
-
-    if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式不支持文件上传，可以提示用户或禁用按钮
-        if (attachedFiles.length > 0) {
-            showSystemMessage('实时模式尚不支持文件上传。');
-            attachmentManager.clearAttachedFile('chat'); // T2: 使用管理器清除附件
-            return;
-        }
-        client.send({ text: message });
-    } else {
-        // HTTP 模式下发送消息
-        try {
-            const apiKey = apiKeyInput.value;
-            const modelName = selectedModelConfig.name;
-
-            // 🚀 使用智能代理系统处理
-            const agentResult = await orchestrator.handleUserRequest(message, attachedFiles, {
-                model: modelName,
-                apiKey: apiKey,
-                messages: chatHistory,
-                apiHandler: chatApiHandler  // 传递API处理器
-            });
-
-            // 处理代理结果
-            if (agentResult.enhanced) {
-                if (agentResult.skipped) {
-                    // 用户跳过了工作流，使用标准处理
-                    await executeStandardChat(message, attachedFiles, modelName, apiKey);
-                } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
-                    // 显示增强处理的结果
-                    displayEnhancedResult(agentResult);
-                }
-            } else {
-                // 标准处理
-                await executeStandardChat(message, attachedFiles, modelName, apiKey);
-            }
-
-        } catch (error) {
-            Logger.error('发送 HTTP 消息失败:', error);
-            chatUI.logMessage(`发送消息失败: ${error.message}`, 'system');
-        }
-    }
-}
-        
-        // Event Listeners
-        client.on('open', () => {
-            chatUI.logMessage('WebSocket connection opened', 'system');
-        });
-        
-        client.on('log', (log) => {
-            chatUI.logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system');
-        });
-        
-        let reconnectAttempts = 0;
-        const MAX_RECONNECT = 3;
-        
-        client.on('close', (event) => {
-            chatUI.logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
-            if (event.code === 1006 && reconnectAttempts < MAX_RECONNECT) {
-                setTimeout(() => {
-                    reconnectAttempts++;
-                    connectToWebsocket();
-                }, 2000);
-            }
-        });
-        
-        client.on('audio', async (data) => {
-            try {
-                await resumeAudioContext();
-                const streamer = await ensureAudioInitialized();
-                streamer.addPCM16(new Uint8Array(data));
-                // 同时将音频数据累积到缓冲区
-                audioDataBuffer.push(new Uint8Array(data));
-            } catch (error) {
-                chatUI.logMessage(`处理音频时出错: ${error.message}`, 'system');
-            }
-        });
-        
-        // 声明一个全局变量来跟踪当前 AI 消息的内容 div
-        let currentAIMessageContentDiv = null;
 
 client.on('content', (data) => {
     if (data.modelTurn) {
