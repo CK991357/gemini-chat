@@ -2,9 +2,16 @@ export class WorkflowUI {
   constructor(containerId = 'workflow-container') {
     this.container = document.getElementById(containerId) || this.createContainer();
     this.currentWorkflow = null;
+    this._isWorkflowActive = false; // ✨ 添加内部状态跟踪
+  }
+
+  // ✨ 新增：检查工作流是否激活的方法
+  isWorkflowActive() {
+    return this._isWorkflowActive;
   }
 
   showWorkflow(workflow) {
+    this._isWorkflowActive = true; // ✨ 显示时激活状态
     this.currentWorkflow = workflow;
     
     this.container.innerHTML = `
@@ -44,6 +51,9 @@ export class WorkflowUI {
   }
 
   updateStep(stepIndex, status, result = null) {
+    // ✨ 添加防御性检查
+    if (!this._isWorkflowActive) return;
+    
     const stepElement = this.container.querySelector(`[data-step-index="${stepIndex}"]`);
     if (!stepElement) return;
 
@@ -58,6 +68,9 @@ export class WorkflowUI {
   }
 
   showCompletion(workflowResult) {
+    // ✨ 添加防御性检查
+    if (!this._isWorkflowActive) return;
+    
     const panel = this.container.querySelector('.workflow-panel');
     panel.classList.add('workflow-completed');
     
@@ -121,6 +134,9 @@ export class WorkflowUI {
   }
 
   updateProgress() {
+    // ✨ 添加防御性检查
+    if (!this._isWorkflowActive) return;
+    
     const steps = this.container.querySelectorAll('.workflow-step');
     const completed = Array.from(steps).filter(step => 
       step.classList.contains('workflow-step-success')
@@ -174,6 +190,7 @@ export class WorkflowUI {
   }
 
   hide() {
+    this._isWorkflowActive = false; // ✨ 隐藏时取消激活状态
     this.container.style.display = 'none';
   }
 }

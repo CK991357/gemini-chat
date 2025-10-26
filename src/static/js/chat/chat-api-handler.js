@@ -831,4 +831,68 @@ export class ChatApiHandler {
             }
         }
     }
+
+    /**
+     * ✨ [新增] 独立的工具调用方法
+     * @description 负责将工具调用请求发送到后端的 MCP 代理。
+     * @param {string} toolName - 要调用的工具名称。
+     * @param {object} parameters - 工具所需的参数。
+     * @returns {Promise<object>} - 返回工具执行的结果。
+     */
+    async callTool(toolName, parameters) {
+        const timestamp = () => new Date().toISOString();
+        console.log(`[${timestamp()}] [ChatApiHandler] Calling tool via proxy: ${toolName}`, parameters);
+        
+        try {
+            // 从配置中动态查找当前模型的 MCP 服务器 URL
+            const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => 
+                m.tools && m.tools.some(tool => tool.function?.name === toolName)
+            );
+
+            if (!modelConfig || !modelConfig.mcp_server_url) {
+                const errorMsg = `在 config.js 中未找到工具 '${toolName}' 对应的 mcp_server_url 配置。`;
+                console.error(`[${timestamp()}] [ChatApiHandler] ERROR: ${errorMsg}`);
+                throw new Error(errorMsg);
+            }
+
+            console.log(`[${timestamp()}] [ChatApiHandler] Found model config. Server URL: ${modelConfig.mcp_server_url}`);
+            const server_url = modelConfig.mcp_server_url;
+
+            const response = await fetch('/api/mcp-proxy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    tool_name: toolName,
+                    parameters: parameters || {},
+                    server_url: server_url,
+                    requestId: `tool_call_${Date.now()}`
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`工具代理请求失败: ${errorData.details || errorData.error || response.statusText}`);
+            }
+
+            const result = await response.json();
+            console.log(`[${timestamp()}] [ChatApiHandler] Tool call successful:`, result);
+            
+            // 适配 Orchestrator 预期的返回格式
+            return {
+                success: result.success !== false, // 如果 success 未定义，则默认为 true
+                output: result.output || result.result || JSON.stringify(result),
+                rawResult: result
+            };
+
+        } catch (error) {
+            console.error(`[${timestamp()}] [ChatApiHandler] Error calling tool ${toolName}:`, error);
+            return {
+                success: false,
+                error: error.message,
+                output: `工具执行出错: ${error.message}`
+            };
+        }
+    }
 }
