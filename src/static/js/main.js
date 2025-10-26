@@ -863,8 +863,6 @@ async function handleSendMessage(attachmentManager) {
 
     chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
-    // ✨ 修复：使用全局作用域的 currentAIMessageContentDiv
-    window.currentAIMessageContentDiv = null;
 
     const apiKey = apiKeyInput.value;
     const modelName = selectedModelConfig.name;
@@ -894,10 +892,20 @@ async function handleSendMessage(attachmentManager) {
                             
                             if (result.skipped) {
                                 // 工作流被跳过，继续标准流程
-                                handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).then(resolve);
+                                handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).then(() => {
+                                    // 🎯 在工作流完成后清理附件和重置状态
+                                    attachmentManager.clearAttachedFile('chat');
+                                    window.currentAIMessageContentDiv = null;
+                                    resolve();
+                                });
                             } else {
                                 // 工作流完成，显示结果
-                                displayAgentResult(result).then(resolve);
+                                displayAgentResult(result).then(() => {
+                                    // 🎯 在工作流完成后清理附件和重置状态
+                                    attachmentManager.clearAttachedFile('chat');
+                                    window.currentAIMessageContentDiv = null;
+                                    resolve();
+                                });
                             }
                         };
                         
@@ -906,20 +914,32 @@ async function handleSendMessage(attachmentManager) {
                 } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
                     // 立即显示结果 (例如，直接的工具调用结果)
                     await displayAgentResult(agentResult);
+                    // 🎯 在代理结果显示完成后清理附件和重置状态
+                    attachmentManager.clearAttachedFile('chat');
+                    window.currentAIMessageContentDiv = null;
                 }
             } else {
                 console.log("💬 Agent模式未触发工作流，使用标准对话");
                 // 🎯 重用标准流程
                 await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+                // 🎯 在标准流程完成后清理附件和重置状态
+                attachmentManager.clearAttachedFile('chat');
+                window.currentAIMessageContentDiv = null;
             }
         } catch (error) {
             console.error("🤖 Agent模式执行失败，降级到标准模式:", error);
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+            // 🎯 在错误处理完成后也要清理附件和重置状态
+            attachmentManager.clearAttachedFile('chat');
+            window.currentAIMessageContentDiv = null;
         }
     } else {
         // --- 路径 B: 标准Skill模式 (开关关闭) ---
         console.log("🛠️ Agent Mode OFF: 执行标准工具模式");
         await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+        // 🎯 在标准模式完成后清理附件和重置状态
+        attachmentManager.clearAttachedFile('chat');
+        window.currentAIMessageContentDiv = null;
     }
 }
 
