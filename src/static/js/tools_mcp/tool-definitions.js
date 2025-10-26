@@ -26,7 +26,7 @@ const tavily_search = {
 const image_url_analyzer = {
     "type": "function",
     "function": {
-        "name": "glm4v.analyze_image",
+        "name": "glm4v_analyze_image",
         "description": "Analyze image using GLM-4V model",
         "parameters": {
             "type": "object",
@@ -209,7 +209,7 @@ export const mcpTools = [
 // Export a map for easy lookup by name
 export const mcpToolsMap = {
     'tavily_search': tavily_search,
-    'glm4v.analyze_image': image_url_analyzer,
+    'glm4v_analyze_image': image_url_analyzer,
     'python_sandbox': python_sandbox,
     'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
     'firecrawl': firecrawl,

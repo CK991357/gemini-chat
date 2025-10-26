@@ -1,4 +1,3 @@
-// scripts/build-skills.js
 import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
@@ -12,9 +11,17 @@ const __dirname = path.dirname(__filename);
  */
 async function buildSkills() {
   const skillsDir = path.join(__dirname, '../src/skills');
-  const outputFile = path.join(__dirname, '../src/tool-spec-system/generated-skills.js');
+  // ✨ 修复：更新输出路径到正确的位置
+  const outputFile = path.join(__dirname, '../src/static/js/tool-spec-system/generated-skills.js');
   
   console.log('🚀 开始构建技能系统...');
+  
+  // ✨ 确保输出目录存在
+  const outputDir = path.dirname(outputFile);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+    console.log(`📁 创建输出目录: ${outputDir}`);
+  }
   
   const skillsData = {};
   const skillFolders = fs.readdirSync(skillsDir).filter(item => {

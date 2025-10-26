@@ -1,7 +1,7 @@
 ---
 name: glm4v_analyze_image
 description: 智谱AI的视觉语言模型，用于图像分析、内容识别和视觉问答
-tool_name: glm4v.analyze_image
+tool_name: glm4v_analyze_image
 category: vision
 priority: 7
 tags: ["image-analysis", "vision", "recognition", "visual-qa", "multimodal"]
@@ -19,7 +19,7 @@ version: 1.0
 ## 调用规范
 ```json
 {
-  "tool_name": "glm4v.analyze_image",
+  "tool_name": "glm4v_analyze_image",
   "parameters": {
     "model": "glm-4v-flash",
     "image_url": "图片URL",
@@ -28,7 +28,7 @@ version: 1.0
 }
 ```
 
-以下是调用 `glm4v.analyze_image` 工具的**正确**和**错误**示例。请务必遵循正确格式。
+以下是调用 `glm4v_analyze_image` 工具的**正确**和**错误**示例。请务必遵循正确格式。
 
 ## ✅ 正确示例
 ```json
@@ -66,7 +66,7 @@ version: 1.0
 ### 图像描述
 ```json
 {
-  "tool_name": "glm4v.analyze_image",
+  "tool_name": "glm4v_analyze_image",
   "parameters": {
     "model": "glm-4v-flash", 
     "image_url": "https://example.com/image.jpg",
@@ -78,7 +78,7 @@ version: 1.0
 ### 视觉问答
 ```json
 {
-  "tool_name": "glm4v.analyze_image",
+  "tool_name": "glm4v_analyze_image",
   "parameters": {
     "model": "glm-4v-flash",
     "image_url": "https://example.com/image.jpg", 
@@ -90,7 +90,7 @@ version: 1.0
 ### 细节分析
 ```json
 {
-  "tool_name": "glm4v.analyze_image",
+  "tool_name": "glm4v_analyze_image",
   "parameters": {
     "model": "glm-4v-flash",
     "image_url": "https://example.com/image.jpg",
