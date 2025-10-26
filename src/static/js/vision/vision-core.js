@@ -297,9 +297,7 @@ async function handleSendVisionMessage() {
 
     // 发送后清空输入框和附件
     elements.visionInputText.value = '';
-    if (attachmentManager) { // ✅ 修复：添加健壮性检查
-        attachmentManager.clearAttachedFile('vision');
-    }
+    attachmentManager.clearAttachedFile('vision');
 }
 
 /**
