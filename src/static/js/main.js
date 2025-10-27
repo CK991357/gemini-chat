@@ -878,8 +878,13 @@ async function handleSendMessage(attachmentManager) {
         historyManager.generateNewSession();
     }
 
+    // 🚀 --- 关键修复：立即执行所有UI更新和清理操作 --- 🚀
+    // 这个代码块是同步执行的，会立即给用户反馈。
     chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
+    attachmentManager.clearAttachedFile('chat'); // ⬅️ 关键修复：将清理操作移到这里
+    window.currentAIMessageContentDiv = null; // ⬅️ 重置状态也应提前
+    // 🚀 ----------------------------------------- 🚀
 
     const apiKey = apiKeyInput.value;
     const modelName = selectedModelConfig.name;
@@ -888,79 +893,54 @@ async function handleSendMessage(attachmentManager) {
     // 新增：获取当前模型可用的工具名称列表
     const availableToolNames = getAvailableToolNames(modelName);
 
-    // ✨ --- 核心逻辑分支 --- ✨
-    if (isAgentModeEnabled) {
-        // --- 路径 A: 智能代理模式 (开关开启) ---
-        console.log("🤖 Agent Mode ON: 智能路由用户请求");
-        
-        try {
+    // ✨ --- 然后，开始执行耗时的异步AI逻辑 --- ✨
+    // 此时UI已经清理干净，用户可以进行其他操作。
+    try {
+        if (isAgentModeEnabled) {
+            // --- 路径 A: 智能代理模式 (开关开启) ---
+            console.log("🤖 Agent Mode ON: 智能路由用户请求");
+            
             const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
                 model: modelName,
                 apiKey: apiKey,
                 messages: chatHistory,
                 apiHandler: chatApiHandler,
-                availableTools: availableToolNames // 新增：传递当前模型可用的工具名称列表
+                availableTools: availableToolNames
             });
 
             if (agentResult.enhanced) {
                 if (agentResult.type === 'workflow_pending') {
                     console.log("🎯 工作流等待执行");
-                    // 🎯 等待工作流完成
+                    // 等待 'workflow:result' 事件触发，该事件现在只负责处理结果显示，无需再关心UI清理
                     return new Promise((resolve) => {
                         const handleWorkflowResult = (event) => {
                             const result = event.detail;
                             window.removeEventListener('workflow:result', handleWorkflowResult);
                             
                             if (result.skipped) {
-                                // 工作流被跳过，继续标准流程
-                                handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).then(() => {
-                                    // 🎯 在工作流完成后清理附件和重置状态
-                                    attachmentManager.clearAttachedFile('chat');
-                                    window.currentAIMessageContentDiv = null;
-                                    resolve();
-                                });
+                                handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).finally(resolve);
                             } else {
-                                // 工作流完成，显示结果
-                                displayAgentResult(result).then(() => {
-                                    // 🎯 在工作流完成后清理附件和重置状态
-                                    attachmentManager.clearAttachedFile('chat');
-                                    window.currentAIMessageContentDiv = null;
-                                    resolve();
-                                });
+                                displayAgentResult(result).finally(resolve);
                             }
                         };
-                        
                         window.addEventListener('workflow:result', handleWorkflowResult);
                     });
                 } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
-                    // 立即显示结果 (例如，直接的工具调用结果)
                     await displayAgentResult(agentResult);
-                    // 🎯 在代理结果显示完成后清理附件和重置状态
-                    attachmentManager.clearAttachedFile('chat');
-                    window.currentAIMessageContentDiv = null;
                 }
             } else {
                 console.log("💬 Agent模式未触发工作流，使用标准对话");
-                // 🎯 重用标准流程
                 await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-                // 🎯 在标准流程完成后清理附件和重置状态
-                attachmentManager.clearAttachedFile('chat');
-                window.currentAIMessageContentDiv = null;
             }
-        } catch (error) {
-            console.error("🤖 Agent模式执行失败，降级到标准模式:", error);
+        } else {
+            // --- 路径 B: 标准Skill模式 (开关关闭) ---
+            console.log("🛠️ Agent Mode OFF: 执行标准工具模式");
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-            // 🎯 在错误处理完成后也要清理附件和重置状态
-            attachmentManager.clearAttachedFile('chat');
-            window.currentAIMessageContentDiv = null;
         }
-    } else {
-        // --- 路径 B: 标准Skill模式 (开关关闭) ---
-        console.log("🛠️ Agent Mode OFF: 执行标准工具模式");
-        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-        // 🎯 在标准模式完成后清理附件和重置状态
-        attachmentManager.clearAttachedFile('chat');
-        window.currentAIMessageContentDiv = null;
+    } catch (error) {
+        console.error("🤖 Agent/Standard模式执行失败:", error);
+        // 可以在这里显示一个错误消息给用户
+        chatUI.addMessage({ role: 'assistant', content: `❌ 请求处理失败: ${error.message}` });
     }
 }
 
