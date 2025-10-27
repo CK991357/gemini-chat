@@ -798,18 +798,38 @@ async function displayAgentResult(result) {
   }
 }
 
-// 辅助函数：获取当前模型可用的工具名称列表
+/**
+ * 辅助函数：获取当前模型可用的工具名称列表
+ * [已修复]
+ */
 function getAvailableToolNames(currentModel) {
   const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === currentModel);
+  // 如果模型配置或工具列表不存在，返回空数组
   if (!modelConfig || !modelConfig.tools) {
     return [];
   }
   
   try {
-    // modelConfig.tools is a function that takes CONFIG and returns tool definitions
-    const toolDefinitions = modelConfig.tools(CONFIG);
-    return toolDefinitions.map(tool => tool.function.name);
+    // --- 关键修复 ---
+    // modelConfig.tools 是工具定义的数组，而不是一个函数。
+    // 我们直接使用这个数组。
+    const toolDefinitions = modelConfig.tools;
+
+    // 确保它是一个数组，以防配置错误
+    if (!Array.isArray(toolDefinitions)) {
+        console.error(`[Agent System] Error: modelConfig.tools for model '${currentModel}' is not an array.`);
+        return [];
+    }
+
+    // 从每个工具定义中提取函数名称
+    // 使用可选链 (?.) 增加代码健壮性
+    return toolDefinitions
+        .map(tool => tool.function?.name)
+        .filter(Boolean); // 过滤掉任何可能为空的名称
+    // --- 修复结束 ---
+
   } catch (error) {
+    // 保留 try...catch 块以处理任何意外错误
     console.error('获取可用工具失败:', error);
     return [];
   }
