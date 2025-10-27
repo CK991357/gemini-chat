@@ -798,6 +798,23 @@ async function displayAgentResult(result) {
   }
 }
 
+// 辅助函数：获取当前模型可用的工具名称列表
+function getAvailableToolNames(currentModel) {
+  const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === currentModel);
+  if (!modelConfig || !modelConfig.tools) {
+    return [];
+  }
+  
+  try {
+    // modelConfig.tools is a function that takes CONFIG and returns tool definitions
+    const toolDefinitions = modelConfig.tools(CONFIG);
+    return toolDefinitions.map(tool => tool.function.name);
+  } catch (error) {
+    console.error('获取可用工具失败:', error);
+    return [];
+  }
+}
+
 /**
  * ✨ [新增] 标准聊天请求处理函数 (替代旧的 executeStandardChat)
  * @description 构建包含工具定义的请求，并调用API。这是"Skill模式"的核心。
@@ -867,6 +884,9 @@ async function handleSendMessage(attachmentManager) {
     const apiKey = apiKeyInput.value;
     const modelName = selectedModelConfig.name;
     const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
+    
+    // 新增：获取当前模型可用的工具名称列表
+    const availableToolNames = getAvailableToolNames(modelName);
 
     // ✨ --- 核心逻辑分支 --- ✨
     if (isAgentModeEnabled) {
@@ -878,7 +898,8 @@ async function handleSendMessage(attachmentManager) {
                 model: modelName,
                 apiKey: apiKey,
                 messages: chatHistory,
-                apiHandler: chatApiHandler
+                apiHandler: chatApiHandler,
+                availableTools: availableToolNames // 新增：传递当前模型可用的工具名称列表
             });
 
             if (agentResult.enhanced) {

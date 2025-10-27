@@ -53,9 +53,13 @@ export class Orchestrator {
 
     try {
       // 🎯 重用现有的任务分析逻辑
-      const taskAnalysis = await this.workflowEngine.analyzeTask(userMessage);
+      // 🎯 修复：将 availableTools 传递给 analyzeTask
+      const taskAnalysis = await this.workflowEngine.analyzeTask(userMessage, {
+        availableTools: context.availableTools || []  // 新增：传递可用工具
+      });
       
-      console.log(`[Orchestrator] 任务分析结果:`, taskAnalysis);
+      console.log(`[Orchestrator] 任务分析结果:`, taskAnalysis,
+        `可用工具: ${context.availableTools ? context.availableTools.length : 'all'}`);
 
       // 🎯 只在明确需要工作流时才启动
       if (taskAnalysis.complexity === 'high' && taskAnalysis.workflowType) {

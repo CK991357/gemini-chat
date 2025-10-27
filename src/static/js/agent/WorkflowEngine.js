@@ -12,7 +12,7 @@ export class WorkflowEngine {
    * 🎯 智能分析用户请求的复杂度和意图 (增强版)
    * 动态利用 Skill 系统进行分析
    */
-  async analyzeTask(userMessage) {
+  async analyzeTask(userMessage, context = {}) {
     const lowerCaseMessage = userMessage.toLowerCase();
     let complexity = 'low';
     let workflowType = null;
@@ -26,10 +26,15 @@ export class WorkflowEngine {
 
     // --- ✨ 1. 动态利用 Skill 系统进行分析 ---
     try {
-      const matchedSkills = await this.skillManager.findRelevantSkills(userMessage);
+      // 🎯 修复：传递 availableTools 给技能匹配
+      const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, {
+        category: 'general',
+        availableTools: context.availableTools || []  // 新增：传递可用工具
+      });
 
       if (matchedSkills && matchedSkills.length > 0) {
-        console.log(`[Task Analysis] 检测到相关技能:`, matchedSkills.map(s => s.toolName || s.name));
+        console.log(`[Task Analysis] 检测到相关技能:`, matchedSkills.map(s => s.toolName || s.name),
+          `(已过滤，实际可用: ${matchedSkills.length}个)`);
 
         if (matchedSkills.length > 1) {
           // 如果匹配到多个不同的高分技能，很可能是一个复杂任务
@@ -38,7 +43,6 @@ export class WorkflowEngine {
         } else if (matchedSkills.length === 1) {
           // 检查单个技能是否本身就是复杂任务的标志
           const topSkill = matchedSkills[0];
-          // 🎯 修复：使用一致的属性访问方式
           const skillName = topSkill.toolName || topSkill.name;
           const skillCategory = topSkill.category || (skillName?.includes('code') ? 'code' : 'general');
           

@@ -17,19 +17,31 @@ class EnhancedSkillManager {
       return [];
     }
     
-    console.log(`🔍 [技能匹配] 查询: "${query}"`);
+    console.log(`🔍 [技能匹配] 查询: "${query}"`,
+      context.availableTools ? `可用工具: ${context.availableTools.length}个` : '');
     
     const matches = [];
     const expandedQuery = this.expandQuery(query);
     
+    // 🎯 新增：获取可用工具过滤条件
+    const availableTools = context.availableTools || [];
+    const shouldFilterByAvailableTools = availableTools.length > 0;
+    
     for (const [skillName, skill] of this.skills) {
+      const toolName = skill.metadata.tool_name;
+      
+      // 🎯 新增：如果指定了可用工具，进行过滤
+      if (shouldFilterByAvailableTools && !availableTools.includes(toolName)) {
+        continue; // 跳过不可用的工具
+      }
+      
       const relevanceScore = this.calculateEnhancedRelevanceScore(expandedQuery, skill, context);
       
       if (relevanceScore >= 0.15) {
         matches.push({
           skill,
           score: relevanceScore,
-          toolName: skill.metadata.tool_name,
+          toolName: toolName,
           name: skill.metadata.name,
           description: skill.metadata.description,
           category: skill.metadata.category
@@ -40,9 +52,9 @@ class EnhancedSkillManager {
     const sortedMatches = matches.sort((a, b) => b.score - a.score).slice(0, 3);
     
     if (sortedMatches.length > 0) {
-      console.log(`📊 [技能匹配] 完成，找到 ${sortedMatches.length} 个相关技能:`);
+      console.log(`📊 [技能匹配] 完成，找到 ${sortedMatches.length} 个相关技能 (已过滤):`);
       sortedMatches.forEach(match => {
-        console.log(`   - ${match.name}: ${(match.score * 100).toFixed(1)}%`);
+        console.log(`   - ${match.name} (${match.toolName}): ${(match.score * 100).toFixed(1)}%`);
       });
     } else {
       console.log(`🔍 [技能匹配] 未找到相关技能`);
