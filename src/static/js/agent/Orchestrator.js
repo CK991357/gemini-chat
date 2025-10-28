@@ -24,6 +24,7 @@ export class Orchestrator {
     this.isEnabled = config.enabled !== false;
     this.currentWorkflow = null;
     this.currentContext = null;
+    this.isCancelled = false; // ✨ 1. 添加取消状态标志
     
     this.setupEventListeners();
   }
@@ -121,18 +122,27 @@ export class Orchestrator {
   async startWorkflowExecution() {
     if (!this.currentWorkflow) return;
     
+    this.isCancelled = false; // ✨ 2. 每次开始执行前，重置取消标志
+    
     try {
       // 🎯 重用现有的流式工作流引擎
       const workflowStream = this.workflowEngine.stream(this.currentWorkflow, {
         apiHandler: this.chatApiHandler,
         apiKey: this.currentContext?.apiKey,
         model: this.currentContext?.model,
-        stepOutputs: {}
+        stepOutputs: {},
+        isCancelled: () => this.isCancelled // ✨ 3. 将检查函数传递给引擎
       });
       
       let finalResult = null;
       
       for await (const event of workflowStream) {
+        // ✨ 检查是否已取消
+        if (this.isCancelled) {
+          console.log('[Orchestrator] 检测到取消标志，停止事件处理');
+          break;
+        }
+        
         // 🎯 转发到事件系统
         await this.callbackManager.invokeEvent(event.event, {
           name: event.name,
@@ -146,7 +156,11 @@ export class Orchestrator {
         }
       }
       
-      return this.formatWorkflowResult(finalResult);
+      if (this.isCancelled) {
+        return this.formatCancelledResult();
+      } else {
+        return this.formatWorkflowResult(finalResult);
+      }
       
     } catch (error) {
       console.error('工作流执行失败:', error);
@@ -157,7 +171,44 @@ export class Orchestrator {
       });
       
       return this.formatErrorResult(error);
+    } finally {
+      this.isCancelled = false; // ✨ 4. 结束后重置
     }
+  }
+
+  /**
+   * ✨ 5. 新增取消工作流方法
+   */
+  cancelWorkflow() {
+    if (this.currentWorkflow) {
+      // 显示确认对话框
+      if (this.workflowUI.showCancelConfirmation()) {
+        this.isCancelled = true;
+        console.log('[Orchestrator] 工作流取消请求已发出。');
+        
+        // 立即隐藏UI
+        this.workflowUI.hide();
+        
+        // 发送取消事件
+        this.callbackManager.onWorkflowCancelled(this.currentWorkflow);
+        
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 🎯 格式化取消结果
+   */
+  formatCancelledResult() {
+    return {
+      type: 'cancelled',
+      success: false,
+      content: '工作流已被用户取消',
+      enhanced: true,
+      cancelled: true
+    };
   }
 
   /**
@@ -233,6 +284,15 @@ export class Orchestrator {
       const result = this.skipWorkflow();
       this.emitWorkflowResult(result);
     });
+
+    // ✨ 6. 监听工作流取消事件
+    document.addEventListener('workflow:workflow-cancel', () => {
+      const cancelled = this.cancelWorkflow();
+      if (cancelled) {
+        const result = this.formatCancelledResult();
+        this.emitWorkflowResult(result);
+      }
+    });
   }
 
   /**
@@ -252,7 +312,20 @@ export class Orchestrator {
       currentWorkflow: this.currentWorkflow ? {
         name: this.currentWorkflow.name,
         steps: this.currentWorkflow.steps.length
-      } : null
+      } : null,
+      // ✨ 新增：获取取消状态
+      cancellationStatus: this.getCancellationStatus()
+    };
+  }
+
+  /**
+   * ✨ 新增：获取取消状态
+   */
+  getCancellationStatus() {
+    return {
+      isCancelled: this.isCancelled,
+      hasActiveWorkflow: !!this.currentWorkflow,
+      canBeCancelled: this.isCancelled ? false : !!this.currentWorkflow
     };
   }
 
@@ -289,8 +362,9 @@ export class Orchestrator {
     return {
       workflow: this.currentWorkflow,
       events: currentEvents,
-      status: 'running',
-      progress: this.calculateProgress(currentEvents)
+      status: this.isCancelled ? 'cancelling' : 'running',
+      progress: this.calculateProgress(currentEvents),
+      isCancelled: this.isCancelled
     };
   }
 
@@ -318,10 +392,12 @@ export class Orchestrator {
   destroy() {
     this.currentWorkflow = null;
     this.currentContext = null;
+    this.isCancelled = false; // ✨ 清理时重置取消状态
     this.callbackManager.clearCurrentRun();
     
     // 移除事件监听器
     document.removeEventListener('workflow:workflow-start', this.startWorkflowExecution);
     document.removeEventListener('workflow:workflow-skip', this.skipWorkflow);
+    document.removeEventListener('workflow:workflow-cancel', this.cancelWorkflow);
   }
 }

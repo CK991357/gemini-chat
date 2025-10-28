@@ -128,10 +128,10 @@ export class WorkflowEngine {
   }
 
   /**
-   * 🎯 流式工作流执行引擎
+   * 🎯 流式工作流执行引擎（支持取消功能）
    */
   async* stream(workflow, context = {}) {
-    const { apiHandler, apiKey, model, stepOutputs = {} } = context;
+    const { apiHandler, apiKey, model, stepOutputs = {}, isCancelled } = context;
     const runId = `run_${Date.now()}`;
 
     try {
@@ -157,6 +157,29 @@ export class WorkflowEngine {
 
       // 🎯 按顺序执行每个步骤
       for (let stepIndex = 0; stepIndex < workflow.steps.length; stepIndex++) {
+        // ✨ 在每个步骤开始前检查取消标志
+        if (isCancelled && isCancelled()) {
+          console.log(`[WorkflowEngine] 检测到取消信号，在步骤 ${stepIndex + 1} 前中止。`);
+          
+          yield {
+            event: 'on_workflow_cancelled',
+            name: 'workflow_cancelled',
+            run_id: runId,
+            data: {
+              cancelledAtStep: stepIndex,
+              stepName: workflow.steps[stepIndex]?.name,
+              reason: "用户取消"
+            },
+            metadata: {
+              userAction: true,
+              completedSteps: stepIndex
+            }
+          };
+          
+          results.success = false;
+          break; // ✨ 退出循环
+        }
+
         const step = workflow.steps[stepIndex];
         const stepStartTime = Date.now();
 
@@ -179,6 +202,30 @@ export class WorkflowEngine {
             stepResult = await this.executeToolStep(step, context, stepOutputs);
           } else {
             throw new Error(`未知的步骤类型: ${step.type}`);
+          }
+
+          // ✨ 在步骤执行完成后再次检查取消标志
+          if (isCancelled && isCancelled()) {
+            console.log(`[WorkflowEngine] 检测到取消信号，在步骤 ${stepIndex + 1} 完成后中止。`);
+            
+            yield {
+              event: 'on_workflow_cancelled',
+              name: 'workflow_cancelled',
+              run_id: runId,
+              data: {
+                cancelledAtStep: stepIndex,
+                stepName: workflow.steps[stepIndex]?.name,
+                reason: "用户取消",
+                stepResult: stepResult // 包含已完成的步骤结果
+              },
+              metadata: {
+                userAction: true,
+                completedSteps: stepIndex + 1
+              }
+            };
+            
+            results.success = false;
+            break; // ✨ 退出循环
           }
 
           const stepExecutionTime = Date.now() - stepStartTime;
@@ -210,7 +257,7 @@ export class WorkflowEngine {
             name: 'step_end',
             run_id: runId,
             data: { step: stepData, stepIndex },
-            metadata: { 
+            metadata: {
               timestamp: Date.now(),
               executionTime: stepExecutionTime
             }
@@ -238,12 +285,12 @@ export class WorkflowEngine {
             event: 'on_step_error',
             name: 'step_error',
             run_id: runId,
-            data: { 
-              step: step, 
-              stepIndex, 
-              error: error.message 
+            data: {
+              step: step,
+              stepIndex,
+              error: error.message
             },
-            metadata: { 
+            metadata: {
               timestamp: Date.now(),
               executionTime: stepExecutionTime
             }
@@ -263,7 +310,10 @@ export class WorkflowEngine {
         name: 'workflow_end',
         run_id: runId,
         data: { result: results },
-        metadata: { timestamp: Date.now() }
+        metadata: {
+          timestamp: Date.now(),
+          cancelled: isCancelled && isCancelled() // ✨ 标记是否被取消
+        }
       };
 
     } catch (error) {
@@ -321,9 +371,7 @@ export class WorkflowEngine {
       // 🎯 处理流式响应
       let output = '';
       for await (const chunk of response) {
-        if (chunk.choices && chunk.choices[0].delta.content) {
-          output += chunk.choices[0].delta.content;
-        }
+        output += chunk.choices && chunk.choices[0].delta.content || '';
       }
 
       return {

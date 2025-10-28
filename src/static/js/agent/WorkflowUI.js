@@ -42,6 +42,8 @@ export class WorkflowUI {
         <div class="workflow-controls">
           <button class="btn-start-workflow primary">开始执行</button>
           <button class="btn-skip-workflow secondary">跳过，直接聊天</button>
+          <!-- ✨ 新增取消按钮，初始隐藏 -->
+          <button class="btn-cancel-workflow danger" style="display: none;">取消执行</button>
         </div>
       </div>
     `;
@@ -102,6 +104,44 @@ export class WorkflowUI {
     this.attachCompletionEvents();
   }
 
+  // ✨ 新增：显示取消确认对话框
+  showCancelConfirmation() {
+    return confirm('确定要取消当前工作流执行吗？');
+  }
+
+  // ✨ 新增：显示取消状态
+  showCancelledState() {
+    if (!this._isWorkflowActive) return;
+    
+    const panel = this.container.querySelector('.workflow-panel');
+    panel.classList.add('workflow-cancelled');
+    
+    const cancelledHTML = `
+      <div class="workflow-cancelled">
+        <div class="cancelled-header">
+          <span class="cancelled-icon">⏹️</span>
+          <h4>工作流已取消</h4>
+        </div>
+        
+        <div class="cancelled-message">
+          <p>工作流执行已被用户取消</p>
+        </div>
+        
+        <div class="cancelled-actions">
+          <button class="btn-close-workflow">关闭面板</button>
+        </div>
+      </div>
+    `;
+    
+    // 隐藏控制按钮
+    const controls = this.container.querySelector('.workflow-controls');
+    if (controls) controls.style.display = 'none';
+    
+    // 添加取消状态显示
+    panel.querySelector('.workflow-steps').insertAdjacentHTML('afterend', cancelledHTML);
+    this.attachCompletionEvents();
+  }
+
   // 私有方法
   renderSteps(steps) {
     return steps.map((step, index) => `
@@ -120,7 +160,13 @@ export class WorkflowUI {
   }
 
   getStatusText(status) {
-    const statusMap = { pending: '等待中', running: '执行中', success: '完成', failed: '失败' };
+    const statusMap = { 
+      pending: '等待中', 
+      running: '执行中', 
+      success: '完成', 
+      failed: '失败',
+      cancelled: '已取消' // ✨ 新增取消状态
+    };
     return statusMap[status] || status;
   }
 
@@ -128,6 +174,8 @@ export class WorkflowUI {
     const outputElement = stepElement.querySelector('.step-output');
     if (result.success) {
       outputElement.innerHTML = `<div class="output-success">✓ 执行成功</div>`;
+    } else if (result.cancelled) {
+      outputElement.innerHTML = `<div class="output-cancelled">⏹️ 执行被取消</div>`;
     } else {
       outputElement.innerHTML = `<div class="output-error">✗ ${result.error}</div>`;
     }
@@ -148,8 +196,8 @@ export class WorkflowUI {
     const progressFill = this.container.querySelector('.progress-fill');
     const progressText = this.container.querySelector('.progress-text');
     
-    progressFill.style.width = `${percentage}%`;
-    progressText.textContent = `${completed}/${total} 步骤完成`;
+    if (progressFill) progressFill.style.width = `${percentage}%`;
+    if (progressText) progressText.textContent = `${completed}/${total} 步骤完成`;
   }
 
   createContainer() {
@@ -164,13 +212,27 @@ export class WorkflowUI {
   }
 
   attachEventListeners() {
+    // 开始执行按钮
     this.container.querySelector('.btn-start-workflow')?.addEventListener('click', () => {
+      // ✨ 点击开始后，显示取消按钮，隐藏开始和跳过按钮
+      this.container.querySelector('.btn-start-workflow').style.display = 'none';
+      this.container.querySelector('.btn-skip-workflow').style.display = 'none';
+      this.container.querySelector('.btn-cancel-workflow').style.display = 'inline-block';
       this.emitEvent('workflow-start');
     });
     
+    // 跳过按钮
     this.container.querySelector('.btn-skip-workflow')?.addEventListener('click', () => {
       this.hide();
       this.emitEvent('workflow-skip');
+    });
+
+    // ✨ 为取消按钮添加事件监听
+    this.container.querySelector('.btn-cancel-workflow')?.addEventListener('click', () => {
+      if (this.showCancelConfirmation()) {
+        this.hide();
+        this.emitEvent('workflow-cancel');
+      }
     });
   }
 
@@ -192,5 +254,17 @@ export class WorkflowUI {
   hide() {
     this._isWorkflowActive = false; // ✨ 隐藏时取消激活状态
     this.container.style.display = 'none';
+  }
+
+  // ✨ 新增：获取当前工作流信息
+  getCurrentWorkflow() {
+    return this.currentWorkflow;
+  }
+
+  // ✨ 新增：重置UI状态
+  reset() {
+    this._isWorkflowActive = false;
+    this.currentWorkflow = null;
+    this.container.innerHTML = '';
   }
 }
