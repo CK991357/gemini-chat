@@ -315,7 +315,7 @@ class EnhancedSkillManager {
 // ✨ 步骤 2: 创建一个异步工厂函数来初始化
 async function getBaseSkillManager() {
   try {
-    const response = await fetch('/synonyms.json'); // ✨ 使用 fetch 加载
+    const response = await fetch('./synonyms.json'); // ✨ 使用 fetch 加载
     if (!response.ok) {
       throw new Error(`Failed to load synonyms.json: ${response.statusText}`);
     }
