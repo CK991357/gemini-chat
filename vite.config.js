@@ -4,6 +4,9 @@ export default defineConfig({
   root: '.',
   publicDir: 'public',
 
+  // 告诉 Vite 所有的资源都从根目录 / 开始引用
+  base: '/',
+
   server: {
     port: 5173,
     proxy: {
