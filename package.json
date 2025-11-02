@@ -24,11 +24,5 @@
     "sass": "^1.77.6",
     "vitest": "2.1.8",
     "wrangler": "^3.60.3"
-  },
-  "dependencies": {
-    "@langchain/core": "^1.0.2",
-    "@langchain/openai": "^1.0.0",
-    "langchain": "^1.0.2",
-    "zod": "^4.1.12"
   }
 }

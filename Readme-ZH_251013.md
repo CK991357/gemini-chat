@@ -1,12 +1,3 @@
-我将根据您提供的 agent 系统代码，更新 README-ZH_251013.md 文档。主要在第9节"工具管理机制和连接差异"之后添加新的第10节"智能代理系统"。
-
-以下是更新后的完整文档：
-
-```markdown
-# CLAUDE.md
-
-该文件为 Claude Code (claude.ai/code) 在处理此仓库代码时提供指导。
-
 ## 1. 项目概述
 
 这是一个基于 **Cloudflare Workers** 构建的复杂 **AI 网关和 Web 应用程序**。它提供了一个单页前端应用，并作为多提供商 API 代理，为各种 AI 服务提供统一接口。
@@ -95,6 +86,10 @@
             -   **[`WorkflowEngine.js`](src/static/js/agent/WorkflowEngine.js)**: **新增模块** - 工作流引擎，负责创建和执行多步骤的 AI 工作流。
             -   **[`WorkflowTemplates.js`](src/static/js/agent/WorkflowTemplates.js)**: **新增模块** - 预定义的工作流模板库，包括网页分析、数据可视化和研究报告等模板。
             -   **[`WorkflowUI.js`](src/static/js/agent/WorkflowUI.js)**: **新增模块** - 工作流用户界面，提供工作流执行的可视化展示和交互控制。
+            -   **LangChain 代理模块 (`src/static/js/agent/langchain/`)**: **新增模块** - LangChain 智能代理系统集成。
+                -   **[`langchain-agent-manager.js`](src/static/js/agent/langchain/langchain-agent-manager.js)**: LangChain 代理管理器，负责创建和管理 LangChain 代理实例。
+                -   **[`langchain-middleware-adapter.js`](src/static/js/agent/langchain/langchain-middleware-adapter.js)**: LangChain 中间件适配器，提供日志记录、进度跟踪和错误处理中间件。
+                -   **[`langchain-tools-adapter.js`](src/static/js/agent/langchain/langchain-tools-adapter.js)**: LangChain 工具适配器，将现有 MCP 工具包装成 LangChain 标准格式。
             -   **处理器模块 (`src/static/js/agent/handlers/`)**: **新增模块** - 结构化事件处理器集合。
                 -   [`AnalyticsHandler.js`](src/static/js/agent/handlers/AnalyticsHandler.js): 分析处理器，收集和报告工作流执行指标。
                 -   [`LearningHandler.js`](src/static/js/agent/handlers/LearningHandler.js): 学习处理器，基于执行结果优化工具使用策略。
@@ -731,7 +726,34 @@ await callbackManager.onToolStart(toolName, input, stepIndex);
 - **交互式控制**: 支持开始、跳过等用户交互
 - **完成状态展示**: 清晰展示工作流执行结果
 
-#### 10.2.7 事件处理器
+#### 10.2.7 LangChain 代理系统 - 高级智能代理
+
+[`langchain-agent-manager.js`](src/static/js/agent/langchain/langchain-agent-manager.js) 提供基于 LangChain 框架的高级智能代理能力：
+
+- **LangChain 标准代理**: 使用 LangChain 框架创建和管理智能代理
+- **动态工具选择**: 基于用户查询智能选择相关工具
+- **中间件支持**: 通过中间件系统实现日志记录、进度跟踪和错误处理
+- **代理缓存**: 智能缓存代理实例，提高执行效率
+
+#### 10.2.8 LangChain 中间件适配器
+
+[`langchain-middleware-adapter.js`](src/static/js/agent/langchain/langchain-middleware-adapter.js) 提供 LangChain 中间件系统：
+
+- **日志记录中间件**: 记录模型调用和工具执行的详细信息
+- **进度跟踪中间件**: 实时跟踪代理执行进度并更新 UI
+- **错误处理中间件**: 统一的错误处理和恢复机制
+- **自定义中间件支持**: 支持添加自定义中间件扩展功能
+
+#### 10.2.9 LangChain 工具适配器
+
+[`langchain-tools-adapter.js`](src/static/js/agent/langchain/langchain-tools-adapter.js) 将现有工具适配到 LangChain 框架：
+
+- **工具包装器**: 将 MCP 工具包装成 LangChain 标准工具格式
+- **统一工具调用**: 通过现有 API Handler 执行工具调用
+- **错误处理**: 统一的工具执行错误处理和结果格式化
+- **工具分类**: 支持按类别过滤和选择工具
+
+#### 10.2.10 事件处理器
 
 系统包含四个专门的事件处理器：
 
@@ -747,11 +769,20 @@ await callbackManager.onToolStart(toolName, input, stepIndex);
 1. **用户请求分析**: Orchestrator 接收用户请求并分析复杂度
 2. **路由决策**: 
    - 简单任务: 使用 EnhancedSkillManager 选择最优工具直接执行
-   - 复杂任务: 使用 WorkflowEngine 创建和执行多步骤工作流
+   - 中等复杂度任务: 使用原有 WorkflowEngine 创建工作流
+   - 高复杂度任务: 路由到 LangChain 代理进行智能处理
 3. **执行监控**: 通过 CallbackManager 实时监控执行状态
 4. **结果编译**: 格式化执行结果返回给用户
 
-#### 10.3.2 工作流执行流程
+#### 10.3.2 LangChain 代理执行流程
+
+1. **代理创建**: LangChainAgentManager 根据模型配置和工具创建代理实例
+2. **工具选择**: 基于用户查询和上下文智能选择相关工具
+3. **中间件处理**: 通过中间件系统处理日志记录、进度跟踪等
+4. **代理推理**: 代理按照思考-行动-观察的循环执行任务
+5. **结果返回**: 格式化代理执行结果并返回
+
+#### 10.3.3 工作流执行流程
 
 1. **工作流创建**: 基于模板或动态分析创建工作流
 2. **步骤顺序执行**: 按顺序执行工作流中的每个步骤
@@ -759,37 +790,90 @@ await callbackManager.onToolStart(toolName, input, stepIndex);
 4. **错误处理**: 支持关键步骤失败时的优雅降级
 5. **结果汇总**: 编译所有步骤结果生成最终输出
 
-#### 10.3.3 事件流处理
+#### 10.3.4 事件流处理
 
 1. **事件触发**: 各个组件在执行过程中触发结构化事件
 2. **处理器分发**: CallbackManager 将事件分发给所有注册的处理器
 3. **并行处理**: 各个处理器并行处理事件
 4. **状态同步**: 确保所有组件状态一致
 
-### 10.4 集成优势
+### 10.4 LangChain 集成架构
 
-#### 10.4.1 与现有架构的深度集成
+#### 10.4.1 核心集成组件
+
+**LangChainAgentManager**
+- 负责创建和管理 LangChain 代理实例
+- 提供代理缓存机制，提高执行效率
+- 集成中间件系统，实现统一的监控和控制
+
+**LangChainMiddlewareAdapter**
+- 提供内置中间件：日志记录、进度跟踪、错误处理
+- 支持自定义中间件扩展
+- 与现有 CallbackManager 深度集成
+
+**LangChainToolsAdapter**
+- 将现有 MCP 工具包装成 LangChain 标准工具
+- 支持工具分类和过滤
+- 提供统一的工具执行接口
+
+#### 10.4.2 智能路由策略
+
+Orchestrator 实现智能路由决策：
+
+```javascript
+// 路由决策逻辑
+if (taskAnalysis.complexity === 'high' || (taskAnalysis.score >= 2)) {
+    // 高复杂度任务 → LangChain Agent
+    return await this.langchainManager.execute(userMessage, agentContext);
+} else if (taskAnalysis.complexity === 'high' && taskAnalysis.workflowType) {
+    // 中等复杂度但匹配工作流模板 → 原有WorkflowEngine
+    return await this.handleWithWorkflow(userMessage, taskAnalysis, files, context);
+} else {
+    // 其他情况 → 标准聊天模式
+    return { enhanced: false, type: 'standard_fallback' };
+}
+```
+
+#### 10.4.3 中间件系统
+
+LangChain 中间件提供完整的执行监控：
+
+- **日志记录中间件**: 记录详细的执行日志
+- **进度跟踪中间件**: 实时更新 UI 进度状态
+- **错误处理中间件**: 统一的错误处理和恢复
+- **自定义中间件**: 支持业务特定的扩展需求
+
+### 10.5 集成优势
+
+#### 10.5.1 与现有架构的深度集成
 
 - **统一工具调用**: 复用现有的工具调用基础设施
 - **共享配置系统**: 使用统一的模型配置和 API 密钥管理
 - **兼容现有UI**: 与现有的聊天界面无缝集成
 - **统一错误处理**: 复用现有的错误处理机制
 
-#### 10.4.2 性能优化特性
+#### 10.5.2 性能优化特性
 
 - **智能缓存**: 基于执行历史的智能缓存策略
 - **并行处理**: 支持工作流步骤的并行执行
 - **资源优化**: 按需加载工作流组件，减少内存占用
 - **快速降级**: 工作流失败时快速降级到单步执行
 
-#### 10.4.3 开发者体验
+#### 10.5.3 LangChain 框架优势
+
+- **标准化代理**: 使用行业标准的 LangChain 框架
+- **丰富的工具生态**: 支持大量预构建工具和组件
+- **灵活的中间件**: 可扩展的中间件系统
+- **活跃的社区**: 受益于活跃的开源社区支持
+
+#### 10.5.4 开发者体验
 
 - **模块化架构**: 清晰的组件边界和职责分离
 - **详细日志**: 完整的执行日志和调试信息
 - **可扩展设计**: 易于添加新的工作流模板和工具
 - **测试友好**: 支持单元测试和集成测试
 
-这个智能代理系统显著提升了应用程序处理复杂任务的能力，通过智能的任务分析、动态的工作流编排和结构化的事件系统，为用户提供了更加智能和高效的AI助手体验。
+这个智能代理系统显著提升了应用程序处理复杂任务的能力，通过智能的任务分析、动态的工作流编排、LangChain 标准化代理和结构化的事件系统，为用户提供了更加智能和高效的AI助手体验。
 
 ## 11. Vision 模块技术实现细节
 
