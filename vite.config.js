@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   root: '.',
   publicDir: 'public',
+
   server: {
     port: 5173,
     proxy: {
@@ -12,8 +13,9 @@ export default defineConfig({
       },
     },
   },
+
   build: {
     outDir: 'dist',
+    // 移除 rollupOptions，让 Vite 自动处理所有内部模块
   },
-  // 完全依赖 Vite 的自动优化，不进行任何手动配置
 });

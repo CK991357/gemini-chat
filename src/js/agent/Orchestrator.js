@@ -6,8 +6,6 @@ import { LoggingHandler } from './handlers/LoggingHandler.js';
 import { WorkflowUIHandler } from './handlers/WorkflowUIHandler.js';
 import { WorkflowEngine } from './WorkflowEngine.js';
 import { WorkflowUI } from './WorkflowUI.js';
-// 🆕 新增导入
-import { LangChainAgentManager } from './langchain/langchain-agent-manager.js';
 
 export class Orchestrator {
   constructor(chatApiHandler, config = {}) {
@@ -20,13 +18,6 @@ export class Orchestrator {
     this.workflowEngine = new WorkflowEngine(this.skillManager, this.callbackManager);
     this.workflowUI = new WorkflowUI(config.containerId);
     
-    // 🆕 实例化 LangChain 管理器，作为增强模块
-    this.langchainManager = new LangChainAgentManager(
-      chatApiHandler, 
-      this.callbackManager,
-      this.workflowUI  // 🆕 传递workflowUI用于中间件集成
-    );
-    
     // 🎯 简化处理器注册
     this.setupHandlers();
     
@@ -36,8 +27,6 @@ export class Orchestrator {
     this.isCancelled = false; // ✨ 1. 添加取消状态标志
     
     this.setupEventListeners();
-    
-    console.log("🎯 Orchestrator 初始化完成 - LangChain智能路由就绪");
   }
 
   setupHandlers() {
@@ -53,7 +42,7 @@ export class Orchestrator {
 
   /**
    * 🎯 核心：智能路由用户请求
-   * 重用现有技能系统，只在复杂任务时启动工作流或LangChain代理
+   * 重用现有技能系统，只在复杂任务时启动工作流
    */
   async handleUserRequest(userMessage, files = [], context = {}) {
     this.currentContext = context;
@@ -65,6 +54,7 @@ export class Orchestrator {
 
     try {
       // 🎯 重用现有的任务分析逻辑
+      // 🎯 修复：将 availableTools 传递给 analyzeTask
       const taskAnalysis = await this.workflowEngine.analyzeTask(userMessage, {
         availableTools: context.availableTools || []  // 新增：传递可用工具
       });
@@ -72,28 +62,7 @@ export class Orchestrator {
       console.log(`[Orchestrator] 任务分析结果:`, taskAnalysis,
         `可用工具: ${context.availableTools ? context.availableTools.length : 'all'}`);
 
-      // 🆕 智能路由决策逻辑
-      // 条件1: 高复杂度任务 → LangChain Agent
-      // 条件2: 中等复杂度但匹配多个工具 → LangChain Agent  
-      // 条件3: 有匹配的模板工作流 → 原有WorkflowEngine
-      // 条件4: 其他 → 标准聊天模式
-
-      if (taskAnalysis.complexity === 'high' || (taskAnalysis.score >= 2)) {
-        console.log(`[Orchestrator] 复杂任务检测到，路由至 LangChain Agent`);
-        
-        // 将 skillManager 传入 context，以便 LangChain 管理器可以复用它
-        const agentContext = { 
-          ...context, 
-          skillManager: this.skillManager,
-          // 🎯 传递任务分析结果，供LangChain智能决策使用
-          taskAnalysis 
-        };
-        
-        // 直接调用并返回结果，UI更新由CallbackManager驱动
-        return await this.langchainManager.execute(userMessage, agentContext);
-      }
-      
-      // 🎯 模板化工作流：使用原有稳定引擎
+      // 🎯 只在明确需要工作流时才启动
       if (taskAnalysis.complexity === 'high' && taskAnalysis.workflowType) {
         console.log(`[Orchestrator] 检测到复杂任务，启动工作流: ${taskAnalysis.workflowType}`);
         return await this.handleWithWorkflow(userMessage, taskAnalysis, files, context);
@@ -345,9 +314,7 @@ export class Orchestrator {
         steps: this.currentWorkflow.steps.length
       } : null,
       // ✨ 新增：获取取消状态
-      cancellationStatus: this.getCancellationStatus(),
-      // 🆕 新增：获取LangChain状态
-      langchainStatus: this.langchainManager.getMiddlewareStatus()
+      cancellationStatus: this.getCancellationStatus()
     };
   }
 
