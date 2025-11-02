@@ -4,25 +4,30 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy": "npm run build:skills && npm run build:css && wrangler deploy",
-    "dev": "npm run build:skills && wrangler dev",
-    "start": "npm run build:skills && wrangler dev",
-    "test": "vitest",
-    "build:css": "sass src/static/scss/style.scss src/static/css/style.css",
-    "build:skills": "node ./scripts/build-skills.js",
-    "build:skills:watch": "chokidar 'src/skills/**/*.md' -c 'npm run build:skills'",
-    "build:all": "npm run build:skills && npm run build:css",
-    "analyze:logs": "node ./scripts/analyze-logs.js",
-    "validate:skills": "node ./scripts/validate-skills.js"
+    "dev:frontend": "vite",
+    "dev:backend": "wrangler dev",
+    "dev": "concurrently \"npm:dev:frontend\" \"npm:dev:backend\"",
+    "build": "vite build",
+    "deploy": "npm run build && wrangler deploy",
+    "start": "npm run dev",
+    "test": "vitest"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.2",
     "chokidar-cli": "^3.0.0",
+    "concurrently": "^9.2.1",
     "glob": "^11.0.3",
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
     "sass": "^1.77.6",
+    "vite": "^5.4.21",
     "vitest": "2.1.8",
     "wrangler": "^3.60.3"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.79",
+    "@langchain/openai": "^0.3.17",
+    "langchain": "^0.3.36",
+    "zod": "^3.25.76"
   }
 }

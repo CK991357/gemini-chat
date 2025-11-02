@@ -3,7 +3,14 @@ name = "gemini-chat"
 main = "src/worker.js"
 compatibility_date = "2024-12-30"
 compatibility_flags = ["nodejs_compat"]
-assets = { directory = "./src/static", not_found_handling = "single-page-application" }
+
+# ==================================================================
+# 🎯 关键修改：从 assets 切换到 [site]
+# 这是为了告诉 Wrangler，您的前端静态文件现在位于 Vite 构建后生成的 "dist" 文件夹中。
+# 这也是与现代前端构建流程集成的标准方式。
+# ==================================================================
+[site]
+bucket = "./dist"
 
 # Workers Logs
 # Docs: https://developers.cloudflare.com/workers/observability/logs/workers-logs/
@@ -26,9 +33,9 @@ enabled = true
 # [vars]
 # MY_VARIABLE = "production_value"
 
-# Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare’s global network
+# Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare's global network
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#workers-ai
-# Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare’s global network
+# Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare's global network
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#workers-ai
 # [ai]
 # binding = "AI"
@@ -43,7 +50,7 @@ enabled = true
 # [browser]
 # binding = "MY_BROWSER"
 
-# Bind a D1 database. D1 is Cloudflare’s native serverless SQL database.
+# Bind a D1 database. D1 is Cloudflare's native serverless SQL database.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases
 # [[d1_databases]]
 # binding = "MY_DB"
@@ -77,9 +84,10 @@ enabled = true
 
 # Bind a KV Namespace. Use KV as persistent storage for small key-value pairs.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#kv-namespaces
-# [[kv_namespaces]]
-# binding = "MY_KV_NAMESPACE"
-# id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+[[kv_namespaces]]
+binding = "GEMINICHAT_HISTORY_KV"
+id = "f64330e7c00f48e6893f0bf8625106c1"
+preview_id = "f64330e7c00f48e6893f0bf8625106c1"
 
 # Bind an mTLS certificate. Use to present a client certificate when communicating with another service.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#mtls-certificates
@@ -115,11 +123,6 @@ enabled = true
 # [[vectorize]]
 # binding = "MY_INDEX"
 # index_name = "my-index"
-
-[[kv_namespaces]]
-binding = "GEMINICHAT_HISTORY_KV"
-id = "f64330e7c00f48e6893f0bf8625106c1"
-preview_id = "f64330e7c00f48e6893f0bf8625106c1"
 
 [[d1_databases]]
 binding = "CHAT_DB"
