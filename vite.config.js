@@ -1,13 +1,8 @@
-import { viteCommonjs } from '@originjs/vite-plugin-commonjs';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: '.',
   publicDir: 'public',
-
-  plugins: [
-    viteCommonjs(),
-  ],
 
   server: {
     port: 5173,
@@ -18,24 +13,29 @@ export default defineConfig({
       },
     },
   },
-  
-  resolve: {
-    alias: [
-      // ==================================================================
-      // 🎯 最终解决方案 v2：使用更稳健的路径别名
-      // 我们直接将别名指向包名本身，让 Node.js 的解析算法来找到正确的入口。
-      // ==================================================================
-      { find: 'langchain', replacement: 'langchain' },
-      { find: '@langchain/core', replacement: '@langchain/core' },
-      { find: '@langchain/openai', replacement: '@langchain/openai' },
-      { find: 'zod', replacement: 'zod' },
-    ],
-  },
 
   build: {
     outDir: 'dist',
-    commonjsOptions: {
-      transformMixedEsModules: true,
+    // ==================================================================
+    // 🎯 关键修复：简化构建配置
+    // ==================================================================
+    rollupOptions: {
+      // 确保不排除任何需要的包
+      external: [],
     },
+  },
+
+  optimizeDeps: {
+    // ==================================================================
+    // 🎯 关键修复：显式包含 LangChain 相关包进行预构建
+    // ==================================================================
+    include: [
+      'langchain',
+      '@langchain/core', 
+      '@langchain/openai',
+      'zod'
+    ],
+    // 强制预构建这些包
+    force: true
   },
 });
