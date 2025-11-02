@@ -17,13 +17,18 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.2",
+    "chokidar-cli": "^3.0.0",
     "glob": "^11.0.3",
     "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.0",
     "sass": "^1.77.6",
     "vitest": "2.1.8",
-    "wrangler": "^3.60.3",
-    "chokidar-cli": "^3.0.0",
-    "js-yaml": "^4.1.0"
+    "wrangler": "^3.60.3"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@langchain/core": "^1.0.2",
+    "@langchain/openai": "^1.0.0",
+    "langchain": "^1.0.2",
+    "zod": "^4.1.12"
+  }
 }
