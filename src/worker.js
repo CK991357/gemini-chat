@@ -1,6 +1,6 @@
 import { handleMcpProxyRequest } from './mcp_proxy/mcp-handler.js';
 // ✅ 引入技能管理器 - 构建时已初始化完成
-import { skillManager } from './js/tool-spec-system/skill-manager.js';
+import { skillManager } from './static/js/tool-spec-system/skill-manager.js';
 
 const assetManifest = {};
 
