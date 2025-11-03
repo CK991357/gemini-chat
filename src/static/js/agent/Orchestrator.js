@@ -20,8 +20,6 @@ import { CallbackManager } from './CallbackManager.js';
 import { EnhancedSkillManager } from './EnhancedSkillManager.js';
 
 // 🎯 导入向后兼容系统
-import { WorkflowEngine } from './WorkflowEngine.js';
-import { WorkflowUI } from './WorkflowUI.js';
 
 export class Orchestrator {
     constructor(chatApiHandler, config = {}) {
@@ -30,11 +28,16 @@ export class Orchestrator {
         
         console.log('[Orchestrator] 初始化智能路由器...');
         
-        // 🎯 修复：按正确顺序初始化组件
+        // 🎯 修复1：确保基础组件先初始化
         this.callbackManager = new CallbackManager();
         this.skillManager = new EnhancedSkillManager();
         
+        // 🎯 修复2：标记初始化状态
+        this._isInitialized = false;
+        this._initializationError = null;
+        
         // 🎯 等待技能管理器就绪后再继续
+        this.tools = {}; // 确保在降级模式下 Object.keys(this.tools) 不会抛出错误
         this.initializationPromise = this._initializeWithDependencies();
         
         this.isEnabled = config.enabled !== false;
@@ -50,45 +53,107 @@ export class Orchestrator {
     // 🔧 更安全的实现
     async _initializeWithDependencies() {
         try {
-            // 🎯 添加超时保护
+            // 🎯 修复3：添加超时保护
             const initTimeout = 10000; // 10秒超时
-            const initPromise = this.skillManager.waitUntilReady();
+            const initPromise = (async () => {
+                await this.skillManager.waitUntilReady();
+                // 🎯 继续初始化其他组件...
+                await this._initializeRemainingComponents();
+            })();
             
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('技能管理器初始化超时')), initTimeout);
             });
-            
+
             await Promise.race([initPromise, timeoutPromise]);
+            this._isInitialized = true;
             
-            // 🎯 然后初始化其他组件
-            this.workflowEngine = new WorkflowEngine(this.skillManager, this.callbackManager);
-            this.workflowUI = new WorkflowUI(this.config.containerId);
-            
-            // 🎯 初始化工具系统
-            this.tools = this._initializeTools();
-            this.agentSystem = this._initializeAgentSystem();
-            
-            this.setupHandlers();
-            this.setupEventListeners();
-            
-            console.log('[Orchestrator] 所有组件初始化完成', {
-                agentSystem: this.agentSystem ? '已启用' : '未启用',
-                toolsCount: Object.keys(this.tools).length,
-                enabled: this.isEnabled
-            });
-            
+            console.log('[Orchestrator] 所有组件初始化成功');
             return true;
+            
         } catch (error) {
+            // 🎯 修复4：关键修复 - 超时后优雅降级
             console.error('[Orchestrator] 组件初始化失败:', error);
-            // 🎯 确保系统仍可降级运行
-            this.agentSystem = { isAvailable: false, error: error.message };
-            throw error; // 重新抛出，让调用方处理
+            this._initializationError = error;
+            
+            // 🎯 进入降级模式，确保基础功能可用
+            await this._enterFallbackMode(error);
+            return false;
         }
     }
 
     /**
      * 🎯 初始化工具系统（组装工厂模式）
      */
+    /**
+     * 🎯 新增：初始化剩余组件
+     */
+    async _initializeRemainingComponents() {
+        // 初始化工作流引擎
+        this.workflowEngine = new WorkflowEngine(this.skillManager, this.callbackManager);
+        
+        // 初始化工作流UI
+        this.workflowUI = new WorkflowUI(this.config.containerId);
+        
+        // 初始化工具系统
+        this.tools = this._initializeTools();
+        
+        // 初始化Agent系统
+        this.agentSystem = this._initializeAgentSystem();
+        
+        // 设置处理器
+        this.setupHandlers();
+        this.setupEventListeners();
+        
+        console.log('[Orchestrator] 所有组件初始化完成', {
+            agentSystem: this.agentSystem ? '已启用' : '未启用',
+            toolsCount: Object.keys(this.tools).length,
+            enabled: this.isEnabled
+        });
+    }
+
+    /**
+     * 🎯 新增：创建降级工具集
+     */
+    _createFallbackTools() {
+        // 🎯 降级模式下只提供最基础的工具，例如一个简单的搜索工具
+        console.log('[Orchestrator] 创建降级工具集：仅提供基础功能');
+        
+        // 考虑到当前文件没有导入 BaseTool，为避免引入新的依赖，我们暂时返回空对象。
+        // 实际应用中，如果需要降级工具，应在此处创建并返回。
+        return {};
+    }
+
+    /**
+     * 🎯 新增：进入降级模式
+     */
+    async _enterFallbackMode(error) {
+        console.warn('[Orchestrator] 进入降级模式，Agent功能受限');
+        
+        // 🎯 确保基础组件可用
+        if (!this.workflowEngine) {
+            this.workflowEngine = new WorkflowEngine(this.skillManager, this.callbackManager);
+        }
+        
+        if (!this.workflowUI) {
+            this.workflowUI = new WorkflowUI(this.config.containerId);
+        }
+        
+        // 🎯 创建基础工具集
+        if (Object.keys(this.tools).length === 0) {
+            this.tools = this._createFallbackTools();
+        }
+        
+        // 🎯 标记Agent系统不可用
+        this.agentSystem = {
+            isAvailable: false,
+            error: error.message,
+            fallbackMode: true
+        };
+        
+        this._isInitialized = true; // 标记为已初始化（降级模式）
+        console.log('[Orchestrator] 降级模式初始化完成');
+    }
     _initializeTools() {
         try {
             const skills = getSkillsRegistry();
@@ -212,16 +277,21 @@ export class Orchestrator {
      * 🎯 核心：智能路由用户请求（100%向后兼容）
      */
     async handleUserRequest(userMessage, files = [], context = {}) {
-        // 🎯 确保初始化完成
-        if (!this.initializationPromise) {
-            this.initializationPromise = this._initializeComponents();
+        // 🎯 修复5：确保初始化完成
+        if (!this._isInitialized) {
+            await this.initializationPromise;
         }
-        await this.initializationPromise;
         
         this.currentContext = context;
         
         // ✨ 如果开关关闭，直接返回标准回退
         if (!this.isEnabled) {
+            return { enhanced: false, type: 'standard_fallback' };
+        }
+
+        // 🎯 如果初始化失败，直接使用标准模式
+        if (this.agentSystem?.fallbackMode) {
+            console.log('[Orchestrator] 使用降级模式处理请求');
             return { enhanced: false, type: 'standard_fallback' };
         }
 

@@ -11,14 +11,28 @@ export class CallbackManager {
         this.eventHistory = [];
         this.currentRunId = null;
         this.runCounter = 0;
+        this._isDisposed = false;
         
         console.log('[CallbackManager] 初始化完成');
+        
         // 内存清理：每 5 分钟清理一次事件历史
-        this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+        try {
+            this.cleanupInterval = setInterval(() => {
+                if (!this._isDisposed) {
+                    this.cleanup();
+                }
+            }, 5 * 60 * 1000);
+        } catch (error) {
+            console.error('[CallbackManager] 定时器设置失败:', error);
+        }
     }
 
     // 🎯 基础管理方法
     addHandler(handler) {
+        if (this._isDisposed) {
+            console.warn('[CallbackManager] 尝试在已销毁的管理器上添加处理器');
+            return;
+        }
         if (this.handlers.includes(handler)) {
             console.warn('[CallbackManager] 处理器已存在，跳过添加');
             return;
@@ -92,6 +106,10 @@ export class CallbackManager {
 
     // 🎯 事件系统
     async invokeEvent(eventName, payload = {}) {
+        if (this._isDisposed) {
+            console.warn('[CallbackManager] 尝试在已销毁的管理器上调用事件');
+            return Promise.resolve(null);
+        }
         const event = {
             event: eventName,
             name: payload.name || 'unnamed',
@@ -274,7 +292,9 @@ export class CallbackManager {
     }
 
     // 🎯 工具方法
+    // 🎯 工具方法
     getCurrentRunEvents() {
+        if (this._isDisposed) return [];
         return this.eventHistory.filter(event => event.run_id === this.currentRunId);
     }
 
@@ -282,18 +302,49 @@ export class CallbackManager {
      * @description 定期清理事件历史，防止内存泄漏
      */
     cleanup() {
-        // 仅保留最新的 50 条事件，如果历史记录超过 100 条
-        if (this.eventHistory.length > 100) {
-            this.eventHistory = this.eventHistory.slice(-50);
-            console.log(`[CallbackManager] 内存清理完成，事件历史剩余: ${this.eventHistory.length}`);
+        if (this._isDisposed) return;
+        
+        try {
+            const beforeSize = this.eventHistory.length;
+            
+            // 仅保留最新的 50 条事件，如果历史记录超过 100 条
+            if (this.eventHistory.length > 100) {
+                this.eventHistory = this.eventHistory.slice(-50);
+                console.log(`[CallbackManager] 内存清理完成，事件历史: ${beforeSize} -> ${this.eventHistory.length}`);
+            }
+            
+            // 清理无效处理器
+            this._cleanupInvalidHandlers();
+            
+        } catch (error) {
+            console.error('[CallbackManager] 清理过程出错:', error);
+        }
+    }
+
+    /**
+     * 🎯 新增：清理无效处理器
+     */
+    _cleanupInvalidHandlers() {
+        const validHandlers = this.handlers.filter(handler => {
+            if (handler._isDisposed) {
+                console.log(`[CallbackManager] 清理已销毁的处理器: ${handler.name || 'unnamed'}`);
+                return false;
+            }
+            return true;
+        });
+        
+        if (validHandlers.length !== this.handlers.length) {
+            this.handlers = validHandlers;
         }
     }
 
     clearCurrentRun() {
+        if (this._isDisposed) return;
         this.currentRunId = null;
     }
 
     getEventHistory() {
+        if (this._isDisposed) return [];
         return [...this.eventHistory];
     }
 
@@ -301,11 +352,24 @@ export class CallbackManager {
      * @description 清理资源，停止定时器
      */
     dispose() {
+        if (this._isDisposed) return;
+        
+        console.log('[CallbackManager] 开始资源清理...');
+        this._isDisposed = true;
+        
         if (this.cleanupInterval) {
             clearInterval(this.cleanupInterval);
             this.cleanupInterval = null;
             console.log('[CallbackManager] 清理定时器完成');
         }
+        
+        // 清理所有引用
+        this.handlers = [];
+        this.middlewares = [];
+        this.eventHistory = [];
+        this.currentRunId = null;
+        
+        console.log('[CallbackManager] 资源完全释放');
     }
 
     getStatus() {
@@ -314,7 +378,8 @@ export class CallbackManager {
             middlewares: this.middlewares.length,
             eventHistory: this.eventHistory.length,
             currentRunId: this.currentRunId,
-            runCounter: this.runCounter
+            runCounter: this.runCounter,
+            isDisposed: this._isDisposed
         };
     }
 }

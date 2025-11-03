@@ -273,20 +273,57 @@ export class WorkflowUI {
  * 🎯 独立的显示工作流函数（用于全局调用）
  */
 export function showWorkflowUI(workflow) {
-  // 🎯 创建或获取全局 WorkflowUI 实例
-  if (!window.globalWorkflowUI) {
-    window.globalWorkflowUI = new WorkflowUI();
-  }
-  
-  return window.globalWorkflowUI.showWorkflow(workflow);
+    // 🎯 修复1：创建或获取全局 WorkflowUI 实例
+    if (!window.globalWorkflowUI) {
+        window.globalWorkflowUI = new WorkflowUI();
+    }
+    
+    // 🎯 修复2：检查工作流有效性
+    if (!workflow || !workflow.steps || workflow.steps.length === 0) {
+        console.error('[WorkflowUI] 无效的工作流数据');
+        return null;
+    }
+    
+    try {
+        return window.globalWorkflowUI.showWorkflow(workflow);
+    } catch (error) {
+        console.error('[WorkflowUI] 显示工作流失败:', error);
+        return null;
+    }
 }
 
 /**
  * 🎯 获取全局工作流UI实例
  */
 export function getWorkflowUI() {
-  if (!window.globalWorkflowUI) {
-    window.globalWorkflowUI = new WorkflowUI();
-  }
-  return window.globalWorkflowUI;
+    // 🎯 修复3：安全的实例获取
+    if (!window.globalWorkflowUI) {
+        window.globalWorkflowUI = new WorkflowUI();
+    }
+    return window.globalWorkflowUI;
+}
+
+/**
+ * 🎯 新增：销毁全局工作流UI实例
+ */
+export function disposeWorkflowUI() {
+    if (window.globalWorkflowUI) {
+        try {
+            window.globalWorkflowUI.hide();
+            window.globalWorkflowUI.reset();
+            window.globalWorkflowUI = null;
+            console.log('[WorkflowUI] 全局实例已销毁');
+        } catch (error) {
+            console.error('[WorkflowUI] 销毁实例失败:', error);
+        }
+    }
+}
+
+/**
+ * 🎯 新增：检查工作流UI状态
+ */
+export function isWorkflowUIAvailable() {
+    return !!(window.globalWorkflowUI &&
+              window.globalWorkflowUI.isWorkflowActive &&
+              typeof window.globalWorkflowUI.isWorkflowActive === 'function');
 }
