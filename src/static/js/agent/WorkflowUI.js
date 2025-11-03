@@ -268,3 +268,25 @@ export class WorkflowUI {
     this.container.innerHTML = '';
   }
 }
+
+/**
+ * 🎯 独立的显示工作流函数（用于全局调用）
+ */
+export function showWorkflowUI(workflow) {
+  // 🎯 创建或获取全局 WorkflowUI 实例
+  if (!window.globalWorkflowUI) {
+    window.globalWorkflowUI = new WorkflowUI();
+  }
+  
+  return window.globalWorkflowUI.showWorkflow(workflow);
+}
+
+/**
+ * 🎯 获取全局工作流UI实例
+ */
+export function getWorkflowUI() {
+  if (!window.globalWorkflowUI) {
+    window.globalWorkflowUI = new WorkflowUI();
+  }
+  return window.globalWorkflowUI;
+}

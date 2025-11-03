@@ -193,6 +193,8 @@ export class EnhancedSkillManager {
 
   loadExecutionHistory() {
     try {
+      // 🎯 添加浏览器隐私模式兼容
+      if (!localStorage) return {};
       return JSON.parse(localStorage.getItem('agent_execution_history') || '{}');
     } catch {
       return {};
@@ -200,16 +202,23 @@ export class EnhancedSkillManager {
   }
 
   saveExecution(entry) {
-    const toolName = entry.toolName;
-    if (!this.executionHistory[toolName]) this.executionHistory[toolName] = [];
-    
-    this.executionHistory[toolName].push(entry);
-    
-    if (this.executionHistory[toolName].length > 100) {
-      this.executionHistory[toolName] = this.executionHistory[toolName].slice(-50);
+    try {
+      // 🎯 添加存储失败处理
+      if (!localStorage) return;
+      
+      const toolName = entry.toolName;
+      if (!this.executionHistory[toolName]) this.executionHistory[toolName] = [];
+      
+      this.executionHistory[toolName].push(entry);
+      
+      if (this.executionHistory[toolName].length > 100) {
+        this.executionHistory[toolName] = this.executionHistory[toolName].slice(-50);
+      }
+      
+      localStorage.setItem('agent_execution_history', JSON.stringify(this.executionHistory));
+    } catch (error) {
+      console.warn('无法保存执行历史（可能处于隐私模式）:', error);
     }
-    
-    localStorage.setItem('agent_execution_history', JSON.stringify(this.executionHistory));
   }
 
   sanitizeParameters(parameters) {

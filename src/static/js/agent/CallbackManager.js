@@ -13,6 +13,8 @@ export class CallbackManager {
         this.runCounter = 0;
         
         console.log('[CallbackManager] 初始化完成');
+        // 内存清理：每 5 分钟清理一次事件历史
+        this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
     }
 
     // 🎯 基础管理方法
@@ -276,12 +278,34 @@ export class CallbackManager {
         return this.eventHistory.filter(event => event.run_id === this.currentRunId);
     }
 
+    /**
+     * @description 定期清理事件历史，防止内存泄漏
+     */
+    cleanup() {
+        // 仅保留最新的 50 条事件，如果历史记录超过 100 条
+        if (this.eventHistory.length > 100) {
+            this.eventHistory = this.eventHistory.slice(-50);
+            console.log(`[CallbackManager] 内存清理完成，事件历史剩余: ${this.eventHistory.length}`);
+        }
+    }
+
     clearCurrentRun() {
         this.currentRunId = null;
     }
 
     getEventHistory() {
         return [...this.eventHistory];
+    }
+
+    /**
+     * @description 清理资源，停止定时器
+     */
+    dispose() {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+            console.log('[CallbackManager] 清理定时器完成');
+        }
     }
 
     getStatus() {

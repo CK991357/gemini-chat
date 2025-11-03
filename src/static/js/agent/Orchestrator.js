@@ -35,7 +35,7 @@ export class Orchestrator {
         this.skillManager = new EnhancedSkillManager();
         
         // 🎯 等待技能管理器就绪后再继续
-        this.initializationPromise = this._initializeComponents();
+        this.initializationPromise = this._initializeWithDependencies();
         
         this.isEnabled = config.enabled !== false;
         this.currentWorkflow = null;
@@ -45,10 +45,10 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 异步初始化所有组件
+     * 🎯 异步初始化所有组件，等待依赖项就绪
      */
     // 🔧 更安全的实现
-    async _initializeComponents() {
+    async _initializeWithDependencies() {
         try {
             // 🎯 添加超时保护
             const initTimeout = 10000; // 10秒超时
