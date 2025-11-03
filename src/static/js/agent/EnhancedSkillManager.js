@@ -52,41 +52,43 @@ export class EnhancedSkillManager {
    */
   createFallbackSkillManager() {
     return {
-      findRelevantSkills: (userQuery, context = {}) => {
-        // 🎯 简化的关键词匹配逻辑
-        const tools = ['python_sandbox', 'tavily_search', 'firecrawl', 'stockfish_analyzer'];
-        const matches = [];
-        
-        const lowerQuery = userQuery.toLowerCase();
-        tools.forEach(toolName => {
-          if (lowerQuery.includes(toolName.replace('_', ' ')) || 
-              this.doesQueryMatchTool(lowerQuery, toolName)) {
-            matches.push({
-              toolName,
-              score: 0.7 + Math.random() * 0.3, // 基础评分
-              category: this.getToolCategory(toolName)
-            });
+      findRelevantSkills: async (userQuery, context = {}) => {
+        try {
+          // 🎯 重用现有的技能管理器
+          const baseSkillManager = await getBaseSkillManager();
+          if (baseSkillManager && baseSkillManager.findRelevantSkills) {
+            return baseSkillManager.findRelevantSkills(userQuery, context);
           }
-        });
+        } catch (error) {
+          console.warn('重用技能系统失败，使用简化降级:', error);
+        }
         
-        return matches;
+        // 🎯 真正的降级：极简匹配
+        return this.simplifiedFallback(userQuery, context);
       }
     };
   }
 
   /**
-   * 🎯 简化的工具匹配逻辑
+   * 🎯 真正的降级：极简匹配
    */
-  doesQueryMatchTool(query, toolName) {
-    const toolKeywords = {
-      python_sandbox: ['代码', '编程', '计算', 'python', '运行代码', '执行代码'],
-      tavily_search: ['搜索', '查询', '查找', '信息', '资料'],
-      firecrawl: ['网页', '网站', '爬取', '抓取', '内容'],
-      stockfish_analyzer: ['象棋', '国际象棋', '棋局', '走法']
-    };
+  simplifiedFallback(userQuery, context = {}) {
+    const availableTools = context.availableTools || [];
+    const matches = [];
+    const lowerQuery = userQuery.toLowerCase();
     
-    const keywords = toolKeywords[toolName] || [];
-    return keywords.some(keyword => query.includes(keyword));
+    // 🎯 只做最基本的工具名匹配
+    availableTools.forEach(toolName => {
+      if (lowerQuery.includes(toolName.replace('_', ' '))) {
+        matches.push({
+          toolName,
+          score: 0.8,
+          category: this.getToolCategory(toolName)
+        });
+      }
+    });
+    
+    return matches;
   }
 
   getToolCategory(toolName) {
@@ -94,7 +96,9 @@ export class EnhancedSkillManager {
       python_sandbox: 'code',
       tavily_search: 'search',
       firecrawl: 'web-crawling',
-      stockfish_analyzer: 'analysis'
+      stockfish_analyzer: 'analysis',
+      crawl4ai: 'web-crawling',
+      glm4v_analyze_image: 'vision'
     };
     return categories[toolName] || 'general';
   }
@@ -107,7 +111,7 @@ export class EnhancedSkillManager {
     await this.waitUntilReady();
 
     // 🎯 重用基础技能匹配（确保与现有系统一致）
-    const basicMatches = this.baseSkillManager.findRelevantSkills(userQuery, context);
+    const basicMatches = await this.baseSkillManager.findRelevantSkills(userQuery, context);
     if (!basicMatches.length) return null;
 
     // 🎯 添加执行历史增强评分（这是Agent模式的增值）
@@ -132,7 +136,7 @@ export class EnhancedSkillManager {
     await this.waitUntilReady();
     
     // 🎯 直接重用基础匹配，不进行增强过滤
-    return this.baseSkillManager.findRelevantSkills(userQuery, context);
+    return await this.baseSkillManager.findRelevantSkills(userQuery, context);
   }
 
   // 🎯 其余方法保持不变...

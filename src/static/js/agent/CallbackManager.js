@@ -307,10 +307,10 @@ export class CallbackManager {
         try {
             const beforeSize = this.eventHistory.length;
             
-            // 仅保留最新的 50 条事件，如果历史记录超过 100 条
-            if (this.eventHistory.length > 100) {
-                this.eventHistory = this.eventHistory.slice(-50);
-                console.log(`[CallbackManager] 内存清理完成，事件历史: ${beforeSize} -> ${this.eventHistory.length}`);
+            // 🎯 优化：提高清理阈值，避免过于频繁
+            if (this.eventHistory.length > 200) { // 从100提高到200
+                this.eventHistory = this.eventHistory.slice(-100); // 保留更多历史
+                console.log(`[CallbackManager] 内存清理: ${beforeSize} -> ${this.eventHistory.length}`);
             }
             
             // 清理无效处理器

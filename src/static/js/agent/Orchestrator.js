@@ -10,6 +10,10 @@ import { AgentExecutor } from './core/AgentExecutor.js';
 import { AgentLogic } from './core/AgentLogic.js';
 import { AgentOutputParser } from './core/OutputParser.js';
 
+// 🎯 导入工作流组件
+import { WorkflowEngine } from './WorkflowEngine.js';
+import { WorkflowUI } from './WorkflowUI.js';
+
 // 🎯 导入工具系统
 import { ToolFactory } from './tools/ToolImplementations.js';
 

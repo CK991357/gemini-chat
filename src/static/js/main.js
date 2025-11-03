@@ -707,7 +707,7 @@ function initializeEnhancedAgent() {
     orchestrator = new Orchestrator(chatApiHandler, {
       enabled: isAgentEnabled,
       containerId: 'workflow-container',
-      maxIterations: 10 // Agent最大迭代次数
+      maxIterations: 8 // Agent最大迭代次数
     });
     
     // 挂载到window便于调试
