@@ -5,10 +5,15 @@ export class EnhancedSkillManager {
     this.baseSkillManager = null;
     this.isInitialized = false;
     this.executionHistory = this.loadExecutionHistory();
+    this.initializationPromise = this.initialize();
+    this.initializationResolve = null;
+    this.initializationReject = null;
     
-    // 🎯 修复：移除未定义的 skillManagerPromise 引用
-    // 改为在需要时动态获取基础技能管理器
-    this.initPromise = this.initialize();
+    // 🎯 创建等待机制
+    this.readyPromise = new Promise((resolve, reject) => {
+      this.initializationResolve = resolve;
+      this.initializationReject = reject;
+    });
   }
 
   async initialize() {
@@ -24,13 +29,22 @@ export class EnhancedSkillManager {
       }
       
       this.isInitialized = true;
+      this.initializationResolve(true);
       console.log("EnhancedSkillManager initialized with skill manager.");
     } catch (error) {
       console.error("EnhancedSkillManager 初始化失败:", error);
       // 🎯 确保即使初始化失败也能继续工作
       this.baseSkillManager = this.createFallbackSkillManager();
       this.isInitialized = true;
+      this.initializationResolve(false); // 即使失败也继续
     }
+  }
+
+  /**
+   * 🎯 新增：等待初始化完成的方法
+   */
+  async waitUntilReady() {
+    return this.readyPromise;
   }
 
   /**
@@ -90,9 +104,7 @@ export class EnhancedSkillManager {
    * 保持与现有技能系统的完全兼容
    */
   async findOptimalSkill(userQuery, context = {}) {
-    if (!this.isInitialized) {
-      await this.initPromise;
-    }
+    await this.waitUntilReady();
 
     // 🎯 重用基础技能匹配（确保与现有系统一致）
     const basicMatches = this.baseSkillManager.findRelevantSkills(userQuery, context);
@@ -117,9 +129,7 @@ export class EnhancedSkillManager {
    * 🎯 提供与基础系统相同的接口
    */
   async findRelevantSkills(userQuery, context = {}) {
-    if (!this.isInitialized) {
-      await this.initPromise;
-    }
+    await this.waitUntilReady();
     
     // 🎯 直接重用基础匹配，不进行增强过滤
     return this.baseSkillManager.findRelevantSkills(userQuery, context);

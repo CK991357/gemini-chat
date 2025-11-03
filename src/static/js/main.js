@@ -21,6 +21,7 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 
 // 🚀 新增导入：智能代理系统
 import { Orchestrator } from './agent/Orchestrator.js';
+import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
 
 // 🎯 获取基础技能管理器的函数
 // 这个函数应该在技能系统初始化后调用
@@ -705,7 +706,8 @@ function initializeEnhancedAgent() {
     
     orchestrator = new Orchestrator(chatApiHandler, {
       enabled: isAgentEnabled,
-      containerId: 'workflow-container'
+      containerId: 'workflow-container',
+      maxIterations: 10 // Agent最大迭代次数
     });
     
     // 挂载到window便于调试
@@ -778,25 +780,6 @@ function injectFallbackStyles() {
   document.head.appendChild(style);
 }
 
-
-/**
- * 🎯 显示Agent结果
- */
-async function displayAgentResult(result) {
-  if (result.type === 'workflow_result' && result.success) {
-    // 显示工作流结果
-    await chatUI.addMessage({
-      role: 'assistant',
-      content: result.content
-    });
-  } else if (result.type === 'error') {
-    // 显示错误信息
-    await chatUI.addMessage({
-      role: 'assistant',
-      content: `❌ ${result.content}`
-    });
-  }
-}
 
 /**
  * 辅助函数：获取当前模型可用的工具名称列表
@@ -928,28 +911,42 @@ async function handleSendMessage(attachmentManager) {
                 availableTools: availableToolNames
             });
 
+            // 🎯 处理结果（完全兼容现有逻辑）
             if (agentResult.enhanced) {
                 if (agentResult.type === 'workflow_pending') {
+                    // 显示工作流UI - 现有逻辑
+                    showWorkflowUI(agentResult.workflow);
                     console.log("🎯 工作流等待执行");
-                    // 等待 'workflow:result' 事件触发，该事件现在只负责处理结果显示，无需再关心UI清理
+                    // 保持异步等待逻辑，等待工作流完成
                     return new Promise((resolve) => {
                         const handleWorkflowResult = (event) => {
-                            const result = event.detail;
+                            const finalResult = event.detail;
                             window.removeEventListener('workflow:result', handleWorkflowResult);
                             
-                            if (result.skipped) {
+                            if (finalResult.skipped) {
+                                // 工作流被跳过，回退到标准聊天
                                 handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).finally(resolve);
                             } else {
-                                displayAgentResult(result).finally(resolve);
+                                // 显示最终结果
+                                chatUI.addMessage({ role: 'assistant', content: finalResult.content });
+                                console.log('工作流执行详情:', finalResult);
+                                resolve();
                             }
                         };
                         window.addEventListener('workflow:result', handleWorkflowResult);
                     });
-                } else if (agentResult.type === 'workflow_result' || agentResult.type === 'tool_result') {
-                    await displayAgentResult(agentResult);
+                } else if (agentResult.type === 'agent_result') {
+                    // 显示Agent执行结果 - 新增
+                    chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+                    console.log('Agent执行详情:', agentResult);
+                } else {
+                    // 其他增强结果（单工具等，如 tool_result, workflow_result）
+                    chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+                    console.log('增强结果详情:', agentResult);
                 }
             } else {
-                console.log("💬 Agent模式未触发工作流，使用标准对话");
+                // 标准回退处理 - 现有逻辑
+                console.log("💬 未触发增强模式，使用标准对话");
                 await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
             }
         } else {
