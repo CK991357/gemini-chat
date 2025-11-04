@@ -71,23 +71,39 @@ export class MultimodalLiveClient extends EventEmitter {
         const ws = new WebSocket(`${this.baseUrl}?key=${apiKey}`);
 
         ws.addEventListener('message', async (evt) => {
-            if (evt.data instanceof Blob) {
-                this.receive(evt.data);
-            } else {
-                console.log('Non-blob message', evt);
+            try {
+                if (evt.data instanceof Blob) {
+                    await this.receive(evt.data);
+                } else {
+                    // 处理文本消息，检查是否为JSON
+                    const text = evt.data.toString();
+                    if (text.startsWith('{') || text.startsWith('[')) {
+                        // 是JSON，正常处理
+                        const response = JSON.parse(text);
+                        await this.handleJSONResponse(response);
+                    } else {
+                        // 非JSON响应，可能是错误信息
+                        Logger.error('Non-JSON response from server:', text);
+                        this.emit('error', new Error(`API returned non-JSON: ${text.substring(0, 100)}`));
+                    }
+                }
+            } catch (error) {
+                Logger.error('Message processing error:', error);
+                this.emit('error', error);
             }
         });
 
         return new Promise((resolve, reject) => {
             const onError = (ev) => {
                 this.disconnect(ws);
-                const message = `Could not connect to "${this.url}"`;
-                this.log(`server.${ev.type}`, message);
-                throw new ApplicationError(
-                    message,
+                const error = new ApplicationError(
+                    `WebSocket connection error: ${ev.message || 'Connection failed'}`,
                     ErrorCodes.WEBSOCKET_CONNECTION_FAILED,
                     { originalError: ev }
                 );
+                Logger.error('WebSocket error:', error);
+                this.emit('error', error);
+                reject(error);
             };
 
             ws.addEventListener('error', onError);
@@ -398,5 +414,19 @@ export class MultimodalLiveClient extends EventEmitter {
                 }]
             });
         }
+    }
+    /**
+     * 🔥 新增：JSON响应处理
+     * 处理非 Blob 的 JSON 消息，包括 API 错误。
+     * @param {Object} response - 解析后的 JSON 响应对象。
+     */
+    async handleJSONResponse(response) {
+        if (response.error) {
+            Logger.error('API returned error:', response.error);
+            this.emit('api_error', response.error);
+            return;
+        }
+        // 重新打包为 Blob，以便 receive 方法可以像处理原始 Blob 一样处理它
+        await this.receive(new Blob([JSON.stringify(response)]));
     }
 }
