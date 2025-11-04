@@ -2,7 +2,7 @@
 
 /**
  * @class AgentExecutor
- * @description 纯粹的ReAct循环执行器，包含错误恢复机制
+ * @description 纯粹的ReAct循环执行器，包含错误恢复机制和智能超时优化
  */
 export class AgentExecutor {
     constructor(agentLogic, tools, callbackManager, config = {}) {
@@ -12,12 +12,76 @@ export class AgentExecutor {
         
         this.maxIterations = config.maxIterations || 10;
         this.earlyStoppingMethod = config.earlyStoppingMethod || 'force';
+        this.maxThinkTimeout = config.maxThinkTimeout || 120000; // 🎯 新增：最大思考超时配置
         
-        console.log(`[AgentExecutor] 初始化完成，最大迭代次数: ${this.maxIterations}`);
+        console.log(`[AgentExecutor] 初始化完成，最大迭代次数: ${this.maxIterations}, 最大思考超时: ${this.maxThinkTimeout}ms`);
     }
 
     /**
-     * 🎯 增强的ReAct循环执行（含更好的错误恢复）
+     * 🎯 智能思考超时策略
+     * @param {number} iteration - 当前迭代次数 (0-based)
+     * @param {number} consecutiveErrors - 连续错误次数
+     * @param {string} taskComplexity - 任务复杂度 ('low'|'medium'|'high')
+     * @param {object} context - 执行上下文
+     * @returns {number} 超时时间(毫秒)
+     */
+    _getThinkTimeout(iteration, consecutiveErrors, taskComplexity = 'medium', context = {}) {
+        // 🎯 基础超时配置（基于实际使用数据优化）
+        const baseTimeouts = {
+            high: 75000,    // 复杂任务：75秒（代码分析、多步推理）
+            medium: 35000,  // 中等任务：35秒（信息检索、简单分析）
+            low: 18000      // 简单任务：18秒（单工具调用、简单查询）
+        };
+        
+        let timeout = baseTimeouts[taskComplexity] || baseTimeouts.medium;
+        
+        // 🎯 迭代策略调整
+        if (iteration === 0) {
+            // 首次思考：给予充分规划时间
+            timeout = Math.round(timeout * 1.6); // 增加60%
+            console.log(`🧠 首次思考，超时延长至: ${timeout}ms`);
+        } else if (iteration > 3) {
+            // 后期迭代：逐渐收紧，避免无限循环
+            timeout = Math.round(timeout * 0.8); // 减少20%
+            console.log(`⚡ 后期迭代${iteration}，超时收紧至: ${timeout}ms`);
+        }
+        
+        // 🎯 错误恢复策略
+        if (consecutiveErrors > 0) {
+            const errorPenalty = Math.min(consecutiveErrors * 0.3, 0.7); // 最多减少70%
+            timeout = Math.round(timeout * (1 - errorPenalty));
+            timeout = Math.max(timeout, 10000); // 最低10秒保障
+            console.log(`🔄 连续错误${consecutiveErrors}次，超时调整至: ${timeout}ms`);
+        }
+        
+        // 🎯 上下文感知调整
+        if (context.availableTools && context.availableTools.length > 5) {
+            // 工具较多时，选择困难，需要更多思考时间
+            timeout = Math.round(timeout * 1.2);
+        }
+        
+        // 🎯 安全上限和个人使用友好
+        return Math.min(timeout, this.maxThinkTimeout);
+    }
+
+    /**
+     * 🎯 增强的任务复杂度评估
+     */
+    _getTaskComplexity(context) {
+        // 检查多层嵌套结构
+        if (context?.taskAnalysis?.complexity) {
+            return context.taskAnalysis.complexity;
+        }
+        
+        // 🎯 基于可用工具数量推断复杂度
+        const availableTools = context.availableTools || Object.keys(this.tools);
+        if (availableTools.length >= 5) return 'high';
+        if (availableTools.length >= 3) return 'medium';
+        return 'low';
+    }
+
+    /**
+     * 🎯 增强的ReAct循环执行（含智能超时和错误恢复）
      */
     async invoke(inputs) {
         const runId = this.callbackManager.generateRunId();
@@ -32,7 +96,8 @@ export class AgentExecutor {
             data: { 
                 userMessage,
                 maxIterations: this.maxIterations,
-                availableTools: Object.keys(this.tools)
+                availableTools: Object.keys(this.tools),
+                maxThinkTimeout: this.maxThinkTimeout
             }
         });
 
@@ -40,6 +105,10 @@ export class AgentExecutor {
         let finalAnswer = null;
         let iteration = 0;
         let consecutiveErrors = 0; // 🎯 新增：连续错误计数
+
+        // 🎯 使用增强的任务复杂度评估
+        const taskComplexity = this._getTaskComplexity(context);
+        console.log(`🎯 任务复杂度评估: ${taskComplexity}`);
 
         // 🎯 ReAct循环核心
         for (iteration = 0; iteration < this.maxIterations; iteration++) {
@@ -59,23 +128,37 @@ export class AgentExecutor {
                 data: {
                     iteration: iteration + 1,
                     intermediateSteps: intermediateSteps.length,
-                    consecutiveErrors: consecutiveErrors
+                    consecutiveErrors: consecutiveErrors,
+                    taskComplexity: taskComplexity
                 }
             });
 
-            let action, observation;
+            // 🎯 修复：将变量提升到作用域顶部
+            let action, observation, thinkTimeout;
 
             try {
-                // 🎯 步骤1: 思考 (Think) - 添加超时保护
+                // 🎯 动态计算思考超时时间
+                thinkTimeout = this._getThinkTimeout(
+                    iteration, 
+                    consecutiveErrors, 
+                    taskComplexity,
+                    { 
+                        availableTools: Object.keys(this.tools)
+                    }
+                );
+                
+                console.log(`⏱️ 第${iteration + 1}次思考超时: ${thinkTimeout}ms`);
+
+                // 🎯 步骤1: 思考 (Think) - 使用动态超时保护
                 const thinkPromise = this.agentLogic.plan(
                     intermediateSteps, 
                     { userMessage, context },
                     { runId, callbackManager: this.callbackManager }
                 );
                 
-                // 30秒思考超时
+                // 动态思考超时
                 const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('思考超时')), 30000);
+                    setTimeout(() => reject(new Error(`思考超时 (${thinkTimeout}ms)`)), thinkTimeout);
                 });
                 
                 action = await Promise.race([thinkPromise, timeoutPromise]);
@@ -92,7 +175,8 @@ export class AgentExecutor {
                         data: {
                             iteration: iteration + 1,
                             action: action,
-                            isFinal: true
+                            isFinal: true,
+                            thinkTimeout: thinkTimeout
                         }
                     });
                     break;
@@ -100,7 +184,8 @@ export class AgentExecutor {
 
                 // 🎯 步骤2: 执行工具调用 (Act)
                 if (action.type === 'tool_call') {
-                    observation = await this._executeAction(action, runId);
+                    // 🎯 增强：传递思考超时信息给工具执行
+                    observation = await this._executeAction(action, runId, thinkTimeout);
                     
                     // 🎯 检查工具执行结果
                     if (observation.isError) {
@@ -138,7 +223,7 @@ export class AgentExecutor {
                     intermediateSteps.push({ action, observation });
                 }
                 
-                // 🎯 错误事件
+                // 🎯 错误事件 - 修复：现在可以安全访问 thinkTimeout
                 await this.callbackManager.invokeEvent('on_agent_iteration_error', {
                     name: 'agent_iteration',
                     run_id: runId,
@@ -146,7 +231,8 @@ export class AgentExecutor {
                         iteration: iteration + 1,
                         error: error.message,
                         action: action,
-                        consecutiveErrors: consecutiveErrors
+                        consecutiveErrors: consecutiveErrors,
+                        thinkTimeout: thinkTimeout // ✅ 修复：安全访问
                     }
                 });
 
@@ -167,7 +253,8 @@ export class AgentExecutor {
                     iteration: iteration + 1,
                     action: action,
                     intermediateSteps: intermediateSteps.length,
-                    consecutiveErrors: consecutiveErrors
+                    consecutiveErrors: consecutiveErrors,
+                    thinkTimeout: thinkTimeout // 🎯 记录当前迭代的超时时间
                 }
             });
         }
@@ -191,7 +278,9 @@ export class AgentExecutor {
                 intermediateSteps: intermediateSteps.length,
                 success: !!finalAnswer,
                 hasErrors: intermediateSteps.some(step => step.observation.isError),
-                consecutiveErrors: consecutiveErrors
+                consecutiveErrors: consecutiveErrors,
+                taskComplexity: taskComplexity,
+                maxThinkTimeout: this.maxThinkTimeout
             }
         });
 
@@ -202,14 +291,15 @@ export class AgentExecutor {
             agentRunId: runId,
             type: 'agent_execution',
             iterations: iteration + 1,
-            hasErrors: intermediateSteps.some(step => step.observation.isError)
+            hasErrors: intermediateSteps.some(step => step.observation.isError),
+            taskComplexity: taskComplexity
         };
     }
 
     /**
-     * 🎯 执行行动（工具调用）
+     * 🎯 执行行动（工具调用）- 增强版本
      */
-    async _executeAction(action, runId) {
+    async _executeAction(action, runId, thinkTimeout = null) {
         const { tool_name, parameters } = action;
         
         console.log(`[AgentExecutor] 执行工具: ${tool_name}`, parameters);
@@ -220,7 +310,8 @@ export class AgentExecutor {
             run_id: runId,
             data: {
                 tool_name,
-                parameters
+                parameters,
+                thinkTimeout: thinkTimeout // 🎯 传递思考超时信息
             }
         });
 
@@ -230,14 +321,22 @@ export class AgentExecutor {
                 throw new Error(`未知的工具: ${tool_name}。可用工具: ${Object.keys(this.tools).join(', ')}`);
             }
 
-            // 🎯 执行工具调用（通过中间件包装）
+            // 🎯 执行工具调用（通过中间件包装）- 增强：传递思考超时信息
+            const executionContext = { 
+                runId, 
+                callbackManager: this.callbackManager 
+            };
+            
+            // 🎯 如果提供了思考超时，传递给工具作为参考
+            if (thinkTimeout !== null) {
+                executionContext.thinkTimeout = thinkTimeout;
+                console.log(`⏱️ 工具执行协调: 当前思考超时 ${thinkTimeout}ms`);
+            }
+
             const observation = await this.callbackManager.wrapToolCall(
                 { toolName: tool_name, parameters },
                 async (request) => {
-                    return await tool.invoke(request.parameters, { 
-                        runId, 
-                        callbackManager: this.callbackManager 
-                    });
+                    return await tool.invoke(request.parameters, executionContext);
                 }
             );
 
@@ -248,7 +347,8 @@ export class AgentExecutor {
                 data: {
                     tool_name,
                     result: observation,
-                    success: true
+                    success: true,
+                    thinkTimeout: thinkTimeout // 🎯 记录思考超时信息
                 }
             });
 
@@ -264,7 +364,8 @@ export class AgentExecutor {
                 data: {
                     tool_name,
                     error: error.message,
-                    parameters
+                    parameters,
+                    thinkTimeout: thinkTimeout // 🎯 记录思考超时信息
                 }
             });
 
@@ -322,7 +423,7 @@ export class AgentExecutor {
     }
 
     /**
-     * 🎯 新增：判断是否为严重错误
+     * 🎯 判断是否为严重错误
      */
     _isCriticalError(error) {
         const criticalPatterns = [
@@ -339,14 +440,14 @@ export class AgentExecutor {
     }
 
     /**
-     * 🎯 新增：处理连续错误
+     * 🎯 处理连续错误
      */
     _handleConsecutiveErrors(intermediateSteps, errorCount) {
         return `🤖 Agent执行因连续错误过多而终止（${errorCount}次连续错误）。\n\n请尝试简化问题或检查工具可用性。`;
     }
 
     /**
-     * 🎯 新增：处理严重错误
+     * 🎯 处理严重错误
      */
     _handleCriticalError(error, intermediateSteps, consecutiveErrors) {
         return `🤖 Agent执行遇到严重错误: ${error.message}\n\n连续错误次数: ${consecutiveErrors}\n\n建议检查问题表述或稍后重试。`;
@@ -360,6 +461,7 @@ export class AgentExecutor {
             maxIterations: this.maxIterations,
             availableTools: Object.keys(this.tools),
             toolsCount: Object.keys(this.tools).length,
+            maxThinkTimeout: this.maxThinkTimeout,
             type: 'react_agent_executor'
         };
     }

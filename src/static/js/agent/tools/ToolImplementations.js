@@ -13,13 +13,13 @@ class ProxiedTool extends BaseTool {
     _getToolTimeout(toolName) {
         const timeouts = {
             'python_sandbox': 60000,    // 代码执行需要更长时间
-            'tavily_search': 15000,     // 搜索应该较快
-            'firecrawl': 30000,         // 网页抓取中等
+            'tavily_search': 20000,     // 搜索应该较快
+            'firecrawl': 45000,         // 网页抓取中等
             'crawl4ai': 45000,          // 深度爬取需要时间
-            'stockfish_analyzer': 25000, // 棋局分析中等
-            'glm4v_analyze_image': 20000, // 图像分析中等
+            'stockfish_analyzer': 30000, // 棋局分析中等
+            'glm4v_analyze_image': 25000, // 图像分析中等
             'mcp_tool_catalog': 10000,  // 工具目录查询应该很快
-            'default': 20000            // 默认20秒
+            'default': 30000            // 默认30秒
         };
         return timeouts[toolName] || timeouts.default;
     }

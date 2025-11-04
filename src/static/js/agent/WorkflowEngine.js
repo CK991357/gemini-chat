@@ -128,57 +128,106 @@ export class WorkflowEngine {
   }
 
   /**
+   * 🎯 收集部分结果（安全版本）
+   */
+  _collectPartialResults(workflowResult) {
+    if (!workflowResult || !workflowResult.steps) {
+        return [];
+    }
+    
+    return workflowResult.steps
+        .filter(step => step && step.success && step.output)
+        .map(step => ({
+            stepName: step.step || '未知步骤',
+            output: step.output,
+            executionTime: step.executionTime || 0,
+            timestamp: new Date().toISOString()
+        }));
+  }
+
+  /**
+   * 🎯 检查恢复可能性
+   */
+  _canResumeFromStep(stepIndex, workflow) {
+    if (!workflow || !workflow.steps) return false;
+    if (stepIndex >= workflow.steps.length - 1) return false;
+    
+    const remainingSteps = workflow.steps.slice(stepIndex);
+    return remainingSteps.some(step => !step.critical) || remainingSteps.length > 0;
+  }
+
+  /**
    * 🎯 流式工作流执行引擎（支持取消功能）
    */
   async* stream(workflow, context = {}) {
     const { apiHandler, apiKey, model, stepOutputs = {}, isCancelled } = context;
     const runId = `run_${Date.now()}`;
+    const workflowStartTime = Date.now(); // 🎯 记录开始时间
 
     try {
-      // 🎯 触发工作流开始事件
-      yield {
-        event: 'on_workflow_start',
-        name: 'workflow_start',
-        run_id: runId,
-        data: { workflow },
-        metadata: { timestamp: Date.now() }
-      };
-
-      const results = {
-        workflowName: workflow.name,
-        success: true,
-        steps: [],
-        summary: {
-          totalSteps: workflow.steps.length,
-          successfulSteps: 0,
-          totalExecutionTime: 0
-        }
-      };
-
-      // 🎯 按顺序执行每个步骤
-      for (let stepIndex = 0; stepIndex < workflow.steps.length; stepIndex++) {
-        // ✨ 在每个步骤开始前检查取消标志
-        if (isCancelled && isCancelled()) {
-          console.log(`[WorkflowEngine] 检测到取消信号，在步骤 ${stepIndex + 1} 前中止。`);
-          
-          yield {
-            event: 'on_workflow_cancelled',
-            name: 'workflow_cancelled',
+        // 🎯 触发工作流开始事件
+        yield {
+            event: 'on_workflow_start',
+            name: 'workflow_start',
             run_id: runId,
-            data: {
-              cancelledAtStep: stepIndex,
-              stepName: workflow.steps[stepIndex]?.name,
-              reason: "用户取消"
-            },
-            metadata: {
-              userAction: true,
-              completedSteps: stepIndex
+            data: { workflow },
+            metadata: { timestamp: Date.now() }
+        };
+
+        const results = {
+            workflowName: workflow.name,
+            success: true,
+            steps: [],
+            summary: {
+                totalSteps: workflow.steps.length,
+                successfulSteps: 0,
+                totalExecutionTime: 0
             }
-          };
-          
-          results.success = false;
-          break; // ✨ 退出循环
-        }
+        };
+
+        // 🎯 按顺序执行每个步骤
+        for (let stepIndex = 0; stepIndex < workflow.steps.length; stepIndex++) {
+            // 🎯 在每个步骤开始前检查取消标志
+            if (isCancelled && isCancelled()) {
+                console.log(`[WorkflowEngine] 检测到取消信号，在步骤 ${stepIndex + 1} 前中止`);
+                
+                const completedSteps = results.steps.filter(step => step.success);
+                const partialResults = this._collectPartialResults(results);
+                const progress = `${completedSteps.length}/${workflow.steps.length}`;
+                
+                yield {
+                    event: 'on_workflow_cancelled',
+                    name: 'workflow_cancelled',
+                    run_id: runId,
+                    data: {
+                        cancelledAtStep: stepIndex,
+                        stepName: workflow.steps[stepIndex]?.name,
+                        reason: "用户取消",
+                        completedSteps: completedSteps,
+                        partialResults: partialResults,
+                        progress: progress,
+                        canResume: this._canResumeFromStep(stepIndex, workflow),
+                        totalExecutionTime: Date.now() - workflowStartTime
+                    },
+                    metadata: {
+                        userAction: true,
+                        completedSteps: completedSteps.length,
+                        partialResultsCount: partialResults.length
+                    }
+                };
+                
+                results.success = false;
+                results.cancellationInfo = {
+                    cancelled: true,
+                    cancelledAt: new Date().toISOString(),
+                    cancelledAtStep: stepIndex,
+                    completedSteps: completedSteps.length,
+                    partialResults: partialResults,
+                    totalExecutionTime: Date.now() - workflowStartTime
+                };
+                
+                break;
+            }
 
         const step = workflow.steps[stepIndex];
         const stepStartTime = Date.now();
@@ -204,29 +253,48 @@ export class WorkflowEngine {
             throw new Error(`未知的步骤类型: ${step.type}`);
           }
 
-          // ✨ 在步骤执行完成后再次检查取消标志
-          if (isCancelled && isCancelled()) {
-            console.log(`[WorkflowEngine] 检测到取消信号，在步骤 ${stepIndex + 1} 完成后中止。`);
-            
-            yield {
-              event: 'on_workflow_cancelled',
-              name: 'workflow_cancelled',
-              run_id: runId,
-              data: {
-                cancelledAtStep: stepIndex,
-                stepName: workflow.steps[stepIndex]?.name,
-                reason: "用户取消",
-                stepResult: stepResult // 包含已完成的步骤结果
-              },
-              metadata: {
-                userAction: true,
-                completedSteps: stepIndex + 1
-              }
-            };
-            
-            results.success = false;
-            break; // ✨ 退出循环
-          }
+                // 🎯 在步骤执行完成后再次检查取消标志
+                if (isCancelled && isCancelled()) {
+                    console.log(`[WorkflowEngine] 检测到取消信号，在步骤 ${stepIndex + 1} 完成后中止`);
+                    
+                    const completedSteps = results.steps.filter(step => step.success);
+                    const partialResults = this._collectPartialResults(results);
+                    const progress = `${completedSteps.length}/${workflow.steps.length}`;
+                    
+                    yield {
+                        event: 'on_workflow_cancelled',
+                        name: 'workflow_cancelled',
+                        run_id: runId,
+                        data: {
+                            cancelledAtStep: stepIndex,
+                            stepName: workflow.steps[stepIndex]?.name,
+                            reason: "用户取消",
+                            completedSteps: completedSteps,
+                            partialResults: partialResults,
+                            progress: progress,
+                            canResume: this._canResumeFromStep(stepIndex + 1, workflow),
+                            totalExecutionTime: Date.now() - workflowStartTime,
+                            stepResult: stepResult // 包含已完成的步骤结果
+                        },
+                        metadata: {
+                            userAction: true,
+                            completedSteps: completedSteps.length,
+                            partialResultsCount: partialResults.length
+                        }
+                    };
+                    
+                    results.success = false;
+                    results.cancellationInfo = {
+                        cancelled: true,
+                        cancelledAt: new Date().toISOString(),
+                        cancelledAtStep: stepIndex,
+                        completedSteps: completedSteps.length,
+                        partialResults: partialResults,
+                        totalExecutionTime: Date.now() - workflowStartTime
+                    };
+                    
+                    break;
+                }
 
           const stepExecutionTime = Date.now() - stepStartTime;
           results.summary.totalExecutionTime += stepExecutionTime;
@@ -304,15 +372,19 @@ export class WorkflowEngine {
         }
       }
 
-      // 🎯 触发工作流结束事件
+      // 🎯 触发工作流结束事件（包含取消状态）
       yield {
         event: 'on_workflow_end',
         name: 'workflow_end',
         run_id: runId,
-        data: { result: results },
+        data: {
+          result: results,
+          wasCancelled: isCancelled && isCancelled()
+        },
         metadata: {
           timestamp: Date.now(),
-          cancelled: isCancelled && isCancelled() // ✨ 标记是否被取消
+          cancelled: isCancelled && isCancelled(),
+          totalExecutionTime: Date.now() - workflowStartTime
         }
       };
 
@@ -323,7 +395,10 @@ export class WorkflowEngine {
         name: 'workflow_error',
         run_id: runId,
         data: { error: error.message },
-        metadata: { timestamp: Date.now() }
+        metadata: {
+          timestamp: Date.now(),
+          wasCancelled: isCancelled && isCancelled()
+        }
       };
     }
   }

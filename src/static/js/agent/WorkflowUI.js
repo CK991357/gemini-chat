@@ -3,6 +3,7 @@ export class WorkflowUI {
     this.container = document.getElementById(containerId) || this.createContainer();
     this.currentWorkflow = null;
     this._isWorkflowActive = false; // ✨ 添加内部状态跟踪
+    this._bindEventListeners(); // ✨ 绑定一次性事件监听器
   }
 
   // ✨ 新增：检查工作流是否激活的方法
@@ -48,7 +49,7 @@ export class WorkflowUI {
       </div>
     `;
     
-    this.attachEventListeners();
+    // this.attachEventListeners(); // ✨ 移除，事件监听器已在构造函数中绑定
     this.show();
   }
 
@@ -104,43 +105,137 @@ export class WorkflowUI {
     this.attachCompletionEvents();
   }
 
-  // ✨ 新增：显示取消确认对话框
-  showCancelConfirmation() {
-    return confirm('确定要取消当前工作流执行吗？');
-  }
+  /**
+ * 🎯 增强取消确认对话框（响应式设计）
+ */
+showCancelConfirmation(currentProgress = { completed: 0, total: 0 }) {
+    return new Promise((resolve) => {
+        // 🎯 响应式消息设计
+        const isMobile = window.innerWidth < 768;
+        const messages = {
+            full: [
+                `确定要取消当前工作流执行吗？`,
+                ``,
+                `📊 进度: ${currentProgress.completed}/${currentProgress.total} 步骤`,
+                `✅ 已完成步骤会保留`,
+                `🔍 可查看部分结果`,
+                `🔄 支持稍后继续`
+            ],
+            compact: [
+                `取消工作流执行？`,
+                `进度: ${currentProgress.completed}/${currentProgress.total}`,
+                `已完成步骤将保留`
+            ]
+        };
+        
+        const message = (isMobile ? messages.compact : messages.full).join('\n');
+        const confirmed = confirm(message);
+        resolve(confirmed);
+    });
+}
 
-  // ✨ 新增：显示取消状态
-  showCancelledState() {
-    if (!this._isWorkflowActive) return;
+/**
+ * 🎯 安全显示取消摘要页面
+ */
+showCancellationSummary(cancelData) {
+    const { completedSteps, partialResults, progress, cancelledAtStep } = cancelData;
     
-    const panel = this.container.querySelector('.workflow-panel');
-    panel.classList.add('workflow-cancelled');
+    // 🎯 创建安全的DOM结构
+    const summaryElement = document.createElement('div');
+    summaryElement.className = 'cancellation-summary';
     
-    const cancelledHTML = `
-      <div class="workflow-cancelled">
-        <div class="cancelled-header">
-          <span class="cancelled-icon">⏹️</span>
-          <h4>工作流已取消</h4>
-        </div>
+    // 🎯 构建头部
+    const header = document.createElement('div');
+    header.className = 'summary-header';
+    header.innerHTML = '<span class="icon">⏹️</span><h4>工作流已取消</h4>';
+    
+    // 🎯 构建进度信息
+    const progressEl = document.createElement('div');
+    progressEl.className = 'summary-progress';
+    progressEl.textContent = `取消时进度: ${progress}`;
+    
+    summaryElement.appendChild(header);
+    summaryElement.appendChild(progressEl);
+    
+    // 🎯 安全构建已完成步骤列表
+    if (completedSteps.length > 0) {
+        const stepsSection = document.createElement('div');
+        stepsSection.className = 'completed-steps';
         
-        <div class="cancelled-message">
-          <p>工作流执行已被用户取消</p>
-        </div>
+        const stepsTitle = document.createElement('strong');
+        stepsTitle.textContent = `已完成步骤 (${completedSteps.length}个):`;
         
-        <div class="cancelled-actions">
-          <button class="btn-close-workflow">关闭面板</button>
-        </div>
-      </div>
-    `;
+        const stepsList = document.createElement('ul');
+        completedSteps.forEach(step => {
+            const item = document.createElement('li');
+            item.textContent = `✅ ${this.escapeHtml(step.step)} - ${step.executionTime}ms`;
+            stepsList.appendChild(item);
+        });
+        
+        stepsSection.appendChild(stepsTitle);
+        stepsSection.appendChild(stepsList);
+        summaryElement.appendChild(stepsSection);
+    }
     
-    // 隐藏控制按钮
+    // 🎯 安全构建部分结果预览
+    if (partialResults && partialResults.length > 0) {
+        const resultsSection = document.createElement('div');
+        resultsSection.className = 'partial-results';
+        
+        const resultsTitle = document.createElement('strong');
+        resultsTitle.textContent = '部分结果:';
+        
+        const resultsContainer = document.createElement('div');
+        resultsContainer.className = 'results-preview';
+        
+        partialResults.forEach(result => {
+            const details = document.createElement('details');
+            const summary = document.createElement('summary');
+            summary.textContent = this.escapeHtml(result.stepName);
+            
+            const pre = document.createElement('pre');
+            pre.textContent = typeof result.output === 'string'
+                ? result.output
+                : JSON.stringify(result.output, null, 2);
+            
+            details.appendChild(summary);
+            details.appendChild(pre);
+            resultsContainer.appendChild(details);
+        });
+        
+        resultsSection.appendChild(resultsTitle);
+        resultsSection.appendChild(resultsContainer);
+        summaryElement.appendChild(resultsSection);
+    }
+    
+    // 🎯 构建操作按钮
+    const actionsSection = document.createElement('div');
+    actionsSection.className = 'cancellation-actions';
+    
+    const viewDetailsBtn = document.createElement('button');
+    viewDetailsBtn.className = 'btn-view-details';
+    viewDetailsBtn.textContent = '查看详细报告';
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-close';
+    closeBtn.textContent = '关闭面板';
+    
+    actionsSection.appendChild(viewDetailsBtn);
+    actionsSection.appendChild(closeBtn);
+    summaryElement.appendChild(actionsSection);
+    
+    // 🎯 插入到UI中
+    const stepsContainer = this.container.querySelector('.workflow-steps');
+    if (stepsContainer) {
+        stepsContainer.insertAdjacentElement('afterend', summaryElement);
+    }
+    
+    // 🎯 隐藏控制按钮
     const controls = this.container.querySelector('.workflow-controls');
-    if (controls) controls.style.display = 'none';
-    
-    // 添加取消状态显示
-    panel.querySelector('.workflow-steps').insertAdjacentHTML('afterend', cancelledHTML);
-    this.attachCompletionEvents();
-  }
+    if (controls) {
+        controls.style.display = 'none';
+    }
+}
 
   // 私有方法
   renderSteps(steps) {
@@ -211,36 +306,55 @@ export class WorkflowUI {
     return container;
   }
 
-  attachEventListeners() {
-    // 开始执行按钮
-    this.container.querySelector('.btn-start-workflow')?.addEventListener('click', () => {
-      // ✨ 点击开始后，显示取消按钮，隐藏开始和跳过按钮
-      this.container.querySelector('.btn-start-workflow').style.display = 'none';
-      this.container.querySelector('.btn-skip-workflow').style.display = 'none';
-      this.container.querySelector('.btn-cancel-workflow').style.display = 'inline-block';
-      this.emitEvent('workflow-start');
-    });
-    
-    // 跳过按钮
-    this.container.querySelector('.btn-skip-workflow')?.addEventListener('click', () => {
-      this.hide();
-      this.emitEvent('workflow-skip');
-    });
+  /**
+ * 🎯 HTML转义辅助方法
+ */
+escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 
-    // ✨ 为取消按钮添加事件监听
-    this.container.querySelector('.btn-cancel-workflow')?.addEventListener('click', () => {
-      if (this.showCancelConfirmation()) {
-        this.hide();
-        this.emitEvent('workflow-cancel');
-      }
+/**
+ * 🎯 初始化事件监听器（一次性绑定）
+ */
+_bindEventListeners() {
+    // 🎯 使用事件委托，避免重复绑定
+    this.container.addEventListener('click', (e) => {
+        // 开始执行按钮处理
+        if (e.target.closest('.btn-start-workflow')) {
+            // ✨ 点击开始后，显示取消按钮，隐藏开始和跳过按钮
+            this.container.querySelector('.btn-start-workflow').style.display = 'none';
+            this.container.querySelector('.btn-skip-workflow').style.display = 'none';
+            this.container.querySelector('.btn-cancel-workflow').style.display = 'inline-block';
+            this.emitEvent('workflow-start');
+        }
+        // 跳过按钮处理
+        else if (e.target.closest('.btn-skip-workflow')) {
+            this.hide();
+            this.emitEvent('workflow-skip');
+        }
+        // 取消按钮处理
+        else if (e.target.closest('.btn-cancel-workflow')) {
+            // 🎯 触发取消事件，由外部处理确认逻辑
+            this.emitEvent('workflow-cancel-request');
+        }
+        // 查看详情按钮处理
+        else if (e.target.closest('.btn-view-details')) {
+            this.emitEvent('workflow-cancellation-details', {
+                timestamp: new Date().toISOString()
+            });
+        }
+        // 关闭按钮处理 (包括完成和取消后的关闭)
+        else if (e.target.closest('.btn-close') || e.target.closest('.btn-close-workflow')) {
+            this.hide();
+        }
     });
-  }
-
-  attachCompletionEvents() {
-    this.container.querySelector('.btn-close-workflow')?.addEventListener('click', () => {
-      this.hide();
-    });
-  }
+}
 
   emitEvent(eventName, detail = null) {
     const event = new CustomEvent(`workflow:${eventName}`, { detail });

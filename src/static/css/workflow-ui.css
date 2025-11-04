@@ -306,3 +306,119 @@
   background: #28a745;
   color: white;
 }
+
+/* 取消摘要样式 */
+.cancellation-summary {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.cancellation-summary .summary-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.cancellation-summary .summary-header .icon {
+    font-size: 1.5em;
+    margin-right: 8px;
+}
+
+.cancellation-summary .summary-header h4 {
+    margin: 0;
+    color: #856404;
+}
+
+.cancellation-summary .summary-progress {
+    margin-bottom: 12px;
+    font-weight: 500;
+}
+
+.cancellation-summary .completed-steps {
+    margin-bottom: 12px;
+}
+
+.cancellation-summary .completed-steps ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+}
+
+.cancellation-summary .completed-steps li {
+    margin: 4px 0;
+    font-size: 0.9em;
+}
+
+.cancellation-summary .partial-results {
+    margin-bottom: 16px;
+}
+
+.cancellation-summary .results-preview {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 8px;
+}
+
+.cancellation-summary .results-preview details {
+    margin-bottom: 8px;
+}
+
+.cancellation-summary .results-preview summary {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.cancellation-summary .results-preview pre {
+    background: white;
+    padding: 8px;
+    border-radius: 4px;
+    margin: 8px 0 0 0;
+    font-size: 0.8em;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.cancellation-summary .cancellation-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.cancellation-summary .btn-view-details {
+    background: #17a2b8;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.cancellation-summary .btn-close {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* 移动端适配 */
+@media (max-width: 767px) {
+    .cancellation-summary {
+        padding: 12px;
+    }
+    
+    .cancellation-summary .cancellation-actions {
+        flex-direction: column;
+    }
+    
+    .cancellation-summary .results-preview {
+        max-height: 150px;
+    }
+}
