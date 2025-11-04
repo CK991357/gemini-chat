@@ -1,5 +1,4 @@
 import { EventEmitter } from 'https://cdn.skypack.dev/eventemitter3';
-import { CONFIG } from '../config/config.js';
 import { ToolManager } from '../tools/tool-manager.js';
 import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { Logger } from '../utils/logger.js';
@@ -27,8 +26,6 @@ export class MultimodalLiveClient extends EventEmitter {
         this.config = null;
         this.send = this.send.bind(this);
         this.toolManager = new ToolManager();
-        // 🔥 新增：视频传输状态初始化
-        this.videoState = null;
     }
 
     /**
@@ -228,80 +225,6 @@ export class MultimodalLiveClient extends EventEmitter {
         const data = { realtimeInput: { mediaChunks: chunks } };
         this._sendDirect(data);
         //this.log(`client.realtimeInput`, message);
-    }
-
-    /**
-     * 🔥 修正：视频队列管理方法 - 处理单个视频块
-     * @param {Object} videoChunk - 单个视频数据块
-     * @private
-     */
-    manageVideoQueue(videoChunk) {
-        // 初始化视频状态
-        if (!this.videoState) {
-            const videoConfig = CONFIG.WEBSOCKET_VIDEO || {};
-            this.videoState = {
-                lastVideoTime: 0,
-                videoQueue: [],
-                isProcessing: false,
-                maxQueueSize: videoConfig.TRANSMISSION?.MAX_QUEUE_SIZE || 3,
-                transmitInterval: videoConfig.TRANSMISSION?.ADAPTIVE_INTERVAL || 100
-            };
-        }
-        
-        // 限制队列大小，丢弃旧帧
-        if (this.videoState.videoQueue.length >= this.videoState.maxQueueSize) {
-            this.videoState.videoQueue.shift();
-        }
-        
-        // 🔥 修正：push单个视频块
-        this.videoState.videoQueue.push(videoChunk);
-        
-        // 如果没有在处理，开始处理队列
-        if (!this.videoState.isProcessing) {
-            this.processVideoQueue();
-        }
-    }
-
-    /**
-     * 🔥 修正：处理视频队列
-     * @private
-     */
-    async processVideoQueue() {
-        if (!this.videoState || this.videoState.isProcessing || this.videoState.videoQueue.length === 0) {
-            return;
-        }
-        
-        this.videoState.isProcessing = true;
-        
-        while (this.videoState.videoQueue.length > 0) {
-            const videoChunk = this.videoState.videoQueue.shift();
-            
-            try {
-                const data = { realtimeInput: { mediaChunks: [videoChunk] } };
-                this._sendDirect(data);
-                
-                Logger.debug(`Video frame sent (${Math.round(videoChunk.data.length/1024)}KB), queue: ${this.videoState.videoQueue.length}`);
-                
-                // 控制发送速率
-                await new Promise(resolve => setTimeout(resolve, this.videoState.transmitInterval));
-                
-            } catch (error) {
-                Logger.error('Video transmission error:', error);
-                break;
-            }
-        }
-        
-        this.videoState.isProcessing = false;
-    }
-
-    /**
-     * 🔥 新增：立即发送方法
-     * @param {Array} chunks - 要立即发送的数据块
-     * @private
-     */
-    sendImmediate(chunks) {
-        const data = { realtimeInput: { mediaChunks: chunks } };
-        this._sendDirect(data);
     }
 
     /**
