@@ -1,9 +1,6 @@
 import { ApplicationError, ErrorCodes } from '../utils/error-boundary.js';
 import { Logger } from '../utils/logger.js';
 import { VideoRecorder } from './video-recorder.js';
-// 🔥 修正：导入配置和网络优化器
-import { CONFIG } from '../config/config.js';
-import { NetworkOptimizer } from '../utils/network-optimizer.js';
 
 /**
  * @fileoverview Manages video capture and processing with motion detection and frame preview.
@@ -59,12 +56,6 @@ export class VideoManager {
                 'Flip camera button element not found',
                 ErrorCodes.INVALID_STATE
             );
-        }
-        
-        // 🔥 修正：使用导入的 CONFIG
-        const videoConfig = CONFIG.WEBSOCKET_VIDEO || {};
-        if (videoConfig.OPTIMIZATION_ENABLED) {
-            this.networkOptimizer = new NetworkOptimizer();
         }
         
         // 在构造函数中直接绑定事件
@@ -142,28 +133,20 @@ export class VideoManager {
             Logger.info('Starting video manager');
             this.videoContainer.style.display = 'block';
             console.log("fps:",fps);
-            
-            // 🔥 修改：传递fps参数
             this.videoRecorder = new VideoRecorder({fps: fps});
                         
-            await this.videoRecorder.start(this.previewVideo, this.facingMode, (base64Data) => {
-                if (!this.isActive) return;
-
-                // 🔥 修正：网络优化逻辑
-                let interval = this.FRAME_INTERVAL;
-                if (this.networkOptimizer) {
-                    const networkSettings = this.networkOptimizer.getCurrentSettings();
-                    interval = networkSettings.interval;
-                }
-
-                const currentTime = Date.now();
-                if (currentTime - this.lastFrameTime < interval) {
+            await this.videoRecorder.start(this.previewVideo,this.facingMode, (base64Data) => {
+                if (!this.isActive) {
+                    //Logger.debug('Skipping frame - inactive');
                     return;
                 }
 
-                // 处理帧数据
+                const currentTime = Date.now();
+                if (currentTime - this.lastFrameTime < this.FRAME_INTERVAL) {
+                    return;
+                }
+
                 this.processFrame(base64Data, onFrame);
-                this.lastFrameTime = currentTime;
             });
 
             this.isActive = true;
@@ -217,26 +200,10 @@ export class VideoManager {
             // const size = Math.round(base64Data.length / 1024); // 移除未使用的变量
             // Logger.debug(`Processing frame (${size}KB) - frame #${this.frameCount}`);
 
-            // 🔥 新增：网络优化传输记录
-            if (this.networkOptimizer) {
-                const startTime = Date.now();
-                
-                onFrame({
-                    mimeType: "image/jpeg",
-                    data: base64Data,
-                    timestamp: startTime,
-                    frameId: this.frameCount
-                });
-                
-                // 记录网络指标（假设成功）
-                this.networkOptimizer.recordTransmission(true, Date.now() - startTime);
-            } else {
-                // 原有逻辑
-                onFrame({
-                    mimeType: "image/jpeg",
-                    data: base64Data
-                });
-            }
+            onFrame({
+                mimeType: "image/jpeg",
+                data: base64Data
+            });
         };
         img.src = 'data:image/jpeg;base64,' + base64Data;
     }
