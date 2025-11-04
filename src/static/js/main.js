@@ -865,7 +865,23 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
         console.log(`🔍 [工具跳过] 模型 ${modelName} 未配置工具，使用标准请求`);
     }
 
-    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+    // 🎯 关键修复：根据模型类型选择 WebSocket 或 HTTP 路由
+    if (selectedModelConfig.isWebSocket) {
+        // WebSocket 模式：直接通过 client 发送消息
+        // 消息内容需要从 chatHistory 中提取最新的用户消息
+        const latestUserMessage = chatHistory[chatHistory.length - 1];
+        const parts = latestUserMessage.content;
+        
+        // 确保 WebSocket 客户端已连接
+        if (isConnected) {
+            client.send(parts);
+        } else {
+            chatUI.logMessage('WebSocket 未连接，无法发送消息', 'system');
+        }
+    } else {
+        // HTTP 模式：通过 chatApiHandler 发送请求
+        await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+    }
 }
 
 /**
