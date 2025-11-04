@@ -83,18 +83,31 @@
                 -   [`vol-meter.js`](src/static/js/audio/worklets/vol-meter.js): 计算音频流实时音量级别 (RMS) 的 AudioWorkletProcessor，用于在录制或播放期间提供视觉反馈。
         -   `src/static/js/main.js`: 主要的客户端应用程序逻辑。
         -   **代理模块 (`src/static/js/agent/`)**: 包含集成 AI 代理和代理其工具调用的逻辑。
-            -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): 充当由 Qwen 模型发起的多云平台 (MCP) 工具调用的客户端适配器。它从 `chat-api-handler.js` 接收工具调用请求（包含 `tool_name` 和 `parameters`），并将它们代理到后端的 `/api/mcp-proxy` 端点。这对于在应用程序内启用灵活的 AI 代理功能至关重要。
-            -   **[`CallbackManager.js`](src/static/js/agent/CallbackManager.js)**: **新增模块** - 结构化事件管理器，提供 LangChain 风格的事件流系统，用于协调智能代理工作流的各个组件。
-            -   **[`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js)**: **新增模块** - 增强技能管理器，基于工具执行历史提供智能的技能匹配和优化。
+            -   **[`AgentExecutor.js`](src/static/js/agent/AgentExecutor.js)**: **新增模块** - 纯粹的 ReAct 循环执行器，包含错误恢复机制和智能超时优化，支持动态思考超时策略和智能任务复杂度评估。
+            -   **[`AgentLogic.js`](src/static/js/agent/AgentLogic.js)**: **新增模块** - Agent 的思考核心，负责规划下一步行动，实现 ReAct 格式的思考提示词构建。
+            -   **[`OutputParser.js`](src/static/js/agent/OutputParser.js)**: **新增模块** - 解析 LLM 响应，决定下一步行动（ReAct 格式），支持最终答案和工具调用解析。
+            -   **[`CallbackManager.js`](src/static/js/agent/CallbackManager.js)**: **新增模块** - 增强的回调管理器，支持中间件和 Agent 事件系统，提供结构化事件流管理。
             -   **[`Orchestrator.js`](src/static/js/agent/Orchestrator.js)**: **新增模块** - 智能代理协调器，负责分析用户请求并决定使用单步工具执行还是复杂工作流。
+            -   **[`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js)**: **新增模块** - 增强技能管理器，基于工具执行历史提供智能的技能匹配和优化。
             -   **[`WorkflowEngine.js`](src/static/js/agent/WorkflowEngine.js)**: **新增模块** - 工作流引擎，负责创建和执行多步骤的 AI 工作流。
-            -   **[`WorkflowTemplates.js`](src/static/js/agent/WorkflowTemplates.js)**: **新增模块** - 预定义的工作流模板库，包括网页分析、数据可视化和研究报告等模板。
             -   **[`WorkflowUI.js`](src/static/js/agent/WorkflowUI.js)**: **新增模块** - 工作流用户界面，提供工作流执行的可视化展示和交互控制。
+            -   **[`WorkflowTemplates.js`](src/static/js/agent/WorkflowTemplates.js)**: **新增模块** - 预定义的工作流模板库，包括网页分析、数据可视化和研究报告等模板。
+            -   **核心模块 (`src/static/js/agent/core/`)**: **新增模块** - Agent 系统核心组件。
+                -   [`AgentExecutor.js`](src/static/js/agent/core/AgentExecutor.js): ReAct 循环执行器核心实现
+                -   [`AgentLogic.js`](src/static/js/agent/core/AgentLogic.js): Agent 思考逻辑核心
+                -   [`OutputParser.js`](src/static/js/agent/core/OutputParser.js): 输出解析器核心
+            -   **中间件模块 (`src/static/js/agent/middlewares/`)**: **新增模块** - Agent 中间件系统。
+                -   [`PerformanceMonitorMiddleware.js`](src/static/js/agent/middlewares/PerformanceMonitorMiddleware.js): 性能监控中间件，收集工具和 LLM 调用的性能指标
+                -   [`SmartRetryMiddleware.js`](src/static/js/agent/middlewares/SmartRetryMiddleware.js): 智能重试中间件，根据错误类型和工具特性进行智能重试
+            -   **工具模块 (`src/static/js/agent/tools/`)**: **新增模块** - Agent 工具系统。
+                -   [`BaseTool.js`](src/static/js/agent/tools/BaseTool.js): 所有工具的抽象基类，确保接口一致性
+                -   [`ToolImplementations.js`](src/static/js/agent/tools/ToolImplementations.js): 通用代理工具实现，处理所有通过 MCP 代理的工具
             -   **处理器模块 (`src/static/js/agent/handlers/`)**: **新增模块** - 结构化事件处理器集合。
-                -   [`AnalyticsHandler.js`](src/static/js/agent/handlers/AnalyticsHandler.js): 分析处理器，收集和报告工作流执行指标。
-                -   [`LearningHandler.js`](src/static/js/agent/handlers/LearningHandler.js): 学习处理器，基于执行结果优化工具使用策略。
-                -   [`LoggingHandler.js`](src/static/js/agent/handlers/LoggingHandler.js): 日志处理器，记录详细的事件流信息。
-                -   [`WorkflowUIHandler.js`](src/static/js/agent/handlers/WorkflowUIHandler.js): UI 处理器，将事件转换为用户界面更新。
+                -   [`AnalyticsHandler.js`](src/static/js/agent/handlers/AnalyticsHandler.js): 分析处理器，收集和报告工作流执行指标
+                -   [`LearningHandler.js`](src/static/js/agent/handlers/LearningHandler.js): 学习处理器，基于执行结果优化工具使用策略
+                -   [`LoggingHandler.js`](src/static/js/agent/handlers/LoggingHandler.js): 日志处理器，记录详细的事件流信息
+                -   [`WorkflowUIHandler.js`](src/static/js/agent/handlers/WorkflowUIHandler.js): UI 处理器，将事件转换为用户界面更新
+            -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): 充当由 Qwen 模型发起的多云平台 (MCP) 工具调用的客户端适配器。它从 `chat-api-handler.js` 接收工具调用请求（包含 `tool_name` 和 `parameters`），并将它们代理到后端的 `/api/mcp-proxy` 端点。这对于在应用程序内启用灵活的 AI 代理功能至关重要。
         -   `src/static/js/attachments/`: 处理文件附件功能，如 `file-attachment.js`。
             -   [`file-attachment.js`](src/static/js/attachments/file-attachment.js): 定义 `AttachmentManager` 类，该类管理文件附件的所有逻辑（选择、验证、Base64 转换和 UI 预览显示），适用于单文件（"chat" 模式）和多文件（"vision" 模式）场景。**增强**: 现在与 `ImageCompressor` 集成，自动压缩所有模式下大于 1MB 的图像，提供压缩反馈并保持文件类型一致性。具有 `toggleCompression()` 方法用于运行时控制。
         -   **聊天模块 (`src/static/js/chat/`)**: 包含管理聊天 UI、API 交互和处理 AI 响应（包括工具调用）的核心逻辑。
@@ -665,23 +678,64 @@ skills/python-sandbox/
 
 ### 10.2 核心组件架构
 
-#### 10.2.1 CallbackManager - 结构化事件管理器
+#### 10.2.1 AgentExecutor - ReAct 循环执行器
+
+[`AgentExecutor.js`](src/static/js/agent/core/AgentExecutor.js) 是纯粹的 ReAct 循环执行器：
+
+- **智能超时策略**: 基于迭代次数、连续错误次数和任务复杂度动态调整思考超时
+- **错误恢复机制**: 支持连续错误计数和优雅降级
+- **迭代优化**: 根据执行阶段动态调整超时时间（首次思考延长，后期迭代收紧）
+- **上下文感知**: 基于可用工具数量智能调整思考时间
+
+```javascript
+// 智能超时策略示例
+_getThinkTimeout(iteration, consecutiveErrors, taskComplexity, context) {
+    const baseTimeouts = {
+        high: 75000,    // 复杂任务：75秒
+        medium: 35000,  // 中等任务：35秒  
+        low: 18000      // 简单任务：18秒
+    };
+    // 动态调整逻辑...
+}
+```
+
+#### 10.2.2 AgentLogic - 思考核心
+
+[`AgentLogic.js`](src/static/js/agent/core/AgentLogic.js) 负责 Agent 的思考规划：
+
+- **ReAct 格式提示词**: 构建标准化的思考-行动-观察循环提示词
+- **历史步骤集成**: 在提示词中包含之前的执行历史作为上下文
+- **响应解析**: 处理 LLM 响应并提取下一步行动
+- **错误处理**: 思考失败时的优雅错误处理
+
+#### 10.2.3 OutputParser - 输出解析器
+
+[`OutputParser.js`](src/static/js/agent/core/OutputParser.js) 解析 LLM 响应：
+
+- **ReAct 格式解析**: 识别最终答案和工具调用
+- **JSON 参数验证**: 安全解析工具调用参数
+- **错误恢复**: 解析失败时提供清晰的错误信息
+- **格式兼容性**: 支持标准 ReAct 格式响应
+
+#### 10.2.4 CallbackManager - 增强回调管理器
 
 [`CallbackManager.js`](src/static/js/agent/CallbackManager.js) 是整个代理系统的事件中枢：
 
 - **LangChain 兼容事件流**: 提供标准化的 `on_workflow_start`, `on_step_start`, `on_tool_start`, `on_ai_start` 等事件
-- **结构化事件数据**: 每个事件包含完整的上下文信息，包括运行ID、时间戳、元数据等
-- **多处理器支持**: 支持注册多个事件处理器，实现关注点分离
-- **事件历史记录**: 自动记录事件历史，支持调试和状态恢复
+- **中间件系统**: 支持性能监控、智能重试等中间件
+- **结构化事件数据**: 每个事件包含完整的上下文信息
+- **内存管理**: 自动清理事件历史，防止内存泄漏
 
-```javascript
-// 事件系统示例
-await callbackManager.onWorkflowStart(workflow);
-await callbackManager.onStepStart(step, stepIndex);
-await callbackManager.onToolStart(toolName, input, stepIndex);
-```
+#### 10.2.5 Orchestrator - 智能代理协调器
 
-#### 10.2.2 EnhancedSkillManager - 增强技能管理器
+[`Orchestrator.js`](src/static/js/agent/Orchestrator.js) 是整个系统的核心协调器：
+
+- **任务复杂度分析**: 自动分析用户请求，识别复杂任务模式
+- **智能路由决策**: 决定使用单步工具执行还是复杂工作流
+- **100%向后兼容**: 在现有系统基础上新增 Agent 能力，不影响现有功能
+- **优雅降级**: Agent 系统失败时自动降级到单工具或标准模式
+
+#### 10.2.6 EnhancedSkillManager - 增强技能管理器
 
 [`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js) 在基础技能管理系统之上提供智能优化：
 
@@ -690,16 +744,7 @@ await callbackManager.onToolStart(toolName, input, stepIndex);
 - **性能分析**: 提供工具使用统计和成功率分析
 - **参数优化**: 自动清理和优化工具参数
 
-#### 10.2.3 Orchestrator - 智能代理协调器
-
-[`Orchestrator.js`](src/static/js/agent/Orchestrator.js) 是整个系统的核心协调器：
-
-- **任务复杂度分析**: 自动分析用户请求，识别复杂任务模式
-- **智能路由决策**: 决定使用单步工具执行还是复杂工作流
-- **工作流生命周期管理**: 管理工作流的创建、执行和结果编译
-- **统一错误处理**: 提供标准化的错误处理和降级机制
-
-#### 10.2.4 WorkflowEngine - 工作流引擎
+#### 10.2.7 WorkflowEngine - 工作流引擎
 
 [`WorkflowEngine.js`](src/static/js/agent/WorkflowEngine.js) 负责工作流的创建和执行：
 
@@ -708,30 +753,43 @@ await callbackManager.onToolStart(toolName, input, stepIndex);
 - **步骤依赖管理**: 处理步骤间的数据依赖和参数传递
 - **真实工具集成**: 与现有 API 系统深度集成，支持真实工具调用
 
-#### 10.2.5 WorkflowTemplates - 工作流模板
-
-[`WorkflowTemplates.js`](src/static/js/agent/WorkflowTemplates.js) 提供预定义的工作流模板：
-
-- **网页分析工作流**: 自动爬取网页内容并进行分析总结
-- **数据可视化工作流**: 数据处理、分析和可视化生成
-- **研究报告工作流**: 信息收集、分析和报告生成
-- **可扩展架构**: 支持轻松添加新的工作流模板
-
-#### 10.2.6 WorkflowUI - 工作流用户界面
+#### 10.2.8 WorkflowUI - 工作流用户界面
 
 [`WorkflowUI.js`](src/static/js/agent/WorkflowUI.js) 提供工作流的可视化展示：
 
 - **实时进度显示**: 可视化展示工作流执行进度
 - **步骤状态监控**: 实时显示每个步骤的执行状态
-- **交互式控制**: 支持开始、跳过等用户交互
+- **交互式控制**: 支持开始、跳过、取消等用户交互
 - **完成状态展示**: 清晰展示工作流执行结果
 
-#### 10.2.7 事件处理器
+#### 10.2.9 中间件系统
 
-系统包含四个专门的事件处理器：
+**PerformanceMonitorMiddleware** ([`PerformanceMonitorMiddleware.js`](src/static/js/agent/middlewares/PerformanceMonitorMiddleware.js)):
+- 收集工具和 LLM 调用的性能指标
+- 提供详细的性能报告和统计信息
+- 支持定期数据清理和重置
+
+**SmartRetryMiddleware** ([`SmartRetryMiddleware.js`](src/static/js/agent/middlewares/SmartRetryMiddleware.js)):
+- 根据错误类型和工具特性进行智能重试
+- 支持指数退避和随机抖动
+- 工具特定的重试配置
+
+#### 10.2.10 工具系统
+
+**BaseTool** ([`BaseTool.js`](src/static/js/agent/tools/BaseTool.js)):
+- 所有工具的抽象基类，确保接口一致性
+- 统一的工具声明和调用接口
+- 配置化工具元数据管理
+
+**ToolImplementations** ([`ToolImplementations.js`](src/static/js/agent/tools/ToolImplementations.js)):
+- 通用代理工具实现，处理所有通过 MCP 代理的工具
+- 智能超时策略：根据工具类型设置合理的超时时间
+- 统一的错误处理和结果格式化
+
+#### 10.2.11 事件处理器
 
 - **AnalyticsHandler**: 收集和分析工作流执行指标
-- **LearningHandler**: 基于执行结果优化工具使用策略
+- **LearningHandler**: 基于执行结果优化工具使用策略  
 - **LoggingHandler**: 记录详细的事件流信息用于调试
 - **WorkflowUIHandler**: 将事件转换为用户界面更新
 
@@ -743,23 +801,24 @@ await callbackManager.onToolStart(toolName, input, stepIndex);
 2. **路由决策**: 
    - 简单任务: 使用 EnhancedSkillManager 选择最优工具直接执行
    - 复杂任务: 使用 WorkflowEngine 创建和执行多步骤工作流
+   - Agent任务: 使用 AgentExecutor 执行 ReAct 循环
 3. **执行监控**: 通过 CallbackManager 实时监控执行状态
 4. **结果编译**: 格式化执行结果返回给用户
 
-#### 10.3.2 工作流执行流程
+#### 10.3.2 ReAct 循环执行流程
+
+1. **思考阶段**: AgentLogic 分析当前状态并规划下一步行动
+2. **行动阶段**: AgentExecutor 执行工具调用或生成最终答案
+3. **观察阶段**: 收集工具执行结果并更新中间状态
+4. **循环控制**: 智能超时和错误恢复确保循环稳定性
+
+#### 10.3.3 工作流执行流程
 
 1. **工作流创建**: 基于模板或动态分析创建工作流
 2. **步骤顺序执行**: 按顺序执行工作流中的每个步骤
 3. **数据传递**: 前一步骤的输出作为后一步骤的输入
 4. **错误处理**: 支持关键步骤失败时的优雅降级
 5. **结果汇总**: 编译所有步骤结果生成最终输出
-
-#### 10.3.3 事件流处理
-
-1. **事件触发**: 各个组件在执行过程中触发结构化事件
-2. **处理器分发**: CallbackManager 将事件分发给所有注册的处理器
-3. **并行处理**: 各个处理器并行处理事件
-4. **状态同步**: 确保所有组件状态一致
 
 ### 10.4 集成优势
 
@@ -910,3 +969,7 @@ let handlers = {}; // 保存 handlers 对象
 -   **易于扩展**: 模块化的设计便于添加新功能
 -   **调试友好**: 统一的日志系统和错误处理
 -   **配置灵活**: 支持模型和提示词的动态配置
+
+---
+
+*文档更新完成：整合了智能代理系统的完整架构说明，包括新增的 Agent 核心组件、中间件系统、工具实现和事件处理器。*
