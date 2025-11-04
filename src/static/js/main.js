@@ -893,6 +893,12 @@ async function handleSendMessage(attachmentManager) {
     const attachedFiles = attachmentManager.getChatAttachedFiles();
     if (!messageText && attachedFiles.length === 0) return;
 
+    // 🎯 修复 2: 在发送前检查 WebSocket 连接状态
+    if (selectedModelConfig.isWebSocket && !isConnected) {
+        chatUI.logMessage('请先连接到 WebSocket 服务器', 'system');
+        return;
+    }
+
     if (!selectedModelConfig.isWebSocket && !currentSessionId) {
         historyManager.generateNewSession();
     }
@@ -973,7 +979,7 @@ async function handleSendMessage(attachmentManager) {
     } catch (error) {
         console.error("🤖 Agent/Standard模式执行失败:", error);
         // 可以在这里显示一个错误消息给用户
-        chatUI.addMessage({ role: 'assistant', content: `❌ 请求处理失败: ${error.message}` });
+        chatUI.logMessage(`❌ 请求处理失败: ${error.message}`, 'system');
     }
 }
 
