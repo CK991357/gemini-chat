@@ -865,23 +865,7 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
         console.log(`🔍 [工具跳过] 模型 ${modelName} 未配置工具，使用标准请求`);
     }
 
-    // 🎯 关键修复：根据模型类型选择 WebSocket 或 HTTP 路由
-    if (selectedModelConfig.isWebSocket) {
-        // WebSocket 模式：直接通过 client 发送消息
-        // 消息内容需要从 chatHistory 中提取最新的用户消息
-        const latestUserMessage = chatHistory[chatHistory.length - 1];
-        const parts = latestUserMessage.content;
-        
-        // 确保 WebSocket 客户端已连接
-        if (isConnected) {
-            client.send(parts);
-        } else {
-            chatUI.logMessage('WebSocket 未连接，无法发送消息', 'system');
-        }
-    } else {
-        // HTTP 模式：通过 chatApiHandler 发送请求
-        await chatApiHandler.streamChatCompletion(requestBody, apiKey);
-    }
+    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 }
 
 /**
@@ -892,12 +876,6 @@ async function handleSendMessage(attachmentManager) {
     const messageText = messageInput.value.trim();
     const attachedFiles = attachmentManager.getChatAttachedFiles();
     if (!messageText && attachedFiles.length === 0) return;
-
-    // 🎯 修复 2: 在发送前检查 WebSocket 连接状态
-    if (selectedModelConfig.isWebSocket && !isConnected) {
-        chatUI.logMessage('请先连接到 WebSocket 服务器', 'system');
-        return;
-    }
 
     if (!selectedModelConfig.isWebSocket && !currentSessionId) {
         historyManager.generateNewSession();
@@ -979,7 +957,7 @@ async function handleSendMessage(attachmentManager) {
     } catch (error) {
         console.error("🤖 Agent/Standard模式执行失败:", error);
         // 可以在这里显示一个错误消息给用户
-        chatUI.logMessage(`❌ 请求处理失败: ${error.message}`, 'system');
+        chatUI.addMessage({ role: 'assistant', content: `❌ 请求处理失败: ${error.message}` });
     }
 }
 
