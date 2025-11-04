@@ -830,11 +830,37 @@ print(json.dumps(result))
     DEFAULT_PROMPT_ID: 'default',
     // Default audio settings
     AUDIO: {
-        SAMPLE_RATE: 16000,
-        OUTPUT_SAMPLE_RATE: 24000,      // 修改为 16000，确保与输入采样率一致
-        BUFFER_SIZE: 2048,
-        CHANNELS: 1
+    SAMPLE_RATE: 16000,
+    OUTPUT_SAMPLE_RATE: 24000,      // 修改为 16000，确保与输入采样率一致
+    BUFFER_SIZE: 2048,
+    CHANNELS: 1
     },
+
+    // 🔥 新增：WebSocket 视频优化配置（默认关闭，不影响现有业务）
+    WEBSOCKET_VIDEO: {
+    OPTIMIZATION_ENABLED: false,  // 默认关闭，需要时手动开启
+
+    // 图像质量设置
+    IMAGE_QUALITY: 0.8,           // 从0.6提升到0.8
+    RESOLUTION: {
+        WIDTH: 1280,              // 从640提升到1280
+        HEIGHT: 720               // 从480提升到720
+    },
+    
+    // 传输优化
+    TRANSMISSION: {
+        FPS: 3,                   // 平衡帧率
+        ADAPTIVE_INTERVAL: 500,   // 传输间隔(ms)
+        MAX_QUEUE_SIZE: 3         // 队列大小
+    },
+    
+    // 图像预处理
+    PREPROCESSING: {
+        CONTRAST_ENHANCE: true,   // 对比度增强
+        BRIGHTNESS_ADJUST: 5      // 轻微提亮
+    }
+},
+    
     TRANSLATION: {
         MODELS: [
             {
