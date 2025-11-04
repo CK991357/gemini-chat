@@ -22,12 +22,11 @@ export class MultimodalLiveClient extends EventEmitter {
     constructor() {
         super();
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.baseUrl = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
+        this.baseUrl  = `${wsProtocol}//${window.location.host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
         this.ws = null;
         this.config = null;
         this.send = this.send.bind(this);
         this.toolManager = new ToolManager();
-        
         // 🔥 新增：视频传输状态初始化
         this.videoState = null;
     }
@@ -60,7 +59,7 @@ export class MultimodalLiveClient extends EventEmitter {
      * @returns {Promise<boolean>} - Resolves with true when the connection is established.
      * @throws {ApplicationError} - Throws an error if the connection fails.
      */
-    connect(config, apiKey) {
+    connect(config,apiKey) {
         this.config = {
             ...config,
             tools: [
@@ -71,39 +70,23 @@ export class MultimodalLiveClient extends EventEmitter {
         const ws = new WebSocket(`${this.baseUrl}?key=${apiKey}`);
 
         ws.addEventListener('message', async (evt) => {
-            try {
-                if (evt.data instanceof Blob) {
-                    await this.receive(evt.data);
-                } else {
-                    // 处理文本消息，检查是否为JSON
-                    const text = evt.data.toString();
-                    if (text.startsWith('{') || text.startsWith('[')) {
-                        // 是JSON，正常处理
-                        const response = JSON.parse(text);
-                        await this.handleJSONResponse(response);
-                    } else {
-                        // 非JSON响应，可能是错误信息
-                        Logger.error('Non-JSON response from server:', text);
-                        this.emit('error', new Error(`API returned non-JSON: ${text.substring(0, 100)}`));
-                    }
-                }
-            } catch (error) {
-                Logger.error('Message processing error:', error);
-                this.emit('error', error);
+            if (evt.data instanceof Blob) {
+                this.receive(evt.data);
+            } else {
+                console.log('Non-blob message', evt);
             }
         });
 
         return new Promise((resolve, reject) => {
             const onError = (ev) => {
                 this.disconnect(ws);
-                const error = new ApplicationError(
-                    `WebSocket connection error: ${ev.message || 'Connection failed'}`,
+                const message = `Could not connect to "${this.url}"`;
+                this.log(`server.${ev.type}`, message);
+                throw new ApplicationError(
+                    message,
                     ErrorCodes.WEBSOCKET_CONNECTION_FAILED,
                     { originalError: ev }
                 );
-                Logger.error('WebSocket error:', error);
-                this.emit('error', error);
-                reject(error);
             };
 
             ws.addEventListener('error', onError);
@@ -224,54 +207,27 @@ export class MultimodalLiveClient extends EventEmitter {
      * @param {Array} chunks - An array of media chunks to send. Each chunk should have a mimeType and data.
      */
     sendRealtimeInput(chunks) {
-        // 🔥 修正：添加安全检查
-        if (!chunks || !Array.isArray(chunks)) {
-            Logger.error('Invalid chunks data:', chunks);
-            return;
+        let hasAudio = false;
+        let hasVideo = false;
+        let totalSize = 0;
+
+        for (let i = 0; i < chunks.length; i++) {
+            const ch = chunks[i];
+            totalSize += ch.data.length;
+            if (ch.mimeType.includes('audio')) {
+                hasAudio = true;
+            }
+            if (ch.mimeType.includes('image')) {
+                hasVideo = true;
+            }
         }
-        
-        const videoConfig = CONFIG.WEBSOCKET_VIDEO || {};
-        const useVideoQueue = videoConfig.OPTIMIZATION_ENABLED && videoConfig.TRANSMISSION?.MAX_QUEUE_SIZE;
-        
-        if (useVideoQueue) {
-            // 分离视频帧和其他数据
-            const videoChunks = chunks.filter(ch => ch && ch.mimeType && ch.mimeType.includes('image'));
-            const nonVideoChunks = chunks.filter(ch => !ch || !ch.mimeType || !ch.mimeType.includes('image'));
-            
-            // 🔥 修正：处理所有视频块，而不是只处理第一个
-            if (videoChunks.length > 0) {
-                videoChunks.forEach(videoChunk => {
-                    this.manageVideoQueue(videoChunk);
-                });
-            }
-            
-            // 立即发送音频和其他数据
-            if (nonVideoChunks.length > 0) {
-                this.sendImmediate(nonVideoChunks);
-            }
-        } else {
-            // 原有逻辑
-            let hasAudio = false;
-            let hasVideo = false;
-            let totalSize = 0;
 
-            for (let i = 0; i < chunks.length; i++) {
-                const ch = chunks[i];
-                totalSize += ch.data.length;
-                if (ch.mimeType && ch.mimeType.includes('audio')) {
-                    hasAudio = true;
-                }
-                if (ch.mimeType && ch.mimeType.includes('image')) {
-                    hasVideo = true;
-                }
-            }
+        const message = hasAudio && hasVideo ? 'audio + video' : hasAudio ? 'audio' : hasVideo ? 'video' : 'unknown';
+        Logger.debug(`Sending realtime input: ${message} (${Math.round(totalSize/1024)}KB)`);
 
-            const message = hasAudio && hasVideo ? 'audio + video' : hasAudio ? 'audio' : hasVideo ? 'video' : 'unknown';
-            Logger.debug(`Sending realtime input: ${message} (${Math.round(totalSize/1024)}KB)`);
-
-            const data = { realtimeInput: { mediaChunks: chunks } };
-            this._sendDirect(data);
-        }
+        const data = { realtimeInput: { mediaChunks: chunks } };
+        this._sendDirect(data);
+        //this.log(`client.realtimeInput`, message);
     }
 
     /**
@@ -414,19 +370,5 @@ export class MultimodalLiveClient extends EventEmitter {
                 }]
             });
         }
-    }
-    /**
-     * 🔥 新增：JSON响应处理
-     * 处理非 Blob 的 JSON 消息，包括 API 错误。
-     * @param {Object} response - 解析后的 JSON 响应对象。
-     */
-    async handleJSONResponse(response) {
-        if (response.error) {
-            Logger.error('API returned error:', response.error);
-            this.emit('api_error', response.error);
-            return;
-        }
-        // 重新打包为 Blob，以便 receive 方法可以像处理原始 Blob 一样处理它
-        await this.receive(new Blob([JSON.stringify(response)]));
     }
 }
