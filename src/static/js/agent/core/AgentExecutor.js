@@ -446,6 +446,9 @@ export class AgentExecutor {
             taskComplexity: taskComplexity
         };
 
+        // 🎯 格式化结果用于显示
+        finalResult.formatted = this._formatAgentResult(finalResult);
+
         window.dispatchEvent(new CustomEvent('agent:session_completed', {
             detail: { 
                 result: finalResult,
@@ -557,6 +560,62 @@ export class AgentExecutor {
     }
 
     /**
+     * 🎯 优化结果显示 - 新增方法
+     */
+    _formatAgentResult(agentResult) {
+        if (!agentResult.success) {
+            return {
+                enhanced: true,
+                type: 'agent_error',
+                content: agentResult.output,
+                success: false,
+                agentRunId: agentResult.agentRunId,
+                fallback: true
+            };
+        }
+
+        let content = agentResult.output;
+        
+        // 🎯 确保内容完整显示
+        if (content && content.length > 2000) {
+            // 对于长内容，添加分页或折叠显示
+            const preview = content.substring(0, 1500) + '...\n\n**⚠️ 内容较长，已截断显示**';
+            content = preview;
+        }
+        
+        // 🎯 优化执行摘要显示
+        if (agentResult.intermediateSteps && agentResult.intermediateSteps.length > 0) {
+            const successfulSteps = agentResult.intermediateSteps.filter(step => 
+                !ObservationUtils.isErrorResult(step.observation)
+            ).length;
+            const failedSteps = agentResult.intermediateSteps.filter(step => 
+                ObservationUtils.isErrorResult(step.observation)
+            ).length;
+            
+            content += `\n\n---\n**🤖 智能代理执行摘要**\n`;
+            content += `共执行 ${agentResult.iterations} 轮思考，完成 ${successfulSteps} 个成功步骤${failedSteps > 0 ? `，${failedSteps} 个失败步骤` : ''}\n`;
+            
+            // 🎯 简化步骤显示
+            agentResult.intermediateSteps.forEach((step, index) => {
+                const isError = ObservationUtils.isErrorResult(step.observation);
+                const status = isError ? '❌' : '✅';
+                content += `\n${index + 1}. ${step.action.tool_name} ${status}`;
+            });
+        }
+
+        return {
+            enhanced: true,
+            type: 'agent_result',
+            content: content,
+            success: agentResult.success,
+            agentRunId: agentResult.agentRunId,
+            intermediateSteps: agentResult.intermediateSteps,
+            isMultiStep: agentResult.intermediateSteps && agentResult.intermediateSteps.length > 0,
+            iterations: agentResult.iterations
+        };
+    }
+
+    /**
      * 🎯 检查是否应该提前停止
      */
     _shouldEarlyStop(observation) {
@@ -585,9 +644,6 @@ export class AgentExecutor {
         return `执行提前停止。原因: ${reason}`;
     }
 
-    /**
-     * 从 observation 中安全提取可读字符串输出
-     */
     /**
      * 从 observation 中安全提取可读字符串输出
      */
