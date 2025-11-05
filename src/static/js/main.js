@@ -1098,6 +1098,7 @@ function updateMicIcon() {
  * Initializes the audio context and streamer if not already initialized.
  * @returns {Promise<AudioStreamer>} The audio streamer instance.
  */
+// 🚀 修复：改进音频流初始化，确保实时播放可用
 async function ensureAudioInitialized() {
     if (!audioCtx) {
         const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -1112,12 +1113,34 @@ async function ensureAudioInitialized() {
             };
             
             document.addEventListener('click', resumeHandler);
-            document.addEventListener('touchstart', resumeHandler);
+            document.removeEventListener('touchstart', resumeHandler);
         }
     }
     
     if (!audioStreamer) {
         audioStreamer = new AudioStreamer(audioCtx);
+        
+        // 🎯 修复：添加音频播放状态监听
+        audioStreamer.onPlaybackStart = () => {
+            console.log('🔊 音频实时播放开始');
+            chatUI.logMessage('音频开始播放', 'system');
+        };
+        
+        audioStreamer.onPlaybackEnd = () => {
+            console.log('🔊 音频实时播放结束');
+            chatUI.logMessage('音频播放结束', 'system');
+        };
+        
+        audioStreamer.onPlaybackError = (error) => {
+            console.error('🔊 音频播放错误:', error);
+            chatUI.logMessage(`音频播放错误: ${error.message}`, 'system');
+        };
+        
+        // 🎯 修复：添加音频播放进度监听
+        audioStreamer.onPlaybackProgress = (progress) => {
+            // 可以在这里添加音频播放进度显示
+            console.log('🔊 音频播放进度:', progress);
+        };
     }
     
     return audioStreamer;
@@ -1211,6 +1234,7 @@ async function resumeAudioContext() {
  * Connects to the WebSocket server.
  * @returns {Promise<void>}
  */
+// 🚀 修复：在连接成功时初始化音频系统
 async function connectToWebsocket() {
     if (!apiKeyInput.value) {
         chatUI.logMessage('Please input API Key', 'system');
@@ -1222,38 +1246,28 @@ async function connectToWebsocket() {
     localStorage.setItem('gemini_voice', voiceSelect.value);
     localStorage.setItem('system_instruction', systemInstructionInput.value);
 
-        /**
-         * @description 根据用户选择的响应类型构建模型生成配置。
-         * @param {string} selectedResponseType - 用户选择的响应类型 ('text' 或 'audio')。
-         * @returns {string[]} 响应模态数组。
-         */
-        function getResponseModalities(selectedResponseType) {
-            if (selectedResponseType === 'audio') {
-                return ['audio'];
-            } else {
-                return ['text'];
+    const config = {
+        model: CONFIG.API.MODEL_NAME,
+        generationConfig: {
+            responseModalities: responseTypeSelect.value === 'audio' ? ['audio'] : ['text'],
+            speechConfig: {
+                voiceConfig: {
+                    prebuiltVoiceConfig: {
+                        voiceName: voiceSelect.value
+                    }
+                },
             }
+        },
+        systemInstruction: {
+            parts: [{ text: systemInstructionInput.value }],
         }
-
-        const config = {
-            model: CONFIG.API.MODEL_NAME,
-            generationConfig: {
-                responseModalities: getResponseModalities(responseTypeSelect.value),
-                speechConfig: {
-                    voiceConfig: {
-                        prebuiltVoiceConfig: {
-                            voiceName: voiceSelect.value
-                        }
-                    },
-                }
-            },
-            systemInstruction: {
-                parts: [{ text: systemInstructionInput.value }],
-            }
-        };  
+    };
 
     try {
-        await client.connect(config,apiKeyInput.value);
+        // 🎯 修复：在连接前确保音频系统初始化
+        await ensureAudioInitialized();
+        
+        await client.connect(config, apiKeyInput.value);
         isConnected = true;
         await resumeAudioContext();
         connectButton.textContent = '断开连接';
@@ -1266,6 +1280,11 @@ async function connectToWebsocket() {
         screenButton.disabled = false;
         chatUI.logMessage('已连接到 Gemini 2.0 Flash 多模态实时 API', 'system');
         updateConnectionStatus();
+        
+        // 🎯 修复：连接成功后测试音频系统
+        console.log('🔊 WebSocket连接成功，音频系统已准备就绪');
+        debugAudioState();
+        
     } catch (error) {
         const errorMessage = error.message || '未知错误';
         Logger.error('连接错误:', error);
@@ -1280,11 +1299,11 @@ async function connectToWebsocket() {
         screenButton.disabled = true;
         updateConnectionStatus();
         
-        if (videoHandler && videoHandler.getIsVideoActive()) { // T3: 使用 videoHandler 停止视频
+        if (videoHandler && videoHandler.getIsVideoActive()) {
             videoHandler.stopVideo();
         }
         
-        if (screenHandler && screenHandler.getIsScreenActive()) { // T4: 使用 screenHandler 停止屏幕共享
+        if (screenHandler && screenHandler.getIsScreenActive()) {
             screenHandler.stopScreenSharing();
         }
     }
@@ -1324,9 +1343,23 @@ function disconnectFromWebsocket() {
     }
 }
 
-// 🚀 修复：WebSocket音频处理 - 监听audio事件
+// 🚀 修复：WebSocket音频处理 - 监听audio事件并进行实时播放
 client.on('audio', (data) => {
-    console.log('🚀 接收到音频数据:', data.byteLength, 'bytes');
+    console.log('🚀 接收到实时音频数据:', data.byteLength, 'bytes');
+    
+    // 🎯 修复1：实时播放音频数据
+    if (audioStreamer) {
+        try {
+            // 将ArrayBuffer转换为Int16Array用于实时播放
+            const int16Array = new Int16Array(data);
+            audioStreamer.addPCM16(int16Array);
+            console.log('🔊 实时音频数据已发送到AudioStreamer播放');
+        } catch (error) {
+            console.error('实时音频播放失败:', error);
+        }
+    }
+    
+    // 🎯 修复2：累积音频数据用于最终显示
     // 将ArrayBuffer转换为Uint8Array并累积
     const audioData = new Uint8Array(data);
     audioDataBuffer.push(audioData);
@@ -1378,20 +1411,23 @@ client.on('content', (data) => {
     }
 });
 
+// 🚀 修复：改进 interrupted 事件处理
 client.on('interrupted', () => {
     audioStreamer?.stop();
     isUsingTool = false;
     Logger.info('Model interrupted');
     chatUI.logMessage('Model interrupted', 'system');
-    // 确保在中断时完成当前文本消息并添加到聊天历史
+    
+    // 处理文本消息
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
         chatHistory.push({
             role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
+            content: currentAIMessageContentDiv.rawMarkdownBuffer
         });
     }
-    currentAIMessageContentDiv = null; // 重置
-    // 🚀 修复：处理累积的音频数据
+    currentAIMessageContentDiv = null;
+    
+    // 🎯 修复：中断时也处理音频数据
     processAudioData('interrupted');
 });
 
@@ -1399,26 +1435,28 @@ client.on('setupcomplete', () => {
     chatUI.logMessage('Setup complete', 'system');
 });
 
+// 🚀 修复：改进 turncomplete 事件处理
 client.on('turncomplete', () => {
     isUsingTool = false;
     chatUI.logMessage('Turn complete', 'system');
-    // 在对话结束时刷新文本缓冲区并添加到聊天历史
+    
+    // 处理文本消息
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
         chatHistory.push({
             role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
+            content: currentAIMessageContentDiv.rawMarkdownBuffer
         });
     }
     currentAIMessageContentDiv = null; // 重置
     
-    // 🚀 修复：处理累积的音频数据
+    // 🎯 修复：处理累积的音频数据，但不重复播放
+    // 因为音频已经在实时播放过了，这里只用于生成可下载的音频文件
     processAudioData('turncomplete');
 
-    // T15: 在WebSocket模式对话完成时保存历史
+    // 保存历史记录
     if (isConnected && !selectedModelConfig.isWebSocket) {
         historyManager.saveHistory();
     } else if (isConnected && selectedModelConfig.isWebSocket) {
-        // 🚀 修复：WebSocket模式也保存历史
         historyManager.saveHistory();
     }
 });
@@ -1457,17 +1495,17 @@ client.on('message', (message) => {
 sendButton.addEventListener('click', () => handleSendMessage(attachmentManager)); // T2: 传入管理器
 
 /**
- * 🚀 修复：处理累积的音频数据
- * @param {string} source - 来源 ('turncomplete', 'interrupted', 'user')
+ * 🚀 修复：改进音频数据处理，确保实时播放和最终显示都正常工作
+ * @param {string} source - 来源 ('turncomplete', 'interrupted', 'user_interrupt')
  */
 function processAudioData(source) {
     if (audioDataBuffer.length > 0) {
         try {
             const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
             const audioUrl = URL.createObjectURL(audioBlob);
-            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
+            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2);
             
-            console.log('🚀 处理音频数据:', {
+            console.log('🚀 处理最终音频数据:', {
                 source: source,
                 bufferLength: audioDataBuffer.length,
                 totalBytes: audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0),
@@ -1475,15 +1513,19 @@ function processAudioData(source) {
                 audioUrl: audioUrl
             });
             
-            // 显示音频消息
-            chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlob);
-            
-            // 将音频消息添加到聊天历史
-            chatHistory.push({
-                role: 'assistant',
-                content: `[音频消息，时长: ${duration.toFixed(2)}秒]`,
-                audioData: audioBlob // 可选：存储音频数据供后续使用
-            });
+            // 🎯 修复：只在需要时才显示音频消息
+            // 如果音频已经实时播放过了，可以跳过显示，或者仍然显示供用户重播
+            if (source !== 'realtime_only') {
+                // 显示音频消息（供重播和下载）
+                chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlob);
+                
+                // 将音频消息添加到聊天历史
+                chatHistory.push({
+                    role: 'assistant',
+                    content: `[音频消息，时长: ${duration.toFixed(2)}秒]`,
+                    audioData: audioBlob
+                });
+            }
             
         } catch (error) {
             console.error('音频处理失败:', error);
@@ -1499,27 +1541,49 @@ function processAudioData(source) {
  * @description 处理中断按钮点击事件，停止当前语音播放。
  * @returns {void}
  */
+// 🚀 修复：改进中断播放处理
 function handleInterruptPlayback() {
     if (audioStreamer) {
         audioStreamer.stop();
         Logger.info('Audio playback interrupted by user.');
         chatUI.logMessage('语音播放已中断', 'system');
-        // 确保在中断时也刷新文本缓冲区并添加到聊天历史
+        
+        // 处理文本消息
         if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
             chatHistory.push({
                 role: 'assistant',
-                content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
+                content: currentAIMessageContentDiv.rawMarkdownBuffer
             });
         }
-        currentAIMessageContentDiv = null; // 重置
+        currentAIMessageContentDiv = null;
         
-        // 🚀 修复：处理累积的音频数据
+        // 🎯 修复：用户中断时处理音频数据
         processAudioData('user_interrupt');
     } else {
         Logger.warn('Attempted to interrupt playback, but audioStreamer is not initialized.');
         chatUI.logMessage('当前没有语音播放可中断', 'system');
     }
-    }
+}
+
+// 🚀 修复：添加音频调试功能
+function debugAudioState() {
+    console.log('🔊 音频状态调试:', {
+        audioCtx: audioCtx ? {
+            state: audioCtx.state,
+            sampleRate: audioCtx.sampleRate
+        } : '未初始化',
+        audioStreamer: audioStreamer ? {
+            isPlaying: audioStreamer.isPlaying,
+            audioQueueLength: audioStreamer.audioQueue ? audioStreamer.audioQueue.length : 0
+        } : '未初始化',
+        audioDataBuffer: {
+            length: audioDataBuffer.length,
+            totalBytes: audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0)
+        },
+        isRecording: isRecording,
+        isConnected: isConnected
+    });
+}
 
 interruptButton.addEventListener('click', handleInterruptPlayback); // 新增事件监听器
 
