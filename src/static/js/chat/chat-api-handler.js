@@ -29,6 +29,7 @@ export class ChatApiHandler {
         this.state = state;
         this.libs = libs;
         this.config = config; // 存储配置对象
+        this.activeToolCallContext = null; // 新增：当前活跃的工具调用上下文
     }
 
     /**
@@ -39,29 +40,23 @@ export class ChatApiHandler {
      * @returns {Promise<void>}
      */
     async streamChatCompletion(requestBody, apiKey, uiOverrides = null) {
-        // ✅ 步骤2: 接收 uiOverrides 参数
-        const ui = uiOverrides || chatUI; // ✅ 如果有覆盖则使用，否则回退到默认的 chatUI
+        const ui = uiOverrides || chatUI;
 
         let currentMessages = requestBody.messages;
-        const selectedModelName = requestBody.model; // 获取当前模型名称
+        const selectedModelName = requestBody.model;
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
         
-        // 检查当前模型是否为Gemini类型（通过名称判断，不依赖isGemini标签）
         const isCurrentModelGeminiType = selectedModelName.includes('gemini');
         const isReasoningEnabledGlobally = localStorage.getItem('geminiEnableReasoning') === 'true';
         
         let enableReasoning;
         if (modelConfig && modelConfig.enableReasoning !== undefined) {
-            // 如果模型配置中明确设置了 enableReasoning，则以其为准
             enableReasoning = modelConfig.enableReasoning;
         } else {
-            // 否则，回退到 localStorage 中的全局开关状态，但仅限于 Gemini 类型模型
             enableReasoning = isCurrentModelGeminiType && isReasoningEnabledGlobally;
         }
         
         const disableSearch = modelConfig ? modelConfig.disableSearch : false;
-        
-        // 提取 tools 字段，它可能来自 vision-core.js 或 chat-ui.js
         const tools = requestBody.tools;
 
         try {
@@ -71,7 +66,6 @@ export class ChatApiHandler {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                // 将 tools, enableReasoning 和 disableSearch 参数添加到请求体中
                 body: JSON.stringify({ ...requestBody, tools, enableReasoning, disableSearch })
             });
 
@@ -91,20 +85,36 @@ export class ChatApiHandler {
             let qwenToolCallAssembler = null;
             // ---
 
-            // 创建流上下文，避免不同流/嵌套流之间共享或覆盖 UI 容器引用
+            // 创建流上下文
             const streamContext = {
                 id: `stream_${Date.now()}_${Math.random().toString(36).substr(2,6)}`,
                 previousAIMessageContentDiv: this.state.currentAIMessageContentDiv,
                 localAIMessageContentDiv: null,
                 isToolCallActive: false,
                 toolCallUI: null,
-                startTime: Date.now()
+                startTime: Date.now(),
+                reasoningStarted: false,
+                answerStarted: false,
+                rawMarkdownBuffer: '',
+                rawReasoningBuffer: ''
             };
 
             const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-            if (!isToolResponseFollowUp) {
+            
+            // 如果是工具调用的后续响应，使用现有的工具调用UI
+            if (isToolResponseFollowUp && this.activeToolCallContext) {
+                streamContext.localAIMessageContentDiv = this.activeToolCallContext;
+                this.state.currentAIMessageContentDiv = streamContext.localAIMessageContentDiv;
+            } else if (!isToolResponseFollowUp) {
+                // 新的对话轮次，创建新的消息容器
                 streamContext.localAIMessageContentDiv = ui.createAIMessageElement();
                 this.state.currentAIMessageContentDiv = streamContext.localAIMessageContentDiv;
+                
+                // 初始化缓冲区
+                if (streamContext.localAIMessageContentDiv) {
+                    streamContext.localAIMessageContentDiv.rawMarkdownBuffer = '';
+                    streamContext.localAIMessageContentDiv.rawReasoningBuffer = '';
+                }
             }
 
             let buffer = '';
@@ -139,34 +149,21 @@ export class ChatApiHandler {
                                     // --- Qwen Tool Call Assembly Logic ---
                                     qwenToolCallParts.forEach(toolCallChunk => {
                                         const func = toolCallChunk.function;
-                                        if (func && func.name) { // First chunk
+                                        if (func && func.name) {
                                             if (!qwenToolCallAssembler) {
                                                 qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
                                                 Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
                                                 ui.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
-                                                // 创建工具调用的临时 UI，让工具调用过程有独立容器展示状态
+                                                
+                                                // 创建工具调用状态UI，但不切换当前消息容器
                                                 if (!streamContext.isToolCallActive) {
                                                     streamContext.isToolCallActive = true;
-                                                    try {
-                                                        streamContext.toolCallUI = this._createToolCallStatusUI(qwenToolCallAssembler, ui);
-                                                        // 将工具调用 UI 设置为当前容器，让后续工具相关输出显示在该容器中
-                                                        if (streamContext.toolCallUI) {
-                                                            this.state.currentAIMessageContentDiv = streamContext.toolCallUI;
-                                                        }
-                                                    } catch (err) {
-                                                        console.warn('创建 toolCallUI 失败:', err);
-                                                    }
-                                                    // 现在恢复外层全局引用（如果需要），工具UI 已成为当前容器
-                                                    try {
-                                                        this._restoreStateFromContext(streamContext);
-                                                    } catch (error) {
-                                                        console.warn('状态恢复失败:', error);
-                                                    }
+                                                    this._createToolCallStatusUI(qwenToolCallAssembler, ui, streamContext.localAIMessageContentDiv);
                                                 }
                                             } else {
                                                 qwenToolCallAssembler.arguments += func.arguments || '';
                                             }
-                                        } else if (qwenToolCallAssembler && func && func.arguments) { // Subsequent chunks
+                                        } else if (qwenToolCallAssembler && func && func.arguments) {
                                             qwenToolCallAssembler.arguments += func.arguments;
                                         }
                                     });
@@ -178,45 +175,30 @@ export class ChatApiHandler {
                                     currentFunctionCall = functionCallPart.functionCall;
                                     Logger.info('Function call detected:', currentFunctionCall);
                                     ui.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    // 为 function call 创建独立的工具调用 UI，然后恢复外层引用
+                                    
+                                    // 创建工具调用状态UI
                                     if (!streamContext.isToolCallActive) {
                                         streamContext.isToolCallActive = true;
-                                        try {
-                                            streamContext.toolCallUI = this._createToolCallStatusUI(currentFunctionCall, ui);
-                                            if (streamContext.toolCallUI) {
-                                                this.state.currentAIMessageContentDiv = streamContext.toolCallUI;
-                                            }
-                                        } catch (err) {
-                                            console.warn('创建 function-call UI 失败', err);
-                                        }
-                                        try {
-                                            this._restoreStateFromContext(streamContext);
-                                        } catch (error) {
-                                            console.warn('状态恢复失败:', error);
-                                        }
+                                        this._createToolCallStatusUI(currentFunctionCall, ui, streamContext.localAIMessageContentDiv);
                                     }
 
                                 } else if (choice.delta && !functionCallDetected && !qwenToolCallAssembler) {
                                     // Process reasoning and content only if no tool call is active
                                     if (choice.delta.reasoning_content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                        if (!this.state.currentAIMessageContentDiv) {
+                                            this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                            streamContext.localAIMessageContentDiv = this.state.currentAIMessageContentDiv;
+                                        }
                                         
-                                        // 兼容性检查：确保 reasoningContainer 存在
                                         if (this.state.currentAIMessageContentDiv.reasoningContainer) {
-                                            if (!reasoningStarted) {
+                                            if (!streamContext.reasoningStarted) {
                                                 this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                                reasoningStarted = true;
+                                                streamContext.reasoningStarted = true;
                                             }
                                             const reasoningText = choice.delta.reasoning_content;
                                             
-                                            // 兼容性检查：确保 rawReasoningBuffer 存在
-                                            if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string') {
-                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
-                                            } else {
-                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer = reasoningText;
-                                            }
+                                            streamContext.rawReasoningBuffer += reasoningText;
                                             
-                                            // 兼容性检查：确保 reasoning-content 元素存在
                                             const reasoningContentEl = this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
                                             if (reasoningContentEl) {
                                                 reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
@@ -225,36 +207,29 @@ export class ChatApiHandler {
                                     }
                                     
                                     if (choice.delta.content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                        if (!this.state.currentAIMessageContentDiv) {
+                                            this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                            streamContext.localAIMessageContentDiv = this.state.currentAIMessageContentDiv;
+                                        }
                                         
-                                        // 兼容性检查：确保 reasoningContainer 存在且需要添加分隔线
                                         if (this.state.currentAIMessageContentDiv.reasoningContainer &&
-                                            reasoningStarted && !answerStarted) {
+                                            streamContext.reasoningStarted && !streamContext.answerStarted) {
                                             const separator = document.createElement('hr');
                                             separator.className = 'answer-separator';
-                                            // 兼容性检查：确保 markdownContainer 存在
                                             if (this.state.currentAIMessageContentDiv.markdownContainer) {
                                                 this.state.currentAIMessageContentDiv.markdownContainer.before(separator);
                                             }
-                                            answerStarted = true;
+                                            streamContext.answerStarted = true;
                                         }
 
-                                        // 兼容性处理：确保 rawMarkdownBuffer 存在
-                                        if (typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string') {
-                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
-                                        } else {
-                                            // 如果不存在，初始化
-                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer = choice.delta.content || '';
-                                        }
+                                        streamContext.rawMarkdownBuffer += choice.delta.content || '';
 
-                                        // 兼容性检查：确保 markdownContainer 存在
                                         if (this.state.currentAIMessageContentDiv.markdownContainer) {
                                             this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(
-                                                this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+                                                streamContext.rawMarkdownBuffer
                                             );
                                         }
                                         
-                                        // 应用数学公式渲染 - 兼容性处理
                                         if (typeof this.libs.MathJax !== 'undefined' && this.libs.MathJax.startup) {
                                             this.libs.MathJax.startup.promise.then(() => {
                                                 const containersToTypeset = [];
@@ -270,7 +245,6 @@ export class ChatApiHandler {
                                             }).catch((err) => console.error('MathJax typesetting failed:', err));
                                         }
                                         
-                                        // 调用滚动函数
                                         if (ui.scrollToBottom) {
                                             ui.scrollToBottom();
                                         }
@@ -303,18 +277,14 @@ export class ChatApiHandler {
             if (functionCallDetected && currentFunctionCall) {
                 console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
                 
-                // 兼容性处理：保存最终文本到历史记录
-                if (this.state.currentAIMessageContentDiv &&
-                    typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
-                    this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {
-                    
+                // 保存当前文本内容到历史记录
+                if (streamContext.rawMarkdownBuffer && streamContext.rawMarkdownBuffer.trim() !== '') {
                     console.log(`[${timestamp()}] [DISPATCH] Saving final text part to history.`);
                     this.state.chatHistory.push({
                         role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+                        content: streamContext.rawMarkdownBuffer
                     });
                 }
-                this._restoreStateFromContext(streamContext);
 
                 // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
                 console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call for model: ${requestBody.model}`);
@@ -322,51 +292,47 @@ export class ChatApiHandler {
 
                 const isQwenModel = modelConfig && modelConfig.isQwen;
                 const isZhipuModel = modelConfig && modelConfig.isZhipu;
-                const isGeminiToolModel = modelConfig && modelConfig.isGemini; // 新增：检查Gemini工具模型标签
+                const isGeminiToolModel = modelConfig && modelConfig.isGemini;
 
-                // 为 Qwen、Zhipu 和启用了工具的 Gemini 模型统一路由到 MCP 处理器
+                // 设置活跃的工具调用上下文
+                this.activeToolCallContext = streamContext.localAIMessageContentDiv;
+
                 if (isQwenModel || isZhipuModel || isGeminiToolModel) {
-                    // 对于 Gemini 风格的 functionCall，我们将其标准化为 MCP 期望的格式
                     const mcpToolCall = currentFunctionCall.tool_name
                         ? currentFunctionCall
                         : { tool_name: currentFunctionCall.name, arguments: JSON.stringify(currentFunctionCall.args || {}) };
                     
                     console.log(`[${timestamp()}] [DISPATCH] Detected Qwen/Zhipu/Gemini MCP tool call. Routing to _handleMcpToolCall...`);
-                    await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey, uiOverrides);
+                    await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey, uiOverrides, streamContext.localAIMessageContentDiv);
 
                 } else {
-                    // 否则，处理为标准的、前端执行的 Gemini 函数调用（例如默认的 Google 搜索）
                     console.log(`[${timestamp()}] [DISPATCH] Model is not configured for MCP. Routing to _handleGeminiToolCall...`);
-                    await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey, uiOverrides);
+                    await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey, uiOverrides, streamContext.localAIMessageContentDiv);
                 }
                 console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
 
             } else {
-                // 兼容性处理：保存非工具调用的响应
-                if (this.state.currentAIMessageContentDiv &&
-                    typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
-                    this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {
-                    
+                // 保存非工具调用的响应
+                if (streamContext.rawMarkdownBuffer && streamContext.rawMarkdownBuffer.trim() !== '') {
                     const historyEntry = {
                         role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
+                        content: streamContext.rawMarkdownBuffer
                     };
                     
-                    // 兼容性检查：如果有思维链内容也保存
-                    if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string' &&
-                        this.state.currentAIMessageContentDiv.rawReasoningBuffer.trim() !== '') {
-                        historyEntry.reasoning = this.state.currentAIMessageContentDiv.rawReasoningBuffer;
+                    if (streamContext.rawReasoningBuffer && streamContext.rawReasoningBuffer.trim() !== '') {
+                        historyEntry.reasoning = streamContext.rawReasoningBuffer;
                     }
                     
                     this.state.chatHistory.push(historyEntry);
                 }
-                this._restoreStateFromContext(streamContext);
+                
+                // 清除活跃的工具调用上下文
+                this.activeToolCallContext = null;
                 
                 if (ui.logMessage) {
                     ui.logMessage('Turn complete (HTTP)', 'system');
                 }
                 
-                // 保存历史记录 - 只在有 historyManager 时保存
                 if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
                     this.historyManager.saveHistory();
                 }
@@ -378,66 +344,93 @@ export class ChatApiHandler {
             if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
                 this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
             }
-            this._restoreStateFromContext(streamContext);
-            // 确保在失败时也保存历史记录（如果 historyManager 存在）
+            // 清除活跃的工具调用上下文
+            this.activeToolCallContext = null;
+            
             if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
-                this.historyManager.saveHistory(); // Ensure history is saved even on failure
+                this.historyManager.saveHistory();
             }
         }
     }
 
     /**
-     * Create a minimal tool-call status UI element that does not interfere with
-     * the stream's main content container. Returns the created element.
+     * Create tool call status UI within the current message container
      */
-    _createToolCallStatusUI(toolCall, ui) {
+    _createToolCallStatusUI(toolCall, ui, messageContainer) {
+        if (!messageContainer || !messageContainer.markdownContainer) return;
+        
         const toolName = toolCall.tool_name || toolCall.name || 'tool';
-        const el = ui.createAIMessageElement();
-        try {
-            if (el && el.markdownContainer) {
-                const args = toolCall.arguments || toolCall.args || '';
-                el.markdownContainer.innerHTML = `
-                    <div class="tool-call-status">
-                        <strong>执行工具: ${toolName}</strong>
-                        <pre style="white-space:pre-wrap;">${typeof args === 'string' ? args : JSON.stringify(args, null, 2)}</pre>
-                    </div>
-                `;
-            }
-        } catch (err) {
-            console.warn('构建 tool status UI 失败:', err);
-        }
-        return el;
+        const args = toolCall.arguments || toolCall.args || '';
+        
+        const toolCallElement = document.createElement('div');
+        toolCallElement.className = 'tool-call-status';
+        toolCallElement.innerHTML = `
+            <div style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 5px;">
+                <strong>🔧 执行工具: ${toolName}</strong>
+                <div style="margin-top: 5px;">
+                    <strong>查询参数:</strong>
+                    <pre style="white-space:pre-wrap; background: #fff; padding: 8px; border-radius: 3px; margin: 5px 0;">${typeof args === 'string' ? args : JSON.stringify(args, null, 2)}</pre>
+                </div>
+            </div>
+        `;
+        
+        messageContainer.markdownContainer.appendChild(toolCallElement);
+        
+        // 添加工具执行结果占位符
+        const resultPlaceholder = document.createElement('div');
+        resultPlaceholder.className = 'tool-result-placeholder';
+        resultPlaceholder.id = `tool-result-${Date.now()}`;
+        resultPlaceholder.style.margin = '10px 0';
+        messageContainer.markdownContainer.appendChild(resultPlaceholder);
+        
+        return resultPlaceholder;
     }
 
     /**
-     * Restore global currentAIMessageContentDiv from streamContext if this stream
-     * currently owns it. Safe to call multiple times.
+     * Display tool execution result in the designated placeholder
      */
-    _restoreStateFromContext(streamContext) {
-        if (!streamContext) return;
-        if (streamContext.localAIMessageContentDiv &&
-            this.state.currentAIMessageContentDiv === streamContext.localAIMessageContentDiv) {
-            this.state.currentAIMessageContentDiv = streamContext.previousAIMessageContentDiv;
+    _displayToolResult(result, placeholder, toolName, ui) {
+        if (!placeholder) return;
+        
+        const resultElement = document.createElement('div');
+        resultElement.className = 'tool-execution-result';
+        resultElement.innerHTML = `
+            <div style="margin: 10px 0; padding: 10px; background: #e8f5e8; border-radius: 5px; border-left: 4px solid #4caf50;">
+                <strong>✅ 工具执行完成: ${toolName}</strong>
+                <div style="margin-top: 5px;">
+                    <strong>返回结果:</strong>
+                    <pre style="white-space:pre-wrap; background: #fff; padding: 8px; border-radius: 3px; margin: 5px 0;">${typeof result === 'string' ? result : JSON.stringify(result, null, 2)}</pre>
+                </div>
+            </div>
+        `;
+        
+        placeholder.parentNode.replaceChild(resultElement, placeholder);
+        
+        if (ui.scrollToBottom) {
+            ui.scrollToBottom();
         }
-        // Note: we intentionally keep streamContext.toolCallUI alive until the tool
-        // handling code finishes; caller may remove it later if desired.
     }
 
     /**
      * @private
      * @description Handles the execution of a Gemini tool call.
-     * @param {object} functionCall - The Gemini function call object.
-     * @param {object} requestBody - The original request body.
-     * @param {string} apiKey - The API key.
-     * @returns {Promise<void>}
      */
-    _handleGeminiToolCall = async (functionCall, requestBody, apiKey, uiOverrides = null) => {
+    _handleGeminiToolCall = async (functionCall, requestBody, apiKey, uiOverrides = null, messageContainer = null) => {
         const ui = uiOverrides || chatUI;
+        const timestamp = () => new Date().toISOString();
+        
         try {
             this.state.isUsingTool = true;
-            ui.logMessage(`执行 Gemini 工具: ${functionCall.name} with args: ${JSON.stringify(functionCall.args)}`, 'system');
+            ui.logMessage(`执行 Gemini 工具: ${functionCall.name}`, 'system');
+            
+            // 创建工具调用状态
+            const resultPlaceholder = this._createToolCallStatusUI(functionCall, ui, messageContainer);
+            
             const toolResult = await this.toolManager.handleToolCall(functionCall);
             const toolResponsePart = toolResult.functionResponses[0].response.output;
+
+            // 显示工具执行结果
+            this._displayToolResult(toolResponsePart, resultPlaceholder, functionCall.name, ui);
 
             this.state.chatHistory.push({
                 role: 'assistant',
@@ -459,6 +452,7 @@ export class ChatApiHandler {
         } catch (toolError) {
             Logger.error('Gemini 工具执行失败:', toolError);
             ui.logMessage(`Gemini 工具执行失败: ${toolError.message}`, 'system');
+            
             this.state.chatHistory.push({
                 role: 'assistant',
                 parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }]
@@ -467,6 +461,7 @@ export class ChatApiHandler {
                 role: 'tool',
                 parts: [{ functionResponse: { name: functionCall.name, response: { error: toolError.message } } }]
             });
+            
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
@@ -475,7 +470,8 @@ export class ChatApiHandler {
             }, apiKey, uiOverrides);
         } finally {
             this.state.isUsingTool = false;
-            // 保存工具调用的历史记录（如果 historyManager 存在）
+            this.activeToolCallContext = null;
+            
             if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
                 this.historyManager.saveHistory();
             }
@@ -485,57 +481,46 @@ export class ChatApiHandler {
     /**
      * @private
      * @description Handles the execution of a Qwen MCP tool call via the backend proxy.
-     * @param {object} toolCode - The tool_code object from the Qwen model.
-     * @param {object} requestBody - The original request body.
-     * @param {string} apiKey - The API key.
-     * @returns {Promise<void>}
      */
-    _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
+    _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null, messageContainer = null) => {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
-    const callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
+        const callId = `call_${Date.now()}`;
+        
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
 
         try {
             this.state.isUsingTool = true;
             console.log(`[${timestamp()}] [MCP] State isUsingTool set to true.`);
 
-            // 显示工具调用状态UI
-            console.log(`[${timestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
-            ui.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
-            ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
+            // 创建工具调用状态
+            const resultPlaceholder = this._createToolCallStatusUI(toolCode, ui, messageContainer);
+            
+            ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name}`, 'system');
             console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
- 
-            // ✨ 修复：不再查找 mcp_server_url，直接发送到后端代理
-            console.log(`[${timestamp()}] [MCP] Using unified backend proxy for tool: ${toolCode.tool_name}`);
 
-            // --- Revert to Standard MCP Request Format for glm4v ---
-            // We are no longer using Tavily's non-standard API.
-            // We will now send the full, unmodified arguments object to the proxy.
             let parsedArguments;
             try {
                 parsedArguments = this._robustJsonParse(toolCode.arguments);
             } catch (e) {
-                const errorMsg = `无法解析来自模型的工具参数，即使在尝试修复后也是如此: ${toolCode.arguments}`;
+                const errorMsg = `无法解析工具参数: ${toolCode.arguments}`;
                 console.error(`[${timestamp()}] [MCP] ROBUST PARSE FAILED: ${errorMsg}`, e);
                 throw new Error(errorMsg);
             }
 
-            // ✨ 修复：构建简化的请求体，不再包含 server_url
             const proxyRequestBody = {
                 tool_name: toolCode.tool_name,
-                parameters: parsedArguments, // Send the full, parsed arguments object
+                parameters: parsedArguments,
                 requestId: `tool_call_${Date.now()}`
             };
-            console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
-
-            // 调用后端代理
+            
             console.log(`[${timestamp()}] [MCP] Sending fetch request to /api/mcp-proxy...`);
             const proxyResponse = await fetch('/api/mcp-proxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(proxyRequestBody)
             });
+            
             console.log(`[${timestamp()}] [MCP] Fetch request to /api/mcp-proxy FINISHED. Response status: ${proxyResponse.status}`);
 
             if (!proxyResponse.ok) {
@@ -548,39 +533,33 @@ export class ChatApiHandler {
             const toolRawResult = await proxyResponse.json();
             console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolRawResult);
 
-            let toolResultContent; // Declare without initializing
+            let toolResultContent;
+            let isFileHandled = false;
 
-            // Enhanced handling for python_sandbox output to detect and display images and download files
+            // Enhanced handling for python_sandbox output
             if (toolCode.tool_name === 'python_sandbox') {
                 console.log(`[${timestamp()}] [MCP] Processing python_sandbox output`);
-                let isFileHandled = false;
                 
-                // 关键修复：处理MCP代理返回的嵌套结构
                 let actualStdout = '';
                 if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
-                    // 如果toolRawResult.stdout是字符串，直接使用
                     actualStdout = toolRawResult.stdout.trim();
                 } else if (toolRawResult && toolRawResult.type === 'text' && toolRawResult.stdout) {
-                    // 如果toolRawResult是对象且包含stdout字段
                     actualStdout = toolRawResult.stdout.trim();
                 } else if (toolRawResult && typeof toolRawResult === 'string') {
-                    // 如果toolRawResult本身就是字符串
                     actualStdout = toolRawResult.trim();
                 }
                 
                 console.log(`[${timestamp()}] [MCP] Actual stdout content:`, actualStdout.substring(0, 200) + '...');
                 
                 if (actualStdout) {
-                    // 尝试解析为JSON对象
                     try {
                         let fileData = JSON.parse(actualStdout);
                         console.log(`[${timestamp()}] [MCP] First level JSON parsed:`, fileData);
                         
-                        // 关键修复：如果解析出来的是包装结构，提取实际的stdout内容
                         if (fileData && fileData.type === 'text' && fileData.stdout) {
                             console.log(`[${timestamp()}] [MCP] Detected wrapped structure, extracting stdout`);
                             actualStdout = fileData.stdout;
-                            fileData = JSON.parse(actualStdout); // 重新解析实际的Python输出
+                            fileData = JSON.parse(actualStdout);
                             console.log(`[${timestamp()}] [MCP] Second level JSON parsed:`, fileData);
                         }
                         
@@ -592,20 +571,14 @@ export class ChatApiHandler {
                             toolResultContent = { output: `Image "${title}" generated and displayed.` };
                             isFileHandled = true;
                         }
-                        // 处理Office文档和PDF类型（标准格式）
+                        // 处理Office文档和PDF类型
                         else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
                             console.log(`[${timestamp()}] [MCP] Detected standard format office file:`, fileData.type);
                             const extensionMap = { 'word': 'docx', 'excel': 'xlsx', 'ppt': 'pptx', 'pdf': 'pdf' };
                             const fileExtension = extensionMap[fileData.type] || fileData.type;
                             const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
                             
-                            // *** KEY FIX START ***
-                            // 1. Create the persistent download link in its own, new message container.
-                            this._createFileDownload(fileData.data_base64, fileName, fileData.type, ui);
-                            // 2. 强制状态重置：明确设置当前消息容器为 null，确保后续文本响应创建新的容器。
-                            this.state.currentAIMessageContentDiv = null;
-                            // *** KEY FIX END ***
-                            
+                            this._createFileDownload(fileData.data_base64, fileName, fileData.type, ui, messageContainer);
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
                             isFileHandled = true;
                         }
@@ -619,10 +592,7 @@ export class ChatApiHandler {
                             const fileType = fileTypeMap[fileExtension];
 
                             if (fileType) {
-                                // 关键修复：创建独立下载链接并强制状态重置
-                                this._createFileDownload(content, name, fileType, ui);
-                                this.state.currentAIMessageContentDiv = null;
-
+                                this._createFileDownload(content, name, fileType, ui, messageContainer);
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
                             }
@@ -632,10 +602,8 @@ export class ChatApiHandler {
 
                     } catch (e) {
                         console.log(`[${timestamp()}] [MCP] JSON parse failed:`, e.message);
-                        console.log(`[${timestamp()}] [MCP] Raw content that failed to parse:`, actualStdout.substring(0, 200));
                     }
 
-                    // 如果不是JSON格式，继续原有的图片检测逻辑
                     if (!isFileHandled) {
                         console.log(`[${timestamp()}] [MCP] Checking for image format`);
                         if (actualStdout.startsWith('iVBORw0KGgo') || actualStdout.startsWith('/9j/')) {
@@ -652,7 +620,6 @@ export class ChatApiHandler {
                  
                  console.log(`[${timestamp()}] [MCP] File handling completed, isFileHandled:`, isFileHandled);
                  
-                 // 处理stderr
                  if (toolRawResult && toolRawResult.stderr) {
                      ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
                      if (toolResultContent && toolResultContent.output) {
@@ -666,63 +633,57 @@ export class ChatApiHandler {
                     toolResultContent = { output: "Tool executed successfully with no output." };
                 }
             } else {
-                // For ALL other tools, wrap the raw result consistently to ensure a predictable
-                // structure for the transit worker.
                 toolResultContent = { output: toolRawResult };
             }
 
-            // --- Special handling for mcp_tool_catalog tool ---
+            // 显示工具执行结果
+            this._displayToolResult(toolResultContent.output, resultPlaceholder, toolCode.tool_name, ui);
+
+            // Special handling for mcp_tool_catalog tool
             if (toolCode.tool_name === 'mcp_tool_catalog' && toolRawResult && toolRawResult.data && Array.isArray(toolRawResult.data)) {
                 console.log(`[${timestamp()}] [MCP] Discovered new tools via mcp_tool_catalog. Merging...`);
                 
-                // 获取当前Qwen模型的完整工具列表
                 const currentModelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
                 let allCurrentTools = currentModelConfig && currentModelConfig.tools ? [...currentModelConfig.tools] : [];
 
-                // 过滤掉重复的工具，然后合并
-                const newToolsToAdd = toolResult.data.filter(newTool =>
+                const newToolsToAdd = toolRawResult.data.filter(newTool =>
                     !allCurrentTools.some(existingTool => existingTool.function.name === newTool.function.name)
                 );
                 allCurrentTools = [...allCurrentTools, ...newToolsToAdd];
                 
-                // 更新 requestBody，确保下次 streamChatCompletion 包含最新工具列表
                 requestBody.tools = allCurrentTools;
                 console.log(`[${timestamp()}] [MCP] Updated requestBody.tools with ${newToolsToAdd.length} new tools.`);
             }
 
-            // --- Refactored History Logging based on AliCloud Docs ---
-            // 1. Push the assistant's decision to call the tool.
-            // This must be an object with a `tool_calls` array.
+            // Push assistant's tool call decision to history
             console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history...`);
             this.state.chatHistory.push({
                 role: 'assistant',
-                content: null, // Qwen expects content to be null when tool_calls are present
+                content: null,
                 tool_calls: [{
-                    id: callId, // Generate a unique ID for the call
+                    id: callId,
                     type: 'function',
                     function: {
                         name: toolCode.tool_name,
-                        arguments: JSON.stringify(parsedArguments) // 使用 parsedArguments
+                        arguments: JSON.stringify(parsedArguments)
                     }
                 }]
             });
 
-            // 2. Push the result from the tool execution.
-            // This must be an object with `role: 'tool'`.
+            // Push tool execution result to history
             console.log(`[${timestamp()}] [MCP] Pushing 'tool' result message to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify(toolResultContent), // Use the possibly modified content
-                tool_call_id: callId // 确保匹配 assistant message 中的 ID
+                content: JSON.stringify(toolResultContent),
+                tool_call_id: callId
             });
 
-            // 再次调用模型以获得最终答案
+            // Resume chat completion with tool result
             console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool result...`);
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                // 确保再次传递工具定义，以防需要连续调用
-                tools: requestBody.tools // Now 'requestBody.tools' might be updated with newly discovered tools
+                tools: requestBody.tools
             }, apiKey, uiOverrides);
             console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
  
@@ -731,29 +692,52 @@ export class ChatApiHandler {
             Logger.error('MCP 工具执行失败:', toolError);
             ui.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
             
-            // 即使失败，也要将失败信息以正确的格式加入历史记录
-            const callId = `call_${Date.now()}`; // 统一生成 ID
+            // 显示错误结果
+            if (messageContainer && messageContainer.markdownContainer) {
+                const errorElement = document.createElement('div');
+                errorElement.className = 'tool-execution-error';
+                errorElement.innerHTML = `
+                    <div style="margin: 10px 0; padding: 10px; background: #ffe8e8; border-radius: 5px; border-left: 4px solid #f44336;">
+                        <strong>❌ 工具执行失败: ${toolCode.tool_name}</strong>
+                        <div style="margin-top: 5px;">
+                            <strong>错误信息:</strong>
+                            <pre style="white-space:pre-wrap; background: #fff; padding: 8px; border-radius: 3px; margin: 5px 0;">${toolError.message}</pre>
+                        </div>
+                    </div>
+                `;
+                
+                // 找到并替换结果占位符
+                const placeholders = messageContainer.markdownContainer.querySelectorAll('.tool-result-placeholder');
+                if (placeholders.length > 0) {
+                    const lastPlaceholder = placeholders[placeholders.length - 1];
+                    lastPlaceholder.parentNode.replaceChild(errorElement, lastPlaceholder);
+                } else {
+                    messageContainer.markdownContainer.appendChild(errorElement);
+                }
+            }
+            
+            const callId = `call_${Date.now()}`;
             console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history on error...`);
             this.state.chatHistory.push({
                 role: 'assistant',
                 content: null,
                 tool_calls: [{
-                    id: callId, // 使用统一的 ID
+                    id: callId,
                     type: 'function',
                     function: {
                         name: toolCode.tool_name,
-                        arguments: toolCode.arguments // 保持原始字符串格式
+                        arguments: toolCode.arguments
                     }
                 }]
             });
+            
             console.log(`[${timestamp()}] [MCP] Pushing 'tool' error result to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify({ error: toolError.message }), // Use the possibly modified content
-                tool_call_id: callId // 确保匹配 assistant message 中的 ID
+                content: JSON.stringify({ error: toolError.message }),
+                tool_call_id: callId
             });
             
-            // 再次调用模型，让它知道工具失败了
             console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool error...`);
             await this.streamChatCompletion({
                 ...requestBody,
@@ -763,9 +747,10 @@ export class ChatApiHandler {
             console.log(`[${timestamp()}] [MCP] Chat completion stream after error finished.`);
         } finally {
             this.state.isUsingTool = false;
+            this.activeToolCallContext = null;
             console.log(`[${timestamp()}] [MCP] State isUsingTool set to false.`);
             console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall END ---`);
-            // 保存工具调用的历史记录（如果 historyManager 存在）
+            
             if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
                 this.historyManager.saveHistory();
             }
@@ -774,18 +759,18 @@ export class ChatApiHandler {
 
     /**
      * @private
-     * @description Creates a self-contained, persistent message element for a file download link.
-     * This function is purely for UI creation and does NOT modify the handler's state.
-     * @param {string} base64Data - The base64 encoded file data
-     * @param {string} fileName - The name of the file to download
-     * @param {string} fileType - The type of file (excel, word, ppt, pdf)
-     * @param {object} ui - The UI adapter (必须从调用者传递)
+     * @description Creates a file download link within the current message container
      */
-    _createFileDownload(base64Data, fileName, fileType, ui) {
+    _createFileDownload(base64Data, fileName, fileType, ui, messageContainer) {
         const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [FILE] Creating persistent download for ${fileType} file: ${fileName}`);
+        console.log(`[${timestamp()}] [FILE] Creating download for ${fileType} file: ${fileName}`);
         
         try {
+            if (!messageContainer || !messageContainer.markdownContainer) {
+                console.error(`[${timestamp()}] [FILE] No message container available for file download`);
+                return;
+            }
+            
             const binaryString = atob(base64Data);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) {
@@ -818,32 +803,20 @@ export class ChatApiHandler {
             downloadLink.style.textDecoration = 'none';
             downloadLink.style.fontWeight = 'bold';
 
-            // 关键修复：创建独立的消息容器，不依赖状态
-            // 注意：这里不传递任何参数，让 UI 库创建标准消息容器
-            const messageContainer = ui.createAIMessageElement();
-            
-            // 关键：确保这个新容器不会被设置为全局当前消息
-            // 通过不将其赋值给 this.state.currentAIMessageContentDiv 来实现
-            
-            // 添加到新容器的内容区域
-            if (messageContainer && messageContainer.markdownContainer) {
-                const successMsg = document.createElement('p');
-                successMsg.textContent = `✅ 文件 ${fileName} 已生成并可供下载。`;
-                successMsg.style.fontWeight = 'bold';
-                successMsg.style.margin = '5px 0';
+            const successMsg = document.createElement('p');
+            successMsg.textContent = `✅ 文件 ${fileName} 已生成并可供下载。`;
+            successMsg.style.fontWeight = 'bold';
+            successMsg.style.margin = '5px 0';
 
-                messageContainer.markdownContainer.appendChild(successMsg);
-                messageContainer.markdownContainer.appendChild(downloadLink);
-                messageContainer.markdownContainer.appendChild(document.createElement('br'));
-                
-                console.log(`[${timestamp()}] [FILE] Download link added to independent container for ${fileName}`);
-            }
+            messageContainer.markdownContainer.appendChild(successMsg);
+            messageContainer.markdownContainer.appendChild(downloadLink);
+            messageContainer.markdownContainer.appendChild(document.createElement('br'));
+            
+            console.log(`[${timestamp()}] [FILE] Download link added to container for ${fileName}`);
             
             downloadLink.addEventListener('click', () => {
                 setTimeout(() => { URL.revokeObjectURL(url); }, 100);
             });
-            
-            console.log(`[${timestamp()}] [FILE] Download link created successfully in its own container for ${fileName}`);
             
             if (ui.scrollToBottom) {
                 ui.scrollToBottom();
@@ -851,72 +824,49 @@ export class ChatApiHandler {
             
         } catch (error) {
             console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
-            const errorContainer = ui.createAIMessageElement();
-            if (errorContainer && errorContainer.markdownContainer) {
+            if (messageContainer && messageContainer.markdownContainer) {
                 const errorElement = document.createElement('p');
                 errorElement.textContent = `创建文件下载时出错 ${fileName}: ${error.message}`;
                 errorElement.style.color = 'red';
-                errorContainer.markdownContainer.appendChild(errorElement);
+                messageContainer.markdownContainer.appendChild(errorElement);
             }
         }
     }
 
     /**
      * @private
-     * @description Attempts to parse a JSON string that may have minor syntax errors,
-     * which can sometimes be output by language models.
-     * @param {string} jsonString - The JSON string to parse.
-     * @returns {object} The parsed JavaScript object.
-     * @throws {Error} If the string cannot be parsed even after cleanup attempts.
+     * @description Attempts to parse a JSON string that may have minor syntax errors
      */
     _robustJsonParse(jsonString) {
         try {
-            // First, try the standard parser.
             return JSON.parse(jsonString);
         } catch (e) {
             console.warn("[MCP] Standard JSON.parse failed, attempting robust parsing...", e);
             let cleanedString = jsonString;
 
-            // 1. Remove trailing commas from objects and arrays.
             cleanedString = cleanedString.replace(/,\s*([}\]])/g, '$1');
-
-            // 2. Escape unescaped newlines and carriage returns within string literals, but not within JSON structure.
-            // This is a common issue with LLM output that can break JSON.
-            // This regex tries to target content inside string values, not keys or structural elements.
-            // This is a heuristic and might not cover all cases, but should help with common code snippets.
             cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\n/g, '$1\\n');
             cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\r/g, '$1\\r');
-
-
-            // 3. Fix issue where a quote is added after a number or boolean.
-            // e.g., "max_results": 5" -> "max_results": 5
             cleanedString = cleanedString.replace(/:( *[0-9\.]+)\"/g, ':$1');
             cleanedString = cleanedString.replace(/:( *(?:true|false))\"/g, ':$1');
 
             try {
-                // Retry parsing with the cleaned string.
                 return JSON.parse(cleanedString);
             } catch (finalError) {
                 console.error("[MCP] Robust JSON parsing failed after cleanup.", finalError);
-                // Throw the original error for better context if the final one is not informative.
                 throw finalError || e;
             }
         }
     }
 
     /**
-     * ✨ [最终优化版] 独立的工具调用方法
-     * @description 将所有工具调用统一发送到后端代理，由后端决定如何处理。
-     * @param {string} toolName - 要调用的工具名称。
-     * @param {object} parameters - 工具所需的参数。
-     * @returns {Promise<object>} - 返回工具执行的结果。
+     * ✨ 独立的工具调用方法
      */
     async callTool(toolName, parameters) {
         const timestamp = () => new Date().toISOString();
         console.log(`[${timestamp()}] [ChatApiHandler] Forwarding tool call to backend proxy: ${toolName}`, parameters);
         
         try {
-            // 核心：简单地将请求发送到通用的后端代理端点
             const response = await fetch('/api/mcp-proxy', {
                 method: 'POST',
                 headers: {
@@ -926,7 +876,6 @@ export class ChatApiHandler {
                     tool_name: toolName,
                     parameters: parameters || {},
                     requestId: `tool_call_${Date.now()}`
-                    // ✨ 注意：不再需要发送任何 server_url
                 }),
             });
 
@@ -938,7 +887,6 @@ export class ChatApiHandler {
             const result = await response.json();
             console.log(`[${timestamp()}] [ChatApiHandler] Received result from backend proxy:`, result);
             
-            // 适配 Orchestrator 预期的返回格式
             return {
                 success: result.success !== false,
                 output: result.output || result.result || result.data || JSON.stringify(result),
@@ -947,7 +895,6 @@ export class ChatApiHandler {
 
         } catch (error) {
             console.error(`[${timestamp()}] [ChatApiHandler] Error during tool proxy call for ${toolName}:`, error);
-            // 向上抛出错误，让 Orchestrator 能够捕获并处理
             throw error; 
         }
     }
