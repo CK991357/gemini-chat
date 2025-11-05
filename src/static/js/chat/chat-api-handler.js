@@ -342,6 +342,81 @@ export class ChatApiHandler {
     }
 
     /**
+     * @description 兼容方法：提供一个非流式的 completeChat 接口，返回模型的完整JSON响应。
+     * 许多Agent逻辑期望llm.completeChat类似于OpenAI风格的非流式response。
+     * @param {object} requestBody
+     * @param {string} apiKey
+     * @returns {Promise<object>} 响应JSON
+     */
+    async completeChat(requestBody, apiKey) {
+        // 尝试非流式调用；如果后端不支持或返回不符合预期，则回退到流式组装
+        try {
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({ ...requestBody, stream: false })
+            });
+
+            if (response.ok) {
+                let json = null;
+                try { json = await response.json(); } catch (_e) { json = null; }
+
+                // 检查是否为预期的非流式响应（含 choices/message）
+                if (json && Array.isArray(json.choices) && json.choices[0] && json.choices[0].message && json.choices[0].message.content) {
+                    return json;
+                }
+                // 如果返回结构不符，继续走流式回退逻辑
+            }
+
+            // 回退：使用流式接口并等待其完成，然后从 state 中提取最终文本
+            console.warn('[ChatApiHandler] Non-stream response missing or backend does not support non-stream mode; falling back to stream adapter.');
+            // 我们复用现有的 streamChatCompletion，它会在完成时将最终内容推入 this.state.chatHistory
+            await this.streamChatCompletion(requestBody, apiKey);
+
+            // 尝试从 chatHistory 中取最后一条 assistant 内容
+            let finalText = null;
+            if (Array.isArray(this.state.chatHistory)) {
+                for (let i = this.state.chatHistory.length - 1; i >= 0; i--) {
+                    const entry = this.state.chatHistory[i];
+                    if (entry && entry.role === 'assistant') {
+                        if (typeof entry.content === 'string' && entry.content.trim() !== '') {
+                            finalText = entry.content;
+                            break;
+                        }
+                        // 也可能存在 parts/markdown buffer
+                        if (entry.parts && entry.parts[0] && entry.parts[0].functionResponse && entry.parts[0].functionResponse.response) {
+                            finalText = entry.parts[0].functionResponse.response;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 其次尝试从 currentAIMessageContentDiv 缓冲提取
+            if (!finalText && this.state.currentAIMessageContentDiv && typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string') {
+                finalText = this.state.currentAIMessageContentDiv.rawMarkdownBuffer;
+            }
+
+            if (finalText) {
+                return {
+                    choices: [
+                        { message: { content: finalText } }
+                    ]
+                };
+            }
+
+            throw new Error('无法从流式/非流式响应中提取最终文本');
+
+        } catch (error) {
+            console.error('[ChatApiHandler] completeChat failed (both non-stream and stream fallback):', error);
+            throw error;
+        }
+    }
+
+    /**
      * @private
      * @description Handles the execution of a Gemini tool call.
      * @param {object} functionCall - The Gemini function call object.
@@ -411,7 +486,7 @@ export class ChatApiHandler {
     _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
-        let callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
+    const callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
 
         try {

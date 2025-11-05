@@ -278,6 +278,38 @@ export function createAIMessageElement() {
 }
 
 /**
+ * 通用添加消息接口（兼容旧代码调用 chatUI.addMessage）
+ * @param {{role:string, content:string}} msg
+ */
+export function addMessage(msg) {
+    if (!msg || !msg.role) return;
+    const role = msg.role;
+    const content = msg.content || '';
+
+    if (role === 'assistant') {
+        const el = createAIMessageElement();
+        if (!el) return;
+        // 使用库解析markdown（如果可用）
+        if (libraries && libraries.marked) {
+            try {
+                el.markdownContainer.innerHTML = libraries.marked.parse(content);
+            } catch (_e) {
+                el.markdownContainer.textContent = content;
+            }
+        } else {
+            el.markdownContainer.textContent = content;
+        }
+        scrollToBottom();
+    } else if (role === 'user') {
+        // 简单地显示用户消息
+        displayUserMessage(content, msg.files || []);
+    } else {
+        // 将系统消息记录到日志
+        logMessage(content, 'system');
+    }
+}
+
+/**
  * Scrolls the main message history container to the bottom.
  * Respects user's manual scrolling.
  */
@@ -295,7 +327,7 @@ export function scrollToBottom() {
  * @param {object} args - 传递给工具的参数。
  * @returns {void}
  */
-export function displayToolCallStatus(toolName, args) {
+export function displayToolCallStatus(toolName, _args) {
     if (!elements.messageHistory) return;
     const statusDiv = document.createElement('div');
     statusDiv.className = 'tool-call-status';
@@ -319,7 +351,7 @@ export function displayToolCallStatus(toolName, args) {
  * @param {string} [altText='Generated Image'] - Alternative text for the image.
  * @param {string} [fileName='generated_image.png'] - The default filename for download.
  */
-export function displayImageResult(base64Image, altText = 'Generated Image', fileName = 'generated_image.png') {
+export function displayImageResult(base64Image, altText = 'Generated Image', _fileName = 'generated_image.png') {
     if (!elements.messageHistory) return;
 
     const messageDiv = document.createElement('div');
@@ -360,7 +392,7 @@ export function displayImageResult(base64Image, altText = 'Generated Image', fil
         const sizeInBytes = (base64Length * 0.75) - (base64Image.endsWith('==') ? 2 : (base64Image.endsWith('=') ? 1 : 0));
         const sizeInKB = (sizeInBytes / 1024).toFixed(2);
         const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
-        let size = sizeInKB < 1024 ? `${sizeInKB} KB` : `${sizeInMB} MB`;
+    const size = sizeInKB < 1024 ? `${sizeInKB} KB` : `${sizeInMB} MB`;
 
         imageElement.addEventListener('click', () => {
             openImageModal(imageElement.src, altText, dimensions, size, imageType);
