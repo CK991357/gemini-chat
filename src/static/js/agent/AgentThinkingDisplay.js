@@ -1,24 +1,354 @@
 // src/static/js/agent/AgentThinkingDisplay.js
 export class AgentThinkingDisplay {
     constructor(containerId = 'agent-thinking-container') {
-        this.container = document.getElementById(containerId) || this.createContainer();
+        this.containerId = containerId;
+        this.container = null;
         this.currentSession = null;
         this.thinkingBuffer = '';
+        this.stylesInjected = false; // 标记样式是否已注入
+        this.timeUpdateInterval = null;
+        
         this.setupEventListeners();
+        this.injectStyles(); // 预注入样式，但确保默认隐藏
+    }
+
+    /**
+     * 🎯 动态注入CSS样式 - 关键修复
+     */
+    injectStyles() {
+        if (this.stylesInjected) return;
+
+        const styleId = 'agent-thinking-styles';
+        if (document.getElementById(styleId)) return;
+
+        const css = `
+/* Agent Thinking Display Styles - 动态注入 */
+#agent-thinking-container {
+    display: none;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 500px;
+    max-height: 80vh;
+    background: white;
+    border: 1px solid #e1e5e9;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+#agent-thinking-container.minimized {
+    height: 50px;
+    overflow: hidden;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+    #agent-thinking-container {
+        width: 95% !important;
+        left: 2.5% !important;
+        right: 2.5% !important;
+        top: 10px !important;
+    }
+}
+
+/* 内部样式 */
+.agent-thinking-container .session-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+}
+
+.agent-thinking-container .session-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.agent-thinking-container .session-icon {
+    font-size: 20px;
+}
+
+.agent-thinking-container .session-title h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.agent-thinking-container .session-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.agent-thinking-container .session-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.agent-thinking-container .session-controls button {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: background 0.2s;
+}
+
+.agent-thinking-container .session-controls button:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.agent-thinking-container .session-content {
+    padding: 0;
+    max-height: calc(80vh - 60px);
+    overflow-y: auto;
+}
+
+.agent-thinking-container .section-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #2d3748;
+    margin-bottom: 12px;
+    padding: 16px 20px 0;
+}
+
+.agent-thinking-container .user-query-section {
+    border-bottom: 1px solid #f1f5f9;
+    padding: 0 20px 16px;
+}
+
+.agent-thinking-container .user-query {
+    background: #f8fafc;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #4a5568;
+}
+
+.agent-thinking-container .execution-plan-section {
+    border-bottom: 1px solid #f1f5f9;
+    padding: 0 20px 16px;
+}
+
+.agent-thinking-container .plan-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.agent-thinking-container .plan-step {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    transition: all 0.2s;
+}
+
+.agent-thinking-container .plan-step.current {
+    border-color: #4299e1;
+    background: #ebf8ff;
+}
+
+.agent-thinking-container .plan-step.completed {
+    border-color: #48bb78;
+    background: #f0fff4;
+}
+
+.agent-thinking-container .step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.agent-thinking-container .step-number {
+    width: 24px;
+    height: 24px;
+    background: #e2e8f0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.agent-thinking-container .plan-step.current .step-number {
+    background: #4299e1;
+    color: white;
+}
+
+.agent-thinking-container .plan-step.completed .step-number {
+    background: #48bb78;
+    color: white;
+}
+
+.agent-thinking-container .step-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.agent-thinking-container .step-type {
+    font-size: 12px;
+    font-weight: 600;
+    color: #718096;
+    margin-bottom: 4px;
+}
+
+.agent-thinking-container .step-description {
+    font-size: 14px;
+    line-height: 1.4;
+    color: #2d3748;
+    margin-bottom: 6px;
+}
+
+.agent-thinking-container .step-tool {
+    font-size: 12px;
+    color: #667eea;
+    background: #f0f4ff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.agent-thinking-container .step-result {
+    font-size: 12px;
+    color: #718096;
+    background: #f7fafc;
+    padding: 6px;
+    border-radius: 4px;
+    margin-top: 6px;
+    border-left: 3px solid #e2e8f0;
+}
+
+.agent-thinking-container .thinking-process-section {
+    border-bottom: 1px solid #f1f5f9;
+    padding: 0 20px 16px;
+}
+
+.agent-thinking-container .thinking-content {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.agent-thinking-container .thinking-chunk {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.agent-thinking-container .thinking-chunk:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.agent-thinking-container .thinking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.agent-thinking-container .thinking-time {
+    font-size: 11px;
+    color: #718096;
+}
+
+.agent-thinking-container .thinking-type {
+    font-size: 11px;
+    font-weight: 600;
+    color: #667eea;
+}
+
+.agent-thinking-container .thinking-text {
+    color: #4a5568;
+    white-space: pre-wrap;
+}
+
+.agent-thinking-container .current-status-section {
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    background: #f7fafc;
+}
+
+.agent-thinking-container .status-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.agent-thinking-container .status-label {
+    font-size: 11px;
+    color: #718096;
+    font-weight: 500;
+}
+
+.agent-thinking-container .status-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.agent-thinking-container .thinking-placeholder {
+    color: #a0aec0;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+        `;
+
+        const styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        styleElement.textContent = css;
+        document.head.appendChild(styleElement);
+
+        this.stylesInjected = true;
+        console.log('[AgentThinkingDisplay] 动态样式注入完成');
     }
 
     createContainer() {
-        const container = document.createElement('div');
-        container.id = 'agent-thinking-container';
-        container.className = 'agent-thinking-container';
-        
-        // 插入到聊天界面旁边
-        const chatContainer = document.querySelector('.chat-container');
-        if (chatContainer) {
-            chatContainer.parentNode.insertBefore(container, chatContainer);
-        } else {
-            document.body.appendChild(container);
+        // 如果容器已存在，直接返回
+        const existingContainer = document.getElementById(this.containerId);
+        if (existingContainer) {
+            this.container = existingContainer;
+            return this.container;
         }
+
+        const container = document.createElement('div');
+        container.id = this.containerId;
+        container.className = 'agent-thinking-container';
+        container.style.display = 'none'; // 关键：确保默认隐藏
+        
+        // 插入到body末尾，避免影响现有布局
+        document.body.appendChild(container);
+        this.container = container;
         
         return container;
     }
@@ -27,6 +357,11 @@ export class AgentThinkingDisplay {
      * 🎯 开始新的Agent会话
      */
     startSession(userMessage, maxIterations = 8) {
+        // 确保容器存在
+        if (!this.container) {
+            this.container = this.createContainer();
+        }
+        
         const sessionId = `agent_${Date.now()}`;
         this.currentSession = {
             id: sessionId,
@@ -426,29 +761,51 @@ export class AgentThinkingDisplay {
     }
 
     show() {
-        this.container.style.display = 'block';
+        if (this.container) {
+            this.container.style.display = 'block';
+        }
     }
 
     hide() {
-        this.container.style.display = 'none';
+        if (this.container) {
+            this.container.style.display = 'none';
+        }
     }
 
     clear() {
         if (this.timeUpdateInterval) {
             clearInterval(this.timeUpdateInterval);
+            this.timeUpdateInterval = null;
         }
         this.currentSession = null;
         this.thinkingBuffer = '';
-        this.container.innerHTML = '';
+        if (this.container) {
+            this.container.innerHTML = '';
+        }
     }
 
     /**
-     * 🎯 销毁实例
+     * 🎯 完全销毁实例
      */
     destroy() {
         this.clear();
         if (this.container && this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
+            this.container = null;
+        }
+        
+        // 可选：移除注入的样式
+        // this.removeStyles();
+    }
+
+    /**
+     * 🎯 可选：移除注入的样式
+     */
+    removeStyles() {
+        const styleElement = document.getElementById('agent-thinking-styles');
+        if (styleElement && styleElement.parentNode) {
+            styleElement.parentNode.removeChild(styleElement);
+            this.stylesInjected = false;
         }
     }
 }

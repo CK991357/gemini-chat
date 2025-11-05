@@ -20,7 +20,6 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
 
 // 🚀 新增导入：智能代理系统
-import { AgentThinkingDisplay } from './agent/AgentThinkingDisplay.js'; // 🚀 新增：导入 AgentThinkingDisplay
 import { Orchestrator } from './agent/Orchestrator.js';
 import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
 
@@ -710,7 +709,7 @@ async function initializeEnhancedAgent() {
         const isAgentEnabled = localStorage.getItem('agentModeEnabled') !== 'false';
 
         // 初始化Agent思考显示
-        agentThinkingDisplay = new AgentThinkingDisplay(); // 🚀 新增：初始化 AgentThinkingDisplay
+        // agentThinkingDisplay 实例现在通过 startAgentThinking() 懒加载创建
 
         orchestrator = new Orchestrator(chatApiHandler, {
             enabled: isAgentEnabled,
@@ -1000,8 +999,8 @@ async function handleHttpMessage(messageText, attachedFiles) {
 async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames) {
     console.log("🤖 Agent Mode ON: 智能路由用户请求");
     
-    // 启动思考过程显示
-    const sessionId = agentThinkingDisplay.startSession(messageText, 8);
+    // 启动思考过程显示 (使用新的懒加载函数)
+    const sessionId = startAgentThinking(messageText, 8);
     
     try {
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
@@ -2350,3 +2349,32 @@ window.setAudioSampleRate = (rate) => {
 };
 
 window.getAudioSampleRate = () => audioStreamer?.sampleRate || null;
+
+/**
+ * @function startAgentThinking
+ * @description 启动 Agent 思考显示，如果实例不存在则创建。
+ * @param {string} userMessage - 用户消息。
+ * @param {number} [maxIterations=8] - 最大迭代次数。
+ * @returns {string} 会话 ID。
+ */
+export function startAgentThinking(userMessage, maxIterations = 8) {
+    // 只在需要时创建实例
+    if (!agentThinkingDisplay) {
+        agentThinkingDisplay = new AgentThinkingDisplay();
+    }
+    return agentThinkingDisplay.startSession(userMessage, maxIterations);
+}
+
+/**
+ * @function stopAgentThinking
+ * @description 停止 Agent 思考显示并隐藏。
+ * @returns {void}
+ */
+export function stopAgentThinking() {
+    if (agentThinkingDisplay) {
+        agentThinkingDisplay.hide();
+        // 可选：完全销毁
+        // agentThinkingDisplay.destroy();
+        // agentThinkingDisplay = null;
+    }
+}

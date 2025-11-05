@@ -422,3 +422,20 @@
         max-height: 150px;
     }
 }
+/* 确保Agent容器默认完全隐藏且不影响布局 */
+#agent-thinking-container {
+    display: none !important;
+    position: fixed !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 只有在显示时才应用样式 */
+#agent-thinking-container[style*="display: block"] {
+    display: block !important;
+    /* 其他样式由JS动态注入的CSS控制 */
+}
