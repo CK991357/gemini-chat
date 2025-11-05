@@ -45,6 +45,31 @@ export class AgentThinkingDisplay {
     }
 
     /**
+     * 🎯 完成会话 - 修复：统一使用 completeSession 方法
+     */
+    completeSession(finalResult) {
+        if (!this.currentSession) return;
+
+        this.currentSession.status = 'completed';
+        this.currentSession.endTime = Date.now();
+        this.currentSession.finalResult = finalResult;
+
+        this.updateThinking('🎉 Agent执行完成！', 'completion');
+        this.updateStatus('completed');
+        
+        // 添加完成总结
+        this.addCompletionSummary();
+    }
+
+    /**
+     * 🎯 结束会话（兼容性方法）- 修复：添加 endSession 方法
+     */
+    endSession(finalResult) {
+        console.warn('endSession 方法已弃用，请使用 completeSession 方法');
+        this.completeSession(finalResult);
+    }
+
+    /**
      * 🎯 渲染会话界面
      */
     renderSession() {
@@ -74,7 +99,7 @@ export class AgentThinkingDisplay {
                     <!-- 执行计划 -->
                     <div class="execution-plan-section">
                         <div class="section-title">📋 执行计划</div>
-                        <div class="plan-steps">
+                        <div class="plan-steps" id="plan-steps">
                             ${this.renderPlanSteps(steps)}
                         </div>
                     </div>
@@ -107,6 +132,26 @@ export class AgentThinkingDisplay {
         `;
 
         this.attachContainerEvents();
+        this.startTimeUpdate();
+    }
+
+    /**
+     * 🎯 开始更新时间显示
+     */
+    startTimeUpdate() {
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
+        }
+        
+        this.timeUpdateInterval = setInterval(() => {
+            if (this.currentSession && this.currentSession.startTime) {
+                const elapsed = Math.floor((Date.now() - this.currentSession.startTime) / 1000);
+                const timeElement = this.container.querySelector('#elapsed-time');
+                if (timeElement) {
+                    timeElement.textContent = `${elapsed}s`;
+                }
+            }
+        }, 1000);
     }
 
     /**
@@ -128,6 +173,7 @@ export class AgentThinkingDisplay {
                     <div class="step-description">${this.escapeHtml(step.description)}</div>
                     ${step.tool ? `<div class="step-tool">🛠️ ${step.tool}</div>` : ''}
                     ${step.result ? `<div class="step-result">${this.formatStepResult(step.result)}</div>` : ''}
+                    ${step.duration ? `<div class="step-duration">${step.duration}ms</div>` : ''}
                 </div>
             </div>
         `).join('');
@@ -150,7 +196,7 @@ export class AgentThinkingDisplay {
         thinkingChunk.className = `thinking-chunk thinking-${type}`;
         
         const timestamp = new Date().toLocaleTimeString();
-        const icon = type === 'thinking' ? '🧠' : type === 'action' ? '🎯' : '📝';
+        const icon = this.getThinkingIcon(type);
         
         thinkingChunk.innerHTML = `
             <div class="thinking-header">
@@ -168,6 +214,8 @@ export class AgentThinkingDisplay {
      * 🎯 更新迭代信息
      */
     updateIteration(iteration, total, thinking = '') {
+        if (!this.currentSession) return;
+        
         this.currentSession.currentIteration = iteration;
         
         const iterationElement = this.container.querySelector('#current-iteration');
@@ -186,12 +234,19 @@ export class AgentThinkingDisplay {
     addStep(step) {
         if (!this.currentSession) return;
 
-        this.currentSession.steps.push({
+        // 确保有步骤数组
+        if (!this.currentSession.steps) {
+            this.currentSession.steps = [];
+        }
+
+        const newStep = {
             ...step,
             timestamp: Date.now(),
             completed: false,
             current: true
-        });
+        };
+
+        this.currentSession.steps.push(newStep);
 
         // 更新之前的当前步骤
         this.currentSession.steps.forEach((s, index) => {
@@ -226,25 +281,8 @@ export class AgentThinkingDisplay {
         // 记录结果
         if (step.type === 'action') {
             const resultText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-            this.updateThinking(`工具执行完成:\n${resultText}`, 'result');
+            this.updateThinking(`工具执行完成 (${step.duration}ms):\n${resultText}`, 'result');
         }
-    }
-
-    /**
-     * 🎯 完成会话
-     */
-    completeSession(finalResult) {
-        if (!this.currentSession) return;
-
-        this.currentSession.status = 'completed';
-        this.currentSession.endTime = Date.now();
-        this.currentSession.finalResult = finalResult;
-
-        this.updateThinking('🎉 Agent执行完成！', 'completion');
-        this.updateStatus('completed');
-        
-        // 添加完成总结
-        this.addCompletionSummary();
     }
 
     /**
@@ -272,6 +310,8 @@ export class AgentThinkingDisplay {
      * 🎯 更新状态
      */
     updateStatus(status) {
+        if (!this.currentSession) return;
+        
         this.currentSession.status = status;
         
         const statusElement = this.container.querySelector('#execution-status');
@@ -298,6 +338,19 @@ export class AgentThinkingDisplay {
         return icons[type] || '📝';
     }
 
+    getThinkingIcon(type) {
+        const icons = {
+            thinking: '🧠',
+            action: '🎯',
+            result: '📊',
+            iteration: '🔄',
+            completion: '🎉',
+            summary: '📋',
+            error: '❌'
+        };
+        return icons[type] || '💭';
+    }
+
     getThinkingTypeText(type) {
         const texts = {
             thinking: '模型思考',
@@ -305,7 +358,8 @@ export class AgentThinkingDisplay {
             result: '执行结果',
             iteration: '迭代分析',
             completion: '完成',
-            summary: '总结'
+            summary: '总结',
+            error: '错误'
         };
         return texts[type] || '思考';
     }
@@ -364,6 +418,11 @@ export class AgentThinkingDisplay {
         window.addEventListener('agent:session_completed', (event) => {
             this.completeSession(event.detail.result);
         });
+
+        window.addEventListener('agent:session_error', (event) => {
+            this.updateThinking(`❌ Agent执行出错: ${event.detail.error}`, 'error');
+            this.updateStatus('error');
+        });
     }
 
     show() {
@@ -375,8 +434,21 @@ export class AgentThinkingDisplay {
     }
 
     clear() {
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
+        }
         this.currentSession = null;
         this.thinkingBuffer = '';
         this.container.innerHTML = '';
+    }
+
+    /**
+     * 🎯 销毁实例
+     */
+    destroy() {
+        this.clear();
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+        }
     }
 }
