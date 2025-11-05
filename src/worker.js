@@ -192,31 +192,129 @@ async function handleWebSocket(request, env) {
   const [client, proxy] = new WebSocketPair();
   proxy.accept();
   
-  // 用于存储在连接建立前收到的消息
+  // 用于存储在连接建立前收到的消息（带元数据、重试和超时）
   let pendingMessages = [];
-  
+  let pendingMessageCounter = 0;
+  const PENDING_QUEUE_MAX = 2000; // 队列上限，避免内存耗尽（可配置）
+
   const targetWebSocket = new WebSocket(targetUrl);
+
+  function makeMessageEntry(data) {
+    return {
+      id: `msg_${Date.now()}_${pendingMessageCounter++}`,
+      timestamp: Date.now(),
+      data,
+      retries: 0,
+      maxRetries: 3,
+      status: 'pending', // pending | sending | sent | failed | expired
+      attemptAt: Date.now()
+    };
+  }
+
+  function scheduleExpiry(entry) {
+    // 30s 后过期（如果仍未发送）
+    setTimeout(() => {
+      const idx = pendingMessages.findIndex(m => m.id === entry.id && m.status === 'pending');
+      if (idx !== -1) {
+        const expired = pendingMessages[idx];
+        expired.status = 'expired';
+        try {
+          if (proxy && proxy.readyState === WebSocket.OPEN) {
+            proxy.send(JSON.stringify({ type: 'message_expired', messageId: expired.id }));
+          }
+        } catch (e) {
+          // 忽略发送错误
+          console.warn('Notify client of expiry failed', e);
+        }
+      }
+    }, 30000);
+  }
+
+  function queueMessage(data) {
+    try {
+      if (pendingMessages.length >= PENDING_QUEUE_MAX) {
+        // 队列已满，直接告知客户端失败
+        if (proxy && proxy.readyState === WebSocket.OPEN) {
+          proxy.send(JSON.stringify({ type: 'message_rejected', reason: 'queue_full' }));
+        }
+        return null;
+      }
+      const entry = makeMessageEntry(data);
+      pendingMessages.push(entry);
+      scheduleExpiry(entry);
+      return entry;
+    } catch (e) {
+      console.error('queueMessage error', e);
+      return null;
+    }
+  }
+
+  function backoffFor(retries) {
+    // 指数退避 (ms)，基数 500ms
+    return Math.min(500 * Math.pow(2, retries), 30000);
+  }
+
+  function flushPendingMessages() {
+    if (!pendingMessages.length) return;
+
+    // 按时间排序，优先发送到期的
+    const now = Date.now();
+    const toAttempt = pendingMessages.filter(m => m.status === 'pending' && m.attemptAt <= now);
+
+    for (const msg of toAttempt) {
+      try {
+        if (targetWebSocket && targetWebSocket.readyState === WebSocket.OPEN) {
+          msg.status = 'sending';
+          targetWebSocket.send(msg.data);
+          msg.status = 'sent';
+          // 发送成功后，从队列中移除（后续统一清理）
+        } else {
+          // 目标不可用，安排重试
+          msg.retries++;
+          if (msg.retries >= msg.maxRetries) {
+            msg.status = 'failed';
+            if (proxy && proxy.readyState === WebSocket.OPEN) {
+              proxy.send(JSON.stringify({ type: 'message_failed', messageId: msg.id, reason: 'max_retries_exceeded' }));
+            }
+          } else {
+            msg.attemptAt = Date.now() + backoffFor(msg.retries);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to send pending message ${msg.id}:`, err);
+        msg.retries++;
+        msg.status = 'pending';
+        if (msg.retries >= msg.maxRetries) {
+          msg.status = 'failed';
+          if (proxy && proxy.readyState === WebSocket.OPEN) {
+            proxy.send(JSON.stringify({ type: 'message_failed', messageId: msg.id, reason: err.message || 'send_error' }));
+          }
+        } else {
+          msg.attemptAt = Date.now() + backoffFor(msg.retries);
+        }
+      }
+    }
+
+    // 清理已发送/失败/过期的消息，保留 pending 的
+    pendingMessages = pendingMessages.filter(m => m.status === 'pending');
+  }
  
   console.log('Initial targetWebSocket readyState:', targetWebSocket.readyState);
  
   targetWebSocket.addEventListener("open", () => {
     console.log('Connected to target server');
     console.log('targetWebSocket readyState after open:', targetWebSocket.readyState);
-    
-    // 连接建立后，发送所有待处理的消息
-    console.log(`Processing ${pendingMessages.length} pending messages`);
-    for (const message of pendingMessages) {
-      try {
-        targetWebSocket.send(message);
-        console.log('Sent pending message:', message);
-      } catch (error) {
-        console.error('Error sending pending message:', error);
-      }
+
+    // 连接建立后，触发队列刷新（含重试/退避策略）
+    try {
+      console.log(`Processing ${pendingMessages.length} pending messages`);
+      flushPendingMessages();
+    } catch (e) {
+      console.error('Error flushing pending messages on open:', e);
     }
-    pendingMessages = []; // 清空待处理消息队列
   });
  
-  proxy.addEventListener("message", async (event) => {
+  proxy.addEventListener("message", (event) => {
     console.log('Received message from client:', {
       dataPreview: typeof event.data === 'string' ? event.data.slice(0, 200) : 'Binary data',
       dataType: typeof event.data,
@@ -229,12 +327,16 @@ async function handleWebSocket(request, env) {
         targetWebSocket.send(event.data);
         console.log('Successfully sent message to gemini');
       } catch (error) {
-        console.error('Error sending to gemini:', error);
+        console.error('Error sending to gemini, queueing for retry:', error);
+        // 发送失败，改为入队并触发后续重试
+  queueMessage(event.data);
+        // 立即触发一次刷新尝试
+        flushPendingMessages();
       }
     } else {
       // 如果连接还未建立，将消息加入待处理队列
       console.log('Connection not ready, queueing message');
-      pendingMessages.push(event.data);
+      queueMessage(event.data);
     }
   });
  
