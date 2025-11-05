@@ -148,6 +148,15 @@ export class AgentExecutor {
             }
         }));
 
+        // 🎯 新增：在聊天区显示Agent开始消息
+        window.dispatchEvent(new CustomEvent('chat:agent_started', {
+            detail: {
+                userMessage: userMessage,
+                sessionId: runId,
+                maxIterations: this.maxIterations
+            }
+        }));
+
         // 🎯 初始化会话状态
         this.currentSession = {
             steps: [],
@@ -223,6 +232,15 @@ export class AgentExecutor {
                     }
                 }));
 
+                // 🎯 思考开始 - 同时在聊天区显示
+                window.dispatchEvent(new CustomEvent('chat:agent_thinking', {
+                    detail: {
+                        content: `第 ${iteration + 1} 次思考...`,
+                        iteration: iteration + 1,
+                        sessionId: runId
+                    }
+                }));
+
                 // 🎯 动态计算思考超时时间
                 thinkTimeout = this._getThinkTimeout(
                     iteration, 
@@ -283,6 +301,16 @@ export class AgentExecutor {
                     }
                 }));
 
+                // 🎯 添加思考步骤到聊天区
+                window.dispatchEvent(new CustomEvent('chat:agent_step', {
+                    detail: {
+                        type: 'think',
+                        content: action.log || '模型思考过程',
+                        iteration: iteration + 1,
+                        sessionId: runId
+                    }
+                }));
+
                 // 🎯 检查是否获得最终答案
                 if (action.type === 'final_answer') {
                     finalAnswer = action.answer;
@@ -297,6 +325,15 @@ export class AgentExecutor {
                                 timestamp: Date.now(),
                                 iteration: iteration + 1
                             }
+                        }
+                    }));
+
+                    // 🎯 最终答案显示到聊天区
+                    window.dispatchEvent(new CustomEvent('chat:agent_final_answer', {
+                        detail: {
+                            content: finalAnswer,
+                            sessionId: runId,
+                            iterations: iteration + 1
                         }
                     }));
                     
@@ -330,6 +367,18 @@ export class AgentExecutor {
                         }
                     }));
 
+                    // 🎯 工具调用显示到聊天区
+                    window.dispatchEvent(new CustomEvent('chat:agent_step', {
+                        detail: {
+                            type: 'action',
+                            content: `执行工具: ${action.tool_name}`,
+                            tool: action.tool_name,
+                            parameters: action.parameters,
+                            iteration: iteration + 1,
+                            sessionId: runId
+                        }
+                    }));
+
                     // 🎯 增强：传递思考超时信息给工具执行
                     observation = await this._executeAction(action, runId, thinkTimeout);
                     
@@ -339,6 +388,18 @@ export class AgentExecutor {
                             index: actionStepIndex,
                             result: observation.output,
                             success: !observation.isError
+                        }
+                    }));
+
+                    // 🎯 工具结果显示到聊天区
+                    window.dispatchEvent(new CustomEvent('chat:agent_step_completed', {
+                        detail: {
+                            type: 'observation',
+                            content: observation.output,
+                            tool: action.tool_name,
+                            success: !observation.isError,
+                            iteration: iteration + 1,
+                            sessionId: runId
                         }
                     }));
                     
@@ -366,6 +427,15 @@ export class AgentExecutor {
                 consecutiveErrors++;
                 console.error(`[AgentExecutor] 第 ${iteration + 1} 次迭代出错:`, error);
                 
+                // 🎯 错误显示到聊天区
+                window.dispatchEvent(new CustomEvent('chat:agent_error', {
+                    detail: {
+                        error: error.message,
+                        iteration: iteration + 1,
+                        sessionId: runId
+                    }
+                }));
+
                 // 🎯 创建错误观察结果
                 observation = {
                     success: false,
@@ -451,6 +521,15 @@ export class AgentExecutor {
 
         window.dispatchEvent(new CustomEvent('agent:session_completed', {
             detail: { 
+                result: finalResult,
+                sessionId: runId,
+                duration: this.currentSession.endTime - this.currentSession.startTime
+            }
+        }));
+
+        // 🎯 Agent完成显示到聊天区
+        window.dispatchEvent(new CustomEvent('chat:agent_completed', {
+            detail: {
                 result: finalResult,
                 sessionId: runId,
                 duration: this.currentSession.endTime - this.currentSession.startTime

@@ -439,3 +439,127 @@
     display: block !important;
     /* 其他样式由JS动态注入的CSS控制 */
 }
+
+/* Agent消息样式 */
+.message.agent-thinking,
+.message.agent-step,
+.message.agent-final-answer,
+.message.agent-error {
+    border-left: 4px solid #6366f1;
+    background: #f8fafc;
+}
+
+.message.agent-thinking .agent-thinking-header,
+.message.agent-step .agent-step-header,
+.message.agent-final-answer .agent-final-header,
+.message.agent-error .agent-error-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.agent-badge, .step-type, .final-badge, .error-badge {
+    background: #6366f1;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.iteration-badge, .tool-badge, .iterations-info, .iteration-info {
+    background: #94a3b8;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 0.75em;
+}
+
+.parameters-details {
+    margin-top: 8px;
+}
+
+.parameters-details summary {
+    cursor: pointer;
+    font-weight: bold;
+    color: #475569;
+}
+
+.parameters-details pre {
+    background: #f1f5f9;
+    padding: 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+    font-size: 0.9em;
+    overflow-x: auto;
+}
+
+.observation-result.success {
+    color: #059669;
+}
+
+.observation-result.error {
+    color: #dc2626;
+}
+
+.output-text {
+    margin-top: 4px;
+    white-space: pre-wrap;
+}
+
+.message.system.agent-start,
+.message.system.agent-complete {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+}
+
+.agent-start-header,
+.agent-complete-header {
+    font-weight: bold;
+    color: #1e40af;
+    margin-bottom: 8px;
+}
+
+.agent-title, .complete-badge {
+    background: #3b82f6;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 0.9em;
+}
+
+/* Agent执行摘要样式 */
+.agent-execution-summary {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 8px 0;
+    font-size: 0.9em;
+}
+
+.summary-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: #0369a1;
+}
+
+.summary-details {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    color: #475569;
+    font-size: 0.85em;
+}
+
+.summary-note {
+    color: #64748b;
+    font-size: 0.8em;
+    font-style: italic;
+}

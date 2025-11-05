@@ -22,6 +22,9 @@ export function initChatUI(el, hdl, libs) {
     elements = el;
     handlers = hdl;
     libraries = libs;
+    
+    // 🎯 初始化Agent事件监听器
+    setupAgentEventListeners();
 }
 
 /**
@@ -425,4 +428,304 @@ export function displayImageResult(base64Image, altText = 'Generated Image', _fi
     elements.messageHistory.appendChild(messageDiv);
 
     scrollToBottom();
+}
+
+/**
+ * 🎯 显示Agent思考过程在聊天区
+ */
+export function displayAgentThinking(content, iteration, sessionId) {
+    if (!elements.messageHistory) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai', 'agent-thinking');
+    messageDiv.setAttribute('data-agent-session', sessionId);
+    messageDiv.setAttribute('data-iteration', iteration);
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '🤖';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+
+    const thinkingHeader = document.createElement('div');
+    thinkingHeader.className = 'agent-thinking-header';
+    thinkingHeader.innerHTML = `
+        <span class="agent-badge">Agent思考</span>
+        <span class="iteration-badge">第${iteration}次迭代</span>
+    `;
+
+    const thinkingContent = document.createElement('div');
+    thinkingContent.className = 'agent-thinking-content';
+    thinkingContent.textContent = content;
+
+    contentDiv.appendChild(thinkingHeader);
+    contentDiv.appendChild(thinkingContent);
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    
+    elements.messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+}
+
+/**
+ * 🎯 显示Agent步骤在聊天区
+ */
+export function displayAgentStep(step, sessionId) {
+    if (!elements.messageHistory) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai', 'agent-step');
+    messageDiv.setAttribute('data-agent-session', sessionId);
+    messageDiv.setAttribute('data-step-type', step.type);
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = step.type === 'think' ? '💭' : '🎯';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+
+    const stepHeader = document.createElement('div');
+    stepHeader.className = 'agent-step-header';
+    
+    const stepTypeMap = {
+        'think': { text: '模型思考', icon: '💭' },
+        'action': { text: '工具执行', icon: '🛠️' },
+        'observation': { text: '执行结果', icon: '📊' }
+    };
+    
+    const stepInfo = stepTypeMap[step.type] || { text: step.type, icon: '📝' };
+    
+    stepHeader.innerHTML = `
+        <span class="step-type">${stepInfo.icon} ${stepInfo.text}</span>
+        ${step.tool ? `<span class="tool-badge">${step.tool}</span>` : ''}
+    `;
+
+    const stepContent = document.createElement('div');
+    stepContent.className = 'agent-step-content';
+    
+    if (step.type === 'think') {
+        stepContent.innerHTML = `
+            <div class="thinking-text">${escapeHtml(step.content)}</div>
+        `;
+    } else if (step.type === 'action') {
+        stepContent.innerHTML = `
+            <div class="action-info">
+                <strong>工具:</strong> ${step.tool}
+            </div>
+            ${step.parameters ? `
+            <details class="parameters-details">
+                <summary>参数</summary>
+                <pre>${JSON.stringify(step.parameters, null, 2)}</pre>
+            </details>
+            ` : ''}
+        `;
+    } else if (step.type === 'observation') {
+        stepContent.innerHTML = `
+            <div class="observation-result ${step.success ? 'success' : 'error'}">
+                <strong>${step.success ? '✅ 成功' : '❌ 失败'}:</strong>
+                <div class="output-text">${escapeHtml(step.content)}</div>
+            </div>
+        `;
+    }
+
+    contentDiv.appendChild(stepHeader);
+    contentDiv.appendChild(stepContent);
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    
+    elements.messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+}
+
+/**
+ * 🎯 显示Agent最终答案在聊天区
+ */
+export function displayAgentFinalAnswer(content, sessionId, iterations) {
+    if (!elements.messageHistory) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai', 'agent-final-answer');
+    messageDiv.setAttribute('data-agent-session', sessionId);
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '🎉';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+
+    const header = document.createElement('div');
+    header.className = 'agent-final-header';
+    header.innerHTML = `
+        <span class="final-badge">Agent最终答案</span>
+        <span class="iterations-info">经过 ${iterations} 次迭代</span>
+    `;
+
+    const answerContent = document.createElement('div');
+    answerContent.className = 'agent-answer-content';
+    
+    // 使用marked解析markdown内容
+    if (libraries && libraries.marked) {
+        answerContent.innerHTML = libraries.marked.parse(content);
+    } else {
+        answerContent.textContent = content;
+    }
+
+    contentDiv.appendChild(header);
+    contentDiv.appendChild(answerContent);
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    
+    elements.messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+    
+    // 应用数学公式渲染
+    if (libraries && libraries.MathJax && libraries.MathJax.typeset) {
+        libraries.MathJax.typeset([answerContent]);
+    }
+}
+
+/**
+ * 🎯 显示Agent错误在聊天区
+ */
+export function displayAgentError(error, sessionId, iteration) {
+    if (!elements.messageHistory) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'ai', 'agent-error');
+    messageDiv.setAttribute('data-agent-session', sessionId);
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.classList.add('avatar');
+    avatarDiv.textContent = '❌';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+
+    const errorHeader = document.createElement('div');
+    errorHeader.className = 'agent-error-header';
+    errorHeader.innerHTML = `
+        <span class="error-badge">Agent执行错误</span>
+        <span class="iteration-info">第${iteration}次迭代</span>
+    `;
+
+    const errorContent = document.createElement('div');
+    errorContent.className = 'agent-error-content';
+    errorContent.textContent = error;
+
+    contentDiv.appendChild(errorHeader);
+    contentDiv.appendChild(errorContent);
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    
+    elements.messageHistory.appendChild(messageDiv);
+    scrollToBottom();
+}
+
+/**
+ * 🎯 设置Agent事件监听器
+ */
+export function setupAgentEventListeners() {
+    // Agent开始事件
+    window.addEventListener('chat:agent_started', (event) => {
+        const { userMessage, sessionId, maxIterations } = event.detail;
+        
+        // 显示Agent开始消息
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', 'system', 'agent-start');
+        messageDiv.setAttribute('data-agent-session', sessionId);
+        
+        messageDiv.innerHTML = `
+            <div class="avatar">🚀</div>
+            <div class="content">
+                <div class="agent-start-header">
+                    <span class="agent-title">🤖 Agent模式启动</span>
+                </div>
+                <div class="agent-start-info">
+                    <p><strong>用户请求:</strong> ${escapeHtml(userMessage)}</p>
+                    <p><strong>最大迭代次数:</strong> ${maxIterations}</p>
+                    <p><strong>会话ID:</strong> ${sessionId}</p>
+                </div>
+            </div>
+        `;
+        
+        if (elements.messageHistory) {
+            elements.messageHistory.appendChild(messageDiv);
+            scrollToBottom();
+        }
+    });
+
+    // Agent思考事件
+    window.addEventListener('chat:agent_thinking', (event) => {
+        const { content, iteration, sessionId } = event.detail;
+        displayAgentThinking(content, iteration, sessionId);
+    });
+
+    // Agent步骤事件
+    window.addEventListener('chat:agent_step', (event) => {
+        displayAgentStep(event.detail, event.detail.sessionId);
+    });
+
+    // Agent步骤完成事件
+    window.addEventListener('chat:agent_step_completed', (event) => {
+        displayAgentStep(event.detail, event.detail.sessionId);
+    });
+
+    // Agent最终答案事件
+    window.addEventListener('chat:agent_final_answer', (event) => {
+        const { content, sessionId, iterations } = event.detail;
+        displayAgentFinalAnswer(content, sessionId, iterations);
+    });
+
+    // Agent错误事件
+    window.addEventListener('chat:agent_error', (event) => {
+        const { error, iteration, sessionId } = event.detail;
+        displayAgentError(error, sessionId, iteration);
+    });
+
+    // Agent完成事件
+    window.addEventListener('chat:agent_completed', (event) => {
+        const { result, sessionId, duration } = event.detail;
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', 'system', 'agent-complete');
+        messageDiv.setAttribute('data-agent-session', sessionId);
+        
+        const durationSeconds = (duration / 1000).toFixed(1);
+        
+        messageDiv.innerHTML = `
+            <div class="avatar">🏁</div>
+            <div class="content">
+                <div class="agent-complete-header">
+                    <span class="complete-badge">Agent执行完成</span>
+                </div>
+                <div class="agent-complete-info">
+                    <p><strong>总用时:</strong> ${durationSeconds}秒</p>
+                    <p><strong>迭代次数:</strong> ${result.iterations}</p>
+                    <p><strong>任务复杂度:</strong> ${result.taskComplexity}</p>
+                    <p><strong>状态:</strong> ${result.success ? '✅ 成功' : '❌ 失败'}</p>
+                    ${result.hasErrors ? '<p><strong>⚠️ 包含错误步骤</strong></p>' : ''}
+                </div>
+            </div>
+        `;
+        
+        if (elements.messageHistory) {
+            elements.messageHistory.appendChild(messageDiv);
+            scrollToBottom();
+        }
+    });
+}
+
+// HTML转义辅助函数
+function escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;")
+        .replace(/\n/g, '<br>');
 }

@@ -1040,8 +1040,15 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     window.addEventListener('workflow:result', handleWorkflowResult);
                 });
             } else if (agentResult.type === 'agent_result') {
-                // 显示Agent执行结果
-                chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+                // 🎯 修改：Agent模式下不重复显示完整内容
+                if (agentResult.fallback) {
+                    // 降级情况：显示降级结果
+                    chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+                } else {
+                    // 正常Agent执行：只显示简洁总结
+                    displayAgentSummary(agentResult);
+                    console.log(`Agent执行完成，${agentResult.iterations}次迭代，详细过程已在聊天区显示`);
+                }
                 console.log('Agent执行详情:', agentResult);
                 agentThinkingDisplay.endSession(sessionId, 'success'); // 修正：在 Agent 成功后结束
             } else {
@@ -2402,4 +2409,49 @@ export function stopAgentThinking(destroy = false) {
  */
 export function getAgentThinkingDisplay() {
     return agentThinkingDisplay;
+}
+
+/**
+ * @function displayAgentSummary
+ * @description 新增：显示Agent执行摘要卡片，避免重复显示完整摘要。
+ * @param {Object} agentResult - Agent执行结果对象。
+ * @returns {void}
+ */
+function displayAgentSummary(agentResult) {
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'message assistant agent-execution-summary'; // 使用 message assistant 类以保持样式一致性
+    
+    // 确保 messageHistory 元素可用
+    const messageHistoryElement = document.getElementById('message-history');
+    if (!messageHistoryElement) {
+        console.error('messageHistory 元素未找到，无法显示 Agent 摘要。');
+        return;
+    }
+
+    // 确保 intermediateSteps 是数组
+    const toolCount = agentResult.intermediateSteps?.length || 0;
+    const statusText = agentResult.success ? '✅ 成功' : '❌ 失败';
+    
+    summaryDiv.innerHTML = `
+        <div class="content">
+            <div class="summary-header">
+                <span class="summary-icon">📊</span>
+                <strong>Agent执行摘要</strong>
+            </div>
+            <div class="summary-details">
+                <span>迭代: ${agentResult.iterations}次</span>
+                <span>•</span>
+                <span>工具: ${toolCount}个</span>
+                <span>•</span>
+                <span>状态: ${statusText}</span>
+            </div>
+            <div class="summary-note">
+                💡 详细执行过程已在聊天记录中显示
+            </div>
+        </div>
+    `;
+    
+    // 添加到消息历史中
+    messageHistoryElement.appendChild(summaryDiv);
+    chatUI.scrollToBottom();
 }
