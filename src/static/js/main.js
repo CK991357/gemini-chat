@@ -695,47 +695,67 @@ let _realtimeDetectDone = false;
 /**
  * 🚀 智能代理系统初始化函数
  */
-function initializeEnhancedAgent() {
-  try {
-    // 🎯 修复：确保在初始化 Orchestrator 之前技能系统可用
-    if (typeof window.getBaseSkillManager !== 'function') {
-      window.getBaseSkillManager = () => Promise.resolve({
-        findRelevantSkills: () => [] // 默认返回空数组
-      });
+async function initializeEnhancedAgent() {
+    try {
+        // 🎯 修复：确保在初始化 Orchestrator 之前技能系统可用
+        if (typeof window.getBaseSkillManager !== 'function') {
+            window.getBaseSkillManager = () => Promise.resolve({
+                findRelevantSkills: () => [] // 默认返回空数组
+            });
+        }
+
+        // 获取初始状态
+        const isAgentEnabled = localStorage.getItem('agentModeEnabled') !== 'false';
+
+        orchestrator = new Orchestrator(chatApiHandler, {
+            enabled: isAgentEnabled,
+            containerId: 'workflow-container',
+            maxIterations: 8 // Agent最大迭代次数
+        });
+
+        // 挂载到window便于调试
+        window.orchestrator = orchestrator;
+
+        // 在 Orchestrator 初始化完成之前禁用开关，避免误用
+        if (agentModeToggle) {
+            agentModeToggle.disabled = true;
+            agentModeToggle.checked = false;
+        }
+
+        // 等待初始化结果（或降级完成）
+        try {
+            await orchestrator.ensureInitialized();
+            console.log('Orchestrator 初始化完成（成功或降级）');
+            showToast('智能代理系统已就绪');
+
+            if (agentModeToggle) {
+                agentModeToggle.disabled = false;
+                agentModeToggle.checked = orchestrator.isEnabled;
+            }
+        } catch (initErr) {
+            console.warn('Orchestrator 初始化失败或超时，已进入降级模式：', initErr);
+            showToast('智能代理系统初始化失败，已降级到标准模式');
+            if (agentModeToggle) {
+                agentModeToggle.checked = false;
+                agentModeToggle.disabled = true;
+            }
+        }
+
+        // 初始化开关状态并监听变化（保持原逻辑）
+        if (agentModeToggle) {
+            agentModeToggle.addEventListener('change', (e) => {
+                const enabled = e.target.checked;
+                orchestrator.setEnabled(enabled);
+                localStorage.setItem('agentModeEnabled', enabled);
+                showToast(`智能代理模式已${enabled ? '启用' : '禁用'}`);
+            });
+        }
+
+        console.log('initializeEnhancedAgent 完成');
+    } catch (error) {
+        console.error('智能代理系统初始化失败:', error);
+        showToast('智能代理系统初始化失败，已降级到标准模式');
     }
-    
-    // 获取初始状态
-    const isAgentEnabled = localStorage.getItem('agentModeEnabled') !== 'false';
-    
-    orchestrator = new Orchestrator(chatApiHandler, {
-      enabled: isAgentEnabled,
-      containerId: 'workflow-container',
-      maxIterations: 8 // Agent最大迭代次数
-    });
-    
-    // 挂载到window便于调试
-    window.orchestrator = orchestrator;
-    
-    // 初始化开关状态
-    if (agentModeToggle) {
-      agentModeToggle.checked = isAgentEnabled;
-      
-      // 监听开关变化
-      agentModeToggle.addEventListener('change', (e) => {
-        const enabled = e.target.checked;
-        orchestrator.setEnabled(enabled);
-        localStorage.setItem('agentModeEnabled', enabled);
-        showToast(`智能代理模式已${enabled ? '启用' : '禁用'}`);
-        console.log(`智能代理模式: ${enabled ? '启用' : '禁用'}`);
-      });
-    }
-    
-    console.log('🚀 智能代理系统初始化完成');
-  } catch (error) {
-    console.error('智能代理系统初始化失败:', error);
-    // 🎯 修复：即使代理系统初始化失败，也不影响基础功能
-    showToast('智能代理系统初始化失败，已降级到标准模式');
-  }
 }
 
 /**
