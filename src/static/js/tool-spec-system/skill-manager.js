@@ -86,10 +86,20 @@ class EnhancedSkillManager {
     
     const keywords = this.extractKeywords(query);
     keywords.forEach(keyword => {
-      const regex = new RegExp(keyword, 'gi');
-      const matches = searchText.match(regex);
-      if (matches) {
-        score += matches.length * 0.08;
+      try {
+        // 🎯 修复：安全地构建正则表达式
+        const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedKeyword, 'gi');
+        const matches = searchText.match(regex);
+        if (matches) {
+          score += matches.length * 0.08;
+        }
+      } catch (error) {
+        console.warn(`[SkillManager] 正则表达式匹配失败，跳过关键词: ${keyword}`, error);
+        // 降级方案：使用字符串包含检查
+        if (searchText.includes(keyword)) {
+          score += 0.08;
+        }
       }
     });
     
@@ -151,8 +161,25 @@ class EnhancedSkillManager {
    */
   extractKeywords(text) {
     const stopWords = ['请', '帮', '我', '怎么', '如何', '什么', '为什么', 'the', 'and', 'for'];
+    
+    // 🔧 修复：安全地分割和过滤关键词
     return text.split(/\s+/)
-      .filter(k => k.length > 1 && !stopWords.includes(k));
+        .filter(k => {
+            // 确保关键词是有效的字符串
+            if (typeof k !== 'string') return false;
+            if (k.length <= 1) return false;
+            if (stopWords.includes(k)) return false;
+            
+            // 检查是否包含非法正则字符
+            const regexSpecialChars = /[.*+?^${}()|[\]\\]/g;
+            if (regexSpecialChars.test(k)) {
+                console.warn(`[SkillManager] 跳过包含特殊字符的关键词: ${k}`);
+                return false;
+            }
+            
+            return true;
+        })
+        .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); // 转义特殊字符
   }
 
   /**
@@ -202,7 +229,9 @@ class EnhancedSkillManager {
       const sectionLower = section.toLowerCase();
       
       queryKeywords.forEach(keyword => {
-        if (sectionLower.includes(keyword)) {
+        // 移除转义字符用于字符串包含检查
+        const cleanKeyword = keyword.replace(/\\/g, '');
+        if (sectionLower.includes(cleanKeyword)) {
           score += 1;
         }
       });
@@ -247,10 +276,11 @@ class EnhancedSkillManager {
    * 提取关键指令 (保持原有逻辑)
    */
   extractKeyInstructions(content) {
-    const instructionMatch = content.match(/## 关键指令[\s\S]*?(?=##|$)/i);
+    // 🔧 修复：使用更安全的正则表达式
+    const instructionMatch = content.match(/##\s+关键指令[\s\S]*?(?=##|$)/i);
     if (instructionMatch) {
       return instructionMatch[0]
-        .replace(/## 关键指令/i, '')
+        .replace(/##\s+关键指令/gi, '')
         .trim()
         .split('\n')
         .filter(line => line.trim() && !line.trim().startsWith('#'))
@@ -270,7 +300,8 @@ class EnhancedSkillManager {
    * 提取调用格式 (保持原有逻辑)
    */
   extractCallingFormat(content) {
-    const formatMatch = content.match(/```json\n([\s\S]*?)\n```/);
+    // 🔧 修复：使用更安全的正则表达式
+    const formatMatch = content.match(/```json\s*\n([\s\S]*?)\n\s*```/);
     if (formatMatch) {
       return formatMatch[1];
     }
@@ -309,6 +340,33 @@ class EnhancedSkillManager {
       tools: this.getAllSkills().map(t => t.tool_name),
       timestamp: new Date().toISOString()
     };
+  }
+
+  /**
+   * 🎯 新增：等待技能管理器就绪
+   */
+  async waitUntilReady() {
+    // 如果技能已经加载完成，直接返回
+    if (this.isInitialized) {
+      return Promise.resolve(true);
+    }
+    
+    // 否则等待一小段时间再检查
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (this.isInitialized) {
+          clearInterval(checkInterval);
+          resolve(true);
+        }
+      }, 100);
+      
+      // 10秒超时
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        console.warn('[SkillManager] 技能管理器初始化超时');
+        resolve(false);
+      }, 10000);
+    });
   }
 }
 
