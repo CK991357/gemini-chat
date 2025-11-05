@@ -726,7 +726,6 @@ async function initializeEnhancedAgent() {
         try {
             await orchestrator.ensureInitialized();
             console.log('Orchestrator 初始化完成（成功或降级）');
-            showToast('智能代理系统已就绪');
 
             if (agentModeToggle) {
                 agentModeToggle.disabled = false;
