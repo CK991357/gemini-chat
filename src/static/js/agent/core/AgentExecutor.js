@@ -89,6 +89,48 @@ export class AgentExecutor {
     }
 
     /**
+     * 🎯 优化迭代策略
+     */
+    _shouldUseAgent(userMessage, taskAnalysis, matchedSkills) {
+        // 🎯 检查Agent系统是否可用
+        if (!this.agentSystem || !this.agentSystem.isAvailable) {
+            console.log('[Orchestrator] Agent系统不可用，跳过Agent模式');
+            return false;
+        }
+
+        // 🎯 基于匹配技能数量决策 - 降低阈值
+        if (matchedSkills && matchedSkills.length >= 2) {
+            console.log(`[Orchestrator] 匹配到${matchedSkills.length}个技能，启用Agent模式`);
+            return true;
+        }
+
+        // 🎯 基于任务复杂度决策 - 提高阈值
+        if (taskAnalysis.complexity === 'high' || taskAnalysis.score >= 3) {
+            console.log('[Orchestrator] 高复杂度任务，启用Agent模式');
+            return true;
+        }
+
+        // 🎯 基于关键词决策
+        const agentKeywords = [
+            '多步', '分步', '流程', '首先', '然后', '接着', '第一步', '第二步',
+            '分析', '比较', '研究', '调查', '评估', '总结',
+            'multiple steps', 'step by step', 'workflow', 'analyze', 'compare'
+        ];
+        
+        const lowerMessage = userMessage.toLowerCase();
+        const hasComplexIntent = agentKeywords.some(keyword =>
+            lowerMessage.includes(keyword)
+        );
+        
+        if (hasComplexIntent) {
+            console.log(`[Orchestrator] 检测到复杂意图关键词，启用Agent模式`);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * 🎯 增强的ReAct循环执行（含智能超时和错误恢复）
      */
     async invoke(inputs) {
@@ -130,6 +172,8 @@ export class AgentExecutor {
         let finalAnswer = null;
         let iteration = 0;
         let consecutiveErrors = 0; // 🎯 新增：连续错误计数
+        let lastAction = null; // 🎯 跟踪上一次行动
+        let repeatedActions = 0; // 🎯 重复行动计数
 
         // 🎯 使用增强的任务复杂度评估
         const taskComplexity = this._getTaskComplexity(context);
@@ -205,6 +249,27 @@ export class AgentExecutor {
                 
                 action = await Promise.race([thinkPromise, timeoutPromise]);
                 consecutiveErrors = 0; // 🎯 重置连续错误计数
+
+                // 🎯 检查重复行动，避免无限循环
+                if (lastAction && action &&
+                    action.type === 'tool_call' &&
+                    lastAction.type === 'tool_call' && // 确保上次也是工具调用
+                    action.tool_name === lastAction.tool_name &&
+                    JSON.stringify(action.parameters) === JSON.stringify(lastAction.parameters)) {
+                    
+                    repeatedActions++;
+                    console.warn(`[AgentExecutor] 重复执行相同行动: ${action.tool_name} (${repeatedActions}次)`);
+                    
+                    if (repeatedActions >= 2) {
+                        console.warn(`[AgentExecutor] 重复行动过多，提前终止`);
+                        finalAnswer = this._handleRepeatedActions(intermediateSteps, repeatedActions);
+                        break;
+                    }
+                } else {
+                    repeatedActions = 0; // 重置计数
+                }
+                
+                lastAction = action;
 
                 // 🎯 添加思考步骤
                 window.dispatchEvent(new CustomEvent('agent:step_added', {
@@ -596,6 +661,13 @@ export class AgentExecutor {
      */
     _handleCriticalError(error, _intermediateSteps, consecutiveErrors) {
         return `🤖 Agent执行遇到严重错误: ${error.message}\n\n连续错误次数: ${consecutiveErrors}\n\n建议检查问题表述或稍后重试。`;
+    }
+
+    /**
+     * 🎯 处理重复行动
+     */
+    _handleRepeatedActions(_intermediateSteps, repeatedCount) {
+        return `🤖 Agent执行因重复行动过多而终止（${repeatedCount}次重复）。\n\n建议重新表述问题或分步骤提问。`;
     }
 
     /**

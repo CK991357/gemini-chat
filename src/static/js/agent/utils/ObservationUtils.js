@@ -28,21 +28,40 @@ export class ObservationUtils {
             if (typeof rawResult === 'string') {
                 outputText = rawResult;
                 extractedFrom = 'string';
+                success = !outputText.toLowerCase().includes('失败') && 
+                         !outputText.toLowerCase().includes('错误');
             } else if (typeof rawResult === 'object') {
-                // 检查成功状态
+                // 🎯 关键修复：优先使用工具返回的成功状态
                 if (rawResult.success === false) {
                     success = false;
+                } else if (rawResult.success === true) {
+                    success = true;
                 }
-
+                
                 // 🎯 智能提取输出文本
                 const extraction = this.extractOutputText(rawResult);
                 outputText = extraction.text;
                 extractedFrom = extraction.source;
                 
+                // 🎯 修复：对于 crawl4ai 的特殊格式处理
+                if (!outputText && rawResult.title && rawResult.content) {
+                    outputText = `标题: ${rawResult.title}\n内容: ${rawResult.content}`;
+                    extractedFrom = 'crawl4ai_format';
+                    success = true; // 有标题和内容意味着成功
+                }
+                
                 // 如果没有提取到有效文本，序列化整个对象
                 if (!outputText || outputText.trim() === '') {
                     outputText = this.safeStringify(rawResult);
                     extractedFrom = 'stringify';
+                }
+                
+                // 🎯 检查是否有错误字段
+                if (rawResult.error) {
+                    success = false;
+                    if (!outputText.includes('失败') && !outputText.includes('错误')) {
+                        outputText = `错误: ${rawResult.error}`;
+                    }
                 }
             } else {
                 // 数字、布尔值等基本类型
@@ -109,10 +128,10 @@ export class ObservationUtils {
             return { text: '', source: 'invalid' };
         }
 
-        // 🎯 优先级提取序列
+        // 🎯 优先级提取序列 - 增加更多可能的输出字段
         const textFields = [
             'stdout', 'output', 'result', 'text', 'message', 
-            'content', 'data', 'error', 'stderr'
+            'content', 'data', 'error', 'stderr', 'title', 'body'
         ];
 
         for (const field of textFields) {
