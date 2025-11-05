@@ -109,7 +109,8 @@ export class AudioStreamer {
      * @returns {AudioBuffer} The created AudioBuffer.
      */
     createAudioBuffer(audioData) {
-        const audioBuffer = this.context.createBuffer(1, audioData.length, this.sampleRate);
+        // 🎯 修复：使用 AudioContext 的实际采样率创建 AudioBuffer，避免播放速度错误
+        const audioBuffer = this.context.createBuffer(1, audioData.length, this.context.sampleRate);
         audioBuffer.getChannelData(0).set(audioData);
         return audioBuffer;
     }
