@@ -354,6 +354,12 @@ export class Orchestrator {
      * 🎯 核心：智能路由用户请求（100%向后兼容）
      */
     async handleUserRequest(userMessage, files = [], context = {}) {
+        // 🎯 新增：知识库优先检测
+        if (await this._isKnowledgeBaseQuestion(userMessage)) {
+            console.log('[Orchestrator] 检测到知识库问题，使用标准回复');
+            return { enhanced: false, type: 'knowledge_base' };
+        }
+        
         // 🎯 修复5：确保初始化完成（使用新的等待器接口）
         try {
             await this.ensureInitialized();
@@ -434,6 +440,40 @@ export class Orchestrator {
                 error: error.message 
             };
         }
+    }
+
+    /**
+     * 🎯 新增：知识库问题检测
+     */
+    async _isKnowledgeBaseQuestion(userMessage) {
+        const knowledgeBasePatterns = [
+            // 基础问候和简单问题
+            /^(hi|hello|hey|你好|嗨|您好|早安|晚上好)/i,
+            /^(你是谁|你是什么|你能做什么)/,
+            /^(爱因斯坦|特斯拉|牛顿|物理|数学|科学)/i,
+            
+            // 简单查询（不涉及复杂操作）
+            /^(什么是|什么是|告诉我关于|解释一下)/,
+            
+            // 模型自身能力问题
+            /^(你的能力|你能帮我|你有什么功能)/
+        ];
+        
+        // 检查是否匹配知识库模式
+        const isSimpleQuestion = knowledgeBasePatterns.some(pattern => 
+            pattern.test(userMessage.trim())
+        );
+        
+        // 检查消息长度（短消息通常是简单问题）
+        const isShortMessage = userMessage.trim().length < 20;
+        
+        // 检查是否包含工具调用关键词
+        const toolKeywords = ['搜索', '爬取', '分析', '执行', '代码', 'python', '搜索', 'crawl'];
+        const hasToolIntent = toolKeywords.some(keyword => 
+            userMessage.toLowerCase().includes(keyword.toLowerCase())
+        );
+        
+        return (isSimpleQuestion || isShortMessage) && !hasToolIntent;
     }
 
     /**

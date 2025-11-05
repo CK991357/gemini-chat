@@ -15,6 +15,13 @@ export class AgentExecutor {
         this.earlyStoppingMethod = config.earlyStoppingMethod || 'force';
         this.maxThinkTimeout = config.maxThinkTimeout || 120000; // 🎯 新增：最大思考超时配置
         
+        // 🎯 新增：会话状态管理
+        this.currentSession = {
+            steps: [],
+            startTime: null,
+            endTime: null
+        };
+        
         console.log(`[AgentExecutor] 初始化完成，最大迭代次数: ${this.maxIterations}, 最大思考超时: ${this.maxThinkTimeout}ms`);
     }
 
@@ -90,6 +97,23 @@ export class AgentExecutor {
         
         console.log(`[AgentExecutor] 开始执行Agent循环，输入: "${userMessage.substring(0, 100)}..."`);
 
+        // 🎯 启动思考过程显示
+        window.dispatchEvent(new CustomEvent('agent:session_started', {
+            detail: { 
+                sessionId: runId, 
+                userMessage, 
+                maxIterations: this.maxIterations 
+            }
+        }));
+
+        // 🎯 初始化会话状态
+        this.currentSession = {
+            steps: [],
+            startTime: Date.now(),
+            endTime: null,
+            sessionId: runId
+        };
+
         // 🎯 Agent开始事件
         await this.callbackManager.invokeEvent('on_agent_start', {
             name: 'agent_executor',
@@ -115,6 +139,15 @@ export class AgentExecutor {
         for (iteration = 0; iteration < this.maxIterations; iteration++) {
             console.log(`[AgentExecutor] 第 ${iteration + 1} 次迭代开始`);
             
+            // 🎯 迭代开始
+            window.dispatchEvent(new CustomEvent('agent:iteration_update', {
+                detail: { 
+                    iteration: iteration + 1, 
+                    total: this.maxIterations,
+                    thinking: `开始分析第 ${iteration + 1} 次迭代...` 
+                }
+            }));
+            
             // 🎯 检查连续错误，避免无限循环（放宽到5次）
             if (consecutiveErrors >= 5) {
                 console.warn(`[AgentExecutor] 连续错误过多 (${consecutiveErrors}次)，提前终止`);
@@ -138,6 +171,14 @@ export class AgentExecutor {
             let action, observation, thinkTimeout;
 
             try {
+                // 🎯 思考开始
+                window.dispatchEvent(new CustomEvent('agent:thinking', {
+                    detail: { 
+                        content: `正在分析当前状况并规划下一步行动...`,
+                        type: 'thinking' 
+                    }
+                }));
+
                 // 🎯 动态计算思考超时时间
                 thinkTimeout = this._getThinkTimeout(
                     iteration, 
@@ -165,10 +206,34 @@ export class AgentExecutor {
                 action = await Promise.race([thinkPromise, timeoutPromise]);
                 consecutiveErrors = 0; // 🎯 重置连续错误计数
 
+                // 🎯 添加思考步骤
+                window.dispatchEvent(new CustomEvent('agent:step_added', {
+                    detail: {
+                        step: {
+                            type: 'think',
+                            description: action.log || '模型思考过程',
+                            timestamp: Date.now(),
+                            iteration: iteration + 1
+                        }
+                    }
+                }));
+
                 // 🎯 检查是否获得最终答案
                 if (action.type === 'final_answer') {
                     finalAnswer = action.answer;
                     console.log(`[AgentExecutor] 获得最终答案，结束循环`);
+                    
+                    // 🎯 添加最终答案步骤
+                    window.dispatchEvent(new CustomEvent('agent:step_added', {
+                        detail: {
+                            step: {
+                                type: 'final_answer',
+                                description: `生成最终答案: ${finalAnswer.substring(0, 100)}...`,
+                                timestamp: Date.now(),
+                                iteration: iteration + 1
+                            }
+                        }
+                    }));
                     
                     await this.callbackManager.invokeEvent('on_agent_iteration_end', {
                         name: 'agent_iteration',
@@ -185,8 +250,32 @@ export class AgentExecutor {
 
                 // 🎯 步骤2: 执行工具调用 (Act)
                 if (action.type === 'tool_call') {
+                    // 🎯 添加行动步骤
+                    const actionStepIndex = this.currentSession.steps.length;
+                    window.dispatchEvent(new CustomEvent('agent:step_added', {
+                        detail: {
+                            step: {
+                                type: 'action',
+                                description: `执行工具: ${action.tool_name}`,
+                                tool: action.tool_name,
+                                parameters: action.parameters,
+                                timestamp: Date.now(),
+                                iteration: iteration + 1
+                            }
+                        }
+                    }));
+
                     // 🎯 增强：传递思考超时信息给工具执行
                     observation = await this._executeAction(action, runId, thinkTimeout);
+                    
+                    // 🎯 完成行动步骤
+                    window.dispatchEvent(new CustomEvent('agent:step_completed', {
+                        detail: {
+                            index: actionStepIndex,
+                            result: observation.output,
+                            success: !observation.isError
+                        }
+                    }));
                     
                     // 🎯 检查工具执行结果
                     if (observation.isError) {
@@ -222,6 +311,14 @@ export class AgentExecutor {
                 
                 if (action) {
                     intermediateSteps.push({ action, observation });
+                    
+                    // 🎯 标记步骤为错误状态
+                    window.dispatchEvent(new CustomEvent('agent:step_error', {
+                        detail: {
+                            index: this.currentSession.steps.length - 1,
+                            error: error.message
+                        }
+                    }));
                 }
                 
                 // 🎯 错误事件 - 修复：现在可以安全访问 thinkTimeout
@@ -269,6 +366,29 @@ export class AgentExecutor {
             }
         }
 
+        // 🎯 更新会话结束时间
+        this.currentSession.endTime = Date.now();
+
+        // 🎯 会话完成
+        const finalResult = {
+            success: !!finalAnswer,
+            output: finalAnswer,
+            intermediateSteps,
+            agentRunId: runId,
+            type: 'agent_execution',
+            iterations: iteration + 1,
+            hasErrors: intermediateSteps.some(step => step.observation.isError),
+            taskComplexity: taskComplexity
+        };
+
+        window.dispatchEvent(new CustomEvent('agent:session_completed', {
+            detail: { 
+                result: finalResult,
+                sessionId: runId,
+                duration: this.currentSession.endTime - this.currentSession.startTime
+            }
+        }));
+
         // 🎯 Agent结束事件
         await this.callbackManager.invokeEvent('on_agent_end', {
             name: 'agent_executor',
@@ -285,16 +405,7 @@ export class AgentExecutor {
             }
         });
 
-        return {
-            success: !!finalAnswer,
-            output: finalAnswer,
-            intermediateSteps,
-            agentRunId: runId,
-            type: 'agent_execution',
-            iterations: iteration + 1,
-            hasErrors: intermediateSteps.some(step => step.observation.isError),
-            taskComplexity: taskComplexity
-        };
+        return finalResult;
     }
 
     /**
@@ -496,7 +607,8 @@ export class AgentExecutor {
             availableTools: Object.keys(this.tools),
             toolsCount: Object.keys(this.tools).length,
             maxThinkTimeout: this.maxThinkTimeout,
-            type: 'react_agent_executor'
+            type: 'react_agent_executor',
+            currentSession: this.currentSession
         };
     }
 }

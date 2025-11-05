@@ -20,6 +20,7 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
 
 // 🚀 新增导入：智能代理系统
+import { AgentThinkingDisplay } from './agent/AgentThinkingDisplay.js'; // 🚀 新增：导入 AgentThinkingDisplay
 import { Orchestrator } from './agent/Orchestrator.js';
 import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
 
@@ -686,6 +687,7 @@ let visionApiHandler = null; // 确保这里声明了 visionApiHandler
 
 // 🚀 新增：智能代理系统实例
 let orchestrator = null;
+let agentThinkingDisplay = null; // 🚀 新增：Agent思考显示实例
 
 // 添加实时采样率侦测状态（当服务器未发送采样率元数据时尝试估算）
 let _realtimeDetectBytes = 0;
@@ -706,6 +708,9 @@ async function initializeEnhancedAgent() {
 
         // 获取初始状态
         const isAgentEnabled = localStorage.getItem('agentModeEnabled') !== 'false';
+
+        // 初始化Agent思考显示
+        agentThinkingDisplay = new AgentThinkingDisplay(); // 🚀 新增：初始化 AgentThinkingDisplay
 
         orchestrator = new Orchestrator(chatApiHandler, {
             enabled: isAgentEnabled,
@@ -995,51 +1000,66 @@ async function handleHttpMessage(messageText, attachedFiles) {
 async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames) {
     console.log("🤖 Agent Mode ON: 智能路由用户请求");
     
-    const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
-        model: modelName,
-        apiKey: apiKey,
-        messages: chatHistory,
-        apiHandler: chatApiHandler,
-        availableTools: availableToolNames
-    });
+    // 启动思考过程显示
+    const sessionId = agentThinkingDisplay.startSession(messageText, 8);
+    
+    try {
+        const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
+            model: modelName,
+            apiKey: apiKey,
+            messages: chatHistory,
+            apiHandler: chatApiHandler,
+            availableTools: availableToolNames
+        });
 
-    // 🎯 处理结果
-    if (agentResult.enhanced) {
-        if (agentResult.type === 'workflow_pending') {
-            // 显示工作流UI
-            showWorkflowUI(agentResult.workflow);
-            console.log("🎯 工作流等待执行");
-            
-            return new Promise((resolve) => {
-                const handleWorkflowResult = (event) => {
-                    const finalResult = event.detail;
-                    window.removeEventListener('workflow:result', handleWorkflowResult);
-                    
-                    if (finalResult.skipped) {
-                        // 工作流被跳过，回退到标准聊天
-                        handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).finally(resolve);
-                    } else {
-                        // 显示最终结果
-                        chatUI.addMessage({ role: 'assistant', content: finalResult.content });
-                        console.log('工作流执行详情:', finalResult);
-                        resolve();
-                    }
-                };
-                window.addEventListener('workflow:result', handleWorkflowResult);
-            });
-        } else if (agentResult.type === 'agent_result') {
-            // 显示Agent执行结果
-            chatUI.addMessage({ role: 'assistant', content: agentResult.content });
-            console.log('Agent执行详情:', agentResult);
+        // 🎯 处理结果
+        if (agentResult.enhanced) {
+            if (agentResult.type === 'workflow_pending') {
+                // 显示工作流UI
+                showWorkflowUI(agentResult.workflow);
+                console.log("🎯 工作流等待执行");
+                
+                return new Promise((resolve) => {
+                    const handleWorkflowResult = (event) => {
+                        const finalResult = event.detail;
+                        window.removeEventListener('workflow:result', handleWorkflowResult);
+                        
+                        if (finalResult.skipped) {
+                            // 工作流被跳过，回退到标准聊天
+                            handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
+                                .then(() => agentThinkingDisplay.endSession(sessionId, 'success')) // 修正：在标准回退成功后结束
+                                .finally(resolve);
+                        } else {
+                            // 显示最终结果
+                            chatUI.addMessage({ role: 'assistant', content: finalResult.content });
+                            console.log('工作流执行详情:', finalResult);
+                            agentThinkingDisplay.endSession(sessionId, 'success'); // 修正：在工作流成功后结束
+                            resolve();
+                        }
+                    };
+                    window.addEventListener('workflow:result', handleWorkflowResult);
+                });
+            } else if (agentResult.type === 'agent_result') {
+                // 显示Agent执行结果
+                chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+                console.log('Agent执行详情:', agentResult);
+                agentThinkingDisplay.endSession(sessionId, 'success'); // 修正：在 Agent 成功后结束
+            } else {
+                // 其他增强结果
+                chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+                console.log('增强结果详情:', agentResult);
+                agentThinkingDisplay.endSession(sessionId, 'success'); // 修正：在增强成功后结束
+            }
         } else {
-            // 其他增强结果
-            chatUI.addMessage({ role: 'assistant', content: agentResult.content });
-            console.log('增强结果详情:', agentResult);
+            // 标准回退处理
+            console.log("💬 未触发增强模式，使用标准对话");
+            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+            agentThinkingDisplay.endSession(sessionId, 'success'); // 修正：在标准聊天成功后结束
         }
-    } else {
-        // 标准回退处理
-        console.log("💬 未触发增强模式，使用标准对话");
-        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+    } catch (error) {
+        agentThinkingDisplay.updateThinking(sessionId, `执行出错: ${error.message}`, 'error');
+        agentThinkingDisplay.endSession(sessionId, 'error');
+        throw error;
     }
 }
 
