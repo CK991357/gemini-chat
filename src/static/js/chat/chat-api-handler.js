@@ -91,9 +91,20 @@ export class ChatApiHandler {
             let qwenToolCallAssembler = null;
             // ---
 
+            // 创建流上下文，避免不同流/嵌套流之间共享或覆盖 UI 容器引用
+            const streamContext = {
+                id: `stream_${Date.now()}_${Math.random().toString(36).substr(2,6)}`,
+                previousAIMessageContentDiv: this.state.currentAIMessageContentDiv,
+                localAIMessageContentDiv: null,
+                isToolCallActive: false,
+                toolCallUI: null,
+                startTime: Date.now()
+            };
+
             const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
             if (!isToolResponseFollowUp) {
-                this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                streamContext.localAIMessageContentDiv = ui.createAIMessageElement();
+                this.state.currentAIMessageContentDiv = streamContext.localAIMessageContentDiv;
             }
 
             let buffer = '';
@@ -133,7 +144,25 @@ export class ChatApiHandler {
                                                 qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
                                                 Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
                                                 ui.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
-                                                if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
+                                                // 创建工具调用的临时 UI，让工具调用过程有独立容器展示状态
+                                                if (!streamContext.isToolCallActive) {
+                                                    streamContext.isToolCallActive = true;
+                                                    try {
+                                                        streamContext.toolCallUI = this._createToolCallStatusUI(qwenToolCallAssembler, ui);
+                                                        // 将工具调用 UI 设置为当前容器，让后续工具相关输出显示在该容器中
+                                                        if (streamContext.toolCallUI) {
+                                                            this.state.currentAIMessageContentDiv = streamContext.toolCallUI;
+                                                        }
+                                                    } catch (err) {
+                                                        console.warn('创建 toolCallUI 失败:', err);
+                                                    }
+                                                    // 现在恢复外层全局引用（如果需要），工具UI 已成为当前容器
+                                                    try {
+                                                        this._restoreStateFromContext(streamContext);
+                                                    } catch (error) {
+                                                        console.warn('状态恢复失败:', error);
+                                                    }
+                                                }
                                             } else {
                                                 qwenToolCallAssembler.arguments += func.arguments || '';
                                             }
@@ -149,7 +178,23 @@ export class ChatApiHandler {
                                     currentFunctionCall = functionCallPart.functionCall;
                                     Logger.info('Function call detected:', currentFunctionCall);
                                     ui.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
+                                    // 为 function call 创建独立的工具调用 UI，然后恢复外层引用
+                                    if (!streamContext.isToolCallActive) {
+                                        streamContext.isToolCallActive = true;
+                                        try {
+                                            streamContext.toolCallUI = this._createToolCallStatusUI(currentFunctionCall, ui);
+                                            if (streamContext.toolCallUI) {
+                                                this.state.currentAIMessageContentDiv = streamContext.toolCallUI;
+                                            }
+                                        } catch (err) {
+                                            console.warn('创建 function-call UI 失败', err);
+                                        }
+                                        try {
+                                            this._restoreStateFromContext(streamContext);
+                                        } catch (error) {
+                                            console.warn('状态恢复失败:', error);
+                                        }
+                                    }
 
                                 } else if (choice.delta && !functionCallDetected && !qwenToolCallAssembler) {
                                     // Process reasoning and content only if no tool call is active
@@ -269,7 +314,7 @@ export class ChatApiHandler {
                         content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
                     });
                 }
-                this.state.currentAIMessageContentDiv = null;
+                this._restoreStateFromContext(streamContext);
 
                 // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
                 console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call for model: ${requestBody.model}`);
@@ -315,7 +360,7 @@ export class ChatApiHandler {
                     
                     this.state.chatHistory.push(historyEntry);
                 }
-                this.state.currentAIMessageContentDiv = null;
+                this._restoreStateFromContext(streamContext);
                 
                 if (ui.logMessage) {
                     ui.logMessage('Turn complete (HTTP)', 'system');
@@ -333,12 +378,49 @@ export class ChatApiHandler {
             if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
                 this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
             }
-            this.state.currentAIMessageContentDiv = null;
+            this._restoreStateFromContext(streamContext);
             // 确保在失败时也保存历史记录（如果 historyManager 存在）
             if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
                 this.historyManager.saveHistory(); // Ensure history is saved even on failure
             }
         }
+    }
+
+    /**
+     * Create a minimal tool-call status UI element that does not interfere with
+     * the stream's main content container. Returns the created element.
+     */
+    _createToolCallStatusUI(toolCall, ui) {
+        const toolName = toolCall.tool_name || toolCall.name || 'tool';
+        const el = ui.createAIMessageElement();
+        try {
+            if (el && el.markdownContainer) {
+                const args = toolCall.arguments || toolCall.args || '';
+                el.markdownContainer.innerHTML = `
+                    <div class="tool-call-status">
+                        <strong>执行工具: ${toolName}</strong>
+                        <pre style="white-space:pre-wrap;">${typeof args === 'string' ? args : JSON.stringify(args, null, 2)}</pre>
+                    </div>
+                `;
+            }
+        } catch (err) {
+            console.warn('构建 tool status UI 失败:', err);
+        }
+        return el;
+    }
+
+    /**
+     * Restore global currentAIMessageContentDiv from streamContext if this stream
+     * currently owns it. Safe to call multiple times.
+     */
+    _restoreStateFromContext(streamContext) {
+        if (!streamContext) return;
+        if (streamContext.localAIMessageContentDiv &&
+            this.state.currentAIMessageContentDiv === streamContext.localAIMessageContentDiv) {
+            this.state.currentAIMessageContentDiv = streamContext.previousAIMessageContentDiv;
+        }
+        // Note: we intentionally keep streamContext.toolCallUI alive until the tool
+        // handling code finishes; caller may remove it later if desired.
     }
 
     /**
@@ -411,7 +493,7 @@ export class ChatApiHandler {
     _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
-        let callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
+    const callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
 
         try {
