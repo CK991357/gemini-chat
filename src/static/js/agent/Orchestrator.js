@@ -39,10 +39,16 @@ export class Orchestrator {
         // 🎯 修复2：标记初始化状态
         this._isInitialized = false;
         this._initializationError = null;
+    // 🎯 新增：更加精细的初始化状态管理
+    // state: 'idle' | 'initializing' | 'initialized' | 'failed'
+    this._initState = 'idle';
+    this._initializationPromise = null;
+    this._pendingInitWaiters = [];
         
         // 🎯 等待技能管理器就绪后再继续
         this.tools = {}; // 确保在降级模式下 Object.keys(this.tools) 不会抛出错误
-        this.initializationPromise = this._initializeWithDependencies();
+    // 兼容：公开一个 promise 字段，指向 initialize() 的调用结果
+    this.initializationPromise = this.initialize();
         
         this.isEnabled = config.enabled !== false;
         this.currentWorkflow = null;
@@ -70,6 +76,7 @@ export class Orchestrator {
             });
 
             await Promise.race([initPromise, timeoutPromise]);
+            // 标记为已初始化（注意：该方法本身在降级路径也会将功能标记为可用）
             this._isInitialized = true;
             
             console.log('[Orchestrator] 所有组件初始化成功');
@@ -84,6 +91,71 @@ export class Orchestrator {
             await this._enterFallbackMode(error);
             return false;
         }
+    }
+
+    /**
+     * 更高级的初始化入口：防止重复初始化并支持等待队列
+     * 返回一个 Promise<boolean>，表示是否成功初始化（或进入降级并可用）
+     */
+    async initialize(timeoutMs = 15000) {
+        // 如果已经初始化完成，直接返回
+        if (this._initState === 'initialized') return true;
+
+        // 如果正在初始化，返回同一 promise 以防止重复初始化
+        if (this._initState === 'initializing' && this._initializationPromise) {
+            return this._initializationPromise;
+        }
+
+        // 开始初始化
+        this._initState = 'initializing';
+        this._initializationPromise = (async () => {
+            try {
+                const initResult = await this._initializeWithDependencies();
+                // _initializeWithDependencies 会在成功或降级路径设置 this._isInitialized
+                this._initState = 'initialized';
+                this._initializationError = null;
+                this._notifyInitWaiters(null, initResult);
+                return initResult;
+            } catch (err) {
+                this._initState = 'failed';
+                this._initializationError = err;
+                this._notifyInitWaiters(err, false);
+                // 清理 promise 以允许后续手动重试
+                throw err;
+            } finally {
+                // 为了允许后续重试或再次初始化，清除内部promise引用（外部仍可通过 initialize() 获得新 promise）
+                this._initializationPromise = null;
+            }
+        })();
+
+        return this._initializationPromise;
+    }
+
+    /**
+     * 等待初始化完成（如果正在初始化会加入等待队列）
+     */
+    async ensureInitialized() {
+        if (this._initState === 'initialized') return true;
+        if (this._initState === 'initializing' && this._initializationPromise) {
+            return new Promise((resolve, reject) => {
+                this._pendingInitWaiters.push({ resolve, reject });
+            });
+        }
+
+        // 非初始化或之前初始化失败：触发一次初始化
+        return this.initialize();
+    }
+
+    _notifyInitWaiters(err, result) {
+        for (const w of this._pendingInitWaiters) {
+            try {
+                if (err) w.reject(err);
+                else w.resolve(result);
+            } catch (e) {
+                console.warn('[Orchestrator] notify waiter failed:', e);
+            }
+        }
+        this._pendingInitWaiters = [];
     }
 
     /**
@@ -281,9 +353,13 @@ export class Orchestrator {
      * 🎯 核心：智能路由用户请求（100%向后兼容）
      */
     async handleUserRequest(userMessage, files = [], context = {}) {
-        // 🎯 修复5：确保初始化完成
-        if (!this._isInitialized) {
-            await this.initializationPromise;
+        // 🎯 修复5：确保初始化完成（使用新的等待器接口）
+        try {
+            await this.ensureInitialized();
+        } catch (initErr) {
+            // 初始化失败：_initializeWithDependencies 会尝试进入降级模式。
+            // 在这里记录并继续，后续逻辑会根据 this.agentSystem 或降级模式选择回退路径。
+            console.warn('[Orchestrator] 初始化未完成或失败，继续以降级/现有状态处理', initErr);
         }
         
         this.currentContext = context;
