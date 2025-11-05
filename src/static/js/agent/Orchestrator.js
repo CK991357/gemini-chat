@@ -24,6 +24,7 @@ import { CallbackManager } from './CallbackManager.js';
 import { EnhancedSkillManager } from './EnhancedSkillManager.js';
 
 // 🎯 导入向后兼容系统
+import { ObservationUtils } from './utils/ObservationUtils.js';
 
 export class Orchestrator {
     constructor(chatApiHandler, config = {}) {
@@ -39,16 +40,16 @@ export class Orchestrator {
         // 🎯 修复2：标记初始化状态
         this._isInitialized = false;
         this._initializationError = null;
-    // 🎯 新增：更加精细的初始化状态管理
-    // state: 'idle' | 'initializing' | 'initialized' | 'failed'
-    this._initState = 'idle';
-    this._initializationPromise = null;
-    this._pendingInitWaiters = [];
+        // 🎯 新增：更加精细的初始化状态管理
+        // state: 'idle' | 'initializing' | 'initialized' | 'failed'
+        this._initState = 'idle';
+        this._initializationPromise = null;
+        this._pendingInitWaiters = [];
         
         // 🎯 等待技能管理器就绪后再继续
         this.tools = {}; // 确保在降级模式下 Object.keys(this.tools) 不会抛出错误
-    // 兼容：公开一个 promise 字段，指向 initialize() 的调用结果
-    this.initializationPromise = this.initialize();
+        // 兼容：公开一个 promise 字段，指向 initialize() 的调用结果
+        this.initializationPromise = this.initialize();
         
         this.isEnabled = config.enabled !== false;
         this.currentWorkflow = null;
@@ -527,21 +528,27 @@ export class Orchestrator {
         
         // 🎯 添加执行摘要（如果有多步执行）
         if (agentResult.intermediateSteps && agentResult.intermediateSteps.length > 0) {
-            const successfulSteps = agentResult.intermediateSteps.filter(step => !step.observation.isError).length;
-            const failedSteps = agentResult.intermediateSteps.filter(step => step.observation.isError).length;
+            const successfulSteps = agentResult.intermediateSteps.filter(step => 
+                !ObservationUtils.isErrorResult(step.observation)
+            ).length;
+            const failedSteps = agentResult.intermediateSteps.filter(step => 
+                ObservationUtils.isErrorResult(step.observation)
+            ).length;
             
             content += `\n\n---\n**🤖 智能代理执行摘要**\n`;
             content += `共执行 ${agentResult.iterations} 轮思考，完成 ${successfulSteps} 个成功步骤${failedSteps > 0 ? `，${failedSteps} 个失败步骤` : ''}：\n`;
             
             agentResult.intermediateSteps.forEach((step, index) => {
-                const status = step.observation.isError ? '❌' : '✅';
+                const isError = ObservationUtils.isErrorResult(step.observation);
+                const status = isError ? '❌' : '✅';
                 content += `\n${index + 1}. ${step.action.tool_name} ${status}`;
                 
                 // 添加简要结果预览（成功步骤）
-                if (!step.observation.isError && step.observation.output) {
-                    const preview = step.observation.output.substring(0, 80);
-                    if (preview.length > 0) {
-                        content += ` - ${preview}${step.observation.output.length > 80 ? '...' : ''}`;
+                if (!isError) {
+                    const previewText = ObservationUtils.getOutputText(step.observation) || '';
+                    if (previewText.trim()) {
+                        const preview = previewText.substring(0, 80);
+                        content += ` - ${preview}${previewText.length > 80 ? '...' : ''}`;
                     }
                 }
             });
@@ -551,7 +558,7 @@ export class Orchestrator {
             enhanced: true,
             type: 'agent_result',
             content: content,
-            success: true,
+            success: agentResult.success,
             agentRunId: agentResult.agentRunId,
             intermediateSteps: agentResult.intermediateSteps,
             isMultiStep: agentResult.intermediateSteps && agentResult.intermediateSteps.length > 0,

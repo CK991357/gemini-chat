@@ -67,8 +67,8 @@ export class CallbackManager {
     // 🎯 中间件系统
     async wrapToolCall(request, handler) {
         console.log(`[CallbackManager] 包装工具调用: ${request.toolName}`);
-        
-        let currentRequest = { ...request };
+
+        const currentRequest = { ...request };
         let currentHandler = handler;
 
         // 🎯 应用中间件（从后向前包装）
@@ -82,13 +82,40 @@ export class CallbackManager {
             }
         }
 
-        return await currentHandler(currentRequest);
+        // 执行中间件链后的实际处理器并获取原始结果
+        const rawResult = await currentHandler(currentRequest);
+
+        // 🎯 使用 ObservationUtils 进行统一规范化
+        try {
+            // 使用相对路径导入
+            const { ObservationUtils } = await import('./utils/ObservationUtils.js');
+            const normalizedResult = ObservationUtils.normalizeToolResult(rawResult);
+
+            console.log(`[CallbackManager] 工具调用规范化完成:`, {
+                tool: request.toolName,
+                success: normalizedResult.success,
+                outputLength: (normalizedResult.output || '').length,
+                extractedFrom: normalizedResult._extractedFrom
+            });
+
+            return normalizedResult;
+        } catch (err) {
+            console.error('[CallbackManager] 使用 ObservationUtils 规范化失败:', err);
+            // 🎯 安全的回退方案
+            return {
+                success: false,
+                output: `规范化失败: ${err.message}`,
+                _rawResult: rawResult,
+                _callbackManagerError: true,
+                _error: err.message
+            };
+        }
     }
 
     async wrapLLMCall(request, handler) {
         console.log(`[CallbackManager] 包装LLM调用`);
         
-        let currentRequest = { ...request };
+        const currentRequest = { ...request };
         let currentHandler = handler;
 
         for (let i = this.middlewares.length - 1; i >= 0; i--) {
@@ -291,7 +318,6 @@ export class CallbackManager {
         });
     }
 
-    // 🎯 工具方法
     // 🎯 工具方法
     getCurrentRunEvents() {
         if (this._isDisposed) return [];

@@ -4,6 +4,7 @@
  * @class AgentExecutor
  * @description 纯粹的ReAct循环执行器，包含错误恢复机制和智能超时优化
  */
+import { ObservationUtils } from '../utils/ObservationUtils.js';
 export class AgentExecutor {
     constructor(agentLogic, tools, callbackManager, config = {}) {
         this.agentLogic = agentLogic;
@@ -383,22 +384,55 @@ export class AgentExecutor {
      * 🎯 检查是否应该提前停止
      */
     _shouldEarlyStop(observation) {
-        // 🎯 可以根据业务逻辑实现提前停止条件
-        if (observation.output && (
-            observation.output.includes("ERROR_CRITICAL") ||
-            observation.output.includes("无法继续") ||
-            observation.output.includes("终止执行")
-        )) {
+        // 🎯 可以根据业务逻辑实现提前停止条件（安全处理各种类型的 observation.output）
+        if (!observation) return false;
+
+        const outputText = this._extractOutputText(observation);
+        if (!outputText) return false;
+
+        if (
+            outputText.includes("ERROR_CRITICAL") ||
+            outputText.includes("无法继续") ||
+            outputText.includes("终止执行")
+        ) {
             return true;
         }
+
         return false;
     }
 
     /**
      * 🎯 处理提前停止
      */
-    _handleEarlyStop(observation, intermediateSteps) {
-        return `执行提前停止。原因: ${observation.output}`;
+    _handleEarlyStop(observation, _intermediateSteps) {
+        const reason = this._extractOutputText(observation) || '未知原因';
+        return `执行提前停止。原因: ${reason}`;
+    }
+
+    /**
+     * 从 observation 中安全提取可读字符串输出
+     */
+    /**
+     * 从 observation 中安全提取可读字符串输出
+     */
+    _extractOutputText(observation) {
+        try {
+            return ObservationUtils.getOutputText(observation) || '';
+        } catch (error) {
+            console.warn('[AgentExecutor] _extractOutputText 失败:', error);
+            // 🎯 简化的安全兜底
+            try {
+                if (typeof observation === 'string') return observation;
+                if (observation && typeof observation === 'object') {
+                    if (typeof observation.output === 'string') return observation.output;
+                    if (observation.error) return String(observation.error);
+                    return JSON.stringify(observation);
+                }
+                return String(observation);
+            } catch {
+                return '[无法提取输出]';
+            }
+        }
     }
 
     /**
@@ -442,14 +476,14 @@ export class AgentExecutor {
     /**
      * 🎯 处理连续错误
      */
-    _handleConsecutiveErrors(intermediateSteps, errorCount) {
+    _handleConsecutiveErrors(_intermediateSteps, errorCount) {
         return `🤖 Agent执行因连续错误过多而终止（${errorCount}次连续错误）。\n\n请尝试简化问题或检查工具可用性。`;
     }
 
     /**
      * 🎯 处理严重错误
      */
-    _handleCriticalError(error, intermediateSteps, consecutiveErrors) {
+    _handleCriticalError(error, _intermediateSteps, consecutiveErrors) {
         return `🤖 Agent执行遇到严重错误: ${error.message}\n\n连续错误次数: ${consecutiveErrors}\n\n建议检查问题表述或稍后重试。`;
     }
 

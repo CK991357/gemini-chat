@@ -4,6 +4,7 @@
  * @class AgentLogic
  * @description Agent的思考核心，负责规划下一步行动
  */
+import { ObservationUtils } from '../utils/ObservationUtils.js';
 export class AgentLogic {
     constructor(llm, tools, outputParser) {
         this.llm = llm; // chatApiHandler
@@ -138,23 +139,16 @@ Question: ${userMessage}
      * 🎯 格式化观察结果
      */
     _formatObservation(observation) {
-        if (typeof observation === 'string') {
-            // 如果是错误信息，突出显示
-            if (observation.includes('失败') || observation.includes('错误')) {
-                return `❌ ${observation}`;
-            }
-            return observation.substring(0, 800) + (observation.length > 800 ? '...' : '');
+        try {
+            const outputText = ObservationUtils.getOutputText(observation) || '[无输出内容]';
+            const isError = ObservationUtils.isErrorResult(observation);
+
+            const display = outputText.substring(0, 800) + (outputText.length > 800 ? '...' : '');
+            return isError ? `❌ ${display}` : display;
+        } catch (error) {
+            console.warn('[AgentLogic] _formatObservation 失败:', error);
+            return `❌ 格式化观察结果失败: ${error.message}`;
         }
-        
-        if (observation.output) {
-            return observation.output.substring(0, 800) + (observation.output.length > 800 ? '...' : '');
-        }
-        
-        if (observation.success === false) {
-            return `❌ 工具执行失败: ${observation.error || '未知错误'}`;
-        }
-        
-        return JSON.stringify(observation).substring(0, 800) + '...';
     }
 
     /**
