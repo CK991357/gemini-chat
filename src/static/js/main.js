@@ -1119,6 +1119,8 @@ async function ensureAudioInitialized() {
     
     if (!audioStreamer) {
         audioStreamer = new AudioStreamer(audioCtx);
+        // 🎯 修复：强制设置实时播放采样率为 16000Hz，以匹配 Gemini 实时流的默认输出，解决快进问题
+        audioStreamer.sampleRate = 16000;
         
         // 🎯 修复：添加音频播放状态监听
         audioStreamer.onPlaybackStart = () => {
