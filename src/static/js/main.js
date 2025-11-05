@@ -1549,9 +1549,11 @@ sendButton.addEventListener('click', () => handleSendMessage(attachmentManager))
 function processAudioData(source) {
     if (audioDataBuffer.length > 0) {
         try {
-            const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
+            // Use the runtime-detected sample rate from the audioStreamer when available.
+            const finalSampleRate = (audioStreamer && audioStreamer.sampleRate) || CONFIG.AUDIO.OUTPUT_SAMPLE_RATE;
+            const audioBlob = pcmToWavBlob(audioDataBuffer, finalSampleRate);
             const audioUrl = URL.createObjectURL(audioBlob);
-            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2);
+            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (finalSampleRate * 2);
             
             console.log('🚀 处理最终音频数据:', {
                 source: source,
