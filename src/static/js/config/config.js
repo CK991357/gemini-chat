@@ -831,7 +831,10 @@ print(json.dumps(result))
     // Default audio settings
     AUDIO: {
         SAMPLE_RATE: 16000,
-        OUTPUT_SAMPLE_RATE: 24000,      // 修改为 16000，确保与输入采样率一致
+        // OUTPUT_SAMPLE_RATE must match the actual PCM sample rate produced by the model/server.
+        // Using a mismatched OUTPUT_SAMPLE_RATE (e.g. 24000) while the stream is 16000 will
+        // make playback play faster (duration = samples / OUTPUT_SAMPLE_RATE). Set to 16000.
+        OUTPUT_SAMPLE_RATE: 16000,
         BUFFER_SIZE: 2048,
         CHANNELS: 1
     },

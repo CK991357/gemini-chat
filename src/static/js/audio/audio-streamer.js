@@ -72,16 +72,13 @@ export class AudioStreamer {
      * @param {Int16Array} chunk - The audio data chunk.
      */
     addPCM16(chunk) {
-        const float32Array = new Float32Array(chunk.length / 2);
-        const dataView = new DataView(chunk.buffer);
-
-        for (let i = 0; i < chunk.length / 2; i++) {
-            try {
-                const int16 = dataView.getInt16(i * 2, true);
-                float32Array[i] = int16 / 32768;
-            } catch (e) {
-                console.error(e);
-            }
+        // chunk is expected to be an Int16Array of PCM samples.
+        // Earlier implementation incorrectly treated it as bytes and used chunk.length/2,
+        // which halved the sample count and caused playback to be twice as fast.
+        // Correct approach: convert each Int16 sample to Float32 in [-1,1].
+        const float32Array = new Float32Array(chunk.length);
+        for (let i = 0; i < chunk.length; i++) {
+            float32Array[i] = chunk[i] / 32768;
         }
 
         const newBuffer = new Float32Array(this.processingBuffer.length + float32Array.length);
@@ -109,8 +106,7 @@ export class AudioStreamer {
      * @returns {AudioBuffer} The created AudioBuffer.
      */
     createAudioBuffer(audioData) {
-        // 🎯 修复：使用 AudioContext 的实际采样率创建 AudioBuffer，避免播放速度错误
-        const audioBuffer = this.context.createBuffer(1, audioData.length, this.context.sampleRate);
+        const audioBuffer = this.context.createBuffer(1, audioData.length, this.sampleRate);
         audioBuffer.getChannelData(0).set(audioData);
         return audioBuffer;
     }
