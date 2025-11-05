@@ -999,10 +999,11 @@ async function handleHttpMessage(messageText, attachedFiles) {
 async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames) {
     console.log("🤖 Agent Mode ON: 智能路由用户请求");
     
-    // 启动思考过程显示 (使用新的懒加载函数)
-    const sessionId = startAgentThinking(messageText, 8);
-    
     try {
+        // 启动思考过程显示 (使用新的懒加载函数)
+        const sessionId = await startAgentThinking(messageText, 8);
+        console.log(`🤖 Agent会话启动: ${sessionId}`);
+        
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
             model: modelName,
             apiKey: apiKey,
@@ -1056,9 +1057,11 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
             agentThinkingDisplay.endSession(sessionId, 'success'); // 修正：在标准聊天成功后结束
         }
     } catch (error) {
-        agentThinkingDisplay.updateThinking(sessionId, `执行出错: ${error.message}`, 'error');
-        agentThinkingDisplay.endSession(sessionId, 'error');
-        throw error;
+        console.error("🤖 Agent模式执行失败:", error);
+        // 发生错误时隐藏思考显示
+        stopAgentThinking();
+        // 回退到普通聊天模式或显示错误信息
+        throw error; // 或者处理错误
     }
 }
 
@@ -2355,26 +2358,48 @@ window.getAudioSampleRate = () => audioStreamer?.sampleRate || null;
  * @description 启动 Agent 思考显示，如果实例不存在则创建。
  * @param {string} userMessage - 用户消息。
  * @param {number} [maxIterations=8] - 最大迭代次数。
- * @returns {string} 会话 ID。
+ * @returns {Promise<string>} 会话 ID。
  */
-export function startAgentThinking(userMessage, maxIterations = 8) {
-    // 只在需要时创建实例
-    if (!agentThinkingDisplay) {
-        agentThinkingDisplay = new AgentThinkingDisplay();
+export async function startAgentThinking(userMessage, maxIterations = 8) {
+    try {
+        // 只在需要时创建实例
+        if (!agentThinkingDisplay) {
+            // 动态导入，避免在不需要Agent功能时加载
+            const { AgentThinkingDisplay } = await import('./agent/AgentThinkingDisplay.js');
+            agentThinkingDisplay = new AgentThinkingDisplay();
+        }
+        return agentThinkingDisplay.startSession(userMessage, maxIterations);
+    } catch (error) {
+        console.error('启动Agent思考显示失败:', error);
+        // 返回一个虚拟会话ID，避免阻塞主流程
+        return `agent_fallback_${Date.now()}`;
     }
-    return agentThinkingDisplay.startSession(userMessage, maxIterations);
 }
 
 /**
  * @function stopAgentThinking
  * @description 停止 Agent 思考显示并隐藏。
+ * @param {boolean} [destroy=false] - 是否完全销毁实例。
  * @returns {void}
  */
-export function stopAgentThinking() {
+export function stopAgentThinking(destroy = false) {
     if (agentThinkingDisplay) {
         agentThinkingDisplay.hide();
-        // 可选：完全销毁
-        // agentThinkingDisplay.destroy();
-        // agentThinkingDisplay = null;
+        if (destroy) {
+            // 确保 destroy 方法存在
+            if (typeof agentThinkingDisplay.destroy === 'function') {
+                agentThinkingDisplay.destroy();
+            }
+            agentThinkingDisplay = null;
+        }
     }
+}
+
+/**
+ * @function getAgentThinkingDisplay
+ * @description 获取当前的Agent思考显示实例（用于调试或高级操作）。
+ * @returns {AgentThinkingDisplay|null}
+ */
+export function getAgentThinkingDisplay() {
+    return agentThinkingDisplay;
 }
