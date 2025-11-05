@@ -1118,22 +1118,6 @@ async function ensureAudioInitialized() {
     
     if (!audioStreamer) {
         audioStreamer = new AudioStreamer(audioCtx);
-        
-        // 🚀 修复：添加音频播放状态监听
-        audioStreamer.onPlaybackStart = () => {
-            console.log('🚀 音频播放开始');
-            chatUI.logMessage('音频播放开始', 'system');
-        };
-        
-        audioStreamer.onPlaybackEnd = () => {
-            console.log('🚀 音频播放结束');
-            chatUI.logMessage('音频播放结束', 'system');
-        };
-        
-        audioStreamer.onPlaybackError = (error) => {
-            console.error('🚀 音频播放错误:', error);
-            chatUI.logMessage(`音频播放错误: ${error.message}`, 'system');
-        };
     }
     
     return audioStreamer;
@@ -1340,6 +1324,14 @@ function disconnectFromWebsocket() {
     }
 }
 
+// 🚀 修复：WebSocket音频处理 - 监听audio事件
+client.on('audio', (data) => {
+    console.log('🚀 接收到音频数据:', data.byteLength, 'bytes');
+    // 将ArrayBuffer转换为Uint8Array并累积
+    const audioData = new Uint8Array(data);
+    audioDataBuffer.push(audioData);
+});
+
 client.on('content', (data) => {
     if (data.modelTurn) {
         if (data.modelTurn.parts.some(part => part.functionCall)) {
@@ -1358,19 +1350,6 @@ client.on('content', (data) => {
             }
         }
 
-        // 🚀 修复：处理音频数据
-        const audioParts = data.modelTurn.parts.filter(part => part.inlineData && part.inlineData.mimeType === 'audio/pcm');
-        if (audioParts.length > 0) {
-            audioParts.forEach(part => {
-                if (part.inlineData && part.inlineData.data) {
-                    // 将base64音频数据转换为Uint8Array
-                    const audioData = Uint8Array.from(atob(part.inlineData.data), c => c.charCodeAt(0));
-                    audioDataBuffer.push(audioData);
-                }
-            });
-        }
-
-        // 处理文本数据
         const text = data.modelTurn.parts.map(part => part.text).join('');
         
         if (text) {
@@ -1382,6 +1361,8 @@ client.on('content', (data) => {
             currentAIMessageContentDiv.rawMarkdownBuffer += text;
             
             // 渲染Markdown并高亮代码
+            // 注意：marked.js 已经集成了 highlight.js，所以不需要单独调用 hljs.highlightElement
+            // 立即更新 innerHTML，确保实时渲染
             currentAIMessageContentDiv.markdownContainer.innerHTML = marked.parse(currentAIMessageContentDiv.rawMarkdownBuffer);
             
             // 触发 MathJax 渲染
@@ -1402,42 +1383,16 @@ client.on('interrupted', () => {
     isUsingTool = false;
     Logger.info('Model interrupted');
     chatUI.logMessage('Model interrupted', 'system');
-    
-    // 处理文本消息
+    // 确保在中断时完成当前文本消息并添加到聊天历史
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
         chatHistory.push({
             role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer
+            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
         });
     }
-    currentAIMessageContentDiv = null;
-
-    // 🚀 修复：中断时也处理音频数据
-    if (audioDataBuffer.length > 0) {
-        try {
-            const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2);
-            
-            console.log('🚀 中断时音频处理:', {
-                bufferLength: audioDataBuffer.length,
-                duration: duration
-            });
-            
-            chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlob);
-            
-            chatHistory.push({
-                role: 'assistant',
-                content: `[音频消息（中断），时长: ${duration.toFixed(2)}秒]`,
-                audioData: audioBlob
-            });
-            
-        } catch (error) {
-            console.error('中断时音频处理失败:', error);
-        } finally {
-            audioDataBuffer = [];
-        }
-    }
+    currentAIMessageContentDiv = null; // 重置
+    // 🚀 修复：处理累积的音频数据
+    processAudioData('interrupted');
 });
 
 client.on('setupcomplete', () => {
@@ -1447,50 +1402,23 @@ client.on('setupcomplete', () => {
 client.on('turncomplete', () => {
     isUsingTool = false;
     chatUI.logMessage('Turn complete', 'system');
-    
-    // 处理文本消息
+    // 在对话结束时刷新文本缓冲区并添加到聊天历史
     if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
         chatHistory.push({
             role: 'assistant',
-            content: currentAIMessageContentDiv.rawMarkdownBuffer
+            content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
         });
     }
     currentAIMessageContentDiv = null; // 重置
+    
+    // 🚀 修复：处理累积的音频数据
+    processAudioData('turncomplete');
 
-    // 🚀 修复：处理累积的音频数据 - 确保正确显示音频消息
-    if (audioDataBuffer.length > 0) {
-        try {
-            const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
-            
-            console.log('🚀 音频处理完成:', {
-                bufferLength: audioDataBuffer.length,
-                totalBytes: audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0),
-                duration: duration,
-                audioUrl: audioUrl
-            });
-            
-            // 显示音频消息
-            chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlob);
-            
-            // 将音频消息添加到聊天历史
-            chatHistory.push({
-                role: 'assistant',
-                content: `[音频消息，时长: ${duration.toFixed(2)}秒]`,
-                audioData: audioBlob // 可选：存储音频数据供后续使用
-            });
-            
-        } catch (error) {
-            console.error('音频处理失败:', error);
-            chatUI.logMessage(`音频处理失败: ${error.message}`, 'system');
-        } finally {
-            audioDataBuffer = []; // 清空缓冲区
-        }
-    }
-
-    // 保存历史记录 (仅 HTTP 模式)
+    // T15: 在WebSocket模式对话完成时保存历史
     if (isConnected && !selectedModelConfig.isWebSocket) {
+        historyManager.saveHistory();
+    } else if (isConnected && selectedModelConfig.isWebSocket) {
+        // 🚀 修复：WebSocket模式也保存历史
         historyManager.saveHistory();
     }
 });
@@ -1529,6 +1457,44 @@ client.on('message', (message) => {
 sendButton.addEventListener('click', () => handleSendMessage(attachmentManager)); // T2: 传入管理器
 
 /**
+ * 🚀 修复：处理累积的音频数据
+ * @param {string} source - 来源 ('turncomplete', 'interrupted', 'user')
+ */
+function processAudioData(source) {
+    if (audioDataBuffer.length > 0) {
+        try {
+            const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2); // 16位PCM，2字节/采样
+            
+            console.log('🚀 处理音频数据:', {
+                source: source,
+                bufferLength: audioDataBuffer.length,
+                totalBytes: audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0),
+                duration: duration,
+                audioUrl: audioUrl
+            });
+            
+            // 显示音频消息
+            chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlob);
+            
+            // 将音频消息添加到聊天历史
+            chatHistory.push({
+                role: 'assistant',
+                content: `[音频消息，时长: ${duration.toFixed(2)}秒]`,
+                audioData: audioBlob // 可选：存储音频数据供后续使用
+            });
+            
+        } catch (error) {
+            console.error('音频处理失败:', error);
+            chatUI.logMessage(`音频处理失败: ${error.message}`, 'system');
+        } finally {
+            audioDataBuffer = []; // 清空缓冲区
+        }
+    }
+}
+
+/**
  * @function handleInterruptPlayback
  * @description 处理中断按钮点击事件，停止当前语音播放。
  * @returns {void}
@@ -1538,47 +1504,22 @@ function handleInterruptPlayback() {
         audioStreamer.stop();
         Logger.info('Audio playback interrupted by user.');
         chatUI.logMessage('语音播放已中断', 'system');
-        
-        // 处理文本消息
+        // 确保在中断时也刷新文本缓冲区并添加到聊天历史
         if (currentAIMessageContentDiv && currentAIMessageContentDiv.rawMarkdownBuffer) {
             chatHistory.push({
                 role: 'assistant',
-                content: currentAIMessageContentDiv.rawMarkdownBuffer
+                content: currentAIMessageContentDiv.rawMarkdownBuffer // AI文本消息统一为字符串
             });
         }
-        currentAIMessageContentDiv = null;
-
-        // 🚀 修复：中断时处理音频数据
-        if (audioDataBuffer.length > 0) {
-            try {
-                const audioBlob = pcmToWavBlob(audioDataBuffer, CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const duration = audioDataBuffer.reduce((sum, arr) => sum + arr.length, 0) / (CONFIG.AUDIO.OUTPUT_SAMPLE_RATE * 2);
-                
-                console.log('🚀 用户中断时音频处理:', {
-                    bufferLength: audioDataBuffer.length,
-                    duration: duration
-                });
-                
-                chatUI.displayAudioMessage(audioUrl, duration, 'ai', audioBlob);
-                
-                chatHistory.push({
-                    role: 'assistant',
-                    content: `[音频消息（用户中断），时长: ${duration.toFixed(2)}秒]`,
-                    audioData: audioBlob
-                });
-                
-            } catch (error) {
-                console.error('用户中断时音频处理失败:', error);
-            } finally {
-                audioDataBuffer = [];
-            }
-        }
+        currentAIMessageContentDiv = null; // 重置
+        
+        // 🚀 修复：处理累积的音频数据
+        processAudioData('user_interrupt');
     } else {
         Logger.warn('Attempted to interrupt playback, but audioStreamer is not initialized.');
         chatUI.logMessage('当前没有语音播放可中断', 'system');
     }
-}
+    }
 
 interruptButton.addEventListener('click', handleInterruptPlayback); // 新增事件监听器
 
