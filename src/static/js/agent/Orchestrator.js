@@ -363,6 +363,17 @@ export class Orchestrator {
         }
         
         this.currentContext = context;
+        // 快速过滤：对于非常短的问候或简单单词，避免触发工具或Agent模式
+        try {
+            const trimmed = (userMessage || '').trim();
+            const greetingRegex = /^\s*(hi|hello|hey|你好|嗨|您好|早安|晚上好)([.!?\s]|$)/i;
+            if (trimmed.length <= 4 || greetingRegex.test(trimmed)) {
+                console.log('[Orchestrator] 检测到短消息或问候，回退到标准对话以避免误触发工具');
+                return { enhanced: false, type: 'standard_fallback' };
+            }
+        } catch (_e) {
+            // ignore and continue routing
+        }
         
         // ✨ 如果开关关闭，直接返回标准回退
         if (!this.isEnabled) {

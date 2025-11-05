@@ -284,20 +284,37 @@ export function createAIMessageElement() {
 export function addMessage(msg) {
     if (!msg || !msg.role) return;
     const role = msg.role;
-    const content = msg.content || '';
+    let content = msg.content || '';
 
     if (role === 'assistant') {
         const el = createAIMessageElement();
         if (!el) return;
         // 使用库解析markdown（如果可用）
+        // 如果 content 是对象，尝试提取友好字段（stdout/output），否则格式化为代码块
+        if (typeof content === 'object' && content !== null) {
+            if (typeof content.stdout === 'string') {
+                content = content.stdout;
+            } else if (typeof content.output === 'string') {
+                content = content.output;
+            } else {
+                // 为对象生成可读 JSON
+                const pre = document.createElement('pre');
+                pre.className = 'assistant-json-output';
+                pre.textContent = JSON.stringify(content, null, 2);
+                el.markdownContainer.appendChild(pre);
+                scrollToBottom();
+                return;
+            }
+        }
+
         if (libraries && libraries.marked) {
             try {
-                el.markdownContainer.innerHTML = libraries.marked.parse(content);
+                el.markdownContainer.innerHTML = libraries.marked.parse(String(content));
             } catch (_e) {
-                el.markdownContainer.textContent = content;
+                el.markdownContainer.textContent = String(content);
             }
         } else {
-            el.markdownContainer.textContent = content;
+            el.markdownContainer.textContent = String(content);
         }
         scrollToBottom();
     } else if (role === 'user') {
