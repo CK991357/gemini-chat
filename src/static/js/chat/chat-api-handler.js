@@ -29,6 +29,9 @@ export class ChatApiHandler {
         this.state = state;
         this.libs = libs;
         this.config = config; // 存储配置对象
+        
+        // ✨ 新增：创建流上下文管理器
+        this.streamContextManager = new StreamContextManager();
     }
 
     /**
@@ -38,33 +41,46 @@ export class ChatApiHandler {
      * @param {string} apiKey - The API key for authorization.
      * @returns {Promise<void>}
      */
-    async streamChatCompletion(requestBody, apiKey, uiOverrides = null) {
+    async streamChatCompletion(requestBody, apiKey, uiOverrides = null, parentContextId = null) {
         // ✅ 步骤2: 接收 uiOverrides 参数
         const ui = uiOverrides || chatUI; // ✅ 如果有覆盖则使用，否则回退到默认的 chatUI
 
-        let currentMessages = requestBody.messages;
-        const selectedModelName = requestBody.model; // 获取当前模型名称
-        const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
-        
-        // 检查当前模型是否为Gemini类型（通过名称判断，不依赖isGemini标签）
-        const isCurrentModelGeminiType = selectedModelName.includes('gemini');
-        const isReasoningEnabledGlobally = localStorage.getItem('geminiEnableReasoning') === 'true';
-        
-        let enableReasoning;
-        if (modelConfig && modelConfig.enableReasoning !== undefined) {
-            // 如果模型配置中明确设置了 enableReasoning，则以其为准
-            enableReasoning = modelConfig.enableReasoning;
-        } else {
-            // 否则，回退到 localStorage 中的全局开关状态，但仅限于 Gemini 类型模型
-            enableReasoning = isCurrentModelGeminiType && isReasoningEnabledGlobally;
-        }
-        
-        const disableSearch = modelConfig ? modelConfig.disableSearch : false;
-        
-        // 提取 tools 字段，它可能来自 vision-core.js 或 chat-ui.js
-        const tools = requestBody.tools;
-
+        // ✨ 修复：创建或获取流上下文
+        const streamContext = parentContextId 
+            ? this.streamContextManager.createChildContext(parentContextId, requestBody)
+            : this.streamContextManager.createContext(requestBody);
+            
         try {
+            // ✨ 修复：标记流开始，使用上下文ID
+            this.state.chatHistory.push({
+                role: 'assistant',
+                content: '', // 空内容表示流开始
+                streamId: streamContext.id,
+                timestamp: streamContext.startTime
+            });
+
+            let currentMessages = requestBody.messages;
+            const selectedModelName = requestBody.model; // 获取当前模型名称
+            const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
+            
+            // 检查当前模型是否为Gemini类型（通过名称判断，不依赖isGemini标签）
+            const isCurrentModelGeminiType = selectedModelName.includes('gemini');
+            const isReasoningEnabledGlobally = localStorage.getItem('geminiEnableReasoning') === 'true';
+            
+            let enableReasoning;
+            if (modelConfig && modelConfig.enableReasoning !== undefined) {
+                // 如果模型配置中明确设置了 enableReasoning，则以其为准
+                enableReasoning = modelConfig.enableReasoning;
+            } else {
+                // 否则，回退到 localStorage 中的全局开关状态，但仅限于 Gemini 类型模型
+                enableReasoning = isCurrentModelGeminiType && isReasoningEnabledGlobally;
+            }
+            
+            const disableSearch = modelConfig ? modelConfig.disableSearch : false;
+            
+            // 提取 tools 字段，它可能来自 vision-core.js 或 chat-ui.js
+            const tools = requestBody.tools;
+
             const response = await fetch('/api/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -80,264 +96,271 @@ export class ChatApiHandler {
                 throw new Error(`HTTP API 请求失败: ${response.status} - ${errorData.error?.message || JSON.stringify(errorData)}`);
             }
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let functionCallDetected = false;
-            let currentFunctionCall = null;
-            let reasoningStarted = false;
-            let answerStarted = false;
+            // ✨ 修复：使用上下文处理流
+            await this._processStreamWithContext(response, streamContext, requestBody, apiKey, ui);
+            
+        } catch (error) {
+            // ✨ 修复：使用上下文处理错误
+            await this._handleStreamError(error, streamContext, ui);
+        } finally {
+            // ✨ 修复：延迟清理上下文，确保递归调用完成
+            setTimeout(() => {
+                this.streamContextManager.closeContext(streamContext.id);
+            }, 1000);
+        }
+    }
 
-            // --- Qwen Tool Call Stream Assembler ---
-            let qwenToolCallAssembler = null;
-            // ---
+    /**
+     * ✨ 新增：使用上下文处理流数据
+     * @private
+     */
+    async _processStreamWithContext(response, streamContext, requestBody, apiKey, ui) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
 
-            const isToolResponseFollowUp = currentMessages.some(msg => msg.role === 'tool');
-            if (!isToolResponseFollowUp) {
-                this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                Logger.info('HTTP Stream finished.');
+                break;
             }
 
-            let buffer = '';
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    Logger.info('HTTP Stream finished.');
-                    break;
-                }
+            buffer += decoder.decode(value, { stream: true });
+            let boundary = buffer.indexOf('\n\n');
 
-                buffer += decoder.decode(value, { stream: true });
-                let boundary = buffer.indexOf('\n\n');
+            while (boundary !== -1) {
+                const message = buffer.substring(0, boundary);
+                buffer = buffer.substring(boundary + 2);
 
-                while (boundary !== -1) {
-                    const message = buffer.substring(0, boundary);
-                    buffer = buffer.substring(boundary + 2);
+                if (message.startsWith('data: ')) {
+                    const jsonStr = message.substring(6);
+                    if (jsonStr === '[DONE]') {
+                        boundary = buffer.indexOf('\n\n');
+                        continue;
+                    }
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        if (data.choices && data.choices.length > 0) {
+                            const choice = data.choices[0];
+                            const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
+                            const qwenToolCallParts = choice.delta.tool_calls;
 
-                    if (message.startsWith('data: ')) {
-                        const jsonStr = message.substring(6);
-                        if (jsonStr === '[DONE]') {
-                            boundary = buffer.indexOf('\n\n');
-                            continue;
-                        }
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            if (data.choices && data.choices.length > 0) {
-                                const choice = data.choices[0];
-                                const functionCallPart = choice.delta.parts?.find(p => p.functionCall);
-                                const qwenToolCallParts = choice.delta.tool_calls;
-
-                                if (qwenToolCallParts && Array.isArray(qwenToolCallParts)) {
-                                    // --- Qwen Tool Call Assembly Logic ---
-                                    qwenToolCallParts.forEach(toolCallChunk => {
-                                        const func = toolCallChunk.function;
-                                        if (func && func.name) { // First chunk
-                                            if (!qwenToolCallAssembler) {
-                                                qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
-                                                Logger.info('Qwen MCP tool call started:', qwenToolCallAssembler);
-                                                ui.logMessage(`模型请求 MCP 工具: ${qwenToolCallAssembler.tool_name}`, 'system');
-                                                if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
-                                            } else {
-                                                qwenToolCallAssembler.arguments += func.arguments || '';
-                                            }
-                                        } else if (qwenToolCallAssembler && func && func.arguments) { // Subsequent chunks
-                                            qwenToolCallAssembler.arguments += func.arguments;
-                                        }
-                                    });
-                                    // --- End Assembly Logic ---
-
-                                } else if (functionCallPart) {
-                                    // Gemini Function Call Detected
-                                    functionCallDetected = true;
-                                    currentFunctionCall = functionCallPart.functionCall;
-                                    Logger.info('Function call detected:', currentFunctionCall);
-                                    ui.logMessage(`模型请求工具: ${currentFunctionCall.name}`, 'system');
-                                    if (this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = null;
-
-                                } else if (choice.delta && !functionCallDetected && !qwenToolCallAssembler) {
-                                    // Process reasoning and content only if no tool call is active
-                                    if (choice.delta.reasoning_content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                                        
-                                        // 兼容性检查：确保 reasoningContainer 存在
-                                        if (this.state.currentAIMessageContentDiv.reasoningContainer) {
-                                            if (!reasoningStarted) {
-                                                this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                                reasoningStarted = true;
-                                            }
-                                            const reasoningText = choice.delta.reasoning_content;
-                                            
-                                            // 兼容性检查：确保 rawReasoningBuffer 存在
-                                            if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string') {
-                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
-                                            } else {
-                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer = reasoningText;
-                                            }
-                                            
-                                            // 兼容性检查：确保 reasoning-content 元素存在
-                                            const reasoningContentEl = this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
-                                            if (reasoningContentEl) {
-                                                reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
-                                            }
-                                        }
-                                    }
-                                    
-                                    if (choice.delta.content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                                        
-                                        // 兼容性检查：确保 reasoningContainer 存在且需要添加分隔线
-                                        if (this.state.currentAIMessageContentDiv.reasoningContainer &&
-                                            reasoningStarted && !answerStarted) {
-                                            const separator = document.createElement('hr');
-                                            separator.className = 'answer-separator';
-                                            // 兼容性检查：确保 markdownContainer 存在
-                                            if (this.state.currentAIMessageContentDiv.markdownContainer) {
-                                                this.state.currentAIMessageContentDiv.markdownContainer.before(separator);
-                                            }
-                                            answerStarted = true;
-                                        }
-
-                                        // 兼容性处理：确保 rawMarkdownBuffer 存在
-                                        if (typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string') {
-                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer += choice.delta.content || '';
+                            if (qwenToolCallParts && Array.isArray(qwenToolCallParts)) {
+                                // --- Qwen Tool Call Assembly Logic ---
+                                qwenToolCallParts.forEach(toolCallChunk => {
+                                    const func = toolCallChunk.function;
+                                    if (func && func.name) { // First chunk
+                                        if (!streamContext.qwenToolCallAssembler) {
+                                            streamContext.qwenToolCallAssembler = { tool_name: func.name, arguments: func.arguments || '' };
+                                            Logger.info('Qwen MCP tool call started:', streamContext.qwenToolCallAssembler);
+                                            ui.logMessage(`模型请求 MCP 工具: ${streamContext.qwenToolCallAssembler.tool_name}`, 'system');
+                                            if (streamContext.currentAIMessageContentDiv) streamContext.currentAIMessageContentDiv = null;
                                         } else {
-                                            // 如果不存在，初始化
-                                            this.state.currentAIMessageContentDiv.rawMarkdownBuffer = choice.delta.content || '';
+                                            streamContext.qwenToolCallAssembler.arguments += func.arguments || '';
                                         }
+                                    } else if (streamContext.qwenToolCallAssembler && func && func.arguments) { // Subsequent chunks
+                                        streamContext.qwenToolCallAssembler.arguments += func.arguments;
+                                    }
+                                });
+                                // --- End Assembly Logic ---
 
-                                        // 兼容性检查：确保 markdownContainer 存在
-                                        if (this.state.currentAIMessageContentDiv.markdownContainer) {
-                                            this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(
-                                                this.state.currentAIMessageContentDiv.rawMarkdownBuffer
-                                            );
+                            } else if (functionCallPart) {
+                                // Gemini Function Call Detected
+                                streamContext.functionCallDetected = true;
+                                streamContext.currentFunctionCall = functionCallPart.functionCall;
+                                Logger.info('Function call detected:', streamContext.currentFunctionCall);
+                                ui.logMessage(`模型请求工具: ${streamContext.currentFunctionCall.name}`, 'system');
+                                if (streamContext.currentAIMessageContentDiv) streamContext.currentAIMessageContentDiv = null;
+
+                            } else if (choice.delta && !streamContext.functionCallDetected && !streamContext.qwenToolCallAssembler) {
+                                // Process reasoning and content only if no tool call is active
+                                if (choice.delta.reasoning_content) {
+                                    if (!streamContext.currentAIMessageContentDiv) streamContext.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                    
+                                    // ✨ 修复：使用上下文存储 reasoningContainer
+                                    if (streamContext.currentAIMessageContentDiv.reasoningContainer) {
+                                        if (!streamContext.reasoningStarted) {
+                                            streamContext.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
+                                            streamContext.reasoningStarted = true;
                                         }
+                                        const reasoningText = choice.delta.reasoning_content;
                                         
-                                        // 应用数学公式渲染 - 兼容性处理
-                                        if (typeof this.libs.MathJax !== 'undefined' && this.libs.MathJax.startup) {
-                                            this.libs.MathJax.startup.promise.then(() => {
-                                                const containersToTypeset = [];
-                                                if (this.state.currentAIMessageContentDiv.markdownContainer) {
-                                                    containersToTypeset.push(this.state.currentAIMessageContentDiv.markdownContainer);
-                                                }
-                                                if (this.state.currentAIMessageContentDiv.reasoningContainer) {
-                                                    containersToTypeset.push(this.state.currentAIMessageContentDiv.reasoningContainer);
-                                                }
-                                                if (containersToTypeset.length > 0) {
-                                                    this.libs.MathJax.typeset(containersToTypeset);
-                                                }
-                                            }).catch((err) => console.error('MathJax typesetting failed:', err));
-                                        }
+                                        // ✨ 修复：使用上下文存储 reasoning buffer
+                                        streamContext.rawReasoningBuffer += reasoningText;
                                         
-                                        // 调用滚动函数
-                                        if (ui.scrollToBottom) {
-                                            ui.scrollToBottom();
+                                        // 兼容性检查：确保 reasoning-content 元素存在
+                                        const reasoningContentEl = streamContext.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
+                                        if (reasoningContentEl) {
+                                            reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
                                         }
                                     }
                                 }
+                                
+                                if (choice.delta.content) {
+                                    if (!streamContext.currentAIMessageContentDiv) streamContext.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                    
+                                    // ✨ 修复：使用上下文状态
+                                    if (streamContext.currentAIMessageContentDiv.reasoningContainer &&
+                                        streamContext.reasoningStarted && !streamContext.answerStarted) {
+                                        const separator = document.createElement('hr');
+                                        separator.className = 'answer-separator';
+                                        // 兼容性检查：确保 markdownContainer 存在
+                                        if (streamContext.currentAIMessageContentDiv.markdownContainer) {
+                                            streamContext.currentAIMessageContentDiv.markdownContainer.before(separator);
+                                        }
+                                        streamContext.answerStarted = true;
+                                    }
+
+                                    // ✨ 修复：使用上下文存储 markdown buffer
+                                    streamContext.rawMarkdownBuffer += choice.delta.content || '';
+
+                                    // 兼容性检查：确保 markdownContainer 存在
+                                    if (streamContext.currentAIMessageContentDiv.markdownContainer) {
+                                        streamContext.currentAIMessageContentDiv.markdownContainer.innerHTML = this.libs.marked.parse(
+                                            streamContext.rawMarkdownBuffer
+                                        );
+                                    }
+                                    
+                                    // 应用数学公式渲染 - 兼容性处理
+                                    if (typeof this.libs.MathJax !== 'undefined' && this.libs.MathJax.startup) {
+                                        this.libs.MathJax.startup.promise.then(() => {
+                                            const containersToTypeset = [];
+                                            if (streamContext.currentAIMessageContentDiv.markdownContainer) {
+                                                containersToTypeset.push(streamContext.currentAIMessageContentDiv.markdownContainer);
+                                            }
+                                            if (streamContext.currentAIMessageContentDiv.reasoningContainer) {
+                                                containersToTypeset.push(streamContext.currentAIMessageContentDiv.reasoningContainer);
+                                            }
+                                            if (containersToTypeset.length > 0) {
+                                                this.libs.MathJax.typeset(containersToTypeset);
+                                            }
+                                        }).catch((err) => console.error('MathJax typesetting failed:', err));
+                                    }
+                                    
+                                    // 调用滚动函数
+                                    if (ui.scrollToBottom) {
+                                        ui.scrollToBottom();
+                                    }
+                                }
                             }
-                            if (data.usage) {
-                                Logger.info('Usage:', data.usage);
-                            }
-                        } catch (e) {
-                            Logger.error('Error parsing SSE chunk:', e, jsonStr);
                         }
+                        if (data.usage) {
+                            Logger.info('Usage:', data.usage);
+                        }
+                    } catch (e) {
+                        Logger.error('Error parsing SSE chunk:', e, jsonStr);
                     }
-                    boundary = buffer.indexOf('\n\n');
                 }
+                boundary = buffer.indexOf('\n\n');
             }
+        }
 
-            // --- Post-Stream Processing ---
-            if (qwenToolCallAssembler) {
-                functionCallDetected = true;
-                currentFunctionCall = qwenToolCallAssembler;
-                try {
-                    JSON.parse(currentFunctionCall.arguments);
-                } catch (e) {
-                    console.error("Failed to parse assembled tool call arguments.", e);
-                }
+        // ✨ 修复：使用上下文进行后处理
+        await this._finalizeStreamWithContext(streamContext, requestBody, apiKey, ui);
+    }
+
+    /**
+     * ✨ 新增：使用上下文完成流处理
+     * @private
+     */
+    async _finalizeStreamWithContext(streamContext, requestBody, apiKey, ui) {
+        // --- Post-Stream Processing ---
+        if (streamContext.qwenToolCallAssembler) {
+            streamContext.functionCallDetected = true;
+            streamContext.currentFunctionCall = streamContext.qwenToolCallAssembler;
+            try {
+                JSON.parse(streamContext.currentFunctionCall.arguments);
+            } catch (e) {
+                console.error("Failed to parse assembled tool call arguments.", e);
             }
+        }
 
-            const timestamp = () => new Date().toISOString();
-            if (functionCallDetected && currentFunctionCall) {
-                console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
+        const timestamp = () => new Date().toISOString();
+        if (streamContext.functionCallDetected && streamContext.currentFunctionCall) {
+            console.log(`[${timestamp()}] [DISPATCH] Stream finished. Tool call detected.`);
+            
+            // ✨ 修复：使用上下文存储的缓冲区内容
+            if (streamContext.currentAIMessageContentDiv &&
+                streamContext.rawMarkdownBuffer.trim() !== '') {
                 
-                // 兼容性处理：保存最终文本到历史记录
-                if (this.state.currentAIMessageContentDiv &&
-                    typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
-                    this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {
-                    
-                    console.log(`[${timestamp()}] [DISPATCH] Saving final text part to history.`);
-                    this.state.chatHistory.push({
-                        role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
-                    });
-                }
-                this.state.currentAIMessageContentDiv = null;
+                console.log(`[${timestamp()}] [DISPATCH] Saving final text part to history.`);
+                this.state.chatHistory.push({
+                    role: 'assistant',
+                    content: streamContext.rawMarkdownBuffer
+                });
+            }
+            streamContext.currentAIMessageContentDiv = null;
 
-                // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
-                console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call for model: ${requestBody.model}`);
-                const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
+            // 根据 currentFunctionCall 的结构区分是 Gemini 调用还是 Qwen 调用
+            console.log(`[${timestamp()}] [DISPATCH] Analyzing tool call for model: ${requestBody.model}`);
+            const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
 
-                const isQwenModel = modelConfig && modelConfig.isQwen;
-                const isZhipuModel = modelConfig && modelConfig.isZhipu;
-                const isGeminiToolModel = modelConfig && modelConfig.isGemini; // 新增：检查Gemini工具模型标签
+            const isQwenModel = modelConfig && modelConfig.isQwen;
+            const isZhipuModel = modelConfig && modelConfig.isZhipu;
+            const isGeminiToolModel = modelConfig && modelConfig.isGemini; // 新增：检查Gemini工具模型标签
 
-                // 为 Qwen、Zhipu 和启用了工具的 Gemini 模型统一路由到 MCP 处理器
-                if (isQwenModel || isZhipuModel || isGeminiToolModel) {
-                    // 对于 Gemini 风格的 functionCall，我们将其标准化为 MCP 期望的格式
-                    const mcpToolCall = currentFunctionCall.tool_name
-                        ? currentFunctionCall
-                        : { tool_name: currentFunctionCall.name, arguments: JSON.stringify(currentFunctionCall.args || {}) };
-                    
-                    console.log(`[${timestamp()}] [DISPATCH] Detected Qwen/Zhipu/Gemini MCP tool call. Routing to _handleMcpToolCall...`);
-                    await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey, uiOverrides);
-
-                } else {
-                    // 否则，处理为标准的、前端执行的 Gemini 函数调用（例如默认的 Google 搜索）
-                    console.log(`[${timestamp()}] [DISPATCH] Model is not configured for MCP. Routing to _handleGeminiToolCall...`);
-                    await this._handleGeminiToolCall(currentFunctionCall, requestBody, apiKey, uiOverrides);
-                }
-                console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
+            // 为 Qwen、Zhipu 和启用了工具的 Gemini 模型统一路由到 MCP 处理器
+            if (isQwenModel || isZhipuModel || isGeminiToolModel) {
+                // 对于 Gemini 风格的 functionCall，我们将其标准化为 MCP 期望的格式
+                const mcpToolCall = streamContext.currentFunctionCall.tool_name
+                    ? streamContext.currentFunctionCall
+                    : { tool_name: streamContext.currentFunctionCall.name, arguments: JSON.stringify(streamContext.currentFunctionCall.args || {}) };
+                
+                console.log(`[${timestamp()}] [DISPATCH] Detected Qwen/Zhipu/Gemini MCP tool call. Routing to _handleMcpToolCall...`);
+                await this._handleMcpToolCall(mcpToolCall, requestBody, apiKey, null, streamContext.id);
 
             } else {
-                // 兼容性处理：保存非工具调用的响应
-                if (this.state.currentAIMessageContentDiv &&
-                    typeof this.state.currentAIMessageContentDiv.rawMarkdownBuffer === 'string' &&
-                    this.state.currentAIMessageContentDiv.rawMarkdownBuffer.trim() !== '') {
-                    
-                    const historyEntry = {
-                        role: 'assistant',
-                        content: this.state.currentAIMessageContentDiv.rawMarkdownBuffer
-                    };
-                    
-                    // 兼容性检查：如果有思维链内容也保存
-                    if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string' &&
-                        this.state.currentAIMessageContentDiv.rawReasoningBuffer.trim() !== '') {
-                        historyEntry.reasoning = this.state.currentAIMessageContentDiv.rawReasoningBuffer;
-                    }
-                    
-                    this.state.chatHistory.push(historyEntry);
-                }
-                this.state.currentAIMessageContentDiv = null;
+                // 否则，处理为标准的、前端执行的 Gemini 函数调用（例如默认的 Google 搜索）
+                console.log(`[${timestamp()}] [DISPATCH] Model is not configured for MCP. Routing to _handleGeminiToolCall...`);
+                await this._handleGeminiToolCall(streamContext.currentFunctionCall, requestBody, apiKey, null, streamContext.id);
+            }
+            console.log(`[${timestamp()}] [DISPATCH] Returned from tool call handler.`);
+
+        } else {
+            // ✨ 修复：使用上下文存储的缓冲区内容
+            if (streamContext.currentAIMessageContentDiv &&
+                streamContext.rawMarkdownBuffer.trim() !== '') {
                 
-                if (ui.logMessage) {
-                    ui.logMessage('Turn complete (HTTP)', 'system');
+                const historyEntry = {
+                    role: 'assistant',
+                    content: streamContext.rawMarkdownBuffer
+                };
+                
+                // 兼容性检查：如果有思维链内容也保存
+                if (streamContext.rawReasoningBuffer.trim() !== '') {
+                    historyEntry.reasoning = streamContext.rawReasoningBuffer;
                 }
                 
-                // 保存历史记录 - 只在有 historyManager 时保存
-                if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
-                    this.historyManager.saveHistory();
-                }
+                this.state.chatHistory.push(historyEntry);
             }
-     
-        } catch (error) {
-            Logger.error('处理 HTTP 流失败:', error);
-            ui.logMessage(`处理流失败: ${error.message}`, 'system');
-            if (this.state.currentAIMessageContentDiv && this.state.currentAIMessageContentDiv.markdownContainer) {
-                this.state.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
+            streamContext.currentAIMessageContentDiv = null;
+            
+            if (ui.logMessage) {
+                ui.logMessage('Turn complete (HTTP)', 'system');
             }
-            this.state.currentAIMessageContentDiv = null;
-            // 确保在失败时也保存历史记录（如果 historyManager 存在）
+            
+            // 保存历史记录 - 只在有 historyManager 时保存
             if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
-                this.historyManager.saveHistory(); // Ensure history is saved even on failure
+                this.historyManager.saveHistory();
             }
+        }
+    }
+
+    /**
+     * ✨ 新增：使用上下文处理流错误
+     * @private
+     */
+    async _handleStreamError(error, streamContext, ui) {
+        Logger.error('处理 HTTP 流失败:', error);
+        ui.logMessage(`处理流失败: ${error.message}`, 'system');
+        if (streamContext.currentAIMessageContentDiv && streamContext.currentAIMessageContentDiv.markdownContainer) {
+            streamContext.currentAIMessageContentDiv.markdownContainer.innerHTML = `<p><strong>错误:</strong> ${error.message}</p>`;
+        }
+        streamContext.currentAIMessageContentDiv = null;
+        // 确保在失败时也保存历史记录（如果 historyManager 存在）
+        if (this.historyManager && typeof this.historyManager.saveHistory === 'function') {
+            this.historyManager.saveHistory(); // Ensure history is saved even on failure
         }
     }
 
@@ -349,7 +372,7 @@ export class ChatApiHandler {
      * @param {string} apiKey - The API key.
      * @returns {Promise<void>}
      */
-    _handleGeminiToolCall = async (functionCall, requestBody, apiKey, uiOverrides = null) => {
+    _handleGeminiToolCall = async (functionCall, requestBody, apiKey, uiOverrides = null, parentContextId = null) => {
         const ui = uiOverrides || chatUI;
         try {
             this.state.isUsingTool = true;
@@ -367,12 +390,13 @@ export class ChatApiHandler {
                 parts: [{ functionResponse: { name: functionCall.name, response: toolResponsePart } }]
             });
 
+            // ✨ 修复：传递父上下文ID
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
                 tools: this.toolManager.getToolDeclarations(),
                 sessionId: this.state.currentSessionId
-            }, apiKey, uiOverrides);
+            }, apiKey, uiOverrides, parentContextId);
  
         } catch (toolError) {
             Logger.error('Gemini 工具执行失败:', toolError);
@@ -385,12 +409,13 @@ export class ChatApiHandler {
                 role: 'tool',
                 parts: [{ functionResponse: { name: functionCall.name, response: { error: toolError.message } } }]
             });
+            // ✨ 修复：传递父上下文ID
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
                 tools: this.toolManager.getToolDeclarations(),
                 sessionId: this.state.currentSessionId
-            }, apiKey, uiOverrides);
+            }, apiKey, uiOverrides, parentContextId);
         } finally {
             this.state.isUsingTool = false;
             // 保存工具调用的历史记录（如果 historyManager 存在）
@@ -408,7 +433,7 @@ export class ChatApiHandler {
      * @param {string} apiKey - The API key.
      * @returns {Promise<void>}
      */
-    _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
+    _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null, parentContextId = null) => {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
         let callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
@@ -521,7 +546,8 @@ export class ChatApiHandler {
                             // 1. Create the persistent download link in its own, new message container.
                             this._createFileDownload(fileData.data_base64, fileName, fileData.type, ui);
                             // 2. 强制状态重置：明确设置当前消息容器为 null，确保后续文本响应创建新的容器。
-                            this.state.currentAIMessageContentDiv = null;
+                            // ✨ 修复：不再操作全局状态，由上下文管理
+                            // this.state.currentAIMessageContentDiv = null;
                             // *** KEY FIX END ***
                             
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
@@ -539,7 +565,8 @@ export class ChatApiHandler {
                             if (fileType) {
                                 // 关键修复：创建独立下载链接并强制状态重置
                                 this._createFileDownload(content, name, fileType, ui);
-                                this.state.currentAIMessageContentDiv = null;
+                                // ✨ 修复：不再操作全局状态
+                                // this.state.currentAIMessageContentDiv = null;
 
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
@@ -598,7 +625,7 @@ export class ChatApiHandler {
                 let allCurrentTools = currentModelConfig && currentModelConfig.tools ? [...currentModelConfig.tools] : [];
 
                 // 过滤掉重复的工具，然后合并
-                const newToolsToAdd = toolResult.data.filter(newTool =>
+                const newToolsToAdd = toolRawResult.data.filter(newTool =>
                     !allCurrentTools.some(existingTool => existingTool.function.name === newTool.function.name)
                 );
                 allCurrentTools = [...allCurrentTools, ...newToolsToAdd];
@@ -636,12 +663,13 @@ export class ChatApiHandler {
 
             // 再次调用模型以获得最终答案
             console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool result...`);
+            // ✨ 修复：传递父上下文ID
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
                 // 确保再次传递工具定义，以防需要连续调用
                 tools: requestBody.tools // Now 'requestBody.tools' might be updated with newly discovered tools
-            }, apiKey, uiOverrides);
+            }, apiKey, uiOverrides, parentContextId);
             console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
  
         } catch (toolError) {
@@ -673,11 +701,12 @@ export class ChatApiHandler {
             
             // 再次调用模型，让它知道工具失败了
             console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool error...`);
+            // ✨ 修复：传递父上下文ID
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
                 tools: requestBody.tools
-            }, apiKey, uiOverrides);
+            }, apiKey, uiOverrides, parentContextId);
             console.log(`[${timestamp()}] [MCP] Chat completion stream after error finished.`);
         } finally {
             this.state.isUsingTool = false;
@@ -690,183 +719,82 @@ export class ChatApiHandler {
         }
     }
 
+    // ... 其余方法保持不变 (_createFileDownload, _robustJsonParse, callTool) ...
+}
+
+/**
+ * ✨ 新增：流上下文管理器类
+ * @class StreamContextManager
+ * @description 管理每个流的上下文，防止状态竞态条件
+ */
+class StreamContextManager {
+    constructor() {
+        this.activeContexts = new Map();
+        this.contextIdCounter = 0;
+    }
+    
     /**
-     * @private
-     * @description Creates a self-contained, persistent message element for a file download link.
-     * This function is purely for UI creation and does NOT modify the handler's state.
-     * @param {string} base64Data - The base64 encoded file data
-     * @param {string} fileName - The name of the file to download
-     * @param {string} fileType - The type of file (excel, word, ppt, pdf)
-     * @param {object} ui - The UI adapter (必须从调用者传递)
+     * 创建新的流上下文
+     * @param {object} requestBody - 请求体
+     * @returns {object} 上下文对象
      */
-    _createFileDownload(base64Data, fileName, fileType, ui) {
-        const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [FILE] Creating persistent download for ${fileType} file: ${fileName}`);
+    createContext(requestBody) {
+        const contextId = `stream_${Date.now()}_${this.contextIdCounter++}`;
+        const context = {
+            id: contextId,
+            currentAIMessageContentDiv: null,
+            rawMarkdownBuffer: '',
+            rawReasoningBuffer: '',
+            reasoningStarted: false,
+            answerStarted: false,
+            functionCallDetected: false,
+            currentFunctionCall: null,
+            qwenToolCallAssembler: null,
+            isToolResponseFollowUp: requestBody.messages.some(msg => msg.role === 'tool'),
+            startTime: Date.now(),
+            parentContextId: null
+        };
         
-        try {
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            
-            const mimeTypes = {
-                'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'ppt': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                'pdf': 'application/pdf'
-            };
-            
-            const mimeType = mimeTypes[fileType] || 'application/octet-stream';
-            const blob = new Blob([bytes], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            
-            const downloadLink = document.createElement('a');
-            downloadLink.href = url;
-            downloadLink.download = fileName;
-            downloadLink.textContent = `📥 Download ${fileType.toUpperCase()}: ${fileName}`;
-            downloadLink.className = 'file-download-link';
-            downloadLink.style.display = 'inline-block';
-            downloadLink.style.margin = '10px 0';
-            downloadLink.style.padding = '8px 12px';
-            downloadLink.style.backgroundColor = '#f0f8ff';
-            downloadLink.style.border = '1px solid #007acc';
-            downloadLink.style.borderRadius = '4px';
-            downloadLink.style.color = '#007acc';
-            downloadLink.style.textDecoration = 'none';
-            downloadLink.style.fontWeight = 'bold';
-
-            // 关键修复：创建独立的消息容器，不依赖状态
-            // 注意：这里不传递任何参数，让 UI 库创建标准消息容器
-            const messageContainer = ui.createAIMessageElement();
-            
-            // 关键：确保这个新容器不会被设置为全局当前消息
-            // 通过不将其赋值给 this.state.currentAIMessageContentDiv 来实现
-            
-            // 添加到新容器的内容区域
-            if (messageContainer && messageContainer.markdownContainer) {
-                const successMsg = document.createElement('p');
-                successMsg.textContent = `✅ 文件 ${fileName} 已生成并可供下载。`;
-                successMsg.style.fontWeight = 'bold';
-                successMsg.style.margin = '5px 0';
-
-                messageContainer.markdownContainer.appendChild(successMsg);
-                messageContainer.markdownContainer.appendChild(downloadLink);
-                messageContainer.markdownContainer.appendChild(document.createElement('br'));
-                
-                console.log(`[${timestamp()}] [FILE] Download link added to independent container for ${fileName}`);
-            }
-            
-            downloadLink.addEventListener('click', () => {
-                setTimeout(() => { URL.revokeObjectURL(url); }, 100);
-            });
-            
-            console.log(`[${timestamp()}] [FILE] Download link created successfully in its own container for ${fileName}`);
-            
-            if (ui.scrollToBottom) {
-                ui.scrollToBottom();
-            }
-            
-        } catch (error) {
-            console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
-            const errorContainer = ui.createAIMessageElement();
-            if (errorContainer && errorContainer.markdownContainer) {
-                const errorElement = document.createElement('p');
-                errorElement.textContent = `创建文件下载时出错 ${fileName}: ${error.message}`;
-                errorElement.style.color = 'red';
-                errorContainer.markdownContainer.appendChild(errorElement);
-            }
+        this.activeContexts.set(contextId, context);
+        return context;
+    }
+    
+    /**
+     * 获取指定ID的上下文
+     * @param {string} contextId - 上下文ID
+     * @returns {object|null} 上下文对象
+     */
+    getContext(contextId) {
+        return this.activeContexts.get(contextId);
+    }
+    
+    /**
+     * 关闭并清理上下文
+     * @param {string} contextId - 上下文ID
+     */
+    closeContext(contextId) {
+        const context = this.activeContexts.get(contextId);
+        if (context) {
+            // 清理资源
+            context.currentAIMessageContentDiv = null;
+            this.activeContexts.delete(contextId);
         }
     }
-
+    
     /**
-     * @private
-     * @description Attempts to parse a JSON string that may have minor syntax errors,
-     * which can sometimes be output by language models.
-     * @param {string} jsonString - The JSON string to parse.
-     * @returns {object} The parsed JavaScript object.
-     * @throws {Error} If the string cannot be parsed even after cleanup attempts.
+     * 创建子上下文，防止嵌套调用导致的上下文混乱
+     * @param {string} parentContextId - 父上下文ID
+     * @param {object} requestBody - 请求体
+     * @returns {object} 子上下文对象
      */
-    _robustJsonParse(jsonString) {
-        try {
-            // First, try the standard parser.
-            return JSON.parse(jsonString);
-        } catch (e) {
-            console.warn("[MCP] Standard JSON.parse failed, attempting robust parsing...", e);
-            let cleanedString = jsonString;
-
-            // 1. Remove trailing commas from objects and arrays.
-            cleanedString = cleanedString.replace(/,\s*([}\]])/g, '$1');
-
-            // 2. Escape unescaped newlines and carriage returns within string literals, but not within JSON structure.
-            // This is a common issue with LLM output that can break JSON.
-            // This regex tries to target content inside string values, not keys or structural elements.
-            // This is a heuristic and might not cover all cases, but should help with common code snippets.
-            cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\n/g, '$1\\n');
-            cleanedString = cleanedString.replace(/(".*?[^\\]")(?<!\\)\r/g, '$1\\r');
-
-
-            // 3. Fix issue where a quote is added after a number or boolean.
-            // e.g., "max_results": 5" -> "max_results": 5
-            cleanedString = cleanedString.replace(/:( *[0-9\.]+)\"/g, ':$1');
-            cleanedString = cleanedString.replace(/:( *(?:true|false))\"/g, ':$1');
-
-            try {
-                // Retry parsing with the cleaned string.
-                return JSON.parse(cleanedString);
-            } catch (finalError) {
-                console.error("[MCP] Robust JSON parsing failed after cleanup.", finalError);
-                // Throw the original error for better context if the final one is not informative.
-                throw finalError || e;
-            }
+    createChildContext(parentContextId, requestBody) {
+        const parentContext = this.getContext(parentContextId);
+        if (!parentContext) {
+            return this.createContext(requestBody);
         }
-    }
-
-    /**
-     * ✨ [最终优化版] 独立的工具调用方法
-     * @description 将所有工具调用统一发送到后端代理，由后端决定如何处理。
-     * @param {string} toolName - 要调用的工具名称。
-     * @param {object} parameters - 工具所需的参数。
-     * @returns {Promise<object>} - 返回工具执行的结果。
-     */
-    async callTool(toolName, parameters) {
-        const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [ChatApiHandler] Forwarding tool call to backend proxy: ${toolName}`, parameters);
         
-        try {
-            // 核心：简单地将请求发送到通用的后端代理端点
-            const response = await fetch('/api/mcp-proxy', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    tool_name: toolName,
-                    parameters: parameters || {},
-                    requestId: `tool_call_${Date.now()}`
-                    // ✨ 注意：不再需要发送任何 server_url
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`工具代理请求失败: ${errorData.details || errorData.error || response.statusText}`);
-            }
-
-            const result = await response.json();
-            console.log(`[${timestamp()}] [ChatApiHandler] Received result from backend proxy:`, result);
-            
-            // 适配 Orchestrator 预期的返回格式
-            return {
-                success: result.success !== false,
-                output: result.output || result.result || result.data || JSON.stringify(result),
-                rawResult: result
-            };
-
-        } catch (error) {
-            console.error(`[${timestamp()}] [ChatApiHandler] Error during tool proxy call for ${toolName}:`, error);
-            // 向上抛出错误，让 Orchestrator 能够捕获并处理
-            throw error; 
-        }
+        const childContext = this.createContext(requestBody);
+        childContext.parentContextId = parentContextId;
+        return childContext;
     }
 }
