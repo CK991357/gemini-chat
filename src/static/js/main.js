@@ -876,6 +876,11 @@ async function handleSendMessage(attachmentManager) {
     const attachedFiles = attachmentManager.getChatAttachedFiles();
     if (!messageText && attachedFiles.length === 0) return;
 
+    // 如果是 HTTP 模式且尚无 session，先创建会话以避免后续生成新会话时清空刚刚渲染的用户消息
+    if (!selectedModelConfig.isWebSocket && !currentSessionId) {
+        historyManager.generateNewSession();
+    }
+
     // 🚀 关键修复：立即执行所有UI更新和清理操作
     chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
