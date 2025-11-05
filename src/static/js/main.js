@@ -819,10 +819,6 @@ function getAvailableToolNames(currentModel) {
 }
 
 /**
- * ✨ [新增] 标准聊天请求处理函数 (替代旧的 executeStandardChat)
- * @description 构建包含工具定义的请求，并调用API。这是"Skill模式"的核心。
- */
-/**
  * ✨ [修复] 标准聊天请求处理函数
  * @description 根据模型配置决定是否添加工具定义
  */
@@ -869,95 +865,154 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
 }
 
 /**
- * 🚀 [重构后] 处理用户消息发送的核心函数
- * @description 根据智能代理开关的状态，选择不同的执行路径。
+ * 🚀 [关键修复] 处理用户消息发送的核心函数
+ * @description 严格区分WebSocket和HTTP模式，确保WebSocket模式完全独立
  */
 async function handleSendMessage(attachmentManager) {
     const messageText = messageInput.value.trim();
     const attachedFiles = attachmentManager.getChatAttachedFiles();
     if (!messageText && attachedFiles.length === 0) return;
 
-    if (!selectedModelConfig.isWebSocket && !currentSessionId) {
-        historyManager.generateNewSession();
-    }
-
-    // 🚀 --- 关键修复：立即执行所有UI更新和清理操作 --- 🚀
-    // 这个代码块是同步执行的，会立即给用户反馈。
+    // 🚀 关键修复：立即执行所有UI更新和清理操作
     chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
-    attachmentManager.clearAttachedFile('chat'); // ⬅️ 关键修复：将清理操作移到这里
-    window.currentAIMessageContentDiv = null; // ⬅️ 重置状态也应提前
-    // 🚀 ----------------------------------------- 🚀
+    attachmentManager.clearAttachedFile('chat');
+    window.currentAIMessageContentDiv = null;
+
+    // 🚀 严格分离WebSocket和HTTP模式
+    if (selectedModelConfig.isWebSocket) {
+        // WebSocket模式 - 完全独立，不涉及任何HTTP请求
+        await handleWebSocketMessage(messageText, attachedFiles);
+    } else {
+        // HTTP模式 - 使用原有的逻辑
+        await handleHttpMessage(messageText, attachedFiles);
+    }
+}
+
+/**
+ * 🚀 处理WebSocket模式消息发送
+ * @description WebSocket模式完全独立，不涉及任何HTTP请求或代理系统
+ */
+async function handleWebSocketMessage(messageText, attachedFiles) {
+    if (!isConnected) {
+        chatUI.logMessage('未连接到WebSocket，请先点击连接按钮', 'system');
+        return;
+    }
+
+    try {
+        const parts = [];
+        
+        // 添加文本部分
+        if (messageText) {
+            parts.push({ text: messageText });
+        }
+        
+        // 处理附件（WebSocket模式只支持图片）
+        for (const file of attachedFiles) {
+            if (file.type.startsWith('image/')) {
+                // 将base64数据转换为inlineData格式
+                const base64Data = file.base64.split(',')[1]; // 移除data URL前缀
+                parts.push({
+                    inlineData: {
+                        mimeType: file.type,
+                        data: base64Data
+                    }
+                });
+            } else {
+                chatUI.logMessage(`WebSocket模式暂不支持${file.type}类型的附件`, 'system');
+            }
+        }
+        
+        // 发送消息到WebSocket
+        client.send(parts, true);
+        chatUI.logMessage('消息已通过WebSocket发送', 'system');
+        
+    } catch (error) {
+        console.error('WebSocket消息发送失败:', error);
+        chatUI.logMessage(`WebSocket消息发送失败: ${error.message}`, 'system');
+    }
+}
+
+/**
+ * 🚀 处理HTTP模式消息发送
+ * @description HTTP模式使用原有的智能代理和标准模式逻辑
+ */
+async function handleHttpMessage(messageText, attachedFiles) {
+    if (!currentSessionId) {
+        historyManager.generateNewSession();
+    }
 
     const apiKey = apiKeyInput.value;
     const modelName = selectedModelConfig.name;
     const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
-    
-    // 新增：获取当前模型可用的工具名称列表
     const availableToolNames = getAvailableToolNames(modelName);
 
-    // ✨ --- 然后，开始执行耗时的异步AI逻辑 --- ✨
-    // 此时UI已经清理干净，用户可以进行其他操作。
     try {
         if (isAgentModeEnabled) {
-            // --- 路径 A: 智能代理模式 (开关开启) ---
-            console.log("🤖 Agent Mode ON: 智能路由用户请求");
-            
-            const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
-                model: modelName,
-                apiKey: apiKey,
-                messages: chatHistory,
-                apiHandler: chatApiHandler,
-                availableTools: availableToolNames
-            });
-
-            // 🎯 处理结果（完全兼容现有逻辑）
-            if (agentResult.enhanced) {
-                if (agentResult.type === 'workflow_pending') {
-                    // 显示工作流UI - 现有逻辑
-                    showWorkflowUI(agentResult.workflow);
-                    console.log("🎯 工作流等待执行");
-                    // 保持异步等待逻辑，等待工作流完成
-                    return new Promise((resolve) => {
-                        const handleWorkflowResult = (event) => {
-                            const finalResult = event.detail;
-                            window.removeEventListener('workflow:result', handleWorkflowResult);
-                            
-                            if (finalResult.skipped) {
-                                // 工作流被跳过，回退到标准聊天
-                                handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).finally(resolve);
-                            } else {
-                                // 显示最终结果
-                                chatUI.addMessage({ role: 'assistant', content: finalResult.content });
-                                console.log('工作流执行详情:', finalResult);
-                                resolve();
-                            }
-                        };
-                        window.addEventListener('workflow:result', handleWorkflowResult);
-                    });
-                } else if (agentResult.type === 'agent_result') {
-                    // 显示Agent执行结果 - 新增
-                    chatUI.addMessage({ role: 'assistant', content: agentResult.content });
-                    console.log('Agent执行详情:', agentResult);
-                } else {
-                    // 其他增强结果（单工具等，如 tool_result, workflow_result）
-                    chatUI.addMessage({ role: 'assistant', content: agentResult.content });
-                    console.log('增强结果详情:', agentResult);
-                }
-            } else {
-                // 标准回退处理 - 现有逻辑
-                console.log("💬 未触发增强模式，使用标准对话");
-                await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-            }
+            // 智能代理模式
+            await handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames);
         } else {
-            // --- 路径 B: 标准Skill模式 (开关关闭) ---
+            // 标准Skill模式
             console.log("🛠️ Agent Mode OFF: 执行标准工具模式");
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
         }
     } catch (error) {
-        console.error("🤖 Agent/Standard模式执行失败:", error);
-        // 可以在这里显示一个错误消息给用户
+        console.error("🤖 消息处理失败:", error);
         chatUI.addMessage({ role: 'assistant', content: `❌ 请求处理失败: ${error.message}` });
+    }
+}
+
+/**
+ * 🚀 处理智能代理模式
+ */
+async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames) {
+    console.log("🤖 Agent Mode ON: 智能路由用户请求");
+    
+    const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
+        model: modelName,
+        apiKey: apiKey,
+        messages: chatHistory,
+        apiHandler: chatApiHandler,
+        availableTools: availableToolNames
+    });
+
+    // 🎯 处理结果
+    if (agentResult.enhanced) {
+        if (agentResult.type === 'workflow_pending') {
+            // 显示工作流UI
+            showWorkflowUI(agentResult.workflow);
+            console.log("🎯 工作流等待执行");
+            
+            return new Promise((resolve) => {
+                const handleWorkflowResult = (event) => {
+                    const finalResult = event.detail;
+                    window.removeEventListener('workflow:result', handleWorkflowResult);
+                    
+                    if (finalResult.skipped) {
+                        // 工作流被跳过，回退到标准聊天
+                        handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey).finally(resolve);
+                    } else {
+                        // 显示最终结果
+                        chatUI.addMessage({ role: 'assistant', content: finalResult.content });
+                        console.log('工作流执行详情:', finalResult);
+                        resolve();
+                    }
+                };
+                window.addEventListener('workflow:result', handleWorkflowResult);
+            });
+        } else if (agentResult.type === 'agent_result') {
+            // 显示Agent执行结果
+            chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+            console.log('Agent执行详情:', agentResult);
+        } else {
+            // 其他增强结果
+            chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+            console.log('增强结果详情:', agentResult);
+        }
+    } else {
+        // 标准回退处理
+        console.log("💬 未触发增强模式，使用标准对话");
+        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
     }
 }
 
@@ -1501,9 +1556,11 @@ modelSelect.addEventListener('change', () => {
     }
     Logger.info(`模型选择已更改为: ${selectedModelConfig.displayName}`);
     chatUI.logMessage(`模型选择已更改为: ${selectedModelConfig.displayName}`, 'system');
+    // 🚀 关键修复：更新按钮状态
+    updateConnectionStatus();
     // 如果已连接，断开连接以应用新模型
     if (isConnected) {
-        disconnect(); // 调用统一的断开连接函数
+        disconnect();
     }
 });
 
@@ -1522,7 +1579,7 @@ async function connect() {
     localStorage.setItem('system_instruction', systemInstructionInput.value);
     localStorage.setItem('video_fps', fpsInput.value); // 保存 FPS
 
-    // 根据选定的模型配置决定连接方式
+    // 🚀 关键修复：根据模型配置决定连接方式
     if (selectedModelConfig.isWebSocket) {
         await connectToWebsocket();
     } else {
@@ -1537,7 +1594,7 @@ function disconnect() {
     if (selectedModelConfig.isWebSocket) {
         disconnectFromWebsocket();
     } else {
-        // 对于 HTTP 模式，没有"断开连接"的概念，但需要重置 UI 状态
+        // 对于 HTTP 模式，重置UI状态
         resetUIForDisconnectedState();
         chatUI.logMessage('已断开连接 (HTTP 模式)', 'system');
     }
@@ -1616,22 +1673,30 @@ function updateConnectionStatus() {
         }
     });
 
-    // 根据连接状态和模型类型禁用/启用媒体按钮
+    // 🚀 关键修复：根据模型类型和连接状态控制按钮状态
+    const isWebSocketModel = selectedModelConfig.isWebSocket;
+    
+    // 媒体按钮仅在 WebSocket 模式且已连接时启用
     const mediaButtons = [micButton, cameraButton, screenButton, chatVoiceInputButton];
     mediaButtons.forEach(btn => {
         if (btn) {
-            // 摄像头按钮的禁用状态现在由 VideoHandler 内部管理，这里只处理其他按钮
-            if (btn === cameraButton) {
-                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            } else {
-                btn.disabled = !isConnected || !selectedModelConfig.isWebSocket;
-            }
+            btn.disabled = !isConnected || !isWebSocketModel;
         }
     });
     
-    // 附件按钮仅在 HTTP 模式下可用
+    // 附件按钮仅在 HTTP 模式且已连接时启用
     if (attachmentButton) {
-        attachmentButton.disabled = !isConnected || selectedModelConfig.isWebSocket;
+        attachmentButton.disabled = !isConnected || isWebSocketModel;
+    }
+    
+    // 发送按钮在任何模式连接后都启用
+    if (sendButton) {
+        sendButton.disabled = !isConnected;
+    }
+    
+    // 消息输入框在任何模式连接后都启用
+    if (messageInput) {
+        messageInput.disabled = !isConnected;
     }
 }
 
