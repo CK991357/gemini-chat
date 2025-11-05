@@ -176,10 +176,27 @@ export class MultimodalLiveClient extends EventEmitter {
                 const base64s = audioParts.map((p) => p.inlineData?.data);
                 const otherParts = parts.filter((p) => !audioParts.includes(p));
 
-                base64s.forEach((b64) => {
+                base64s.forEach((b64, idx) => {
                     if (b64) {
                         const data = base64ToArrayBuffer(b64);
-                        this.emit('audio', data);
+                        // Try to extract sample rate from the corresponding audio part mimeType if available
+                        const audioPart = audioParts[idx];
+                        let sampleRate = null;
+                        try {
+                            const mime = audioPart?.inlineData?.mimeType || '';
+                            const match = mime.match(/rate=(\d+)/i);
+                            if (match) {
+                                sampleRate = parseInt(match[1], 10);
+                            }
+                        } catch (_e) {
+                            // ignore parsing errors
+                        }
+
+                        if (sampleRate) {
+                            this.emit('audio', { data, sampleRate });
+                        } else {
+                            this.emit('audio', data);
+                        }
                         //this.log(`server.audio`, `buffer (${data.byteLength})`);
                     }
                 });

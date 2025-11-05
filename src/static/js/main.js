@@ -666,6 +666,7 @@ let micStream = null; // 新增：用于保存麦克风流
 let isUsingTool = false;
 let isUserScrolling = false; // 新增：用于判断用户是否正在手动滚动
 let audioDataBuffer = []; // 新增：用于累积AI返回的PCM音频数据
+let currentAIMessageContentDiv = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 let currentAudioElement = null; // 新增：用于跟踪当前播放的音频元素，确保单例播放
 let chatHistory = []; // 用于存储聊天历史
 let currentSessionId = null; // 用于存储当前会话ID
@@ -686,8 +687,10 @@ let visionApiHandler = null; // 确保这里声明了 visionApiHandler
 // 🚀 新增：智能代理系统实例
 let orchestrator = null;
 
-// ✨ 新增：确保 currentAIMessageContentDiv 在全局作用域中定义
-let currentAIMessageContentDiv = null;
+// 添加实时采样率侦测状态（当服务器未发送采样率元数据时尝试估算）
+let _realtimeDetectBytes = 0;
+let _realtimeDetectStart = 0;
+let _realtimeDetectDone = false;
 
 /**
  * 🚀 智能代理系统初始化函数
@@ -1344,24 +1347,64 @@ function disconnectFromWebsocket() {
 }
 
 // 🚀 修复：WebSocket音频处理 - 监听audio事件并进行实时播放
-client.on('audio', (data) => {
-    console.log('🚀 接收到实时音频数据:', data.byteLength, 'bytes');
-    
-    // 🎯 修复1：实时播放音频数据
+client.on('audio', (payload) => {
+    // payload may be either an ArrayBuffer (legacy) or an object { data: ArrayBuffer, sampleRate: number }
+    let buffer = null;
+    let detectedSampleRate = null;
+
+    if (payload && payload.data && payload.data instanceof ArrayBuffer) {
+        buffer = payload.data;
+        detectedSampleRate = payload.sampleRate || null;
+    } else if (payload instanceof ArrayBuffer) {
+        buffer = payload;
+    } else {
+        console.warn('Unknown audio payload format', payload);
+        return;
+    }
+
+    console.log('🚀 接收到实时音频数据:', buffer.byteLength, 'bytes', detectedSampleRate ? `(rate=${detectedSampleRate})` : '');
+
+    // 🎯 实时播放处理
     if (audioStreamer) {
         try {
-            // 将ArrayBuffer转换为Int16Array用于实时播放
-            const int16Array = new Int16Array(data);
+            const int16Array = new Int16Array(buffer);
+
+            // 如果服务器在 mimeType 中提供了采样率，优先使用
+            if (detectedSampleRate && typeof detectedSampleRate === 'number') {
+                audioStreamer.sampleRate = detectedSampleRate;
+            } else if (!_realtimeDetectDone) {
+                // 启动基于到达字节率的估算（仅在没有显式采样率并且尚未完成估算时）
+                const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                if (!_realtimeDetectStart) {
+                    _realtimeDetectStart = now;
+                    _realtimeDetectBytes = 0;
+                }
+                _realtimeDetectBytes += buffer.byteLength;
+                const elapsed = (now - _realtimeDetectStart) / 1000;
+                // 在累计一定时间后进行估算（0.6s），可以调整阈值
+                if (elapsed >= 0.6) {
+                    const bytesPerSec = _realtimeDetectBytes / elapsed;
+                    const estimatedSampleRate = Math.round(bytesPerSec / 2); // 2 bytes per sample for Int16 mono
+                    // 合理范围检查
+                    if (estimatedSampleRate >= 8000 && estimatedSampleRate <= 96000) {
+                        audioStreamer.sampleRate = estimatedSampleRate;
+                        console.log('🔎 估算到服务器采样率:', estimatedSampleRate);
+                    } else {
+                        console.warn('🔎 估算到的采样率不在合理范围，使用默认值', CONFIG.AUDIO.OUTPUT_SAMPLE_RATE);
+                    }
+                    _realtimeDetectDone = true;
+                }
+            }
+
             audioStreamer.addPCM16(int16Array);
             console.log('🔊 实时音频数据已发送到AudioStreamer播放');
         } catch (error) {
             console.error('实时音频播放失败:', error);
         }
     }
-    
-    // 🎯 修复2：累积音频数据用于最终显示
-    // 将ArrayBuffer转换为Uint8Array并累积
-    const audioData = new Uint8Array(data);
+
+    // 累积音频数据用于最终显示（保留原始字节）
+    const audioData = new Uint8Array(buffer);
     audioDataBuffer.push(audioData);
 });
 
@@ -1452,6 +1495,11 @@ client.on('turncomplete', () => {
     // 🎯 修复：处理累积的音频数据，但不重复播放
     // 因为音频已经在实时播放过了，这里只用于生成可下载的音频文件
     processAudioData('turncomplete');
+
+    // 重置实时采样率侦测状态，以便下一轮重新估算
+    _realtimeDetectBytes = 0;
+    _realtimeDetectStart = 0;
+    _realtimeDetectDone = false;
 
     // 保存历史记录
     if (isConnected && !selectedModelConfig.isWebSocket) {
@@ -2244,3 +2292,15 @@ window.toggleAgentMode = (enabled) => {
         toggle.dispatchEvent(new Event('change'));
     }
 };
+
+// Debug helpers: allow manually inspecting/overriding audio sample rate from console
+window.setAudioSampleRate = (rate) => {
+    if (!audioStreamer) {
+        console.warn('audioStreamer 未初始化');
+        return;
+    }
+    audioStreamer.sampleRate = rate;
+    console.log('audioStreamer.sampleRate 已设置为', rate);
+};
+
+window.getAudioSampleRate = () => audioStreamer?.sampleRate || null;
