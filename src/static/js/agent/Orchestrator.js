@@ -312,10 +312,8 @@ export class Orchestrator {
                 this.tools,
                 this.callbackManager,
                 {
-                    // 🎯 优化配置
-                    maxIterations: this.config.maxIterations || 5, // 减少默认迭代次数
-                    earlyStoppingMethod: 'smart', // 智能停止
-                    maxThinkTimeout: 60000 // 减少超时时间
+                    maxIterations: this.config.maxIterations || 4,
+                    earlyStoppingMethod: 'force'
                 }
             );
             
