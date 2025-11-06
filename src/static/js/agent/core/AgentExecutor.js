@@ -89,45 +89,344 @@ export class AgentExecutor {
     }
 
     /**
-     * 🎯 优化迭代策略
+     * 🎯 第一阶段：工具输出标准化 - 无风险版本
+     * 保持所有原始数据，只添加标准化结构
      */
-    _shouldUseAgent(userMessage, taskAnalysis, matchedSkills) {
-        // 🎯 检查Agent系统是否可用
-        if (!this.agentSystem || !this.agentSystem.isAvailable) {
-            console.log('[Orchestrator] Agent系统不可用，跳过Agent模式');
-            return false;
+    _normalizeToolOutput(rawResult, toolName) {
+        // 🎯 基础标准化结构 - 完全向后兼容
+        const normalized = {
+            // 保持现有字段不变
+            success: rawResult.success !== undefined ? rawResult.success : true,
+            output: rawResult.output || '',
+            error: rawResult.error || null,
+            isError: rawResult.isError || false,
+            
+            // 🎯 新增：原始数据保护
+            raw: rawResult,  // 完整保留原始数据
+            
+            // 🎯 新增：工具标识和时间戳
+            tool: toolName,
+            timestamp: Date.now(),
+            
+            // 🎯 新增：元数据（不影响现有逻辑）
+            metadata: {
+                normalized: true,
+                version: '1.0'
+            }
+        };
+
+        // 🎯 智能生成Agent可读输出（不修改原始数据）
+        if (!normalized.output || normalized.output.length < 10) {
+            normalized.output = this._generateAgentReadableOutput(rawResult, toolName);
         }
 
-        // 🎯 基于匹配技能数量决策 - 降低阈值
-        if (matchedSkills && matchedSkills.length >= 2) {
-            console.log(`[Orchestrator] 匹配到${matchedSkills.length}个技能，启用Agent模式`);
-            return true;
-        }
+        return normalized;
+    }
 
-        // 🎯 基于任务复杂度决策 - 提高阈值
-        if (taskAnalysis.complexity === 'high' || taskAnalysis.score >= 3) {
-            console.log('[Orchestrator] 高复杂度任务，启用Agent模式');
-            return true;
+    /**
+     * 🎯 生成Agent可读输出（安全版本）
+     */
+    _generateAgentReadableOutput(rawResult, toolName) {
+        // 🎯 根据工具类型生成友好的摘要
+        switch (toolName) {
+            case 'python_sandbox':
+                return this._formatPythonOutput(rawResult);
+                
+            case 'tavily_search':
+                return this._formatSearchOutput(rawResult);
+                
+            case 'crawl4ai':
+            case 'firecrawl':
+                return this._formatCrawlerOutput(rawResult);
+                
+            default:
+                return this._formatGenericOutput(rawResult);
         }
+    }
 
-        // 🎯 基于关键词决策
-        const agentKeywords = [
-            '多步', '分步', '流程', '首先', '然后', '接着', '第一步', '第二步',
-            '分析', '比较', '研究', '调查', '评估', '总结',
-            'multiple steps', 'step by step', 'workflow', 'analyze', 'compare'
+    /**
+     * 🎯 Python沙箱输出格式化
+     */
+    _formatPythonOutput(rawResult) {
+        if (rawResult.images && rawResult.images.length > 0) {
+            return `📊 代码执行完成，生成了 ${rawResult.images.length} 个可视化结果。`;
+        }
+        
+        if (rawResult.stdout) {
+            const output = rawResult.stdout.length > 500 
+                ? rawResult.stdout.substring(0, 500) + '...' 
+                : rawResult.stdout;
+            return `📊 代码执行完成:\n${output}`;
+        }
+        
+        return '📊 代码执行完成（无输出）';
+    }
+
+    /**
+     * 🎯 搜索工具输出格式化
+     */
+    _formatSearchOutput(rawResult) {
+        if (Array.isArray(rawResult.data)) {
+            const count = rawResult.data.length;
+            const sample = rawResult.data.slice(0, 2).map(item => 
+                `• ${item.title || '无标题'}: ${item.content?.substring(0, 100)}...`
+            ).join('\n');
+            
+            return `🔍 搜索到 ${count} 条结果:\n${sample}${count > 2 ? `\n... 还有 ${count - 2} 条结果` : ''}`;
+        }
+        
+        return '🔍 搜索完成';
+    }
+
+    /**
+     * 🎯 爬虫工具输出格式化
+     */
+    _formatCrawlerOutput(rawResult) {
+        if (rawResult.content) {
+            const content = rawResult.content.length > 500 
+                ? rawResult.content.substring(0, 500) + '...' 
+                : rawResult.content;
+            return `🌐 网页抓取完成:\n${content}`;
+        }
+        
+        if (rawResult.data) {
+            return `🌐 网页抓取完成，数据长度: ${JSON.stringify(rawResult.data).length} 字符`;
+        }
+        
+        return '🌐 网页抓取完成';
+    }
+
+    /**
+     * 🎯 通用输出格式化
+     */
+    _formatGenericOutput(rawResult) {
+        // 安全地提取可读内容
+        const content = rawResult.content || rawResult.data || rawResult.result;
+        
+        if (typeof content === 'string' && content.trim()) {
+            return content.length > 1000 
+                ? content.substring(0, 1000) + '...' 
+                : content;
+        }
+        
+        return '工具执行完成';
+    }
+
+    /**
+     * 🎯 第一阶段：智能错误重试 - 无风险版本
+     */
+    async _executeActionWithRetry(action, runId, maxRetries = 2) {
+        const { tool_name, parameters } = action;
+        
+        // 🎯 安全的重试配置
+        const retryConfig = this._getSafeRetryConfig(tool_name);
+        const actualRetries = Math.min(maxRetries, retryConfig.maxRetries);
+        
+        let lastAttempt;
+        
+        for (let attempt = 1; attempt <= actualRetries + 1; attempt++) {
+            try {
+                console.log(`🔄 ${tool_name} 第 ${attempt} 次执行`);
+                
+                // 🎯 使用现有的 _executeAction 逻辑，只包装工具调用部分
+                const result = await this._executeSingleAction(action, runId);
+                
+                if (result.success || !result.isError) {
+                    return result;
+                }
+                
+                lastAttempt = result;
+                
+                // 🎯 检查是否可重试
+                if (this._isSafeToRetry(result) && attempt <= actualRetries) {
+                    const delay = retryConfig.getDelay(attempt);
+                    console.log(`⏱️ ${tool_name} 等待 ${delay}ms 后重试`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+                
+                break;
+                
+            } catch (error) {
+                console.error(`${tool_name} 执行异常:`, error);
+                lastAttempt = this._normalizeToolOutput({
+                    success: false,
+                    output: `❌ 工具执行异常: ${error.message}`,
+                    error: error.message,
+                    isError: true
+                }, tool_name);
+                
+                if (this._isSafeToRetry(error) && attempt <= actualRetries) {
+                    const delay = retryConfig.getDelay(attempt);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+                
+                break;
+            }
+        }
+        
+        // 🎯 返回最后一次尝试的结果（保持现有错误格式）
+        return lastAttempt;
+    }
+
+    /**
+     * 🎯 安全的重试配置 - 无风险版本
+     */
+    _getSafeRetryConfig(toolName) {
+        // 🎯 保守的重试策略，避免对关键工具过度重试
+        const configs = {
+            'tavily_search': {
+                maxRetries: 2,
+                getDelay: (attempt) => Math.min(1000 * attempt, 3000) // 1s, 2s, 3s
+            },
+            'firecrawl': {
+                maxRetries: 1,
+                getDelay: () => 2000
+            },
+            'crawl4ai': {
+                maxRetries: 1, 
+                getDelay: () => 2000
+            }
+        };
+        
+        // 🎯 默认配置：大多数工具不重试
+        return configs[toolName] || { 
+            maxRetries: 0, 
+            getDelay: () => 0 
+        };
+    }
+
+    /**
+     * 🎯 安全检查是否可重试
+     */
+    _isSafeToRetry(errorOrResult) {
+        // 🎯 只对网络相关错误进行重试
+        const errorMessage = errorOrResult.message || errorOrResult.error || '';
+        
+        const safeRetryPatterns = [
+            '网络错误', '超时', 'timeout', 
+            '服务不可用', '服务繁忙', 'too many requests',
+            '连接失败', '网络连接'
         ];
         
-        const lowerMessage = userMessage.toLowerCase();
-        const hasComplexIntent = agentKeywords.some(keyword =>
-            lowerMessage.includes(keyword)
+        const unsafePatterns = [
+            '语法错误', '参数错误', '无效的', '不支持',
+            '未授权', '权限不足', '余额不足'
+        ];
+        
+        const isSafe = safeRetryPatterns.some(pattern => 
+            errorMessage.toLowerCase().includes(pattern.toLowerCase())
         );
         
-        if (hasComplexIntent) {
-            console.log(`[Orchestrator] 检测到复杂意图关键词，启用Agent模式`);
-            return true;
-        }
+        const isUnsafe = unsafePatterns.some(pattern =>
+            errorMessage.toLowerCase().includes(pattern.toLowerCase())
+        );
+        
+        return isSafe && !isUnsafe;
+    }
 
-        return false;
+    /**
+     * 🎯 单次工具执行（现有 _executeAction 的简化版）
+     */
+    async _executeSingleAction(action, runId) {
+        const { tool_name, parameters } = action;
+        
+        try {
+            const tool = this.tools[tool_name];
+            if (!tool) {
+                throw new Error(`未知的工具: ${tool_name}`);
+            }
+
+            // 🎯 执行工具调用（保持现有逻辑）
+            const executionContext = { 
+                runId, 
+                callbackManager: this.callbackManager 
+            };
+
+            const rawResult = await this.callbackManager.wrapToolCall(
+                { toolName: tool_name, parameters },
+                async (request) => {
+                    return await tool.invoke(request.parameters, executionContext);
+                }
+            );
+
+            // 🎯 应用标准化（无风险）
+            return this._normalizeToolOutput(rawResult, tool_name);
+            
+        } catch (error) {
+            console.error(`工具 ${tool_name} 执行失败:`, error);
+            
+            // 🎯 返回标准化错误格式
+            return this._normalizeToolOutput({
+                success: false,
+                error: error.message,
+                isError: true,
+                output: `❌ 工具"${tool_name}"执行失败: ${error.message}`
+            }, tool_name);
+        }
+    }
+
+    /**
+     * 🎯 执行行动（工具调用）- 增强版本
+     */
+    async _executeAction(action, runId, thinkTimeout = null) {
+        const { tool_name, parameters } = action;
+        
+        console.log(`[AgentExecutor] 执行工具: ${tool_name}`, parameters);
+
+        // 🎯 工具开始事件（保持现有逻辑）
+        await this.callbackManager.invokeEvent('on_tool_start', {
+            name: tool_name,
+            run_id: runId,
+            data: {
+                tool_name,
+                parameters,
+                thinkTimeout: thinkTimeout
+            }
+        });
+
+        try {
+            // 🎯 使用增强的执行（包含重试）
+            const observation = await this._executeActionWithRetry(action, runId, 2);
+
+            // 🎯 工具结束事件（保持现有逻辑）
+            await this.callbackManager.invokeEvent('on_tool_end', {
+                name: tool_name,
+                run_id: runId,
+                data: {
+                    tool_name,
+                    result: observation,
+                    success: observation.success,
+                    thinkTimeout: thinkTimeout
+                }
+            });
+
+            return observation;
+
+        } catch (error) {
+            console.error(`[AgentExecutor] 工具执行失败:`, error);
+            
+            // 🎯 工具错误事件（保持现有逻辑）
+            await this.callbackManager.invokeEvent('on_tool_error', {
+                name: tool_name,
+                run_id: runId,
+                data: {
+                    tool_name,
+                    error: error.message,
+                    parameters,
+                    thinkTimeout: thinkTimeout
+                }
+            });
+
+            // 🎯 返回标准化错误
+            return this._normalizeToolOutput({
+                success: false,
+                output: `❌ 工具"${tool_name}"执行失败: ${error.message}`,
+                error: error.message,
+                isError: true
+            }, tool_name);
+        }
     }
 
     /**
@@ -553,89 +852,6 @@ export class AgentExecutor {
         });
 
         return finalResult;
-    }
-
-    /**
-     * 🎯 执行行动（工具调用）- 增强版本
-     */
-    async _executeAction(action, runId, thinkTimeout = null) {
-        const { tool_name, parameters } = action;
-        
-        console.log(`[AgentExecutor] 执行工具: ${tool_name}`, parameters);
-
-        // 🎯 工具开始事件
-        await this.callbackManager.invokeEvent('on_tool_start', {
-            name: tool_name,
-            run_id: runId,
-            data: {
-                tool_name,
-                parameters,
-                thinkTimeout: thinkTimeout // 🎯 传递思考超时信息
-            }
-        });
-
-        try {
-            const tool = this.tools[tool_name];
-            if (!tool) {
-                throw new Error(`未知的工具: ${tool_name}。可用工具: ${Object.keys(this.tools).join(', ')}`);
-            }
-
-            // 🎯 执行工具调用（通过中间件包装）- 增强：传递思考超时信息
-            const executionContext = { 
-                runId, 
-                callbackManager: this.callbackManager 
-            };
-            
-            // 🎯 如果提供了思考超时，传递给工具作为参考
-            if (thinkTimeout !== null) {
-                executionContext.thinkTimeout = thinkTimeout;
-                console.log(`⏱️ 工具执行协调: 当前思考超时 ${thinkTimeout}ms`);
-            }
-
-            const observation = await this.callbackManager.wrapToolCall(
-                { toolName: tool_name, parameters },
-                async (request) => {
-                    return await tool.invoke(request.parameters, executionContext);
-                }
-            );
-
-            // 🎯 工具结束事件
-            await this.callbackManager.invokeEvent('on_tool_end', {
-                name: tool_name,
-                run_id: runId,
-                data: {
-                    tool_name,
-                    result: observation,
-                    success: true,
-                    thinkTimeout: thinkTimeout // 🎯 记录思考超时信息
-                }
-            });
-
-            return observation;
-
-        } catch (error) {
-            console.error(`[AgentExecutor] 工具执行失败:`, error);
-            
-            // 🎯 工具错误事件
-            await this.callbackManager.invokeEvent('on_tool_error', {
-                name: tool_name,
-                run_id: runId,
-                data: {
-                    tool_name,
-                    error: error.message,
-                    parameters,
-                    thinkTimeout: thinkTimeout // 🎯 记录思考超时信息
-                }
-            });
-
-            // 🎯 返回错误信息作为观察结果
-            return {
-                success: false,
-                output: `❌ 工具"${tool_name}"执行失败: ${error.message}`,
-                error: error.message,
-                isError: true
-            };
-        }
     }
 
     /**
