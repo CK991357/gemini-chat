@@ -10,39 +10,30 @@ class UnifiedToolAdapter {
      * Agent模式专用参数适配
      */
     static normalizeParametersForAgent(toolName, rawParameters) {
-        console.log(`[ToolAdapter] Agent模式参数适配: ${toolName}`, rawParameters);
+        console.log(`[ToolAdapter] Agent模式参数适配: ${toolName}`);
         
         if (!rawParameters) return {};
         
         const parameters = { ...rawParameters };
         
-        // 🎯 只修复有问题的工具，其他工具保持不变
+        // 🎯 Agent模式使用更激进的参数包装策略
         switch (toolName) {
             case 'firecrawl':
             case 'crawl4ai':
-                console.log(`[ToolAdapter] 修复 ${toolName} 参数结构`);
-                
-                // 如果已经是标准结构，直接返回
-                if (parameters.mode && parameters.parameters) {
-                    console.log(`[ToolAdapter] ${toolName} 已是标准结构，保持原样`);
-                    return parameters;
-                }
-                
-                // 如果有URL参数，构建最简结构
+                // Agent模式下强制包装嵌套结构
                 if (parameters.url) {
-                    console.log(`[ToolAdapter] ${toolName} 构建最简参数结构`);
                     return {
-                        mode: 'scrape',
+                        mode: parameters.mode || 'scrape',
                         parameters: {
-                            url: parameters.url
-                            // 🎯 关键：移除所有默认参数，与普通模式保持一致
+                            url: parameters.url,
+                            format: 'markdown', // Agent模式默认使用markdown
+                            word_count_threshold: 30, // 更宽松的内容阈值
+                            exclude_external_links: false, // 允许外部链接获取更多上下文
+                            ...parameters // 保留其他参数
                         }
                     };
                 }
-                
-                // 其他情况保持原样
-                console.log(`[ToolAdapter] ${toolName} 保持原有参数结构`);
-                return parameters;
+                break;
                 
             case 'tavily_search':
                 // Agent模式下获取更多结果
@@ -92,9 +83,8 @@ class UnifiedToolAdapter {
                 break;
                 
             default:
-                // 🎯 其他工具保持原有Agent优化逻辑
-                console.log(`[ToolAdapter] ${toolName} 使用原有Agent优化参数`);
-                return parameters;
+                // 其他工具保持Agent优化
+                break;
         }
         
         return parameters;
@@ -143,25 +133,10 @@ class UnifiedToolAdapter {
     }
     
     /**
-     * 🎯 统一参数适配器
-     */
-    static normalizeParameters(toolName, rawParameters, isAgentMode = false) {
-        if (isAgentMode) {
-            return this.normalizeParametersForAgent(toolName, rawParameters);
-        }
-        return this.normalizeParametersForStandard(toolName, rawParameters);
-    }
-    
-    /**
      * Agent模式专用响应处理
      */
     static normalizeResponseForAgent(toolName, rawResponse) {
-        console.log(`[ToolAdapter] Agent模式响应处理: ${toolName}`, {
-            rawResponse,
-            hasData: !!rawResponse?.data,
-            hasContent: !!rawResponse?.data?.content,
-            isArray: Array.isArray(rawResponse?.data)
-        });
+        console.log(`[ToolAdapter] Agent模式响应处理: ${toolName}`);
         
         if (!rawResponse) {
             return {
@@ -169,33 +144,6 @@ class UnifiedToolAdapter {
                 output: '工具返回空响应',
                 isError: true
             };
-        }
-        
-        // 🎯 特殊处理网页抓取工具的响应结构问题
-        if (toolName === 'crawl4ai' || toolName === 'firecrawl') {
-            // 检查是否返回了搜索结果（错误情况）
-            if (rawResponse?.data && Array.isArray(rawResponse.data)) {
-                console.warn(`[ToolAdapter] ${toolName} 返回了搜索结果数组，而非页面内容`);
-                return {
-                    success: false,
-                    output: `❌ 工具返回了搜索结果而非页面内容，可能URL无效或参数问题`,
-                    rawResponse,
-                    isError: true
-                };
-            }
-            
-            // 检查是否返回了空内容
-            if (rawResponse?.data && 
-                (!rawResponse.data.content || rawResponse.data.content.trim() === '') &&
-                (!rawResponse.data.markdown || rawResponse.data.markdown.trim() === '')) {
-                console.warn(`[ToolAdapter] ${toolName} 返回了空内容`);
-                return {
-                    success: false,
-                    output: `❌ 工具返回了空内容，可能页面无法访问或反爬机制`,
-                    rawResponse,
-                    isError: true
-                };
-            }
         }
         
         // 🎯 Agent模式需要更结构化的响应数据
@@ -390,16 +338,6 @@ class UnifiedToolAdapter {
     }
     
     /**
-     * 🎯 统一响应处理
-     */
-    static normalizeResponse(toolName, rawResponse, isAgentMode = false) {
-        if (isAgentMode) {
-            return this.normalizeResponseForAgent(toolName, rawResponse);
-        }
-        return this.normalizeResponseForStandard(toolName, rawResponse);
-    }
-    
-    /**
      * 🎯 为Agent生成执行建议
      */
     static _generateAgentSuggestions(toolName, result) {
@@ -535,18 +473,17 @@ class ProxiedTool extends BaseTool {
         const mode = isAgentMode ? 'agent' : 'standard';
         const timeoutMs = this._getToolTimeout(this.name, isAgentMode);
         
-        console.group(`🛠️ [${mode.toUpperCase()}] 调用工具: ${this.name}`);
-        console.log('原始输入:', this.sanitizeToolInput(input));
+        console.log(`[ProxiedTool] ${mode.toUpperCase()}模式调用工具: ${this.name} (超时: ${timeoutMs}ms)`, this.sanitizeToolInput(input));
         
         try {
             let normalizedInput, rawResult, normalizedResult;
             
-            // 🎯 统一参数适配
-            normalizedInput = UnifiedToolAdapter.normalizeParameters(this.name, input, isAgentMode);
-            console.log('适配后参数:', this.sanitizeToolInput(normalizedInput));
-            
             if (isAgentMode) {
-                // 🎯 Agent模式：使用竞争超时机制
+                // 🎯 Agent模式：使用完整的参数适配和响应处理
+                normalizedInput = UnifiedToolAdapter.normalizeParametersForAgent(this.name, input);
+                console.log(`[ProxiedTool] Agent模式适配后参数:`, this.sanitizeToolInput(normalizedInput));
+                
+                // Agent模式使用竞争超时机制
                 const timeoutPromise = new Promise((_, reject) => {
                     setTimeout(() => reject(new Error(`工具"${this.name}"调用超时 (${timeoutMs}ms)`)), timeoutMs);
                 });
@@ -554,25 +491,28 @@ class ProxiedTool extends BaseTool {
                 const toolPromise = this.chatApiHandler.callTool(this.name, normalizedInput);
                 rawResult = await Promise.race([toolPromise, timeoutPromise]);
                 
+                // Agent专用响应处理
+                normalizedResult = UnifiedToolAdapter.normalizeResponseForAgent(this.name, rawResult);
+                
             } else {
-                // 🎯 普通模式：使用简化的超时机制
+                // 🎯 普通模式：保持原有逻辑，最小化处理
+                normalizedInput = UnifiedToolAdapter.normalizeParametersForStandard(this.name, input);
+                console.log(`[ProxiedTool] 普通模式适配后参数:`, this.sanitizeToolInput(normalizedInput));
+                
+                // 普通模式使用简化的超时机制
                 rawResult = await this._callToolWithSimpleTimeout(this.name, normalizedInput, timeoutMs);
+                
+                // 普通模式保持原有响应格式
+                normalizedResult = UnifiedToolAdapter.normalizeResponseForStandard(this.name, rawResult);
             }
-            
-            console.log('原始结果:', rawResult);
-            
-            // 🎯 统一响应处理
-            normalizedResult = UnifiedToolAdapter.normalizeResponse(this.name, rawResult, isAgentMode);
             
             const executionTime = Date.now() - startTime;
             
-            console.log('适配后结果:', {
+            console.log(`[ProxiedTool] ${mode.toUpperCase()}模式工具调用完成: ${this.name}`, {
                 success: normalizedResult.success,
-                outputLength: normalizedResult.output?.length,
-                isError: normalizedResult.isError
+                outputLength: normalizedResult.output?.length || 0,
+                executionTime
             });
-            
-            console.groupEnd();
             
             return {
                 ...normalizedResult,
@@ -582,8 +522,7 @@ class ProxiedTool extends BaseTool {
             
         } catch (error) {
             const executionTime = Date.now() - startTime;
-            console.error(`[${mode.toUpperCase()}] 工具调用失败:`, error);
-            console.groupEnd();
+            console.error(`[ProxiedTool] ${mode.toUpperCase()}模式工具调用失败: ${this.name} (${executionTime}ms)`, error);
             
             // 🎯 区分不同类型的错误
             let errorMessage = error.message;
