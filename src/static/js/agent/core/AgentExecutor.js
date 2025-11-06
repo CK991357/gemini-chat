@@ -327,10 +327,33 @@ export class AgentExecutor {
     }
 
     /**
-     * 🎯 单次工具执行（现有 _executeAction 的简化版）
+     * 🎯 参数清理方法
+     */
+    _sanitizeParams(parameters) {
+        const sanitized = { ...parameters };
+        
+        // 🎯 清理大文本字段，避免日志过大
+        // 针对常见的代码、内容、数据字段进行截断
+        for (const key in sanitized) {
+            const value = sanitized[key];
+            if (typeof value === 'string' && value.length > 500) {
+                sanitized[key] = value.substring(0, 500) + '... [内容已截断]';
+            }
+        }
+        
+        return sanitized;
+    }
+
+    /**
+     * 🎯 单次工具执行（增强版：日志、错误处理、Agent模式标记）
      */
     async _executeSingleAction(action, runId) {
         const { tool_name, parameters } = action;
+        
+        // 🆕 开始执行日志
+        console.group(`[AgentExecutor] 执行工具: ${tool_name}`);
+        console.log('参数:', this._sanitizeParams(parameters));
+        console.log('Run ID:', runId);
         
         try {
             const tool = this.tools[tool_name];
@@ -338,10 +361,11 @@ export class AgentExecutor {
                 throw new Error(`未知的工具: ${tool_name}`);
             }
 
-            // 🎯 执行工具调用（保持现有逻辑）
-            const executionContext = { 
-                runId, 
-                callbackManager: this.callbackManager 
+            // 🆕 明确标记Agent模式
+            const executionContext = {
+                runId,
+                callbackManager: this.callbackManager,
+                isAgentMode: true
             };
 
             const rawResult = await this.callbackManager.wrapToolCall(
@@ -351,18 +375,40 @@ export class AgentExecutor {
                 }
             );
 
+            // 🆕 执行完成日志
+            console.log('执行结果:', {
+                success: rawResult.success,
+                outputLength: (rawResult.output || '').length,
+                hasError: rawResult.isError,
+                mode: rawResult.mode
+            });
+
+            // 🆕 关键修复：如果工具返回错误，记录详细信息
+            if (rawResult.isError) {
+                console.warn('工具执行失败详情:', {
+                    error: rawResult.error,
+                    output: rawResult.output,
+                    rawResponse: rawResult.rawResponse
+                });
+            }
+            
+            console.groupEnd();
+            
             // 🎯 应用标准化（无风险）
             return this._normalizeToolOutput(rawResult, tool_name);
             
         } catch (error) {
-            console.error(`工具 ${tool_name} 执行失败:`, error);
+            // 🆕 异常处理日志
+            console.error('工具执行异常:', error);
+            console.groupEnd();
             
             // 🎯 返回标准化错误格式
             return this._normalizeToolOutput({
                 success: false,
                 error: error.message,
                 isError: true,
-                output: `❌ 工具"${tool_name}"执行失败: ${error.message}`
+                output: `❌ 工具"${tool_name}"执行异常: ${error.message}`,
+                rawResponse: { error: error.stack }
             }, tool_name);
         }
     }
