@@ -651,6 +651,9 @@ document.addEventListener('DOMContentLoaded', () => {
    // 🚀 新增：初始化智能代理系统
    initializeEnhancedAgent();
    
+   // 🎯 添加调试状态检查
+   setTimeout(debugAgentSystem, 2000);
+   
    // 确保工作流样式加载
    loadWorkflowStyles();
 });
@@ -695,38 +698,45 @@ let _realtimeDetectDone = false;
 // 🚀 修改智能代理系统初始化函数
 async function initializeEnhancedAgent() {
     try {
-        console.log('🚀 准备智能代理系统（按需初始化模式）...');
+        console.log('🚀 准备智能代理系统（开关控制初始化模式）...');
         
-        // 🎯 提前初始化 AgentThinkingDisplay
+        // 🎯 提前初始化 AgentThinkingDisplay (保留自原有逻辑)
         const { AgentThinkingDisplay } = await import('./agent/AgentThinkingDisplay.js');
         agentThinkingDisplay = new AgentThinkingDisplay();
         console.log('✅ AgentThinkingDisplay 初始化完成');
         
-        // 🎯 关键修改：设置 Orchestrator 占位符，不立即初始化
+        // 🎯 关键修改：创建占位符Orchestrator，不立即初始化
         orchestrator = {
             isEnabled: false,
             isInitialized: false,
+            _initState: 'created',
             _initializing: false,
             
-            // 占位方法 - 在真正初始化前提供基础功能
+            // 占位方法
             handleUserRequest: (userMessage, files = [], context = {}) => {
                 console.log('🔌 Orchestrator 未初始化，使用标准模式');
                 return { enhanced: false, type: 'standard_fallback' };
             },
             
-            setEnabled: async function(enabled) {  // 🎯 修复：改为普通函数，确保正确的 this 绑定
-                console.log(`🎯 设置智能代理开关: ${enabled}, 当前初始化状态: ${this.isInitialized}`);
+            setEnabled: async function(enabled) {
+                console.log(`🎯 设置智能代理开关: ${enabled}, 当前初始化状态: ${this._initState}`);
                 
-                if (enabled && !this.isInitialized && !this._initializing) {
-                    // 开关打开且未初始化，开始初始化
-                    await this._initializeOrchestrator();
-                }
-                
+                // 🎯 立即更新开关状态
                 this.isEnabled = enabled;
                 localStorage.setItem('agentModeEnabled', enabled);
                 
+                if (enabled && this._initState === 'created') {
+                    // 🎯 开关打开且未初始化，开始初始化
+                    console.log('🔌 开关触发Orchestrator初始化...');
+                    await this._initializeOrchestrator();
+                } else if (!enabled && this._initState === 'initialized') {
+                    // 🎯 开关关闭且已初始化，清理资源
+                    console.log('🔌 开关关闭，清理Agent资源');
+                    this._cleanupResources();
+                }
+                
                 // 🎯 简化：直接使用Toast提示状态
-                if (enabled && this.isInitialized) {
+                if (enabled && this._initState === 'initialized') {
                     showToast('智能代理系统已启用');
                 } else if (!enabled) {
                     showToast('智能代理系统已禁用');
@@ -734,19 +744,17 @@ async function initializeEnhancedAgent() {
             },
             
             // 真正的初始化方法
-            _initializeOrchestrator: async function() {  // 🎯 修复：改为普通函数
-                if (this.isInitialized) {
+            _initializeOrchestrator: async function() {
+                if (this._initState === 'initialized') {
                     console.log('✅ Orchestrator 已初始化');
                     return true;
                 }
                 
                 if (this._initializing) {
                     console.log('🔄 Orchestrator 正在初始化中...');
-                    // 等待初始化完成
-                    const self = this;
                     return new Promise((resolve) => {
                         const checkInterval = setInterval(() => {
-                            if (self.isInitialized) {
+                            if (this._initState === 'initialized') {
                                 clearInterval(checkInterval);
                                 resolve(true);
                             }
@@ -774,7 +782,7 @@ async function initializeEnhancedAgent() {
                     
                     // 🎯 替换占位符为真实实例
                     Object.assign(this, realOrchestrator);
-                    this.isInitialized = true;
+                    this._initState = 'initialized';
                     this._initializing = false;
                     
                     console.log('✅ Orchestrator 初始化完成');
@@ -784,6 +792,7 @@ async function initializeEnhancedAgent() {
                 } catch (error) {
                     console.error('❌ Orchestrator 初始化失败:', error);
                     this._initializing = false;
+                    this._initState = 'failed';
                     showToast('智能代理系统初始化失败，使用标准模式', 3000);
                     this.isEnabled = false;
                     
@@ -796,9 +805,23 @@ async function initializeEnhancedAgent() {
                 }
             },
             
-            ensureInitialized: function() {  // 🎯 修复：改为普通函数
-                if (this.isInitialized) return Promise.resolve(true);
-                return this._initializeOrchestrator();
+            _cleanupResources: function() {
+                // 清理Agent相关资源，但不销毁实例
+                this.currentWorkflow = null;
+                this.currentContext = null;
+                if (this.agentSystem) {
+                    this.agentSystem.executor = null;
+                }
+                console.log('🔌 Agent资源清理完成');
+            },
+            
+            ensureInitialized: function() {
+                if (this._initState === 'initialized') return Promise.resolve(true);
+                if (this.isEnabled) {
+                    return this._initializeOrchestrator();
+                } else {
+                    return Promise.resolve(false);
+                }
             }
         };
         
@@ -823,25 +846,24 @@ async function initializeEnhancedAgent() {
                 await orchestrator.setEnabled(enabled);
                 
                 // 如果初始化失败，确保开关状态正确
-                if (enabled && !orchestrator.isInitialized) {
+                if (enabled && orchestrator._initState === 'failed') {
                     agentModeToggle.checked = false;
                 }
             });
             
-            // 🎯 如果之前是开启状态，自动初始化
+            // 🎯 如果之前是开启状态，触发初始化
             if (isAgentEnabled) {
-                console.log('🔘 检测到之前开启状态，自动初始化 Orchestrator...');
+                console.log('🔘 检测到之前开启状态，触发Orchestrator初始化...');
                 setTimeout(async () => {
                     await orchestrator.setEnabled(true);
-                }, 1000); // 延迟1秒，让页面先完成渲染
+                }, 1000);
             }
         }
         
-        console.log('✅ 智能代理系统准备完成（按需初始化模式）');
+        console.log('✅ 智能代理系统准备完成（开关控制初始化模式）');
         
     } catch (error) {
         console.error('智能代理系统准备失败:', error);
-        // 确保基础功能可用
         ensureBasicAgentFunctionality();
     }
 }
@@ -1108,22 +1130,28 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
     console.log("🤖 Agent Mode ON: 智能路由用户请求");
     
     try {
-        // 🎯 关键修改：确保 Orchestrator 已初始化
-        if (!orchestrator.isInitialized) {
-            console.log('🔄 Agent 系统未初始化，立即初始化...');
+        // 🎯 关键修复：检查开关状态
+        if (!orchestrator.isEnabled) {
+            console.log('🔌 Agent开关未启用，使用标准模式');
+            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+            return;
+        }
+        
+        // 🎯 关键修复：确保 Orchestrator 已初始化
+        if (orchestrator._initState !== 'initialized') {
+            console.log('🔄 Agent系统未初始化，立即初始化...');
             showToast('正在初始化智能代理系统...');
             
             const initSuccess = await orchestrator.ensureInitialized();
             if (!initSuccess) {
                 // 初始化失败，回退到标准模式
-                console.log('❌ Agent 初始化失败，使用标准模式');
+                console.log('❌ Agent初始化失败，使用标准模式');
                 await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
                 return;
             }
         }
         
         // 启动思考过程显示
-        // 🎯 修复：直接使用已创建的实例
         const sessionId = agentThinkingDisplay.startSession(messageText, 8);
         console.log(`🤖 Agent会话启动: ${sessionId}`);
         
@@ -1136,7 +1164,9 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
             availableTools: availableToolNames
         });
         
-        // ... 原有的结果处理逻辑保持不变
+        console.log('🎯 Orchestrator处理结果:', agentResult);
+        
+        // 🎯 处理结果
         if (agentResult.enhanced) {
             if (agentResult.type === 'workflow_pending') {
                 // 显示工作流UI
@@ -1151,13 +1181,13 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                         if (finalResult.skipped) {
                             // 工作流被跳过，回退到标准聊天
                             handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
-                                .then(() => agentThinkingDisplay.completeSession('success')) // 🎯 修复：completeSession 不再需要 sessionId
+                                .then(() => agentThinkingDisplay.completeSession('success'))
                                 .finally(resolve);
                         } else {
                             // 显示最终结果
                             chatUI.addMessage({ role: 'assistant', content: finalResult.content });
                             console.log('工作流执行详情:', finalResult);
-                            agentThinkingDisplay.completeSession('success'); // 🎯 修复：completeSession 不再需要 sessionId
+                            agentThinkingDisplay.completeSession('success');
                             resolve();
                         }
                     };
@@ -1174,29 +1204,25 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     console.log(`Agent执行完成，${agentResult.iterations}次迭代，详细过程已在聊天区显示`);
                 }
                 console.log('Agent执行详情:', agentResult);
-                agentThinkingDisplay.completeSession('success'); // 🎯 修复：completeSession 不再需要 sessionId
+                agentThinkingDisplay.completeSession('success');
             } else {
                 // 其他增强结果
                 chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 console.log('增强结果详情:', agentResult);
-                agentThinkingDisplay.completeSession('success'); // 🎯 修复：completeSession 不再需要 sessionId
+                agentThinkingDisplay.completeSession('success');
             }
         } else {
             // 标准回退处理
             console.log("💬 未触发增强模式，使用标准对话，立即停止Agent思考显示");
-            // 🎯 关键修复：在回退到标准模式时，立即完成/隐藏 AgentThinkingDisplay
-            agentThinkingDisplay.completeSession('skipped'); // 🎯 修复：completeSession 不再需要 sessionId
+            agentThinkingDisplay.completeSession('skipped');
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
         }
         
     } catch (error) {
         console.error("🤖 Agent模式执行失败:", error);
         // 发生错误时隐藏思考显示
-        // 🎯 关键修复：确保在错误发生时，AgentThinkingDisplay 被标记为失败并隐藏
         if (agentThinkingDisplay) {
-            agentThinkingDisplay.completeSession('error'); // 🎯 修复：completeSession 不再需要 sessionId
-        } else {
-            stopAgentThinking(); // 降级处理
+            agentThinkingDisplay.completeSession('error');
         }
         // 回退到普通聊天模式
         await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
@@ -2478,6 +2504,22 @@ window.toggleAgentMode = (enabled) => {
         toggle.dispatchEvent(new Event('change'));
     }
 };
+
+// 🎯 新增：Agent系统状态调试函数
+function debugAgentSystem() {
+    console.log('🔍 Agent系统状态:', {
+        orchestrator: window.orchestrator ? {
+            isEnabled: orchestrator.isEnabled,
+            initState: orchestrator._initState,
+            isInitialized: orchestrator.isInitialized
+        } : '未创建',
+        agentThinkingDisplay: window.agentThinkingDisplay ? '已创建' : '未创建',
+        agentModeToggle: agentModeToggle ? {
+            checked: agentModeToggle.checked,
+            disabled: agentModeToggle.disabled
+        } : '未找到'
+    });
+}
 
 // Debug helpers: allow manually inspecting/overriding audio sample rate from console
 window.setAudioSampleRate = (rate) => {

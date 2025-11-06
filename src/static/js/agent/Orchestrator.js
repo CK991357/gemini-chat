@@ -39,7 +39,7 @@ export class Orchestrator {
         this._initializationPromise = null;
         this._pendingInitWaiters = [];
         
-        // 🎯 基础状态
+        // 🎯 基础状态 - 开关控制
         this.isEnabled = config.enabled !== false;
         this.currentWorkflow = null;
         this.currentContext = null;
@@ -137,8 +137,13 @@ export class Orchestrator {
             });
         }
         
-        // 开始真正的初始化
-        return this._realInitialize();
+        // 🎯 关键修改：只有开关启用时才真正初始化
+        if (this.isEnabled) {
+            return this._realInitialize();
+        } else {
+            console.log('[Orchestrator] 开关未启用，跳过初始化');
+            return false;
+        }
     }
 
     _notifyInitWaiters(err, result) {
