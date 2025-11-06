@@ -11,7 +11,8 @@ export class AgentExecutor {
         this.tools = tools;
         this.callbackManager = callbackManager;
         
-        this.maxIterations = config.maxIterations || 10;
+        // 🎯 动态最大迭代次数
+        this.maxIterations = config.maxIterations || this._calculateDynamicMaxIterations(config);
         this.earlyStoppingMethod = config.earlyStoppingMethod || 'force';
         this.maxThinkTimeout = config.maxThinkTimeout || 120000; // 🎯 新增：最大思考超时配置
         
@@ -23,6 +24,23 @@ export class AgentExecutor {
         };
         
         console.log(`[AgentExecutor] 初始化完成，最大迭代次数: ${this.maxIterations}, 最大思考超时: ${this.maxThinkTimeout}ms`);
+    }
+
+    /**
+     * 🎯 动态计算最大迭代次数
+     */
+    _calculateDynamicMaxIterations(config) {
+        const baseIterations = 6; // 基础迭代次数
+        const availableTools = Object.keys(this.tools).length;
+        
+        // 根据工具数量调整迭代次数
+        if (availableTools <= 2) {
+            return 4; // 工具少，减少迭代
+        } else if (availableTools >= 5) {
+            return 8; // 工具多，增加迭代
+        }
+        
+        return baseIterations;
     }
 
     /**
@@ -430,6 +448,48 @@ export class AgentExecutor {
     }
 
     /**
+     * 🎯 智能提前停止检查
+     */
+    _shouldStopEarly(iteration, intermediateSteps, consecutiveErrors) {
+        // 1. 错误过多停止
+        if (consecutiveErrors >= 3) {
+            console.log('[AgentExecutor] 连续错误过多，提前停止');
+            return true;
+        }
+        
+        // 2. 有成功结果且迭代足够
+        const successfulSteps = intermediateSteps.filter(step => 
+            step.observation && step.observation.success
+        ).length;
+        
+        if (successfulSteps >= 2 && iteration >= 3) {
+            console.log('[AgentExecutor] 已有足够成功步骤，建议停止');
+            return true;
+        }
+        
+        // 3. 重复模式检测
+        if (this._detectRepetitivePattern(intermediateSteps)) {
+            console.log('[AgentExecutor] 检测到重复模式，提前停止');
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * 🎯 重复模式检测
+     */
+    _detectRepetitivePattern(intermediateSteps) {
+        if (intermediateSteps.length < 3) return false;
+        
+        const lastThree = intermediateSteps.slice(-3);
+        const actions = lastThree.map(step => step.action?.tool_name);
+        
+        // 检查是否连续三次相同动作
+        return actions.every(action => action === actions[0]);
+    }
+
+    /**
      * 🎯 增强的ReAct循环执行（含智能超时和错误恢复）
      */
     async invoke(inputs) {
@@ -490,6 +550,13 @@ export class AgentExecutor {
         // 🎯 ReAct循环核心
         for (iteration = 0; iteration < this.maxIterations; iteration++) {
             console.log(`[AgentExecutor] 第 ${iteration + 1} 次迭代开始`);
+            
+            // 🎯 智能提前停止检查
+            if (this._shouldStopEarly(iteration, intermediateSteps, consecutiveErrors)) {
+                console.log(`[AgentExecutor] 智能提前停止触发`);
+                finalAnswer = this._handleEarlyStop(null, intermediateSteps);
+                break;
+            }
             
             // 🎯 迭代开始
             window.dispatchEvent(new CustomEvent('agent:iteration_update', {
@@ -647,10 +714,8 @@ export class AgentExecutor {
                         }
                     });
                     break;
-                }
-
-                // 🎯 步骤2: 执行工具调用 (Act)
-                if (action.type === 'tool_call') {
+                } else if (action.type === 'tool_call') {
+                    // 🎯 步骤2: 执行工具调用 (Act)
                     // 🎯 添加行动步骤
                     const actionStepIndex = this.currentSession.steps.length;
                     window.dispatchEvent(new CustomEvent('agent:step_added', {
@@ -718,6 +783,40 @@ export class AgentExecutor {
                         finalAnswer = this._handleEarlyStop(observation, intermediateSteps);
                         break;
                     }
+                } else if (action.type === 'continue_thinking') {
+                    // 🎯 新增：处理继续思考的情况
+                    console.log(`[AgentExecutor] 模型要求继续思考，记录思考步骤`);
+                    
+                    // 添加思考步骤到历史记录
+                    intermediateSteps.push({
+                        action: { type: 'think', log: action.log },
+                        observation: { output: '继续分析问题...', success: true }
+                    });
+                    
+                    // 在UI中显示思考步骤
+                    window.dispatchEvent(new CustomEvent('agent:step_added', {
+                        detail: {
+                            step: {
+                                type: 'think',
+                                description: action.log || '继续分析问题...',
+                                timestamp: Date.now(),
+                                iteration: iteration + 1
+                            }
+                        }
+                    }));
+
+                    // 🎯 继续思考显示到聊天区
+                    window.dispatchEvent(new CustomEvent('chat:agent_step', {
+                        detail: {
+                            type: 'think',
+                            content: action.log || '继续分析问题...',
+                            iteration: iteration + 1,
+                            sessionId: runId
+                        }
+                    }));
+                    
+                    // 🎯 关键：不抛出错误，继续下一次迭代
+                    continue;
                 } else {
                     throw new Error(`未知的Action类型: ${action.type}`);
                 }
