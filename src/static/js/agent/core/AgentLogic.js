@@ -17,35 +17,29 @@ export class AgentLogic {
      */
     async plan(intermediateSteps, inputs, runManager) {
         const { userMessage, context } = inputs;
-        const { runId, callbackManager } = runManager || {};
+        
+        // 🎯 构建思考提示词
+        const prompt = this._constructPrompt(userMessage, intermediateSteps, context);
         
         console.log(`[AgentLogic] 第 ${intermediateSteps.length + 1} 次思考...`);
 
         try {
             // 🎯 思考开始事件
-            await callbackManager?.invokeEvent('on_agent_think_start', {
+            await runManager?.callbackManager.invokeEvent('on_agent_think_start', {
                 name: 'agent_think',
-                run_id: runId,
+                run_id: runManager.runId,
                 data: { 
                     step: intermediateSteps.length + 1,
-                    user_message: userMessage.substring(0, 200)
+                    prompt_preview: prompt.substring(0, 200) + '...'
                 }
             });
 
-            // 🎯 构建增强的系统提示词
-            const systemPrompt = this._buildEnhancedSystemPrompt(intermediateSteps, context);
-            
-            // 🎯 构建消息历史
-            const messages = this._buildMessages(systemPrompt, intermediateSteps, userMessage);
-            
-            console.log(`[AgentLogic] 发送给LLM的消息数量: ${messages.length}`);
-
             // 🎯 调用LLM进行思考
             const llmResponse = await this.llm.completeChat({
-                messages: messages,
-                model: context?.model || 'gpt-4',
+                messages: [{ role: 'user', content: prompt }],
+                model: context?.model || 'gpt-3.5-turbo',
                 temperature: 0.1, // 低温度确保稳定性
-                max_tokens: 1500
+                max_tokens: 1000
             }, context?.apiKey);
 
             if (!llmResponse || !llmResponse.choices || !llmResponse.choices[0]) {
@@ -55,12 +49,12 @@ export class AgentLogic {
             const responseText = llmResponse.choices[0].message.content;
             
             // 🎯 思考结束事件
-            await callbackManager?.invokeEvent('on_agent_think_end', {
+            await runManager?.callbackManager.invokeEvent('on_agent_think_end', {
                 name: 'agent_think',
-                run_id: runId,
+                run_id: runManager.runId,
                 data: { 
                     step: intermediateSteps.length + 1,
-                    response_preview: responseText.substring(0, 300) + '...'
+                    response_preview: responseText.substring(0, 200) + '...'
                 }
             });
 
@@ -75,113 +69,70 @@ export class AgentLogic {
             console.error(`[AgentLogic] 思考过程失败:`, error);
             
             // 🎯 思考失败事件
-            await callbackManager?.invokeEvent('on_agent_think_error', {
+            await runManager?.callbackManager.invokeEvent('on_agent_think_error', {
                 name: 'agent_think',
-                run_id: runId,
+                run_id: runManager.runId,
                 data: { 
                     step: intermediateSteps.length + 1,
                     error: error.message
                 }
             });
 
-            // 🎯 错误时返回继续思考，而不是抛出错误
-            console.warn('[AgentLogic] 规划失败，返回继续思考状态');
-            return {
-                type: 'continue_thinking',
-                log: `规划过程遇到错误: ${error.message}。请重新分析问题。`
-            };
+            // 🎯 思考失败时抛出错误，让执行器处理
+            throw new Error(`思考过程失败: ${error.message}`);
         }
     }
 
     /**
-     * 🎯 构建增强的系统提示词
+     * 🎯 构建思考提示词（ReAct格式 - 生产级优化）
      */
-    _buildEnhancedSystemPrompt(intermediateSteps, context) {
+    _constructPrompt(userMessage, intermediateSteps, context) {
         const toolDescriptions = Object.values(this.tools)
             .map(tool => `- ${tool.name}: ${tool.description}`)
             .join('\n');
 
         const toolNames = Object.keys(this.tools).join(', ');
-        const stepCount = intermediateSteps.length;
 
-        return `你是一个智能代理，需要按照ReAct(思考-行动-观察)框架解决问题。
+        let prompt = `你是一个智能助手，需要通过多步推理和工具调用来解决复杂问题，当处理"网页抓取任务必须优先使用 crawl4ai 工具，它提供更强大的网页抓取和内容提取能力。只有在 crawl4ai 明确失败时才考虑firecrawl作为替代方案。
 
-## 可用工具:
+原始问题: ${userMessage}
+
+你可以使用的工具:
 ${toolDescriptions}
 
-## 网页抓取工具使用策略：
-- 网页抓取任务必须优先使用 crawl4ai 工具，它提供更强大的网页抓取和内容提取能力
-- 只有在 crawl4ai 明确失败时才考虑firecrawl作为替代方案
+请严格按照以下格式响应：
 
-## 执行流程：
-1. **思考(Thought)**: 分析当前状况，规划下一步
-2. **行动(Action)**: 选择合适工具并调用
-3. **观察(Observation)**: 获取工具执行结果
-4. 重复1-3步直到问题解决
-5. **最终答案(Final Answer)**: 整理所有信息给出完整答案
+Question: 你必须回答的原始问题
+Thought: 分析当前状况，规划下一步行动。解释为什么选择这个行动。
+Action: 需要调用的工具名称，必须是以下之一: [${toolNames}]
+Action Input: 工具的输入参数，必须是有效的JSON对象
+Observation: 工具执行的结果
+... (这个 Thought/Action/Action Input/Observation 循环可以重复N次)
+Thought: 我现在有足够信息来给出最终答案了
+Final Answer: 对原始问题的完整、详细答案
 
-## 关键规则：
-- 必须使用工具获取实时信息，不要凭空猜测
-- 每次只执行一个工具调用
-- 工具参数必须是有效的JSON格式
-- 只有获得所有必要信息后才能给出最终答案
-- 最终答案必须是整理后的完整信息，不要包含思考过程
+现在开始！
 
-## 输出格式：
-\`\`\`
-Thought: 你的思考过程
-Action: 工具名称
-Action Input: {"参数": "值"}
-\`\`\`
+Question: ${userMessage}
+`;
 
-或者当问题解决时：
-\`\`\`
-Thought: 我已经获得所有必要信息
-Final Answer: 完整的最终答案
-\`\`\`
+        // 🎯 添加历史步骤（scratchpad）
+        if (intermediateSteps.length > 0) {
+            prompt += "\n之前的执行历史:\n\n";
+            intermediateSteps.forEach((step, index) => {
+                prompt += `步骤 ${index + 1}:\n`;
+                prompt += `Thought: ${step.action.log}\n`;
+                prompt += `Action: ${step.action.tool_name}\n`;
+                prompt += `Action Input: ${JSON.stringify(step.action.parameters, null, 2)}\n`;
+                prompt += `Observation: ${this._formatObservation(step.observation)}\n\n`;
+            });
+            
+            prompt += "基于以上历史，请继续思考：\n";
+        }
 
-当前是第${stepCount + 1}步思考，请继续...
-
-## 🎯 重要提醒：
-- **不要**在最终答案中包含思考过程、Action、Observation等内容
-- **必须**先通过工具获取真实信息，再整理成完整的最终答案
-- 最终答案应该是面向用户的、完整的、整理好的信息
-- 如果信息不足，继续使用工具获取更多信息
-
-例如：
-❌ 错误答案："根据搜索，Model Y是销量最高的... Action: crawl4ai ..."
-✅ 正确答案："根据最新行业数据和官方信息，特斯拉2025年销量最高的车型是Model Y。该车型具有以下特点：1. ... 2. ..."
-
-当前任务：${context?.userMessage}`;
-    }
-
-    /**
-     * 🎯 构建消息历史
-     */
-    _buildMessages(systemPrompt, intermediateSteps, userMessage) {
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `问题: ${userMessage}` }
-        ];
+        prompt += "Thought: ";
         
-        // 🎯 添加历史步骤作为对话上下文
-        intermediateSteps.forEach((step, index) => {
-            if (step.action && step.observation) {
-                // 添加助理的思考+行动
-                messages.push({ 
-                    role: 'assistant', 
-                    content: `Thought: ${step.action.log || `执行第${index + 1}步工具调用`}\nAction: ${step.action.tool_name}\nAction Input: ${JSON.stringify(step.action.parameters)}` 
-                });
-                
-                // 添加工具执行结果作为用户消息
-                messages.push({ 
-                    role: 'user', 
-                    content: `Observation: ${this._formatObservation(step.observation)}` 
-                });
-            }
-        });
-        
-        return messages;
+        return prompt;
     }
 
     /**
@@ -192,8 +143,8 @@ Final Answer: 完整的最终答案
             const outputText = ObservationUtils.getOutputText(observation) || '[无输出内容]';
             const isError = ObservationUtils.isErrorResult(observation);
 
-            const display = outputText.substring(0, 1000) + (outputText.length > 1000 ? '...' : '');
-            return isError ? `❌ 执行失败: ${display}` : display;
+            const display = outputText.substring(0, 800) + (outputText.length > 800 ? '...' : '');
+            return isError ? `❌ ${display}` : display;
         } catch (error) {
             console.warn('[AgentLogic] _formatObservation 失败:', error);
             return `❌ 格式化观察结果失败: ${error.message}`;
