@@ -175,6 +175,107 @@ export class Orchestrator {
     /**
      * 🎯 原有的 handleUserRequest 逻辑移到这里
      */
+    /**
+     * 🎯 新增：爬虫工具优先级策略
+     */
+    _applyCrawlerPriority(matchedSkills) {
+        if (!matchedSkills || matchedSkills.length === 0) {
+            return matchedSkills;
+        }
+
+        // 🎯 检查是否包含爬虫工具
+        const hasCrawl4ai = matchedSkills.some(skill => skill.toolName === 'crawl4ai');
+        const hasFirecrawl = matchedSkills.some(skill => skill.toolName === 'firecrawl');
+
+        // 如果同时匹配到两个爬虫工具，优先使用 crawl4ai
+        if (hasCrawl4ai && hasFirecrawl) {
+            console.log('[Orchestrator] 检测到多个爬虫工具，应用优先级策略: crawl4ai > firecrawl');
+            
+            // 🎯 提升 crawl4ai 的优先级
+            const reorderedSkills = matchedSkills.map(skill => {
+                if (skill.toolName === 'crawl4ai') {
+                    return {
+                        ...skill,
+                        // 提升相似度分数，确保优先选择
+                        similarityScore: Math.min(skill.similarityScore + 0.1, 1.0),
+                        _priorityBoosted: true
+                    };
+                }
+                if (skill.toolName === 'firecrawl') {
+                    return {
+                        ...skill,
+                        // 降低 firecrawl 的优先级
+                        similarityScore: Math.max(skill.similarityScore - 0.05, 0),
+                        _priorityReduced: true
+                    };
+                }
+                return skill;
+            });
+
+            // 🎯 重新按分数排序
+            return reorderedSkills.sort((a, b) => b.similarityScore - a.similarityScore);
+        }
+
+        return matchedSkills;
+    }
+
+    /**
+     * 🎯 新增：智能爬虫工具选择
+     */
+    _selectBestCrawlerTool(userMessage, matchedSkills) {
+        const crawl4aiSkill = matchedSkills.find(skill => skill.toolName === 'crawl4ai');
+        const firecrawlSkill = matchedSkills.find(skill => skill.toolName === 'firecrawl');
+
+        // 🎯 优先选择策略
+        if (crawl4aiSkill && firecrawlSkill) {
+            console.log('[Orchestrator] 智能爬虫选择: 优先使用 crawl4ai');
+            return crawl4aiSkill;
+        } else if (crawl4aiSkill) {
+            console.log('[Orchestrator] 智能爬虫选择: 使用 crawl4ai');
+            return crawl4aiSkill;
+        } else if (firecrawlSkill) {
+            console.log('[Orchestrator] 智能爬虫选择: 使用 firecrawl');
+            return firecrawlSkill;
+        }
+
+        return null;
+    }
+
+    /**
+     * 🎯 新增：降级爬虫工具尝试
+     */
+    async _tryFallbackCrawler(userMessage, fallbackSkill) {
+        try {
+            console.log(`[Orchestrator] 尝试降级爬虫工具: ${fallbackSkill.toolName}`);
+            
+            const tool = this.tools[fallbackSkill.toolName];
+            if (!tool) {
+                return null;
+            }
+            
+            const defaultInput = this._buildDefaultToolInput(fallbackSkill.toolName, userMessage);
+            const result = await tool.invoke(defaultInput);
+            
+            return {
+                enhanced: true,
+                type: 'single_tool',
+                toolUsed: fallbackSkill.toolName,
+                content: result.output,
+                success: result.success,
+                isMultiStep: false,
+                fallbackUsed: true,
+                originalTool: 'crawl4ai'
+            };
+            
+        } catch (error) {
+            console.error(`[Orchestrator] 降级爬虫工具 ${fallbackSkill.toolName} 失败:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * 🎯 原有的 handleUserRequest 逻辑移到这里
+     */
     async _handleUserRequestInternal(userMessage, files = [], context = {}) {
         // 🎯 新增：知识库优先检测
         if (await this._isKnowledgeBaseQuestion(userMessage)) {
@@ -217,7 +318,10 @@ export class Orchestrator {
             });
 
             // 🎯 技能匹配
-            const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, context);
+            let matchedSkills = await this.skillManager.findRelevantSkills(userMessage, context);
+
+            // 🎯 新增：应用爬虫工具优先级策略
+            matchedSkills = this._applyCrawlerPriority(matchedSkills);
 
             console.log(`[Orchestrator] 路由分析完成:`, {
                 complexity: taskAnalysis.complexity,
@@ -237,7 +341,7 @@ export class Orchestrator {
                 console.log(`[Orchestrator] 路由决策 → Agent模式`);
                 return await this._handleWithAgent(userMessage, context, matchedSkills);
             } else if (matchedSkills && matchedSkills.length > 0) {
-                // 🎯 单工具模式 - 现有系统
+                // 🎯 单工具模式 - 应用爬虫优先级
                 console.log(`[Orchestrator] 路由决策 → 单工具模式`);
                 return await this._handleWithSingleTool(userMessage, context, matchedSkills);
             } else {
@@ -248,10 +352,10 @@ export class Orchestrator {
             
         } catch (error) {
             console.error('[Orchestrator] 请求处理失败:', error);
-            return { 
-                enhanced: false, 
+            return {
+                enhanced: false,
                 type: 'standard_fallback',
-                error: error.message 
+                error: error.message
             };
         }
     }
@@ -560,6 +664,10 @@ export class Orchestrator {
     /**
      * 🎯 使用Agent处理复杂任务（新增能力）
      */
+
+    /**
+     * 🎯 使用Agent处理复杂任务（新增能力）
+     */
     async _handleWithAgent(userMessage, context, matchedSkills) {
         if (!this.agentSystem || !this.agentSystem.isAvailable) {
             console.log('[Orchestrator] Agent系统不可用，回退到单工具模式');
@@ -569,12 +677,23 @@ export class Orchestrator {
         try {
             console.log(`[Orchestrator] 启动Agent处理复杂任务...`);
             
+            // 🎯 新增：为Agent添加爬虫优先级提示
+            const enhancedContext = {
+                ...context,
+                availableTools: Object.keys(this.tools),
+                // 🎯 添加工具优先级提示
+                toolPreferences: {
+                    crawlers: {
+                        primary: 'crawl4ai',
+                        fallback: 'firecrawl',
+                        reason: 'crawl4ai提供更强大的网页抓取和内容提取能力'
+                    }
+                }
+            };
+            
             const result = await this.agentSystem.executor.invoke({
                 userMessage,
-                context: {
-                    ...context,
-                    availableTools: Object.keys(this.tools)
-                }
+                context: enhancedContext
             });
 
             // 🎯 格式化Agent结果
