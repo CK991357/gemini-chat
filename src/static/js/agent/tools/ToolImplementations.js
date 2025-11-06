@@ -133,6 +133,16 @@ class UnifiedToolAdapter {
     }
     
     /**
+     * 🎯 统一参数适配器
+     */
+    static normalizeParameters(toolName, rawParameters, isAgentMode = false) {
+        if (isAgentMode) {
+            return this.normalizeParametersForAgent(toolName, rawParameters);
+        }
+        return this.normalizeParametersForStandard(toolName, rawParameters);
+    }
+    
+    /**
      * Agent模式专用响应处理
      */
     static normalizeResponseForAgent(toolName, rawResponse) {
@@ -338,6 +348,16 @@ class UnifiedToolAdapter {
     }
     
     /**
+     * 🎯 统一响应处理
+     */
+    static normalizeResponse(toolName, rawResponse, isAgentMode = false) {
+        if (isAgentMode) {
+            return this.normalizeResponseForAgent(toolName, rawResponse);
+        }
+        return this.normalizeResponseForStandard(toolName, rawResponse);
+    }
+    
+    /**
      * 🎯 为Agent生成执行建议
      */
     static _generateAgentSuggestions(toolName, result) {
@@ -478,12 +498,12 @@ class ProxiedTool extends BaseTool {
         try {
             let normalizedInput, rawResult, normalizedResult;
             
+            // 🎯 统一参数适配
+            normalizedInput = UnifiedToolAdapter.normalizeParameters(this.name, input, isAgentMode);
+            console.log(`[ProxiedTool] 适配后参数:`, this.sanitizeToolInput(normalizedInput));
+            
             if (isAgentMode) {
-                // 🎯 Agent模式：使用完整的参数适配和响应处理
-                normalizedInput = UnifiedToolAdapter.normalizeParametersForAgent(this.name, input);
-                console.log(`[ProxiedTool] Agent模式适配后参数:`, this.sanitizeToolInput(normalizedInput));
-                
-                // Agent模式使用竞争超时机制
+                // 🎯 Agent模式：使用竞争超时机制
                 const timeoutPromise = new Promise((_, reject) => {
                     setTimeout(() => reject(new Error(`工具"${this.name}"调用超时 (${timeoutMs}ms)`)), timeoutMs);
                 });
@@ -491,20 +511,13 @@ class ProxiedTool extends BaseTool {
                 const toolPromise = this.chatApiHandler.callTool(this.name, normalizedInput);
                 rawResult = await Promise.race([toolPromise, timeoutPromise]);
                 
-                // Agent专用响应处理
-                normalizedResult = UnifiedToolAdapter.normalizeResponseForAgent(this.name, rawResult);
-                
             } else {
-                // 🎯 普通模式：保持原有逻辑，最小化处理
-                normalizedInput = UnifiedToolAdapter.normalizeParametersForStandard(this.name, input);
-                console.log(`[ProxiedTool] 普通模式适配后参数:`, this.sanitizeToolInput(normalizedInput));
-                
-                // 普通模式使用简化的超时机制
+                // 🎯 普通模式：使用简化的超时机制
                 rawResult = await this._callToolWithSimpleTimeout(this.name, normalizedInput, timeoutMs);
-                
-                // 普通模式保持原有响应格式
-                normalizedResult = UnifiedToolAdapter.normalizeResponseForStandard(this.name, rawResult);
             }
+            
+            // 🎯 统一响应处理
+            normalizedResult = UnifiedToolAdapter.normalizeResponse(this.name, rawResult, isAgentMode);
             
             const executionTime = Date.now() - startTime;
             
