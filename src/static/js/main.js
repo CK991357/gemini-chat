@@ -697,6 +697,11 @@ async function initializeEnhancedAgent() {
     try {
         console.log('🚀 准备智能代理系统（按需初始化模式）...');
         
+        // 🎯 提前初始化 AgentThinkingDisplay
+        const { AgentThinkingDisplay } = await import('./agent/AgentThinkingDisplay.js');
+        agentThinkingDisplay = new AgentThinkingDisplay();
+        console.log('✅ AgentThinkingDisplay 初始化完成');
+        
         // 🎯 关键修改：设置 Orchestrator 占位符，不立即初始化
         orchestrator = {
             isEnabled: false,
@@ -1118,7 +1123,8 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
         }
         
         // 启动思考过程显示
-        const sessionId = await startAgentThinking(messageText, 8);
+        // 🎯 修复：直接使用已创建的实例
+        const sessionId = agentThinkingDisplay.startSession(messageText, 8);
         console.log(`🤖 Agent会话启动: ${sessionId}`);
         
         // 使用真正的 Orchestrator 处理请求
@@ -1145,13 +1151,13 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                         if (finalResult.skipped) {
                             // 工作流被跳过，回退到标准聊天
                             handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
-                                .then(() => agentThinkingDisplay.completeSession(sessionId, 'success'))
+                                .then(() => agentThinkingDisplay.completeSession('success')) // 🎯 修复：completeSession 不再需要 sessionId
                                 .finally(resolve);
                         } else {
                             // 显示最终结果
                             chatUI.addMessage({ role: 'assistant', content: finalResult.content });
                             console.log('工作流执行详情:', finalResult);
-                            agentThinkingDisplay.completeSession(sessionId, 'success');
+                            agentThinkingDisplay.completeSession('success'); // 🎯 修复：completeSession 不再需要 sessionId
                             resolve();
                         }
                     };
@@ -1168,18 +1174,18 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     console.log(`Agent执行完成，${agentResult.iterations}次迭代，详细过程已在聊天区显示`);
                 }
                 console.log('Agent执行详情:', agentResult);
-                agentThinkingDisplay.completeSession(sessionId, 'success');
+                agentThinkingDisplay.completeSession('success'); // 🎯 修复：completeSession 不再需要 sessionId
             } else {
                 // 其他增强结果
                 chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 console.log('增强结果详情:', agentResult);
-                agentThinkingDisplay.completeSession(sessionId, 'success');
+                agentThinkingDisplay.completeSession('success'); // 🎯 修复：completeSession 不再需要 sessionId
             }
         } else {
             // 标准回退处理
             console.log("💬 未触发增强模式，使用标准对话，立即停止Agent思考显示");
             // 🎯 关键修复：在回退到标准模式时，立即完成/隐藏 AgentThinkingDisplay
-            agentThinkingDisplay.completeSession(sessionId, 'skipped');
+            agentThinkingDisplay.completeSession('skipped'); // 🎯 修复：completeSession 不再需要 sessionId
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
         }
         
@@ -1188,7 +1194,7 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
         // 发生错误时隐藏思考显示
         // 🎯 关键修复：确保在错误发生时，AgentThinkingDisplay 被标记为失败并隐藏
         if (agentThinkingDisplay) {
-            agentThinkingDisplay.completeSession(sessionId, 'error');
+            agentThinkingDisplay.completeSession('error'); // 🎯 修复：completeSession 不再需要 sessionId
         } else {
             stopAgentThinking(); // 降级处理
         }
@@ -2493,10 +2499,10 @@ window.getAudioSampleRate = () => audioStreamer?.sampleRate || null;
  * @returns {Promise<string>} 会话 ID。
  */
 export async function startAgentThinking(userMessage, maxIterations = 8) {
+    // 🎯 修复：由于已在 initializeEnhancedAgent 中提前创建，这里不再需要动态导入和创建
     try {
-        // 只在需要时创建实例
         if (!agentThinkingDisplay) {
-            // 动态导入，避免在不需要Agent功能时加载
+            // 降级处理：如果由于某种原因未创建，则动态导入
             const { AgentThinkingDisplay } = await import('./agent/AgentThinkingDisplay.js');
             agentThinkingDisplay = new AgentThinkingDisplay();
         }

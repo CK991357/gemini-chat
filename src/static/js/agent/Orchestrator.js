@@ -449,6 +449,13 @@ export class Orchestrator {
                         result: eventData.data
                     }
                 }));
+            },
+            on_agent_iteration_error: (eventData) => {
+                window.dispatchEvent(new CustomEvent('agent:session_error', {
+                    detail: {
+                        error: eventData.data?.error
+                    }
+                }));
             }
         });
         
