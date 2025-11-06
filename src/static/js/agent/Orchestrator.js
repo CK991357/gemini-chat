@@ -372,7 +372,10 @@ export class Orchestrator {
 
     setupHandlers() {
         try {
-            // 🎯 导入中间件
+            // 🎯 关键修复：注册事件处理器来转发Agent事件
+            this._setupAgentEventHandlers();
+            
+            // 现有的中间件注册
             import('./middlewares/PerformanceMonitorMiddleware.js').then(module => {
                 const PerformanceMonitorMiddleware = module.PerformanceMonitorMiddleware;
                 this.callbackManager.addMiddleware(new PerformanceMonitorMiddleware());
@@ -392,13 +395,64 @@ export class Orchestrator {
                 console.warn('❌ 智能重试中间件加载失败:', error);
             });
 
-            // 🎯 保持现有的处理器注册逻辑
-            // 例如：this.callbackManager.addHandler(new WorkflowUIHandler(this.workflowUI));
             console.log('[Orchestrator] 处理器设置完成');
 
         } catch (error) {
-            console.error('❌ 中间件注册失败:', error);
+            console.error('❌ 处理器注册失败:', error);
         }
+    }
+
+    /**
+     * 🎯 设置Agent事件处理器 - 转发AgentExecutor事件到显示面板
+     */
+    _setupAgentEventHandlers() {
+        // 监听AgentExecutor触发的事件，并转发到window供AgentThinkingDisplay捕获
+        this.callbackManager.addHandler({
+            on_agent_start: (eventData) => {
+                window.dispatchEvent(new CustomEvent('agent:session_started', {
+                    detail: eventData
+                }));
+            },
+            on_agent_iteration_start: (eventData) => {
+                window.dispatchEvent(new CustomEvent('agent:iteration_update', {
+                    detail: eventData
+                }));
+            },
+            on_agent_thinking: (eventData) => {
+                window.dispatchEvent(new CustomEvent('agent:thinking', {
+                    detail: eventData
+                }));
+            },
+            on_tool_start: (eventData) => {
+                window.dispatchEvent(new CustomEvent('agent:step_added', {
+                    detail: {
+                        step: {
+                            type: 'action',
+                            description: `执行工具: ${eventData.name}`,
+                            tool: eventData.name,
+                            parameters: eventData.data?.parameters,
+                            timestamp: Date.now()
+                        }
+                    }
+                }));
+            },
+            on_tool_end: (eventData) => {
+                window.dispatchEvent(new CustomEvent('agent:step_completed', {
+                    detail: {
+                        result: eventData.data?.result
+                    }
+                }));
+            },
+            on_agent_end: (eventData) => {
+                window.dispatchEvent(new CustomEvent('agent:session_completed', {
+                    detail: {
+                        result: eventData.data
+                    }
+                }));
+            }
+        });
+        
+        console.log('✅ Agent事件处理器已注册');
     }
 
     setupEventListeners() {

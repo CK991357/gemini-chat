@@ -1177,15 +1177,21 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
             }
         } else {
             // 标准回退处理
-            console.log("💬 未触发增强模式，使用标准对话");
+            console.log("💬 未触发增强模式，使用标准对话，立即停止Agent思考显示");
+            // 🎯 关键修复：在回退到标准模式时，立即完成/隐藏 AgentThinkingDisplay
+            agentThinkingDisplay.completeSession(sessionId, 'skipped');
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-            agentThinkingDisplay.completeSession(sessionId, 'success');
         }
         
     } catch (error) {
         console.error("🤖 Agent模式执行失败:", error);
         // 发生错误时隐藏思考显示
-        stopAgentThinking();
+        // 🎯 关键修复：确保在错误发生时，AgentThinkingDisplay 被标记为失败并隐藏
+        if (agentThinkingDisplay) {
+            agentThinkingDisplay.completeSession(sessionId, 'error');
+        } else {
+            stopAgentThinking(); // 降级处理
+        }
         // 回退到普通聊天模式
         await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
     }

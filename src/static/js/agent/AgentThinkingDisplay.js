@@ -567,7 +567,10 @@ export class AgentThinkingDisplay {
      * 🎯 添加执行步骤
      */
     addStep(step) {
-        if (!this.currentSession) return;
+        if (!this.currentSession) {
+            console.warn('没有活跃的Agent会话，忽略步骤:', step);
+            return;
+        }
 
         // 确保有步骤数组
         if (!this.currentSession.steps) {
@@ -576,18 +579,18 @@ export class AgentThinkingDisplay {
 
         const newStep = {
             ...step,
-            timestamp: Date.now(),
+            id: `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // 添加唯一ID
+            timestamp: step.timestamp || Date.now(), // 允许传入时间戳
             completed: false,
             current: true
         };
 
-        this.currentSession.steps.push(newStep);
-
-        // 更新之前的当前步骤
-        this.currentSession.steps.forEach((s, index) => {
-            s.current = index === this.currentSession.steps.length - 1;
+        // 更新之前的当前步骤状态
+        this.currentSession.steps.forEach(s => {
+            s.current = false;
         });
 
+        this.currentSession.steps.push(newStep);
         this.renderPlanSteps(this.currentSession.steps);
         
         // 记录思考过程
@@ -602,7 +605,10 @@ export class AgentThinkingDisplay {
      * 🎯 完成步骤
      */
     completeStep(stepIndex, result) {
-        if (!this.currentSession || !this.currentSession.steps[stepIndex]) return;
+        if (!this.currentSession || !this.currentSession.steps[stepIndex]) {
+            console.warn('步骤不存在:', stepIndex);
+            return;
+        }
 
         const step = this.currentSession.steps[stepIndex];
         step.completed = true;
@@ -729,7 +735,16 @@ export class AgentThinkingDisplay {
     }
 
     setupEventListeners() {
-        // 监听Agent事件
+        // 🎯 只监听Agent模式的事件，忽略标准工具模式
+        
+        window.addEventListener('agent:session_started', (event) => {
+            console.log('🤖 Agent会话开始:', event.detail);
+            this.startSession(
+                event.detail.data?.userMessage || 'Agent任务',
+                event.detail.data?.maxIterations || 8
+            );
+        });
+
         window.addEventListener('agent:thinking', (event) => {
             this.updateThinking(event.detail.content, event.detail.type);
         });
@@ -739,12 +754,16 @@ export class AgentThinkingDisplay {
         });
 
         window.addEventListener('agent:step_completed', (event) => {
-            this.completeStep(event.detail.index, event.detail.result);
+            // 🎯 简化：自动完成最后一个步骤
+            const lastStepIndex = this.currentSession?.steps?.length - 1 || 0;
+            if (lastStepIndex >= 0) {
+                this.completeStep(lastStepIndex, event.detail.result);
+            }
         });
 
         window.addEventListener('agent:iteration_update', (event) => {
             this.updateIteration(
-                event.detail.iteration, 
+                event.detail.iteration,
                 event.detail.total,
                 event.detail.thinking
             );
@@ -758,6 +777,9 @@ export class AgentThinkingDisplay {
             this.updateThinking(`❌ Agent执行出错: ${event.detail.error}`, 'error');
             this.updateStatus('error');
         });
+        
+        // 🚫 明确不监听标准工具模式的事件
+        console.log('🎯 AgentThinkingDisplay 只监听Agent模式事件');
     }
 
     show() {
