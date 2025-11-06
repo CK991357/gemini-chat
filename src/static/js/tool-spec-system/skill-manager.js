@@ -397,20 +397,3 @@ skillManagerPromise.then(instance => {
 
 // 导出函数以便外部模块可以获取基础技能管理器
 export { EnhancedSkillManager, getBaseSkillManager };
-
-// 🎯 确保在 main.js 的 DOMContentLoaded 中初始化技能系统
-document.addEventListener('DOMContentLoaded', () => {
-  // 🎯 独立初始化技能系统（不依赖 Orchestrator）
-  getBaseSkillManager().then(manager => {
-    window.skillManager = manager;
-    console.log('✅ 技能系统独立初始化完成');
-  }).catch(error => {
-    console.error('❌ 技能系统初始化失败:', error);
-    // 降级处理
-    window.skillManager = {
-      findRelevantSkills: () => [],
-      waitUntilReady: () => Promise.resolve(false),
-      getSystemStatus: () => ({ initialized: false, skillCount: 0, tools: [] })
-    };
-  });
-});

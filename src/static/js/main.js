@@ -25,17 +25,17 @@ import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入�
 // 🎯 获取基础技能管理器的函数
 // 这个函数应该在技能系统初始化后调用
 window.getBaseSkillManager = function() {
-  // 🎯 如果全局有技能管理器，直接返回
-  if (window.skillManager) {
-    return Promise.resolve(window.skillManager);
+  // 🎯 关键修复：返回 skill-manager.js 中导出的 Promise，确保单例
+  const { skillManagerPromise } = window.skillManagerModule || {};
+  if (skillManagerPromise) {
+    return skillManagerPromise;
   }
   
-  // 🎯 否则返回一个简单的技能管理器
+  // 降级方案：返回一个简单的技能管理器
   return Promise.resolve({
     findRelevantSkills: (userQuery, context = {}) => {
-      // 简化的匹配逻辑 - 在实际应用中应该替换为真实的技能匹配
-      console.log(`[BaseSkillManager] 查询: ${userQuery}`);
-      return []; // 返回空数组，让增强管理器使用备用方案
+      console.log(`[BaseSkillManager] 降级查询: ${userQuery}`);
+      return [];
     }
   });
 };
@@ -1145,13 +1145,13 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                         if (finalResult.skipped) {
                             // 工作流被跳过，回退到标准聊天
                             handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
-                                .then(() => agentThinkingDisplay.endSession(sessionId, 'success'))
+                                .then(() => agentThinkingDisplay.completeSession(sessionId, 'success'))
                                 .finally(resolve);
                         } else {
                             // 显示最终结果
                             chatUI.addMessage({ role: 'assistant', content: finalResult.content });
                             console.log('工作流执行详情:', finalResult);
-                            agentThinkingDisplay.endSession(sessionId, 'success');
+                            agentThinkingDisplay.completeSession(sessionId, 'success');
                             resolve();
                         }
                     };
@@ -1168,18 +1168,18 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     console.log(`Agent执行完成，${agentResult.iterations}次迭代，详细过程已在聊天区显示`);
                 }
                 console.log('Agent执行详情:', agentResult);
-                agentThinkingDisplay.endSession(sessionId, 'success');
+                agentThinkingDisplay.completeSession(sessionId, 'success');
             } else {
                 // 其他增强结果
                 chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 console.log('增强结果详情:', agentResult);
-                agentThinkingDisplay.endSession(sessionId, 'success');
+                agentThinkingDisplay.completeSession(sessionId, 'success');
             }
         } else {
             // 标准回退处理
             console.log("💬 未触发增强模式，使用标准对话");
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-            agentThinkingDisplay.endSession(sessionId, 'success');
+            agentThinkingDisplay.completeSession(sessionId, 'success');
         }
         
     } catch (error) {
