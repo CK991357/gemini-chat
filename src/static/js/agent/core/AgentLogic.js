@@ -93,7 +93,7 @@ export class AgentLogic {
 
         const toolNames = Object.keys(this.tools).join(', ');
 
-        let prompt = `你是一个智能助手，需要通过多步推理和工具调用来解决复杂问题。
+        let prompt = `你是一个智能助手，需要通过多步推理和工具调用来解决复杂问题，当处理"网页抓取任务必须优先使用 crawl4ai 工具，它提供更强大的网页抓取和内容提取能力。只有在 crawl4ai 明确失败时才考虑firecrawl作为替代方案。
 
 原始问题: ${userMessage}
 
