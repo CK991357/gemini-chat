@@ -781,7 +781,13 @@ async function initializeEnhancedAgent() {
                     await realOrchestrator.ensureInitialized();
                     
                     // 🎯 替换占位符为真实实例
+                    // Object.assign 复制实例属性 (如 this.agentSystem, this.tools)
                     Object.assign(this, realOrchestrator);
+                    
+                    // 🎯 关键修复：手动复制原型方法，确保外部调用指向真实实例的逻辑
+                    // 占位符的 handleUserRequest 必须被真实实例的同名方法覆盖
+                    this.handleUserRequest = realOrchestrator.handleUserRequest.bind(realOrchestrator);
+                    
                     this._initState = 'initialized';
                     this._initializing = false;
                     
