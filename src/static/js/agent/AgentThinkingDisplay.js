@@ -8,6 +8,13 @@ export class AgentThinkingDisplay {
         this.stylesInjected = false; // 标记样式是否已注入
         this.timeUpdateInterval = null;
         
+        // 🎯 拖动状态和绑定函数
+        this.isDragging = false;
+        this.dragOffsetX = 0;
+        this.dragOffsetY = 0;
+        this.onMouseMoveBound = this.onMouseMove.bind(this);
+        this.onMouseUpBound = this.onMouseUp.bind(this);
+
         this.setupEventListeners();
         this.injectStyles(); // 预注入样式，但确保默认隐藏
     }
@@ -375,6 +382,8 @@ export class AgentThinkingDisplay {
 
         this.renderSession();
         this.show();
+        // 🎯 默认最小化
+        this.container.classList.add('minimized');
         
         return sessionId;
     }
@@ -732,6 +741,67 @@ export class AgentThinkingDisplay {
         this.container.querySelector('.btn-close')?.addEventListener('click', () => {
             this.hide();
         });
+        
+        // 🎯 拖动功能实现
+        const header = this.container.querySelector('.session-header');
+        if (header) {
+            header.addEventListener('mousedown', this.onMouseDown.bind(this));
+        }
+    }
+    /**
+     * 🎯 鼠标按下事件 (开始拖动)
+     */
+    onMouseDown(e) {
+        if (e.button !== 0) return; // 只响应左键
+
+        this.isDragging = true;
+        
+        // 计算鼠标在面板内的偏移量
+        const rect = this.container.getBoundingClientRect();
+        this.dragOffsetX = e.clientX - rect.left;
+        this.dragOffsetY = e.clientY - rect.top;
+
+        // 确保面板使用绝对定位
+        this.container.style.position = 'fixed';
+        
+        // 绑定全局事件，确保鼠标移出面板区域也能继续拖动
+        document.addEventListener('mousemove', this.onMouseMoveBound);
+        document.addEventListener('mouseup', this.onMouseUpBound);
+        
+        e.preventDefault(); // 阻止默认的文本选择等行为
+    }
+
+    /**
+     * 🎯 鼠标移动事件 (拖动中)
+     */
+    onMouseMove(e) {
+        if (!this.isDragging) return;
+
+        // 计算新的位置
+        let newLeft = e.clientX - this.dragOffsetX;
+        let newTop = e.clientY - this.dragOffsetY;
+
+        // 限制拖动范围，防止拖出屏幕
+        const maxX = window.innerWidth - this.container.offsetWidth;
+        const maxY = window.innerHeight - this.container.offsetHeight;
+
+        newLeft = Math.max(0, Math.min(newLeft, maxX));
+        newTop = Math.max(0, Math.min(newTop, maxY));
+
+        this.container.style.left = `${newLeft}px`;
+        this.container.style.top = `${newTop}px`;
+        this.container.style.right = 'auto'; // 拖动后取消 right 属性
+    }
+
+    /**
+     * 🎯 鼠标抬起事件 (结束拖动)
+     */
+    onMouseUp() {
+        if (!this.isDragging) return;
+
+        this.isDragging = false;
+        document.removeEventListener('mousemove', this.onMouseMoveBound);
+        document.removeEventListener('mouseup', this.onMouseUpBound);
     }
 
     setupEventListeners() {
