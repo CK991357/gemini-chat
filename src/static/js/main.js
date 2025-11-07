@@ -19,9 +19,6 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
 
-// 🚀 新增导入：智能代理系统
-import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
-
 // 🎯 获取基础技能管理器的函数
 // 这个函数应该在技能系统初始化后调用
 window.getBaseSkillManager = function() {
@@ -653,9 +650,6 @@ document.addEventListener('DOMContentLoaded', () => {
    
    // 🎯 添加调试状态检查
    setTimeout(debugAgentSystem, 2000);
-   
-   // 确保工作流样式加载
-   loadWorkflowStyles();
 });
 
 // State variables
@@ -897,52 +891,6 @@ function ensureBasicAgentFunctionality() {
 }
 
 /**
- * 🚀 加载工作流样式
- */
-function loadWorkflowStyles() {
-  if (!document.querySelector('link[href*="workflow-ui.css"]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'css/workflow-ui.css';
-    document.head.appendChild(link);
-    
-    // 添加加载错误处理
-    link.onerror = () => {
-      console.warn('工作流样式加载失败，使用备用样式');
-      injectFallbackStyles();
-    };
-  }
-}
-
-/**
- * 🚀 备用样式注入
- */
-function injectFallbackStyles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    .workflow-container { 
-      display: none; 
-      margin: 20px 0; 
-      padding: 16px; 
-      background: #f8f9fa; 
-      border-radius: 8px; 
-      border: 1px solid #ddd; 
-    }
-    .workflow-step { 
-      margin: 8px 0; 
-      padding: 12px; 
-      background: white; 
-      border-radius: 6px; 
-    }
-    .workflow-step-running { background: #f0f8ff; }
-    .workflow-step-success { background: #f0fff0; }
-    .workflow-step-failed { background: #fff0f0; }
-  `;
-  document.head.appendChild(style);
-}
-
-
-/**
  * 辅助函数：获取当前模型可用的工具名称列表
  * [已修复] 将 modelConfig.tools 作为数组使用，而不是函数
  */
@@ -1174,32 +1122,7 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
         
         // 🎯 处理结果
         if (agentResult.enhanced) {
-            if (agentResult.type === 'workflow_pending') {
-                // 显示工作流UI
-                showWorkflowUI(agentResult.workflow);
-                console.log("🎯 工作流等待执行");
-                
-                return new Promise((resolve) => {
-                    const handleWorkflowResult = (event) => {
-                        const finalResult = event.detail;
-                        window.removeEventListener('workflow:result', handleWorkflowResult);
-                        
-                        if (finalResult.skipped) {
-                            // 工作流被跳过，回退到标准聊天
-                            handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
-                                .then(() => agentThinkingDisplay.completeSession('success'))
-                                .finally(resolve);
-                        } else {
-                            // 显示最终结果
-                            chatUI.addMessage({ role: 'assistant', content: finalResult.content });
-                            console.log('工作流执行详情:', finalResult);
-                            agentThinkingDisplay.completeSession('success');
-                            resolve();
-                        }
-                    };
-                    window.addEventListener('workflow:result', handleWorkflowResult);
-                });
-            } else if (agentResult.type === 'agent_result') {
+            if (agentResult.type === 'agent_result') {
                 // Agent模式下不重复显示完整内容
                 if (agentResult.fallback) {
                     // 降级情况：显示降级结果
