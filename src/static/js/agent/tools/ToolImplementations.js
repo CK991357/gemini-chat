@@ -1,655 +1,735 @@
 // src/static/js/agent/tools/ToolImplementations.js
-
-import { BaseTool } from './BaseTool.js';
+import { Logger } from '../../utils/logger.js';
 
 /**
- * 🎯 统一工具参数适配器 - 支持模式分离
+ * 🎯 深度研究专用工具实现
+ * 只保留三个核心工具：tavily_search, crawl4ai, python_sandbox
+ * 其他工具在标准模式中仍然可用，但深度研究Agent只使用这三个
  */
-class UnifiedToolAdapter {
-    /**
-     * Agent模式专用参数适配
-     */
-    static normalizeParametersForAgent(toolName, rawParameters) {
-        console.log(`[ToolAdapter] Agent模式参数适配: ${toolName}`);
-        
-        if (!rawParameters) return {};
-        
-        const parameters = { ...rawParameters };
-        
-        // 🎯 Agent模式使用更激进的参数包装策略
-        switch (toolName) {
-            case 'firecrawl':
-            case 'crawl4ai':
-                // Agent模式下强制包装嵌套结构
-                if (parameters.url) {
-                    return {
-                        mode: parameters.mode || 'scrape',
-                        parameters: {
-                            url: parameters.url,
-                            format: 'markdown', // Agent模式默认使用markdown
-                            word_count_threshold: 30, // 更宽松的内容阈值
-                            exclude_external_links: false, // 允许外部链接获取更多上下文
-                            ...parameters // 保留其他参数
-                        }
-                    };
-                }
-                break;
-                
-            case 'tavily_search':
-                // Agent模式下获取更多结果
-                return {
-                    query: parameters.query,
-                    max_results: 10, // 更多结果供Agent分析
-                    include_raw_content: true, // 包含原始内容
-                    search_depth: 'advanced' // 更深入的搜索
-                };
-                
-            case 'python_sandbox':
-                // Agent模式下优化代码执行参数
-                if (parameters.parameters && parameters.parameters.code) {
-                    return parameters.parameters;
-                }
-                // 为Agent提供更好的默认代码模板
-                if (parameters.code) {
-                    return {
-                        code: parameters.code,
-                        timeout: 60 // Agent模式允许更长的执行时间
-                    };
-                }
-                break;
-                
-            case 'stockfish_analyzer':
-                // Agent模式下使用更深入的分析
-                if (parameters.fen && parameters.mode) {
-                    return {
-                        fen: parameters.fen,
-                        mode: parameters.mode,
-                        depth: parameters.depth || 20, // 更深的分析
-                        movetime: parameters.movetime || 5000 // 更长的思考时间
-                    };
-                }
-                break;
-                
-            case 'glm4v_analyze_image':
-                // Agent模式下提供更详细的提示词
-                if (parameters.image_url && parameters.prompt) {
-                    return {
-                        model: parameters.model || 'glm-4v',
-                        image_url: parameters.image_url,
-                        prompt: `请详细分析这张图片，提供全面的描述和洞察：${parameters.prompt}`,
-                        max_tokens: 2000 // 更长的响应
-                    };
-                }
-                break;
-                
-            default:
-                // 其他工具保持Agent优化
-                break;
-        }
-        
-        return parameters;
+
+export class ToolImplementations {
+    constructor(chatApiHandler) {
+        this.chatApiHandler = chatApiHandler;
+        this.tools = {};
+        this.initializeTools();
     }
-    
-    /**
-     * 标准模式参数适配（最小化处理）
-     */
-    static normalizeParametersForStandard(toolName, rawParameters) {
-        console.log(`[ToolAdapter] 标准模式参数适配: ${toolName}`);
+
+    initializeTools() {
+        console.log('🎯 初始化深度研究专用工具...');
         
-        if (!rawParameters) return {};
-        
-        const parameters = { ...rawParameters };
-        
-        // 🎯 标准模式只做最基本的参数修复
-        switch (toolName) {
-            case 'firecrawl':
-            case 'crawl4ai':
-                // 标准模式：只在明显需要时包装参数
-                if (parameters.url && !parameters.parameters && !parameters.mode) {
-                    return {
-                        mode: 'scrape',
-                        parameters: {
-                            url: parameters.url
-                        }
-                    };
-                }
-                break;
-                
-            case 'tavily_search':
-                // 标准模式：修复明显错误的查询参数
-                if (parameters.query && typeof parameters.query === 'object') {
-                    return {
-                        query: parameters.query.query || JSON.stringify(parameters.query)
-                    };
-                }
-                break;
-                
-            default:
-                // 其他工具保持原样
-                break;
-        }
-        
-        return parameters;
+        // 🎯 只初始化三个研究核心工具
+        this.tools = {
+            tavily_search: this._createTavilySearchTool(),
+            crawl4ai: this._createCrawl4AITool(),
+            python_sandbox: this._createPythonSandboxTool()
+        };
+
+        console.log('✅ 深度研究工具初始化完成:', Object.keys(this.tools));
     }
-    
+
     /**
-     * Agent模式专用响应处理
+     * 🎯 Tavily 搜索工具 - 深度研究优化版
      */
-    static normalizeResponseForAgent(toolName, rawResponse) {
-        console.log(`[ToolAdapter] Agent模式响应处理: ${toolName}`);
-        
-        if (!rawResponse) {
-            return {
-                success: false,
-                output: '工具返回空响应',
-                isError: true
-            };
-        }
-        
-        // 🎯 Agent模式需要更结构化的响应数据
-        let success = rawResponse.success !== false;
-        let output = '';
-        let data = rawResponse.data || rawResponse.result || rawResponse;
-        
-        // 🎯 Agent模式专用响应处理
-        switch (toolName) {
-            case 'tavily_search':
-                if (data && Array.isArray(data)) {
-                    // Agent模式：更详细的搜索结果格式化
-                    output = `🔍 搜索到 ${data.length} 个相关结果：\n\n` + 
-                        data.map((item, index) => 
-                            `${index + 1}. **${item.title || '无标题'}**\n` +
-                            `   📍 来源: ${item.url || '未知'}\n` +
-                            `   📝 ${item.content?.substring(0, 200)}...`
-                        ).join('\n\n');
-                    success = true;
-                } else if (data && typeof data === 'object') {
-                    output = JSON.stringify(data, null, 2);
-                    success = true;
-                } else if (rawResponse.answer) {
-                    output = `🤖 **智能答案**: ${rawResponse.answer}\n\n` +
-                            `📚 **相关搜索结果**:\n${JSON.stringify(data, null, 2)}`;
-                    success = true;
-                }
-                break;
-                
-            case 'firecrawl':
-            case 'crawl4ai':
-                if (data && data.content) {
-                    output = `📄 **网页内容提取结果**\n\n` +
-                            `**标题**: ${data.title || '无标题'}\n\n` +
-                            `**内容**:\n${data.content}`;
-                    success = true;
-                } else if (data && data.markdown) {
-                    output = data.markdown;
-                    success = true;
-                } else if (data && data.data) {
-                    output = typeof data.data === 'string' ? data.data : JSON.stringify(data.data, null, 2);
-                    success = true;
-                } else if (data && typeof data === 'object') {
-                    output = `📊 **结构化数据**:\n${JSON.stringify(data, null, 2)}`;
-                    success = true;
-                }
-                break;
-                
-            case 'python_sandbox':
-                if (data && data.stdout) {
-                    output = `🐍 **代码执行结果**\n\n${data.stdout}`;
-                    success = true;
-                } else if (data && data.result) {
-                    output = `📋 **执行结果**: ${data.result}`;
-                    success = true;
-                } else if (data && data.output) {
-                    output = data.output;
-                    success = true;
-                } else if (data && typeof data === 'string') {
-                    output = data;
-                    success = true;
-                }
-                break;
-                
-            case 'stockfish_analyzer':
-                if (data && data.best_move) {
-                    output = `♟️ **棋局分析结果**\n\n` +
-                            `🏆 **最佳着法**: ${data.best_move}\n` +
-                            `📊 **评估分数**: ${data.score || 'N/A'}\n` +
-                            `⏱️ **思考深度**: ${data.depth || 'N/A'}`;
-                    success = true;
-                } else if (data && data.top_moves) {
-                    output = `🏆 **顶级着法分析**:\n\n` +
-                            data.top_moves.map((move, index) => 
-                                `${index + 1}. ${move.move} (评分: ${move.score})`
-                            ).join('\n');
-                    success = true;
-                } else if (data && data.evaluation) {
-                    output = `📈 **局面评估**: ${data.evaluation}`;
-                    success = true;
-                } else if (data && typeof data === 'object') {
-                    output = JSON.stringify(data, null, 2);
-                    success = true;
-                }
-                break;
-                
-            case 'glm4v_analyze_image':
-                if (data && data.choices && data.choices[0] && data.choices[0].message) {
-                    output = `🖼️ **图像分析结果**\n\n${data.choices[0].message.content}`;
-                    success = true;
-                } else if (data && data.content) {
-                    output = data.content;
-                    success = true;
-                } else if (data && typeof data === 'object') {
-                    output = JSON.stringify(data, null, 2);
-                    success = true;
-                }
-                break;
-                
-            case 'mcp_tool_catalog':
-                if (data && Array.isArray(data)) {
-                    output = `🛠️ **可用工具目录** (共 ${data.length} 个工具)\n\n` +
-                            data.map(tool => 
-                                `• **${tool.function?.name || '未知工具'}**: ${tool.function?.description || '无描述'}`
-                            ).join('\n');
-                    success = true;
-                } else if (data && typeof data === 'object') {
-                    output = JSON.stringify(data, null, 2);
-                    success = true;
-                }
-                break;
-                
-            default:
-                // 🎯 Agent模式通用响应处理
-                if (typeof data === 'string') {
-                    output = data;
-                } else if (data && typeof data === 'object') {
-                    output = JSON.stringify(data, null, 2);
-                } else {
-                    output = String(data);
-                }
-                break;
-        }
-        
-        // 🎯 错误处理
-        if (rawResponse.error) {
-            success = false;
-            output = `❌ **工具执行错误**: ${rawResponse.error}`;
-        }
-        
-        // 🎯 确保有输出
-        if (success && !output) {
-            output = `✅ ${toolName} 执行成功`;
-        }
-        
-        // 🎯 为Agent添加结构化元数据
+    _createTavilySearchTool() {
         return {
-            success,
-            output: output || '工具执行完成',
-            rawResponse,
-            isError: !success,
-            agentMetadata: {
-                tool: toolName,
-                timestamp: Date.now(),
-                structuredData: this._extractStructuredData(toolName, rawResponse),
-                suggestions: this._generateAgentSuggestions(toolName, output)
+            name: 'tavily_search',
+            description: '专业的网络搜索工具，用于获取最新、最相关的信息。支持深度搜索和结果过滤。',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description: '搜索查询，应包含具体的关键词和上下文'
+                    },
+                    max_results: {
+                        type: 'number',
+                        description: '返回的最大结果数量 (默认: 10，最大: 20)',
+                        default: 10
+                    },
+                    include_raw_content: {
+                        type: 'boolean',
+                        description: '是否包含原始内容（用于深度分析）',
+                        default: true
+                    },
+                    search_depth: {
+                        type: 'string',
+                        description: '搜索深度: basic | advanced',
+                        enum: ['basic', 'advanced'],
+                        default: 'advanced'
+                    }
+                },
+                required: ['query']
+            },
+            invoke: async (params) => {
+                try {
+                    const {
+                        query,
+                        max_results = 10,
+                        include_raw_content = true,
+                        search_depth = 'advanced'
+                    } = params;
+
+                    Logger.info(`[Tavily] 执行搜索: "${query}"`, params);
+
+                    // 🎯 参数验证和优化
+                    if (!query || query.trim().length === 0) {
+                        throw new Error('搜索查询不能为空');
+                    }
+
+                    if (max_results > 20) {
+                        Logger.warn(`[Tavily] 最大结果数 ${max_results} 超过限制，使用 20`);
+                        max_results = 20;
+                    }
+
+                    // 🎯 优化搜索查询
+                    const optimizedQuery = this._optimizeSearchQuery(query);
+                    
+                    const searchParams = {
+                        query: optimizedQuery,
+                        max_results: Math.min(max_results, 20),
+                        include_raw_content,
+                        search_depth
+                    };
+
+                    Logger.info(`[Tavily] 优化后搜索参数:`, searchParams);
+
+                    // 🎯 通过统一的工具调用接口
+                    const result = await this.chatApiHandler.callTool('tavily_search', searchParams);
+
+                    if (!result.success) {
+                        throw new Error(result.output || '搜索执行失败');
+                    }
+
+                    // 🎯 结果后处理
+                    const processedResults = this._processSearchResults(result.rawResult || result.output);
+                    
+                    Logger.info(`[Tavily] 搜索完成，获得 ${processedResults.results?.length || 0} 个结果`);
+                    
+                    return {
+                        success: true,
+                        query: optimizedQuery,
+                        ...processedResults
+                    };
+
+                } catch (error) {
+                    Logger.error('[Tavily] 搜索失败:', error);
+                    return {
+                        success: false,
+                        error: error.message,
+                        query: params.query
+                    };
+                }
             }
         };
     }
-    
+
     /**
-     * 标准模式响应处理（最小化处理）
+     * 🎯 爬虫工具 - 深度研究优化版
      */
-    static normalizeResponseForStandard(toolName, rawResponse) {
-        console.log(`[ToolAdapter] 标准模式响应处理: ${toolName}`);
-        
-        if (!rawResponse) {
-            return {
-                success: false,
-                output: '工具返回空响应'
-            };
-        }
-        
-        // 🎯 标准模式：保持最简响应格式
-        let success = rawResponse.success !== false;
-        let output = '';
-        
-        if (rawResponse.output !== undefined && rawResponse.output !== null) {
-            output = rawResponse.output;
-        } else if (rawResponse.data !== undefined && rawResponse.data !== null) {
-            output = typeof rawResponse.data === 'string' ? rawResponse.data : JSON.stringify(rawResponse.data);
-        } else if (rawResponse !== null && rawResponse !== undefined) {
-            output = String(rawResponse);
-        }
-        
-        // 错误处理
-        if (rawResponse.error) {
-            success = false;
-            output = rawResponse.error;
-        }
-        
-        // 确保有输出
-        if (success && !output) {
-            output = `${toolName} 执行成功`;
-        }
-        
+    _createCrawl4AITool() {
         return {
-            success,
-            output: output || '工具执行完成',
-            rawResponse
+            name: 'crawl4ai',
+            description: '智能网页爬取工具，可以提取网页的主要内容、文章、代码等。支持动态内容加载。',
+            parameters: {
+                type: 'object',
+                properties: {
+                    url: {
+                        type: 'string',
+                        description: '要爬取的网页URL'
+                    },
+                    extraction_strategy: {
+                        type: 'string',
+                        description: '内容提取策略',
+                        enum: ['markdown', 'readable', 'raw'],
+                        default: 'markdown'
+                    },
+                    include_links: {
+                        type: 'boolean',
+                        description: '是否包含链接',
+                        default: true
+                    },
+                    word_count_threshold: {
+                        type: 'number',
+                        description: '内容长度阈值，超过此值将进行智能压缩',
+                        default: 3000
+                    }
+                },
+                required: ['url']
+            },
+            invoke: async (params) => {
+                try {
+                    const {
+                        url,
+                        extraction_strategy = 'markdown',
+                        include_links = true,
+                        word_count_threshold = 3000
+                    } = params;
+
+                    Logger.info(`[Crawl4AI] 开始爬取: ${url}`);
+
+                    // 🎯 URL验证和清理
+                    const cleanedUrl = this._cleanUrl(url);
+                    if (!cleanedUrl) {
+                        throw new Error('无效的URL');
+                    }
+
+                    const crawlParams = {
+                        url: cleanedUrl,
+                        extraction_strategy,
+                        include_links,
+                        word_count_threshold
+                    };
+
+                    const result = await this.chatApiHandler.callTool('crawl4ai', crawlParams);
+
+                    if (!result.success) {
+                        throw new Error(result.output || '爬取失败');
+                    }
+
+                    // 🎯 内容后处理
+                    const processedContent = this._processCrawledContent(
+                        result.rawResult || result.output, 
+                        word_count_threshold
+                    );
+
+                    Logger.info(`[Crawl4AI] 爬取完成，内容长度: ${processedContent.content_length} 字符`);
+
+                    return {
+                        success: true,
+                        url: cleanedUrl,
+                        ...processedContent
+                    };
+
+                } catch (error) {
+                    Logger.error('[Crawl4AI] 爬取失败:', error);
+                    return {
+                        success: false,
+                        error: error.message,
+                        url: params.url
+                    };
+                }
+            }
         };
     }
-    
-    /**
-     * 🎯 为Agent生成执行建议
-     */
-    static _generateAgentSuggestions(toolName, result) {
-        if (!result) return [];
-        
-        const suggestions = [];
-        
-        switch (toolName) {
-            case 'crawl4ai':
-            case 'firecrawl':
-                if (result && result.length > 1000) {
-                    suggestions.push('内容较长，建议进行总结提取关键信息');
-                }
-                if (result.includes('错误') || result.includes('error') || result.includes('失败')) {
-                    suggestions.push('检测到可能的错误信息，建议检查URL或尝试其他网站');
-                }
-                break;
-                
-            case 'tavily_search':
-                suggestions.push('请分析搜索结果并提取最相关的信息');
-                if (result && result.includes('个相关结果') && parseInt(result.match(/\d+/)?.[0]) > 5) {
-                    suggestions.push('搜索结果较多，建议筛选最相关的前几个结果');
-                }
-                break;
-                
-            case 'python_sandbox':
-                if (result.includes('error') || result.includes('Error') || result.includes('异常')) {
-                    suggestions.push('代码执行出现错误，请检查代码逻辑或输入参数');
-                }
-                if (result.includes('警告') || result.includes('warning')) {
-                    suggestions.push('代码执行有警告信息，建议优化代码');
-                }
-                break;
-                
-            case 'stockfish_analyzer':
-                suggestions.push('请根据分析结果给出棋局建议或下一步策略');
-                break;
-                
-            case 'glm4v_analyze_image':
-                suggestions.push('请根据图像分析结果提供详细的描述和洞察');
-                break;
-        }
-        
-        return suggestions;
-    }
-    
-    /**
-     * 🎯 提取结构化数据供Agent使用
-     */
-    static _extractStructuredData(toolName, rawResponse) {
-        // 根据工具类型提取结构化数据
-        switch (toolName) {
-            case 'tavily_search':
-                if (rawResponse.data && Array.isArray(rawResponse.data)) {
-                    return {
-                        resultCount: rawResponse.data.length,
-                        titles: rawResponse.data.map(item => item.title).filter(Boolean),
-                        sources: rawResponse.data.map(item => item.url).filter(Boolean),
-                        hasAnswer: !!rawResponse.answer
-                    };
-                }
-                break;
-                
-            case 'crawl4ai':
-            case 'firecrawl':
-                if (rawResponse.data) {
-                    return {
-                        hasContent: !!rawResponse.data.content,
-                        contentLength: rawResponse.data.content?.length || 0,
-                        title: rawResponse.data.title || '无标题',
-                        hasMarkdown: !!rawResponse.data.markdown
-                    };
-                }
-                break;
-                
-            case 'python_sandbox':
-                return {
-                    hasOutput: !!(rawResponse.stdout || rawResponse.result),
-                    hasError: !!rawResponse.stderr,
-                    outputLength: (rawResponse.stdout || '').length
-                };
-                
-            case 'stockfish_analyzer':
-                if (rawResponse.data) {
-                    return {
-                        bestMove: rawResponse.data.best_move,
-                        evaluation: rawResponse.data.evaluation,
-                        hasTopMoves: !!(rawResponse.data.top_moves && rawResponse.data.top_moves.length > 0)
-                    };
-                }
-                break;
-        }
-        
-        return null;
-    }
-}
 
-/**
- * @class ProxiedTool
- * @description 通用代理工具实现，支持普通模式和Agent模式完全分离
- */
-class ProxiedTool extends BaseTool {
     /**
-     * 🎯 智能超时策略：根据工具类型和模式设置合理的超时时间
+     * 🎯 Python沙盒工具 - 深度研究优化版
      */
-    _getToolTimeout(toolName, isAgentMode = false) {
-        const baseTimeouts = {
-            'python_sandbox': 60000,    // 代码执行需要更长时间
-            'tavily_search': 20000,     // 搜索应该较快
-            'firecrawl': 45000,         // 网页抓取中等
-            'crawl4ai': 45000,          // 深度爬取需要时间
-            'stockfish_analyzer': 30000, // 棋局分析中等
-            'glm4v_analyze_image': 25000, // 图像分析中等
-            'mcp_tool_catalog': 10000,  // 工具目录查询应该很快
-            'default': 30000            // 默认30秒
+    _createPythonSandboxTool() {
+        return {
+            name: 'python_sandbox',
+            description: '安全的Python代码执行环境，用于数据分析、计算、图表生成等研究任务。',
+            parameters: {
+                type: 'object',
+                properties: {
+                    code: {
+                        type: 'string',
+                        description: '要执行的Python代码'
+                    },
+                    timeout: {
+                        type: 'number',
+                        description: '执行超时时间（秒）',
+                        default: 30
+                    },
+                    libraries: {
+                        type: 'array',
+                        description: '需要导入的库',
+                        items: {
+                            type: 'string'
+                        },
+                        default: ['pandas', 'numpy', 'matplotlib', 'seaborn']
+                    }
+                },
+                required: ['code']
+            },
+            invoke: async (params) => {
+                try {
+                    const {
+                        code,
+                        timeout = 30,
+                        libraries = ['pandas', 'numpy', 'matplotlib', 'seaborn']
+                    } = params;
+
+                    Logger.info(`[PythonSandbox] 执行代码，长度: ${code.length} 字符`);
+
+                    // 🎯 代码安全检查
+                    const safeCode = this._validatePythonCode(code);
+                    if (!safeCode.isSafe) {
+                        throw new Error(`代码安全检查失败: ${safeCode.reason}`);
+                    }
+
+                    const pythonParams = {
+                        code: safeCode.code,
+                        timeout: Math.min(timeout, 60), // 最大60秒
+                        libraries: this._filterAllowedLibraries(libraries)
+                    };
+
+                    const result = await this.chatApiHandler.callTool('python_sandbox', pythonParams);
+
+                    if (!result.success) {
+                        throw new Error(result.output || '代码执行失败');
+                    }
+
+                    // 🎯 执行结果处理
+                    const processedResult = this._processPythonResult(result.rawResult || result.output);
+
+                    Logger.info(`[PythonSandbox] 代码执行完成`);
+
+                    return {
+                        success: true,
+                        execution_time: processedResult.execution_time,
+                        ...processedResult
+                    };
+
+                } catch (error) {
+                    Logger.error('[PythonSandbox] 执行失败:', error);
+                    return {
+                        success: false,
+                        error: error.message,
+                        code_preview: params.code.substring(0, 100) + '...'
+                    };
+                }
+            }
         };
-        
-        const baseTimeout = baseTimeouts[toolName] || baseTimeouts.default;
-        
-        // 🎯 Agent模式允许更长的超时时间
-        if (isAgentMode) {
-            return Math.min(baseTimeout * 1.5, 120000); // 最多2分钟
-        }
-        
-        return baseTimeout;
     }
 
-    async invoke(input, runManager) {
-        const startTime = Date.now();
+    /**
+     * 🎯 工具方法：优化搜索查询
+     */
+    _optimizeSearchQuery(originalQuery) {
+        let query = originalQuery.trim();
         
-        // 🎯 关键：识别调用模式
-        const isAgentMode = !!runManager;
-        const mode = isAgentMode ? 'agent' : 'standard';
-        const timeoutMs = this._getToolTimeout(this.name, isAgentMode);
+        // 移除多余的标点
+        query = query.replace(/[.,;!?]+$/, '');
         
-        console.log(`[ProxiedTool] ${mode.toUpperCase()}模式调用工具: ${this.name} (超时: ${timeoutMs}ms)`, this.sanitizeToolInput(input));
+        // 确保查询有足够的特异性
+        const words = query.split(/\s+/).filter(word => word.length > 1);
+        if (words.length < 2) {
+            // 如果查询太短，添加研究相关后缀
+            query += ' 研究 分析 最新';
+        }
         
+        // 限制查询长度
+        if (query.length > 200) {
+            query = query.substring(0, 200);
+            Logger.warn(`[Tavily] 查询过长，已截断: ${query}`);
+        }
+        
+        return query;
+    }
+
+    /**
+     * 🎯 工具方法：处理搜索结果
+     */
+    _processSearchResults(rawResults) {
         try {
-            let normalizedInput, rawResult, normalizedResult;
-            
-            if (isAgentMode) {
-                // 🎯 Agent模式：使用完整的参数适配和响应处理
-                normalizedInput = UnifiedToolAdapter.normalizeParametersForAgent(this.name, input);
-                console.log(`[ProxiedTool] Agent模式适配后参数:`, this.sanitizeToolInput(normalizedInput));
-                
-                // Agent模式使用竞争超时机制
-                const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error(`工具"${this.name}"调用超时 (${timeoutMs}ms)`)), timeoutMs);
-                });
-                
-                const toolPromise = this.chatApiHandler.callTool(this.name, normalizedInput);
-                rawResult = await Promise.race([toolPromise, timeoutPromise]);
-                
-                // Agent专用响应处理
-                normalizedResult = UnifiedToolAdapter.normalizeResponseForAgent(this.name, rawResult);
-                
-            } else {
-                // 🎯 普通模式：保持原有逻辑，最小化处理
-                normalizedInput = UnifiedToolAdapter.normalizeParametersForStandard(this.name, input);
-                console.log(`[ProxiedTool] 普通模式适配后参数:`, this.sanitizeToolInput(normalizedInput));
-                
-                // 普通模式使用简化的超时机制
-                rawResult = await this._callToolWithSimpleTimeout(this.name, normalizedInput, timeoutMs);
-                
-                // 普通模式保持原有响应格式
-                normalizedResult = UnifiedToolAdapter.normalizeResponseForStandard(this.name, rawResult);
+            if (!rawResults) {
+                return { results: [], total_count: 0 };
             }
+
+            let results = [];
             
-            const executionTime = Date.now() - startTime;
-            
-            console.log(`[ProxiedTool] ${mode.toUpperCase()}模式工具调用完成: ${this.name}`, {
-                success: normalizedResult.success,
-                outputLength: normalizedResult.output?.length || 0,
-                executionTime
-            });
-            
+            // 🎯 处理不同的结果格式
+            if (Array.isArray(rawResults)) {
+                results = rawResults;
+            } else if (rawResults.results && Array.isArray(rawResults.results)) {
+                results = rawResults.results;
+            } else if (rawResults.answer) {
+                // 如果是直接答案格式
+                results = [{
+                    title: '直接答案',
+                    content: rawResults.answer,
+                    url: '',
+                    score: 1.0
+                }];
+            }
+
+            // 🎯 结果去重和排序
+            const uniqueResults = this._deduplicateResults(results);
+            const sortedResults = uniqueResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+            // 🎯 内容压缩和清理
+            const processedResults = sortedResults.map((result, index) => ({
+                id: `result_${index + 1}`,
+                title: result.title || '无标题',
+                url: result.url || '',
+                content: this._compressContent(result.content || result.raw_content || '', 500),
+                full_content: result.content || result.raw_content || '',
+                score: result.score || 0.5,
+                published_date: result.published_date || null,
+                source: result.source || '未知来源'
+            }));
+
             return {
-                ...normalizedResult,
-                executionTime,
-                mode: mode // 标记调用模式
+                results: processedResults,
+                total_count: processedResults.length,
+                search_time: rawResults.search_time || Date.now()
             };
-            
+
         } catch (error) {
-            const executionTime = Date.now() - startTime;
-            console.error(`[ProxiedTool] ${mode.toUpperCase()}模式工具调用失败: ${this.name} (${executionTime}ms)`, error);
-            
-            // 🎯 区分不同类型的错误
-            let errorMessage = error.message;
-            if (error.message.includes('timeout') || error.message.includes('超时')) {
-                errorMessage = `工具"${this.name}"执行超时 (${timeoutMs}ms)`;
-            } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                errorMessage = `网络错误: 无法连接到工具"${this.name}"`;
-            } else if (error.message.includes('404') || error.message.includes('not found')) {
-                errorMessage = `工具"${this.name}"服务不可用`;
-            }
-            
+            Logger.error('[ToolImplementations] 搜索结果处理失败:', error);
             return {
-                success: false,
-                output: `工具"${this.name}"执行失败: ${errorMessage}`,
-                error: errorMessage,
-                isError: true,
-                executionTime,
-                mode: mode
+                results: [],
+                total_count: 0,
+                processing_error: error.message
             };
         }
     }
-    
+
     /**
-     * 🎯 普通模式专用：简化的工具调用
+     * 🎯 工具方法：搜索结果去重
      */
-    async _callToolWithSimpleTimeout(toolName, input, timeoutMs) {
-        return new Promise(async (resolve, reject) => {
-            const timeoutId = setTimeout(() => {
-                reject(new Error(`工具"${toolName}"调用超时 (${timeoutMs}ms)`));
-            }, timeoutMs);
+    _deduplicateResults(results) {
+        const seenUrls = new Set();
+        const seenContent = new Set();
+        const uniqueResults = [];
+
+        for (const result of results) {
+            const url = result.url || '';
+            const content = result.content || result.raw_content || '';
             
-            try {
-                const result = await this.chatApiHandler.callTool(toolName, input);
-                clearTimeout(timeoutId);
-                resolve(result);
-            } catch (error) {
-                clearTimeout(timeoutId);
-                reject(error);
+            // 🎯 基于URL和内容相似度的去重
+            const contentHash = this._generateContentHash(content.substring(0, 200));
+            
+            if (!url || (!seenUrls.has(url) && !seenContent.has(contentHash))) {
+                seenUrls.add(url);
+                seenContent.add(contentHash);
+                uniqueResults.push(result);
             }
-        });
+        }
+
+        Logger.info(`[ToolImplementations] 去重: ${results.length} -> ${uniqueResults.length}`);
+        return uniqueResults;
     }
 
     /**
-     * 🎯 清理工具输入，避免日志过大
+     * 🎯 工具方法：内容压缩
      */
-    sanitizeToolInput(input) {
-        if (!input || typeof input !== 'object') {
-            return input;
+    _compressContent(content, maxLength = 500) {
+        if (!content || content.length <= maxLength) {
+            return content || '';
         }
+
+        // 🎯 智能压缩：保留开头和关键信息
+        const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 10);
         
-        const sanitized = { ...input };
-        
-        // 清理大文本字段
-        if (sanitized.code && sanitized.code.length > 200) {
-            sanitized.code = sanitized.code.substring(0, 200) + '...';
+        if (sentences.length <= 3) {
+            return content.substring(0, maxLength) + '...';
         }
-        if (sanitized.prompt && sanitized.prompt.length > 100) {
-            sanitized.prompt = sanitized.prompt.substring(0, 100) + '...';
-        }
-        if (sanitized.query && sanitized.query.length > 100) {
-            sanitized.query = sanitized.query.substring(0, 100) + '...';
-        }
-        
-        // 清理敏感或过长的URL
-        if (sanitized.url && sanitized.url.length > 150) {
-            sanitized.url = sanitized.url.substring(0, 150) + '...';
-        }
-        if (sanitized.image_url && sanitized.image_url.length > 150) {
-            sanitized.image_url = sanitized.image_url.substring(0, 150) + '...';
-        }
-        
-        // 清理嵌套参数
-        if (sanitized.parameters && typeof sanitized.parameters === 'object') {
-            sanitized.parameters = this.sanitizeToolInput(sanitized.parameters);
-        }
-        
-        return sanitized;
+
+        // 取第一句、中间一句和最后一句
+        const compressed = [
+            sentences[0],
+            sentences[Math.floor(sentences.length / 2)],
+            sentences[sentences.length - 1]
+        ].join('. ') + '.';
+
+        return compressed.length > maxLength ? 
+            compressed.substring(0, maxLength) + '...' : compressed;
     }
-}
 
-// 🎯 为每个通过MCP代理的工具创建具体实现
-export class PythonSandboxTool extends ProxiedTool {}
-export class TavilySearchTool extends ProxiedTool {}
-export class FirecrawlTool extends ProxiedTool {}
-export class StockfishAnalyzerTool extends ProxiedTool {}
-export class Crawl4AITool extends ProxiedTool {}
-export class Glm4vAnalyzeImageTool extends ProxiedTool {}
-export class McpToolCatalogTool extends ProxiedTool {}
+    /**
+     * 🎯 工具方法：URL清理
+     */
+    _cleanUrl(url) {
+        try {
+            const cleaned = url.trim();
+            if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
+                return 'https://' + cleaned;
+            }
+            return cleaned;
+        } catch (error) {
+            Logger.error('[ToolImplementations] URL清理失败:', error);
+            return null;
+        }
+    }
 
-/**
- * 🎯 工具工厂：便于动态创建工具实例
- */
-export class ToolFactory {
-    static createTool(toolName, chatApiHandler, metadata) {
-        const toolClasses = {
-            'python_sandbox': PythonSandboxTool,
-            'tavily_search': TavilySearchTool,
-            'firecrawl': FirecrawlTool,
-            'stockfish_analyzer': StockfishAnalyzerTool,
-            'crawl4ai': Crawl4AITool,
-            'glm4v_analyze_image': Glm4vAnalyzeImageTool,
-            'mcp_tool_catalog': McpToolCatalogTool
+    /**
+     * 🎯 工具方法：处理爬取内容
+     */
+    _processCrawledContent(rawContent, wordThreshold = 3000) {
+        try {
+            let content = '';
+            let title = '';
+            let wordCount = 0;
+
+            // 🎯 处理不同的内容格式
+            if (typeof rawContent === 'string') {
+                content = rawContent;
+            } else if (rawContent.content) {
+                content = rawContent.content;
+                title = rawContent.title || '';
+            } else if (rawContent.markdown) {
+                content = rawContent.markdown;
+                title = rawContent.title || '';
+            }
+
+            // 🎯 计算字数
+            wordCount = content.split(/\s+/).length;
+
+            // 🎯 内容压缩（如果超过阈值）
+            let compressedContent = content;
+            let compression_ratio = 1.0;
+            
+            if (wordCount > wordThreshold) {
+                compressedContent = this._compressContent(content, 2000);
+                compression_ratio = compressedContent.length / content.length;
+                Logger.info(`[ToolImplementations] 内容压缩: ${wordCount} -> ${compressedContent.split(/\s+/).length} 词 (${(compression_ratio * 100).toFixed(1)}%)`);
+            }
+
+            // 🎯 提取关键信息
+            const keyPoints = this._extractKeyPoints(content, 5);
+
+            return {
+                content: compressedContent,
+                original_content_length: content.length,
+                content_length: compressedContent.length,
+                word_count: wordCount,
+                compression_ratio,
+                title: title || this._extractTitle(content),
+                key_points: keyPoints,
+                has_compressed: compression_ratio < 0.8
+            };
+
+        } catch (error) {
+            Logger.error('[ToolImplementations] 爬取内容处理失败:', error);
+            return {
+                content: '内容处理失败: ' + error.message,
+                content_length: 0,
+                word_count: 0,
+                compression_ratio: 1.0,
+                title: '处理失败',
+                key_points: [],
+                has_compressed: false
+            };
+        }
+    }
+
+    /**
+     * 🎯 工具方法：提取标题
+     */
+    _extractTitle(content) {
+        if (!content) return '无标题';
+        
+        // 尝试从内容中提取标题
+        const lines = content.split('\n').filter(line => line.trim().length > 10);
+        if (lines.length > 0) {
+            return lines[0].substring(0, 100);
+        }
+        
+        return '无标题';
+    }
+
+    /**
+     * 🎯 工具方法：提取关键点
+     */
+    _extractKeyPoints(content, maxPoints = 5) {
+        if (!content) return [];
+        
+        const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+        return sentences.slice(0, maxPoints).map(s => s.trim());
+    }
+
+    /**
+     * 🎯 工具方法：Python代码验证
+     */
+    _validatePythonCode(code) {
+        const forbiddenPatterns = [
+            /__import__/,
+            /eval\(/,
+            /exec\(/,
+            /compile\(/,
+            /open\([^)]*[wax]+/,
+            /import\s+os/,
+            /import\s+sys/,
+            /import\s+subprocess/,
+            /import\s+shutil/,
+            /import\s+socket/,
+            /\.connect\(/,
+            /requests\.(get|post|put|delete)/,
+            /urllib\.request/,
+            /input\(/
+        ];
+
+        for (const pattern of forbiddenPatterns) {
+            if (pattern.test(code)) {
+                return {
+                    isSafe: false,
+                    reason: `检测到不安全代码模式: ${pattern}`
+                };
+            }
+        }
+
+        // 🎯 代码长度限制
+        if (code.length > 5000) {
+            return {
+                isSafe: false,
+                reason: '代码过长（超过5000字符）'
+            };
+        }
+
+        return {
+            isSafe: true,
+            code: code
         };
-        
-        const ToolClass = toolClasses[toolName];
-        if (!ToolClass) {
-            throw new Error(`未知的工具类型: ${toolName}`);
-        }
-        
-        const toolInstance = new ToolClass(chatApiHandler);
-        return toolInstance.configure(metadata);
     }
-    
+
     /**
-     * 🎯 批量创建工具
+     * 🎯 工具方法：过滤允许的Python库
      */
-    static createTools(toolDefinitions, chatApiHandler) {
-        const tools = {};
-        
-        for (const [toolName, metadata] of Object.entries(toolDefinitions)) {
-            try {
-                tools[toolName] = this.createTool(toolName, chatApiHandler, metadata);
-            } catch (error) {
-                console.warn(`[ToolFactory] 创建工具 ${toolName} 失败:`, error);
+    _filterAllowedLibraries(requestedLibraries) {
+        const allowedLibraries = [
+            'pandas', 'numpy', 'matplotlib', 'seaborn', 'plotly',
+            'scipy', 'sklearn', 'statistics', 'math', 'json',
+            'datetime', 're', 'collections', 'itertools'
+        ];
+
+        return requestedLibraries.filter(lib => 
+            allowedLibraries.includes(lib.toLowerCase())
+        );
+    }
+
+    /**
+     * 🎯 工具方法：处理Python执行结果
+     */
+    _processPythonResult(rawResult) {
+        try {
+            let stdout = '';
+            let stderr = '';
+            let execution_time = 0;
+
+            // 🎯 处理不同的结果格式
+            if (typeof rawResult === 'string') {
+                stdout = rawResult;
+            } else if (rawResult.stdout) {
+                stdout = rawResult.stdout;
+                stderr = rawResult.stderr || '';
+                execution_time = rawResult.execution_time || 0;
+            } else if (rawResult.output) {
+                stdout = rawResult.output;
             }
+
+            // 🎯 检测图表输出
+            const hasChart = stdout.includes('matplotlib') || 
+                           stdout.includes('seaborn') || 
+                           stdout.includes('plotly');
+
+            // 🎯 检测数据分析输出
+            const hasDataAnalysis = stdout.includes('pandas') || 
+                                  stdout.includes('DataFrame') || 
+                                  stdout.includes('describe()');
+
+            return {
+                stdout: this._truncateLongOutput(stdout, 2000),
+                stderr: stderr,
+                execution_time,
+                has_chart: hasChart,
+                has_data_analysis: hasDataAnalysis,
+                output_type: this._detectOutputType(stdout)
+            };
+
+        } catch (error) {
+            Logger.error('[ToolImplementations] Python结果处理失败:', error);
+            return {
+                stdout: '结果处理失败: ' + error.message,
+                stderr: '',
+                execution_time: 0,
+                has_chart: false,
+                has_data_analysis: false,
+                output_type: 'error'
+            };
+        }
+    }
+
+    /**
+     * 🎯 工具方法：截断长输出
+     */
+    _truncateLongOutput(output, maxLength = 2000) {
+        if (!output || output.length <= maxLength) {
+            return output || '';
         }
         
-        return tools;
+        return output.substring(0, maxLength) + `\n... [输出已截断，共 ${output.length} 字符]`;
+    }
+
+    /**
+     * 🎯 工具方法：检测输出类型
+     */
+    _detectOutputType(output) {
+        if (!output) return 'empty';
+        
+        if (output.includes('Figure') || output.includes('plot')) {
+            return 'chart';
+        } else if (output.includes('DataFrame') || output.includes('describe()')) {
+            return 'data_analysis';
+        } else if (output.includes('http') || output.includes('www.')) {
+            return 'urls';
+        } else if (output.length > 500) {
+            return 'long_text';
+        } else {
+            return 'text';
+        }
+    }
+
+    /**
+     * 🎯 工具方法：生成内容哈希（用于去重）
+     */
+    _generateContentHash(content) {
+        // 简单的哈希函数，用于内容去重
+        let hash = 0;
+        for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return hash.toString(36);
+    }
+
+    /**
+     * 🎯 获取所有工具声明（用于模型调用）
+     */
+    getToolDeclarations() {
+        return Object.values(this.tools).map(tool => ({
+            type: 'function',
+            function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters
+            }
+        }));
+    }
+
+    /**
+     * 🎯 获取工具实例
+     */
+    getToolInstance(toolName) {
+        return this.tools[toolName];
+    }
+
+    /**
+     * 🎯 检查工具是否存在
+     */
+    hasTool(toolName) {
+        return !!this.tools[toolName];
+    }
+
+    /**
+     * 🎯 获取所有可用工具名称
+     */
+    getAvailableTools() {
+        return Object.keys(this.tools);
+    }
+
+    /**
+     * 🎯 深度研究专用工具列表
+     */
+    getResearchTools() {
+        return {
+            tavily_search: this.tools.tavily_search,
+            crawl4ai: this.tools.crawl4ai,
+            python_sandbox: this.tools.python_sandbox
+        };
     }
 }
+
+export default ToolImplementations;
