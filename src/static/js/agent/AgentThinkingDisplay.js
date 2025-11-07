@@ -5,21 +5,8 @@ export class AgentThinkingDisplay {
         this.container = null;
         this.currentSession = null;
         this.thinkingBuffer = '';
-        this.stylesInjected = false;
+        this.stylesInjected = false; // 标记样式是否已注入
         this.timeUpdateInterval = null;
-        
-        // 🎯 新增：多Agent支持
-        this.availableAgents = {
-            'deep_research': {
-                name: '深度研究助手',
-                description: '专业的研究分析，收集多源信息并生成深度报告',
-                icon: '🔍',
-                tools: ['tavily_search', 'crawl4ai', 'python_sandbox']
-            }
-            // 🎯 未来可以添加更多Agent
-        };
-        
-        this.currentAgentType = null;
         
         // 🎯 拖动状态和绑定函数
         this.isDragging = false;
@@ -29,118 +16,416 @@ export class AgentThinkingDisplay {
         this.onMouseUpBound = this.onMouseUp.bind(this);
 
         this.setupEventListeners();
-        this.injectStyles();
+        this.injectStyles(); // 预注入样式，但确保默认隐藏
     }
 
     /**
-     * 🎯 新增：显示Agent选择界面
+     * 🎯 动态注入CSS样式 - 关键修复
      */
-    showAgentSelection() {
+    injectStyles() {
+        if (this.stylesInjected) return;
+
+        const styleId = 'agent-thinking-styles';
+        if (document.getElementById(styleId)) return;
+
+        const css = `
+/* Agent Thinking Display Styles - 动态注入 */
+#agent-thinking-container {
+    display: none;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 500px;
+    max-height: 80vh;
+    background: white;
+    border: 1px solid #e1e5e9;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+#agent-thinking-container.minimized {
+    height: 50px;
+    overflow: hidden;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+    #agent-thinking-container {
+        width: 95% !important;
+        left: 2.5% !important;
+        right: 2.5% !important;
+        top: 10px !important;
+    }
+}
+
+/* 内部样式 */
+.agent-thinking-container .session-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+}
+
+.agent-thinking-container .session-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.agent-thinking-container .session-icon {
+    font-size: 20px;
+}
+
+.agent-thinking-container .session-title h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.agent-thinking-container .session-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.agent-thinking-container .session-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.agent-thinking-container .session-controls button {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: background 0.2s;
+}
+
+.agent-thinking-container .session-controls button:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.agent-thinking-container .session-content {
+    padding: 0;
+    max-height: calc(80vh - 60px);
+    overflow-y: auto;
+}
+
+.agent-thinking-container .section-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #2d3748;
+    margin-bottom: 12px;
+    padding: 16px 20px 0;
+}
+
+.agent-thinking-container .user-query-section {
+    border-bottom: 1px solid #f1f5f9;
+    padding: 0 20px 16px;
+}
+
+.agent-thinking-container .user-query {
+    background: #f8fafc;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #4a5568;
+}
+
+.agent-thinking-container .execution-plan-section {
+    border-bottom: 1px solid #f1f5f9;
+    padding: 0 20px 16px;
+}
+
+.agent-thinking-container .plan-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.agent-thinking-container .plan-step {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    transition: all 0.2s;
+}
+
+.agent-thinking-container .plan-step.current {
+    border-color: #4299e1;
+    background: #ebf8ff;
+}
+
+.agent-thinking-container .plan-step.completed {
+    border-color: #48bb78;
+    background: #f0fff4;
+}
+
+.agent-thinking-container .step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.agent-thinking-container .step-number {
+    width: 24px;
+    height: 24px;
+    background: #e2e8f0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.agent-thinking-container .plan-step.current .step-number {
+    background: #4299e1;
+    color: white;
+}
+
+.agent-thinking-container .plan-step.completed .step-number {
+    background: #48bb78;
+    color: white;
+}
+
+.agent-thinking-container .step-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.agent-thinking-container .step-type {
+    font-size: 12px;
+    font-weight: 600;
+    color: #718096;
+    margin-bottom: 4px;
+}
+
+.agent-thinking-container .step-description {
+    font-size: 14px;
+    line-height: 1.4;
+    color: #2d3748;
+    margin-bottom: 6px;
+}
+
+.agent-thinking-container .step-tool {
+    font-size: 12px;
+    color: #667eea;
+    background: #f0f4ff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.agent-thinking-container .step-result {
+    font-size: 12px;
+    color: #718096;
+    background: #f7fafc;
+    padding: 6px;
+    border-radius: 4px;
+    margin-top: 6px;
+    border-left: 3px solid #e2e8f0;
+}
+
+.agent-thinking-container .thinking-process-section {
+    border-bottom: 1px solid #f1f5f9;
+    padding: 0 20px 16px;
+}
+
+.agent-thinking-container .thinking-content {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.agent-thinking-container .thinking-chunk {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.agent-thinking-container .thinking-chunk:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.agent-thinking-container .thinking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.agent-thinking-container .thinking-time {
+    font-size: 11px;
+    color: #718096;
+}
+
+.agent-thinking-container .thinking-type {
+    font-size: 11px;
+    font-weight: 600;
+    color: #667eea;
+}
+
+.agent-thinking-container .thinking-text {
+    color: #4a5568;
+    white-space: pre-wrap;
+}
+
+.agent-thinking-container .current-status-section {
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    background: #f7fafc;
+}
+
+.agent-thinking-container .status-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.agent-thinking-container .status-label {
+    font-size: 11px;
+    color: #718096;
+    font-weight: 500;
+}
+
+.agent-thinking-container .status-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.agent-thinking-container .thinking-placeholder {
+    color: #a0aec0;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+        `;
+
+        const styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        styleElement.textContent = css;
+        document.head.appendChild(styleElement);
+
+        this.stylesInjected = true;
+        console.log('[AgentThinkingDisplay] 动态样式注入完成');
+    }
+
+    createContainer() {
+        // 如果容器已存在，直接返回
+        const existingContainer = document.getElementById(this.containerId);
+        if (existingContainer) {
+            this.container = existingContainer;
+            return this.container;
+        }
+
+        const container = document.createElement('div');
+        container.id = this.containerId;
+        container.className = 'agent-thinking-container';
+        container.style.display = 'none'; // 关键：确保默认隐藏
+        
+        // 插入到body末尾，避免影响现有布局
+        document.body.appendChild(container);
+        this.container = container;
+        
+        return container;
+    }
+
+    /**
+     * 🎯 开始新的Agent会话
+     */
+    startSession(userMessage, maxIterations = 8) {
+        // 确保容器存在
         if (!this.container) {
             this.container = this.createContainer();
         }
         
-        this.container.innerHTML = this.renderAgentSelection();
-        this.container.style.display = 'block';
-        
-        this.attachSelectionEvents();
-    }
-
-    /**
-     * 🎯 新增：渲染Agent选择界面
-     */
-    renderAgentSelection() {
-        return `
-            <div class="agent-selection-panel">
-                <div class="selection-header">
-                    <h3>🤖 选择智能助手模式</h3>
-                    <p>请根据您的任务需求选择合适的助手</p>
-                </div>
-                
-                <div class="agent-options">
-                    ${Object.entries(this.availableAgents).map(([agentId, agent]) => `
-                        <div class="agent-option" data-agent-id="${agentId}">
-                            <div class="agent-icon">${agent.icon}</div>
-                            <div class="agent-info">
-                                <h4>${agent.name}</h4>
-                                <p>${agent.description}</p>
-                                <div class="agent-tools">
-                                    <span>可用工具: ${agent.tools.map(tool => 
-                                        `<span class="tool-tag">${tool}</span>`
-                                    ).join('')}</span>
-                                </div>
-                            </div>
-                            <div class="agent-select">
-                                <button class="btn-select-agent">选择</button>
-                            </div>
-                        </div>
-                    `).join('')}
-                    
-                    <div class="agent-option" data-agent-id="standard">
-                        <div class="agent-icon">💬</div>
-                        <div class="agent-info">
-                            <h4>标准对话模式</h4>
-                            <p>使用基础的对话和工具调用功能</p>
-                            <div class="agent-tools">
-                                <span>所有可用工具</span>
-                            </div>
-                        </div>
-                        <div class="agent-select">
-                            <button class="btn-select-agent">选择</button>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="selection-actions">
-                    <button class="btn-cancel-selection">取消</button>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * 🎯 新增：开始特定Agent会话
-     */
-    startAgentSession(agentType, userMessage, context = {}) {
-        this.currentAgentType = agentType;
+        const sessionId = `agent_${Date.now()}`;
         this.currentSession = {
-            id: `agent_${Date.now()}`,
-            agentType: agentType,
+            id: sessionId,
             userMessage,
-            context,
+            maxIterations,
+            currentIteration: 0,
+            steps: [],
             startTime: Date.now(),
-            status: 'initializing',
-            phases: []
+            status: 'planning'
         };
 
-        this.renderAgentSession();
+        this.renderSession();
         this.show();
+        // 🎯 默认最小化
+        this.container.classList.add('minimized');
         
-        // 🎯 触发Agent模式选择事件
-        window.dispatchEvent(new CustomEvent('agent:mode_selected', {
-            detail: {
-                agentType: agentType,
-                sessionId: this.currentSession.id,
-                userMessage: userMessage
-            }
-        }));
-
-        return this.currentSession.id;
+        return sessionId;
     }
 
     /**
-     * 🎯 新增：渲染特定Agent会话界面
+     * 🎯 完成会话 - 修复：统一使用 completeSession 方法
      */
-    renderAgentSession() {
-        const agentConfig = this.availableAgents[this.currentAgentType];
+    completeSession(finalResult) {
+        if (!this.currentSession) return;
+
+        this.currentSession.status = 'completed';
+        this.currentSession.endTime = Date.now();
+        this.currentSession.finalResult = finalResult;
+
+        this.updateThinking('🎉 Agent执行完成！', 'completion');
+        this.updateStatus('completed');
+        
+        // 添加完成总结
+        this.addCompletionSummary();
+    }
+
+    /**
+     * 🎯 结束会话（兼容性方法）- 修复：添加 endSession 方法
+     */
+    endSession(finalResult) {
+        console.warn('endSession 方法已弃用，请使用 completeSession 方法');
+        this.completeSession(finalResult);
+    }
+
+    /**
+     * 🎯 渲染会话界面
+     */
+    renderSession() {
+        const { userMessage, maxIterations, steps, status } = this.currentSession;
         
         this.container.innerHTML = `
             <div class="agent-session">
                 <div class="session-header">
                     <div class="session-title">
-                        <span class="session-icon">${agentConfig?.icon || '🤖'}</span>
-                        <h3>${agentConfig?.name || '智能助手'} - 执行中</h3>
-                        <span class="session-badge">${this.currentAgentType}</span>
+                        <span class="session-icon">🤖</span>
+                        <h3>智能代理执行过程</h3>
+                        <span class="session-badge">${status === 'planning' ? '规划中' : '执行中'}</span>
                     </div>
                     <div class="session-controls">
                         <button class="btn-minimize">−</button>
@@ -152,19 +437,14 @@ export class AgentThinkingDisplay {
                     <!-- 用户请求 -->
                     <div class="user-query-section">
                         <div class="section-title">🎯 用户请求</div>
-                        <div class="user-query">${this.escapeHtml(this.currentSession.userMessage)}</div>
-                    </div>
-                    
-                    <!-- Agent特定内容 -->
-                    <div class="agent-specific-content">
-                        ${this.renderAgentSpecificContent()}
+                        <div class="user-query">${this.escapeHtml(userMessage)}</div>
                     </div>
                     
                     <!-- 执行计划 -->
                     <div class="execution-plan-section">
                         <div class="section-title">📋 执行计划</div>
                         <div class="plan-steps" id="plan-steps">
-                            <div class="no-plan">等待${agentConfig?.name || '智能助手'}制定执行计划...</div>
+                            ${this.renderPlanSteps(steps)}
                         </div>
                     </div>
                     
@@ -179,8 +459,8 @@ export class AgentThinkingDisplay {
                     <!-- 当前状态 -->
                     <div class="current-status-section">
                         <div class="status-item">
-                            <span class="status-label">当前模式:</span>
-                            <span class="status-value">${agentConfig?.name || this.currentAgentType}</span>
+                            <span class="status-label">当前迭代:</span>
+                            <span class="status-value" id="current-iteration">0/${maxIterations}</span>
                         </div>
                         <div class="status-item">
                             <span class="status-label">执行状态:</span>
@@ -200,256 +480,57 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 新增：渲染Agent特定内容
+     * 🎯 开始更新时间显示
      */
-    renderAgentSpecificContent() {
-        switch (this.currentAgentType) {
-            case 'deep_research':
-                return `
-                    <div class="research-info-section">
-                        <div class="section-title">🔍 研究信息</div>
-                        <div class="research-metadata">
-                            <div class="metadata-item">
-                                <span class="label">研究工具:</span>
-                                <span class="value">搜索工具 + 内容分析 + 数据整理</span>
-                            </div>
-                            <div class="metadata-item">
-                                <span class="label">预计步骤:</span>
-                                <span class="value">关键词生成 → 多轮搜索 → 内容分析 → 报告合成</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                
-            default:
-                return '';
+    startTimeUpdate() {
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
         }
-    }
-
-    /**
-     * 🎯 新增：研究进度更新
-     */
-    updateResearchProgress(event) {
-        if (!this.currentSession || this.currentAgentType !== 'deep_research') return;
         
-        const { stage, progress, researchState } = event.detail;
-        
-        this.updateThinking(this._formatResearchProgress(stage, progress, researchState), 'research_progress');
-        
-        // 🎯 更新阶段显示
-        this._updateResearchPhases(researchState);
-    }
-
-    /**
-     * 🎯 新增：研究阶段变更
-     */
-    updateResearchPhase(event) {
-        if (!this.currentSession || this.currentAgentType !== 'deep_research') return;
-        
-        const { phase, researchState } = event.detail;
-        
-        this.currentSession.researchState = researchState;
-        this.updateThinking(`进入阶段: ${this._getPhaseName(phase)}`, 'phase_change');
-        
-        this._updateResearchPhases(researchState);
-    }
-
-    /**
-     * 🎯 新增：格式化研究进度
-     */
-    _formatResearchProgress(stage, progress, researchState) {
-        switch (stage) {
-            case 'search':
-                return `🔍 搜索进度: 第 ${progress.round} 轮，关键词 "${progress.currentKeyword}"，已收集 ${progress.resultsCount} 个结果`;
-                
-            case 'analysis':
-                return `📊 分析进度: ${progress.analyzed}/${progress.total} 个内容已完成分析`;
-                
-            default:
-                return `⚡ 研究进行中: ${researchState.phase}`;
-        }
-    }
-
-    /**
-     * 🎯 新增：更新研究阶段显示
-     */
-    _updateResearchPhases(researchState) {
-        const phases = {
-            'initializing': '初始化研究',
-            'keyword_generation': '生成关键词', 
-            'search': '收集资料',
-            'analysis': '分析内容',
-            'synthesis': '合成报告',
-            'completed': '完成'
-        };
-        
-        const planSteps = this.container.querySelector('#plan-steps');
-        if (!planSteps) return;
-        
-        planSteps.innerHTML = Object.entries(phases).map(([phaseKey, phaseName]) => {
-            const isCurrent = researchState.phase === phaseKey;
-            const isCompleted = this._isPhaseCompleted(phaseKey, researchState.phase);
-            
-            return `
-                <div class="plan-step ${isCurrent ? 'current' : ''} ${isCompleted ? 'completed' : ''}">
-                    <div class="step-indicator">
-                        <span class="step-number">${Object.keys(phases).indexOf(phaseKey) + 1}</span>
-                        <span class="step-status">${isCompleted ? '✅' : isCurrent ? '🔄' : '⏳'}</span>
-                    </div>
-                    <div class="step-content">
-                        <div class="step-type">研究阶段</div>
-                        <div class="step-description">${phaseName}</div>
-                        ${isCurrent && researchState.keywords ? `
-                            <div class="step-tool">关键词: ${researchState.keywords.map(k => k.term).join(', ')}</div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    /**
-     * 🎯 新增：判断阶段是否完成
-     */
-    _isPhaseCompleted(phase, currentPhase) {
-        const phases = ['initializing', 'keyword_generation', 'search', 'analysis', 'synthesis', 'completed'];
-        return phases.indexOf(phase) < phases.indexOf(currentPhase);
-    }
-
-    /**
-     * 🎯 新增：获取阶段名称
-     */
-    _getPhaseName(phase) {
-        const phaseNames = {
-            'initializing': '初始化研究',
-            'keyword_generation': '生成关键词',
-            'search': '收集资料', 
-            'analysis': '分析内容',
-            'synthesis': '合成报告',
-            'completed': '完成'
-        };
-        return phaseNames[phase] || phase;
-    }
-
-    /**
-     * 🎯 修改：设置事件监听器（支持多Agent）
-     */
-    setupEventListeners() {
-        // 🎯 Agent模式选择事件
-        window.addEventListener('agent:show_selection', (event) => {
-            this.showAgentSelection();
-        });
-
-        // 🎯 研究专用事件
-        window.addEventListener('agent:research_phase_changed', (event) => {
-            this.updateResearchPhase(event.detail);
-        });
-
-        window.addEventListener('agent:research_progress', (event) => {
-            this.updateResearchProgress(event.detail);
-        });
-
-        // 🎯 保留原有的通用事件（向后兼容）
-        window.addEventListener('agent:session_started', (event) => {
-            if (!this.currentAgentType) {
-                // 🎯 如果没有选择Agent，显示选择界面
-                this.showAgentSelection();
-            }
-        });
-
-        window.addEventListener('agent:thinking', (event) => {
-            this.updateThinking(event.detail.content, event.detail.type);
-        });
-
-        window.addEventListener('agent:step_added', (event) => {
-            this.addStep(event.detail.step);
-        });
-
-        window.addEventListener('agent:step_completed', (event) => {
-            const lastStepIndex = this.currentSession?.steps?.length - 1 || 0;
-            if (lastStepIndex >= 0) {
-                this.completeStep(lastStepIndex, event.detail.result);
-            }
-        });
-
-        window.addEventListener('agent:session_completed', (event) => {
-            this.completeSession(event.detail.result);
-        });
-
-        window.addEventListener('agent:session_error', (event) => {
-            this.updateThinking(`❌ Agent执行出错: ${event.detail.error}`, 'error');
-            this.updateStatus('error');
-        });
-    }
-
-    /**
-     * 🎯 新增：绑定选择界面事件
-     */
-    attachSelectionEvents() {
-        const agentOptions = this.container.querySelectorAll('.agent-option');
-        const cancelBtn = this.container.querySelector('.btn-cancel-selection');
-        
-        agentOptions.forEach(option => {
-            option.addEventListener('click', (e) => {
-                if (e.target.classList.contains('btn-select-agent')) {
-                    const agentId = option.dataset.agentId;
-                    this.selectAgent(agentId);
+        this.timeUpdateInterval = setInterval(() => {
+            if (this.currentSession && this.currentSession.startTime) {
+                const elapsed = Math.floor((Date.now() - this.currentSession.startTime) / 1000);
+                const timeElement = this.container.querySelector('#elapsed-time');
+                if (timeElement) {
+                    timeElement.textContent = `${elapsed}s`;
                 }
-            });
-        });
-        
-        cancelBtn.addEventListener('click', () => {
-            this.hide();
-            // 🎯 取消Agent模式选择
-            window.dispatchEvent(new CustomEvent('agent:selection_cancelled'));
-        });
+            }
+        }, 1000);
     }
 
     /**
-     * 🎯 新增：选择Agent
+     * 🎯 渲染计划步骤
      */
-    selectAgent(agentId) {
-        if (agentId === 'standard') {
-            // 🎯 选择标准模式
-            window.dispatchEvent(new CustomEvent('agent:standard_mode_selected'));
-            this.hide();
-        } else {
-            // 🎯 选择专用Agent
-            this.currentAgentType = agentId;
-            window.dispatchEvent(new CustomEvent('agent:specialized_selected', {
-                detail: { agentType: agentId }
-            }));
-            // 🎯 这里可以显示Agent特定的配置界面
-            this.hide();
-        }
-    }
-
-    // 🎯 保留原有的核心方法（createContainer, updateThinking, addStep, completeStep等）
-    // 这些方法保持不变，确保向后兼容
-
-    createContainer() {
-        // 如果容器已存在，直接返回
-        const existingContainer = document.getElementById(this.containerId);
-        if (existingContainer) {
-            this.container = existingContainer;
-            return this.container;
+    renderPlanSteps(steps) {
+        if (!steps || steps.length === 0) {
+            return '<div class="no-plan">模型正在制定执行计划...</div>';
         }
 
-        const container = document.createElement('div');
-        container.id = this.containerId;
-        container.className = 'agent-thinking-container';
-        container.style.display = 'none';
-        
-        document.body.appendChild(container);
-        this.container = container;
-        
-        return container;
+        return steps.map((step, index) => `
+            <div class="plan-step ${step.completed ? 'completed' : ''} ${step.current ? 'current' : ''}" data-step-index="${index}">
+                <div class="step-indicator">
+                    <span class="step-number">${index + 1}</span>
+                    <span class="step-status">${step.completed ? '✅' : step.current ? '🔄' : '⏳'}</span>
+                </div>
+                <div class="step-content">
+                    <div class="step-type">${this.getStepTypeIcon(step.type)} ${step.type}</div>
+                    <div class="step-description">${this.escapeHtml(step.description)}</div>
+                    ${step.tool ? `<div class="step-tool">🛠️ ${step.tool}</div>` : ''}
+                    ${step.result ? `<div class="step-result">${this.formatStepResult(step.result)}</div>` : ''}
+                    ${step.duration ? `<div class="step-duration">${step.duration}ms</div>` : ''}
+                </div>
+            </div>
+        `).join('');
     }
 
+    /**
+     * 🎯 更新思考过程
+     */
     updateThinking(content, type = 'thinking') {
         const thinkingContent = this.container.querySelector('#thinking-content');
         if (!thinkingContent) return;
 
+        // 移除占位符
         const placeholder = thinkingContent.querySelector('.thinking-placeholder');
         if (placeholder) {
             placeholder.remove();
@@ -473,24 +554,47 @@ export class AgentThinkingDisplay {
         thinkingContent.scrollTop = thinkingContent.scrollHeight;
     }
 
+    /**
+     * 🎯 更新迭代信息
+     */
+    updateIteration(iteration, total, thinking = '') {
+        if (!this.currentSession) return;
+        
+        this.currentSession.currentIteration = iteration;
+        
+        const iterationElement = this.container.querySelector('#current-iteration');
+        if (iterationElement) {
+            iterationElement.textContent = `${iteration}/${total}`;
+        }
+
+        if (thinking) {
+            this.updateThinking(`开始第 ${iteration} 次迭代分析...\n${thinking}`, 'iteration');
+        }
+    }
+
+    /**
+     * 🎯 添加执行步骤
+     */
     addStep(step) {
         if (!this.currentSession) {
             console.warn('没有活跃的Agent会话，忽略步骤:', step);
             return;
         }
 
+        // 确保有步骤数组
         if (!this.currentSession.steps) {
             this.currentSession.steps = [];
         }
 
         const newStep = {
             ...step,
-            id: `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: step.timestamp || Date.now(),
+            id: `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // 添加唯一ID
+            timestamp: step.timestamp || Date.now(), // 允许传入时间戳
             completed: false,
             current: true
         };
 
+        // 更新之前的当前步骤状态
         this.currentSession.steps.forEach(s => {
             s.current = false;
         });
@@ -498,6 +602,7 @@ export class AgentThinkingDisplay {
         this.currentSession.steps.push(newStep);
         this.renderPlanSteps(this.currentSession.steps);
         
+        // 记录思考过程
         if (step.type === 'think') {
             this.updateThinking(step.description, 'thinking');
         } else if (step.type === 'action') {
@@ -505,6 +610,9 @@ export class AgentThinkingDisplay {
         }
     }
 
+    /**
+     * 🎯 完成步骤
+     */
     completeStep(stepIndex, result) {
         if (!this.currentSession || !this.currentSession.steps[stepIndex]) {
             console.warn('步骤不存在:', stepIndex);
@@ -520,50 +628,56 @@ export class AgentThinkingDisplay {
 
         this.renderPlanSteps(this.currentSession.steps);
 
+        // 记录结果
         if (step.type === 'action') {
             const resultText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
             this.updateThinking(`工具执行完成 (${step.duration}ms):\n${resultText}`, 'result');
         }
     }
 
-    completeSession(finalResult) {
+    /**
+     * 🎯 添加完成总结
+     */
+    addCompletionSummary() {
+        const { steps, startTime, endTime } = this.currentSession;
+        const totalTime = ((endTime - startTime) / 1000).toFixed(1);
+        const completedSteps = steps.filter(s => s.completed).length;
+        const thinkingSteps = steps.filter(s => s.type === 'think').length;
+        const actionSteps = steps.filter(s => s.type === 'action').length;
+
+        const summary = `
+执行总结:
+• 总步骤: ${steps.length} (${thinkingSteps}次思考, ${actionSteps}次行动)
+• 完成步骤: ${completedSteps}
+• 总用时: ${totalTime}秒
+• 成功率: ${((completedSteps / steps.length) * 100).toFixed(1)}%
+        `;
+
+        this.updateThinking(summary, 'summary');
+    }
+
+    /**
+     * 🎯 更新状态
+     */
+    updateStatus(status) {
         if (!this.currentSession) return;
-
-        this.currentSession.status = 'completed';
-        this.currentSession.endTime = Date.now();
-        this.currentSession.finalResult = finalResult;
-
-        this.updateThinking('🎉 Agent执行完成！', 'completion');
-        this.updateStatus('completed');
         
-        this.addCompletionSummary();
-    }
-
-    // 🎯 保留其他辅助方法（renderPlanSteps, getThinkingIcon, escapeHtml等）
-    // 这些方法保持不变...
-
-    renderPlanSteps(steps) {
-        if (!steps || steps.length === 0) {
-            return '<div class="no-plan">模型正在制定执行计划...</div>';
+        this.currentSession.status = status;
+        
+        const statusElement = this.container.querySelector('#execution-status');
+        if (statusElement) {
+            const statusText = {
+                planning: '规划中',
+                running: '执行中',
+                completed: '已完成',
+                error: '执行错误'
+            }[status] || status;
+            
+            statusElement.textContent = statusText;
         }
-
-        return steps.map((step, index) => `
-            <div class="plan-step ${step.completed ? 'completed' : ''} ${step.current ? 'current' : ''}" data-step-index="${index}">
-                <div class="step-indicator">
-                    <span class="step-number">${index + 1}</span>
-                    <span class="step-status">${step.completed ? '✅' : step.current ? '🔄' : '⏳'}</span>
-                </div>
-                <div class="step-content">
-                    <div class="step-type">${this.getStepTypeIcon(step.type)} ${step.type}</div>
-                    <div class="step-description">${this.escapeHtml(step.description)}</div>
-                    ${step.tool ? `<div class="step-tool">🛠️ ${step.tool}</div>` : ''}
-                    ${step.result ? `<div class="step-result">${this.formatStepResult(step.result)}</div>` : ''}
-                    ${step.duration ? `<div class="step-duration">${step.duration}ms</div>` : ''}
-                </div>
-            </div>
-        `).join('');
     }
 
+    // 辅助方法
     getStepTypeIcon(type) {
         const icons = {
             think: '💭',
@@ -582,11 +696,29 @@ export class AgentThinkingDisplay {
             iteration: '🔄',
             completion: '🎉',
             summary: '📋',
-            error: '❌',
-            research_progress: '🔍',
-            phase_change: '🔄'
+            error: '❌'
         };
         return icons[type] || '💭';
+    }
+
+    getThinkingTypeText(type) {
+        const texts = {
+            thinking: '模型思考',
+            action: '执行行动',
+            result: '执行结果',
+            iteration: '迭代分析',
+            completion: '完成',
+            summary: '总结',
+            error: '错误'
+        };
+        return texts[type] || '思考';
+    }
+
+    formatStepResult(result) {
+        if (typeof result === 'string') {
+            return result.length > 100 ? result.substring(0, 100) + '...' : result;
+        }
+        return JSON.stringify(result).substring(0, 100) + '...';
     }
 
     escapeHtml(unsafe) {
@@ -600,150 +732,172 @@ export class AgentThinkingDisplay {
             .replace(/\n/g, '<br>');
     }
 
-    // 🎯 注入样式时添加多Agent支持的样式
-    injectStyles() {
-        if (this.stylesInjected) return;
+    attachContainerEvents() {
+        // 最小化/关闭按钮
+        this.container.querySelector('.btn-minimize')?.addEventListener('click', () => {
+            this.container.classList.toggle('minimized');
+        });
 
-        const styleId = 'agent-thinking-styles';
-        if (document.getElementById(styleId)) return;
+        this.container.querySelector('.btn-close')?.addEventListener('click', () => {
+            this.hide();
+        });
+        
+        // 🎯 拖动功能实现
+        const header = this.container.querySelector('.session-header');
+        if (header) {
+            header.addEventListener('mousedown', this.onMouseDown.bind(this));
+        }
+    }
+    /**
+     * 🎯 鼠标按下事件 (开始拖动)
+     */
+    onMouseDown(e) {
+        if (e.button !== 0) return; // 只响应左键
 
-        const css = `
-            /* 原有的样式保持不变... */
-            
-            /* 🎯 新增：多Agent选择样式 */
-            .agent-selection-panel {
-                padding: 20px;
-                background: white;
-                border-radius: 12px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            }
-            
-            .selection-header {
-                text-align: center;
-                margin-bottom: 24px;
-            }
-            
-            .selection-header h3 {
-                margin: 0 0 8px 0;
-                color: #2d3748;
-            }
-            
-            .selection-header p {
-                margin: 0;
-                color: #718096;
-                font-size: 14px;
-            }
-            
-            .agent-options {
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-                margin-bottom: 24px;
-            }
-            
-            .agent-option {
-                display: flex;
-                align-items: center;
-                padding: 16px;
-                border: 2px solid #e2e8f0;
-                border-radius: 8px;
-                transition: all 0.2s;
-                cursor: pointer;
-            }
-            
-            .agent-option:hover {
-                border-color: #4299e1;
-                background: #f7fafc;
-            }
-            
-            .agent-icon {
-                font-size: 24px;
-                margin-right: 16px;
-            }
-            
-            .agent-info {
-                flex: 1;
-            }
-            
-            .agent-info h4 {
-                margin: 0 0 4px 0;
-                color: #2d3748;
-            }
-            
-            .agent-info p {
-                margin: 0 0 8px 0;
-                color: #718096;
-                font-size: 14px;
-            }
-            
-            .agent-tools {
-                font-size: 12px;
-                color: #a0aec0;
-            }
-            
-            .tool-tag {
-                display: inline-block;
-                background: #edf2f7;
-                padding: 2px 6px;
-                border-radius: 4px;
-                margin-right: 4px;
-            }
-            
-            .btn-select-agent {
-                background: #4299e1;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-weight: 600;
-            }
-            
-            .selection-actions {
-                text-align: center;
-            }
-            
-            .btn-cancel-selection {
-                background: #e2e8f0;
-                color: #4a5568;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                cursor: pointer;
-            }
-            
-            /* 🎯 研究特定样式 */
-            .research-info-section {
-                border-bottom: 1px solid #f1f5f9;
-                padding: 0 20px 16px;
-            }
-            
-            .research-metadata {
-                display: grid;
-                gap: 8px;
-            }
-            
-            .metadata-item {
-                display: flex;
-                justify-content: space-between;
-            }
-            
-            .metadata-item .label {
-                font-weight: 600;
-                color: #4a5568;
-            }
-            
-            .metadata-item .value {
-                color: #718096;
-            }
-        `;
+        this.isDragging = true;
+        
+        // 计算鼠标在面板内的偏移量
+        const rect = this.container.getBoundingClientRect();
+        this.dragOffsetX = e.clientX - rect.left;
+        this.dragOffsetY = e.clientY - rect.top;
 
-        const styleElement = document.createElement('style');
-        styleElement.id = styleId;
-        styleElement.textContent = css;
-        document.head.appendChild(styleElement);
+        // 确保面板使用绝对定位
+        this.container.style.position = 'fixed';
+        
+        // 绑定全局事件，确保鼠标移出面板区域也能继续拖动
+        document.addEventListener('mousemove', this.onMouseMoveBound);
+        document.addEventListener('mouseup', this.onMouseUpBound);
+        
+        e.preventDefault(); // 阻止默认的文本选择等行为
+    }
 
-        this.stylesInjected = true;
-        console.log('[AgentThinkingDisplay] 动态样式注入完成（多Agent支持）');
+    /**
+     * 🎯 鼠标移动事件 (拖动中)
+     */
+    onMouseMove(e) {
+        if (!this.isDragging) return;
+
+        // 计算新的位置
+        let newLeft = e.clientX - this.dragOffsetX;
+        let newTop = e.clientY - this.dragOffsetY;
+
+        // 限制拖动范围，防止拖出屏幕
+        const maxX = window.innerWidth - this.container.offsetWidth;
+        const maxY = window.innerHeight - this.container.offsetHeight;
+
+        newLeft = Math.max(0, Math.min(newLeft, maxX));
+        newTop = Math.max(0, Math.min(newTop, maxY));
+
+        this.container.style.left = `${newLeft}px`;
+        this.container.style.top = `${newTop}px`;
+        this.container.style.right = 'auto'; // 拖动后取消 right 属性
+    }
+
+    /**
+     * 🎯 鼠标抬起事件 (结束拖动)
+     */
+    onMouseUp() {
+        if (!this.isDragging) return;
+
+        this.isDragging = false;
+        document.removeEventListener('mousemove', this.onMouseMoveBound);
+        document.removeEventListener('mouseup', this.onMouseUpBound);
+    }
+
+    setupEventListeners() {
+        // 🎯 只监听Agent模式的事件，忽略标准工具模式
+        
+        window.addEventListener('agent:session_started', (event) => {
+            console.log('🤖 Agent会话开始:', event.detail);
+            this.startSession(
+                event.detail.data?.userMessage || 'Agent任务',
+                event.detail.data?.maxIterations || 8
+            );
+        });
+
+        window.addEventListener('agent:thinking', (event) => {
+            this.updateThinking(event.detail.content, event.detail.type);
+        });
+
+        window.addEventListener('agent:step_added', (event) => {
+            this.addStep(event.detail.step);
+        });
+
+        window.addEventListener('agent:step_completed', (event) => {
+            // 🎯 简化：自动完成最后一个步骤
+            const lastStepIndex = this.currentSession?.steps?.length - 1 || 0;
+            if (lastStepIndex >= 0) {
+                this.completeStep(lastStepIndex, event.detail.result);
+            }
+        });
+
+        window.addEventListener('agent:iteration_update', (event) => {
+            this.updateIteration(
+                event.detail.iteration,
+                event.detail.total,
+                event.detail.thinking
+            );
+        });
+
+        window.addEventListener('agent:session_completed', (event) => {
+            this.completeSession(event.detail.result);
+        });
+
+        window.addEventListener('agent:session_error', (event) => {
+            this.updateThinking(`❌ Agent执行出错: ${event.detail.error}`, 'error');
+            this.updateStatus('error');
+        });
+        
+        // 🚫 明确不监听标准工具模式的事件
+        console.log('🎯 AgentThinkingDisplay 只监听Agent模式事件');
+    }
+
+    show() {
+        if (this.container) {
+            this.container.style.display = 'block';
+        }
+    }
+
+    hide() {
+        if (this.container) {
+            this.container.style.display = 'none';
+        }
+    }
+
+    clear() {
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
+            this.timeUpdateInterval = null;
+        }
+        this.currentSession = null;
+        this.thinkingBuffer = '';
+        if (this.container) {
+            this.container.innerHTML = '';
+        }
+    }
+
+    /**
+     * 🎯 完全销毁实例
+     */
+    destroy() {
+        this.clear();
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+            this.container = null;
+        }
+        
+        // 可选：移除注入的样式
+        // this.removeStyles();
+    }
+
+    /**
+     * 🎯 可选：移除注入的样式
+     */
+    removeStyles() {
+        const styleElement = document.getElementById('agent-thinking-styles');
+        if (styleElement && styleElement.parentNode) {
+            styleElement.parentNode.removeChild(styleElement);
+            this.stylesInjected = false;
+        }
     }
 }
