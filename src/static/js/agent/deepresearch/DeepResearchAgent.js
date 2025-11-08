@@ -5,7 +5,7 @@
  * @description 纯粹的ReAct循环执行器，包含错误恢复机制和智能超时优化
  */
 import { ObservationUtils } from '../utils/ObservationUtils.js';
-export class AgentExecutor {
+export class DeepResearchAgent {
     constructor(agentLogic, tools, callbackManager, config = {}) {
         this.agentLogic = agentLogic;
         this.tools = tools;
