@@ -427,7 +427,7 @@ export class DeepResearchAgent {
     /**
      * 🎯 增强的ReAct循环执行（含智能超时和错误恢复）
      */
-    async invoke(inputs) {
+    async conductResearch(inputs) {
         const runId = this.callbackManager.generateRunId();
         const { userMessage, context } = inputs;
         
