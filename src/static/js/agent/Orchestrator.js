@@ -312,7 +312,7 @@ export class Orchestrator {
                 this.tools,
                 this.callbackManager,
                 {
-                    maxIterations: this.config.maxIterations || 4,
+                    maxIterations: this.config.maxIterations || 8,
                     earlyStoppingMethod: 'force'
                 }
             );
