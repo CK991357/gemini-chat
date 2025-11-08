@@ -583,27 +583,56 @@ export class Orchestrator {
     /**
      * 🎯 知识库问题检测（保持不变）
      */
+    /**
+     * 🎯 修复：知识库问题检测 - 精确识别真正的基础问题
+     */
     async _isKnowledgeBaseQuestion(userMessage) {
+        const trimmedMessage = userMessage.trim();
+        
+        // 🎯 真正的知识库问题模式（严格匹配）
         const knowledgeBasePatterns = [
-            /^(hi|hello|hey|你好|嗨|您好|早安|晚上好)/i,
-            /^(你是谁|你是什么|你能做什么)/,
-            /^(爱因斯坦|特斯拉|牛顿|物理|数学|科学)/i,
-            /^(什么是|什么是|告诉我关于|解释一下)/,
-            /^(你的能力|你能帮我|你有什么功能)/
+            /^(hi|hello|hey|你好|嗨|您好|早安|晚上好)[\s.!?]*$/i, // 仅问候语
+            /^(你是谁|你是什么|你能做什么|你有什么功能)[\s.?]*$/i, // 仅关于AI自身
+            /^(help|帮助|救命|怎么用)[\s.?]*$/i, // 仅帮助请求
+            /^(谢谢|thank you|thanks)[\s.!?]*$/i, // 仅感谢
+            /^(bye|再见|拜拜)[\s.!?]*$/i // 仅告别
         ];
         
-        const isSimpleQuestion = knowledgeBasePatterns.some(pattern => 
-            pattern.test(userMessage.trim())
+        const isSimpleQuestion = knowledgeBasePatterns.some(pattern =>
+            pattern.test(trimmedMessage)
         );
         
-        const isShortMessage = userMessage.trim().length < 20;
+        // 🎯 放宽短消息判断：只有非常短且没有具体内容的才算
+        const isShortMessage = trimmedMessage.length < 10 &&
+                              !trimmedMessage.includes('?') &&
+                              !trimmedMessage.includes('？');
         
-        const toolKeywords = ['搜索', '爬取', '分析', '执行', '代码', 'python', '搜索', 'crawl'];
-        const hasToolIntent = toolKeywords.some(keyword => 
-            userMessage.toLowerCase().includes(keyword.toLowerCase())
+        // 🎯 工具意图检测：包含这些关键词的应该使用工具
+        const toolKeywords = [
+            '搜索', '查询', '查找', '搜一下', '查一下',
+            '爬取', '抓取', '提取', '获取',
+            '分析', '解析', '处理', '计算',
+            '执行', '运行', '代码', '编程',
+            'python', 'crawl', 'scrape', 'search',
+            '报告', '研究', '调查', '调研'
+        ];
+        
+        const hasToolIntent = toolKeywords.some(keyword =>
+            trimmedMessage.toLowerCase().includes(keyword.toLowerCase())
         );
         
-        return (isSimpleQuestion || isShortMessage) && !hasToolIntent;
+        // 🎯 修复逻辑：只有是简单问题OR短消息，且没有工具意图，才认为是知识库问题
+        const isKnowledgeBase = (isSimpleQuestion || isShortMessage) && !hasToolIntent;
+        
+        console.log('[Orchestrator] 知识库检测分析:', {
+            message: trimmedMessage.substring(0, 50),
+            isSimpleQuestion,
+            isShortMessage,
+            hasToolIntent,
+            isKnowledgeBase
+        });
+        
+        return isKnowledgeBase;
     }
 
     /**
