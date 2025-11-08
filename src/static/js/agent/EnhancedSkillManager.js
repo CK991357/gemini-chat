@@ -1,3 +1,4 @@
+// src/static/js/agent/EnhancedSkillManager.js
 import { getBaseSkillManager } from '../tool-spec-system/skill-manager.js';
 
 export class EnhancedSkillManager {
@@ -19,7 +20,6 @@ export class EnhancedSkillManager {
   async initialize() {
     try {
       // 🎯 修复：动态获取基础技能管理器
-      // 假设基础技能管理器在全局可用，或者通过其他方式获取
       if (typeof getBaseSkillManager === 'function') {
         this.baseSkillManager = await getBaseSkillManager();
       } else {
@@ -36,7 +36,7 @@ export class EnhancedSkillManager {
       // 🎯 确保即使初始化失败也能继续工作
       this.baseSkillManager = this.createFallbackSkillManager();
       this.isInitialized = true;
-      this.initializationResolve(false); // 即使失败也继续
+      this.initializationResolve(false);
     }
   }
 
@@ -54,7 +54,6 @@ export class EnhancedSkillManager {
     return {
       findRelevantSkills: async (userQuery, context = {}) => {
         try {
-          // 🎯 重用现有的技能管理器
           const baseSkillManager = await getBaseSkillManager();
           if (baseSkillManager && baseSkillManager.findRelevantSkills) {
             return baseSkillManager.findRelevantSkills(userQuery, context);
@@ -114,7 +113,7 @@ export class EnhancedSkillManager {
     const basicMatches = await this.baseSkillManager.findRelevantSkills(userQuery, context);
     if (!basicMatches.length) return null;
 
-    // 🎯 添加执行历史增强评分（这是Agent模式的增值）
+    // 🎯 添加执行历史增强评分
     const enhancedMatches = basicMatches.map(match => ({
       ...match,
       enhancedScore: this.calculateEnhancedScore(match),
@@ -137,6 +136,118 @@ export class EnhancedSkillManager {
     
     // 🎯 直接重用基础匹配，不进行增强过滤
     return await this.baseSkillManager.findRelevantSkills(userQuery, context);
+  }
+
+  /**
+   * 🎯 新增：DeepResearch模式专用技能匹配
+   */
+  async findResearchSkills(userQuery, context = {}) {
+    await this.waitUntilReady();
+    
+    // 🎯 获取基础匹配
+    const basicMatches = await this.baseSkillManager.findRelevantSkills(userQuery, {
+      ...context,
+      // 🎯 DeepResearch模式优先使用研究相关工具
+      preferredTools: ['tavily_search', 'crawl4ai', 'firecrawl', 'python_sandbox']
+    });
+    
+    // 🎯 为DeepResearch模式添加研究优化评分
+    const researchMatches = basicMatches.map(match => ({
+      ...match,
+      researchScore: this.calculateResearchScore(match, userQuery),
+      researchSuitability: this.assessResearchSuitability(match.toolName)
+    })).sort((a, b) => b.researchScore - a.researchScore);
+    
+    console.log(`[EnhancedSkillManager] DeepResearch技能匹配完成:`, 
+      researchMatches.map(m => `${m.toolName}: ${(m.researchScore * 100).toFixed(1)}%`)
+    );
+    
+    return researchMatches;
+  }
+
+  /**
+   * 🎯 计算研究模式专用评分
+   */
+  calculateResearchScore(match, userQuery) {
+    const baseScore = match.score;
+    const toolName = match.toolName;
+    
+    // 🎯 研究工具优先级调整
+    const researchToolMultipliers = {
+      'tavily_search': 1.3,    // 搜索工具最高优先级
+      'crawl4ai': 1.2,         // 爬虫工具高优先级
+      'firecrawl': 1.2,        // 网页抓取高优先级
+      'python_sandbox': 1.1,   // 数据分析中等优先级
+      'default': 0.8           // 其他工具降低优先级
+    };
+    
+    const multiplier = researchToolMultipliers[toolName] || researchToolMultipliers.default;
+    
+    // 🎯 查询复杂度分析
+    const queryComplexity = this.analyzeQueryComplexity(userQuery);
+    const complexityBonus = queryComplexity > 2 ? 0.2 : 0;
+    
+    return baseScore * multiplier + complexityBonus;
+  }
+
+  /**
+   * 🎯 评估工具对研究的适用性
+   */
+  assessResearchSuitability(toolName) {
+    const suitabilityScores = {
+      'tavily_search': {
+        score: 95,
+        strengths: ['信息检索', '多源收集', '快速搜索'],
+        limitations: ['内容深度有限', '依赖搜索算法']
+      },
+      'crawl4ai': {
+        score: 90,
+        strengths: ['深度内容提取', '结构化数据', '完整页面获取'],
+        limitations: ['速度较慢', '可能被反爬']
+      },
+      'firecrawl': {
+        score: 85,
+        strengths: ['网页抓取', '内容解析', '链接提取'],
+        limitations: ['依赖页面结构', '可能被限制']
+      },
+      'python_sandbox': {
+        score: 75,
+        strengths: ['数据分析', '自定义处理', '复杂计算'],
+        limitations: ['需要编程知识', '执行时间较长']
+      },
+      'default': {
+        score: 50,
+        strengths: ['基础功能'],
+        limitations: ['非研究专用']
+      }
+    };
+    
+    return suitabilityScores[toolName] || suitabilityScores.default;
+  }
+
+  /**
+   * 🎯 分析查询复杂度
+   */
+  analyzeQueryComplexity(userQuery) {
+    let complexity = 0;
+    
+    // 长度复杂度
+    if (userQuery.length > 100) complexity += 1;
+    if (userQuery.length > 200) complexity += 1;
+    
+    // 主题复杂度
+    const topicSeparators = /[、，,;；]/g;
+    const topicCount = (userQuery.match(topicSeparators) || []).length + 1;
+    if (topicCount > 2) complexity += 1;
+    
+    // 关键词复杂度
+    const researchKeywords = ['研究', '分析', '调查', '报告', '趋势', '发展', '深度'];
+    const keywordCount = researchKeywords.filter(keyword => 
+      userQuery.includes(keyword)
+    ).length;
+    if (keywordCount > 1) complexity += 1;
+    
+    return Math.min(complexity, 4);
   }
 
   // 🎯 其余方法保持不变...
@@ -164,12 +275,13 @@ export class EnhancedSkillManager {
       error: error?.message,
       context: {
         userQuery: parameters?.query || parameters?.prompt || 'unknown',
-        outputLength: result?.output?.length || 0
+        outputLength: result?.output?.length || 0,
+        mode: result?.mode || 'standard' // 🎯 记录调用模式
       }
     };
     
     this.saveExecution(entry);
-    console.log(`[EnhancedSkillManager] 记录工具执行: ${toolName}, 成功: ${success}`);
+    console.log(`[EnhancedSkillManager] 记录工具执行: ${toolName}, 模式: ${entry.context.mode}, 成功: ${success}`);
   }
 
   getToolSuccessRate(toolName) {
@@ -191,13 +303,29 @@ export class EnhancedSkillManager {
       lastUsed: history.length > 0 ? Math.max(...history.map(e => e.timestamp)) : null,
       averageExecutionTime: history.length > 0 
         ? history.reduce((sum, e) => sum + (e.executionTime || 0), 0) / history.length 
-        : 0
+        : 0,
+      // 🎯 新增：模式使用统计
+      modeUsage: this.getModeUsage(toolName)
     };
+  }
+
+  /**
+   * 🎯 新增：获取工具在不同模式下的使用统计
+   */
+  getModeUsage(toolName) {
+    const history = this.executionHistory[toolName] || [];
+    const modeStats = {};
+    
+    history.forEach(entry => {
+      const mode = entry.context?.mode || 'standard';
+      modeStats[mode] = (modeStats[mode] || 0) + 1;
+    });
+    
+    return modeStats;
   }
 
   loadExecutionHistory() {
     try {
-      // 🎯 添加浏览器隐私模式兼容
       if (!localStorage) return {};
       return JSON.parse(localStorage.getItem('agent_execution_history') || '{}');
     } catch {
@@ -207,7 +335,6 @@ export class EnhancedSkillManager {
 
   saveExecution(entry) {
     try {
-      // 🎯 添加存储失败处理
       if (!localStorage) return;
       
       const toolName = entry.toolName;
@@ -241,7 +368,8 @@ export class EnhancedSkillManager {
     const analytics = Array.from(tools).map(toolName => ({
       toolName,
       ...this.getToolUsage(toolName),
-      successRate: this.getToolSuccessRate(toolName)
+      successRate: this.getToolSuccessRate(toolName),
+      researchSuitability: this.assessResearchSuitability(toolName)
     })).sort((a, b) => b.totalExecutions - a.totalExecutions);
 
     console.log('[EnhancedSkillManager] 工具分析:', analytics);
