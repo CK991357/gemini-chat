@@ -429,23 +429,23 @@ export class DeepResearchAgent {
      */
     async conductResearch(inputs) {
         const runId = this.callbackManager.generateRunId();
-        const { userMessage, context } = inputs;
+        const { topic, context } = inputs;
         
-        console.log(`[AgentExecutor] 开始执行Agent循环，输入: "${userMessage.substring(0, 100)}..."`);
+        console.log(`[AgentExecutor] 开始执行Agent循环，输入: "${topic.substring(0, 100)}..."`);
 
         // 🎯 启动思考过程显示
         window.dispatchEvent(new CustomEvent('agent:session_started', {
-            detail: { 
-                sessionId: runId, 
-                userMessage, 
-                maxIterations: this.maxIterations 
+            detail: {
+                sessionId: runId,
+                userMessage: topic,
+                maxIterations: this.maxIterations
             }
         }));
 
         // 🎯 新增：在聊天区显示Agent开始消息
         window.dispatchEvent(new CustomEvent('chat:agent_started', {
             detail: {
-                userMessage: userMessage,
+                userMessage: topic,
                 sessionId: runId,
                 maxIterations: this.maxIterations
             }
@@ -463,8 +463,8 @@ export class DeepResearchAgent {
         await this.callbackManager.invokeEvent('on_agent_start', {
             name: 'agent_executor',
             run_id: runId,
-            data: { 
-                userMessage,
+            data: {
+                userMessage: topic,
                 maxIterations: this.maxIterations,
                 availableTools: Object.keys(this.tools),
                 maxThinkTimeout: this.maxThinkTimeout
@@ -549,8 +549,8 @@ export class DeepResearchAgent {
 
                 // 🎯 步骤1: 思考 (Think) - 使用动态超时保护
                 const thinkPromise = this.agentLogic.plan(
-                    intermediateSteps, 
-                    { userMessage, context },
+                    intermediateSteps,
+                    { userMessage: topic, context },
                     { runId, callbackManager: this.callbackManager }
                 );
                 
