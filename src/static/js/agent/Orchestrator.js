@@ -5,7 +5,7 @@
  * @description 智能路由器 + 组装工厂：专用DeepResearch Agent模式，100%向后兼容
  */
 
-// 🎯 导入专用Agent核心组件（使用正确的deepresearch路径）
+// 🎯 导入专用Agent核心组件
 import { DeepResearchAgent } from './deepresearch/DeepResearchAgent.js';
 
 // 🎯 保留工作流组件（向后兼容）
@@ -40,7 +40,15 @@ export class Orchestrator {
         this.currentContext = null;
         
         // 🎯 专用Agent模式标识
-        this.agentMode = 'deep_research'; // 🆕 专用模式标识
+        this.agentMode = 'deep_research';
+        
+        // 🎯 研究工具配置
+        this.researchTools = ['tavily_search', 'crawl4ai', 'python_sandbox'];
+        this.researchToolPriorities = {
+            'tavily_search': 10,    // 搜索工具最高优先级
+            'crawl4ai': 9,          // 网页抓取次高
+            'python_sandbox': 5     // 代码解释器较低优先级（仅用于数据分析）
+        };
         
         // 🎯 轻量级初始化 - 只设置基础结构
         this.callbackManager = new CallbackManager();
@@ -48,6 +56,7 @@ export class Orchestrator {
         this.workflowEngine = null; // 延迟初始化
         this.deepResearchAgent = null; // 🆕 替换通用agentSystem
         this.tools = {}; // 延迟初始化
+        this.researchToolsSet = {}; // 🆕 专门的研究工具集
         
         console.log('[Orchestrator] 实例创建完成（等待开关触发初始化）');
     }
@@ -90,11 +99,15 @@ export class Orchestrator {
                 console.log('[Orchestrator] 初始化工具系统...');
                 this.tools = await this._initializeTools();
                 
-                // 🎯 5. 🆕 初始化专用DeepResearch Agent（替换通用Agent）
+                // 🎯 5. 🆕 初始化专用研究工具集
+                console.log('[Orchestrator] 初始化专用研究工具集...');
+                this.researchToolsSet = this._initializeResearchTools();
+                
+                // 🎯 6. 🆕 初始化专用DeepResearch Agent（使用研究工具集）
                 console.log('[Orchestrator] 初始化专用DeepResearch Agent...');
                 this.deepResearchAgent = this._initializeDeepResearchAgent();
                 
-                // 🎯 6. 设置处理器和事件监听
+                // 🎯 7. 设置处理器和事件监听
                 this.setupHandlers();
                 this.setupEventListeners();
                 
@@ -103,9 +116,10 @@ export class Orchestrator {
                 
                 const initTime = Date.now() - initStartTime;
                 console.log(`[Orchestrator] 专用研究模式初始化完成 (${initTime}ms)`, {
-                    toolsCount: Object.keys(this.tools).length,
-                    agentMode: this.agentMode,
-                    researchAgent: this.deepResearchAgent ? '已启用' : '未启用'
+                    allToolsCount: Object.keys(this.tools).length,
+                    researchToolsCount: Object.keys(this.researchToolsSet).length,
+                    researchTools: Object.keys(this.researchToolsSet),
+                    agentMode: this.agentMode
                 });
                 
                 this._notifyInitWaiters(null, true);
@@ -126,20 +140,42 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 新增：初始化专用DeepResearch Agent
+     * 🎯 新增：初始化专用研究工具集
+     */
+    _initializeResearchTools() {
+        const researchTools = {};
+        
+        this.researchTools.forEach(toolName => {
+            if (this.tools[toolName]) {
+                researchTools[toolName] = this.tools[toolName];
+                console.log(`[Orchestrator] 添加研究工具: ${toolName}`);
+            } else {
+                console.warn(`[Orchestrator] 研究工具 ${toolName} 不存在，跳过`);
+            }
+        });
+        
+        if (Object.keys(researchTools).length === 0) {
+            console.warn('[Orchestrator] 无可用研究工具，研究模式将不可用');
+        }
+        
+        return researchTools;
+    }
+
+    /**
+     * 🎯 修改：初始化专用DeepResearch Agent
      */
     _initializeDeepResearchAgent() {
         try {
-            // 🎯 检查工具是否可用
-            if (Object.keys(this.tools).length === 0) {
-                console.warn('[Orchestrator] 无可用工具，跳过专用研究Agent初始化');
+            // 🎯 检查研究工具是否可用
+            if (Object.keys(this.researchToolsSet).length === 0) {
+                console.warn('[Orchestrator] 无可用研究工具，跳过专用研究Agent初始化');
                 return null;
             }
             
-            // 🎯 创建专用研究Agent实例
+            // 🎯 创建专用研究Agent实例，传入研究工具集
             const researchAgent = new DeepResearchAgent(
                 this.chatApiHandler,
-                this.tools,
+                this.researchToolsSet, // 🆕 传入研究工具集而非所有工具
                 this.callbackManager,
                 {
                     maxIterations: this.config.maxIterations || 6,
@@ -162,38 +198,6 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 修改：确保初始化的公共方法（保持不变）
-     */
-    async ensureInitialized() {
-        if (this._initState === 'initialized') return true;
-        if (this._initState === 'initializing') {
-            return new Promise((resolve, reject) => {
-                this._pendingInitWaiters.push({ resolve, reject });
-            });
-        }
-        
-        // 🎯 关键修改：只有开关启用时才真正初始化
-        if (this.isEnabled) {
-            return this._realInitialize();
-        } else {
-            console.log('[Orchestrator] 开关未启用，跳过初始化');
-            return false;
-        }
-    }
-
-    _notifyInitWaiters(err, result) {
-        for (const w of this._pendingInitWaiters) {
-            try {
-                if (err) w.reject(err);
-                else w.resolve(result);
-            } catch (e) {
-                console.warn('[Orchestrator] notify waiter failed:', e);
-            }
-        }
-        this._pendingInitWaiters = [];
-    }
-
-    /**
      * 🎯 修改：处理用户请求 - 专用研究模式路由
      */
     async handleUserRequest(userMessage, files = [], context = {}) {
@@ -211,7 +215,7 @@ export class Orchestrator {
      * 🎯 修改：核心请求处理逻辑 - 专用研究模式
      */
     async _handleUserRequestInternal(userMessage, files = [], context = {}) {
-        // 🎯 第一步：知识库优先检测（保持不变）
+        // 🎯 第一步：知识库优先检测
         if (await this._isKnowledgeBaseQuestion(userMessage)) {
             console.log('[Orchestrator] 检测到知识库问题，使用标准回复');
             return { enhanced: false, type: 'knowledge_base' };
@@ -219,7 +223,7 @@ export class Orchestrator {
         
         this.currentContext = context;
         
-        // 🎯 第二步：快速过滤短消息（保持不变）
+        // 🎯 第二步：快速过滤短消息
         try {
             const trimmed = (userMessage || '').trim();
             const greetingRegex = /^\s*(hi|hello|hey|你好|嗨|您好|早安|晚上好)([.!?\s]|$)/i;
@@ -246,24 +250,30 @@ export class Orchestrator {
         try {
             console.log(`[Orchestrator] 处理用户请求: "${userMessage.substring(0, 100)}..."`);
             
-            // 🎯 任务分析（保持不变）
+            // 🎯 使用所有可用工具进行标准模式
+            const availableTools = context.availableTools || Object.keys(this.tools);
+            
+            // 🎯 任务分析
             const taskAnalysis = await this.workflowEngine.analyzeTask(userMessage, {
-                availableTools: context.availableTools || [],
+                availableTools: availableTools,
                 userMessage: userMessage
             });
 
-            // 🎯 技能匹配（保持不变）
-            const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, context);
+            // 🎯 技能匹配
+            const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, {
+                ...context,
+                availableTools: availableTools
+            });
 
             console.log(`[Orchestrator] 路由分析完成:`, {
                 complexity: taskAnalysis.complexity,
                 score: taskAnalysis.score,
                 workflowType: taskAnalysis.workflowType,
                 matchedSkills: matchedSkills.length,
-                availableTools: context.availableTools?.length || 'all'
+                availableTools: availableTools.length
             });
 
-            // 🎯 智能路由决策（简化：只有研究模式和标准模式）
+            // 🎯 智能路由决策
             if (matchedSkills && matchedSkills.length > 0) {
                 // 🎯 单工具模式 - 现有系统
                 console.log(`[Orchestrator] 路由决策 → 单工具模式`);
@@ -285,12 +295,18 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 新增：深度研究意图检测
+     * 🎯 修改：深度研究意图检测
      */
     _shouldUseDeepResearch(userMessage) {
         // 🎯 检查研究Agent是否可用
         if (!this.deepResearchAgent) {
             console.log('[Orchestrator] 深度研究Agent不可用，跳过研究模式');
+            return false;
+        }
+
+        // 🎯 检查研究工具是否可用
+        if (Object.keys(this.researchToolsSet).length === 0) {
+            console.log('[Orchestrator] 无可用研究工具，跳过研究模式');
             return false;
         }
 
@@ -323,20 +339,26 @@ export class Orchestrator {
             hasResearchIntent,
             isLongQuery,
             hasMultipleTopics,
-            shouldUseResearch
+            shouldUseResearch,
+            availableResearchTools: Object.keys(this.researchToolsSet)
         });
 
         return shouldUseResearch;
     }
 
     /**
-     * 🎯 新增：专用研究模式处理
+     * 🎯 修改：专用研究模式处理
      */
     async _handleWithDeepResearch(userMessage, context) {
         if (!this.deepResearchAgent) {
             console.log('[Orchestrator] 深度研究Agent不可用，回退到单工具模式');
-            const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, context);
-            return await this._handleWithSingleTool(userMessage, context, matchedSkills);
+            // 🎯 使用研究工具集进行回退
+            const researchContext = {
+                ...context,
+                availableTools: Object.keys(this.researchToolsSet)
+            };
+            const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, researchContext);
+            return await this._handleWithSingleTool(userMessage, researchContext, matchedSkills);
         }
 
         try {
@@ -348,7 +370,9 @@ export class Orchestrator {
                 requirements: context.requirements || '',
                 language: context.language || 'zh-CN',
                 depth: this._determineResearchDepth(userMessage),
-                focus: this._extractResearchFocus(userMessage)
+                focus: this._extractResearchFocus(userMessage),
+                // 🆕 传递研究工具集
+                availableTools: Object.keys(this.researchToolsSet)
             };
 
             // 🎯 执行深度研究
@@ -360,123 +384,50 @@ export class Orchestrator {
         } catch (error) {
             console.error('[Orchestrator] 深度研究执行失败:', error);
             
-            // 🎯 研究失败时优雅降级到单工具模式
-            console.log('[Orchestrator] 研究失败，降级到单工具模式');
-            const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, context);
-            return await this._handleWithSingleTool(userMessage, context, matchedSkills);
+            // 🎯 研究失败时优雅降级到研究工具的单工具模式
+            console.log('[Orchestrator] 研究失败，降级到研究工具模式');
+            const researchContext = {
+                ...context,
+                availableTools: Object.keys(this.researchToolsSet)
+            };
+            const matchedSkills = await this.skillManager.findRelevantSkills(userMessage, researchContext);
+            return await this._handleWithSingleTool(userMessage, researchContext, matchedSkills);
         }
     }
 
     /**
-     * 🎯 新增：确定研究深度
+     * 🎯 修改：获取系统状态（包含研究工具集信息）
      */
-    _determineResearchDepth(userMessage) {
-        const lowerMessage = userMessage.toLowerCase();
-        
-        if (lowerMessage.includes('深度') || lowerMessage.includes('详细') || 
-            lowerMessage.includes('全面') || lowerMessage.includes('系统')) {
-            return 'deep';
-        }
-        
-        if (lowerMessage.includes('简要') || lowerMessage.includes('简单') || 
-            lowerMessage.includes('快速')) {
-            return 'quick';
-        }
-        
-        return 'standard';
-    }
+    getStatus() {
+        const baseStatus = {
+            enabled: this.isEnabled,
+            initialized: this._isInitialized,
+            initState: this._initState,
+            agentMode: this.agentMode,
+            currentWorkflow: this.currentWorkflow ? {
+                name: this.currentWorkflow.name,
+                steps: this.currentWorkflow.steps.length
+            } : null,
+            tools: {
+                allToolsCount: Object.keys(this.tools).length,
+                researchToolsCount: Object.keys(this.researchToolsSet).length,
+                allTools: Object.keys(this.tools),
+                researchTools: Object.keys(this.researchToolsSet)
+            },
+            callbackManager: this.callbackManager.getStatus()
+        };
 
-    /**
-     * 🎯 新增：提取研究重点
-     */
-    _extractResearchFocus(userMessage) {
-        const focusAreas = [];
-        const lowerMessage = userMessage.toLowerCase();
-        
-        // 简单关键词匹配提取研究重点
-        if (lowerMessage.includes('趋势') || lowerMessage.includes('发展')) {
-            focusAreas.push('trends');
-        }
-        if (lowerMessage.includes('技术') || lowerMessage.includes('原理')) {
-            focusAreas.push('technology');
-        }
-        if (lowerMessage.includes('应用') || lowerMessage.includes('场景')) {
-            focusAreas.push('applications');
-        }
-        if (lowerMessage.includes('挑战') || lowerMessage.includes('问题')) {
-            focusAreas.push('challenges');
-        }
-        if (lowerMessage.includes('未来') || lowerMessage.includes('前景')) {
-            focusAreas.push('future');
-        }
-        
-        return focusAreas.length > 0 ? focusAreas : ['comprehensive'];
-    }
-
-    /**
-     * 🎯 新增：格式化研究结果
-     */
-    _formatResearchResult(researchResult) {
-        if (!researchResult.success) {
-            return {
-                enhanced: true,
-                type: 'research_error',
-                content: `🔍 深度研究失败: ${researchResult.report}`,
-                success: false,
-                researchRunId: researchResult.researchState?.sessionId,
-                fallback: true // 允许降级
+        // 🎯 修改：包含专用研究Agent状态
+        if (this.deepResearchAgent) {
+            baseStatus.deepResearchAgent = {
+                isAvailable: true,
+                mode: 'specialized',
+                status: this.deepResearchAgent.getStatus(),
+                tools: Object.keys(this.researchToolsSet) // 🆕 显示研究工具
             };
         }
 
-        let content = researchResult.report;
-        
-        // 🎯 添加研究执行摘要
-        if (researchResult.researchState) {
-            const duration = researchResult.duration;
-            const phase = researchResult.researchState.phase;
-            
-            content += `\n\n---\n**🔍 深度研究执行摘要**\n`;
-            content += `研究耗时: ${duration}ms | 完成阶段: ${phase}\n`;
-            content += `研究模式: 专用深度研究Agent | 工具: 智能规划自主执行`;
-        }
-
-        return {
-            enhanced: true,
-            type: 'research_result',
-            content: content,
-            success: researchResult.success,
-            researchRunId: researchResult.researchState?.sessionId,
-            researchState: researchResult.researchState,
-            isMultiStep: true,
-            iterations: researchResult.researchState?.currentStep || 1
-        };
-    }
-
-    /**
-     * 🎯 修改：进入降级模式
-     */
-    async _enterFallbackMode(error) {
-        console.warn('[Orchestrator] 进入降级模式，专用研究功能受限');
-        
-        // 🎯 确保基础组件可用
-        if (!this.workflowEngine) {
-            this.workflowEngine = new WorkflowEngine(this.skillManager, this.callbackManager);
-        }
-        
-        if (!this.workflowUI) {
-            this.workflowUI = new WorkflowUI(this.config.containerId);
-        }
-        
-        // 🎯 创建基础工具集
-        if (Object.keys(this.tools).length === 0) {
-            this.tools = this._createFallbackTools();
-        }
-        
-        // 🎯 标记研究Agent不可用
-        this.deepResearchAgent = null;
-        
-        this._isInitialized = true; // 标记为已初始化（降级模式）
-        console.log('[Orchestrator] 降级模式初始化完成');
+        return baseStatus;
     }
 
     // 🎯 保留所有现有的辅助方法和兼容性方法
@@ -526,7 +477,8 @@ export class Orchestrator {
         try {
             if (matchedSkills && matchedSkills.length > 0) {
                 const bestSkill = matchedSkills[0];
-                const tool = this.tools[bestSkill.toolName];
+                // 🎯 修改：优先使用研究工具集，如果没有则使用所有工具
+                const tool = this.researchToolsSet[bestSkill.toolName] || this.tools[bestSkill.toolName];
                 
                 if (tool) {
                     console.log(`[Orchestrator] 执行单工具: ${bestSkill.toolName}`);
@@ -583,9 +535,6 @@ export class Orchestrator {
     /**
      * 🎯 知识库问题检测（保持不变）
      */
-    /**
-     * 🎯 修复：知识库问题检测 - 精确识别真正的基础问题
-     */
     async _isKnowledgeBaseQuestion(userMessage) {
         const trimmedMessage = userMessage.trim();
         
@@ -636,214 +585,124 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 工作流处理（完全向后兼容）- 保持您现有的方法
+     * 🎯 确定研究深度（保持不变）
      */
-    async _handleWithWorkflow(userMessage, taskAnalysis, files, context) {
-        try {
-            this.currentWorkflow = await this.workflowEngine.createWorkflow(userMessage, {
-                ...context,
-                files,
-                taskAnalysis,
-                callbackManager: this.callbackManager
-            });
-            
-            if (!this.currentWorkflow) {
-                console.log('[Orchestrator] 工作流创建失败，回退到标准模式');
-                return { enhanced: false, type: 'standard_fallback' };
-            }
-            
-            this.workflowUI.showWorkflow(this.currentWorkflow);
-            
-            return { 
-                enhanced: true, 
-                type: 'workflow_pending',
-                workflow: this.currentWorkflow
-            };
-            
-        } catch (error) {
-            console.error('[Orchestrator] 工作流创建失败:', error);
-            return { enhanced: false, type: 'standard_fallback' };
+    _determineResearchDepth(userMessage) {
+        const lowerMessage = userMessage.toLowerCase();
+        
+        if (lowerMessage.includes('深度') || lowerMessage.includes('详细') || 
+            lowerMessage.includes('全面') || lowerMessage.includes('系统')) {
+            return 'deep';
         }
+        
+        if (lowerMessage.includes('简要') || lowerMessage.includes('简单') || 
+            lowerMessage.includes('快速')) {
+            return 'quick';
+        }
+        
+        return 'standard';
     }
 
     /**
-     * 🎯 工作流执行（完全向后兼容）
+     * 🎯 提取研究重点（保持不变）
      */
-    async startWorkflowExecution() {
-        if (!this.currentWorkflow) {
-            return { enhanced: false, type: 'error', content: '没有正在执行的工作流' };
+    _extractResearchFocus(userMessage) {
+        const focusAreas = [];
+        const lowerMessage = userMessage.toLowerCase();
+        
+        // 简单关键词匹配提取研究重点
+        if (lowerMessage.includes('趋势') || lowerMessage.includes('发展')) {
+            focusAreas.push('trends');
+        }
+        if (lowerMessage.includes('技术') || lowerMessage.includes('原理')) {
+            focusAreas.push('technology');
+        }
+        if (lowerMessage.includes('应用') || lowerMessage.includes('场景')) {
+            focusAreas.push('applications');
+        }
+        if (lowerMessage.includes('挑战') || lowerMessage.includes('问题')) {
+            focusAreas.push('challenges');
+        }
+        if (lowerMessage.includes('未来') || lowerMessage.includes('前景')) {
+            focusAreas.push('future');
         }
         
-        try {
-            const workflowStream = this.workflowEngine.stream(this.currentWorkflow, {
-                apiHandler: this.chatApiHandler,
-                apiKey: this.currentContext?.apiKey,
-                model: this.currentContext?.model,
-                stepOutputs: {},
-                isCancelled: () => false
-            });
-            
-            let finalResult = null;
-            
-            for await (const event of workflowStream) {
-                await this.callbackManager.invokeEvent(event.event, {
-                    name: event.name,
-                    run_id: event.run_id,
-                    data: event.data,
-                    metadata: event.metadata
-                });
-                
-                if (event.event === 'on_workflow_end') {
-                    finalResult = event.data.result;
-                }
-            }
-            
-            return this._formatWorkflowResult(finalResult);
-            
-        } catch (error) {
-            console.error('[Orchestrator] 工作流执行失败:', error);
-            return this._formatErrorResult(error);
-        }
+        return focusAreas.length > 0 ? focusAreas : ['comprehensive'];
     }
 
-    // 🎯 保留所有现有的格式化方法
-    _formatWorkflowResult(workflowResult) {
-        if (!workflowResult) {
+    /**
+     * 🎯 格式化研究结果（保持不变）
+     */
+    _formatResearchResult(researchResult) {
+        if (!researchResult.success) {
             return {
-                type: 'error',
+                enhanced: true,
+                type: 'research_error',
+                content: `🔍 深度研究失败: ${researchResult.report}`,
                 success: false,
-                content: '工作流执行无结果',
-                enhanced: true
+                researchRunId: researchResult.researchState?.sessionId,
+                fallback: true // 允许降级
             };
         }
 
+        let content = researchResult.report;
+        
+        // 🎯 添加研究执行摘要
+        if (researchResult.researchState) {
+            const duration = researchResult.duration;
+            const phase = researchResult.researchState.phase;
+            
+            content += `\n\n---\n**🔍 深度研究执行摘要**\n`;
+            content += `研究耗时: ${duration}ms | 完成阶段: ${phase}\n`;
+            content += `研究模式: 专用深度研究Agent | 工具: 智能规划自主执行`;
+        }
+
         return {
-            type: 'workflow_result',
-            success: workflowResult.success,
-            content: this._extractWorkflowOutput(workflowResult),
-            workflow: workflowResult.workflowName,
-            steps: workflowResult.steps?.length || 0,
             enhanced: true,
-            summary: workflowResult.summary
+            type: 'research_result',
+            content: content,
+            success: researchResult.success,
+            researchRunId: researchResult.researchState?.sessionId,
+            researchState: researchResult.researchState,
+            isMultiStep: true,
+            iterations: researchResult.researchState?.currentStep || 1
         };
     }
 
-    _formatErrorResult(error) {
-        return {
-            type: 'error', 
-            success: false,
-            content: `处理失败: ${error.message}`,
-            enhanced: true
-        };
-    }
-
-    _extractWorkflowOutput(workflowResult) {
-        if (!workflowResult.success) {
-            return '工作流执行失败';
-        }
-
-        const successfulSteps = workflowResult.steps?.filter(step => step?.success) || [];
-        if (successfulSteps.length === 0) return '工作流执行无成功步骤';
-
-        const lastSuccessfulStep = successfulSteps[successfulSteps.length - 1];
-        return lastSuccessfulStep.output || '工作流执行完成';
-    }
-
-    _skipWorkflow() {
-        this.workflowUI.hide();
-        return { 
-            skipped: true,
-            enhanced: true,
-            type: 'workflow_skipped'
-        };
-    }
-
-    _emitWorkflowResult(result) {
-        const event = new CustomEvent('workflow:result', { detail: result });
-        window.dispatchEvent(event);
-    }
-
     /**
-     * 🎯 修改：获取系统状态（包含专用研究Agent信息）
+     * 🎯 进入降级模式（保持不变）
      */
-    getStatus() {
-        const baseStatus = {
-            enabled: this.isEnabled,
-            initialized: this._isInitialized,
-            initState: this._initState,
-            agentMode: this.agentMode, // 🆕 专用模式标识
-            currentWorkflow: this.currentWorkflow ? {
-                name: this.currentWorkflow.name,
-                steps: this.currentWorkflow.steps.length
-            } : null,
-            tools: {
-                count: Object.keys(this.tools).length,
-                available: Object.keys(this.tools)
-            },
-            callbackManager: this.callbackManager.getStatus()
-        };
-
-        // 🎯 修改：只包含专用研究Agent状态
-        if (this.deepResearchAgent) {
-            baseStatus.deepResearchAgent = {
-                isAvailable: true,
-                mode: 'specialized',
-                status: this.deepResearchAgent.getStatus(),
-                tools: Object.keys(this.tools)
-            };
-        }
-
-        return baseStatus;
-    }
-
-    /**
-     * 🎯 启用/禁用系统（保持不变）
-     */
-    setEnabled(enabled) {
-        this.isEnabled = enabled;
-        console.log(`[Orchestrator] ${enabled ? '启用' : '禁用'}专用研究路由`);
+    async _enterFallbackMode(error) {
+        console.warn('[Orchestrator] 进入降级模式，专用研究功能受限');
         
-        if (enabled && !this._isInitialized) {
-            console.log('[Orchestrator] 开关启用，触发初始化...');
-            this.ensureInitialized().catch(error => {
-                console.error('[Orchestrator] 开关触发初始化失败:', error);
-            });
-        }
-    }
-
-    /**
-     * 🎯 动态注册工具（保持不变）
-     */
-    registerTool(toolInstance) {
-        if (this.tools[toolInstance.name]) {
-            console.warn(`[Orchestrator] 工具 ${toolInstance.name} 已存在，跳过注册`);
-            return;
+        // 🎯 确保基础组件可用
+        if (!this.workflowEngine) {
+            this.workflowEngine = new WorkflowEngine(this.skillManager, this.callbackManager);
         }
         
-        this.tools[toolInstance.name] = toolInstance;
-        console.log(`[Orchestrator] 注册新工具: ${toolInstance.name}`);
-    }
-
-    /**
-     * 🎯 清理资源（保持不变）
-     */
-    destroy() {
-        this.currentWorkflow = null;
-        this.currentContext = null;
-        
-        if (this.deepResearchAgent) {
-            this.deepResearchAgent = null;
+        if (!this.workflowUI) {
+            this.workflowUI = new WorkflowUI(this.config.containerId);
         }
         
-        this.callbackManager.clearCurrentRun();
+        // 🎯 创建基础工具集
+        if (Object.keys(this.tools).length === 0) {
+            this.tools = this._createFallbackTools();
+        }
         
-        console.log('[Orchestrator] 资源清理完成');
+        // 🎯 初始化研究工具集
+        this.researchToolsSet = this._initializeResearchTools();
+        
+        // 🎯 标记研究Agent不可用
+        this.deepResearchAgent = null;
+        
+        this._isInitialized = true; // 标记为已初始化（降级模式）
+        console.log('[Orchestrator] 降级模式初始化完成');
     }
 
     // 🎯 保留所有现有的设置方法
     setupHandlers() {
         try {
-            this._setupResearchEventHandlers(); // 🆕 专用研究事件处理器
+            this._setupResearchEventHandlers();
             
             // 保留现有的中间件注册
             import('./middlewares/PerformanceMonitorMiddleware.js').then(module => {
@@ -873,7 +732,7 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 新增：专用研究事件处理器
+     * 🎯 专用研究事件处理器（保持不变）
      */
     _setupResearchEventHandlers() {
         this.callbackManager.addHandler({
@@ -936,5 +795,70 @@ export class Orchestrator {
     _createFallbackTools() {
         console.log('[Orchestrator] 创建降级工具集：仅提供基础功能');
         return {};
+    }
+
+    // 🎯 保留所有现有的兼容性方法
+    ensureInitialized() {
+        if (this._initState === 'initialized') return Promise.resolve(true);
+        if (this._initState === 'initializing') {
+            return new Promise((resolve, reject) => {
+                this._pendingInitWaiters.push({ resolve, reject });
+            });
+        }
+        
+        // 🎯 关键修改：只有开关启用时才真正初始化
+        if (this.isEnabled) {
+            return this._realInitialize();
+        } else {
+            console.log('[Orchestrator] 开关未启用，跳过初始化');
+            return false;
+        }
+    }
+
+    _notifyInitWaiters(err, result) {
+        for (const w of this._pendingInitWaiters) {
+            try {
+                if (err) w.reject(err);
+                else w.resolve(result);
+            } catch (e) {
+                console.warn('[Orchestrator] notify waiter failed:', e);
+            }
+        }
+        this._pendingInitWaiters = [];
+    }
+
+    setEnabled(enabled) {
+        this.isEnabled = enabled;
+        console.log(`[Orchestrator] ${enabled ? '启用' : '禁用'}专用研究路由`);
+        
+        if (enabled && !this._isInitialized) {
+            console.log('[Orchestrator] 开关启用，触发初始化...');
+            this.ensureInitialized().catch(error => {
+                console.error('[Orchestrator] 开关触发初始化失败:', error);
+            });
+        }
+    }
+
+    registerTool(toolInstance) {
+        if (this.tools[toolInstance.name]) {
+            console.warn(`[Orchestrator] 工具 ${toolInstance.name} 已存在，跳过注册`);
+            return;
+        }
+        
+        this.tools[toolInstance.name] = toolInstance;
+        console.log(`[Orchestrator] 注册新工具: ${toolInstance.name}`);
+    }
+
+    destroy() {
+        this.currentWorkflow = null;
+        this.currentContext = null;
+        
+        if (this.deepResearchAgent) {
+            this.deepResearchAgent = null;
+        }
+        
+        this.callbackManager.clearCurrentRun();
+        
+        console.log('[Orchestrator] 资源清理完成');
     }
 }

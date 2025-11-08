@@ -1157,6 +1157,11 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
             }
         }
         
+        // 🎯 修复：传递所有可用工具，让Orchestrator内部处理研究工具过滤
+        const availableTools = getAvailableToolNames(modelName);
+        
+        console.log(`[Agent] 可用工具: ${availableTools.join(', ')}`);
+        
         // 启动思考过程显示
         const sessionId = agentThinkingDisplay.startSession(messageText, 8);
         console.log(`🤖 Agent会话启动: ${sessionId}`);
@@ -1167,7 +1172,7 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
             apiKey: apiKey,
             messages: chatHistory,
             apiHandler: chatApiHandler,
-            availableTools: availableToolNames
+            availableTools: availableTools // 🎯 传递所有工具，Orchestrator内部会过滤
         });
         
         console.log('🎯 Orchestrator处理结果:', agentResult);

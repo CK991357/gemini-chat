@@ -148,7 +148,7 @@ export class EnhancedSkillManager {
     const basicMatches = await this.baseSkillManager.findRelevantSkills(userQuery, {
       ...context,
       // 🎯 DeepResearch模式优先使用研究相关工具
-      preferredTools: ['tavily_search', 'crawl4ai', 'firecrawl', 'python_sandbox']
+      preferredTools: ['tavily_search', 'crawl4ai', 'python_sandbox']
     });
     
     // 🎯 为DeepResearch模式添加研究优化评分
@@ -176,7 +176,6 @@ export class EnhancedSkillManager {
     const researchToolMultipliers = {
       'tavily_search': 1.3,    // 搜索工具最高优先级
       'crawl4ai': 1.2,         // 爬虫工具高优先级
-      'firecrawl': 1.2,        // 网页抓取高优先级
       'python_sandbox': 1.1,   // 数据分析中等优先级
       'default': 0.8           // 其他工具降低优先级
     };
@@ -204,11 +203,6 @@ export class EnhancedSkillManager {
         score: 90,
         strengths: ['深度内容提取', '结构化数据', '完整页面获取'],
         limitations: ['速度较慢', '可能被反爬']
-      },
-      'firecrawl': {
-        score: 85,
-        strengths: ['网页抓取', '内容解析', '链接提取'],
-        limitations: ['依赖页面结构', '可能被限制']
       },
       'python_sandbox': {
         score: 75,
