@@ -136,7 +136,6 @@ export class AgentExecutor {
                 return this._formatSearchOutput(rawResult);
                 
             case 'crawl4ai':
-            case 'firecrawl':
                 return this._formatCrawlerOutput(rawResult);
                 
             default:
@@ -279,10 +278,6 @@ export class AgentExecutor {
             'tavily_search': {
                 maxRetries: 2,
                 getDelay: (attempt) => Math.min(1000 * attempt, 3000) // 1s, 2s, 3s
-            },
-            'firecrawl': {
-                maxRetries: 1,
-                getDelay: () => 2000
             },
             'crawl4ai': {
                 maxRetries: 1, 
