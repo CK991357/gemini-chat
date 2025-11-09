@@ -136,11 +136,11 @@ export class DeepResearchAgent {
                 
                 await this.callbackManager.invokeEvent('on_tool_end', { 
                     run_id: runId, 
-                    data: { 
-                        tool_name, 
-                        output_preview: summarizedObservation.substring(0, 200) + '...',
+                    data: {
+                        tool_name,
+                        output: summarizedObservation, // 🎯 关键修复：统一字段名为 output
                         output_length: summarizedObservation.length
-                    } 
+                    }
                 });
             
             } else {

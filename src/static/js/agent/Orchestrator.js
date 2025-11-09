@@ -165,7 +165,16 @@ export class Orchestrator {
             on_research_progress: (e) => window.dispatchEvent(new CustomEvent('agent:iteration_update', { detail: { ...e, agentType: 'deep_research' } })),
             on_agent_think_start: (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
             on_tool_start: (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: `正在执行工具: ${e.data.tool_name}`, type: 'action', agentType: 'deep_research' } })),
-            on_tool_end: (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: `工具执行完成。结果: ${e.data.output.substring(0, 100)}...`, type: 'result', agentType: 'deep_research' } })),
+            on_tool_end: (e) => {
+                const outputPreview = e.data.output || '';
+                window.dispatchEvent(new CustomEvent('agent:thinking', {
+                    detail: {
+                        content: `工具执行完成。结果: ${outputPreview.substring(0, 100)}...`,
+                        type: 'result',
+                        agentType: 'deep_research'
+                    }
+                }));
+            },
             on_research_end: (e) => window.dispatchEvent(new CustomEvent('agent:session_completed', { detail: { result: e.data, agentType: 'deep_research' } })),
         });
     }
