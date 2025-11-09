@@ -416,6 +416,38 @@ async function handleAPIRequest(request, env) {
 
             const model = body.model || '';
 
+            // 🎯 1. 摘要子代理的专用路由 (最高优先级)
+            if (model === 'gemini-2.0-flash-exp-summarizer') {
+                console.log(`✅ [API路由] 检测到摘要子代理请求，路由到高速模型`);
+                // 使用一个快速、便宜的模型来处理摘要任务
+                body.model = 'gemini-2.0-flash-exp';
+                const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
+                const apiKey = env.AUTH_KEY;
+                
+                if (!apiKey) {
+                    throw new Error('AUTH_KEY is not configured for summarizer.');
+                }
+
+                // 统一的转发逻辑
+                const proxyResponse = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(body)
+                });
+                
+                return new Response(proxyResponse.body, {
+                    status: proxyResponse.status,
+                    statusText: proxyResponse.statusText,
+                    headers: {
+                        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    }
+                });
+            }
+            
             // 路由到新的聊天/搜索请求处理器
             if (
                 model === 'models/gemini-2.5-pro' ||

@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 终极版 (集成摘要子代理)
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 摘要子代理修复版
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -27,7 +27,12 @@ export class DeepResearchAgent {
             iterations++;
             await this.callbackManager.invokeEvent('on_research_progress', { run_id: runId, data: { iteration: iterations, total: this.maxIterations } });
 
-            const agentDecisionText = await this.agentLogic.plan({ topic, intermediateSteps, availableTools }, { run_id: runId, callbackManager: this.callbackManager });
+            const agentDecisionText = await this.agentLogic.plan({
+                topic,
+                intermediateSteps,
+                availableTools 
+            }, { run_id: runId, callbackManager: this.callbackManager });
+            
             const parsedAction = this.outputParser.parse(agentDecisionText);
 
             if (parsedAction.type === 'final_answer') {
@@ -52,7 +57,6 @@ export class DeepResearchAgent {
                     }
                 }
                 
-                // 🎯 关键升级：使用智能摘要子代理来处理观察结果
                 const summarizedObservation = await this._smartSummarizeObservation(topic, rawObservation);
                 
                 intermediateSteps.push({ action: parsedAction, observation: summarizedObservation });
@@ -70,52 +74,45 @@ export class DeepResearchAgent {
     }
 
     /**
-     * 🎯 新增：智能摘要函数（混合策略）
-     * 这就是我们的“摘要子代理”实现
+     * 🎯 关键修复：让摘要子代理使用专用模型和API路由
      */
     async _smartSummarizeObservation(mainTopic, observation) {
-        const threshold = 2000; // 超过2000字符就启动LLM摘要
+        const threshold = 2000;
         if (!observation || typeof observation !== 'string' || observation.length < threshold) {
-            // 内容不长，直接返回（或做简单截断）
             return observation.length > threshold ? observation.substring(0, threshold) + "\n[...内容已截断]" : observation;
         }
 
         console.log(`[DeepResearchAgent] 内容过长 (${observation.length} > ${threshold})，启动摘要子代理...`);
         await this.callbackManager.invokeEvent('agent:thinking', { detail: { content: '正在调用摘要子代理压缩上下文...', type: 'summarize', agentType: 'deep_research' } });
 
-        // 构建给“摘要子代理”的Prompt
-        const summarizerPrompt = `
-        你是一个信息分析专家。你的任务是阅读以下原始材料，并根据给定的“主要研究主题”，提取出最核心、最相关的关键信息，生成一个简洁的摘要。
-        摘要必须保留关键数据、名称、结论和核心观点。长度不要超过400字。
+        const summarizerPrompt = `You are an expert information analyst. Read the following raw text and, based on the MAIN RESEARCH TOPIC, extract the most critical and relevant key information. Create a concise summary. The summary must preserve key data, names, conclusions, and core arguments. Keep it under 400 words.
 
         ---
-        主要研究主题: "${mainTopic}"
+        MAIN RESEARCH TOPIC: "${mainTopic}"
         ---
-        原始材料:
+        RAW TEXT:
         ${observation.substring(0, 10000)} 
         ---
 
-        现在，请生成你的摘要：
-        `;
+        Your concise summary:`;
 
         try {
-            // 调用LLM扮演摘要子代理
+            // 🎯 关键修复：使用专为摘要设计的模型ID
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: summarizerPrompt }],
-                model: 'gemini-2.0-flash-exp', // 可以用一个更快的模型来做摘要
-                temperature: 0.0,
+                model: 'gemini-2.0-flash-exp-summarizer', // 使用一个特殊的、不存在于主列表的ID来触发专用路由
+                stream: false, // 摘要不需要流式
             });
 
             const choice = response && response.choices && response.choices[0];
             const summary = choice && choice.message && choice.message.content ? choice.message.content : '摘要生成失败。';
             
             console.log("[DeepResearchAgent] 摘要子代理完成。");
-            return `[由AI摘要]:\n${summary}`;
+            return `[AI-Generated Summary]:\n${summary}`;
 
         } catch (error) {
             console.error("[DeepResearchAgent] 摘要子代理调用失败:", error);
-            // 摘要失败，回退到简单的程序化截断，保证流程不中断
-            return observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，已截断...]";
+            return observation.substring(0, threshold) + "\n\n[...Content too long, summarization failed, content truncated...]";
         }
     }
 }
