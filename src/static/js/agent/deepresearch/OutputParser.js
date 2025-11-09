@@ -1,34 +1,30 @@
 // src/static/js/agent/deepresearch/OutputParser.js - 健壮性修复版
 
 export class AgentOutputParser {
-    
-    /**
-     * 🎯 关键修复：使用更健壮的正则表达式和解析逻辑
-     */
     parse(text) {
+        if (typeof text !== 'string') {
+            text = ''; // 防止传入非字符串
+        }
         text = text.trim();
 
         // 优先寻找“最终答案”
         const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]*)/i);
-        if (finalAnswerMatch && finalAnswerMatch) {
+        if (finalAnswerMatch && finalAnswerMatch[1]) {
+            // 🎯 关键修复：在捕获的字符串上调用 .trim()
             return {
                 type: 'final_answer',
-                answer: finalAnswerMatch.trim()
+                answer: finalAnswerMatch[1].trim()
             };
         }
 
-        // 🎯 关键修复：寻找被代码块包裹或直接暴露的JSON
-        // 这个正则表达式可以匹配 ```json ... ``` 或者直接的 {...}
+        // 寻找Action的JSON代码块
         const actionMatch = text.match(/(?:```json\s*)?(\{[\s\S]*\})(?:\s*```)?/);
-
-        if (actionMatch && actionMatch) {
+        if (actionMatch && actionMatch[1]) {
             try {
-                // 清理并解析JSON
-                const jsonString = this._cleanupJsonString(actionMatch);
+                const jsonString = this._cleanupJsonString(actionMatch[1]);
                 const actionJson = JSON.parse(jsonString);
 
                 if (actionJson.tool_name && actionJson.parameters) {
-                    console.log("[OutputParser] 成功解析出工具调用:", actionJson);
                     return {
                         type: 'tool_call',
                         tool_name: actionJson.tool_name,
@@ -36,11 +32,10 @@ export class AgentOutputParser {
                     };
                 }
             } catch (e) {
-                console.error('[OutputParser] JSON解析失败:', e, "原始字符串:", actionMatch);
+                console.error('[OutputParser] JSON解析失败:', e, "原始字符串:", actionMatch[1]);
             }
         }
         
-        // 如果以上都失败，则认为模型仍在思考或格式错误
         console.warn('[OutputParser] 无法解析出有效的行动，将触发自我纠正。');
         return {
             type: 'error',
@@ -48,10 +43,8 @@ export class AgentOutputParser {
         };
     }
 
-    /**
-     * 清理LLM可能生成的不规范JSON字符串，例如尾随逗号
-     */
     _cleanupJsonString(str) {
+        // 移除尾随逗号
         return str.replace(/,(?=\s*[}\]])/g, '');
     }
 }

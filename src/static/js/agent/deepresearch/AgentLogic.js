@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/AgentLogic.js - 强化Prompt版
+// src/static/js/agent/deepresearch/AgentLogic.js - 健壮性修复版
 
 export class AgentLogic {
     constructor(chatApiHandler) {
@@ -15,16 +15,26 @@ export class AgentLogic {
                 model: 'gemini-2.5-flash-preview-09-2025',
                 temperature: 0.0,
             });
-            const responseText = llmResponse.choices.message.content;
+
+            // 🎯 关键修复：健壮地提取响应内容
+            const choice = llmResponse && llmResponse.choices && llmResponse.choices[0];
+            const responseText = choice && choice.message && choice.message.content ? choice.message.content : '';
+
+            if (!responseText) {
+                console.error("[AgentLogic] LLM返回了空的或无效的响应:", llmResponse);
+                throw new Error("LLM returned an empty or invalid response.");
+            }
+
             await runManager?.callbackManager.invokeEvent('on_agent_think_end', { run_id: runManager.runId, data: { response: responseText } });
             return responseText;
+
         } catch (error) {
             console.error("[AgentLogic] LLM 思考失败:", error);
             await runManager?.callbackManager.invokeEvent('on_agent_think_error', { run_id: runManager.runId, data: { error: error.message } });
-            return `思考: 发生内部错误，无法继续规划。\n最终答案: 研究因错误终止。`;
+            return `思考: 发生内部错误，无法继续规划。\n最终答案: 研究因错误终止：${error.message}`;
         }
     }
-
+    
     _constructResearchPrompt({ topic, intermediateSteps, availableTools }) {
         const toolDescriptions = availableTools
             .map(tool => `- ${tool.name}: ${tool.description}`)
@@ -32,14 +42,15 @@ export class AgentLogic {
 
         let history = "这是研究的第一步，还没有历史记录。";
         if (intermediateSteps && intermediateSteps.length > 0) {
-            history = intermediateSteps.map(step => 
-                `上一步行动: 调用工具 ${step.action.tool_name}，参数: ${JSON.stringify(step.action.parameters)}\n观察结果: ${step.observation}`
-            ).join('\n\n');
+            history = intermediateSteps.map(step => {
+                const actionStr = `调用工具 ${step.action.tool_name}，参数: ${JSON.stringify(step.action.parameters)}`;
+                const observationStr = `观察结果: ${step.observation}`;
+                return `上一步行动: ${actionStr}\n${observationStr}`;
+            }).join('\n\n');
         }
 
-        // 🎯 关键修复：更严格、更清晰的Prompt指令
         return `
-你是一个专业的AI研究员。你的任务是深入、多步骤地研究用户给定的主题，并最终输出一份全面的研究报告。
+你是一个专业的AI研究员，任务是深入、多步骤地研究用户给定的主题，并最终输出一份全面的研究报告。
 
 # 可用工具
 ${toolDescriptions}
@@ -57,8 +68,7 @@ ${toolDescriptions}
     {
         "tool_name": "你选择的工具名称",
         "parameters": {
-            "参数1": "值1",
-            "参数2": "值2"
+            "参数1": "值1"
         }
     }
     \`\`\`
