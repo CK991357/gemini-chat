@@ -52,15 +52,16 @@ export class AgentOutputParser {
 
             // 🎯 3. 增强版JSON提取 - 支持多种代码块格式
             const jsonPatterns = [
-                /```json\s*([\s\S]*?)\s*```/,  // ```json { ... } ```
-                /```\s*([\s\S]*?)\s*```/,      // ``` { ... } ```
+                /```(?:json)?\s*([\s\S]*?)\s*```/, // 匹配 ```json ... ``` 和 ``` ... ```
+                /行动:\s*(\{[\s\S]*\})/i,              // 从 "行动:" 后面直接捕获 { ... }
+                /Action:\s*(\{[\s\S]*\})/i,
                 /\{[\s\S]*?\}(?=\s*$|\s*思考|\s*行动|\s*最终答案)/  // 纯JSON对象，避免贪婪匹配
             ];
 
             for (const pattern of jsonPatterns) {
                 const match = text.match(pattern);
                 if (match) {
-                    const jsonString = match[1] || match[0];
+                    const jsonString = match[1] || match[2] || match[3] || match[0];
                     try {
                         const cleanedJson = this._cleanupJsonString(jsonString);
                         console.log('[OutputParser] 尝试解析JSON:', cleanedJson.substring(0, 200));
@@ -130,12 +131,18 @@ export class AgentOutputParser {
     }
 
     _cleanupJsonString(str) {
-        return str
-            .replace(/,(?=\s*[}\]])/g, '') // 移除尾随逗号
-            .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":') // 确保键被引号包围
-            .replace(/'/g, '"') // 单引号转双引号
-            .replace(/\\n/g, ' ') // 处理换行符
-            .replace(/\s+/g, ' ') // 压缩多余空格
-            .trim();
+        // 移除多行注释 /* ... */
+        let cleaned = str.replace(/\/\*[\s\S]*?\*\//g, '');
+        
+        // 移除单行注释 // ...
+        cleaned = cleaned.replace(/\/\/[^\n\r]*/g, '');
+        
+        // 移除尾随逗号 (更安全的版本)
+        cleaned = cleaned.replace(/,\s*(?=[}\]])/g, '');
+        
+        // 关键修复：不再全局替换单引号，避免破坏字符串内容。
+        // 专注于结构性修复，让 JSON.parse 处理内容。
+        
+        return cleaned.trim();
     }
 }
