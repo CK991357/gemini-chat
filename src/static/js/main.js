@@ -1205,14 +1205,21 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     window.addEventListener('workflow:result', handleWorkflowResult);
                 });
             } else if (agentResult.type === 'agent_result') {
-                // Agent模式下不重复显示完整内容
                 if (agentResult.fallback) {
                     // 降级情况：显示降级结果
                     chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 } else {
-                    // 正常Agent执行：只显示简洁总结
+                    // 正常Agent执行：
+                    // 1. (保留) 显示简洁的执行摘要卡片，提供快速反馈
                     displayAgentSummary(agentResult);
-                    console.log(`Agent执行完成，${agentResult.iterations}次迭代，详细过程已在聊天区显示`);
+                    
+                    // 2. ✨ 核心修复：将包含资料来源的完整报告，通过 chatUI.addMessage 渲染到聊天窗口
+                    // agentResult.report 包含了由 _generateFinalReport 生成的完整 Markdown 内容
+                    if (agentResult.report) {
+                        chatUI.addMessage({ role: 'assistant', content: agentResult.report });
+                    }
+                    
+                    console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
                 }
                 console.log('Agent执行详情:', agentResult);
                 agentThinkingDisplay.completeSession('success');
