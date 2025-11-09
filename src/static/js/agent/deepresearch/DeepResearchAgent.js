@@ -1,10 +1,11 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 最终版
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 终极版 (集成摘要子代理)
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
 
 export class DeepResearchAgent {
     constructor(chatApiHandler, tools, callbackManager, config = {}) {
+        this.chatApiHandler = chatApiHandler; // 需要用它来调用摘要子代理
         this.tools = tools;
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
@@ -19,24 +20,16 @@ export class DeepResearchAgent {
         
         await this.callbackManager.invokeEvent('on_research_start', { run_id: runId, data: { topic } });
 
-        let intermediateSteps = []; // 这就是我们的上下文记忆
+        let intermediateSteps = [];
         let iterations = 0;
 
         while (iterations < this.maxIterations) {
             iterations++;
             await this.callbackManager.invokeEvent('on_research_progress', { run_id: runId, data: { iteration: iterations, total: this.maxIterations } });
 
-            // 1. 思考 (将上下文记忆`intermediateSteps`传给大脑)
-            const agentDecisionText = await this.agentLogic.plan({
-                topic,
-                intermediateSteps,
-                availableTools 
-            }, { run_id: runId, callbackManager: this.callbackManager });
-            
-            // 2. 解析决策
+            const agentDecisionText = await this.agentLogic.plan({ topic, intermediateSteps, availableTools }, { run_id: runId, callbackManager: this.callbackManager });
             const parsedAction = this.outputParser.parse(agentDecisionText);
 
-            // 3. 根据决策行动
             if (parsedAction.type === 'final_answer') {
                 await this.callbackManager.invokeEvent('on_research_end', { run_id: runId, data: { success: true, report: parsedAction.answer, iterations } });
                 return { success: true, report: parsedAction.answer, iterations };
@@ -47,28 +40,26 @@ export class DeepResearchAgent {
                 await this.callbackManager.invokeEvent('on_tool_start', { run_id: runId, data: { tool_name, parameters } });
 
                 const tool = this.tools[tool_name];
-                let observation;
-
+                let rawObservation;
                 if (!tool) {
-                    observation = `错误: 工具 "${tool_name}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
+                    rawObservation = `错误: 工具 "${tool_name}" 不存在。`;
                 } else {
                     try {
-                        // 🎯 关键：传递'deep_research'模式，让工具返回更丰富的结果
                         const toolResult = await tool.invoke(parameters, { mode: 'deep_research' });
-                        observation = typeof toolResult.output === 'string' ? toolResult.output : JSON.stringify(toolResult);
+                        rawObservation = toolResult.output || JSON.stringify(toolResult);
                     } catch (error) {
-                        observation = `错误: 工具 "${tool_name}" 执行失败: ${error.message}`;
+                        rawObservation = `错误: 工具 "${tool_name}" 执行失败: ${error.message}`;
                     }
                 }
                 
-                // 4. 记录“行动”和“观察”到上下文记忆中
-                intermediateSteps.push({ action: parsedAction, observation });
-                await this.callbackManager.invokeEvent('on_tool_end', { run_id: runId, data: { tool_name, output: observation } });
+                // 🎯 关键升级：使用智能摘要子代理来处理观察结果
+                const summarizedObservation = await this._smartSummarizeObservation(topic, rawObservation);
+                
+                intermediateSteps.push({ action: parsedAction, observation: summarizedObservation });
+                await this.callbackManager.invokeEvent('on_tool_end', { run_id: runId, data: { tool_name, output: summarizedObservation } });
             
-            } else { // 处理解析失败 (parsedAction.type === 'error')
-                console.warn("[DeepResearchAgent] 模型未能规划出有效行动，将启动自我纠正机制。");
+            } else { 
                 const observation = `你上一步的思考未能产生有效的行动JSON或最终答案。请严格遵循指令，检查你的输出格式，然后重试。你的上一步思考是：\n${agentDecisionText}`;
-                // 将纠正指令作为“观察”加入记忆，让模型在下一步看到并改正
                 intermediateSteps.push({ action: { tool_name: 'self_correction', parameters: {} }, observation });
             }
         }
@@ -76,5 +67,55 @@ export class DeepResearchAgent {
         const report = "# 研究达到最大迭代次数\n\n研究已达到最大迭代次数，但未得出最终结论。";
         await this.callbackManager.invokeEvent('on_research_end', { run_id: runId, data: { success: false, report, iterations } });
         return { success: false, report, iterations };
+    }
+
+    /**
+     * 🎯 新增：智能摘要函数（混合策略）
+     * 这就是我们的“摘要子代理”实现
+     */
+    async _smartSummarizeObservation(mainTopic, observation) {
+        const threshold = 2000; // 超过2000字符就启动LLM摘要
+        if (!observation || typeof observation !== 'string' || observation.length < threshold) {
+            // 内容不长，直接返回（或做简单截断）
+            return observation.length > threshold ? observation.substring(0, threshold) + "\n[...内容已截断]" : observation;
+        }
+
+        console.log(`[DeepResearchAgent] 内容过长 (${observation.length} > ${threshold})，启动摘要子代理...`);
+        await this.callbackManager.invokeEvent('agent:thinking', { detail: { content: '正在调用摘要子代理压缩上下文...', type: 'summarize', agentType: 'deep_research' } });
+
+        // 构建给“摘要子代理”的Prompt
+        const summarizerPrompt = `
+        你是一个信息分析专家。你的任务是阅读以下原始材料，并根据给定的“主要研究主题”，提取出最核心、最相关的关键信息，生成一个简洁的摘要。
+        摘要必须保留关键数据、名称、结论和核心观点。长度不要超过400字。
+
+        ---
+        主要研究主题: "${mainTopic}"
+        ---
+        原始材料:
+        ${observation.substring(0, 10000)} 
+        ---
+
+        现在，请生成你的摘要：
+        `;
+
+        try {
+            // 调用LLM扮演摘要子代理
+            const response = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: summarizerPrompt }],
+                model: 'gemini-2.0-flash-exp', // 可以用一个更快的模型来做摘要
+                temperature: 0.0,
+            });
+
+            const choice = response && response.choices && response.choices[0];
+            const summary = choice && choice.message && choice.message.content ? choice.message.content : '摘要生成失败。';
+            
+            console.log("[DeepResearchAgent] 摘要子代理完成。");
+            return `[由AI摘要]:\n${summary}`;
+
+        } catch (error) {
+            console.error("[DeepResearchAgent] 摘要子代理调用失败:", error);
+            // 摘要失败，回退到简单的程序化截断，保证流程不中断
+            return observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，已截断...]";
+        }
     }
 }
