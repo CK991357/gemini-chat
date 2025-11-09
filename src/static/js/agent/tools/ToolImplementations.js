@@ -131,6 +131,7 @@ class DeepResearchToolAdapter {
             return {
                 success: false,
                 output: '工具返回空响应',
+                sources: [], // ✨ 修复：确保总有 sources 字段
                 isError: true,
                 mode: 'deep_research'
             };
@@ -138,50 +139,55 @@ class DeepResearchToolAdapter {
         
         let success = rawResponse.success !== false;
         let output = '';
+        let sources = []; // ✨ 修复：初始化 sources 数组
         let data = rawResponse.data || rawResponse.result || rawResponse;
         
         // 🎯 DeepResearch模式专用响应处理
         switch (toolName) {
             case 'tavily_search':
-                if (data && Array.isArray(data)) {
-                    // DeepResearch模式：结构化搜索结果，便于后续分析
-                    const searchSummary = {
-                        totalResults: data.length,
-                        sources: data.map(item => ({
-                            title: item.title || '无标题',
-                            url: item.url || '未知',
-                            content: item.content ? item.content.substring(0, 300) + '...' : '无内容',
-                            relevance: item.score || 0
-                        })),
-                        query: rawResponse.query || '未知查询'
-                    };
+                // ✨✨✨ START: 核心修复逻辑 ✨✨✨
+                if (data && Array.isArray(data.results)) { // 检查 data.results
+                    const searchResults = data.results;
                     
-                    output = `🔍 **深度研究搜索结果** (${data.length}个来源)\n\n` +
-                        searchSummary.sources.map((source, index) => 
-                            `${index + 1}. **${source.title}**\n` +
-                            `   来源: ${source.url}\n` +
-                            `   相关性: ${(source.relevance * 100).toFixed(1)}%\n` +
-                            `   内容: ${source.content}`
-                        ).join('\n\n');
+                    // 1. 组装 sources 数组
+                    sources = searchResults.map(res => ({
+                        title: res.title || '无标题',
+                        url: res.url || '#',
+                        description: res.content ? res.content.substring(0, 150) + '...' : ''
+                    }));
+
+                    // 2. 组装 output 文本 (供LLM分析)
+                    output = `🔍 **深度研究搜索结果** (${searchResults.length}个来源)\n\n` +
+                        searchResults.map((res, index) =>
+                            `[来源 ${index + 1}] 标题: ${res.title}\n` +
+                            `网址: ${res.url}\n` +
+                            `内容摘要: ${res.content}`
+                        ).join('\n\n-----------------\n\n');
+                    
                     success = true;
-                } else if (data && typeof data === 'object') {
-                    output = JSON.stringify(data, null, 2);
+                } else if (data && data.answer) {
+                    output = data.answer;
                     success = true;
                 }
+                // ✨✨✨ END: 核心修复逻辑 ✨✨✨
                 break;
                 
             case 'firecrawl':
             case 'crawl4ai':
-                if (data && data.content) {
-                    // DeepResearch模式：保留完整内容供分析
+                if (data && (data.content || data.markdown)) {
                     output = `📄 **网页内容提取完成**\n\n` +
                             `**标题**: ${data.title || '无标题'}\n` +
                             `**URL**: ${data.url || '未知'}\n` +
-                            `**内容长度**: ${data.content.length}字符\n\n` +
-                            `**内容**:\n${data.content.substring(0, 2000)}${data.content.length > 2000 ? '...' : ''}`;
-                    success = true;
-                } else if (data && data.markdown) {
-                    output = data.markdown;
+                            `**内容**:\n${(data.content || data.markdown).substring(0, 2000)}...`;
+                    
+                    // ✨ 修复：为爬取结果生成来源
+                    if (data.url) {
+                        sources.push({
+                            title: data.title || data.url,
+                            url: data.url,
+                            description: (data.content || data.markdown).substring(0, 150) + '...'
+                        });
+                    }
                     success = true;
                 } else if (data && typeof data === 'object') {
                     output = `📊 **结构化数据**:\n${JSON.stringify(data, null, 2)}`;
@@ -203,7 +209,6 @@ class DeepResearchToolAdapter {
                 break;
                 
             default:
-                // 🎯 DeepResearch模式通用响应处理
                 if (typeof data === 'string') {
                     output = data;
                 } else if (data && typeof data === 'object') {
@@ -214,21 +219,20 @@ class DeepResearchToolAdapter {
                 break;
         }
         
-        // 🎯 错误处理
         if (rawResponse.error) {
             success = false;
             output = `❌ **工具执行错误**: ${rawResponse.error}`;
         }
         
-        // 🎯 确保有输出
         if (success && !output) {
             output = `✅ ${toolName} 执行成功`;
         }
         
-        // 🎯 为DeepResearch添加研究元数据
+        // 🎯 ✨✨✨ 最终修复：在返回对象中添加 sources 字段 ✨✨✨
         return {
             success,
             output: output || '工具执行完成',
+            sources: sources, // <<<<<<<<<<<<<<<<<<<< 在这里添加！
             rawResponse,
             isError: !success,
             mode: 'deep_research',
