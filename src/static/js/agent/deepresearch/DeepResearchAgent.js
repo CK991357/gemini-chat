@@ -28,18 +28,45 @@ export class DeepResearchAgent {
         const { topic, availableTools } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
-        // ✨ 最终优化 #1: 调用 _detectResearchMode 获取模式和清理后的话题
-        const { detectedMode, cleanTopic } = this._detectResearchMode(topic);
-        console.log(`[DeepResearchAgent] 开始研究: "${cleanTopic}"，检测到模式: ${detectedMode}`);
+        // ✨ 修复：清理主题中的感叹号
+        const cleanTopic = topic.replace(/！\s*$/, '').trim();
         
-        await this.callbackManager.invokeEvent('on_research_start', { 
-            run_id: runId, 
-            data: { 
-                topic: cleanTopic, 
+        // ✨ 最终优化 #1: 调用 _detectResearchMode 获取模式和清理后的话题
+        const { detectedMode, cleanTopic: finalTopic } = this._detectResearchMode(cleanTopic);
+        console.log(`[DeepResearchAgent] 开始研究: "${finalTopic}"，检测到模式: ${detectedMode}`);
+        
+        // 🎯 修复：传递研究数据到监控面板
+        await this.callbackManager.invokeEvent('on_research_start', {
+            run_id: runId,
+            data: {
+                topic: finalTopic,
                 availableTools: availableTools.map(t => t.name),
-                researchMode: detectedMode
-            } 
+                researchMode: detectedMode,
+                researchData: {
+                    keywords: [], // 初始化空数组，后续更新
+                    sources: [],
+                    analyzedContent: [],
+                    toolCalls: [],
+                    metrics: this.metrics
+                }
+            }
         });
+
+        // 🎯 修复：在研究过程中更新统计数据
+        const updateResearchStats = (updates) => {
+            this.callbackManager.invokeEvent('on_research_stats_updated', {
+                run_id: runId,
+                data: updates
+            });
+        };
+
+        // 🎯 修复：记录工具调用
+        const recordToolCall = (toolName, parameters, success, result) => {
+            this.callbackManager.invokeEvent('on_tool_called', {
+                run_id: runId,
+                data: { toolName, parameters, success, result }
+            });
+        };
 
         // ✨ 阶段1：智能规划
         console.log(`[DeepResearchAgent] 阶段1：生成${detectedMode}研究计划...`);
@@ -166,9 +193,14 @@ export class DeepResearchAgent {
                                 this.metrics.toolUsage[tool_name]++;
                             }
                             
+                            // 🎯 修复：记录工具调用
+                            recordToolCall(tool_name, parameters, true, rawObservation);
+
                         } catch (error) {
                             rawObservation = `错误: 工具 "${tool_name}" 执行失败: ${error.message}`;
                             console.error(`[DeepResearchAgent] ❌ 工具执行失败: ${tool_name}`, error);
+                            // 🎯 修复：记录工具调用失败
+                            recordToolCall(tool_name, parameters, false, error.message);
                         }
                     }
                     

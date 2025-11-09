@@ -318,6 +318,30 @@ export class CallbackManager {
         });
     }
 
+    async onResearchStatsUpdated(stats) {
+        return await this.invokeEvent('on_research_stats_updated', {
+            name: 'research_stats',
+            run_id: this.currentRunId,
+            data: stats,
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'stats_update'
+            }
+        });
+    }
+
+    async onToolCalled(toolData) {
+        return await this.invokeEvent('on_tool_called', {
+            name: 'tool_call',
+            run_id: this.currentRunId,
+            data: toolData,
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'tool_execution'
+            }
+        });
+    }
+
     // 🎯 工具方法
     getCurrentRunEvents() {
         if (this._isDisposed) return [];
