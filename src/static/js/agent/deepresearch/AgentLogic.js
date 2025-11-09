@@ -1,282 +1,80 @@
-// src/static/js/agent/core/AgentLogic.js
-
-/**
- * @class AgentLogic
- * @description 研究专用Agent思考核心，优化用于深度研究任务
- */
-import { ObservationUtils } from '../utils/ObservationUtils.js';
+// src/static/js/agent/deepresearch/AgentLogic.js - 重构版
 
 export class AgentLogic {
-    constructor(llm, tools, outputParser) {
-        this.llm = llm;
-        this.tools = tools;
-        this.outputParser = outputParser;
-        
-        // 🎯 研究专用配置
-        this.researchFocus = '';
-        this.analysisDepth = 'standard';
+    constructor(chatApiHandler) {
+        this.llm = chatApiHandler;
     }
 
     /**
-     * 🎯 研究专用规划方法
+     * 思考和规划
+     * @param {object} inputs - 包含主题、历史记录和可用工具定义
+     * @returns {Promise<string>} LLM返回的原始决策文本
      */
-    async plan(intermediateSteps, inputs, runManager) {
-        const { userMessage, context } = inputs;
-        
-        // 🎯 提取研究上下文
-        this._extractResearchContext(userMessage, context);
-        
-        // 🎯 构建研究专用提示词
-        const prompt = this._constructResearchPrompt(userMessage, intermediateSteps, context);
-        
-        console.log(`[AgentLogic] 研究思考第 ${intermediateSteps.length + 1} 轮...`);
+    async plan(inputs, runManager) {
+        const prompt = this._constructResearchPrompt(inputs);
 
+        await runManager?.callbackManager.invokeEvent('on_agent_think_start', { run_id: runManager.runId });
+        
         try {
-            // 🎯 思考开始事件
-            await runManager?.callbackManager.invokeEvent('on_agent_think_start', {
-                name: 'agent_think',
-                run_id: runManager.runId,
-                data: { 
-                    step: intermediateSteps.length + 1,
-                    researchFocus: this.researchFocus,
-                    analysisDepth: this.analysisDepth
-                }
-            });
-
-            // 🎯 调用LLM进行研究思考
+            // 调用LLM进行决策
             const llmResponse = await this.llm.completeChat({
                 messages: [{ role: 'user', content: prompt }],
-                model: context?.model || 'gpt-4', // 🎯 研究任务使用更强模型
-                temperature: 0.1,
-                max_tokens: 1200,
-                research_context: {
-                    focus: this.researchFocus,
-                    depth: this.analysisDepth
-                }
-            }, context?.apiKey);
-
-            if (!llmResponse || !llmResponse.choices || !llmResponse.choices[0]) {
-                throw new Error("LLM返回无效研究响应");
-            }
-
+                model: 'gemini-2.5-flash-preview-09-2025', // 使用一个强大的模型进行规划
+                temperature: 0.0, // 低温确保决策的稳定性
+            });
+            
             const responseText = llmResponse.choices[0].message.content;
-            
-            // 🎯 思考结束事件
-            await runManager?.callbackManager.invokeEvent('on_agent_think_end', {
-                name: 'agent_think',
-                run_id: runManager.runId,
-                data: { 
-                    step: intermediateSteps.length + 1,
-                    response_preview: responseText.substring(0, 200) + '...',
-                    researchFocus: this.researchFocus
-                }
-            });
-
-            // 🎯 使用研究专用解析器
-            const action = this.outputParser.parse(responseText);
-            
-            console.log(`[AgentLogic] 研究决策:`, {
-                type: action.type,
-                tool: action.tool_name,
-                researchFocus: this.researchFocus
-            });
-            
-            return action;
-
+            await runManager?.callbackManager.invokeEvent('on_agent_think_end', { run_id: runManager.runId, data: { response: responseText } });
+            return responseText;
         } catch (error) {
-            console.error(`[AgentLogic] 研究思考失败:`, error);
-            
-            await runManager?.callbackManager.invokeEvent('on_agent_think_error', {
-                name: 'agent_think',
-                run_id: runManager.runId,
-                data: { 
-                    step: intermediateSteps.length + 1,
-                    error: error.message,
-                    researchFocus: this.researchFocus
-                }
-            });
-
-            throw new Error(`研究思考失败: ${error.message}`);
+            console.error("[AgentLogic] LLM 思考失败:", error);
+            await runManager?.callbackManager.invokeEvent('on_agent_think_error', { run_id: runManager.runId, data: { error: error.message } });
+            return `思考: 发生内部错误，无法继续规划。\n最终答案: 研究因错误终止。`;
         }
     }
 
     /**
-     * 🎯 构建研究专用提示词
+     * 🎯 关键：构建包含工具描述和历史记录的动态Prompt
      */
-    _constructResearchPrompt(userMessage, intermediateSteps, context) {
-        const toolDescriptions = this._getResearchToolDescriptions();
-        const researchStrategy = this._getResearchStrategy();
+    _constructResearchPrompt({ topic, intermediateSteps, availableTools }) {
+        // 格式化工具描述，让LLM知道它能用什么
+        const toolDescriptions = availableTools
+            .map(tool => `- ${tool.name}: ${tool.description}`)
+            .join('\n');
 
-        let prompt = `你是一个专业研究助手，负责进行深度研究和综合分析。
+        // 格式化历史记录（上下文工程）
+        let history = "这是第一步，还没有历史记录。";
+        if (intermediateSteps && intermediateSteps.length > 0) {
+            history = intermediateSteps.map(step => 
+                `上一步行动: 调用工具 ${step.action.tool_name}，参数: ${JSON.stringify(step.action.parameters)}\n观察结果: ${step.observation}`
+            ).join('\n\n');
+        }
 
-研究主题: ${userMessage}
-研究重点: ${this.researchFocus}
-分析深度: ${this.analysisDepth}
+        // ReAct Prompt模板
+        return `
+你是一个专业的AI研究员，任务是深入研究用户给定的主题，并最终输出一份全面的研究报告。
 
-可用研究工具:
+# 可用工具
+你有以下工具可以使用：
 ${toolDescriptions}
 
-研究策略:
-${researchStrategy}
+# 研究主题
+"${topic}"
 
-请严格按照研究格式响应：
+# 指令
+请遵循以下的“思考-行动-观察”循环来完成任务：
+1.  **思考 (Thought)**: 分析当前掌握的信息，判断信息是否足够。如果不够，规划下一步需要什么信息，以及应该使用哪个工具来获取。
+2.  **行动 (Action)**: 以单行JSON格式输出你的决策。JSON必须包含 'tool_name' 和 'parameters' 两个键。例如: {"tool_name": "tavily_search", "parameters": {"query": "最新AI技术"}}
 
-思考: 分析当前研究进展，规划下一步研究行动。考虑信息缺口、可靠性验证和研究深度。
-行动: 需要调用的工具名称
-行动输入: 工具的输入参数(JSON格式)
-最终答案: 完整的研究结论（当研究完成时）
+如果你认为所有信息都已收集完毕，可以撰写最终报告，请不要输出“行动”JSON，而是直接在"最终答案 (Final Answer)"部分输出你的完整研究报告。
 
-重要指导原则:
-1. 优先使用 crawl4ai 获取原始资料，确保信息准确性
-2. 使用 tavily_search 进行信息检索和交叉验证
-3. 对矛盾信息进行深入分析
-4. 关注信息的时效性、权威性和相关性
-5. 逐步构建完整的研究图景
+---
+# 研究历史与观察
+${history}
+---
 
-`;
+现在，根据以上历史，请规划你的下一步。你的回答必须从"思考:"开始，然后提供"行动:"的JSON或"最终答案:"的报告。
 
-        // 🎯 添加压缩的研究历史
-        if (intermediateSteps.length > 0) {
-            prompt += "\n研究进展:\n";
-            const compressedHistory = this._compressResearchHistory(intermediateSteps);
-            compressedHistory.forEach((step, index) => {
-                const status = step.observation.isError ? '❌' : '✅';
-                prompt += `${index + 1}. ${step.action.tool_name} ${status}: ${step.summary}\n`;
-            });
-            
-            prompt += `\n当前研究状态: 已完成 ${intermediateSteps.length} 步，收集 ${this._countSources(intermediateSteps)} 个来源\n`;
-            prompt += "基于以上进展，请继续:\n";
-        }
-
-        prompt += "思考: ";
-        
-        return prompt;
-    }
-
-    /**
-     * 🎯 获取研究工具描述
-     */
-    _getResearchToolDescriptions() {
-        const researchTools = {
-            'tavily_search': '🔍 智能搜索工具：获取最新信息、新闻和研究成果，支持关键词搜索和内容过滤',
-            'crawl4ai': '🌐 网页抓取工具：提取网页内容、文章、报告等原始资料，支持深度内容解析',
-            'python_sandbox': '📊 数据分析工具：执行数据分析、统计计算、可视化等研究任务'
-        };
-
-        return Object.entries(researchTools)
-            .map(([name, desc]) => `- ${name}: ${desc}`)
-            .join('\n');
-    }
-
-    /**
-     * 🎯 获取研究策略
-     */
-    _getResearchStrategy() {
-        const strategies = {
-            'technology': '- 关注技术原理、实现方式、性能指标\n- 分析技术趋势和发展方向\n- 比较不同技术方案的优劣',
-            'market': '- 分析市场规模、增长趋势、竞争格局\n- 研究用户需求、消费行为\n- 评估市场机会和风险',
-            'trends': '- 识别当前和未来趋势\n- 分析驱动因素和影响\n- 预测发展趋势和时机',
-            'comprehensive': '- 多角度全面分析\n- 交叉验证信息可靠性\n- 构建完整知识体系'
-        };
-
-        return strategies[this.researchFocus] || strategies['comprehensive'];
-    }
-
-    /**
-     * 🎯 压缩研究历史
-     */
-    _compressResearchHistory(intermediateSteps) {
-        // 🎯 只保留最近3个步骤的摘要
-        return intermediateSteps.slice(-3).map(step => ({
-            action: step.action,
-            observation: step.observation,
-            summary: this._summarizeStep(step)
-        }));
-    }
-
-    /**
-     * 🎯 步骤摘要
-     */
-    _summarizeStep(step) {
-        const output = ObservationUtils.getOutputText(step.observation) || '';
-        
-        if (step.observation.isError) {
-            return `执行失败: ${output.substring(0, 60)}...`;
-        }
-        
-        switch (step.action.tool_name) {
-            case 'tavily_search':
-                return `搜索: ${output.substring(0, 80)}...`;
-            case 'crawl4ai':
-                return `抓取: ${output.substring(0, 80)}...`;
-            case 'python_sandbox':
-                return `分析: ${output.substring(0, 80)}...`;
-            default:
-                return `执行: ${output.substring(0, 80)}...`;
-        }
-    }
-
-    /**
-     * 🎯 计算来源数量
-     */
-    _countSources(intermediateSteps) {
-        return intermediateSteps.filter(step => 
-            !step.observation.isError && 
-            ['tavily_search', 'crawl4ai'].includes(step.action.tool_name)
-        ).length;
-    }
-
-    /**
-     * 🎯 提取研究上下文
-     */
-    _extractResearchContext(userMessage, context) {
-        // 🎯 从用户消息提取研究重点
-        this.researchFocus = this._determineResearchFocus(userMessage);
-        
-        // 🎯 从上下文获取分析深度
-        this.analysisDepth = context?.researchDepth || 'standard';
-        
-        console.log(`[AgentLogic] 研究上下文:`, {
-            focus: this.researchFocus,
-            depth: this.analysisDepth,
-            message: userMessage.substring(0, 100)
-        });
-    }
-
-    /**
-     * 🎯 确定研究重点
-     */
-    _determineResearchFocus(userMessage) {
-        const focusPatterns = {
-            'technology': ['技术', '原理', '实现', '算法', '架构', '系统'],
-            'market': ['市场', '商业', '竞争', '用户', '需求', '销售'],
-            'trends': ['趋势', '发展', '未来', '预测', '方向', '前景'],
-            'analysis': ['分析', '研究', '调查', '评估', '比较', '优劣']
-        };
-
-        const lowerMessage = userMessage.toLowerCase();
-        
-        for (const [focus, keywords] of Object.entries(focusPatterns)) {
-            if (keywords.some(keyword => lowerMessage.includes(keyword))) {
-                return focus;
-            }
-        }
-        
-        return 'comprehensive';
-    }
-
-    /**
-     * 🎯 获取逻辑状态
-     */
-    getStatus() {
-        return {
-            researchFocus: this.researchFocus,
-            analysisDepth: this.analysisDepth,
-            availableTools: Object.keys(this.tools),
-            researchTools: Object.keys(this.tools).filter(name => 
-                ['tavily_search', 'crawl4ai', 'python_sandbox'].includes(name)
-            ),
-            type: 'research_agent_logic'
-        };
+思考:`;
     }
 }
