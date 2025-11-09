@@ -1204,23 +1204,6 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     };
                     window.addEventListener('workflow:result', handleWorkflowResult);
                 });
-            } else if (agentResult.type === 'research_result') {
-                // 确保完整显示研究结果
-                const fullContent = agentResult.content;
-                console.log('🎯 完整研究结果:', fullContent);
-                console.log('📚 资料来源:', agentResult.sources?.length || 0, '个来源');
-                
-                // 显示完整的研究报告（现在包含资料来源）
-                chatUI.addMessage({
-                    role: 'assistant',
-                    content: fullContent
-                });
-                
-                // 同时显示执行摘要
-                displayAgentSummary(agentResult);
-                
-                console.log(`Agent执行完成，${agentResult.iterations}次迭代，${agentResult.sources?.length || 0}个来源`);
-                agentThinkingDisplay.completeSession('success');
             } else if (agentResult.type === 'agent_result') {
                 // Agent模式下不重复显示完整内容
                 if (agentResult.fallback) {
@@ -2631,7 +2614,6 @@ function displayAgentSummary(agentResult) {
 
     // 确保 intermediateSteps 是数组
     const toolCount = agentResult.intermediateSteps?.length || 0;
-    const sourcesCount = agentResult.sources?.length || 0;
     const statusText = agentResult.success ? '✅ 成功' : '❌ 失败';
     
     summaryDiv.innerHTML = `
@@ -2645,12 +2627,10 @@ function displayAgentSummary(agentResult) {
                 <span>•</span>
                 <span>工具: ${toolCount}个</span>
                 <span>•</span>
-                <span>来源: ${sourcesCount}个</span>
-                <span>•</span>
                 <span>状态: ${statusText}</span>
             </div>
             <div class="summary-note">
-                💡 详细执行过程和资料来源已在研究报告中显示
+                💡 详细执行过程已在聊天记录中显示
             </div>
         </div>
     `;
