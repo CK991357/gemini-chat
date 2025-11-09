@@ -1,4 +1,4 @@
-// src/static/js/agent/Orchestrator.js - 聚焦重构版
+// src/static/js/agent/Orchestrator.js - 多模式关键词触发版
 
 import { getSkillsRegistry } from '../tool-spec-system/generated-skills.js';
 import { mcpToolsMap } from '../tools_mcp/tool-definitions.js';
@@ -64,7 +64,7 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 关键路由逻辑: 开关 + 关键词双重检查
+     * 🎯 关键路由逻辑: 开关 + 多模式关键词双重检查
      */
     async handleUserRequest(userMessage, files = [], context = {}) {
         await this.ensureInitialized();
@@ -74,10 +74,12 @@ export class Orchestrator {
             return { enhanced: false, type: 'standard_fallback' };
         }
 
-        // 2. 检查是否包含关键词以触发Agent
-        if (this._shouldUseDeepResearch(userMessage)) {
-            console.log('[Orchestrator] 检测到关键词，启动DeepResearch Agent...');
-            return await this._handleWithDeepResearch(userMessage, context);
+        // 2. ✨ 增强：使用新的多模式检测方法
+        const researchDetection = this._detectAndExtractTopic(userMessage);
+
+        if (researchDetection.shouldStart) {
+            console.log(`[Orchestrator] 检测到关键词"${researchDetection.matchedKeyword}"，启动${researchDetection.mode}研究模式...`);
+            return await this._handleWithDeepResearch(researchDetection.cleanTopic, context);
         }
 
         // 3. 否则，明确回退到标准模式
@@ -86,24 +88,71 @@ export class Orchestrator {
     }
 
     /**
-     * 🎯 触发条件：总开关打开 + Agent可用 + 包含关键词
+     * 🎯 增强：多模式关键词检测与话题提取
      */
-    _shouldUseDeepResearch(userMessage) {
-        const triggerKeyword = '深度研究';
-        return this.deepResearchAgent && userMessage.trim().toLowerCase().includes(triggerKeyword);
+    _detectAndExtractTopic(userMessage) {
+        // ✨ 关键词按特异性从高到低排序，确保更具体的模式被优先匹配
+        const keywords = {
+            '学术论文': 'academic', 
+            '商业分析': 'business',
+            '技术文档': 'technical',
+            '深度研究': 'deep',
+            '标准报告': 'standard'
+        };
+
+        const lowerMessage = userMessage.trim().toLowerCase();
+        let matchedKeyword = '';
+        let detectedMode = 'standard';
+
+        // 遍历关键词，找到第一个匹配的
+        for (const [keyword, mode] of Object.entries(keywords)) {
+            if (lowerMessage.includes(keyword.toLowerCase())) {
+                matchedKeyword = keyword;
+                detectedMode = mode;
+                break; // 找到第一个匹配就停止
+            }
+        }
+
+        // 如果没有匹配到任何关键词
+        if (!matchedKeyword) {
+            return { 
+                shouldStart: false,
+                mode: 'standard',
+                matchedKeyword: '',
+                cleanTopic: userMessage
+            };
+        }
+
+        // ✨ 清理话题：移除检测到的关键词
+        const cleanTopic = userMessage.replace(new RegExp(matchedKeyword, 'gi'), '').trim();
+        
+        console.log(`[Orchestrator] 关键词检测结果:`, {
+            original: userMessage,
+            matchedKeyword,
+            mode: detectedMode,
+            cleanTopic
+        });
+
+        return {
+            shouldStart: true,
+            mode: detectedMode,
+            matchedKeyword: matchedKeyword,
+            originalTopic: userMessage,
+            cleanTopic: cleanTopic || userMessage // 如果清理后为空，使用原消息
+        };
     }
 
-    async _handleWithDeepResearch(userMessage, context) {
+    /**
+     * 🎯 增强：处理深度研究请求
+     */
+    async _handleWithDeepResearch(cleanTopic, context) {
         try {
-            // 从用户消息中移除触发词，得到纯粹的研究主题
-            const topic = userMessage.replace(/深度研究/gi, '').trim();
-
             // 🎯 获取研究工具的定义（名称+描述），交给LLM去选择
             const availableToolDefinitions = (await this.skillManager.baseSkillManager.getAllSkills())
                 .filter(skill => this.researchTools.includes(skill.tool_name));
 
             const researchRequest = {
-                topic: topic || userMessage, // 如果移除关键词后为空，则使用原消息
+                topic: cleanTopic,
                 availableTools: availableToolDefinitions
             };
 
@@ -113,7 +162,8 @@ export class Orchestrator {
                 success: researchResult.success,
                 iterations: researchResult.iterations,
                 reportLength: researchResult.report?.length,
-                sourcesCount: researchResult.sources?.length || 0 // 🎯 新增：记录来源数量
+                sourcesCount: researchResult.sources?.length || 0,
+                researchMode: researchResult.research_mode
             });
 
             return {
@@ -123,7 +173,8 @@ export class Orchestrator {
                 success: researchResult.success,
                 iterations: researchResult.iterations,
                 intermediateSteps: researchResult.intermediateSteps,
-                sources: researchResult.sources // 🎯 新增：传递来源信息
+                sources: researchResult.sources,
+                researchMode: researchResult.research_mode
             };
         } catch (error) {
             console.error('[Orchestrator] DeepResearch Agent执行失败:', error);
