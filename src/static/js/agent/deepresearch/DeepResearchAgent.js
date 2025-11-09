@@ -257,12 +257,9 @@ export class DeepResearchAgent {
         );
         
         uniqueSources.forEach((source, index) => {
-            sourcesText += `${index + 1}. **${source.title}**\n`;
-            sourcesText += `   - 网址: ${source.url}\n`;
-            if (source.description) {
-                sourcesText += `   - 描述: ${source.description}\n`;
-            }
-            sourcesText += `\n`;
+            // 移除了标题的加粗，并去掉了描述和多余的换行
+            sourcesText += `${index + 1}. ${source.title}\n`;
+            sourcesText += `   网址: ${source.url}\n\n`; // 保留一个换行用于条目间距
         });
         
         sourcesText += `*注：以上信息采集时间为研究执行期间，网站内容可能随时间变化。*\n\n`;
