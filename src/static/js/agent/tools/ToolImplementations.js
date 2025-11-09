@@ -304,16 +304,17 @@ class DeepResearchToolAdapter {
     static _extractResearchData(toolName, rawResponse) {
         switch (toolName) {
             case 'tavily_search':
-                if (rawResponse.data && Array.isArray(rawResponse.data)) {
+                if (rawResponse.data && Array.isArray(rawResponse.data.results)) {
+                    const searchResults = rawResponse.data.results;
                     return {
-                        resultCount: rawResponse.data.length,
-                        sources: rawResponse.data.map(item => ({
+                        resultCount: searchResults.length,
+                        sources: searchResults.map(item => ({
                             title: item.title,
                             url: item.url,
                             contentLength: item.content?.length || 0,
                             hasAnswer: !!item.answer
                         })),
-                        averageRelevance: rawResponse.data.reduce((sum, item) => sum + (item.score || 0), 0) / rawResponse.data.length
+                        averageRelevance: searchResults.reduce((sum, item) => sum + (item.score || 0), 0) / (searchResults.length || 1)
                     };
                 }
                 break;
