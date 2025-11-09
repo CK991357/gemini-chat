@@ -403,11 +403,11 @@ class ProxiedTool extends BaseTool {
     async invoke(input, context = {}) {
         const startTime = Date.now();
         
-        // 🎯 关键：识别调用模式
+        // 🎯 关键：从 context 中获取模式，如果没有则默认为 'standard'
         const mode = context.mode || 'standard';
         const timeoutMs = this._getToolTimeout(this.name, mode);
         
-        console.log(`[ProxiedTool] ${mode.toUpperCase()}模式调用工具: ${this.name} (超时: ${timeoutMs}ms)`, this.sanitizeToolInput(input));
+        console.log(`[ProxiedTool] ${mode.toUpperCase()}模式调用工具: ${this.name}...`, this.sanitizeToolInput(input));
         
         try {
             let normalizedInput, rawResult, normalizedResult;
