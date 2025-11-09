@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 强化资料来源收集版本
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 关键词触发最终版
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -13,7 +13,7 @@ export class DeepResearchAgent {
         this.agentLogic = new AgentLogic(chatApiHandler);
         this.outputParser = new AgentOutputParser();
 
-        // ✨ 新增：性能追踪
+        // ✨ 性能追踪
         this.metrics = {
             toolUsage: { tavily_search: 0, crawl4ai: 0, python_sandbox: 0 },
             stepProgress: [],
@@ -28,17 +28,24 @@ export class DeepResearchAgent {
         const { topic, availableTools } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
-        console.log(`[DeepResearchAgent] 开始研究: "${topic}"`);
+        // 🎯 关键词检测逻辑
+        const researchMode = this._detectResearchMode(topic);
+        console.log(`[DeepResearchAgent] 开始研究: "${topic}"，检测到模式: ${researchMode}`);
+        
         await this.callbackManager.invokeEvent('on_research_start', { 
             run_id: runId, 
-            data: { topic, availableTools: availableTools.map(t => t.name) } 
+            data: { 
+                topic, 
+                availableTools: availableTools.map(t => t.name),
+                researchMode: researchMode
+            } 
         });
 
-        // ✨ 阶段1：智能规划
-        console.log(`[DeepResearchAgent] 阶段1：生成研究计划...`);
+        // ✨ 阶段1：智能规划（基于关键词检测的模式）
+        console.log(`[DeepResearchAgent] 阶段1：生成${researchMode}研究计划...`);
         let researchPlan;
         try {
-            researchPlan = await this.agentLogic.createInitialPlan(topic);
+            researchPlan = await this.agentLogic.createInitialPlan(topic, researchMode);
             
             // 实时通知UI研究计划
             await this.callbackManager.invokeEvent('on_research_plan_generated', {
@@ -46,14 +53,15 @@ export class DeepResearchAgent {
                 data: {
                     plan: researchPlan.research_plan,
                     estimated_iterations: researchPlan.estimated_iterations,
-                    risk_assessment: researchPlan.risk_assessment
+                    risk_assessment: researchPlan.risk_assessment,
+                    research_mode: researchMode
                 }
             });
 
-            console.log(`[DeepResearchAgent] 研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
+            console.log(`[DeepResearchAgent] ${researchMode}研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
         } catch (error) {
             console.error('[DeepResearchAgent] 研究计划生成失败，使用降级方案:', error);
-            researchPlan = this.agentLogic._createFallbackPlan(topic);
+            researchPlan = this.agentLogic._createFallbackPlan(topic, researchMode);
         }
 
         // ✨ 阶段2：自适应执行
@@ -72,7 +80,8 @@ export class DeepResearchAgent {
                     iteration: iterations, 
                     total: this.maxIterations,
                     currentSteps: intermediateSteps.length,
-                    metrics: this.metrics
+                    metrics: this.metrics,
+                    research_mode: researchMode
                 } 
             });
 
@@ -82,7 +91,8 @@ export class DeepResearchAgent {
                     topic, 
                     intermediateSteps, 
                     availableTools,
-                    researchPlan 
+                    researchPlan,
+                    researchMode // 🎯 传递检测到的模式
                 };
 
                 const agentDecisionText = await this.agentLogic.plan(logicInput, { 
@@ -127,7 +137,8 @@ export class DeepResearchAgent {
                         intermediateSteps,
                         sources: uniqueSources,
                         metrics: this.metrics,
-                        plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps)
+                        plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
+                        research_mode: researchMode
                     };
                     
                     await this.callbackManager.invokeEvent('on_research_end', {
@@ -157,7 +168,10 @@ export class DeepResearchAgent {
                     } else {
                         try {
                             console.log(`[DeepResearchAgent] 调用工具: ${tool_name}...`);
-                            const toolResult = await tool.invoke(parameters, { mode: 'deep_research' });
+                            const toolResult = await tool.invoke(parameters, { 
+                                mode: 'deep_research',
+                                researchMode // 🎯 传递研究模式给工具
+                            });
                             rawObservation = toolResult.output || JSON.stringify(toolResult);
                             
                             // 🎯 新增：提取来源信息
@@ -186,7 +200,7 @@ export class DeepResearchAgent {
                     }
                     
                     // 处理过长内容
-                    const summarizedObservation = await this._smartSummarizeObservation(topic, rawObservation);
+                    const summarizedObservation = await this._smartSummarizeObservation(topic, rawObservation, researchMode);
                     
                     // ✨ 评估信息增益
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, intermediateSteps);
@@ -274,13 +288,13 @@ export class DeepResearchAgent {
             }
         }
 
-        // ✨ 阶段3：优化报告生成
+        // ✨ 阶段3：优化报告生成（基于研究模式）
         console.log('[DeepResearchAgent] 研究完成，生成最终报告');
         
         let result;
         if (iterations < this.maxIterations && consecutiveNoGain < 2) {
             // 正常完成
-            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources);
+            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources, researchMode);
             result = {
                 success: true,
                 report: finalReport,
@@ -288,11 +302,12 @@ export class DeepResearchAgent {
                 intermediateSteps,
                 sources: allSources,
                 metrics: this.metrics,
-                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps)
+                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
+                research_mode: researchMode
             };
         } else {
             // 达到最大迭代次数或连续无增益
-            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources);
+            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources, researchMode);
             result = {
                 success: false,
                 report: finalReport,
@@ -300,7 +315,8 @@ export class DeepResearchAgent {
                 intermediateSteps,
                 sources: allSources,
                 metrics: this.metrics,
-                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps)
+                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
+                research_mode: researchMode
             };
             console.warn(`[DeepResearchAgent] ❌ 达到终止条件，研究结束`);
         }
@@ -310,6 +326,31 @@ export class DeepResearchAgent {
             data: result
         });
         return result;
+    }
+
+    // 🎯 关键词检测逻辑
+    _detectResearchMode(topic) {
+        const keywords = {
+            '深度研究': 'deep',
+            '学术论文': 'academic', 
+            '商业分析': 'business',
+            '技术文档': 'technical',
+            '标准报告': 'standard'
+        };
+
+        // 清理topic，移除关键词
+        let cleanTopic = topic;
+        let detectedMode = 'standard'; // 默认模式
+
+        for (const [keyword, mode] of Object.entries(keywords)) {
+            if (topic.includes(keyword)) {
+                detectedMode = mode;
+                cleanTopic = topic.replace(keyword, '').trim();
+                break;
+            }
+        }
+
+        return detectedMode;
     }
 
     // ✨ 新增：强化资料来源提取
@@ -379,8 +420,8 @@ export class DeepResearchAgent {
         });
     }
 
-    // ✨ 优化：最终报告生成
-    async _generateFinalReport(topic, intermediateSteps, plan, sources) {
+    // ✨ 优化：最终报告生成（支持研究模式）
+    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
         try {
             // 1. 提取补充资料来源
             const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
@@ -404,27 +445,8 @@ export class DeepResearchAgent {
                 .filter(obs => obs.length > 50) // 只保留有内容的观察
                 .join('\n\n');
             
-            // 3. 使用LLM生成结构化报告
-            const reportPrompt = `
-基于以下研究内容，生成一份专业、结构完整的研究报告。
-
-研究主题：${topic}
-${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_question))}` : ''}
-收集信息：${allObservations.substring(0, 3000)} ${allObservations.length > 3000 ? '...（内容过长已截断）' : ''}
-
-报告要求：
-1. 格式：Markdown
-2. 结构：
-   # 主标题
-   ## 一、引言与背景
-   ## 二、核心内容分析（至少2-3个子部分）
-   ## 三、深度洞察与总结
-3. 字数：800-1200字
-4. 风格：专业、客观、信息密集
-5. 关键事实和引用请标注[1][2]等编号
-
-请生成最终报告（不要包含"资料来源"章节，我们会自动添加）：
-`;
+            // 3. 使用LLM生成结构化报告（基于研究模式）
+            const reportPrompt = this._buildReportPrompt(topic, plan, allObservations, researchMode);
 
             const reportResponse = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: reportPrompt }],
@@ -432,21 +454,104 @@ ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_ques
                 temperature: 0.3,
             });
             
-            let finalReport = reportResponse?.choices?.[0]?.message?.content || this._generateFallbackReport(topic, intermediateSteps, uniqueSources);
+            let finalReport = reportResponse?.choices?.[0]?.message?.content || 
+                this._generateFallbackReport(topic, intermediateSteps, uniqueSources, researchMode);
             
             // 4. ✨ 修复：直接使用所有来源，不再进行过滤
             finalReport += this._generateSourcesSection(uniqueSources);
             
-            console.log(`[DeepResearchAgent] 最终报告生成完成，包含 ${uniqueSources.length} 个资料来源`);
+            console.log(`[DeepResearchAgent] 最终报告生成完成，模式: ${researchMode}，包含 ${uniqueSources.length} 个资料来源`);
             return finalReport;
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources);
+            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
         }
     }
 
-    _generateFallbackReport(topic, intermediateSteps, sources) {
+    // ✨ 新增：构建报告提示词（基于研究模式）
+    _buildReportPrompt(topic, plan, observations, researchMode) {
+        const modeConfigs = {
+            deep: {
+                title: "深度研究模式",
+                structure: `# 主标题
+## 问题解构与分析
+## 多维度深度探索（至少从技术、实践、历史三个维度）
+## 权威验证与专业深化  
+## 辩证解决方案（至少3个可行方案+反对观点）
+## 创新建议与执行路径`,
+                wordCount: "2500-3500字",
+                requirements: "所有关键数据必须验证并标注来源[1][2]，包含至少一个反对观点"
+            },
+            academic: {
+                title: "学术论文模式", 
+                structure: `# 标题
+## 摘要
+## 引言与研究背景
+## 文献综述
+## 方法论
+## 分析与讨论
+## 结论
+## 参考文献`,
+                wordCount: "2500-3500字",
+                requirements: "严格标注来源，使用标准引用格式"
+            },
+            business: {
+                title: "商业分析模式",
+                structure: `# 执行摘要
+## 市场分析
+## 竞争格局
+## 机会与挑战
+## 战略建议
+## 财务影响
+## 实施路线图`,
+                wordCount: "1500-2500字",
+                requirements: "市场数据必须标注来源"
+            },
+            technical: {
+                title: "技术文档模式",
+                structure: `# 技术概述
+## 架构设计
+## 核心组件
+## 实现细节
+## 性能评估
+## 最佳实践
+## 故障排除`,
+                wordCount: "1800-2800字", 
+                requirements: "技术规格和性能数据必须验证"
+            },
+            standard: {
+                title: "标准报告模式",
+                structure: `# 主标题
+## 一、引言与背景
+## 二、核心内容分析（至少2-3个子部分）
+## 三、深度洞察与总结`,
+                wordCount: "800-1200字",
+                requirements: "关键信息标注来源[1][2]"
+            }
+        };
+
+        const config = modeConfigs[researchMode] || modeConfigs.standard;
+
+        return `
+基于以下研究内容，生成一份专业、结构完整的研究报告。
+
+研究主题：${topic}
+${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_question))}` : ''}
+收集信息：${observations.substring(0, 3000)} ${observations.length > 3000 ? '...（内容过长已截断）' : ''}
+
+报告要求（${config.title}）：
+1. 格式：Markdown
+2. 结构：
+${config.structure}
+3. 字数：${config.wordCount}
+4. 风格：专业、客观、信息密集
+5. 要求：${config.requirements}
+
+请生成最终报告（不要包含"资料来源"章节，我们会自动添加）：`;
+    }
+
+    _generateFallbackReport(topic, intermediateSteps, sources, researchMode) {
         // 降级报告生成逻辑
         const observations = intermediateSteps
             .filter(step => step.observation)
@@ -509,7 +614,7 @@ ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_ques
         );
     }
 
-    async _smartSummarizeObservation(mainTopic, observation) {
+    async _smartSummarizeObservation(mainTopic, observation, researchMode) {
         const threshold = 2000;
         if (!observation || typeof observation !== 'string' || observation.length < threshold) {
             return observation.length > threshold ? 
