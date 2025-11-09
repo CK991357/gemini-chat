@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 关键词触发最终版
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 最终关键词触发版 v5.0
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -28,24 +28,24 @@ export class DeepResearchAgent {
         const { topic, availableTools } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
-        // 🎯 关键词检测逻辑
-        const researchMode = this._detectResearchMode(topic);
-        console.log(`[DeepResearchAgent] 开始研究: "${topic}"，检测到模式: ${researchMode}`);
+        // ✨ 最终优化 #1: 调用 _detectResearchMode 获取模式和清理后的话题
+        const { detectedMode, cleanTopic } = this._detectResearchMode(topic);
+        console.log(`[DeepResearchAgent] 开始研究: "${cleanTopic}"，检测到模式: ${detectedMode}`);
         
         await this.callbackManager.invokeEvent('on_research_start', { 
             run_id: runId, 
             data: { 
-                topic, 
+                topic: cleanTopic, 
                 availableTools: availableTools.map(t => t.name),
-                researchMode: researchMode
+                researchMode: detectedMode
             } 
         });
 
-        // ✨ 阶段1：智能规划（基于关键词检测的模式）
-        console.log(`[DeepResearchAgent] 阶段1：生成${researchMode}研究计划...`);
+        // ✨ 阶段1：智能规划
+        console.log(`[DeepResearchAgent] 阶段1：生成${detectedMode}研究计划...`);
         let researchPlan;
         try {
-            researchPlan = await this.agentLogic.createInitialPlan(topic, researchMode);
+            researchPlan = await this.agentLogic.createInitialPlan(cleanTopic, detectedMode);
             
             // 实时通知UI研究计划
             await this.callbackManager.invokeEvent('on_research_plan_generated', {
@@ -54,23 +54,24 @@ export class DeepResearchAgent {
                     plan: researchPlan.research_plan,
                     estimated_iterations: researchPlan.estimated_iterations,
                     risk_assessment: researchPlan.risk_assessment,
-                    research_mode: researchMode
+                    research_mode: detectedMode
                 }
             });
 
-            console.log(`[DeepResearchAgent] ${researchMode}研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
+            console.log(`[DeepResearchAgent] ${detectedMode}研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
         } catch (error) {
             console.error('[DeepResearchAgent] 研究计划生成失败，使用降级方案:', error);
-            researchPlan = this.agentLogic._createFallbackPlan(topic, researchMode);
+            researchPlan = this.agentLogic._createFallbackPlan(cleanTopic, detectedMode);
         }
 
         // ✨ 阶段2：自适应执行
         let intermediateSteps = [];
         let iterations = 0;
-        let consecutiveNoGain = 0; // 追踪无效迭代
+        let consecutiveNoGain = 0;
         let allSources = [];
+        let finalAnswerFromIteration = null;
 
-        while (iterations < this.maxIterations && consecutiveNoGain < 2) {
+        while (iterations < this.maxIterations && consecutiveNoGain < 2 && !finalAnswerFromIteration) {
             iterations++;
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
@@ -81,18 +82,18 @@ export class DeepResearchAgent {
                     total: this.maxIterations,
                     currentSteps: intermediateSteps.length,
                     metrics: this.metrics,
-                    research_mode: researchMode
+                    research_mode: detectedMode
                 } 
             });
 
             try {
                 // 🎯 构建AgentLogic输入数据
                 const logicInput = { 
-                    topic, 
+                    topic: cleanTopic, 
                     intermediateSteps, 
                     availableTools,
                     researchPlan,
-                    researchMode // 🎯 传递检测到的模式
+                    researchMode: detectedMode
                 };
 
                 const agentDecisionText = await this.agentLogic.plan(logicInput, { 
@@ -115,37 +116,9 @@ export class DeepResearchAgent {
 
                 // 🎯 处理最终答案
                 if (parsedAction.type === 'final_answer') {
-                    console.log('[DeepResearchAgent] ✅ 检测到最终答案，研究完成');
-                    
-                    // ✨ 修复：不再尝试标记使用的来源，而是直接使用所有收集到的来源
-                    const uniqueSources = this._deduplicateSources(allSources);
-                    
-                    let finalReport = parsedAction.answer;
-                    
-                    // ✨ 修复：总是添加所有收集到的来源，不再进行过滤
-                    if (uniqueSources.length > 0) {
-                        finalReport += this._generateSourcesSection(uniqueSources);
-                        console.log(`[DeepResearchAgent] 添加了 ${uniqueSources.length} 个资料来源`);
-                    } else {
-                        console.log('[DeepResearchAgent] 警告：没有收集到任何资料来源');
-                    }
-                    
-                    const result = {
-                        success: true,
-                        report: finalReport,
-                        iterations,
-                        intermediateSteps,
-                        sources: uniqueSources,
-                        metrics: this.metrics,
-                        plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
-                        research_mode: researchMode
-                    };
-                    
-                    await this.callbackManager.invokeEvent('on_research_end', {
-                        run_id: runId,
-                        data: result
-                    });
-                    return result;
+                    console.log('[DeepResearchAgent] ✅ Agent在迭代中决定生成最终答案，保存答案并跳出循环');
+                    finalAnswerFromIteration = parsedAction.answer;
+                    break; // 跳出循环
                 }
 
                 // 🎯 处理工具调用
@@ -160,7 +133,7 @@ export class DeepResearchAgent {
 
                     const tool = this.tools[tool_name];
                     let rawObservation;
-                    let toolSources = []; // 🎯 新增：保存本次工具调用的来源
+                    let toolSources = [];
                     
                     if (!tool) {
                         rawObservation = `错误: 工具 "${tool_name}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
@@ -170,11 +143,11 @@ export class DeepResearchAgent {
                             console.log(`[DeepResearchAgent] 调用工具: ${tool_name}...`);
                             const toolResult = await tool.invoke(parameters, { 
                                 mode: 'deep_research',
-                                researchMode // 🎯 传递研究模式给工具
+                                researchMode: detectedMode
                             });
                             rawObservation = toolResult.output || JSON.stringify(toolResult);
                             
-                            // 🎯 新增：提取来源信息
+                            // 🎯 提取来源信息
                             if (toolResult.sources && Array.isArray(toolResult.sources)) {
                                 toolSources = toolResult.sources.map(source => ({
                                     title: source.title || '无标题',
@@ -200,7 +173,7 @@ export class DeepResearchAgent {
                     }
                     
                     // 处理过长内容
-                    const summarizedObservation = await this._smartSummarizeObservation(topic, rawObservation, researchMode);
+                    const summarizedObservation = await this._smartSummarizeObservation(cleanTopic, rawObservation, detectedMode);
                     
                     // ✨ 评估信息增益
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, intermediateSteps);
@@ -213,7 +186,7 @@ export class DeepResearchAgent {
                         consecutiveNoGain = 0;
                     }
                     
-                    // 保存完整的步骤信息（包含思考过程和来源）
+                    // 保存完整的步骤信息
                     intermediateSteps.push({
                         action: {
                             type: 'tool_call',
@@ -222,10 +195,10 @@ export class DeepResearchAgent {
                             thought: thought || `执行工具 ${tool_name} 来获取更多信息。`
                         },
                         observation: summarizedObservation,
-                        sources: toolSources // 🎯 新增：保存来源
+                        sources: toolSources
                     });
                     
-                    // 🎯 新增：合并到总来源列表
+                    // 🎯 合并到总来源列表
                     allSources = [...allSources, ...toolSources];
                     
                     await this.callbackManager.invokeEvent('on_tool_end', {
@@ -250,7 +223,7 @@ export class DeepResearchAgent {
                 } else {
                     // 🎯 处理解析错误
                     console.warn('[DeepResearchAgent] ⚠️ 输出解析失败，触发自我纠正');
-                    const observation = `格式错误: ${parsedAction.log || '无法解析响应'}。请严格遵循指令格式：思考: ... 行动: {...} 或 最终答案: ...`;
+                    const observation = `格式错误: ${parsedAction.error || '无法解析响应'}。请严格遵循指令格式：思考: ... 行动: {...} 或 最终答案: ...`;
                     
                     intermediateSteps.push({ 
                         action: { 
@@ -268,7 +241,7 @@ export class DeepResearchAgent {
                             iteration: iterations, 
                             total: this.maxIterations,
                             warning: '输出解析失败，已触发自我纠正',
-                            error: parsedAction.log
+                            error: parsedAction.error
                         }
                     });
                 }
@@ -288,38 +261,33 @@ export class DeepResearchAgent {
             }
         }
 
-        // ✨ 阶段3：优化报告生成（基于研究模式）
-        console.log('[DeepResearchAgent] 研究完成，生成最终报告');
+        // ✨ 阶段3：统一的报告生成 (最终优化 #2)
+        console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
         
-        let result;
-        if (iterations < this.maxIterations && consecutiveNoGain < 2) {
-            // 正常完成
-            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources, researchMode);
-            result = {
-                success: true,
-                report: finalReport,
-                iterations,
-                intermediateSteps,
-                sources: allSources,
-                metrics: this.metrics,
-                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
-                research_mode: researchMode
-            };
+        let finalReport;
+        if (finalAnswerFromIteration) {
+            console.log('[DeepResearchAgent] 使用迭代中生成的答案作为报告基础');
+            finalReport = finalAnswerFromIteration;
         } else {
-            // 达到最大迭代次数或连续无增益
-            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources, researchMode);
-            result = {
-                success: false,
-                report: finalReport,
-                iterations: this.maxIterations,
-                intermediateSteps,
-                sources: allSources,
-                metrics: this.metrics,
-                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
-                research_mode: researchMode
-            };
-            console.warn(`[DeepResearchAgent] ❌ 达到终止条件，研究结束`);
+            console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
+            finalReport = await this._generateFinalReport(cleanTopic, intermediateSteps, researchPlan, allSources, detectedMode);
         }
+
+        // ✨ 附加所有收集到的资料来源
+        const uniqueSources = this._deduplicateSources(allSources);
+        finalReport += this._generateSourcesSection(uniqueSources);
+        console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${uniqueSources.length} 个资料来源`);
+
+        const result = {
+            success: true, // 只要能生成报告就视为成功
+            report: finalReport,
+            iterations,
+            intermediateSteps,
+            sources: uniqueSources,
+            metrics: this.metrics,
+            plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
+            research_mode: detectedMode
+        };
         
         await this.callbackManager.invokeEvent('on_research_end', {
             run_id: runId,
@@ -328,99 +296,34 @@ export class DeepResearchAgent {
         return result;
     }
 
-    // 🎯 关键词检测逻辑
+    // ✨ 最终优化 #1: 增强的关键词检测逻辑
     _detectResearchMode(topic) {
+        // 关键词按特异性从高到低排序，确保更具体的模式被优先匹配
         const keywords = {
-            '深度研究': 'deep',
             '学术论文': 'academic', 
             '商业分析': 'business',
             '技术文档': 'technical',
+            '深度研究': 'deep', // "深度研究" 优先级较低
             '标准报告': 'standard'
         };
 
-        // 清理topic，移除关键词
         let cleanTopic = topic;
         let detectedMode = 'standard'; // 默认模式
 
         for (const [keyword, mode] of Object.entries(keywords)) {
             if (topic.includes(keyword)) {
                 detectedMode = mode;
+                // 只移除第一个匹配到的关键词，避免意外移除内容
                 cleanTopic = topic.replace(keyword, '').trim();
-                break;
+                console.log(`[DeepResearchAgent] 匹配到关键词: "${keyword}", 模式设置为: ${mode}, 清理后主题: "${cleanTopic}"`);
+                break; // 找到第一个就停止
             }
         }
 
-        return detectedMode;
+        return { detectedMode, cleanTopic };
     }
 
-    // ✨ 新增：强化资料来源提取
-    _extractSourcesFromIntermediateSteps(intermediateSteps) {
-        const sources = new Map(); // 使用Map避免重复来源
-        
-        intermediateSteps.forEach(step => {
-            if (step.observation && typeof step.observation === 'string') {
-                // 从tavily_search结果中提取来源
-                if (step.action.tool_name === 'tavily_search' && step.observation.includes('【来源')) {
-                    const sourceMatches = step.observation.match(/【来源\s*\d+】[^】]*?https?:\/\/[^\s)]+/g);
-                    if (sourceMatches) {
-                        sourceMatches.forEach(source => {
-                            const urlMatch = source.match(/(https?:\/\/[^\s)]+)/);
-                            if (urlMatch) {
-                                const url = urlMatch[1];
-                                const titleMatch = source.match(/【来源\s*\d+】([^】]*?)(?=http|$)/);
-                                const title = titleMatch ? titleMatch[1].trim() : '未知标题';
-                                
-                                if (!sources.has(url)) {
-                                    sources.set(url, {
-                                        title: title,
-                                        url: url,
-                                        used_in_report: false // 稍后标记是否在报告中引用
-                                    });
-                                }
-                            }
-                        });
-                    }
-                }
-                
-                // 从crawl4ai结果中提取来源
-                if (step.action.tool_name === 'crawl4ai' && step.action.parameters && step.action.parameters.url) {
-                    const url = step.action.parameters.url;
-                    if (!sources.has(url)) {
-                        sources.set(url, {
-                            title: `爬取页面: ${new URL(url).hostname}`,
-                            url: url,
-                            used_in_report: false
-                        });
-                    }
-                }
-            }
-        });
-        
-        return Array.from(sources.values());
-    }
-
-    // ✨ 修复：移除过于严格的来源标记逻辑，直接使用所有来源
-    _markUsedSources(reportContent, sources) {
-        // ✨ 修复：不再尝试反向匹配，直接返回所有来源
-        // 因为LLM生成报告时不会直接引用原始URL或标题
-        console.log(`[DeepResearchAgent] 跳过来源使用标记，直接使用所有 ${sources.length} 个来源`);
-        return sources;
-    }
-
-    // ✨ 新增：来源去重
-    _deduplicateSources(sources) {
-        const seen = new Set();
-        return sources.filter(source => {
-            const key = source.url;
-            if (seen.has(key)) {
-                return false;
-            }
-            seen.add(key);
-            return true;
-        });
-    }
-
-    // ✨ 优化：最终报告生成（支持研究模式）
+    // ✨ 最终优化 #2: _generateFinalReport 现在只负责合成
     async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
         try {
             // 1. 提取补充资料来源
@@ -457,16 +360,72 @@ export class DeepResearchAgent {
             let finalReport = reportResponse?.choices?.[0]?.message?.content || 
                 this._generateFallbackReport(topic, intermediateSteps, uniqueSources, researchMode);
             
-            // 4. ✨ 修复：直接使用所有来源，不再进行过滤
-            finalReport += this._generateSourcesSection(uniqueSources);
-            
-            console.log(`[DeepResearchAgent] 最终报告生成完成，模式: ${researchMode}，包含 ${uniqueSources.length} 个资料来源`);
+            console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
             return finalReport;
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
             return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
         }
+    }
+
+    // ✨ 新增：强化资料来源提取
+    _extractSourcesFromIntermediateSteps(intermediateSteps) {
+        const sources = new Map(); // 使用Map避免重复来源
+        
+        intermediateSteps.forEach(step => {
+            if (step.observation && typeof step.observation === 'string') {
+                // 从tavily_search结果中提取来源
+                if (step.action.tool_name === 'tavily_search' && step.observation.includes('【来源')) {
+                    const sourceMatches = step.observation.match(/【来源\s*\d+】[^】]*?https?:\/\/[^\s)]+/g);
+                    if (sourceMatches) {
+                        sourceMatches.forEach(source => {
+                            const urlMatch = source.match(/(https?:\/\/[^\s)]+)/);
+                            if (urlMatch) {
+                                const url = urlMatch[1];
+                                const titleMatch = source.match(/【来源\s*\d+】([^】]*?)(?=http|$)/);
+                                const title = titleMatch ? titleMatch[1].trim() : '未知标题';
+                                
+                                if (!sources.has(url)) {
+                                    sources.set(url, {
+                                        title: title,
+                                        url: url,
+                                        used_in_report: false
+                                    });
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                // 从crawl4ai结果中提取来源
+                if (step.action.tool_name === 'crawl4ai' && step.action.parameters && step.action.parameters.url) {
+                    const url = step.action.parameters.url;
+                    if (!sources.has(url)) {
+                        sources.set(url, {
+                            title: `爬取页面: ${new URL(url).hostname}`,
+                            url: url,
+                            used_in_report: false
+                        });
+                    }
+                }
+            }
+        });
+        
+        return Array.from(sources.values());
+    }
+
+    // ✨ 新增：来源去重
+    _deduplicateSources(sources) {
+        const seen = new Set();
+        return sources.filter(source => {
+            const key = source.url;
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
     }
 
     // ✨ 新增：构建报告提示词（基于研究模式）
@@ -559,11 +518,6 @@ ${config.structure}
             .join('\n');
             
         let report = `# ${topic}\n\n## 收集的信息\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
-        
-        // 添加资料来源
-        if (sources && sources.length > 0) {
-            report += this._generateSourcesSection(sources);
-        }
             
         return report;
     }
