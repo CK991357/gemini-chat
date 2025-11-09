@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/OutputParser.js - 增强健壮性版本
+// src/static/js/agent/deepresearch/OutputParser.js - 最终版（完全匹配AgentLogic格式）
 
 export class AgentOutputParser {
     parse(text) {
@@ -7,142 +7,173 @@ export class AgentOutputParser {
         }
         text = text.trim();
 
-        console.log('[OutputParser] 原始文本:', text.substring(0, 300) + '...');
+        console.log('[OutputParser] 原始文本:', text.substring(0, 300) + (text.length > 300 ? '...' : ''));
 
         try {
-            // 🎯 1. 提取思考过程 (Thought) - 增强模式匹配
+            // 🎯 1. 提取思考过程 - 精确匹配AgentLogic格式
             let thought = '';
-            const thoughtPatterns = [
-                /思考\s*:\s*([\s\S]*?)(?=行动\s*:|最终答案\s*:|$)/i,
-                /Thought\s*:\s*([\s\S]*?)(?=Action\s*:|Final Answer\s*:|$)/i,
-                /思考\s*：\s*([\s\S]*?)(?=行动\s*：|最终答案\s*：|$)/i
-            ];
-            
-            for (const pattern of thoughtPatterns) {
-                const match = text.match(pattern);
-                if (match && match[1]) {
-                    thought = match[1].trim();
-                    break;
-                }
+            const thoughtMatch = text.match(/思考\s*:\s*([\s\S]*?)(?=行动\s*:|行动输入\s*:|最终答案\s*:|$)/i);
+            if (thoughtMatch && thoughtMatch[1]) {
+                thought = thoughtMatch[1].trim();
             }
+            console.log('[OutputParser] 提取思考内容:', thought.substring(0, 200) + (thought.length > 200 ? '...' : ''));
 
-            // 🎯 2. 增强版最终答案检测 - 多模式匹配
-            const finalAnswerPatterns = [
-                /最终答案\s*:\s*([\s\S]*)/i,
-                /Final Answer\s*:\s*([\s\S]*)/i,
-                /最终报告\s*:\s*([\s\S]*)/i,
-                /研究报告\s*:\s*([\s\S]*)/i,
-                /最终结论\s*:\s*([\s\S]*)/i,
-                /#+\s*最终答案\s*\n([\s\S]*)/i,
-                /#+\s*Final Answer\s*\n([\s\S]*)/i
-            ];
-
-            for (const pattern of finalAnswerPatterns) {
-                const match = text.match(pattern);
-                if (match && match[1]) {
-                    const answer = match[1].trim();
-                    console.log('[OutputParser] 检测到最终答案，长度:', answer.length);
+            // 🎯 2. 最终答案检测 - 精确匹配AgentLogic格式
+            const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]*)/i);
+            if (finalAnswerMatch && finalAnswerMatch[1]) {
+                const answer = finalAnswerMatch[1].trim();
+                if (answer.length > 50) {
+                    console.log('[OutputParser] ✅ 检测到最终答案，长度:', answer.length);
                     return {
                         type: 'final_answer',
                         answer: answer,
-                        thought: thought
+                        thought: thought,
+                        thought_length: thought.length
                     };
                 }
             }
 
-            // 🎯 3. 增强版JSON提取 - 支持多种代码块格式
-            const jsonPatterns = [
-                /```(?:json)?\s*([\s\S]*?)\s*```/, // 匹配 ```json ... ``` 和 ``` ... ```
-                /行动:\s*(\{[\s\S]*\})/i,              // 从 "行动:" 后面直接捕获 { ... }
-                /Action:\s*(\{[\s\S]*\})/i,
-                /\{[\s\S]*?\}(?=\s*$|\s*思考|\s*行动|\s*最终答案)/  // 纯JSON对象，避免贪婪匹配
-            ];
+            // 🎯 3. 核心解析：完全匹配AgentLogic的"行动: 工具名" + "行动输入: {json}"格式
+            const toolCallResult = this._parseToolCallFormat(text);
+            if (toolCallResult.success) {
+                console.log("[OutputParser] ✅ 成功解析工具调用:", toolCallResult.tool_name);
+                return {
+                    type: 'tool_call',
+                    tool_name: toolCallResult.tool_name,
+                    parameters: toolCallResult.parameters,
+                    thought: thought,
+                    thought_length: thought.length
+                };
+            }
 
-            for (const pattern of jsonPatterns) {
-                const match = text.match(pattern);
-                if (match) {
-                    const jsonString = match[1] || match[2] || match[3] || match[0];
-                    try {
-                        const cleanedJson = this._cleanupJsonString(jsonString);
-                        console.log('[OutputParser] 尝试解析JSON:', cleanedJson.substring(0, 200));
-                        
-                        const actionJson = JSON.parse(cleanedJson);
-
-                        if (actionJson.tool_name && actionJson.parameters) {
-                            console.log("[OutputParser] 成功解析工具调用:", actionJson.tool_name);
-                            return {
-                                type: 'tool_call',
-                                tool_name: actionJson.tool_name,
-                                parameters: actionJson.parameters,
-                                thought: thought
-                            };
-                        } else {
-                            console.warn('[OutputParser] JSON缺少必要字段:', actionJson);
-                            throw new Error(`JSON缺少必要字段: tool_name 或 parameters。实际内容: ${JSON.stringify(actionJson)}`);
-                        }
-                    } catch (e) {
-                        console.warn('[OutputParser] JSON解析失败:', e.message, '原始字符串:', jsonString.substring(0, 100));
-                        // 继续尝试其他模式
-                    }
+            // 🎯 4. 智能推断：如果思考表明任务完成，且有报告结构
+            if (this._shouldBeFinalAnswer(thought, text)) {
+                const inferredAnswer = this._inferFinalAnswer(text, thought);
+                if (inferredAnswer) {
+                    console.log('[OutputParser] 🤔 从思考中推断出最终答案，长度:', inferredAnswer.length);
+                    return {
+                        type: 'final_answer',
+                        answer: inferredAnswer,
+                        thought: thought,
+                        thought_length: thought.length
+                    };
                 }
             }
 
-            // 🎯 4. 智能推断：如果思考表明任务完成，则返回最终答案
-            if (thought) {
-                const completionIndicators = [
-                    '完成', '足够', '最终', '总结', '结论', '报告',
-                    'complete', 'enough', 'final', 'summary', 'conclusion', 'report'
-                ];
-                
-                const hasCompletionIndicator = completionIndicators.some(indicator => 
-                    thought.toLowerCase().includes(indicator.toLowerCase())
-                );
-
-                if (hasCompletionIndicator) {
-                    // 提取思考后的所有内容作为最终答案
-                    const thoughtEndIndex = text.indexOf(thought) + thought.length;
-                    const remainingText = text.substring(thoughtEndIndex).trim();
-                    
-                    if (remainingText) {
-                        console.log('[OutputParser] 从思考中推断出最终答案');
-                        return {
-                            type: 'final_answer',
-                            answer: remainingText,
-                            thought: thought
-                        };
-                    }
-                }
-            }
-
-            // 🎯 5. 如果都找不到，提供详细的错误信息
-            const errorMsg = '无法解析出有效的行动JSON或最终答案。';
-            console.warn('[OutputParser] 解析失败:', errorMsg, "文本开头:", text.substring(0, 200));
+            // 🎯 5. 精确的错误信息
+            const errorMsg = `无法解析出有效的行动或最终答案。请确保输出格式为：
+思考: ...
+行动: 工具名
+行动输入: {"参数": "值"}
+或
+最终答案: ...`;
             
-            throw new Error(`${errorMsg} 请确保输出格式为：思考: ... 行动: {...} 或 最终答案: ...`);
+            console.warn('[OutputParser] ❌ 解析失败:', errorMsg);
+            throw new Error(errorMsg);
 
         } catch (e) {
-            console.error('[OutputParser] 解析失败:', e.message);
+            console.error('[OutputParser] 💥 解析过程中发生严重错误:', e.message);
             return {
                 type: 'error',
-                log: e.message,
-                thought: text.substring(0, 500) // 返回部分原始文本作为思考
+                error: e.message,
+                thought: text.substring(0, 500),
+                thought_length: Math.min(text.length, 500)
             };
         }
     }
 
-    _cleanupJsonString(str) {
-        // 移除多行注释 /* ... */
-        let cleaned = str.replace(/\/\*[\s\S]*?\*\//g, '');
+    // ✨ 核心方法：解析AgentLogic要求的格式
+    _parseToolCallFormat(text) {
+        try {
+            console.log('[OutputParser] 🔍 开始解析工具调用格式...');
+            
+            // 精确匹配格式：行动: 工具名
+            const actionLineMatch = text.match(/行动\s*:\s*([a-zA-Z0-9_]+)(?=\s|$|\n)/i);
+            if (!actionLineMatch) {
+                console.log('[OutputParser] ❌ 未找到"行动:"行');
+                return { success: false };
+            }
+
+            const tool_name = actionLineMatch[1].trim();
+            console.log(`[OutputParser] 🔍 找到工具名: ${tool_name}`);
+            
+            // 精确匹配格式：行动输入: {json}
+            const inputLineMatch = text.match(/行动输入\s*:\s*(\{[\s\S]*?\})(?=\s*(?:思考|行动|最终答案)|$)/i);
+            if (!inputLineMatch) {
+                console.log('[OutputParser] ❌ 未找到"行动输入:"行');
+                return { success: false };
+            }
+
+            let parametersJson = inputLineMatch[1].trim();
+            console.log(`[OutputParser] 🔍 找到参数JSON: ${parametersJson.substring(0, 100)}...`);
+            
+            // 清理JSON字符串
+            parametersJson = this._cleanJsonString(parametersJson);
+            
+            const parameters = JSON.parse(parametersJson);
+            
+            console.log(`[OutputParser] ✅ 工具调用解析成功: ${tool_name}`, parameters);
+            return { 
+                success: true, 
+                tool_name, 
+                parameters 
+            };
+            
+        } catch (e) {
+            console.warn('[OutputParser] ❌ 工具调用解析失败:', e.message);
+            return { success: false };
+        }
+    }
+
+    // 🛠️ 判断是否应该是最终答案
+    _shouldBeFinalAnswer(thought, fullText) {
+        if (!thought) return false;
         
-        // 移除单行注释 // ...
-        cleaned = cleaned.replace(/\/\/[^\n\r]*/g, '');
+        const completionIndicators = [
+            '完成', '足够', '最终', '总结', '结论', '报告', '撰写最终',
+            '所有计划步骤已完成', '关键问题都已得到充分回答'
+        ];
         
-        // 移除尾随逗号 (更安全的版本)
-        cleaned = cleaned.replace(/,\s*(?=[}\]])/g, '');
+        const hasCompletionIndicator = completionIndicators.some(indicator => 
+            thought.toLowerCase().includes(indicator.toLowerCase())
+        );
         
-        // 关键修复：不再全局替换单引号，避免破坏字符串内容。
-        // 专注于结构性修复，让 JSON.parse 处理内容。
+        // 检查是否有报告结构（匹配AgentLogic要求的格式）
+        const hasReportStructure = /^#\s+.+\n##\s+.+/m.test(fullText);
         
+        return hasCompletionIndicator || hasReportStructure;
+    }
+
+    // 🛠️ 推断最终答案
+    _inferFinalAnswer(fullText, thought) {
+        try {
+            // 如果思考后面直接跟着报告结构，提取整个报告
+            const thoughtIndex = fullText.indexOf(thought);
+            if (thoughtIndex === -1) return null;
+            
+            const remainingText = fullText.substring(thoughtIndex + thought.length).trim();
+            
+            // 清理可能的行动标签
+            const cleanText = remainingText
+                .replace(/^行动\s*:.*$/im, '')
+                .replace(/^行动输入\s*:.*$/im, '')
+                .trim();
+                
+            // 检查是否符合最终报告格式要求
+            if (cleanText.length > 100 && /^#\s+/.test(cleanText) && cleanText.includes('##')) {
+                return cleanText;
+            }
+            
+            return null;
+        } catch (e) {
+            console.warn('[OutputParser] 推断最终答案失败:', e.message);
+            return null;
+        }
+    }
+
+    _cleanJsonString(str) {
+        // 移除尾随逗号（JSON不允许尾随逗号）
+        let cleaned = str.replace(/,\s*}$/, '}');
         return cleaned.trim();
     }
 }
