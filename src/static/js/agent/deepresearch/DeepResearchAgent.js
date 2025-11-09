@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 智能迭代控制版本
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 强化资料来源收集版本
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -60,7 +60,6 @@ export class DeepResearchAgent {
         let intermediateSteps = [];
         let iterations = 0;
         let consecutiveNoGain = 0; // 追踪无效迭代
-        let lastInformationCount = 0;
         let allSources = [];
 
         while (iterations < this.maxIterations && consecutiveNoGain < 2) {
@@ -108,11 +107,17 @@ export class DeepResearchAgent {
                 if (parsedAction.type === 'final_answer') {
                     console.log('[DeepResearchAgent] ✅ 检测到最终答案，研究完成');
                     
-                    // 🎯 直接使用外层已经收集好的 allSources
+                    // ✨ 强化资料来源收集：从中间步骤提取补充来源
+                    const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
+                    const combinedSources = [...allSources, ...extractedSources];
+                    const uniqueSources = this._deduplicateSources(combinedSources);
+                    
                     let finalReport = parsedAction.answer;
-                    if (allSources.length > 0) {
-                        finalReport += `\n\n${this._generateSourcesSection(allSources)}`;
-                        console.log(`[DeepResearchAgent] 添加了 ${allSources.length} 个资料来源`);
+                    if (uniqueSources.length > 0) {
+                        // 标记使用的来源并生成资料来源章节
+                        const usedSources = this._markUsedSources(finalReport, uniqueSources);
+                        finalReport += this._generateSourcesSection(usedSources);
+                        console.log(`[DeepResearchAgent] 添加了 ${usedSources.length} 个资料来源`);
                     } else {
                         console.log('[DeepResearchAgent] 警告：没有收集到任何资料来源');
                     }
@@ -122,7 +127,7 @@ export class DeepResearchAgent {
                         report: finalReport,
                         iterations,
                         intermediateSteps,
-                        sources: allSources,
+                        sources: uniqueSources,
                         metrics: this.metrics,
                         plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps)
                     };
@@ -163,7 +168,8 @@ export class DeepResearchAgent {
                                     title: source.title || '无标题',
                                     url: source.url || '#',
                                     description: source.description || '',
-                                    collectedAt: new Date().toISOString()
+                                    collectedAt: new Date().toISOString(),
+                                    used_in_report: false
                                 }));
                                 console.log(`[DeepResearchAgent] 提取到 ${toolSources.length} 个来源`);
                             }
@@ -288,10 +294,10 @@ export class DeepResearchAgent {
             };
         } else {
             // 达到最大迭代次数或连续无增益
-            const report = this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources);
+            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources);
             result = {
                 success: false,
-                report,
+                report: finalReport,
                 iterations: this.maxIterations,
                 intermediateSteps,
                 sources: allSources,
@@ -306,6 +312,185 @@ export class DeepResearchAgent {
             data: result
         });
         return result;
+    }
+
+    // ✨ 新增：强化资料来源提取
+    _extractSourcesFromIntermediateSteps(intermediateSteps) {
+        const sources = new Map(); // 使用Map避免重复来源
+        
+        intermediateSteps.forEach(step => {
+            if (step.observation && typeof step.observation === 'string') {
+                // 从tavily_search结果中提取来源
+                if (step.action.tool_name === 'tavily_search' && step.observation.includes('【来源')) {
+                    const sourceMatches = step.observation.match(/【来源\s*\d+】[^】]*?https?:\/\/[^\s)]+/g);
+                    if (sourceMatches) {
+                        sourceMatches.forEach(source => {
+                            const urlMatch = source.match(/(https?:\/\/[^\s)]+)/);
+                            if (urlMatch) {
+                                const url = urlMatch[1];
+                                const titleMatch = source.match(/【来源\s*\d+】([^】]*?)(?=http|$)/);
+                                const title = titleMatch ? titleMatch[1].trim() : '未知标题';
+                                
+                                if (!sources.has(url)) {
+                                    sources.set(url, {
+                                        title: title,
+                                        url: url,
+                                        used_in_report: false // 稍后标记是否在报告中引用
+                                    });
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                // 从crawl4ai结果中提取来源
+                if (step.action.tool_name === 'crawl4ai' && step.action.parameters && step.action.parameters.url) {
+                    const url = step.action.parameters.url;
+                    if (!sources.has(url)) {
+                        sources.set(url, {
+                            title: `爬取页面: ${new URL(url).hostname}`,
+                            url: url,
+                            used_in_report: false
+                        });
+                    }
+                }
+            }
+        });
+        
+        return Array.from(sources.values());
+    }
+
+    // ✨ 新增：在最终报告生成时标记使用的来源
+    _markUsedSources(reportContent, sources) {
+        // 简单的URL匹配来标记哪些来源被引用
+        sources.forEach(source => {
+            try {
+                const hostname = new URL(source.url).hostname;
+                if (reportContent.includes(hostname) || 
+                    reportContent.includes(source.title.substring(0, 20))) {
+                    source.used_in_report = true;
+                }
+            } catch (e) {
+                // URL解析失败，使用简单包含匹配
+                if (reportContent.includes(source.url) || 
+                    reportContent.includes(source.title.substring(0, 20))) {
+                    source.used_in_report = true;
+                }
+            }
+        });
+        return sources.filter(source => source.used_in_report);
+    }
+
+    // ✨ 新增：来源去重
+    _deduplicateSources(sources) {
+        const seen = new Set();
+        return sources.filter(source => {
+            const key = source.url;
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+    }
+
+    // ✨ 优化：最终报告生成
+    async _generateFinalReport(topic, intermediateSteps, plan, sources) {
+        try {
+            // 1. 提取补充资料来源
+            const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
+            const combinedSources = [...sources, ...extractedSources];
+            const uniqueSources = this._deduplicateSources(combinedSources);
+            console.log(`[DeepResearchAgent] 提取到 ${extractedSources.length} 个补充来源，总计 ${uniqueSources.length} 个潜在来源`);
+            
+            // 2. 收集所有观察结果
+            const allObservations = intermediateSteps
+                .filter(step => step.observation && 
+                               step.observation !== '系统执行错误，继续研究' &&
+                               !step.observation.includes('OutputParser解析失败'))
+                .map(step => {
+                    let observation = step.observation;
+                    // 清理观察结果中的冗余信息
+                    if (observation.includes('【来源')) {
+                        observation = observation.split('【来源')[0].trim();
+                    }
+                    return observation;
+                })
+                .filter(obs => obs.length > 50) // 只保留有内容的观察
+                .join('\n\n');
+            
+            // 3. 使用LLM生成结构化报告
+            const reportPrompt = `
+基于以下研究内容，生成一份专业、结构完整的研究报告。
+
+研究主题：${topic}
+${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_question))}` : ''}
+收集信息：${allObservations.substring(0, 3000)} ${allObservations.length > 3000 ? '...（内容过长已截断）' : ''}
+
+报告要求：
+1. 格式：Markdown
+2. 结构：
+   # 主标题
+   ## 一、引言与背景
+   ## 二、核心内容分析（至少2-3个子部分）
+   ## 三、深度洞察与总结
+3. 字数：800-1200字
+4. 风格：专业、客观、信息密集
+5. 关键事实和引用请标注[1][2]等编号
+
+请生成最终报告（不要包含"资料来源"章节，我们会自动添加）：
+`;
+
+            const reportResponse = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: reportPrompt }],
+                model: 'gemini-2.5-flash-preview-09-2025',
+                temperature: 0.3,
+            });
+            
+            let finalReport = reportResponse?.choices?.[0]?.message?.content || this._generateFallbackReport(topic, intermediateSteps, uniqueSources);
+            
+            // 4. 标记使用的来源并添加资料来源章节
+            const usedSources = this._markUsedSources(finalReport, uniqueSources);
+            finalReport += this._generateSourcesSection(usedSources);
+            
+            console.log(`[DeepResearchAgent] 最终报告生成完成，包含 ${usedSources.length} 个资料来源`);
+            return finalReport;
+            
+        } catch (error) {
+            console.error('[DeepResearchAgent] 报告生成失败:', error);
+            return this._generateFallbackReport(topic, intermediateSteps, sources);
+        }
+    }
+
+    _generateFallbackReport(topic, intermediateSteps, sources) {
+        // 降级报告生成逻辑
+        const observations = intermediateSteps
+            .filter(step => step.observation)
+            .map(step => `• ${step.observation.substring(0, 200)}...`)
+            .join('\n');
+            
+        let report = `# ${topic}\n\n## 收集的信息\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
+        
+        // 添加资料来源
+        if (sources && sources.length > 0) {
+            const usedSources = this._markUsedSources(report, sources);
+            report += this._generateSourcesSection(usedSources);
+        }
+            
+        return report;
+    }
+
+    // 🎯 保留：生成资料来源部分的方法
+    _generateSourcesSection(sources) {
+        if (!sources || sources.length === 0) {
+            return '\n\n## 资料来源\n本次研究未收集到外部资料来源。';
+        }
+        
+        const sourcesList = sources.map((source, index) => {
+            return `[${index + 1}] ${source.title} - ${source.url}`;
+        }).join('\n');
+        
+        return `\n\n## 资料来源\n${sourcesList}`;
     }
 
     // ✨ 新增：信息增益计算
@@ -339,94 +524,6 @@ export class DeepResearchAgent {
         return stepKeywords.some(keyword => 
             historyText.includes(keyword) && keyword.length > 3
         );
-    }
-
-    // ✨ 优化：最终报告生成
-    async _generateFinalReport(topic, intermediateSteps, plan, sources) {
-        // 收集所有观察结果
-        const allObservations = intermediateSteps
-            .filter(step => step.observation && step.observation !== '系统执行错误，继续研究')
-            .map(step => step.observation)
-            .join('\n\n');
-
-        // 使用LLM整合和格式化最终报告
-        const reportPrompt = `
-基于以下研究内容，生成一份结构完整、内容深度的研究报告。
-
-研究主题：${topic}
-研究计划：${plan ? JSON.stringify(plan.research_plan) : '无计划'}
-收集信息：${allObservations}
-
-报告要求：
-1. 格式：Markdown
-2. 结构：
-   # 主标题
-   ## 一、引言与背景
-   ## 二、核心分析（至少2个子部分）
-   ## 三、深度洞察
-   ## 四、总结
-3. 字数：800-1200字
-4. 风格：专业、客观、信息密集
-5. 关键信息标注来源
-
-现在生成最终报告：`;
-
-        try {
-            const reportResponse = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: reportPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
-                temperature: 0.3,
-            });
-            
-            let finalReport = reportResponse?.choices?.[0]?.message?.content || '报告生成失败';
-            
-            // 添加资料来源
-            if (sources && sources.length > 0) {
-                finalReport += `\n\n${this._generateSourcesSection(sources)}`;
-            }
-            
-            return finalReport;
-        } catch (error) {
-            console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources);
-        }
-    }
-
-    _generateFallbackReport(topic, intermediateSteps, sources) {
-        // 降级报告生成逻辑
-        const observations = intermediateSteps
-            .filter(step => step.observation)
-            .map(step => `• ${step.observation.substring(0, 200)}...`)
-            .join('\n');
-            
-        let report = `# ${topic}\n\n## 收集的信息\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
-        
-        // 添加资料来源
-        if (sources && sources.length > 0) {
-            report += `\n\n${this._generateSourcesSection(sources)}`;
-        }
-            
-        return report;
-    }
-
-    // 🎯 保留：生成资料来源部分的方法
-    _generateSourcesSection(sources) {
-        let sourcesText = `## 资料来源\n\n`;
-        sourcesText += `本研究报告基于以下信息来源，供您参考和验证：\n\n`;
-        
-        // 去重处理（基于URL）
-        const uniqueSources = sources.filter((source, index, self) =>
-            index === self.findIndex(s => s.url === source.url)
-        );
-        
-        uniqueSources.forEach((source, index) => {
-            sourcesText += `${index + 1}. ${source.title}\n`;
-            sourcesText += `   网址: ${source.url}\n\n`;
-        });
-        
-        sourcesText += `*注：以上信息采集时间为研究执行期间，网站内容可能随时间变化。*\n\n`;
-        
-        return sourcesText;
     }
 
     async _smartSummarizeObservation(mainTopic, observation) {
