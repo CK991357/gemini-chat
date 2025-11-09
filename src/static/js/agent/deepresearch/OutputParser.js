@@ -8,29 +8,27 @@ export class AgentOutputParser {
     parse(text) {
         text = text.trim();
 
-        // 尝试寻找 Final Answer
+        // 优先寻找“最终答案”
         const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]*)/i);
-        if (finalAnswerMatch && finalAnswerMatch[1]) {
+        if (finalAnswerMatch && finalAnswerMatch) {
             return {
                 type: 'final_answer',
-                answer: finalAnswerMatch[1].trim()
+                answer: finalAnswerMatch.trim()
             };
         }
 
         // 🎯 关键修复：寻找被代码块包裹或直接暴露的JSON
-        // 正则表达式解释:
-        // (```json\s*)? : 可选的 ```json 开头
-        // (\{[\s\S]*\})  : 捕获从 { 开始到与之匹配的 } 结束的所有内容
-        // \s*```?       : 可选的结尾 ```
+        // 这个正则表达式可以匹配 ```json ... ``` 或者直接的 {...}
         const actionMatch = text.match(/(?:```json\s*)?(\{[\s\S]*\})(?:\s*```)?/);
 
-        if (actionMatch && actionMatch[1]) {
+        if (actionMatch && actionMatch) {
             try {
-                // 尝试清理和解析提取到的JSON字符串
-                const jsonString = this._cleanupJsonString(actionMatch[1]);
+                // 清理并解析JSON
+                const jsonString = this._cleanupJsonString(actionMatch);
                 const actionJson = JSON.parse(jsonString);
 
                 if (actionJson.tool_name && actionJson.parameters) {
+                    console.log("[OutputParser] 成功解析出工具调用:", actionJson);
                     return {
                         type: 'tool_call',
                         tool_name: actionJson.tool_name,
@@ -38,24 +36,22 @@ export class AgentOutputParser {
                     };
                 }
             } catch (e) {
-                console.error('[OutputParser] JSON解析失败:', e, "原始字符串:", actionMatch[1]);
-                // 如果解析失败，继续走下面的逻辑
+                console.error('[OutputParser] JSON解析失败:', e, "原始字符串:", actionMatch);
             }
         }
         
-        // 降级方案：如果上面的逻辑都失败了
-        console.warn('[OutputParser] 无法解析出有效的行动，将默认继续。');
+        // 如果以上都失败，则认为模型仍在思考或格式错误
+        console.warn('[OutputParser] 无法解析出有效的行动，将触发自我纠正。');
         return {
-            type: 'continue', // 表示需要继续，但没有明确行动
-            log: '无法从LLM响应中解析出有效的工具调用或最终答案。'
+            type: 'error',
+            log: '无法从LLM响应中解析出有效的工具调用JSON或最终答案。'
         };
     }
 
     /**
-     * 清理LLM可能生成的不规范JSON字符串
+     * 清理LLM可能生成的不规范JSON字符串，例如尾随逗号
      */
     _cleanupJsonString(str) {
-        // 移除尾随逗号 (trailing commas)
         return str.replace(/,(?=\s*[}\]])/g, '');
     }
 }
