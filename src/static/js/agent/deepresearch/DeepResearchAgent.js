@@ -29,17 +29,17 @@ export class DeepResearchAgent {
         const runId = this.callbackManager.generateRunId();
         
         // ✨ 修复：清理主题中的感叹号
-        const cleanTopic = topic.replace(/！\s*$/, '').trim();
+        const initialCleanTopic = topic.replace(/！\s*$/, '').trim();
         
         // ✨ 最终优化 #1: 调用 _detectResearchMode 获取模式和清理后的话题
-        const { detectedMode, cleanTopic: finalTopic } = this._detectResearchMode(cleanTopic);
-        console.log(`[DeepResearchAgent] 开始研究: "${finalTopic}"，检测到模式: ${detectedMode}`);
+        const { detectedMode, cleanTopic } = this._detectResearchMode(initialCleanTopic);
+        console.log(`[DeepResearchAgent] 开始研究: "${cleanTopic}"，检测到模式: ${detectedMode}`);
         
         // 🎯 修复：传递研究数据到监控面板
         await this.callbackManager.invokeEvent('on_research_start', {
             run_id: runId,
             data: {
-                topic: finalTopic,
+                topic: cleanTopic,
                 availableTools: availableTools.map(t => t.name),
                 researchMode: detectedMode,
                 researchData: {
@@ -233,6 +233,12 @@ export class DeepResearchAgent {
                     // 🎯 合并到总来源列表
                     allSources = [...allSources, ...toolSources];
                     
+                    // 在收集到新来源时更新统计
+                    updateResearchStats({
+                        sources: allSources,
+                        toolCalls: intermediateSteps.filter(step => step.action.type === 'tool_call').length
+                    });
+                    
                     await this.callbackManager.invokeEvent('on_tool_end', {
                         run_id: runId,
                         data: {
@@ -293,8 +299,21 @@ export class DeepResearchAgent {
             }
         }
 
+        // 在每次迭代结束时更新统计
+        updateResearchStats({
+            iterations: iterations,
+            metrics: this.metrics
+        });
+        
         // ✨ 阶段3：统一的报告生成 (最终优化 #2)
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
+
+        // 提取所有观察结果用于关键词分析
+        const allObservationsForKeywords = intermediateSteps.map(s => s.observation).join(' ');
+        const keywords = this._extractKeywords(cleanTopic, allObservationsForKeywords);
+        
+        // 更新关键词统计
+        updateResearchStats({ keywords });
         
         let finalReport;
         if (finalAnswerFromIteration) {
@@ -458,6 +477,24 @@ export class DeepResearchAgent {
             seen.add(key);
             return true;
         });
+    }
+
+    // ✨ 新增：关键词提取
+    _extractKeywords(topic, observations) {
+        // 简单的关键词提取逻辑
+        const words = (topic + ' ' + observations).split(/\s+/)
+            .filter(word => word.length > 2)
+            .map(word => word.toLowerCase());
+        
+        const keywordCounts = words.reduce((acc, word) => {
+            acc[word] = (acc[word] || 0) + 1;
+            return acc;
+        }, {});
+        
+        return Object.entries(keywordCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([term, count]) => ({ term, count }));
     }
 
     // ✨ 新增：构建报告提示词（基于研究模式）
