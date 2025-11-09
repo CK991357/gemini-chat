@@ -28,6 +28,8 @@ export class DeepResearchAgent {
 
         let intermediateSteps = [];
         let iterations = 0;
+        // 🎯 新增：收集所有来源信息
+        let allSources = [];
 
         while (iterations < this.maxIterations) {
             iterations++;
@@ -78,16 +80,27 @@ export class DeepResearchAgent {
             // 🎯 处理最终答案
             if (parsedAction.type === 'final_answer') {
                 console.log('[DeepResearchAgent] ✅ 检测到最终答案，研究完成');
-                const result = { 
-                    success: true, 
-                    report: parsedAction.answer, 
+                
+                // 🎯 直接使用外层已经收集好的 allSources
+                let finalReport = parsedAction.answer;
+                if (allSources.length > 0) {
+                    finalReport += `\n\n${this._generateSourcesSection(allSources)}`;
+                    console.log(`[DeepResearchAgent] 添加了 ${allSources.length} 个资料来源`);
+                } else {
+                    console.log('[DeepResearchAgent] 警告：没有收集到任何资料来源');
+                }
+                
+                const result = {
+                    success: true,
+                    report: finalReport,
                     iterations,
-                    intermediateSteps 
+                    intermediateSteps,
+                    sources: allSources // 🎯 新增：返回来源信息
                 };
                 
-                await this.callbackManager.invokeEvent('on_research_end', { 
-                    run_id: runId, 
-                    data: result 
+                await this.callbackManager.invokeEvent('on_research_end', {
+                    run_id: runId,
+                    data: result
                 });
                 return result;
             }
@@ -97,13 +110,14 @@ export class DeepResearchAgent {
                 const { tool_name, parameters, thought } = parsedAction;
                 console.log(`[DeepResearchAgent] 🔧 执行工具调用: ${tool_name}`, parameters);
                 
-                await this.callbackManager.invokeEvent('on_tool_start', { 
-                    run_id: runId, 
-                    data: { tool_name, parameters, thought } 
+                await this.callbackManager.invokeEvent('on_tool_start', {
+                    run_id: runId,
+                    data: { tool_name, parameters, thought }
                 });
 
                 const tool = this.tools[tool_name];
                 let rawObservation;
+                let toolSources = []; // 🎯 新增：保存本次工具调用的来源
                 
                 if (!tool) {
                     rawObservation = `错误: 工具 "${tool_name}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
@@ -113,6 +127,18 @@ export class DeepResearchAgent {
                         console.log(`[DeepResearchAgent] 调用工具: ${tool_name}...`);
                         const toolResult = await tool.invoke(parameters, { mode: 'deep_research' });
                         rawObservation = toolResult.output || JSON.stringify(toolResult);
+                        
+                        // 🎯 新增：提取来源信息
+                        if (toolResult.sources && Array.isArray(toolResult.sources)) {
+                            toolSources = toolResult.sources.map(source => ({
+                                title: source.title || '无标题',
+                                url: source.url || '#',
+                                description: source.description || '',
+                                collectedAt: new Date().toISOString()
+                            }));
+                            console.log(`[DeepResearchAgent] 提取到 ${toolSources.length} 个来源`);
+                        }
+                        
                         console.log(`[DeepResearchAgent] ✅ 工具执行成功，结果长度: ${rawObservation.length}`);
                     } catch (error) {
                         rawObservation = `错误: 工具 "${tool_name}" 执行失败: ${error.message}`;
@@ -123,23 +149,27 @@ export class DeepResearchAgent {
                 // 处理过长内容
                 const summarizedObservation = await this._smartSummarizeObservation(topic, rawObservation);
                 
-                // 🎯 保存完整的步骤信息（包含思考过程）
-                intermediateSteps.push({ 
+                // 🎯 保存完整的步骤信息（包含思考过程和来源）
+                intermediateSteps.push({
                     action: {
                         type: 'tool_call',
                         tool_name: tool_name,
                         parameters: parameters,
                         thought: thought || `执行工具 ${tool_name} 来获取更多信息。`
-                    }, 
-                    observation: summarizedObservation 
+                    },
+                    observation: summarizedObservation,
+                    sources: toolSources // 🎯 新增：保存来源
                 });
                 
-                await this.callbackManager.invokeEvent('on_tool_end', { 
-                    run_id: runId, 
+                // 🎯 新增：合并到总来源列表
+                allSources = [...allSources, ...toolSources];
+                
+                await this.callbackManager.invokeEvent('on_tool_end', {
+                    run_id: runId,
                     data: {
                         tool_name,
-                        output: summarizedObservation, // 🎯 关键修复：统一字段名为 output
-                        output_length: summarizedObservation.length
+                        output: summarizedObservation,
+                        sources_count: toolSources.length
                     }
                 });
             
@@ -171,24 +201,26 @@ export class DeepResearchAgent {
         }
 
         // 🎯 达到最大迭代次数的处理
-        const report = this._generateFinalReport(topic, intermediateSteps, iterations);
+        const report = this._generateFinalReport(topic, intermediateSteps, iterations, allSources);
         
         console.warn(`[DeepResearchAgent] ❌ 达到最大迭代次数 ${this.maxIterations}，研究失败`);
-        const result = { 
-            success: false, 
-            report, 
+        const result = {
+            success: false,
+            report,
             iterations: this.maxIterations,
-            intermediateSteps 
+            intermediateSteps,
+            sources: allSources // 🎯 新增：返回来源信息
         };
         
-        await this.callbackManager.invokeEvent('on_research_end', { 
-            run_id: runId, 
-            data: result 
+        await this.callbackManager.invokeEvent('on_research_end', {
+            run_id: runId,
+            data: result
         });
         return result;
     }
 
-    _generateFinalReport(topic, intermediateSteps, iterations) {
+    // 🎯 新增：生成包含资料来源的最终报告
+    _generateFinalReport(topic, intermediateSteps, iterations, sources) {
         let report = `# 研究达到最大迭代次数\n\n`;
         report += `研究主题: "${topic}"\n\n`;
         report += `已达到最大迭代次数 (${iterations})，但未得出最终结论。\n\n`;
@@ -206,7 +238,36 @@ export class DeepResearchAgent {
             report += `未收集到任何有效信息。\n`;
         }
         
+        // 🎯 新增：添加资料来源部分
+        if (sources && sources.length > 0) {
+            report += this._generateSourcesSection(sources);
+        }
+        
         return report;
+    }
+
+    // 🎯 新增：生成资料来源部分的方法
+    _generateSourcesSection(sources) {
+        let sourcesText = `## 资料来源\n\n`;
+        sourcesText += `本研究报告基于以下信息来源，供您参考和验证：\n\n`;
+        
+        // 去重处理（基于URL）
+        const uniqueSources = sources.filter((source, index, self) =>
+            index === self.findIndex(s => s.url === source.url)
+        );
+        
+        uniqueSources.forEach((source, index) => {
+            sourcesText += `${index + 1}. **${source.title}**\n`;
+            sourcesText += `   - 网址: ${source.url}\n`;
+            if (source.description) {
+                sourcesText += `   - 描述: ${source.description}\n`;
+            }
+            sourcesText += `\n`;
+        });
+        
+        sourcesText += `*注：以上信息采集时间为研究执行期间，网站内容可能随时间变化。*\n\n`;
+        
+        return sourcesText;
     }
 
     async _smartSummarizeObservation(mainTopic, observation) {

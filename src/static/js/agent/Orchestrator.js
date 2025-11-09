@@ -109,12 +109,21 @@ export class Orchestrator {
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
 
+            console.log('[Orchestrator] DeepResearch 完成:', {
+                success: researchResult.success,
+                iterations: researchResult.iterations,
+                reportLength: researchResult.report?.length,
+                sourcesCount: researchResult.sources?.length || 0 // 🎯 新增：记录来源数量
+            });
+
             return {
                 enhanced: true,
                 type: 'research_result',
                 content: researchResult.report,
                 success: researchResult.success,
                 iterations: researchResult.iterations,
+                intermediateSteps: researchResult.intermediateSteps,
+                sources: researchResult.sources // 🎯 新增：传递来源信息
             };
         } catch (error) {
             console.error('[Orchestrator] DeepResearch Agent执行失败:', error);
