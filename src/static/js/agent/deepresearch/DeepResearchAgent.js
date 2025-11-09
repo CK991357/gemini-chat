@@ -107,17 +107,15 @@ export class DeepResearchAgent {
                 if (parsedAction.type === 'final_answer') {
                     console.log('[DeepResearchAgent] ✅ 检测到最终答案，研究完成');
                     
-                    // ✨ 强化资料来源收集：从中间步骤提取补充来源
-                    const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
-                    const combinedSources = [...allSources, ...extractedSources];
-                    const uniqueSources = this._deduplicateSources(combinedSources);
+                    // ✨ 修复：不再尝试标记使用的来源，而是直接使用所有收集到的来源
+                    const uniqueSources = this._deduplicateSources(allSources);
                     
                     let finalReport = parsedAction.answer;
+                    
+                    // ✨ 修复：总是添加所有收集到的来源，不再进行过滤
                     if (uniqueSources.length > 0) {
-                        // 标记使用的来源并生成资料来源章节
-                        const usedSources = this._markUsedSources(finalReport, uniqueSources);
-                        finalReport += this._generateSourcesSection(usedSources);
-                        console.log(`[DeepResearchAgent] 添加了 ${usedSources.length} 个资料来源`);
+                        finalReport += this._generateSourcesSection(uniqueSources);
+                        console.log(`[DeepResearchAgent] 添加了 ${uniqueSources.length} 个资料来源`);
                     } else {
                         console.log('[DeepResearchAgent] 警告：没有收集到任何资料来源');
                     }
@@ -360,25 +358,12 @@ export class DeepResearchAgent {
         return Array.from(sources.values());
     }
 
-    // ✨ 新增：在最终报告生成时标记使用的来源
+    // ✨ 修复：移除过于严格的来源标记逻辑，直接使用所有来源
     _markUsedSources(reportContent, sources) {
-        // 简单的URL匹配来标记哪些来源被引用
-        sources.forEach(source => {
-            try {
-                const hostname = new URL(source.url).hostname;
-                if (reportContent.includes(hostname) || 
-                    reportContent.includes(source.title.substring(0, 20))) {
-                    source.used_in_report = true;
-                }
-            } catch (e) {
-                // URL解析失败，使用简单包含匹配
-                if (reportContent.includes(source.url) || 
-                    reportContent.includes(source.title.substring(0, 20))) {
-                    source.used_in_report = true;
-                }
-            }
-        });
-        return sources.filter(source => source.used_in_report);
+        // ✨ 修复：不再尝试反向匹配，直接返回所有来源
+        // 因为LLM生成报告时不会直接引用原始URL或标题
+        console.log(`[DeepResearchAgent] 跳过来源使用标记，直接使用所有 ${sources.length} 个来源`);
+        return sources;
     }
 
     // ✨ 新增：来源去重
@@ -449,11 +434,10 @@ ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_ques
             
             let finalReport = reportResponse?.choices?.[0]?.message?.content || this._generateFallbackReport(topic, intermediateSteps, uniqueSources);
             
-            // 4. 标记使用的来源并添加资料来源章节
-            const usedSources = this._markUsedSources(finalReport, uniqueSources);
-            finalReport += this._generateSourcesSection(usedSources);
+            // 4. ✨ 修复：直接使用所有来源，不再进行过滤
+            finalReport += this._generateSourcesSection(uniqueSources);
             
-            console.log(`[DeepResearchAgent] 最终报告生成完成，包含 ${usedSources.length} 个资料来源`);
+            console.log(`[DeepResearchAgent] 最终报告生成完成，包含 ${uniqueSources.length} 个资料来源`);
             return finalReport;
             
         } catch (error) {
@@ -473,8 +457,7 @@ ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_ques
         
         // 添加资料来源
         if (sources && sources.length > 0) {
-            const usedSources = this._markUsedSources(report, sources);
-            report += this._generateSourcesSection(usedSources);
+            report += this._generateSourcesSection(sources);
         }
             
         return report;
