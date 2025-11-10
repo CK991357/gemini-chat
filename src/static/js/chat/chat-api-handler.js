@@ -66,12 +66,13 @@ export class ChatApiHandler {
             } catch (error) {
                 lastError = error;
                 console.warn(`[ChatApiHandler] API调用失败 (尝试 ${attempt + 1}/${maxRetries}):`, error.message);
-                if (attempt + 1 >= maxRetries) {
-                    throw lastError;
-                }
+                // 移除立即抛出逻辑，让循环自然结束
             }
         }
-        throw lastError;
+        // 🎯 修复：确保始终返回 Error 对象
+        const finalError = lastError || new Error(`API调用在 ${maxRetries} 次重试后仍然失败`);
+        console.error(`[ChatApiHandler] 所有重试均失败:`, finalError.message);
+        throw finalError;
     }
 
     /**

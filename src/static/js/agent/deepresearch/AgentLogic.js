@@ -361,13 +361,16 @@ ${config.instructions}
             return responseText;
 
         } catch (error) {
-            console.error("[AgentLogic] LLM 思考失败:", error);
-            await runManager?.callbackManager.invokeEvent('on_agent_think_error', { 
-                run_id: runManager.runId, 
-                data: { error: error.message } 
+            // 🎯 修复：确保 error 对象存在
+            const errorMessage = error?.message || '未知错误';
+            console.error("[AgentLogic] LLM 思考失败:", errorMessage);
+            
+            await runManager?.callbackManager.invokeEvent('on_agent_think_error', {
+                run_id: runManager.runId,
+                data: { error: errorMessage }
             });
             
-            return `思考: 发生内部错误，无法继续规划。错误信息: ${error.message}\n最终答案: 研究因内部错误终止。`;
+            return `思考: 发生内部错误，无法继续规划。错误信息: ${errorMessage}\n最终答案: 研究因内部错误终止。`;
         }
     }
 
