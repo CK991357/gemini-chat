@@ -845,59 +845,63 @@ ${this.formatToolCallDetails(researchState.toolCalls)}
 
     // 🎯 修复：设置事件监听器，正确接收DeepResearch数据
     setupEventListeners() {
-        // DeepResearch Agent事件
-        window.addEventListener('agent:session_started', (event) => {
-            console.log('🔍 DeepResearch会话开始:', event.detail);
-            if (event.detail.agentType === 'deep_research') {
-                const researchData = event.detail.data?.researchData || {};
-                this.startSession(
-                    event.detail.data?.userMessage || event.detail.data?.topic || 'DeepResearch任务',
-                    event.detail.data?.maxIterations || 6,
-                    researchData
-                );
-            }
+        console.log('🔍 AgentThinkingDisplay DeepResearch事件监听器修复完成'); // 确认此行被打印
+
+        // 1. 研究开始
+        window.addEventListener('research:start', (event) => {
+            console.log('🔍 research:start 接收:', event.detail.data);
+            const { topic, maxIterations, researchData } = event.detail.data;
+            this.startSession(topic, maxIterations, researchData);
         });
 
-        window.addEventListener('agent:thinking', (event) => {
-            if (event.detail.agentType === 'deep_research') {
-                this.updateThinking(event.detail.content, event.detail.type || 'research');
-            }
+        // 2. 研究计划生成
+        window.addEventListener('research:plan_generated', (event) => {
+            console.log('🔍 research:plan_generated 接收:', event.detail.data);
+            const { plan, keywords } = event.detail.data;
+            this.renderPlan(plan, keywords);
         });
 
-        window.addEventListener('agent:step_added', (event) => {
-            if (event.detail.agentType === 'deep_research') {
-                this.addStep(event.detail.step);
-            }
+        // 3. 研究进度更新
+        window.addEventListener('research:progress', (event) => {
+            console.log('🔍 research:progress 接收:', event.detail.data);
+            this.updateProgressUI(event.detail.data);
         });
 
-        window.addEventListener('agent:step_completed', (event) => {
-            if (event.detail.agentType === 'deep_research') {
-                const lastStepIndex = this.currentSession?.steps?.length - 1 || 0;
-                if (lastStepIndex >= 0) {
-                    this.completeStep(lastStepIndex, event.detail.result);
-                }
-            }
+        // 4. 工具调用开始
+        window.addEventListener('research:tool_start', (event) => {
+            console.log('🔍 research:tool_start 接收:', event.detail.data);
+            const { tool_name, parameters, thought } = event.detail.data;
+            if (thought) this.addLogEntry('thought', `<pre>${this.escapeHtml(thought)}</pre>`);
+            this.addLogEntry('tool_start', `调用 <strong>${tool_name}</strong>, 参数: <pre>${this.escapeHtml(JSON.stringify(parameters, null, 2))}</pre>`);
+        });
+        
+        // 5. 工具调用结束
+        window.addEventListener('research:tool_end', (event) => {
+            console.log('🔍 research:tool_end 接收:', event.detail.data);
+            const { output, success, sources_found } = event.detail.data;
+            const status = success ? `发现 ${sources_found} 个新来源。` : '执行失败。';
+            this.addLogEntry(success ? 'tool_end' : 'error', `${status}<br>结果摘要: <pre>${this.escapeHtml(output.substring(0, 250))}...</pre>`);
         });
 
-        // 🎯 新增：研究统计数据更新事件
+        // 6. 研究结束
+        window.addEventListener('research:end', (event) => {
+            console.log('🔍 research:end 接收:', event.detail.data);
+            this.completeSession(event.detail.data);
+        });
+        
+        // 7. 统计数据更新 (DeepResearchAgent.js 中已存在)
         window.addEventListener('research:stats_updated', (event) => {
-            this.updateResearchStats(event.detail);
+            this.updateResearchStats(event.detail.data);
         });
 
-        // 🎯 新增：工具调用记录事件
+        // 8. 工具调用记录 (DeepResearchAgent.js 中已存在)
         window.addEventListener('research:tool_called', (event) => {
             this.addToolCallRecord(
-                event.detail.toolName,
-                event.detail.parameters,
-                event.detail.success,
-                event.detail.result
+                event.detail.data.toolName,
+                event.detail.data.parameters,
+                event.detail.data.success,
+                event.detail.data.result
             );
-        });
-
-        window.addEventListener('agent:session_completed', (event) => {
-            if (event.detail.agentType === 'deep_research') {
-                this.completeSession(event.detail.result);
-            }
         });
 
         // 窗口点击事件，确保显示在最前
@@ -906,8 +910,6 @@ ${this.formatToolCallDetails(researchState.toolCalls)}
                 this.container.style.zIndex = '1000';
             }
         });
-
-        console.log('🔍 AgentThinkingDisplay DeepResearch事件监听器修复完成');
     }
 
     /**

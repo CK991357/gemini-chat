@@ -90,7 +90,8 @@ export class Orchestrator {
 
         if (researchDetection.shouldStart) {
             console.log(`[Orchestrator] 检测到关键词"${researchDetection.matchedKeyword}"，启动${researchDetection.mode}研究模式...`);
-            return await this._handleWithDeepResearch(researchDetection.cleanTopic, context);
+            // ✨ 传递 researchDetection.mode
+            return await this._handleWithDeepResearch(researchDetection.cleanTopic, context, researchDetection.mode);
         }
 
         // 4. 否则，明确回退到标准模式
@@ -246,7 +247,7 @@ export class Orchestrator {
     /**
      * 🎯 增强：处理深度研究请求
      */
-    async _handleWithDeepResearch(cleanTopic, context) {
+    async _handleWithDeepResearch(cleanTopic, context, detectedMode) { // ✨ 1. 接收 detectedMode
         try {
             // 🎯 获取研究工具的定义（名称+描述），交给LLM去选择
             const availableToolDefinitions = (await this.skillManager.baseSkillManager.getAllSkills())
@@ -254,9 +255,11 @@ export class Orchestrator {
 
             const researchRequest = {
                 topic: cleanTopic,
-                availableTools: availableToolDefinitions
+                availableTools: availableToolDefinitions,
+                researchMode: detectedMode // ✨ 2. 将模式添加到请求中
             };
 
+            // ✨ 3. 调用 conductResearch
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
 
             console.log('[Orchestrator] DeepResearch 完成:', {
@@ -320,24 +323,29 @@ export class Orchestrator {
     }
     
     setupHandlers() {
-        // 这些事件会由AgentThinkingDisplay.js监听来更新UI
+        // ✨ =============================================================
+        // ✨ 最终版：简化并加固的事件转发器
+        // ✨ =============================================================
+        const forwardEvent = (eventName, newEventName) => {
+            return (e) => window.dispatchEvent(new CustomEvent(newEventName, {
+                detail: { data: e.data, result: e.data, agentType: 'deep_research' }
+            }));
+        };
+
         this.callbackManager.addHandler({
-            on_research_start: (e) => window.dispatchEvent(new CustomEvent('agent:session_started', { detail: { ...e, agentType: 'deep_research' } })),
-            on_research_progress: (e) => window.dispatchEvent(new CustomEvent('agent:iteration_update', { detail: { ...e, agentType: 'deep_research' } })),
-            on_agent_think_start: (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
-            on_tool_start: (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: `正在执行工具: ${e.data.tool_name}`, type: 'action', agentType: 'deep_research' } })),
-            on_tool_end: (e) => {
-                const outputPreview = e.data.output || '';
-                window.dispatchEvent(new CustomEvent('agent:thinking', {
-                    detail: {
-                        content: `工具执行完成。结果: ${outputPreview.substring(0, 100)}...`,
-                        type: 'result',
-                        agentType: 'deep_research'
-                    }
-                }));
-            },
-            on_research_end: (e) => window.dispatchEvent(new CustomEvent('agent:session_completed', { detail: { result: e.data, agentType: 'deep_research' } })),
+            'on_research_start': forwardEvent('on_research_start', 'research:start'),
+            'on_research_plan_generated': forwardEvent('on_research_plan_generated', 'research:plan_generated'),
+            'on_research_progress': forwardEvent('on_research_progress', 'research:progress_update'), // 修正事件名以匹配UI
+            'on_tool_start': forwardEvent('on_tool_start', 'research:tool_start'),
+            'on_tool_end': forwardEvent('on_tool_end', 'research:tool_end'),
+            'on_research_end': forwardEvent('on_research_end', 'research:end'),
+            'on_research_stats_updated': forwardEvent('on_research_stats_updated', 'research:stats_updated'),
+            'on_tool_called': forwardEvent('on_tool_called', 'research:tool_called'),
+            
+            // 保留通用的思考事件
+            'on_agent_think_start': (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
         });
+        console.log('[Orchestrator] 最终版事件处理器已设置。');
     }
 
     setEnabled(enabled) {

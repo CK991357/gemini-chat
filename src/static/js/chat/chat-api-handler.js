@@ -37,7 +37,7 @@ export class ChatApiHandler {
      */
     async _fetchWithAgentRetry(url, options) {
         const maxRetries = 3;
-        const baseDelay = 2000; // 2秒基础延迟
+        const baseDelay = 3000; // 3秒基础延迟 (优化：提高重试礼貌度)
         let lastError;
         
         for (let attempt = 0; attempt < maxRetries; attempt++) {

@@ -25,15 +25,15 @@ export class DeepResearchAgent {
     }
 
     async conductResearch(researchRequest) {
-        const { topic, availableTools } = researchRequest;
+        // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
+        const { topic, availableTools, researchMode } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
         // ✨ 修复：清理主题中的感叹号
-        const initialCleanTopic = topic.replace(/！\s*$/, '').trim();
+        const cleanTopic = topic.replace(/！\s*$/, '').trim();
+        const detectedMode = researchMode || 'standard'; // 确保有一个默认值
         
-        // ✨ 最终优化 #1: 调用 _detectResearchMode 获取模式和清理后的话题
-        const { detectedMode, cleanTopic } = this._detectResearchMode(initialCleanTopic);
-        console.log(`[DeepResearchAgent] 开始研究: "${cleanTopic}"，检测到模式: ${detectedMode}`);
+        console.log(`[DeepResearchAgent] 开始研究: "${cleanTopic}"，接收到模式: ${detectedMode}`);
         
         // 🎯 修复：传递研究数据到监控面板
         await this.callbackManager.invokeEvent('on_research_start', {
@@ -79,6 +79,7 @@ export class DeepResearchAgent {
                 run_id: runId,
                 data: {
                     plan: researchPlan.research_plan,
+                    keywords: [], // 占位符，将在后续更新
                     estimated_iterations: researchPlan.estimated_iterations,
                     risk_assessment: researchPlan.risk_assessment,
                     research_mode: detectedMode
@@ -97,20 +98,27 @@ export class DeepResearchAgent {
         let consecutiveNoGain = 0;
         let allSources = [];
         let finalAnswerFromIteration = null;
+        
+        const totalSteps = researchPlan.research_plan.length; // 新增：总计划步骤数
 
         while (iterations < this.maxIterations && consecutiveNoGain < 2 && !finalAnswerFromIteration) {
             iterations++;
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
-            await this.callbackManager.invokeEvent('on_research_progress', { 
-                run_id: runId, 
-                data: { 
-                    iteration: iterations, 
-                    total: this.maxIterations,
-                    currentSteps: intermediateSteps.length,
+            const planCompletion = this._calculatePlanCompletion(researchPlan, intermediateSteps); // 计算完成度
+            
+            await this.callbackManager.invokeEvent('on_research_progress', {
+                run_id: runId,
+                data: {
+                    iteration: iterations,
+                    total_iterations: this.maxIterations, // 统一命名
+                    current_step: intermediateSteps.length, // 统一命名
+                    total_steps: totalSteps, // 新增
+                    plan_completion: planCompletion, // 新增
+                    sources_collected: allSources.length, // 新增
                     metrics: this.metrics,
                     research_mode: detectedMode
-                } 
+                }
             });
 
             try {
@@ -161,6 +169,7 @@ export class DeepResearchAgent {
                     const tool = this.tools[tool_name];
                     let rawObservation;
                     let toolSources = [];
+                    let toolSuccess = false; // 新增：追踪工具执行状态
                     
                     if (!tool) {
                         rawObservation = `错误: 工具 "${tool_name}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
@@ -168,11 +177,12 @@ export class DeepResearchAgent {
                     } else {
                         try {
                             console.log(`[DeepResearchAgent] 调用工具: ${tool_name}...`);
-                            const toolResult = await tool.invoke(parameters, { 
+                            const toolResult = await tool.invoke(parameters, {
                                 mode: 'deep_research',
                                 researchMode: detectedMode
                             });
                             rawObservation = toolResult.output || JSON.stringify(toolResult);
+                            toolSuccess = true; // 工具执行成功
                             
                             // 🎯 提取来源信息
                             if (toolResult.sources && Array.isArray(toolResult.sources)) {
@@ -244,7 +254,8 @@ export class DeepResearchAgent {
                         data: {
                             tool_name,
                             output: summarizedObservation,
-                            sources_count: toolSources.length,
+                            sources_found: toolSources.length, // 统一命名为 sources_found
+                            success: toolSuccess, // 新增：工具执行状态
                             information_gain: currentInfoGain
                         }
                     });
@@ -336,6 +347,7 @@ export class DeepResearchAgent {
 
         const result = {
             success: true, // 只要能生成报告就视为成功
+            topic: cleanTopic,
             report: finalReport,
             iterations,
             intermediateSteps,
@@ -350,33 +362,6 @@ export class DeepResearchAgent {
             data: result
         });
         return result;
-    }
-
-    // ✨ 最终优化 #1: 增强的关键词检测逻辑
-    _detectResearchMode(topic) {
-        // 关键词按特异性从高到低排序，确保更具体的模式被优先匹配
-        const keywords = {
-            '学术论文': 'academic', 
-            '商业分析': 'business',
-            '技术文档': 'technical',
-            '深度研究': 'deep', // "深度研究" 优先级较低
-            '标准报告': 'standard'
-        };
-
-        let cleanTopic = topic;
-        let detectedMode = 'standard'; // 默认模式
-
-        for (const [keyword, mode] of Object.entries(keywords)) {
-            if (topic.includes(keyword)) {
-                detectedMode = mode;
-                // 只移除第一个匹配到的关键词，避免意外移除内容
-                cleanTopic = topic.replace(keyword, '').trim();
-                console.log(`[DeepResearchAgent] 匹配到关键词: "${keyword}", 模式设置为: ${mode}, 清理后主题: "${cleanTopic}"`);
-                break; // 找到第一个就停止
-            }
-        }
-
-        return { detectedMode, cleanTopic };
     }
 
     // ✨ 最终优化 #2: _generateFinalReport 现在只负责合成
