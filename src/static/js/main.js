@@ -867,6 +867,32 @@ async function initializeEnhancedAgent() {
         }
         
         console.log('✅ 智能代理系统准备完成（开关控制初始化模式）');
+
+        // 🎯 临时调试：强行触发一次已知会发出的事件，检查是否能被接收
+        // 延迟执行，确保 Orchestrator 有足够时间完成初始化（如果 isAgentEnabled 为 true）
+        setTimeout(async () => {
+            if (orchestrator && orchestrator.callbackManager && orchestrator.isEnabled) {
+                try {
+                    console.log('[Main.js Debug] 尝试手动触发一个研究开始事件...');
+                    // 使用 Orchestrator.js 中 setupHandlers 映射的事件名称 on_research_start
+                    await orchestrator.callbackManager.invokeEvent('on_research_start', {
+                        run_id: 'debug_run_id',
+                        data: {
+                            topic: '测试主题',
+                            availableTools: ['tool1'],
+                            researchMode: 'standard',
+                            researchData: { keywords: ['test'], sources: [], toolCalls: [], metrics: {} }
+                        },
+                        agentType: 'deep_research' // 模拟 Agent 传递的类型
+                    });
+                    console.log('[Main.js Debug] 手动触发事件成功。');
+                } catch (eventError) {
+                    console.error('[Main.js Debug] 手动触发事件失败:', eventError);
+                }
+            } else {
+                console.log('[Main.js Debug] Orchestrator 未启用或未初始化，跳过手动触发事件。');
+            }
+        }, 2000); // 给予 2 秒时间确保异步初始化完成
         
     } catch (error) {
         console.error('智能代理系统准备失败:', error);

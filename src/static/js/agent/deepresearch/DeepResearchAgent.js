@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 强化资料来源收集版本
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 最终关键词触发版 v5.0
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -13,7 +13,7 @@ export class DeepResearchAgent {
         this.agentLogic = new AgentLogic(chatApiHandler);
         this.outputParser = new AgentOutputParser();
 
-        // ✨ 新增：性能追踪
+        // ✨ 性能追踪
         this.metrics = {
             toolUsage: { tavily_search: 0, crawl4ai: 0, python_sandbox: 0 },
             stepProgress: [],
@@ -25,64 +25,110 @@ export class DeepResearchAgent {
     }
 
     async conductResearch(researchRequest) {
-        const { topic, availableTools } = researchRequest;
+        // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
+        const { topic, availableTools, researchMode } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
-        console.log(`[DeepResearchAgent] 开始研究: "${topic}"`);
-        await this.callbackManager.invokeEvent('on_research_start', { 
-            run_id: runId, 
-            data: { topic, availableTools: availableTools.map(t => t.name) } 
+        // ✨ 修复：清理主题中的感叹号
+        const cleanTopic = topic.replace(/！\s*$/, '').trim();
+        const detectedMode = researchMode || 'standard'; // 确保有一个默认值
+        
+        console.log(`[DeepResearchAgent] 开始研究: "${cleanTopic}"，接收到模式: ${detectedMode}`);
+        
+        // 🎯 修复：传递研究数据到监控面板
+        await this.callbackManager.invokeEvent('on_research_start', {
+            run_id: runId,
+            data: {
+                topic: cleanTopic,
+                availableTools: availableTools.map(t => t.name),
+                researchMode: detectedMode,
+                researchData: {
+                    keywords: [], // 初始化空数组，后续更新
+                    sources: [],
+                    analyzedContent: [],
+                    toolCalls: [],
+                    metrics: this.metrics
+                }
+            }
         });
 
+        // 🎯 修复：在研究过程中更新统计数据
+        const updateResearchStats = (updates) => {
+            this.callbackManager.invokeEvent('on_research_stats_updated', {
+                run_id: runId,
+                data: updates
+            });
+        };
+
+        // 🎯 修复：记录工具调用
+        const recordToolCall = (toolName, parameters, success, result) => {
+            this.callbackManager.invokeEvent('on_tool_called', {
+                run_id: runId,
+                data: { toolName, parameters, success, result }
+            });
+        };
+
         // ✨ 阶段1：智能规划
-        console.log(`[DeepResearchAgent] 阶段1：生成研究计划...`);
+        console.log(`[DeepResearchAgent] 阶段1：生成${detectedMode}研究计划...`);
         let researchPlan;
         try {
-            researchPlan = await this.agentLogic.createInitialPlan(topic);
+            researchPlan = await this.agentLogic.createInitialPlan(cleanTopic, detectedMode);
             
             // 实时通知UI研究计划
             await this.callbackManager.invokeEvent('on_research_plan_generated', {
                 run_id: runId,
                 data: {
                     plan: researchPlan.research_plan,
+                    keywords: [], // 占位符，将在后续更新
                     estimated_iterations: researchPlan.estimated_iterations,
-                    risk_assessment: researchPlan.risk_assessment
+                    risk_assessment: researchPlan.risk_assessment,
+                    research_mode: detectedMode
                 }
             });
 
-            console.log(`[DeepResearchAgent] 研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
+            console.log(`[DeepResearchAgent] ${detectedMode}研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
         } catch (error) {
             console.error('[DeepResearchAgent] 研究计划生成失败，使用降级方案:', error);
-            researchPlan = this.agentLogic._createFallbackPlan(topic);
+            researchPlan = this.agentLogic._createFallbackPlan(cleanTopic, detectedMode);
         }
 
         // ✨ 阶段2：自适应执行
         let intermediateSteps = [];
         let iterations = 0;
-        let consecutiveNoGain = 0; // 追踪无效迭代
+        let consecutiveNoGain = 0;
         let allSources = [];
+        let finalAnswerFromIteration = null;
+        
+        const totalSteps = researchPlan.research_plan.length; // 新增：总计划步骤数
 
-        while (iterations < this.maxIterations && consecutiveNoGain < 2) {
+        while (iterations < this.maxIterations && consecutiveNoGain < 2 && !finalAnswerFromIteration) {
             iterations++;
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
-            await this.callbackManager.invokeEvent('on_research_progress', { 
-                run_id: runId, 
-                data: { 
-                    iteration: iterations, 
-                    total: this.maxIterations,
-                    currentSteps: intermediateSteps.length,
-                    metrics: this.metrics
-                } 
+            const planCompletion = this._calculatePlanCompletion(researchPlan, intermediateSteps); // 计算完成度
+            
+            await this.callbackManager.invokeEvent('on_research_progress', {
+                run_id: runId,
+                data: {
+                    iteration: iterations,
+                    total_iterations: this.maxIterations, // 统一命名
+                    current_step: intermediateSteps.length, // 统一命名
+                    total_steps: totalSteps, // 新增
+                    plan_completion: planCompletion, // 新增
+                    sources_collected: allSources.length, // 新增
+                    metrics: this.metrics,
+                    research_mode: detectedMode
+                }
             });
 
             try {
                 // 🎯 构建AgentLogic输入数据
                 const logicInput = { 
-                    topic, 
+                    topic: cleanTopic, 
                     intermediateSteps, 
                     availableTools,
-                    researchPlan 
+                    researchPlan,
+                    researchMode: detectedMode
                 };
 
                 const agentDecisionText = await this.agentLogic.plan(logicInput, { 
@@ -105,36 +151,9 @@ export class DeepResearchAgent {
 
                 // 🎯 处理最终答案
                 if (parsedAction.type === 'final_answer') {
-                    console.log('[DeepResearchAgent] ✅ 检测到最终答案，研究完成');
-                    
-                    // ✨ 修复：不再尝试标记使用的来源，而是直接使用所有收集到的来源
-                    const uniqueSources = this._deduplicateSources(allSources);
-                    
-                    let finalReport = parsedAction.answer;
-                    
-                    // ✨ 修复：总是添加所有收集到的来源，不再进行过滤
-                    if (uniqueSources.length > 0) {
-                        finalReport += this._generateSourcesSection(uniqueSources);
-                        console.log(`[DeepResearchAgent] 添加了 ${uniqueSources.length} 个资料来源`);
-                    } else {
-                        console.log('[DeepResearchAgent] 警告：没有收集到任何资料来源');
-                    }
-                    
-                    const result = {
-                        success: true,
-                        report: finalReport,
-                        iterations,
-                        intermediateSteps,
-                        sources: uniqueSources,
-                        metrics: this.metrics,
-                        plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps)
-                    };
-                    
-                    await this.callbackManager.invokeEvent('on_research_end', {
-                        run_id: runId,
-                        data: result
-                    });
-                    return result;
+                    console.log('[DeepResearchAgent] ✅ Agent在迭代中决定生成最终答案，保存答案并跳出循环');
+                    finalAnswerFromIteration = parsedAction.answer;
+                    break; // 跳出循环
                 }
 
                 // 🎯 处理工具调用
@@ -149,7 +168,8 @@ export class DeepResearchAgent {
 
                     const tool = this.tools[tool_name];
                     let rawObservation;
-                    let toolSources = []; // 🎯 新增：保存本次工具调用的来源
+                    let toolSources = [];
+                    let toolSuccess = false; // 新增：追踪工具执行状态
                     
                     if (!tool) {
                         rawObservation = `错误: 工具 "${tool_name}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
@@ -157,10 +177,14 @@ export class DeepResearchAgent {
                     } else {
                         try {
                             console.log(`[DeepResearchAgent] 调用工具: ${tool_name}...`);
-                            const toolResult = await tool.invoke(parameters, { mode: 'deep_research' });
+                            const toolResult = await tool.invoke(parameters, {
+                                mode: 'deep_research',
+                                researchMode: detectedMode
+                            });
                             rawObservation = toolResult.output || JSON.stringify(toolResult);
+                            toolSuccess = true; // 工具执行成功
                             
-                            // 🎯 新增：提取来源信息
+                            // 🎯 提取来源信息
                             if (toolResult.sources && Array.isArray(toolResult.sources)) {
                                 toolSources = toolResult.sources.map(source => ({
                                     title: source.title || '无标题',
@@ -179,14 +203,19 @@ export class DeepResearchAgent {
                                 this.metrics.toolUsage[tool_name]++;
                             }
                             
+                            // 🎯 修复：记录工具调用
+                            recordToolCall(tool_name, parameters, true, rawObservation);
+
                         } catch (error) {
                             rawObservation = `错误: 工具 "${tool_name}" 执行失败: ${error.message}`;
                             console.error(`[DeepResearchAgent] ❌ 工具执行失败: ${tool_name}`, error);
+                            // 🎯 修复：记录工具调用失败
+                            recordToolCall(tool_name, parameters, false, error.message);
                         }
                     }
                     
                     // 处理过长内容
-                    const summarizedObservation = await this._smartSummarizeObservation(topic, rawObservation);
+                    const summarizedObservation = await this._smartSummarizeObservation(cleanTopic, rawObservation, detectedMode);
                     
                     // ✨ 评估信息增益
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, intermediateSteps);
@@ -199,7 +228,7 @@ export class DeepResearchAgent {
                         consecutiveNoGain = 0;
                     }
                     
-                    // 保存完整的步骤信息（包含思考过程和来源）
+                    // 保存完整的步骤信息
                     intermediateSteps.push({
                         action: {
                             type: 'tool_call',
@@ -208,18 +237,26 @@ export class DeepResearchAgent {
                             thought: thought || `执行工具 ${tool_name} 来获取更多信息。`
                         },
                         observation: summarizedObservation,
-                        sources: toolSources // 🎯 新增：保存来源
+                        sources: toolSources
                     });
                     
-                    // 🎯 新增：合并到总来源列表
+                    // 🎯 合并到总来源列表
                     allSources = [...allSources, ...toolSources];
+                    
+                    // 在收集到新来源时更新统计
+                    updateResearchStats({
+                        sources: allSources,
+                        // ✨ 核心修复：传递过滤后的数组本身，而不是它的长度
+                        toolCalls: intermediateSteps.filter(step => step.action.type === 'tool_call')
+                    });
                     
                     await this.callbackManager.invokeEvent('on_tool_end', {
                         run_id: runId,
                         data: {
                             tool_name,
                             output: summarizedObservation,
-                            sources_count: toolSources.length,
+                            sources_found: toolSources.length, // 统一命名为 sources_found
+                            success: toolSuccess, // 新增：工具执行状态
                             information_gain: currentInfoGain
                         }
                     });
@@ -236,7 +273,7 @@ export class DeepResearchAgent {
                 } else {
                     // 🎯 处理解析错误
                     console.warn('[DeepResearchAgent] ⚠️ 输出解析失败，触发自我纠正');
-                    const observation = `格式错误: ${parsedAction.log || '无法解析响应'}。请严格遵循指令格式：思考: ... 行动: {...} 或 最终答案: ...`;
+                    const observation = `格式错误: ${parsedAction.error || '无法解析响应'}。请严格遵循指令格式：思考: ... 行动: {...} 或 最终答案: ...`;
                     
                     intermediateSteps.push({ 
                         action: { 
@@ -254,62 +291,136 @@ export class DeepResearchAgent {
                             iteration: iterations, 
                             total: this.maxIterations,
                             warning: '输出解析失败，已触发自我纠正',
-                            error: parsedAction.log
+                            error: parsedAction.error
                         }
                     });
                 }
 
             } catch (error) {
+                // 🎯 简化错误处理：完全信任ChatApiHandler的重试机制
                 console.error(`[DeepResearchAgent] 迭代 ${iterations} 失败:`, error);
-                // 记录错误但继续执行
-                intermediateSteps.push({ 
-                    action: { 
-                        tool_name: 'error', 
+                
+                // --- START: 增强错误处理 ---
+                let thoughtText = `在第 ${iterations} 次迭代中遇到错误，尝试继续。错误: ${error.message}`;
+                let observationText = '系统执行错误，将尝试在下一步骤中恢复。';
+
+                // 检查是否为速率限制错误
+                if (error.message.includes('429') || error.message.toLowerCase().includes('rate limit')) {
+                    thoughtText = `在第 ${iterations} 次迭代中遭遇API速率限制。这通常是由于请求过于频繁。我将暂停当前操作，并在下一步中调整策略，而不是重复之前的操作。`;
+                    observationText = '错误: API速率限制。无法完成上一步操作。';
+                    // 遭遇速率限制时，强制增加“无增益”计数，以加速跳出无效循环
+                    consecutiveNoGain++;
+                }
+                // --- END: 增强错误处理 ---
+
+                intermediateSteps.push({
+                    action: {
+                        tool_name: 'internal_error',
                         parameters: {},
-                        thought: `执行出错: ${error.message}`,
+                        thought: thoughtText, // 使用新的思考文本
                         type: 'error'
-                    }, 
-                    observation: '系统执行错误，继续研究' 
+                    },
+                    observation: observationText // 使用新的观察文本
                 });
+                
+                // 增加连续无增益计数，避免在连续错误中死循环
+                consecutiveNoGain++;
             }
         }
 
-        // ✨ 阶段3：优化报告生成
-        console.log('[DeepResearchAgent] 研究完成，生成最终报告');
+        // 在每次迭代结束时更新统计
+        updateResearchStats({
+            iterations: iterations,
+            metrics: this.metrics
+        });
         
-        let result;
-        if (iterations < this.maxIterations && consecutiveNoGain < 2) {
-            // 正常完成
-            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources);
-            result = {
-                success: true,
-                report: finalReport,
-                iterations,
-                intermediateSteps,
-                sources: allSources,
-                metrics: this.metrics,
-                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps)
-            };
+        // ✨ 阶段3：统一的报告生成 (最终优化 #2)
+        console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
+
+        // 提取所有观察结果用于关键词分析
+        const allObservationsForKeywords = intermediateSteps.map(s => s.observation).join(' ');
+        const keywords = this._extractKeywords(cleanTopic, allObservationsForKeywords);
+        
+        // 更新关键词统计
+        updateResearchStats({ keywords });
+        
+        let finalReport;
+        if (finalAnswerFromIteration) {
+            console.log('[DeepResearchAgent] 使用迭代中生成的答案作为报告基础');
+            finalReport = finalAnswerFromIteration;
         } else {
-            // 达到最大迭代次数或连续无增益
-            const finalReport = await this._generateFinalReport(topic, intermediateSteps, researchPlan, allSources);
-            result = {
-                success: false,
-                report: finalReport,
-                iterations: this.maxIterations,
-                intermediateSteps,
-                sources: allSources,
-                metrics: this.metrics,
-                plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps)
-            };
-            console.warn(`[DeepResearchAgent] ❌ 达到终止条件，研究结束`);
+            console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
+            finalReport = await this._generateFinalReport(cleanTopic, intermediateSteps, researchPlan, allSources, detectedMode);
         }
+
+        // ✨ 附加所有收集到的资料来源
+        const uniqueSources = this._deduplicateSources(allSources);
+        finalReport += this._generateSourcesSection(uniqueSources);
+        console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${uniqueSources.length} 个资料来源`);
+
+        const result = {
+            success: true, // 只要能生成报告就视为成功
+            topic: cleanTopic,
+            report: finalReport,
+            iterations,
+            intermediateSteps,
+            sources: uniqueSources,
+            metrics: this.metrics,
+            plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
+            research_mode: detectedMode
+        };
         
         await this.callbackManager.invokeEvent('on_research_end', {
             run_id: runId,
             data: result
         });
         return result;
+    }
+
+    // ✨ 最终优化 #2: _generateFinalReport 现在只负责合成
+    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
+        try {
+            // 1. 提取补充资料来源
+            const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
+            const combinedSources = [...sources, ...extractedSources];
+            const uniqueSources = this._deduplicateSources(combinedSources);
+            console.log(`[DeepResearchAgent] 提取到 ${extractedSources.length} 个补充来源，总计 ${uniqueSources.length} 个潜在来源`);
+            
+            // 2. 收集所有观察结果
+            const allObservations = intermediateSteps
+                .filter(step => step.observation && 
+                               step.observation !== '系统执行错误，继续研究' &&
+                               !step.observation.includes('OutputParser解析失败'))
+                .map(step => {
+                    let observation = step.observation;
+                    // 清理观察结果中的冗余信息
+                    if (observation.includes('【来源')) {
+                        observation = observation.split('【来源')[0].trim();
+                    }
+                    return observation;
+                })
+                .filter(obs => obs.length > 50) // 只保留有内容的观察
+                .join('\n\n');
+            
+            // 3. 使用LLM生成结构化报告（基于研究模式）
+            const reportPrompt = this._buildReportPrompt(topic, plan, allObservations, researchMode);
+
+            const reportResponse = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: reportPrompt }],
+                model: 'gemini-2.5-flash-preview-09-2025',
+                temperature: 0.3,
+            });
+            
+            let finalReport = reportResponse?.choices?.[0]?.message?.content || 
+                this._generateFallbackReport(topic, intermediateSteps, uniqueSources, researchMode);
+            
+            console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
+            return finalReport;
+            
+        } catch (error) {
+            console.error('[DeepResearchAgent] 报告生成失败:', error);
+            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+        }
     }
 
     // ✨ 新增：强化资料来源提取
@@ -333,7 +444,7 @@ export class DeepResearchAgent {
                                     sources.set(url, {
                                         title: title,
                                         url: url,
-                                        used_in_report: false // 稍后标记是否在报告中引用
+                                        used_in_report: false
                                     });
                                 }
                             }
@@ -358,14 +469,6 @@ export class DeepResearchAgent {
         return Array.from(sources.values());
     }
 
-    // ✨ 修复：移除过于严格的来源标记逻辑，直接使用所有来源
-    _markUsedSources(reportContent, sources) {
-        // ✨ 修复：不再尝试反向匹配，直接返回所有来源
-        // 因为LLM生成报告时不会直接引用原始URL或标题
-        console.log(`[DeepResearchAgent] 跳过来源使用标记，直接使用所有 ${sources.length} 个来源`);
-        return sources;
-    }
-
     // ✨ 新增：来源去重
     _deduplicateSources(sources) {
         const seen = new Set();
@@ -379,74 +482,107 @@ export class DeepResearchAgent {
         });
     }
 
-    // ✨ 优化：最终报告生成
-    async _generateFinalReport(topic, intermediateSteps, plan, sources) {
-        try {
-            // 1. 提取补充资料来源
-            const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
-            const combinedSources = [...sources, ...extractedSources];
-            const uniqueSources = this._deduplicateSources(combinedSources);
-            console.log(`[DeepResearchAgent] 提取到 ${extractedSources.length} 个补充来源，总计 ${uniqueSources.length} 个潜在来源`);
-            
-            // 2. 收集所有观察结果
-            const allObservations = intermediateSteps
-                .filter(step => step.observation && 
-                               step.observation !== '系统执行错误，继续研究' &&
-                               !step.observation.includes('OutputParser解析失败'))
-                .map(step => {
-                    let observation = step.observation;
-                    // 清理观察结果中的冗余信息
-                    if (observation.includes('【来源')) {
-                        observation = observation.split('【来源')[0].trim();
-                    }
-                    return observation;
-                })
-                .filter(obs => obs.length > 50) // 只保留有内容的观察
-                .join('\n\n');
-            
-            // 3. 使用LLM生成结构化报告
-            const reportPrompt = `
+    // ✨ 新增：关键词提取
+    _extractKeywords(topic, observations) {
+        // 简单的关键词提取逻辑
+        const words = (topic + ' ' + observations).split(/\s+/)
+            .filter(word => word.length > 2)
+            .map(word => word.toLowerCase());
+        
+        const keywordCounts = words.reduce((acc, word) => {
+            acc[word] = (acc[word] || 0) + 1;
+            return acc;
+        }, {});
+        
+        return Object.entries(keywordCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([term, count]) => ({ term, count }));
+    }
+
+    // ✨ 新增：构建报告提示词（基于研究模式）
+    _buildReportPrompt(topic, plan, observations, researchMode) {
+        const modeConfigs = {
+            deep: {
+                title: "深度研究模式",
+                structure: `# 主标题
+## 问题解构与分析
+## 多维度深度探索（至少从技术、实践、历史三个维度）
+## 权威验证与专业深化  
+## 辩证解决方案（至少3个可行方案+反对观点）
+## 创新建议与执行路径`,
+                wordCount: "2500-3500字",
+                requirements: "所有关键数据必须验证并标注来源[1][2]，包含至少一个反对观点"
+            },
+            academic: {
+                title: "学术论文模式", 
+                structure: `# 标题
+## 摘要
+## 引言与研究背景
+## 文献综述
+## 方法论
+## 分析与讨论
+## 结论
+## 参考文献`,
+                wordCount: "2500-3500字",
+                requirements: "严格标注来源，使用标准引用格式"
+            },
+            business: {
+                title: "商业分析模式",
+                structure: `# 执行摘要
+## 市场分析
+## 竞争格局
+## 机会与挑战
+## 战略建议
+## 财务影响
+## 实施路线图`,
+                wordCount: "1500-2500字",
+                requirements: "市场数据必须标注来源"
+            },
+            technical: {
+                title: "技术文档模式",
+                structure: `# 技术概述
+## 架构设计
+## 核心组件
+## 实现细节
+## 性能评估
+## 最佳实践
+## 故障排除`,
+                wordCount: "1800-2800字", 
+                requirements: "技术规格和性能数据必须验证"
+            },
+            standard: {
+                title: "标准报告模式",
+                structure: `# 主标题
+## 一、引言与背景
+## 二、核心内容分析（至少2-3个子部分）
+## 三、深度洞察与总结`,
+                wordCount: "800-1200字",
+                requirements: "关键信息标注来源[1][2]"
+            }
+        };
+
+        const config = modeConfigs[researchMode] || modeConfigs.standard;
+
+        return `
 基于以下研究内容，生成一份专业、结构完整的研究报告。
 
 研究主题：${topic}
 ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_question))}` : ''}
-收集信息：${allObservations.substring(0, 3000)} ${allObservations.length > 3000 ? '...（内容过长已截断）' : ''}
+收集信息：${observations.substring(0, 3000)} ${observations.length > 3000 ? '...（内容过长已截断）' : ''}
 
-报告要求：
+报告要求（${config.title}）：
 1. 格式：Markdown
 2. 结构：
-   # 主标题
-   ## 一、引言与背景
-   ## 二、核心内容分析（至少2-3个子部分）
-   ## 三、深度洞察与总结
-3. 字数：800-1200字
+${config.structure}
+3. 字数：${config.wordCount}
 4. 风格：专业、客观、信息密集
-5. 关键事实和引用请标注[1][2]等编号
+5. 要求：${config.requirements}
 
-请生成最终报告（不要包含"资料来源"章节，我们会自动添加）：
-`;
-
-            const reportResponse = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: reportPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
-                temperature: 0.3,
-            });
-            
-            let finalReport = reportResponse?.choices?.[0]?.message?.content || this._generateFallbackReport(topic, intermediateSteps, uniqueSources);
-            
-            // 4. ✨ 修复：直接使用所有来源，不再进行过滤
-            finalReport += this._generateSourcesSection(uniqueSources);
-            
-            console.log(`[DeepResearchAgent] 最终报告生成完成，包含 ${uniqueSources.length} 个资料来源`);
-            return finalReport;
-            
-        } catch (error) {
-            console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources);
-        }
+请生成最终报告（不要包含"资料来源"章节，我们会自动添加）：`;
     }
 
-    _generateFallbackReport(topic, intermediateSteps, sources) {
+    _generateFallbackReport(topic, intermediateSteps, sources, researchMode) {
         // 降级报告生成逻辑
         const observations = intermediateSteps
             .filter(step => step.observation)
@@ -454,11 +590,6 @@ ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_ques
             .join('\n');
             
         let report = `# ${topic}\n\n## 收集的信息\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
-        
-        // 添加资料来源
-        if (sources && sources.length > 0) {
-            report += this._generateSourcesSection(sources);
-        }
             
         return report;
     }
@@ -509,7 +640,10 @@ ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_ques
         );
     }
 
-    async _smartSummarizeObservation(mainTopic, observation) {
+    /**
+     * 🎯 智能摘要方法 - 带有优雅降级
+     */
+    async _smartSummarizeObservation(mainTopic, observation, researchMode) {
         const threshold = 2000;
         if (!observation || typeof observation !== 'string' || observation.length < threshold) {
             return observation.length > threshold ? 
@@ -518,6 +652,12 @@ ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_ques
         }
 
         console.log(`[DeepResearchAgent] 内容过长 (${observation.length} > ${threshold})，启动摘要子代理...`);
+        
+        // 🎯 添加Agent模式专用延迟，降低请求频率
+        if (researchMode && researchMode !== 'standard') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
         await this.callbackManager.invokeEvent('agent:thinking', { 
             detail: { 
                 content: '正在调用摘要子代理压缩上下文...', 
@@ -553,7 +693,52 @@ ${observation.substring(0, 10000)}
 
         } catch (error) {
             console.error("[DeepResearchAgent] ❌ 摘要子代理调用失败:", error);
-            return observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，内容已截断...]";
+            
+            // 🎯 优雅降级策略：根据错误类型返回不同的降级内容
+            if (error.message.includes('429') || error.message.includes('速率限制')) {
+                // 速率限制：返回智能截断版本
+                const truncated = this._intelligentTruncate(observation, threshold);
+                return `[摘要生成失败-速率限制，已智能截断]:\n${truncated}`;
+            } else if (error.message.includes('超时')) {
+                // 超时错误
+                return observation.substring(0, threshold) + "\n\n[...内容过长，摘要超时，内容已截断...]";
+            } else {
+                // 其他错误
+                return observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，内容已截断...]";
+            }
         }
+    }
+
+    /**
+     * 🎯 智能截断方法
+     * 在指定长度附近寻找合适的截断点（段落边界）
+     */
+    _intelligentTruncate(text, maxLength) {
+        if (text.length <= maxLength) return text;
+        
+        // 在maxLength附近寻找段落边界
+        const searchWindow = Math.min(500, text.length - maxLength);
+        const searchArea = text.substring(maxLength - 100, maxLength + searchWindow);
+        
+        // 优先在段落边界截断
+        const lastParagraph = searchArea.lastIndexOf('\n\n');
+        if (lastParagraph !== -1) {
+            return text.substring(0, maxLength - 100 + lastParagraph) + "\n\n[...]";
+        }
+        
+        // 其次在句子边界截断
+        const lastSentence = searchArea.lastIndexOf('. ');
+        if (lastSentence !== -1 && lastSentence > 50) {
+            return text.substring(0, maxLength - 100 + lastSentence + 1) + ".. [...]";
+        }
+        
+        // 最后在单词边界截断
+        const lastSpace = searchArea.lastIndexOf(' ');
+        if (lastSpace !== -1) {
+            return text.substring(0, maxLength - 100 + lastSpace) + " [...]";
+        }
+        
+        // 实在找不到合适的边界，直接截断
+        return text.substring(0, maxLength) + "...";
     }
 }
