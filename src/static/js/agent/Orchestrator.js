@@ -1,4 +1,4 @@
-// src/static/js/agent/Orchestrator.js - 多模式关键词触发版
+// src/static/js/agent/Orchestrator.js - 多模式关键词触发版（增加使用指南功能）
 
 import { getSkillsRegistry } from '../tool-spec-system/generated-skills.js';
 import { mcpToolsMap } from '../tools_mcp/tool-definitions.js';
@@ -74,7 +74,18 @@ export class Orchestrator {
             return { enhanced: false, type: 'standard_fallback' };
         }
 
-        // 2. ✨ 增强：使用新的多模式检测方法
+        // 2. ✨ 新增：检查是否是使用指南请求
+        const guideDetection = this._detectUserGuideRequest(userMessage);
+        if (guideDetection.shouldShow) {
+            console.log('[Orchestrator] 检测到使用指南请求，返回使用指南');
+            return {
+                enhanced: true,
+                type: 'user_guide',
+                content: this._getUserGuideContent()
+            };
+        }
+
+        // 3. ✨ 增强：使用新的多模式检测方法
         const researchDetection = this._detectAndExtractTopic(userMessage);
 
         if (researchDetection.shouldStart) {
@@ -82,9 +93,99 @@ export class Orchestrator {
             return await this._handleWithDeepResearch(researchDetection.cleanTopic, context);
         }
 
-        // 3. 否则，明确回退到标准模式
+        // 4. 否则，明确回退到标准模式
         console.log('[Orchestrator] 未检测到Agent触发词，回退到标准模式。');
         return { enhanced: false, type: 'standard_fallback' };
+    }
+
+    /**
+     * 🎯 新增：使用指南请求检测
+     */
+    _detectUserGuideRequest(userMessage) {
+        const guideKeywords = [
+            '使用指南', '帮助', '怎么用', '使用方法', '使用说明',
+            'user guide', 'help', 'usage guide', 'how to use'
+        ];
+
+        const lowerMessage = userMessage.trim().toLowerCase();
+        
+        for (const keyword of guideKeywords) {
+            if (lowerMessage.includes(keyword.toLowerCase())) {
+                return {
+                    shouldShow: true,
+                    matchedKeyword: keyword
+                };
+            }
+        }
+
+        return { shouldShow: false };
+    }
+
+    /**
+     * 🎯 新增：获取使用指南内容
+     */
+    _getUserGuideContent() {
+        return `# 🎯 高级研究代理使用指南
+
+我们引入了全新的**高级研究代理 (Advanced Research Agent)** 模式。当您需要在普通问答之外，对一个主题进行深入、结构化的探索时，可以激活此功能。代理将模拟一名专业研究员，通过制定研究计划、执行多步工具调用（搜索、网页抓取等）、评估信息、动态调整策略，最终为您生成一份高质量、带资料来源的专业研究报告。
+
+## 🚀 激活方式
+
+激活高级研究代理非常简单，您只需要在您的研究主题后面，**附加一个模式关键词**即可。系统会自动识别并进入相应的研究模式。
+
+**格式**: [您的研究主题] [模式关键词]
+
+## 📊 研究模式对比
+
+我们目前支持以下五种专业的研究模式，每种模式都有其独特的分析框架和报告格式：
+
+| 模式关键词 | 研究模式 | 最佳应用场景 | 最终报告特点 |
+|-----------|----------|-------------|-------------|
+| **标准报告** | \`standard\` | 快速、全面地了解一个主题，获取关键信息和背景。 | 结构清晰、内容全面、字数适中（约800-1200字）的标准研究报告。 |
+| **深度研究** | \`deep\` | 对复杂问题进行根本性的、多维度的解构与分析，并提出创新性解决方案。 | 极其深入、包含辩证思考和解决方案的专业咨询报告（约2500-3500字）。 |
+| **学术论文** | \`academic\` | 对某个领域或问题进行符合学术规范的研究，侧重理论框架和文献综述。 | 结构严谨，包含摘要、文献综述、方法论等部分的学术风格论文（约2500-3500字）。 |
+| **商业分析** | \`business\` | 从商业视角分析市场、竞争、机会与风险，并提出可行的战略建议。 | 聚焦商业价值，包含市场数据、竞争分析和战略路线图的商业报告（约1500-2500字）。 |
+| **技术文档** | \`technical\` | 对某项技术进行深入剖析，包括其架构、实现、性能和最佳实践。 | 技术细节准确，包含架构设计、性能指标和实现方案的技术文档（约1800-2800字）。 |
+
+## 💡 使用示例
+
+您只需像平常聊天一样输入即可：
+
+**示例1 (标准模式)**:
+\`\`\`
+摇滚红与黑的故事和主创 标准报告
+\`\`\`
+
+**示例2 (深度研究模式)**:
+\`\`\`
+人工智能对未来教育行业的影响 深度研究
+\`\`\`
+
+**示例3 (学术论文模式)**:
+\`\`\`
+机器学习在糖尿病视网膜病变诊断中的应用 学术论文
+\`\`\`
+
+**示例4 (商业分析模式)**:
+\`\`\`
+2025年全球电动汽车市场发展趋势 商业分析
+\`\`\`
+
+## ⚠️ 注意事项
+
+- **关键词优先级**: 如果您输入了多个关键词（如"深度研究 商业分析"），系统会优先匹配更具体、更专业的模式（在此例中为"商业分析"）。
+- **处理时间**: 深度研究通常需要2-5分钟，具体取决于主题复杂度和信息获取难度。
+- **资料来源**: 所有报告都会自动附加资料来源，确保信息的可追溯性。
+
+## 🔍 研究过程
+
+启动研究后，您将看到：
+1. 📋 **研究计划** - 代理会制定详细的研究步骤
+2. 🔄 **实时进度** - 显示当前迭代和工具使用情况  
+3. 📊 **信息收集** - 自动从多个来源获取信息
+4. 📝 **报告生成** - 基于收集的信息生成结构化报告
+
+现在就开始体验智能研究代理的强大功能吧！只需在您的问题后加上模式关键词即可。`;
     }
 
     /**
