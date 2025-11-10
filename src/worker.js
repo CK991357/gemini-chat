@@ -482,23 +482,63 @@ async function handleAPIRequest(request, env) {
 
                 console.log(`🎯 [API路由] 请求 ${requestId} | 模型: ${model} | Agent: ${isAgentRequest} | 端点: ${targetUrl}`);
 
-                const proxyResponse = await fetch(targetUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
-                    },
-                    body: JSON.stringify(body) // 🎯 已移除Agent标记的纯净请求体
-                });
+                // --- START: 核心修复 ---
+                // 检查请求是否明确要求非流式响应
+                if (body.stream === false) {
+                    console.log(`[Worker] 检测到非流式请求，将聚合响应并确保格式正确。`);
+                    
+                    const proxyResponse = await fetch(targetUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify(body)
+                    });
 
-                return new Response(proxyResponse.body, {
-                    status: proxyResponse.status,
-                    statusText: proxyResponse.statusText,
-                    headers: {
-                        'Content-Type': proxyResponse.headers.get('Content-Type'),
-                        'Access-Control-Allow-Origin': '*'
+                    if (!proxyResponse.ok) {
+                        // 如果上游API直接返回错误，则透传错误
+                        return proxyResponse;
                     }
-                });
+
+                    // 消费完整的响应体并解析为JSON
+                    const result = await proxyResponse.json();
+                    
+                    // 确保返回的JSON对象严格符合前端 chat-api-handler.js 的期望格式
+                    // 即使上游API返回的结构略有不同，我们也在这里进行修正
+                    const finalContent = result?.choices?.[0]?.message?.content || '（无法解析响应）';
+                    
+                    const correctlyFormattedResponse = {
+                        choices: [
+                            {
+                                message: {
+                                    content: finalContent
+                                },
+                                finish_reason: result?.choices?.[0]?.finish_reason || 'stop'
+                            }
+                        ],
+                        usage: result?.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+                    };
+
+                    return new Response(JSON.stringify(correctlyFormattedResponse), {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        }
+                    });
+
+                } else {
+                    // 对于流式请求，保持原有的直接代理逻辑
+                    const proxyResponse = await fetch(targetUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify(body)
+                    });
+
+                    return new Response(proxyResponse.body, {
+                        status: proxyResponse.status,
+                        statusText: proxyResponse.statusText,
+                        headers: { 'Content-Type': proxyResponse.headers.get('Content-Type'), 'Access-Control-Allow-Origin': '*' }
+                    });
+                }
+                // --- END: 核心修复 ---
             } else if (model === 'glm-4.1v-thinking-flash' || model === 'glm-4v-flash' || model === 'GLM-4.5-Flash') {
                 console.log(`DEBUG: Routing to Zhipu chat proxy for model: ${model}`);
                 const targetUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';

@@ -300,15 +300,27 @@ export class DeepResearchAgent {
                 // 🎯 简化错误处理：完全信任ChatApiHandler的重试机制
                 console.error(`[DeepResearchAgent] 迭代 ${iterations} 失败:`, error);
                 
-                // 现在错误由 ChatApiHandler 抛出，我们只需记录并决定如何继续
-                intermediateSteps.push({ 
-                    action: { 
-                        tool_name: 'internal_error', 
+                // --- START: 增强错误处理 ---
+                let thoughtText = `在第 ${iterations} 次迭代中遇到错误，尝试继续。错误: ${error.message}`;
+                let observationText = '系统执行错误，将尝试在下一步骤中恢复。';
+
+                // 检查是否为速率限制错误
+                if (error.message.includes('429') || error.message.toLowerCase().includes('rate limit')) {
+                    thoughtText = `在第 ${iterations} 次迭代中遭遇API速率限制。这通常是由于请求过于频繁。我将暂停当前操作，并在下一步中调整策略，而不是重复之前的操作。`;
+                    observationText = '错误: API速率限制。无法完成上一步操作。';
+                    // 遭遇速率限制时，强制增加“无增益”计数，以加速跳出无效循环
+                    consecutiveNoGain++;
+                }
+                // --- END: 增强错误处理 ---
+
+                intermediateSteps.push({
+                    action: {
+                        tool_name: 'internal_error',
                         parameters: {},
-                        thought: `在第 ${iterations} 次迭代中遇到错误，尝试继续。错误: ${error.message}`,
+                        thought: thoughtText, // 使用新的思考文本
                         type: 'error'
-                    }, 
-                    observation: '系统执行错误，将尝试在下一步骤中恢复。' 
+                    },
+                    observation: observationText // 使用新的观察文本
                 });
                 
                 // 增加连续无增益计数，避免在连续错误中死循环
