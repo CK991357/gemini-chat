@@ -37,55 +37,41 @@ export class ChatApiHandler {
      */
     async _fetchWithAgentRetry(url, options) {
         const maxRetries = 3;
-        const baseDelay = 3000; // 3秒基础延迟 (优化：提高重试礼貌度)
+        const baseDelay = 3000; // 3秒基础延迟
+        const maxDelay = 20000; // 20秒最大延迟
         let lastError;
-        
+    
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                if (attempt > 0) {
-                    // Agent模式专用退避策略：2s, 4s, 8s
-                    const backoffTime = baseDelay * Math.pow(2, attempt - 1);
-                    console.log(`[ChatApiHandler] Agent模式第${attempt}次重试，等待${backoffTime}ms`);
-                    await new Promise(resolve => setTimeout(resolve, backoffTime));
-                }
-                
                 const response = await fetch(url, options);
-                
-                // 🎯 专门处理429错误
+    
                 if (response.status === 429) {
-                    const retryAfter = response.headers.get('Retry-After');
-                    if (retryAfter) {
-                        // 如果服务器告知重试时间，使用服务器建议
-                        const waitTime = parseInt(retryAfter) * 1000;
-                        console.log(`[ChatApiHandler] 服务器建议${waitTime}ms后重试`);
-                        await new Promise(resolve => setTimeout(resolve, waitTime));
-                        continue;
-                    }
-                    throw new Error(`Agent模式速率限制 (429)，第${attempt + 1}次尝试`);
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                return response;
-                
-            } catch (error) {
-                lastError = error;
-                console.warn(`[ChatApiHandler] Agent模式API调用失败 (尝试 ${attempt + 1}):`, error.message);
-                
-                // 如果是网络错误或5xx错误，继续重试
-                if (error.message.includes('fetch') || error.message.includes('5')) {
+                    // 指数退避 + 随机抖动
+                    const exponentialBackoff = baseDelay * Math.pow(2, attempt);
+                    const jitter = Math.random() * 1000; // 1秒随机抖动
+                    const waitTime = Math.min(exponentialBackoff + jitter, maxDelay);
+                    
+                    console.warn(`[ChatApiHandler] API速率限制(429)。将在 ${Math.round(waitTime)}ms 后重试 (尝试 ${attempt + 1}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
                     continue;
                 }
-                // 如果是4xx错误（除429外），立即失败
-                if (error.message.includes('4') && !error.message.includes('429')) {
-                    break;
+    
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP Error: ${response.status} - ${errorText}`);
+                }
+    
+                return response;
+    
+            } catch (error) {
+                lastError = error;
+                console.warn(`[ChatApiHandler] API调用失败 (尝试 ${attempt + 1}/${maxRetries}):`, error.message);
+                if (attempt + 1 >= maxRetries) {
+                    throw lastError;
                 }
             }
         }
-        
-        throw lastError || new Error(`Agent模式API调用失败，已重试${maxRetries}次`);
+        throw lastError;
     }
 
     /**
