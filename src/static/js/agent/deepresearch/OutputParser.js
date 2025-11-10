@@ -36,25 +36,11 @@ export class AgentOutputParser {
             // 🎯 3. 核心解析：完全匹配AgentLogic的"行动: 工具名" + "行动输入: {json}"格式
             const toolCallResult = this._parseToolCallFormat(text);
             if (toolCallResult.success) {
-                console.log("[OutputParser] ✅ 严格解析成功:", toolCallResult.tool_name);
+                console.log("[OutputParser] ✅ 成功解析工具调用:", toolCallResult.tool_name);
                 return {
                     type: 'tool_call',
                     tool_name: toolCallResult.tool_name,
                     parameters: toolCallResult.parameters,
-                    thought: thought,
-                    thought_length: thought.length
-                };
-            }
-
-            // ✨ 新增：宽松解析降级
-            console.log('[OutputParser] 严格解析失败，尝试宽松解析...');
-            const lenientResult = this._lenientParse(text);
-            if (lenientResult.success) {
-                console.log('[OutputParser] ✅ 宽松解析成功');
-                return {
-                    type: 'tool_call',
-                    tool_name: lenientResult.tool_name,
-                    parameters: lenientResult.parameters,
                     thought: thought,
                     thought_length: thought.length
                 };
@@ -137,34 +123,6 @@ export class AgentOutputParser {
             console.warn('[OutputParser] ❌ 工具调用解析失败:', e.message);
             return { success: false };
         }
-    }
-
-    // ✨ 新增：宽松解析方法
-    _lenientParse(text) {
-        console.log('[OutputParser] 执行宽松解析...');
-        
-        // 1. 提取工具名
-        const toolMatch = text.match(/行动\s*:\s*(tavily_search|crawl4ai|python_sandbox)/i);
-        if (!toolMatch || !toolMatch[1]) {
-            return { success: false };
-        }
-        const tool_name = toolMatch[1];
-
-        // 2. 提取参数
-        const inputMatch = text.match(/行动输入\s*:\s*({[\s\S]*?})/i);
-        if (inputMatch && inputMatch[1]) {
-            try {
-                let jsonStr = inputMatch[1];
-                // 修复不完整JSON
-                if (!jsonStr.endsWith('}')) jsonStr += '}';
-                const parameters = JSON.parse(this._cleanJsonString(jsonStr));
-                return { success: true, tool_name, parameters };
-            } catch (e) {
-                console.warn('[OutputParser] 宽松解析JSON失败:', e.message);
-            }
-        }
-        
-        return { success: false };
     }
 
     // 🛠️ 判断是否应该是最终答案

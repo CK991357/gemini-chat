@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/AgentLogic.js - 关键词触发最终版
+// src/static/js/agent/deepresearch/AgentLogic.js - 规划-执行-调整模式版本
 
 export class AgentLogic {
     constructor(chatApiHandler) {
@@ -8,95 +8,17 @@ export class AgentLogic {
         this.chatApiHandler = chatApiHandler;
     }
 
-    // ✨ 智能规划器 - 支持多种研究模式
-    async createInitialPlan(topic, researchMode = 'standard') {
-        const plannerPrompt = this._getPlannerPrompt(topic, researchMode);
-
-        try {
-            const llmResponse = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: plannerPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
-                temperature: 0.1,
-            });
-
-            const responseText = llmResponse?.choices?.[0]?.message?.content || '{}';
-            
-            // 增强JSON解析容错
-            const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, responseText];
-            const plan = JSON.parse(jsonMatch[1]);
-            
-            // 验证计划结构
-            if (plan?.research_plan?.length > 0) {
-                console.log(`[AgentLogic] 生成${researchMode}研究计划成功，共${plan.research_plan.length}个步骤`);
-                return plan;
-            }
-            throw new Error('计划结构无效');
-            
-        } catch (error) {
-            console.error('[AgentLogic] 规划失败，使用降级方案:', error);
-            return this._createFallbackPlan(topic, researchMode);
-        }
-    }
-
-    // ✨ 获取规划器提示词
-    _getPlannerPrompt(topic, researchMode) {
-        const modeConfigs = {
-            deep: {
-                role: "顶级深度研究策略师",
-                instructions: `1. 将研究主题分解为5-7个逻辑连贯的深度研究步骤
-2. 每个步骤必须解决一个明确的深度分析子问题
-3. 为每个步骤提供2-3个精准的搜索关键词
-4. 预估每个步骤所需的信息深度（必须包含深度挖掘）
-5. 确保覆盖：问题解构、多维度分析、权威验证、辩证解决方案、创新建议`,
-                iterations: 6,
-                risk: "中|高"
-            },
-            academic: {
-                role: "学术研究策略师", 
-                instructions: `1. 将研究主题分解为4-6个符合学术规范的步骤
-2. 每个步骤必须解决一个学术研究子问题
-3. 为每个步骤提供2-3个学术搜索关键词
-4. 强调文献综述、方法论、理论框架和学术引用`,
-                iterations: 5,
-                risk: "中"
-            },
-            business: {
-                role: "商业分析策略师",
-                instructions: `1. 将研究主题分解为3-5个商业分析步骤
-2. 每个步骤聚焦市场、竞争、战略或财务分析
-3. 为每个步骤提供2-3个商业关键词
-4. 强调可行性、ROI、市场数据和商业洞察`,
-                iterations: 4, 
-                risk: "中"
-            },
-            technical: {
-                role: "技术研究策略师",
-                instructions: `1. 将研究主题分解为4-6个技术分析步骤
-2. 每个步骤聚焦架构、实现、性能或最佳实践
-3. 为每个步骤提供2-3个技术关键词
-4. 强调技术细节、实现方案和性能指标`,
-                iterations: 5,
-                risk: "中"
-            },
-            standard: {
-                role: "AI研究策略师",
-                instructions: `1. 将研究主题分解为3-5个逻辑连贯的研究步骤
-2. 每个步骤必须解决一个明确的子问题
-3. 为每个步骤提供1-2个精准的搜索关键词
-4. 预估每个步骤所需的信息深度（浅层概览/中层分析/深度挖掘）`,
-                iterations: 4,
-                risk: "低|中|高"
-            }
-        };
-
-        const config = modeConfigs[researchMode] || modeConfigs.standard;
-
-        return `
-# 角色：${config.role}
+    // ✨ 新增：智能规划器 - 使用更强的模型生成结构化研究计划
+    async createInitialPlan(topic) {
+        const plannerPrompt = `
+# 角色：顶级AI研究策略师
 你负责为复杂研究任务制定高效的研究策略。
 
 # 核心指令
-${config.instructions}
+1. 将研究主题分解为3-5个逻辑连贯的研究步骤
+2. 每个步骤必须解决一个明确的子问题
+3. 为每个步骤提供1-2个精准的搜索关键词
+4. 预估每个步骤所需的信息深度（浅层概览/中层分析/深度挖掘）
 
 # 输出格式（严格JSON）
 {
@@ -109,205 +31,74 @@ ${config.instructions}
       "expected_tools": ["tavily_search", "crawl4ai"]
     }
   ],
-  "estimated_iterations": ${config.iterations},
-  "risk_assessment": "${config.risk}",
-  "research_mode": "${researchMode}"
+  "estimated_iterations": 4,
+  "risk_assessment": "低|中|高"
 }
 
 # 研究主题
 "${topic}"
 
 现在生成研究计划：`;
+
+        try {
+            const llmResponse = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: plannerPrompt }],
+                model: 'gemini-2.5-flash-preview-09-2025', // 使用最强模型规划
+                temperature: 0.1,
+            });
+
+            const responseText = llmResponse?.choices?.[0]?.message?.content || '{}';
+            
+            // 增强JSON解析容错
+            const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, responseText];
+            const plan = JSON.parse(jsonMatch[1]);
+            
+            // 验证计划结构
+            if (plan?.research_plan?.length > 0) {
+                console.log(`[AgentLogic] 生成研究计划成功，共${plan.research_plan.length}个步骤`);
+                return plan;
+            }
+            throw new Error('计划结构无效');
+            
+        } catch (error) {
+            console.error('[AgentLogic] 规划失败，使用降级方案:', error);
+            return this._createFallbackPlan(topic);
+        }
     }
 
-    // ✨ 降级方案 - 支持所有模式
-    _createFallbackPlan(topic, researchMode = 'standard') {
-        const fallbackPlans = {
-            deep: {
-                research_plan: [
-                    {
-                        step: 1,
-                        sub_question: `深度解构"${topic}"的核心问题与假设`,
-                        initial_queries: [`${topic} 核心问题`, `${topic} 关键假设`, `${topic} 问题边界`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 2,
-                        sub_question: "多维度深度探索与技术可行性分析",
-                        initial_queries: [`${topic} 技术维度`, `${topic} 实践案例`, `${topic} 历史演变`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 3, 
-                        sub_question: "权威理论与前沿研究成果验证",
-                        initial_queries: [`${topic} 权威研究`, `${topic} 学术论文`, `${topic} 最新数据`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 4,
-                        sub_question: "辩证解决方案设计与评估", 
-                        initial_queries: [`${topic} 解决方案`, `${topic} 替代方案`, `${topic} 风险评估`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 5,
-                        sub_question: "创新建议与执行路径规划",
-                        initial_queries: [`${topic} 创新建议`, `${topic} 实施路径`, `${topic} 挑战应对`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["crawl4ai"]
-                    }
-                ],
-                estimated_iterations: 6,
-                risk_assessment: "中",
-                research_mode: "deep"
-            },
-            academic: {
-                research_plan: [
-                    {
-                        step: 1,
-                        sub_question: `界定"${topic}"的研究范围和理论框架`,
-                        initial_queries: [`${topic} 研究综述`, `${topic} 理论框架`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 2,
-                        sub_question: "收集相关学术文献和研究成果",
-                        initial_queries: [`${topic} 学术论文`, `${topic} 研究现状`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 3,
-                        sub_question: "分析研究方法和数据支持",
-                        initial_queries: [`${topic} 研究方法`, `${topic} 实证数据`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["crawl4ai"]
-                    },
-                    {
-                        step: 4,
-                        sub_question: "总结学术贡献和研究局限",
-                        initial_queries: [`${topic} 学术价值`, `${topic} 研究局限`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search"]
-                    }
-                ],
-                estimated_iterations: 5,
-                risk_assessment: "中", 
-                research_mode: "academic"
-            },
-            business: {
-                research_plan: [
-                    {
-                        step: 1,
-                        sub_question: `分析"${topic}"的市场规模和增长趋势`,
-                        initial_queries: [`${topic} 市场规模`, `${topic} 增长趋势`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search"]
-                    },
-                    {
-                        step: 2, 
-                        sub_question: "评估竞争格局和主要参与者",
-                        initial_queries: [`${topic} 竞争分析`, `${topic} 主要企业`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 3,
-                        sub_question: "识别商业机会和潜在风险",
-                        initial_queries: [`${topic} 商业机会`, `${topic} 风险分析`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 4,
-                        sub_question: "提出战略建议和实施方案",
-                        initial_queries: [`${topic} 战略建议`, `${topic} 实施计划`],
-                        depth_required: "中层分析", 
-                        expected_tools: ["tavily_search"]
-                    }
-                ],
-                estimated_iterations: 4,
-                risk_assessment: "中",
-                research_mode: "business"
-            },
-            technical: {
-                research_plan: [
-                    {
-                        step: 1,
-                        sub_question: `理解"${topic}"的技术架构和核心组件`,
-                        initial_queries: [`${topic} 技术架构`, `${topic} 核心组件`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 2,
-                        sub_question: "分析技术实现方案和工具链",
-                        initial_queries: [`${topic} 实现方案`, `${topic} 技术工具`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 3,
-                        sub_question: "评估性能指标和优化策略",
-                        initial_queries: [`${topic} 性能指标`, `${topic} 优化方法`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["crawl4ai"]
-                    },
-                    {
-                        step: 4,
-                        sub_question: "总结最佳实践和部署方案",
-                        initial_queries: [`${topic} 最佳实践`, `${topic} 部署方案`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search"]
-                    }
-                ],
-                estimated_iterations: 5,
-                risk_assessment: "中",
-                research_mode: "technical"
-            },
-            standard: {
-                research_plan: [
-                    {
-                        step: 1,
-                        sub_question: `了解"${topic}"的基本背景和定义`,
-                        initial_queries: [`${topic} 是什么`, `${topic} 基本信息`],
-                        depth_required: "浅层概览",
-                        expected_tools: ["tavily_search"]
-                    },
-                    {
-                        step: 2,
-                        sub_question: "深入挖掘具体细节和关键信息",
-                        initial_queries: [`${topic} 详细分析`, `${topic} 深度解读`],
-                        depth_required: "中层分析", 
-                        expected_tools: ["tavily_search", "crawl4ai"]
-                    },
-                    {
-                        step: 3,
-                        sub_question: "收集权威来源和验证信息准确性",
-                        initial_queries: [`${topic} 权威来源`, `${topic} 官方信息`],
-                        depth_required: "深度挖掘",
-                        expected_tools: ["crawl4ai"]
-                    }
-                ],
-                estimated_iterations: 4,
-                risk_assessment: "低",
-                research_mode: "standard"
-            }
+    // ✨ 新增：降级方案 - 确保系统鲁棒性
+    _createFallbackPlan(topic) {
+        return {
+            research_plan: [
+                {
+                    step: 1,
+                    sub_question: `了解"${topic}"的基本背景和定义`,
+                    initial_queries: [`${topic} 是什么`, `${topic} 基本信息`],
+                    depth_required: "浅层概览",
+                    expected_tools: ["tavily_search"]
+                },
+                {
+                    step: 2,
+                    sub_question: "深入挖掘具体细节和关键信息",
+                    initial_queries: [`${topic} 详细分析`, `${topic} 深度解读`],
+                    depth_required: "中层分析", 
+                    expected_tools: ["tavily_search", "crawl4ai"]
+                },
+                {
+                    step: 3,
+                    sub_question: "收集权威来源和验证信息准确性",
+                    initial_queries: [`${topic} 权威来源`, `${topic} 官方信息`],
+                    depth_required: "深度挖掘",
+                    expected_tools: ["crawl4ai"]
+                }
+            ],
+            estimated_iterations: 4,
+            risk_assessment: "低"
         };
-
-        return fallbackPlans[researchMode] || fallbackPlans.standard;
     }
 
     async plan(inputs, runManager) {
-        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard' } = inputs;
-        
-        // 🎯 关键词检测逻辑
-        const detectedMode = this._detectResearchMode(topic);
+        const { topic, intermediateSteps, availableTools, researchPlan } = inputs;
         
         // 动态计算当前步骤
         const currentStep = this._determineCurrentStep(researchPlan, intermediateSteps);
@@ -317,19 +108,18 @@ ${config.instructions}
             intermediateSteps, 
             availableTools,
             researchPlan,
-            currentStep,
-            researchMode: detectedMode
+            currentStep
         });
         
-        console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
+        console.log('[AgentLogic] 构建的提示词长度:', prompt.length);
+        console.log('[AgentLogic] 提示词结尾部分:', prompt.substring(prompt.length - 500));
         
         await runManager?.callbackManager.invokeEvent('on_agent_think_start', { 
             run_id: runManager.runId,
             data: { 
                 prompt_length: prompt.length,
                 current_step: currentStep,
-                total_steps: researchPlan?.research_plan?.length || '未知',
-                research_mode: detectedMode
+                total_steps: researchPlan?.research_plan?.length || '未知'
             }
         });
         
@@ -353,197 +143,36 @@ ${config.instructions}
                 data: { 
                     response_length: responseText.length,
                     response_preview: responseText.substring(0, 200),
-                    current_step: currentStep,
-                    research_mode: detectedMode
+                    current_step: currentStep
                 } 
             });
             
             return responseText;
 
         } catch (error) {
-            // 🎯 修复：确保 error 对象存在
-            const errorMessage = error?.message || '未知错误';
-            console.error("[AgentLogic] LLM 思考失败:", errorMessage);
-            
-            await runManager?.callbackManager.invokeEvent('on_agent_think_error', {
-                run_id: runManager.runId,
-                data: { error: errorMessage }
+            console.error("[AgentLogic] LLM 思考失败:", error);
+            await runManager?.callbackManager.invokeEvent('on_agent_think_error', { 
+                run_id: runManager.runId, 
+                data: { error: error.message } 
             });
             
-            return `思考: 发生内部错误，无法继续规划。错误信息: ${errorMessage}\n最终答案: 研究因内部错误终止。`;
+            // 返回一个格式正确的错误响应
+            return `思考: 发生内部错误，无法继续规划。错误信息: ${error.message}\n最终答案: 研究因内部错误终止。`;
         }
     }
 
-    // 🎯 关键词检测逻辑
-    _detectResearchMode(topic) {
-        const keywords = {
-            '深度研究': 'deep',
-            '学术论文': 'academic', 
-            '商业分析': 'business',
-            '技术文档': 'technical',
-            '标准报告': 'standard'
-        };
-
-        // 清理topic，移除关键词
-        let cleanTopic = topic;
-        let detectedMode = 'standard'; // 默认模式
-
-        for (const [keyword, mode] of Object.entries(keywords)) {
-            if (topic.includes(keyword)) {
-                detectedMode = mode;
-                cleanTopic = topic.replace(keyword, '').trim();
-                break;
-            }
-        }
-
-        return detectedMode;
-    }
-
-    // ✨ 重构：主提示词构建
-    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard' }) {
+    // ✨ 重构：强化版主提示词构建
+    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1 }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
-        // 动态计划显示
+        // 动态计划显示 - 突出当前步骤
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
         
-        // 🎯 根据模式选择不同的配置
-        const modeConfigs = {
-            deep: {
-                role: "深度研究专家",
-                description: "你是一个专业的研究专家和问题解决顾问。你的任务是为复杂的用户查询提供深度、全面且专业的分析报告。",
-                specialInstructions: `
-### 🎯 深度研究特别指导：
-- **多源验证**：每个关键论点至少需要2个独立来源验证
-- **权威优先**：优先搜索学术论文、行业报告、官方数据
-- **辩证思考**：主动寻找反对观点和局限性分析
-- **深度挖掘**：不要停留在表面信息，深入探索底层机制`,
-                reportRequirements: `
-## 5. 最终报告要求（深度研究模式）
-
-**核心章节**：
-# 主标题
-## 问题解构与分析
-## 多维度深度探索（至少从技术、实践、历史三个维度）
-## 权威验证与专业深化  
-## 辩证解决方案（至少3个可行方案+反对观点）
-## 创新建议与执行路径
-
-**质量要求**：
-- 字数：2500-3500字
-- 内容：深度、全面、专业、辩证
-- 风格：专业术语但易于理解，**加粗**关键结论
-- 引用：所有关键数据必须验证并标注来源[1][2]
-- 深度标准：至少两个分析层次，数据支撑的论点，创新性见解`
-            },
-            academic: {
-                role: "学术研究专家",
-                description: "你是一个严谨的学术研究专家，擅长按照学术规范进行研究和撰写论文。",
-                specialInstructions: `
-### 🎓 学术研究特别指导：
-- **文献严谨**：优先引用权威学术来源和期刊论文
-- **方法论**：关注研究设计、数据收集和分析方法
-- **理论框架**：注重理论支撑和概念清晰度
-- **引用规范**：严格按照学术引用格式`,
-                reportRequirements: `
-## 5. 最终报告要求（学术论文模式）
-
-**核心章节**：
-# 标题
-## 摘要
-## 引言与研究背景
-## 文献综述
-## 方法论
-## 分析与讨论
-## 结论
-## 参考文献
-
-**质量要求**：
-- 字数：2500-3500字
-- 内容：学术严谨、逻辑清晰、论证充分
-- 风格：正式学术语言，避免口语化
-- 引用：严格标注来源，使用标准引用格式`
-            },
-            business: {
-                role: "商业分析专家", 
-                description: "你是一个敏锐的商业分析师，擅长市场分析、竞争评估和战略规划。",
-                specialInstructions: `
-### 💼 商业分析特别指导：
-- **市场导向**：关注市场规模、增长趋势和用户需求
-- **竞争意识**：分析竞争对手和差异化优势
-- **可行性**：评估技术可行性和商业可行性
-- **ROI思维**：关注投资回报和商业价值`,
-                reportRequirements: `
-## 5. 最终报告要求（商业分析模式）
-
-**核心章节**：
-# 执行摘要
-## 市场分析
-## 竞争格局
-## 机会与挑战
-## 战略建议
-## 财务影响
-## 实施路线图
-
-**质量要求**：
-- 字数：1500-2500字
-- 内容：商业洞察、数据支撑、可行性分析
-- 风格：专业但易懂，突出关键商业价值
-- 引用：市场数据必须标注来源`
-            },
-            technical: {
-                role: "技术研究专家",
-                description: "你是一个资深的技术专家，擅长深入分析技术架构、实现方案和性能优化。",
-                specialInstructions: `
-### 🛠️ 技术研究特别指导：
-- **技术深度**：深入技术细节和实现机制
-- **架构思维**：关注系统架构和组件设计
-- **性能意识**：评估性能指标和优化空间
-- **实践导向**：提供可落地的技术方案`,
-                reportRequirements: `
-## 5. 最终报告要求（技术文档模式）
-
-**核心章节**：
-# 技术概述
-## 架构设计
-## 核心组件
-## 实现细节
-## 性能评估
-## 最佳实践
-## 故障排除
-
-**质量要求**：
-- 字数：1800-2800字
-- 内容：技术准确、细节丰富、方案可行
-- 风格：技术专业但不晦涩，代码示例清晰
-- 引用：技术规格和性能数据必须验证`
-            },
-            standard: {
-                role: "策略型AI研究专家",
-                description: "你是一个高效、精准的研究专家，擅长使用多种工具组合来获取深度信息。",
-                specialInstructions: '',
-                reportRequirements: `
-## 5. 最终报告要求
-**结构**：
-# 主标题
-## 一、引言与背景
-## 二、核心内容分析（至少2个子部分）
-## 三、深度洞察与总结
-## 四、资料来源
-
-**质量要求**：
-- 字数：800-1200字
-- 内容：全面、准确、深度
-- 风格：专业、客观、信息密集
-- 引用：关键信息标注来源[1][2]`
-            }
-        };
-
-        const config = modeConfigs[researchMode] || modeConfigs.standard;
-
+        // ✨ 关键优化：强化策略指导的提示词
         const prompt = `
-# 角色：${config.role}
-${config.description}
+# 角色：策略型AI研究专家
+你是一个高效、精准的研究专家，擅长使用多种工具组合来获取深度信息。
 
 ${planText}
 
@@ -569,14 +198,18 @@ ${formattedHistory}
 - 探索新概念、寻找多个信息源
 - 快速获取概况和背景信息  
 - 关键词优化：使用更具体、更精准的搜索词
+- **示例**："摇滚红与黑 剧情分析" 而非 "摇滚红与黑"
 
 ### 🕷️ crawl4ai 使用时机：
 - 当搜索结果中出现权威来源时（百科、官方页面、深度文章）
 - 需要获取完整内容而非摘要时
 - 信息片段不足以回答深度问题时
 - **必须参数**：{url: "具体的URL链接"}
+- **禁止**：对每个链接都使用爬虫
 
-${config.specialInstructions}
+### 💻 python_sandbox 使用时机：
+- 需要数据处理、计算或分析时
+- 生成图表或进行复杂计算时
 
 ## 3. 动态调整权限
 如果你发现：
@@ -592,7 +225,19 @@ ${config.specialInstructions}
 - 关键问题都已得到充分回答
 - 连续2次迭代没有获得新信息
 
-${config.reportRequirements}
+## 5. 最终报告要求
+**结构**：
+# 主标题
+## 一、引言与背景
+## 二、核心内容分析（至少2个子部分）
+## 三、深度洞察与总结
+## 四、资料来源
+
+**质量要求**：
+- 字数：800-1200字
+- 内容：全面、准确、深度
+- 风格：专业、客观、信息密集
+- 引用：关键信息标注来源[1][2]
 
 # 输出格式 (严格遵守)
 
@@ -621,10 +266,8 @@ ${config.reportRequirements}
         return prompt;
     }
 
-    // ✨ 格式化研究计划
+    // ✨ 新增：格式化研究计划，突出当前步骤
     _formatResearchPlan(plan, currentStep) {
-        if (!plan || !plan.research_plan) return '';
-        
         return `
 # 📋 研究计划（当前步骤：${currentStep}）
 ${plan.research_plan.map(item => 
@@ -633,13 +276,12 @@ ${plan.research_plan.map(item =>
     `▢ 步骤 ${item.step}: ${item.sub_question}`
 ).join('\n')}
 
-**预计总迭代**: ${plan.estimated_iterations || 4} 次
-**复杂度评估**: ${plan.risk_assessment || '未知'}
-**研究模式**: ${plan.research_mode || 'standard'}
+**预计总迭代**: ${plan.estimated_iterations} 次
+**复杂度评估**: ${plan.risk_assessment}
 `;
     }
 
-    // ✨ 步骤追踪逻辑
+    // ✨ 新增：步骤追踪逻辑
     _determineCurrentStep(plan, history) {
         if (!plan || !history || history.length === 0) return 1;
         
@@ -651,6 +293,7 @@ ${plan.research_plan.map(item =>
     }
 
     _isStepCompleted(step, history) {
+        // 基于历史判断步骤是否完成（简化版）
         const stepKeywords = step.sub_question.toLowerCase().split(' ');
         const recentActions = history.slice(-3).join(' ').toLowerCase();
         
@@ -660,7 +303,7 @@ ${plan.research_plan.map(item =>
         );
     }
 
-    // 🎯 格式化历史记录
+    // 🎯 重构：格式化历史记录
     _formatHistory(intermediateSteps) {
         if (!intermediateSteps || intermediateSteps.length === 0) {
             return "这是研究的第一步，还没有历史记录。";
@@ -668,6 +311,7 @@ ${plan.research_plan.map(item =>
 
         console.log(`[AgentLogic] 构建历史记录，步骤数: ${intermediateSteps.length}`);
         
+        // 🎯 关键修复：构建包含完整"思考->行动->观察"链条的历史记录
         const formattedSteps = intermediateSteps.map((step, index) => {
             const toolName = step.action?.tool_name || 'unknown_action';
             const parameters = step.action?.parameters || {};
@@ -677,6 +321,7 @@ ${plan.research_plan.map(item =>
                 parameters: parameters
             }, null, 2);
             
+            // 🎯 使用保存的思考过程，如果不存在则提供智能默认值
             let thought = step.action?.thought;
             if (!thought) {
                 if (toolName === 'self_correction') {
@@ -699,7 +344,7 @@ ${plan.research_plan.map(item =>
         return history;
     }
 
-    // 🎯 格式化工具描述
+    // 🎯 新增：格式化工具描述
     _formatTools(availableTools) {
         if (!availableTools || availableTools.length === 0) {
             return "暂无可用工具";

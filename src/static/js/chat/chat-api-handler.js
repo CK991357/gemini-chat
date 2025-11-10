@@ -32,73 +32,6 @@ export class ChatApiHandler {
     }
 
     /**
-     * 🎯 [核心修复] Agent模式专用智能重试机制
-     * 专门处理Agent模式下的API速率限制问题
-     */
-    async _fetchWithAgentRetry(url, options) {
-        const maxRetries = 3;
-        const baseDelay = 3000; // 3秒基础延迟
-        const maxDelay = 20000; // 20秒最大延迟
-        let lastError;
-    
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-            try {
-                const response = await fetch(url, options);
-    
-                if (response.status === 429) {
-                    // 指数退避 + 随机抖动
-                    const exponentialBackoff = baseDelay * Math.pow(2, attempt);
-                    const jitter = Math.random() * 1000; // 1秒随机抖动
-                    const waitTime = Math.min(exponentialBackoff + jitter, maxDelay);
-                    
-                    console.warn(`[ChatApiHandler] API速率限制(429)。将在 ${Math.round(waitTime)}ms 后重试 (尝试 ${attempt + 1}/${maxRetries})`);
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
-                    continue;
-                }
-    
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP Error: ${response.status} - ${errorText}`);
-                }
-    
-                return response;
-    
-            } catch (error) {
-                lastError = error;
-                console.warn(`[ChatApiHandler] API调用失败 (尝试 ${attempt + 1}/${maxRetries}):`, error.message);
-                // 移除立即抛出逻辑，让循环自然结束
-            }
-        }
-        // 🎯 修复：确保始终返回 Error 对象
-        const finalError = lastError || new Error(`API调用在 ${maxRetries} 次重试后仍然失败`);
-        console.error(`[ChatApiHandler] 所有重试均失败:`, finalError.message);
-        throw finalError;
-    }
-
-    /**
-     * 🎯 智能检测Agent请求
-     */
-    _isAgentRequest(requestBody) {
-        // 基于消息内容特征来判断是否为Agent模式
-        const agentKeywords = ['思考:', '研究计划:', '行动:', '行动输入:', '最终答案:'];
-        
-        // 检查最近的几条消息
-        const recentMessages = requestBody.messages?.slice(-5) || [];
-        
-        return recentMessages.some(msg => {
-            const content = msg.content;
-            if (typeof content === 'string') {
-                return agentKeywords.some(kw => content.includes(kw));
-            } else if (Array.isArray(content)) {
-                // 处理多模态消息
-                const textPart = content.find(p => p.type === 'text');
-                return textPart && agentKeywords.some(kw => textPart.text.includes(kw));
-            }
-            return false;
-        });
-    }
-
-    /**
      * Processes an HTTP Server-Sent Events (SSE) stream from the chat completions API.
      * It handles text accumulation, UI updates, and tool calls.
      * @param {object} requestBody - The request body to be sent to the model.
@@ -131,22 +64,7 @@ export class ChatApiHandler {
         // 提取 tools 字段，它可能来自 vision-core.js 或 chat-ui.js
         const tools = requestBody.tools;
 
-        // 🎯 核心修改：检查是否为Agent请求并添加标记
-        const isAgentMode = this._isAgentRequest(requestBody);
-        const finalRequestBody = { ...requestBody };
-        
-        if (isAgentMode) {
-            finalRequestBody._agent_metadata = { 
-                is_agent: true,
-                timestamp: new Date().toISOString(),
-                request_id: `agent_stream_${Date.now()}`
-            };
-            console.log(`[ChatApiHandler] Agent流式请求已标记`);
-        }
-
         try {
-            // 🎯 注意：streamChatCompletion 保持原有的 fetch 逻辑，不在这里使用重试
-            // 因为流式响应不适合重试机制
             const response = await fetch('/api/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -154,7 +72,7 @@ export class ChatApiHandler {
                     'Authorization': `Bearer ${apiKey}`
                 },
                 // 将 tools, enableReasoning 和 disableSearch 参数添加到请求体中
-                body: JSON.stringify({ ...finalRequestBody, tools, enableReasoning, disableSearch })
+                body: JSON.stringify({ ...requestBody, tools, enableReasoning, disableSearch })
             });
 
             if (!response.ok) {
@@ -431,48 +349,16 @@ export class ChatApiHandler {
      * @returns {Promise<object>} 响应JSON
      */
     async completeChat(requestBody, apiKey) {
-        const isAgentMode = this._isAgentRequest(requestBody);
-        
+        // 尝试非流式调用；如果后端不支持或返回不符合预期，则回退到流式组装
         try {
-            let response;
-            
-            // 🎯 核心修改：创建最终请求体
-            const finalRequestBody = { 
-                ...requestBody, 
-                stream: false 
-            };
-            
-            // 🎯 如果是Agent模式，添加信令标记
-            if (isAgentMode) {
-                finalRequestBody._agent_metadata = { 
-                    is_agent: true,
-                    timestamp: new Date().toISOString(),
-                    request_id: `agent_${Date.now()}`
-                };
-                console.log(`[ChatApiHandler] Agent模式请求已标记，启用智能重试`);
-            }
-
-            if (isAgentMode) {
-                // Agent模式：使用带重试的专用方法
-                response = await this._fetchWithAgentRetry('/api/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
-                    },
-                    body: JSON.stringify(finalRequestBody)
-                });
-            } else {
-                // 标准模式：保持原有逻辑
-                response = await fetch('/api/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
-                    },
-                    body: JSON.stringify(finalRequestBody)
-                });
-            }
+            const response = await fetch('/api/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({ ...requestBody, stream: false })
+            });
 
             if (response.ok) {
                 let json = null;
@@ -525,7 +411,7 @@ export class ChatApiHandler {
             throw new Error('无法从流式/非流式响应中提取最终文本');
 
         } catch (error) {
-            console.error(`[ChatApiHandler] completeChat ${isAgentMode ? 'Agent模式' : '标准模式'} 失败:`, error);
+            console.error('[ChatApiHandler] completeChat failed (both non-stream and stream fallback):', error);
             throw error;
         }
     }
@@ -600,7 +486,7 @@ export class ChatApiHandler {
     _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
-        const callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
+    const callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
 
         try {
