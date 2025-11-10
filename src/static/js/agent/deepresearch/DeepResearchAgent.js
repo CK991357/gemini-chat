@@ -18,10 +18,22 @@ export class DeepResearchAgent {
             toolUsage: { tavily_search: 0, crawl4ai: 0, python_sandbox: 0 },
             stepProgress: [],
             informationGain: [],
-            planCompletion: 0
+            planCompletion: 0,
+            tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } // 🎯 新增
         };
 
         console.log(`[DeepResearchAgent] 初始化完成，可用研究工具: ${Object.keys(tools).join(', ')}`);
+    }
+
+    // 🎯 新增：Token 追踪方法
+    _updateTokenUsage(usage) {
+        if (!usage) return;
+        
+        this.metrics.tokenUsage.prompt_tokens += usage.prompt_tokens || 0;
+        this.metrics.tokenUsage.completion_tokens += usage.completion_tokens || 0;
+        this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
+        
+        console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
     }
 
     async conductResearch(researchRequest) {
@@ -72,7 +84,9 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] 阶段1：生成${detectedMode}研究计划...`);
         let researchPlan;
         try {
-            researchPlan = await this.agentLogic.createInitialPlan(cleanTopic, detectedMode);
+            const planResult = await this.agentLogic.createInitialPlan(cleanTopic, detectedMode);
+            researchPlan = planResult;
+            this._updateTokenUsage(planResult.usage); // 🎯 新增
             
             // 实时通知UI研究计划
             await this.callbackManager.invokeEvent('on_research_plan_generated', {
@@ -131,10 +145,12 @@ export class DeepResearchAgent {
                     researchMode: detectedMode
                 };
 
-                const agentDecisionText = await this.agentLogic.plan(logicInput, { 
-                    run_id: runId, 
-                    callbackManager: this.callbackManager 
+                const agentDecision = await this.agentLogic.plan(logicInput, {
+                    run_id: runId,
+                    callbackManager: this.callbackManager
                 });
+                const agentDecisionText = agentDecision.responseText;
+                this._updateTokenUsage(agentDecision.usage); // 🎯 新增
 
                 console.log('[DeepResearchAgent] AgentLogic返回的原始决策文本:');
                 console.log('--- 开始 ---');
@@ -331,7 +347,7 @@ export class DeepResearchAgent {
         // 在每次迭代结束时更新统计
         updateResearchStats({
             iterations: iterations,
-            metrics: this.metrics
+            metrics: this.metrics // 🎯 确保包含 tokenUsage
         });
         
         // ✨ 阶段3：统一的报告生成 (最终优化 #2)
@@ -410,6 +426,7 @@ export class DeepResearchAgent {
                 model: 'gemini-2.5-flash-preview-09-2025',
                 temperature: 0.3,
             });
+            this._updateTokenUsage(reportResponse.usage); // 🎯 新增
             
             let finalReport = reportResponse?.choices?.[0]?.message?.content || 
                 this._generateFallbackReport(topic, intermediateSteps, uniqueSources, researchMode);

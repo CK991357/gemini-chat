@@ -28,7 +28,10 @@ export class AgentLogic {
             // 验证计划结构
             if (plan?.research_plan?.length > 0) {
                 console.log(`[AgentLogic] 生成${researchMode}研究计划成功，共${plan.research_plan.length}个步骤`);
-                return plan;
+                return {
+                    ...plan,
+                    usage: llmResponse.usage // 🎯 新增：返回 token usage
+                };
             }
             throw new Error('计划结构无效');
             
@@ -358,7 +361,10 @@ ${config.instructions}
                 } 
             });
             
-            return responseText;
+            return {
+                responseText: responseText,
+                usage: llmResponse.usage // 🎯 新增：返回 token usage
+            };
 
         } catch (error) {
             // 🎯 修复：确保 error 对象存在
@@ -370,7 +376,11 @@ ${config.instructions}
                 data: { error: errorMessage }
             });
             
-            return `思考: 发生内部错误，无法继续规划。错误信息: ${errorMessage}\n最终答案: 研究因内部错误终止。`;
+            // ✨ 修改：返回兼容的结构，即使在出错时
+            return {
+                responseText: `思考: 发生内部错误，无法继续规划。错误信息: ${errorMessage}\n最终答案: 研究因内部错误终止。`,
+                usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } // 提供一个空的usage对象
+            };
         }
     }
 
