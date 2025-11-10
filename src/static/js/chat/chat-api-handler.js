@@ -131,6 +131,19 @@ export class ChatApiHandler {
         // 提取 tools 字段，它可能来自 vision-core.js 或 chat-ui.js
         const tools = requestBody.tools;
 
+        // 🎯 核心修改：检查是否为Agent请求并添加标记
+        const isAgentMode = this._isAgentRequest(requestBody);
+        const finalRequestBody = { ...requestBody };
+        
+        if (isAgentMode) {
+            finalRequestBody._agent_metadata = { 
+                is_agent: true,
+                timestamp: new Date().toISOString(),
+                request_id: `agent_stream_${Date.now()}`
+            };
+            console.log(`[ChatApiHandler] Agent流式请求已标记`);
+        }
+
         try {
             // 🎯 注意：streamChatCompletion 保持原有的 fetch 逻辑，不在这里使用重试
             // 因为流式响应不适合重试机制
@@ -141,7 +154,7 @@ export class ChatApiHandler {
                     'Authorization': `Bearer ${apiKey}`
                 },
                 // 将 tools, enableReasoning 和 disableSearch 参数添加到请求体中
-                body: JSON.stringify({ ...requestBody, tools, enableReasoning, disableSearch })
+                body: JSON.stringify({ ...finalRequestBody, tools, enableReasoning, disableSearch })
             });
 
             if (!response.ok) {
@@ -423,16 +436,31 @@ export class ChatApiHandler {
         try {
             let response;
             
+            // 🎯 核心修改：创建最终请求体
+            const finalRequestBody = { 
+                ...requestBody, 
+                stream: false 
+            };
+            
+            // 🎯 如果是Agent模式，添加信令标记
             if (isAgentMode) {
-                // 🎯 Agent模式：使用带重试的专用方法
-                console.log('[ChatApiHandler] Agent模式检测到，启用智能重试机制');
+                finalRequestBody._agent_metadata = { 
+                    is_agent: true,
+                    timestamp: new Date().toISOString(),
+                    request_id: `agent_${Date.now()}`
+                };
+                console.log(`[ChatApiHandler] Agent模式请求已标记，启用智能重试`);
+            }
+
+            if (isAgentMode) {
+                // Agent模式：使用带重试的专用方法
                 response = await this._fetchWithAgentRetry('/api/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify({ ...requestBody, stream: false })
+                    body: JSON.stringify(finalRequestBody)
                 });
             } else {
                 // 标准模式：保持原有逻辑
@@ -442,7 +470,7 @@ export class ChatApiHandler {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify({ ...requestBody, stream: false })
+                    body: JSON.stringify(finalRequestBody)
                 });
             }
 

@@ -414,6 +414,20 @@ async function handleAPIRequest(request, env) {
             }
             // 🔥🔥🔥 技能注入结束 🔥🔥🔥
 
+            // 🎯 核心修改：Agent信令检测和路由
+            let isAgentRequest = false;
+            
+            // 检查Agent标记
+            if (body._agent_metadata && body._agent_metadata.is_agent === true) {
+                isAgentRequest = true;
+                const agentRequestId = body._agent_metadata.request_id || '';
+                
+                // 🎯 重要：转发前删除标记，确保上游API兼容性
+                delete body._agent_metadata;
+                
+                console.log(`🚀 [Agent路由] 检测到Agent请求 ${agentRequestId}，将路由到轮询端点`);
+            }
+
             const model = body.model || '';
 
             // 🎯 1. 摘要子代理的专用路由 (最高优先级)
@@ -449,40 +463,40 @@ async function handleAPIRequest(request, env) {
             }
             
             // 路由到新的聊天/搜索请求处理器
+            // 🎯 主要Gemini模型路由 - 根据Agent标记选择端点
             if (
-                model === 'models/gemini-2.5-pro' ||
-                model === 'models/gemini-2.5-flash-preview-05-20' ||
-                model === 'models/gemini-2.5-flash-lite-preview-06-17' ||
-                model === 'models/gemini-2.0-flash'||
-                model === 'models/gemini-2.5-flash' ||
+                model.includes('gemini') ||
+                model.startsWith('models/gemini') ||
                 model === 'gemini-2.5-flash-preview-09-2025'
+            ) {
+                // 🎯 动态端点选择
+                const targetUrl = isAgentRequest
+                    ? 'https://geminiapicode.10110531.xyz/v1/chat/completions'
+                    : 'https://geminiapim.10110531.xyz/v1/chat/completions';
 
-            ) {                
-                console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
-                const targetUrl = 'https://geminiapim.10110531.xyz/v1/chat/completions';
                 const apiKey = env.AUTH_KEY;
 
                 if (!apiKey) {
                     throw new Error('AUTH_KEY is not configured in environment variables.');
                 }
 
-                // 直接将请求体转发到中转端点
+                console.log(`🎯 [API路由] 请求 ${requestId} | 模型: ${model} | Agent: ${isAgentRequest} | 端点: ${targetUrl}`);
+
                 const proxyResponse = await fetch(targetUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify(body)
+                    body: JSON.stringify(body) // 🎯 已移除Agent标记的纯净请求体
                 });
 
-                // 将中转端点的响应（包括流）直接返回给客户端
                 return new Response(proxyResponse.body, {
                     status: proxyResponse.status,
                     statusText: proxyResponse.statusText,
                     headers: {
                         'Content-Type': proxyResponse.headers.get('Content-Type'),
-                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                        'Access-Control-Allow-Origin': '*'
                     }
                 });
             } else if (model === 'glm-4.1v-thinking-flash' || model === 'glm-4v-flash' || model === 'GLM-4.5-Flash') {
