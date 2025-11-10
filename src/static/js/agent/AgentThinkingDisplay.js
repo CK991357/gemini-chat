@@ -351,6 +351,37 @@ export class AgentThinkingDisplay {
 .token-details span {
     margin-right: 8px;
 }
+
+/* ✨ 新增：可折叠 Section 样式 */
+.section-title {
+    cursor: pointer; /* ✨ 让标题看起来可以点击 */
+    user-select: none; /* ✨ 防止意外选中文本 */
+}
+
+.section-title .toggle-icon {
+    margin-left: auto; /* ✨ 将图标推到最右侧 */
+    transition: transform 0.2s ease;
+    font-size: 12px;
+}
+
+.section-content-wrapper.minimized .toggle-icon {
+    transform: rotate(-90deg); /* ✨ 最小化时旋转图标 */
+}
+
+.section-content-wrapper .section-content {
+    max-height: 500px; /* ✨ 设置一个足够大的最大高度 */
+    overflow: hidden;
+    transition: all 0.3s ease-in-out; /* ✨ 平滑过渡动画 */
+}
+
+.section-content-wrapper.minimized .section-content {
+    max-height: 0; /* ✨ 最小化时高度为0 */
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    opacity: 0; /* ✨ 渐隐效果 */
+}
         `;
 
         const styleElement = document.createElement('style');
@@ -446,53 +477,65 @@ export class AgentThinkingDisplay {
                     </div>
                     
                     <!-- 研究统计 -->
-                    <div class="research-stats-section">
-                        <div class="section-title">📈 研究统计</div>
-                        <div class="research-stats-grid">
-                            <div class="stat-item">
-                                <span class="stat-value">${queryCount}</span>
-                                <span class="stat-label">搜索次数</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">${sourcesCount}</span>
-                                <span class="stat-label">收集来源</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">${toolCallsCount}</span>
-                                <span class="stat-label">工具调用</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">${successfulTools}</span>
-                                <span class="stat-label">成功调用</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">${tokenUsage.total_tokens.toLocaleString()}</span>
-                                <span class="stat-label">Token 消耗</span>
-                                <div class="token-details">
-                                    <span>上行: ${tokenUsage.prompt_tokens.toLocaleString()}</span>
-                                    <span>下行: ${tokenUsage.completion_tokens.toLocaleString()}</span>
+                    <div class="research-stats-section section-content-wrapper">
+                        <div class="section-title" data-target="stats-content">
+                            📈 研究统计 <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content" id="stats-content">
+                            <div class="research-stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-value">${queryCount}</span>
+                                    <span class="stat-label">搜索次数</span>
                                 </div>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value" id="elapsed-time">0s</span>
-                                <span class="stat-label">已用时间</span>
+                                <div class="stat-item">
+                                    <span class="stat-value">${sourcesCount}</span>
+                                    <span class="stat-label">收集来源</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${toolCallsCount}</span>
+                                    <span class="stat-label">工具调用</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${successfulTools}</span>
+                                    <span class="stat-label">成功调用</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${tokenUsage.total_tokens.toLocaleString()}</span>
+                                    <span class="stat-label">Token 消耗</span>
+                                    <div class="token-details">
+                                        <span>上行: ${tokenUsage.prompt_tokens.toLocaleString()}</span>
+                                        <span>下行: ${tokenUsage.completion_tokens.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value" id="elapsed-time">0s</span>
+                                    <span class="stat-label">已用时间</span>
+                                </div>
                             </div>
                         </div>
                     </div>
                     
                     <!-- 🎯 搜索记录 -->
-                    <div class="query-log-section">
-                        <div class="section-title">🔍 搜索记录</div>
-                        <div class="query-log" id="query-log">
-                            ${this.renderQueryLog(researchState.queryLog)}
+                    <div class="query-log-section section-content-wrapper">
+                        <div class="section-title" data-target="query-log-content">
+                            🔍 搜索记录 <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content" id="query-log-content">
+                            <div class="query-log" id="query-log">
+                                ${this.renderQueryLog(researchState.queryLog)}
+                            </div>
                         </div>
                     </div>
                     
                     <!-- 🎯 执行日志 -->
-                    <div class="execution-log-section">
-                        <div class="section-title">📜 执行日志</div>
-                        <div class="execution-log" id="execution-log">
-                            ${this.renderExecutionLog()}
+                    <div class="execution-log-section section-content-wrapper">
+                        <div class="section-title" data-target="execution-log-content">
+                            📜 执行日志 <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content" id="execution-log-content">
+                            <div class="execution-log" id="execution-log">
+                                ${this.renderExecutionLog()}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -500,6 +543,7 @@ export class AgentThinkingDisplay {
         `;
 
         this.attachContainerEvents();
+        this.attachCollapsibleEvents(); // ✨ 新增：附加折叠事件
         this.startTimeUpdate();
     }
 
@@ -719,6 +763,20 @@ export class AgentThinkingDisplay {
                 this.hide();
             });
         }
+    }
+
+    /**
+     * 🎯 新增：为所有可折叠的section标题添加点击事件
+     */
+    attachCollapsibleEvents() {
+        this.container.querySelectorAll('.section-title[data-target]').forEach(title => {
+            title.addEventListener('click', () => {
+                const contentWrapper = title.closest('.section-content-wrapper');
+                if (contentWrapper) {
+                    contentWrapper.classList.toggle('minimized');
+                }
+            });
+        });
     }
 
     /**
