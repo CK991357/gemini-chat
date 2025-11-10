@@ -2672,3 +2672,4 @@ function displayAgentSummary(agentResult) {
     messageHistoryElement.appendChild(summaryDiv);
     chatUI.scrollToBottom();
 }
+
