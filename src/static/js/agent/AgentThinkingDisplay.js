@@ -357,10 +357,15 @@ export class AgentThinkingDisplay {
                 keywords: researchData.keywords || [],
                 collectedSources: researchData.sources || [],
                 analyzedContent: researchData.analyzedContent || [],
-                toolCalls: researchData.toolCalls || [],
+                toolCalls: researchData.toolCalls || [], // 确保是数组
                 metrics: researchData.metrics || {}
             }
         };
+
+        // 确保 toolCalls 是数组
+        if (!Array.isArray(this.currentSession.researchState.toolCalls)) {
+            this.currentSession.researchState.toolCalls = [];
+        }
 
         this.renderSession();
         this.show();
@@ -375,12 +380,15 @@ export class AgentThinkingDisplay {
     renderSession() {
         const { userMessage, maxIterations, steps, status, researchState } = this.currentSession;
         
+        // 确保 toolCalls 是数组
+        const toolCallsArray = Array.isArray(researchState.toolCalls) ? researchState.toolCalls : [];
+        
         // 计算准确的统计数据
         const keywordsCount = researchState.keywords?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const analyzedCount = researchState.analyzedContent?.length || 0;
-        const toolCallsCount = researchState.toolCalls?.length || 0;
-        const successfulTools = researchState.toolCalls?.filter(t => t.success)?.length || 0;
+        const toolCallsCount = toolCallsArray.length;
+        const successfulTools = toolCallsArray.filter(t => t.success)?.length || 0;
 
         this.container.innerHTML = `
             <div class="agent-session">
@@ -673,16 +681,18 @@ export class AgentThinkingDisplay {
             timestamp: Date.now()
         };
 
-        // 🛡️ 确保 toolCalls 是数组
+        // 确保 researchState.toolCalls 存在且是数组
         if (!this.currentSession.researchState.toolCalls) {
             this.currentSession.researchState.toolCalls = [];
         }
-        if (!Array.isArray(this.currentSession.researchState.toolCalls)) {
-            console.warn('[AgentThinkingDisplay] toolCalls 不是数组，重置为数组');
-            this.currentSession.researchState.toolCalls = [];
-        }
         
-        this.currentSession.researchState.toolCalls.push(toolCall);
+        // 确保是数组才调用 push
+        if (Array.isArray(this.currentSession.researchState.toolCalls)) {
+            this.currentSession.researchState.toolCalls.push(toolCall);
+        } else {
+            console.warn('[AgentThinkingDisplay] toolCalls 不是数组，重置为数组');
+            this.currentSession.researchState.toolCalls = [toolCall];
+        }
         
         // 在思考内容中显示工具调用记录
         const toolCallText = `🔧 调用工具: ${toolName} ${success ? '✅' : '❌'}`;
@@ -794,18 +804,47 @@ export class AgentThinkingDisplay {
     }
 
     /**
+     * 🎯 新增：渲染研究计划
+     */
+    renderPlan(plan, keywords) {
+        if (!this.currentSession) return;
+        
+        this.currentSession.researchState.keywords = keywords || [];
+        // 假设 plan 是一个步骤数组，如果需要，可以更新 this.currentSession.steps
+        // this.currentSession.steps = plan;
+        this.renderSession();
+    }
+
+    /**
+     * 🎯 新增：更新进度UI
+     */
+    updateProgressUI(progressData) {
+        if (!this.currentSession) return;
+        
+        // 更新当前会话的进度信息
+        this.currentSession.currentIteration = progressData.iteration || 0;
+        this.currentSession.status = 'executing';
+        
+        // 可以在这里添加更多进度更新逻辑，例如更新步骤状态
+        this.renderSession();
+    }
+
+    /**
      * 🎯 修复：增强DeepResearch完成总结
      */
     addDeepResearchSummary(finalResult = {}) {
         const { researchState, startTime, endTime } = this.currentSession;
         const totalTime = ((endTime - startTime) / 1000).toFixed(1);
         
-        // 使用实际数据，而不是默认的0
+        // 确保 toolCalls 是数组
+        const toolCallsArray = Array.isArray(researchState.toolCalls) ? researchState.toolCalls : [];
+        
+        // 使用实际数据
         const keywordsCount = researchState.keywords?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const analyzedCount = researchState.analyzedContent?.length || 0;
-        const toolCallsCount = researchState.toolCalls?.length || 0;
-        const successfulTools = researchState.toolCalls?.filter(t => t.success)?.length || 0;
+        const toolCallsCount = toolCallsArray.length;
+        const successfulTools = toolCallsArray.filter(t => t.success)?.length || 0;
 
         // 从finalResult中获取更多数据
         const iterations = finalResult.iterations || 0;
@@ -818,7 +857,7 @@ export class AgentThinkingDisplay {
 • 研究主题: ${this.currentSession.userMessage}
 • 研究模式: ${researchMode}
 • 研究关键词: ${keywordsCount}个
-• 收集来源: ${sourcesCount}个  
+• 收集来源: ${sourcesCount}个
 • 分析内容: ${analyzedCount}个
 • 工具调用: ${toolCallsCount}次 (成功: ${successfulTools}次)
 • 研究迭代: ${iterations}次
@@ -827,7 +866,7 @@ export class AgentThinkingDisplay {
 • 完成时间: ${new Date().toLocaleTimeString()}
 
 详细工具调用记录:
-${this.formatToolCallDetails(researchState.toolCalls)}
+${this.formatToolCallDetails(toolCallsArray)}
         `;
 
         this.updateThinking(summary, 'summary');
@@ -848,7 +887,7 @@ ${this.formatToolCallDetails(researchState.toolCalls)}
         }).join('\n');
     }
 
-    // 🎯 修复：设置事件监听器，确保正确的 this 上下文
+    // 🎯 修复：设置事件监听器，确保正确的 this 上下文和方法调用
     setupEventListeners() {
         console.log('🔍 AgentThinkingDisplay 设置事件监听器...');
 
@@ -861,12 +900,9 @@ ${this.formatToolCallDetails(researchState.toolCalls)}
             },
             'research:plan_generated': (event) => {
                 console.log('🔍 research:plan_generated 接收:', event.detail.data);
-                // 假设有一个 renderPlan 方法，但当前代码中没有，这里使用 updateResearchStats 替代，或者需要用户提供 renderPlan 的实现
-                // 暂时使用 updateResearchStats 来更新 UI
-                this.updateResearchStats({ keywords: event.detail.data.keywords });
-                this.updateThinking(`研究计划已生成，关键词: ${event.detail.data.keywords.join(', ')}`, 'planning');
+                this.renderPlan(event.detail.data.plan, event.detail.data.keywords);
             },
-            'research:progress': (event) => { // 修正事件名称为 research:progress
+            'research:progress': (event) => {
                 console.log('🔍 research:progress 接收:', event.detail.data);
                 this.updateProgressUI(event.detail.data);
             },
@@ -874,13 +910,14 @@ ${this.formatToolCallDetails(researchState.toolCalls)}
                 console.log('🔍 research:tool_start 接收:', event.detail.data);
                 const { tool_name, parameters, thought } = event.detail.data;
                 if (thought) this.updateThinking(`💭 思考: ${this.escapeHtml(thought)}`, 'thought');
-                this.updateThinking(`🛠️ 调用工具: ${tool_name}`, 'tool_start');
+                this.updateThinking(`🛠️ 调用工具: ${tool_name}, 参数: ${this.escapeHtml(JSON.stringify(parameters, null, 2))}`, 'tool_start');
             },
             'research:tool_end': (event) => {
                 console.log('🔍 research:tool_end 接收:', event.detail.data);
                 const { tool_name, output, success, sources_found } = event.detail.data;
                 const status = success ? `✅ 完成，发现 ${sources_found} 个来源` : '❌ 失败';
-                this.updateThinking(`工具 ${tool_name}: ${status}`, success ? 'tool_success' : 'tool_error');
+                const type = success ? 'tool_success' : 'tool_error';
+                this.updateThinking(`工具 ${tool_name}: ${status} 结果摘要: ${this.escapeHtml(output.substring(0, 250))}...`, type);
             },
             'research:stats_updated': (event) => {
                 console.log('🔍 research:stats_updated 接收:', event.detail.data);

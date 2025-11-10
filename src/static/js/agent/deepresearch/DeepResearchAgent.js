@@ -246,7 +246,8 @@ export class DeepResearchAgent {
                     // 在收集到新来源时更新统计
                     updateResearchStats({
                         sources: allSources,
-                        toolCalls: intermediateSteps.filter(step => step.action.type === 'tool_call').length
+                        // ✨ 核心修复：传递过滤后的数组本身，而不是它的长度
+                        toolCalls: intermediateSteps.filter(step => step.action.type === 'tool_call')
                     });
                     
                     await this.callbackManager.invokeEvent('on_tool_end', {
