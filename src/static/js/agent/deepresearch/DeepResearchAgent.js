@@ -285,17 +285,22 @@ export class DeepResearchAgent {
                 }
 
             } catch (error) {
+                // 🎯 简化错误处理：完全信任ChatApiHandler的重试机制
                 console.error(`[DeepResearchAgent] 迭代 ${iterations} 失败:`, error);
-                // 记录错误但继续执行
+                
+                // 现在错误由 ChatApiHandler 抛出，我们只需记录并决定如何继续
                 intermediateSteps.push({ 
                     action: { 
-                        tool_name: 'error', 
+                        tool_name: 'internal_error', 
                         parameters: {},
-                        thought: `执行出错: ${error.message}`,
+                        thought: `在第 ${iterations} 次迭代中遇到错误，尝试继续。错误: ${error.message}`,
                         type: 'error'
                     }, 
-                    observation: '系统执行错误，继续研究' 
+                    observation: '系统执行错误，将尝试在下一步骤中恢复。' 
                 });
+                
+                // 增加连续无增益计数，避免在连续错误中死循环
+                consecutiveNoGain++;
             }
         }
 
@@ -637,6 +642,9 @@ ${config.structure}
         );
     }
 
+    /**
+     * 🎯 智能摘要方法 - 带有优雅降级
+     */
     async _smartSummarizeObservation(mainTopic, observation, researchMode) {
         const threshold = 2000;
         if (!observation || typeof observation !== 'string' || observation.length < threshold) {
@@ -646,6 +654,12 @@ ${config.structure}
         }
 
         console.log(`[DeepResearchAgent] 内容过长 (${observation.length} > ${threshold})，启动摘要子代理...`);
+        
+        // 🎯 添加Agent模式专用延迟，降低请求频率
+        if (researchMode && researchMode !== 'standard') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
         await this.callbackManager.invokeEvent('agent:thinking', { 
             detail: { 
                 content: '正在调用摘要子代理压缩上下文...', 
@@ -681,7 +695,52 @@ ${observation.substring(0, 10000)}
 
         } catch (error) {
             console.error("[DeepResearchAgent] ❌ 摘要子代理调用失败:", error);
-            return observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，内容已截断...]";
+            
+            // 🎯 优雅降级策略：根据错误类型返回不同的降级内容
+            if (error.message.includes('429') || error.message.includes('速率限制')) {
+                // 速率限制：返回智能截断版本
+                const truncated = this._intelligentTruncate(observation, threshold);
+                return `[摘要生成失败-速率限制，已智能截断]:\n${truncated}`;
+            } else if (error.message.includes('超时')) {
+                // 超时错误
+                return observation.substring(0, threshold) + "\n\n[...内容过长，摘要超时，内容已截断...]";
+            } else {
+                // 其他错误
+                return observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，内容已截断...]";
+            }
         }
+    }
+
+    /**
+     * 🎯 智能截断方法
+     * 在指定长度附近寻找合适的截断点（段落边界）
+     */
+    _intelligentTruncate(text, maxLength) {
+        if (text.length <= maxLength) return text;
+        
+        // 在maxLength附近寻找段落边界
+        const searchWindow = Math.min(500, text.length - maxLength);
+        const searchArea = text.substring(maxLength - 100, maxLength + searchWindow);
+        
+        // 优先在段落边界截断
+        const lastParagraph = searchArea.lastIndexOf('\n\n');
+        if (lastParagraph !== -1) {
+            return text.substring(0, maxLength - 100 + lastParagraph) + "\n\n[...]";
+        }
+        
+        // 其次在句子边界截断
+        const lastSentence = searchArea.lastIndexOf('. ');
+        if (lastSentence !== -1 && lastSentence > 50) {
+            return text.substring(0, maxLength - 100 + lastSentence + 1) + ".. [...]";
+        }
+        
+        // 最后在单词边界截断
+        const lastSpace = searchArea.lastIndexOf(' ');
+        if (lastSpace !== -1) {
+            return text.substring(0, maxLength - 100 + lastSpace) + " [...]";
+        }
+        
+        // 实在找不到合适的边界，直接截断
+        return text.substring(0, maxLength) + "...";
     }
 }
