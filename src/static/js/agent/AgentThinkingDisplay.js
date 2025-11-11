@@ -1,4 +1,4 @@
-// src/static/js/agent/AgentThinkingDisplay.js - 最终修复版
+// src/static/js/agent/AgentThinkingDisplay.js - 状态同步修复版
 
 export class AgentThinkingDisplay {
     constructor() {
@@ -721,9 +721,8 @@ export class AgentThinkingDisplay {
         if (stats.sources) {
             this.currentSession.researchState.collectedSources = stats.sources;
         }
-        if (stats.toolCalls) {
-            this.currentSession.researchState.toolCalls = stats.toolCalls;
-        }
+        // ✅✅✅ 核心修复：不再通过此方法更新 toolCalls，避免状态覆盖
+        // 工具调用记录现在完全由 addToolCallRecord 方法管理
         if (stats.metrics) {
             this.currentSession.researchState.metrics = {
                 ...this.currentSession.researchState.metrics,
