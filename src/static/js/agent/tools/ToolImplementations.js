@@ -1,4 +1,4 @@
-// src/static/js/agent/tools/ToolImplementations.js
+// src/static/js/agent/tools/ToolImplementations.js - 最终健壮版
 
 import { BaseTool } from './BaseTool.js';
 
@@ -145,21 +145,37 @@ class DeepResearchToolAdapter {
         const modeSpecific = this.getModeSpecificParameters(researchMode, toolName);
         
         switch (toolName) {
-            case 'tavily_search':
+            case 'tavily_search': {
+                // ✨✨✨ 最终 Bug 修复 ✨✨✨
+                let finalQuery = '';
+                if (parameters.query && typeof parameters.query === 'string') {
+                    finalQuery = parameters.query;
+                } else if (Array.isArray(parameters.queries) && parameters.queries.length > 0) {
+                    console.log("[DeepResearchAdapter] 检测到 'queries' 数组，合并为单一查询。");
+                    finalQuery = parameters.queries.join(' ');
+                    delete parameters.queries;
+                }
+                // 如果上面两种情况都没匹配，但存在一个非空的 'queries' 字符串，也尝试使用它
+                else if (parameters.queries && typeof parameters.queries === 'string' && parameters.queries.trim() !== '') {
+                     finalQuery = parameters.queries;
+                     delete parameters.queries;
+                }
+
                 return {
-                    query: parameters.query,
+                    ...parameters,
+                    query: finalQuery, // 确保 'query' 字段是正确的字符串
                     max_results: modeSpecific.max_results || 12,
                     include_raw_content: modeSpecific.include_raw_content !== false,
                     search_depth: modeSpecific.search_depth || 'advanced',
                     include_answer: modeSpecific.include_answer || false,
                     include_images: false,
                     include_domains: modeSpecific.include_domains,
-                    exclude_domains: modeSpecific.exclude_domains,
-                    ...parameters
+                    exclude_domains: modeSpecific.exclude_domains
                 };
+            }
                 
             case 'firecrawl':
-            case 'crawl4ai':
+            case 'crawl4ai': {
                 if (parameters.url) {
                     const baseParams = {
                         mode: 'scrape',
@@ -186,8 +202,9 @@ class DeepResearchToolAdapter {
                     return baseParams;
                 }
                 break;
+            }
                 
-            case 'python_sandbox':
+            case 'python_sandbox': {
                 const baseConfig = {
                     timeout: modeSpecific.timeout || 90,
                     allow_network: modeSpecific.allow_network !== false,
@@ -201,21 +218,24 @@ class DeepResearchToolAdapter {
                     return { ...baseConfig, code: parameters.code };
                 }
                 break;
+            }
                 
-            case 'glm4v_analyze_image':
+            case 'glm4v_analyze_image': {
                 return {
                     image_url: parameters.image_url,
                     prompt: parameters.prompt || '请详细分析这张图片的内容、特征和潜在含义',
                     detail: parameters.detail || 'high',
                     ...parameters
                 };
+            }
                 
-            case 'stockfish_analyzer':
+            case 'stockfish_analyzer': {
                 return {
                     fen: parameters.fen,
                     depth: parameters.depth || 18,
                     ...parameters
                 };
+            }
         }
         
         return { ...parameters, ...modeSpecific };
@@ -233,16 +253,24 @@ class DeepResearchToolAdapter {
         
         switch (toolName) {
             case 'firecrawl':
-            case 'crawl4ai':
+            case 'crawl4ai': {
                 if (parameters.url && !parameters.parameters && !parameters.mode) {
                     return { mode: 'scrape', parameters: { url: parameters.url } };
                 }
                 break;
-            case 'tavily_search':
+            }
+            case 'tavily_search': {
+                // ✨✨✨ 标准模式也修复查询参数处理 ✨✨✨
                 if (parameters.query && typeof parameters.query === 'object') {
                     return { query: parameters.query.query || JSON.stringify(parameters.query) };
+                } else if (Array.isArray(parameters.queries) && parameters.queries.length > 0) {
+                    console.log("[ToolAdapter] 标准模式检测到 'queries' 数组，合并为单一查询。");
+                    return { query: parameters.queries.join(' ') };
+                } else if (parameters.queries && typeof parameters.queries === 'string' && parameters.queries.trim() !== '') {
+                    return { query: parameters.queries };
                 }
                 break;
+            }
         }
         
         return parameters;
@@ -285,7 +313,7 @@ class DeepResearchToolAdapter {
         const dataFromProxy = rawResponse.rawResult?.data || rawResponse.output || rawResponse;
 
         switch (toolName) {
-            case 'tavily_search':
+            case 'tavily_search': {
                 if (dataFromProxy && Array.isArray(dataFromProxy.results)) {
                     const searchResults = dataFromProxy.results;
                     
@@ -304,9 +332,10 @@ class DeepResearchToolAdapter {
                     success = true;
                 }
                 break;
+            }
                 
             case 'firecrawl':
-            case 'crawl4ai':
+            case 'crawl4ai': {
                 if (dataFromProxy && (dataFromProxy.content || dataFromProxy.markdown)) {
                     const content = dataFromProxy.content || dataFromProxy.markdown;
                     output = this.formatWebContentForMode(dataFromProxy, researchMode);
@@ -325,8 +354,9 @@ class DeepResearchToolAdapter {
                     success = true;
                 }
                 break;
+            }
                 
-            case 'python_sandbox':
+            case 'python_sandbox': {
                 if (dataFromProxy && dataFromProxy.stdout) {
                     output = this.formatCodeOutputForMode(dataFromProxy, researchMode);
                     success = true;
@@ -338,8 +368,9 @@ class DeepResearchToolAdapter {
                     success = true;
                 }
                 break;
+            }
                 
-            case 'glm4v_analyze_image':
+            case 'glm4v_analyze_image': {
                 if (dataFromProxy && dataFromProxy.analysis) {
                     output = `🖼️ **图片分析结果** (${researchMode}模式):\n\n${dataFromProxy.analysis}`;
                     success = true;
@@ -348,15 +379,17 @@ class DeepResearchToolAdapter {
                     success = true;
                 }
                 break;
+            }
                 
-            case 'stockfish_analyzer':
+            case 'stockfish_analyzer': {
                 if (dataFromProxy && dataFromProxy.analysis) {
                     output = `♟️ **棋局分析结果**:\n\n${dataFromProxy.analysis}`;
                     success = true;
                 }
                 break;
+            }
                 
-            default:
+            default: {
                 if (typeof dataFromProxy === 'string') {
                     output = dataFromProxy;
                 } else if (dataFromProxy && typeof dataFromProxy === 'object') {
@@ -365,6 +398,7 @@ class DeepResearchToolAdapter {
                     output = String(dataFromProxy);
                 }
                 break;
+            }
         }
         
         if (rawResponse.error) {
@@ -552,7 +586,7 @@ class DeepResearchToolAdapter {
         };
 
         switch (toolName) {
-            case 'tavily_search':
+            case 'tavily_search': {
                 if (Array.isArray(dataFromProxy.results)) {
                     const searchResults = dataFromProxy.results;
                     return {
@@ -569,9 +603,10 @@ class DeepResearchToolAdapter {
                     };
                 }
                 break;
+            }
                 
             case 'crawl4ai':
-            case 'firecrawl':
+            case 'firecrawl': {
                 return {
                     ...baseData,
                     hasContent: !!dataFromProxy.content,
@@ -580,8 +615,9 @@ class DeepResearchToolAdapter {
                     url: dataFromProxy.url,
                     wordCount: dataFromProxy.content?.split(/\s+/).length || 0
                 };
+            }
                 
-            case 'python_sandbox':
+            case 'python_sandbox': {
                 return {
                     ...baseData,
                     hasOutput: !!(dataFromProxy.stdout || dataFromProxy.result),
@@ -589,13 +625,15 @@ class DeepResearchToolAdapter {
                     hasError: !!dataFromProxy.stderr,
                     executionTime: dataFromProxy.execution_time
                 };
+            }
                 
-            case 'glm4v_analyze_image':
+            case 'glm4v_analyze_image': {
                 return {
                     ...baseData,
                     hasAnalysis: !!dataFromProxy.analysis,
                     analysisLength: dataFromProxy.analysis?.length || 0
                 };
+            }
         }
         
         return baseData;
@@ -653,27 +691,31 @@ class DeepResearchToolAdapter {
         const toolSpecific = [];
 
         switch (toolName) {
-            case 'tavily_search':
+            case 'tavily_search': {
                 toolSpecific.push('分析搜索结果的相关性和可信度');
                 toolSpecific.push('提取关键信息并识别模式');
                 toolSpecific.push('评估信息来源的权威性');
                 break;
+            }
             case 'crawl4ai':
-            case 'firecrawl':
+            case 'firecrawl': {
                 if (result && result.length > 1000) {
                     toolSpecific.push('内容较长，建议进行关键信息提取');
                 }
                 toolSpecific.push('分析内容结构和主要观点');
                 toolSpecific.push('识别作者立场和内容偏见');
                 break;
-            case 'python_sandbox':
+            }
+            case 'python_sandbox': {
                 toolSpecific.push('分析代码执行结果的数据模式');
                 toolSpecific.push('验证计算结果的准确性');
                 break;
-            case 'glm4v_analyze_image':
+            }
+            case 'glm4v_analyze_image': {
                 toolSpecific.push('分析图片的视觉特征');
                 toolSpecific.push('解读图片的潜在含义');
                 break;
+            }
         }
 
         return [...baseSuggestions, ...toolSpecific];
@@ -732,10 +774,8 @@ class ProxiedTool extends BaseTool {
         console.log(`[ProxiedTool] ${mode.toUpperCase()}模式调用工具: ${this.name} (研究模式: ${researchMode})`, this.sanitizeToolInput(input));
         
         try {
-            let normalizedInput, rawResult, normalizedResult;
-            
-            // 🎯 统一参数适配
-            normalizedInput = DeepResearchToolAdapter.normalizeParameters(
+            // 🎯 修复：使用 const 而不是 let，因为这些变量不会被重新赋值
+            const normalizedInput = DeepResearchToolAdapter.normalizeParameters(
                 this.name, input, mode, researchMode
             );
             console.log(`[ProxiedTool] 适配后参数:`, this.sanitizeToolInput(normalizedInput));
@@ -746,10 +786,10 @@ class ProxiedTool extends BaseTool {
                 setTimeout(() => reject(new Error(`工具"${this.name}"调用超时 (${timeoutMs}ms)`)), timeoutMs);
             });
             
-            rawResult = await Promise.race([toolPromise, timeoutPromise]);
+            const rawResult = await Promise.race([toolPromise, timeoutPromise]);
             
             // 🎯 统一响应处理
-            normalizedResult = DeepResearchToolAdapter.normalizeResponse(
+            const normalizedResult = DeepResearchToolAdapter.normalizeResponse(
                 this.name, rawResult, mode, researchMode
             );
             
