@@ -41,7 +41,6 @@ export class Orchestrator {
         console.log('[Orchestrator] 按需初始化...');
         this._initializationPromise = (async () => {
             try {
-                // ✅ 正确初始化 EnhancedSkillManager - 不传递参数
                 this.skillManager = new EnhancedSkillManager();
                 await this.skillManager.waitUntilReady();
                 
@@ -102,7 +101,7 @@ export class Orchestrator {
         try {
             console.log('[Orchestrator] 正在为 Agent 查找相关技能...');
             
-            // ✅ 修复 1: 添加 await，正确等待技能匹配结果
+            // ✅ 修复：添加 await，正确等待技能匹配结果
             const relevantSkills = await this.skillManager.findRelevantSkills(cleanTopic, {
                 availableTools: this.researchTools
             });
@@ -113,8 +112,8 @@ export class Orchestrator {
             if (relevantSkills && relevantSkills.length > 0) {
                 console.log(`[Orchestrator] 找到 ${relevantSkills.length} 个相关技能，生成技能注入内容`);
                 
-                // ✅ 修复 2: 使用正确的技能注入生成方法
-                skillInjectionContent = this.skillManager.generateMultiSkillInjection(relevantSkills, cleanTopic);
+                // ✅ 核心修复：调用路径需要指向包装器内部的 baseSkillManager 实例
+                skillInjectionContent = this.skillManager.baseSkillManager.generateMultiSkillInjection(relevantSkills, cleanTopic);
                 
                 enrichedTopic = `
 ## 📖 相关工具参考指南
@@ -129,7 +128,7 @@ ${cleanTopic}
                 console.log('[Orchestrator] 未找到与主题直接相关的技能，Agent 将依赖通用知识');
             }
 
-            // ✅ 修复 3: 使用正确的路径调用 getAllSkills
+            // ✅ 修复：使用正确的路径调用 getAllSkills
             const availableToolDefinitions = (await this.skillManager.baseSkillManager.getAllSkills())
                 .filter(skill => this.researchTools.includes(skill.tool_name));
 
