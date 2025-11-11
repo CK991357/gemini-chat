@@ -941,39 +941,20 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 修复：增强DeepResearch完成总结 - 确保统计信息正确
+     * 🎯 增强DeepResearch完成总结
      */
     addDeepResearchSummary(finalResult = {}) {
         const { researchState, startTime, endTime } = this.currentSession;
         const totalTime = ((endTime - startTime) / 1000).toFixed(1);
         
-        // 🎯 修复：使用与renderSession相同的统计逻辑
         const queryCount = researchState.queryLog?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const toolCallsCount = researchState.toolCalls?.length || 0;
-        
-        // 🎯 修复：使用相同的成功调用统计逻辑
-        const successfulTools = researchState.toolCalls?.filter(t => {
-            if (t.success === true) return true;
-            if (t.success === 'true') return true;
-            if (String(t.success).toLowerCase() === 'true') return true;
-            return false;
-        })?.length || 0;
-        
+        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0;
         const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0 };
 
         const iterations = finalResult.iterations || 0;
         const researchMode = finalResult.research_mode || 'standard';
-
-        // 🎯 调试：打印最终统计信息
-        console.log(`[AgentThinkingDisplay] 最终统计:`, {
-            toolCallsCount,
-            successfulTools,
-            queryCount,
-            sourcesCount,
-            tokenUsage: tokenUsage.total_tokens,
-            allToolCalls: researchState.toolCalls?.map(t => ({ tool: t.tool, success: t.success })) || []
-        });
 
         const summary = `
 🔍 DeepResearch 执行完成！

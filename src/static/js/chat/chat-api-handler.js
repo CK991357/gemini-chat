@@ -681,8 +681,6 @@ export class ChatApiHandler {
                             // *** KEY FIX START ***
                             // 1. Create the persistent download link in its own, new message container.
                             this._createFileDownload(fileData.data_base64, fileName, fileData.type, ui);
-                            // 2. 强制状态重置：明确设置当前消息容器为 null，确保后续文本响应创建新的容器。
-                            this.state.currentAIMessageContentDiv = null;
                             // *** KEY FIX END ***
                             
                             toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
@@ -700,7 +698,6 @@ export class ChatApiHandler {
                             if (fileType) {
                                 // 关键修复：创建独立下载链接并强制状态重置
                                 this._createFileDownload(content, name, fileType, ui);
-                                this.state.currentAIMessageContentDiv = null;
 
                                 toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
                                 isFileHandled = true;
