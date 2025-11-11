@@ -653,6 +653,8 @@ document.addEventListener('DOMContentLoaded', () => {
    // 🎯 添加调试状态检查
    setTimeout(debugAgentSystem, 2000);
    
+   // 确保工作流样式加载
+   loadWorkflowStyles();
 });
 
 // State variables
@@ -919,6 +921,50 @@ function ensureBasicAgentFunctionality() {
     }
 }
 
+/**
+ * 🚀 加载工作流样式
+ */
+function loadWorkflowStyles() {
+  if (!document.querySelector('link[href*="workflow-ui.css"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'css/workflow-ui.css';
+    document.head.appendChild(link);
+    
+    // 添加加载错误处理
+    link.onerror = () => {
+      console.warn('工作流样式加载失败，使用备用样式');
+      injectFallbackStyles();
+    };
+  }
+}
+
+/**
+ * 🚀 备用样式注入
+ */
+function injectFallbackStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .workflow-container { 
+      display: none; 
+      margin: 20px 0; 
+      padding: 16px; 
+      background: #f8f9fa; 
+      border-radius: 8px; 
+      border: 1px solid #ddd; 
+    }
+    .workflow-step { 
+      margin: 8px 0; 
+      padding: 12px; 
+      background: white; 
+      border-radius: 6px; 
+    }
+    .workflow-step-running { background: #f0f8ff; }
+    .workflow-step-success { background: #f0fff0; }
+    .workflow-step-failed { background: #fff0f0; }
+  `;
+  document.head.appendChild(style);
+}
 
 
 /**
@@ -1190,20 +1236,7 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                 displayAgentSummary(agentResult);
                 // 显示完整的报告
                 if (agentResult.report) {
-                    // START: 使用更直接、更可靠的方式来显示最终报告，绕过可能被污染的全局状态
-                    const reportElement = chatUI.createAIMessageElement();
-                    if (reportElement && reportElement.markdownContainer) {
-                        reportElement.rawMarkdownBuffer = agentResult.report; // 填充原始数据
-                        reportElement.markdownContainer.innerHTML = window.marked.parse(agentResult.report);
-
-                        // 确保数学公式也能被渲染
-                        if (typeof window.MathJax !== 'undefined' && window.MathJax.startup) {
-                            window.MathJax.startup.promise.then(() => {
-                                window.MathJax.typeset([reportElement.markdownContainer]);
-                            }).catch((err) => console.error('MathJax typesetting failed:', err));
-                        }
-                    }
-                    // END: 新增的代码
+                    chatUI.addMessage({ role: 'assistant', content: agentResult.report });
                 }
                 console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
             } else {
