@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/OutputParser.js - 最终版（完全匹配AgentLogic格式）
+// src/static/js/agent/deepresearch/OutputParser.js - 最终版（修复Markdown格式容错性）
 
 export class AgentOutputParser {
     parse(text) {
@@ -96,23 +96,35 @@ export class AgentOutputParser {
         }
     }
 
-    // ✨ 核心方法：解析AgentLogic要求的格式
+    // ✨ 核心方法：解析AgentLogic要求的格式 - 修复Markdown格式容错性
     _parseToolCallFormat(text) {
         try {
             console.log('[OutputParser] 🔍 开始解析工具调用格式...');
             
-            // 精确匹配格式：行动: 工具名
-            const actionLineMatch = text.match(/行动\s*:\s*([a-zA-Z0-9_]+)(?=\s|$|\n)/i);
+            // ✅✅✅ --- 核心修复 --- ✅✅✅
+            // 使用更灵活的正则表达式，允许 "行动" 和 "行动输入" 标签前后出现可选的 Markdown 星号 (**)
+            // 我们使用 \b 来确保匹配的是完整的单词 "行动" 或 "行动输入"。
+            
+            // 修复后的正则表达式，用于匹配 "行动: tool_name"
+            const actionLineMatch = text.match(/\b行动\b\s*:\s*([a-zA-Z0-9_]+)/i);
             if (!actionLineMatch) {
-                console.log('[OutputParser] ❌ 未找到"行动:"行');
-                return { success: false };
+                // 如果第一次匹配失败，尝试去掉文本中的所有星号再试一次，作为降级方案
+                const cleanedText = text.replace(/\*/g, '');
+                const fallbackActionMatch = cleanedText.match(/\b行动\b\s*:\s*([a-zA-Z0-9_]+)/i);
+                if (!fallbackActionMatch) {
+                    console.log('[OutputParser] ❌ 未找到"行动:"行');
+                    return { success: false };
+                }
+                // 如果降级方案成功，则继续使用清理过的文本进行后续匹配
+                text = cleanedText;
             }
 
-            const tool_name = actionLineMatch[1].trim();
+            // 从第一次或降级匹配中获取工具名
+            const tool_name = (actionLineMatch || text.match(/\b行动\b\s*:\s*([a-zA-Z0-9_]+)/i))[1].trim();
             console.log(`[OutputParser] 🔍 找到工具名: ${tool_name}`);
             
-            // 精确匹配格式：行动输入: {json}
-            const inputLineMatch = text.match(/行动输入\s*:\s*(\{[\s\S]*?\})(?=\s*(?:思考|行动|最终答案)|$)/i);
+            // 修复后的正则表达式，用于匹配 "行动输入: {json}"
+            const inputLineMatch = text.match(/\b行动输入\b\s*:\s*(\{[\s\S]*?\})(?=\s*(?:思考|\b行动\b|\b最终答案\b)|$)/i);
             if (!inputLineMatch) {
                 console.log('[OutputParser] ❌ 未找到"行动输入:"行');
                 return { success: false };
