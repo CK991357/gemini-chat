@@ -1,4 +1,4 @@
-// src/static/js/agent/Orchestrator.js - 多模式关键词触发版（增加使用指南功能）
+// src/static/js/agent/Orchestrator.js - 最终修复版
 
 import { getSkillsRegistry } from '../tool-spec-system/generated-skills.js';
 import { mcpToolsMap } from '../tools_mcp/tool-definitions.js';
@@ -41,9 +41,10 @@ export class Orchestrator {
         console.log('[Orchestrator] 按需初始化...');
         this._initializationPromise = (async () => {
             try {
-                // 仅初始化Agent所需组件
+                // ✅ 正确初始化 EnhancedSkillManager - 不传递参数
                 this.skillManager = new EnhancedSkillManager();
                 await this.skillManager.waitUntilReady();
+                
                 this.tools = await this._initializeTools();
                 this.researchToolsSet = this._initializeResearchTools();
                 this.deepResearchAgent = this._initializeDeepResearchAgent();
@@ -69,12 +70,10 @@ export class Orchestrator {
     async handleUserRequest(userMessage, files = [], context = {}) {
         await this.ensureInitialized();
 
-        // 1. 检查总开关是否打开且系统已初始化
         if (!this.isEnabled || !this._isInitialized) {
             return { enhanced: false, type: 'standard_fallback' };
         }
 
-        // 2. ✨ 新增：检查是否是使用指南请求
         const guideDetection = this._detectUserGuideRequest(userMessage);
         if (guideDetection.shouldShow) {
             console.log('[Orchestrator] 检测到使用指南请求，返回使用指南');
@@ -85,18 +84,90 @@ export class Orchestrator {
             };
         }
 
-        // 3. ✨ 增强：使用新的多模式检测方法
         const researchDetection = this._detectAndExtractTopic(userMessage);
 
         if (researchDetection.shouldStart) {
             console.log(`[Orchestrator] 检测到关键词"${researchDetection.matchedKeyword}"，启动${researchDetection.mode}研究模式...`);
-            // ✨ 传递 researchDetection.mode
             return await this._handleWithDeepResearch(researchDetection.cleanTopic, context, researchDetection.mode);
         }
 
-        // 4. 否则，明确回退到标准模式
         console.log('[Orchestrator] 未检测到Agent触发词，回退到标准模式。');
         return { enhanced: false, type: 'standard_fallback' };
+    }
+
+    /**
+     * 🎯 增强：处理深度研究请求 - 整合 Skill 系统
+     */
+    async _handleWithDeepResearch(cleanTopic, context, detectedMode) {
+        try {
+            console.log('[Orchestrator] 正在为 Agent 查找相关技能...');
+            
+            // ✅ 修复 1: 添加 await，正确等待技能匹配结果
+            const relevantSkills = await this.skillManager.findRelevantSkills(cleanTopic, {
+                availableTools: this.researchTools
+            });
+
+            let skillInjectionContent = '';
+            let enrichedTopic = cleanTopic;
+
+            if (relevantSkills && relevantSkills.length > 0) {
+                console.log(`[Orchestrator] 找到 ${relevantSkills.length} 个相关技能，生成技能注入内容`);
+                
+                // ✅ 修复 2: 使用正确的技能注入生成方法
+                skillInjectionContent = this.skillManager.generateMultiSkillInjection(relevantSkills, cleanTopic);
+                
+                enrichedTopic = `
+## 📖 相关工具参考指南
+${skillInjectionContent}
+
+---
+
+## 🎯 核心研究任务
+${cleanTopic}
+`;
+            } else {
+                console.log('[Orchestrator] 未找到与主题直接相关的技能，Agent 将依赖通用知识');
+            }
+
+            // ✅ 修复 3: 使用正确的路径调用 getAllSkills
+            const availableToolDefinitions = (await this.skillManager.baseSkillManager.getAllSkills())
+                .filter(skill => this.researchTools.includes(skill.tool_name));
+
+            const researchRequest = {
+                topic: enrichedTopic, // ✅ 使用增强版的主题，包含技能指南
+                availableTools: availableToolDefinitions,
+                researchMode: detectedMode
+            };
+
+            const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
+
+            console.log('[Orchestrator] DeepResearch 完成:', {
+                success: researchResult.success,
+                iterations: researchResult.iterations,
+                reportLength: researchResult.report?.length,
+                sourcesCount: researchResult.sources?.length || 0,
+                researchMode: researchResult.research_mode
+            });
+
+            return {
+                enhanced: true,
+                type: 'research_result',
+                content: researchResult.report,
+                success: researchResult.success,
+                iterations: researchResult.iterations,
+                intermediateSteps: researchResult.intermediateSteps,
+                sources: researchResult.sources,
+                researchMode: researchResult.research_mode
+            };
+        } catch (error) {
+            console.error('[Orchestrator] DeepResearch Agent执行失败:', error);
+            return { 
+                enhanced: true, 
+                type: 'research_error',
+                content: `❌ 深度研究任务执行时发生错误: ${error.message}`,
+                success: false
+            };
+        }
     }
 
     /**
@@ -140,16 +211,15 @@ export class Orchestrator {
 
 我们目前支持以下七种专业的研究模式：
 
-模式关键词 | 研究模式 | 最佳应用场景 | 最终报告特点 |
-|-----------|----------|-------------|-------------|
-**标准报告** | \`standard\` | 快速、全面地了解一个主题，获取关键信息和背景。 | 结构清晰、内容全面、字数适中（约1200-1800字）的标准研究报告。 |
-**深度研究** | \`deep\` | 对复杂问题进行根本性的、多维度的解构与创新解决方案。 | 极其深入、包含辩证思考和解决方案的专业咨询报告（约2800-3500字）。 |
-**学术论文** | \`academic\` | 对已有学术论文的深度整理、验证与扩展分析。 | 严谨客观、验证导向的论文解析报告（约1800-2500字）。 |
-**行业分析** | \`business\` | 全面的行业现状扫描、竞争格局分析与发展趋势预测。 | 全景扫描、深度洞察的行业分析报告（约2200-3000字）。 |
-**技术实现** | \`technical\` | 技术需求的全套实现方案、代码示例与最佳实践。 | 技术准确、实践导向的实现文档（约2000-2800字）。 |
-**前沿技术** | \`cutting_edge\` | 对新兴技术的深度分析、发展脉络与应用前景评估。 | 前瞻性、深度分析的技术趋势报告（约1800-2500字）。 |
-**奢侈品导购** | \`shopping_guide\` | 高端商品的深度对比分析，提供专业购买建议。 | 专业细致、数据驱动的导购分析报告（约2000-3000字）。 |
-
+| 模式关键词 | 研究模式 | 最佳应用场景 | 最终报告特点 |
+|---|---|---|---|
+| **标准报告** | \`standard\` | 快速、全面地了解一个主题，获取关键信息和背景。 | 结构清晰、内容全面、字数适中（约1200-1800字）的标准研究报告。 |
+| **深度研究** | \`deep\` | 对复杂问题进行根本性的、多维度的解构与创新解决方案。 | 极其深入、包含辩证思考和解决方案的专业咨询报告（约2800-3500字）。 |
+| **学术论文** | \`academic\` | 对已有学术论文的深度整理、验证与扩展分析。 | 严谨客观、验证导向的论文解析报告（约1800-2500字）。 |
+| **行业分析** | \`business\` | 全面的行业现状扫描、竞争格局分析与发展趋势预测。 | 全景扫描、深度洞察的行业分析报告（约2200-3000字）。 |
+| **技术实现** | \`technical\` | 技术需求的全套实现方案、代码示例与最佳实践。 | 技术准确、实践导向的实现文档（约2000-2800字）。 |
+| **前沿技术** | \`cutting_edge\` | 对新兴技术的深度分析、发展脉络与应用前景评估。 | 前瞻性、深度分析的技术趋势报告（约1800-2500字）。 |
+| **奢侈品导购** | \`shopping_guide\` | 高端商品的深度对比分析，提供专业购买建议。 | 专业细致、数据驱动的导购分析报告（约2000-3000字）。 |
 
 ## 💡 使用示例
 
@@ -188,7 +258,6 @@ export class Orchestrator {
 30岁女性，混合性皮肤，T区油两颊干，预算3000元左右，想找抗初老的精华，比较偏好兰蔻、雅诗兰黛这些品牌 奢侈品导购
 \`\`\`
 
-
 ## ⚠️ 注意事项
 
 - **关键词优先级**: 如果您输入了多个关键词（如"深度研究 商业分析"），系统会优先匹配更具体、更专业的模式（在此例中为"商业分析"）。
@@ -210,13 +279,12 @@ export class Orchestrator {
      * 🎯 增强：多模式关键词检测与话题提取
      */
     _detectAndExtractTopic(userMessage) {
-        // ✨ 关键词按特异性从高到低排序，确保更具体的模式被优先匹配
         const keywords = {
             '学术论文': 'academic',
             '行业分析': 'business',
             '技术实现': 'technical',
             '前沿技术': 'cutting_edge',
-            '奢侈品导购': 'shopping_guide', // 新增
+            '奢侈品导购': 'shopping_guide',
             '深度研究': 'deep',
             '标准报告': 'standard'
         };
@@ -225,16 +293,14 @@ export class Orchestrator {
         let matchedKeyword = '';
         let detectedMode = 'standard';
 
-        // 遍历关键词，找到第一个匹配的
         for (const [keyword, mode] of Object.entries(keywords)) {
             if (lowerMessage.includes(keyword.toLowerCase())) {
                 matchedKeyword = keyword;
                 detectedMode = mode;
-                break; // 找到第一个匹配就停止
+                break;
             }
         }
 
-        // 如果没有匹配到任何关键词
         if (!matchedKeyword) {
             return { 
                 shouldStart: false,
@@ -244,7 +310,6 @@ export class Orchestrator {
             };
         }
 
-        // ✨ 清理话题：移除检测到的关键词
         const cleanTopic = userMessage.replace(new RegExp(matchedKeyword, 'gi'), '').trim();
         
         console.log(`[Orchestrator] 关键词检测结果:`, {
@@ -259,57 +324,10 @@ export class Orchestrator {
             mode: detectedMode,
             matchedKeyword: matchedKeyword,
             originalTopic: userMessage,
-            cleanTopic: cleanTopic || userMessage // 如果清理后为空，使用原消息
+            cleanTopic: cleanTopic || userMessage
         };
     }
 
-    /**
-     * 🎯 增强：处理深度研究请求
-     */
-    async _handleWithDeepResearch(cleanTopic, context, detectedMode) { // ✨ 1. 接收 detectedMode
-        try {
-            // 🎯 获取研究工具的定义（名称+描述），交给LLM去选择
-            const availableToolDefinitions = (await this.skillManager.baseSkillManager.getAllSkills())
-                .filter(skill => this.researchTools.includes(skill.tool_name));
-
-            const researchRequest = {
-                topic: cleanTopic,
-                availableTools: availableToolDefinitions,
-                researchMode: detectedMode // ✨ 2. 将模式添加到请求中
-            };
-
-            // ✨ 3. 调用 conductResearch
-            const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
-
-            console.log('[Orchestrator] DeepResearch 完成:', {
-                success: researchResult.success,
-                iterations: researchResult.iterations,
-                reportLength: researchResult.report?.length,
-                sourcesCount: researchResult.sources?.length || 0,
-                researchMode: researchResult.research_mode
-            });
-
-            return {
-                enhanced: true,
-                type: 'research_result',
-                content: researchResult.report,
-                success: researchResult.success,
-                iterations: researchResult.iterations,
-                intermediateSteps: researchResult.intermediateSteps,
-                sources: researchResult.sources,
-                researchMode: researchResult.research_mode
-            };
-        } catch (error) {
-            console.error('[Orchestrator] DeepResearch Agent执行失败:', error);
-            return { 
-                enhanced: true, 
-                type: 'research_error',
-                content: `❌ 深度研究任务执行时发生错误: ${error.message}`,
-                success: false
-            };
-        }
-    }
-    
     // --- 辅助函数 ---
     _initializeResearchTools() {
         const tools = {};
@@ -342,9 +360,6 @@ export class Orchestrator {
     }
     
     setupHandlers() {
-        // ✨ =============================================================
-        // ✨ 最终版：简化并加固的事件转发器
-        // ✨ =============================================================
         const forwardEvent = (eventName, newEventName) => {
             return (e) => window.dispatchEvent(new CustomEvent(newEventName, {
                 detail: { data: e.data, result: e.data, agentType: 'deep_research' }
@@ -354,14 +369,12 @@ export class Orchestrator {
         this.callbackManager.addHandler({
             'on_research_start': forwardEvent('on_research_start', 'research:start'),
             'on_research_plan_generated': forwardEvent('on_research_plan_generated', 'research:plan_generated'),
-            'on_research_progress': forwardEvent('on_research_progress', 'research:progress_update'), // 修正事件名以匹配UI
+            'on_research_progress': forwardEvent('on_research_progress', 'research:progress_update'),
             'on_tool_start': forwardEvent('on_tool_start', 'research:tool_start'),
             'on_tool_end': forwardEvent('on_tool_end', 'research:tool_end'),
             'on_research_end': forwardEvent('on_research_end', 'research:end'),
             'on_research_stats_updated': forwardEvent('on_research_stats_updated', 'research:stats_updated'),
             'on_tool_called': forwardEvent('on_tool_called', 'research:tool_called'),
-            
-            // 保留通用的思考事件
             'on_agent_think_start': (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
         });
         console.log('[Orchestrator] 最终版事件处理器已设置。');
