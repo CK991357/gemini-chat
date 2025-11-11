@@ -1,883 +1,1035 @@
-// src/static/js/chess/chess-ai-enhanced.js
+// src/static/js/agent/AgentThinkingDisplay.js - 最终修复版
 
-// 风险缓解：确保 chess.js 已加载
-if (typeof window.Chess === 'undefined') {
-    throw new Error('chess.js 库未正确加载，请检查CDN链接');
+export class AgentThinkingDisplay {
+    constructor() {
+        this.container = null;
+        this.currentSession = null;
+        this.stylesInjected = false;
+        this.timeUpdateInterval = null;
+        this.executionLog = [];
+        
+        // 🎯 新增：折叠状态管理
+        this.sectionStates = {
+            'stats-content': false,      // 研究统计 - 默认展开
+            'query-log-content': false,  // 搜索记录 - 默认折叠
+            'execution-log-content': false // 执行日志 - 默认折叠
+        };
+        
+        this.init();
+    }
+
+    /**
+     * 🎯 初始化显示组件
+     */
+    init() {
+        this.injectStyles();
+        this.setupEventListeners();
+        console.log('[AgentThinkingDisplay] DeepResearch 监控面板初始化完成');
+    }
+
+    /**
+     * 🎯 修复：注入不透明样式
+     */
+    injectStyles() {
+        if (this.stylesInjected) return;
+
+        const styleId = 'agent-thinking-styles';
+        if (document.getElementById(styleId)) return;
+
+        const css = `
+/* Agent Thinking Display Styles - 最终修复版 */
+#agent-thinking-container {
+    display: none;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 650px;
+    max-height: 80vh;
+    background: #ffffff !important;
+    border: 2px solid #667eea;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.25);
+    z-index: 1000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    opacity: 1 !important;
 }
-const Chess = window.Chess;
 
+#agent-thinking-container.minimized {
+    height: 50px;
+    overflow: hidden;
+}
 
-export class ChessAIEnhanced {
-    constructor(chessGame, options = {}) {
-        this.chessGame = chessGame;
-        this.showToast = options.showToast || console.log;
-        this.logMessage = options.logMessage || console.log;
-        this.showMoveChoiceModal = options.showMoveChoiceModal || this.defaultMoveChoiceModal;
-        // 新增：视觉聊天区消息显示函数
-        this.displayVisionMessage = options.displayVisionMessage || console.log;
-        this.chatApiHandler = options.chatApiHandler; // ✅ 接收注入的 handler
-        // chess.js 实例，用于验证和解析走法
-        this.chess = new Chess();
+/* 修复内容区域不透明 */
+.agent-thinking-container .session-content {
+    background: #ffffff !important;
+    opacity: 1 !important;
+}
 
-        // ====== 新增：代理 displayVisionMessage 支持按 id 更新同一条消息块 ======
-        // 保存原始显示函数（通常由 main.js 注入）
-        const originalDisplayVision = this.displayVisionMessage;
+/* 移动端优化 */
+@media (max-width: 768px) {
+    #agent-thinking-container {
+        width: 95% !important;
+        left: 2.5% !important;
+        right: 2.5% !important;
+        top: 10px !important;
+    }
+}
 
-        // 缓存（id -> 文本）
-        this._visionMsgCache = {};
+/* 增强的DeepResearch主题样式 */
+.agent-thinking-container .session-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+}
 
-        // helper: 定位容器
-        const _getVisionContainer = () => {
-            return document.getElementById('vision-message-history')
-                || document.getElementById('message-history')
-                || document.querySelector('.vision-container .vision-message-history')
-                || document.querySelector('.vision-container')
-                || document.body;
+/* 🎯 优化：研究统计网格 */
+.research-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.stat-item {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.stat-item:hover {
+    background: #edf2f7;
+    transform: translateY(-2px);
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #2d3748;
+    display: block;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #718096;
+    margin-top: 4px;
+}
+
+/* 🎯 新增：搜索记录样式 */
+.query-log-section {
+    margin-bottom: 16px;
+    padding: 0 16px;
+}
+
+.query-log {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.query-log-entry {
+    display: flex;
+    align-items: flex-start;
+    padding: 8px;
+    margin-bottom: 6px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.query-log-entry:last-child {
+    margin-bottom: 0;
+}
+
+.query-number {
+    background: #667eea;
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: bold;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.query-text {
+    flex: 1;
+    color: #2d3748;
+}
+
+.query-status {
+    margin-left: 8px;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+/* 🎯 新增：执行日志样式 */
+.execution-log-section {
+    margin-bottom: 16px;
+    padding: 0 16px;
+}
+
+.execution-log {
+    max-height: 300px;
+    overflow-y: auto;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.log-entry {
+    display: flex;
+    align-items: flex-start;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.log-entry:hover {
+    border-color: #667eea;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+}
+
+.log-entry:last-child {
+    margin-bottom: 0;
+}
+
+.log-icon {
+    font-size: 14px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.log-content {
+    flex: 1;
+}
+
+.log-meta {
+    font-size: 11px;
+    color: #718096;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.log-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #2d3748;
+    white-space: pre-wrap;
+}
+
+.log-placeholder {
+    color: #a0aec0;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+/* 日志类型颜色 */
+.log-type-thought {
+    border-left: 3px solid #4299e1;
+}
+
+.log-type-tool_start {
+    border-left: 3px solid #48bb78;
+}
+
+.log-type-tool_success {
+    border-left: 3px solid #38a169;
+}
+
+.log-type-tool_error {
+    border-left: 3px solid #e53e3e;
+}
+
+.log-type-plan {
+    border-left: 3px solid #805ad5;
+}
+
+.log-type-summary {
+    border-left: 3px solid #d69e2e;
+}
+
+.log-type-research_start {
+    border-left: 3px solid #667eea;
+}
+
+/* 会话控制按钮样式 */
+.session-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.session-controls button {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.session-controls button:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* 部分标题样式 */
+.section-title {
+    font-weight: bold;
+    color: #2d3748;
+    margin-bottom: 8px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.user-query-section, .research-stats-section {
+    margin-bottom: 16px;
+    padding: 0 16px;
+}
+
+.user-query {
+    background: #f7fafc;
+    padding: 12px;
+    border-radius: 6px;
+    border-left: 3px solid #667eea;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.session-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.session-icon {
+    font-size: 16px;
+}
+
+.session-title h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.session-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* Token详情样式 */
+.token-details {
+    font-size: 11px;
+    color: #718096;
+    margin-top: 2px;
+}
+
+.token-details span {
+    margin-right: 8px;
+}
+
+/* ✨ 修复：可折叠 Section 样式 */
+.section-title {
+    cursor: pointer;
+    user-select: none;
+}
+
+.section-title .toggle-icon {
+    margin-left: auto;
+    transition: transform 0.2s ease;
+    font-size: 12px;
+}
+
+.section-content-wrapper.minimized .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.section-content-wrapper .section-content {
+    max-height: 500px;
+    overflow: hidden;
+    transition: all 0.3s ease-in-out;
+}
+
+.section-content-wrapper.minimized .section-content {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    opacity: 0;
+}
+        `;
+
+        const styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        styleElement.textContent = css;
+        document.head.appendChild(styleElement);
+
+        this.stylesInjected = true;
+        console.log('[AgentThinkingDisplay] 优化样式注入完成');
+    }
+
+    /**
+     * 🎯 创建显示容器
+     */
+    createContainer() {
+        const container = document.createElement('div');
+        container.id = 'agent-thinking-container';
+        container.className = 'agent-thinking-container';
+        document.body.appendChild(container);
+        return container;
+    }
+
+    /**
+     * 🎯 开始会话
+     */
+    startSession(userMessage, maxIterations = 6, researchData = {}) {
+        if (!this.container) {
+            this.container = this.createContainer();
+        }
+        
+        const sessionId = `deepresearch_${Date.now()}`;
+        this.currentSession = {
+            id: sessionId,
+            userMessage: userMessage.replace(/！\s*$/, '').trim(),
+            maxIterations,
+            currentIteration: 0,
+            startTime: Date.now(),
+            status: 'initializing',
+            researchState: {
+                queryLog: [],
+                collectedSources: researchData.sources || [],
+                toolCalls: researchData.toolCalls || [],
+                metrics: {
+                    tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                    ...researchData.metrics
+                }
+            },
+            executionLog: []
         };
 
-        // helper: 立刻创建一个 AI 消息 DOM（与 vision-core 风格兼容）
-        const _createAIMessageElement = (id, initialHtml = '') => {
-            const container = _getVisionContainer();
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message ai';
-            messageDiv.setAttribute('data-msg-id', id);
-
-            const avatarDiv = document.createElement('div');
-            avatarDiv.className = 'avatar';
-            avatarDiv.textContent = '🤖';
-
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'content';
-
-            const markdownContainer = document.createElement('div');
-            markdownContainer.className = 'markdown-container';
-            markdownContainer.innerHTML = initialHtml || '';
-
-            contentDiv.appendChild(markdownContainer);
-            messageDiv.appendChild(avatarDiv);
-            messageDiv.appendChild(contentDiv);
-
-            container.appendChild(messageDiv);
-            return messageDiv;
+        // 🎯 重置折叠状态为默认值
+        this.sectionStates = {
+            'stats-content': false,      // 研究统计 - 默认展开
+            'query-log-content': false,  // 搜索记录 - 默认折叠
+            'execution-log-content': false // 执行日志 - 默认折叠
         };
 
-        // 代理函数：支持 { id, create, append } 三个选项
-        this.displayVisionMessage = (content, opts = {}) => {
-            const { id, create, append } = opts || {};
+        this.renderSession();
+        this.show();
+        this.container.classList.add('minimized'); // 启动时自动折叠整个面板
+        
+        // 🎯 记录研究开始
+        this.addExecutionLog(`开始研究: "${this.currentSession.userMessage}"`, 'research_start');
+        
+        return sessionId;
+    }
 
-            // append 模式：尝试更新已有消息（若不存在则创建）
-            if (append && id) {
-                let existing = document.querySelector(`[data-msg-id="${id}"]`);
-                if (!existing) {
-                    // 直接同步创建占位 DOM（避免 race）
-                    existing = _createAIMessageElement(id, content ? (typeof marked !== 'undefined' ? marked.parse(content) : content) : '');
-                    this._visionMsgCache[id] = content || '';
-                    return;
-                } else {
-                    const md = existing.querySelector('.markdown-container') || existing.querySelector('.content') || existing;
-                    if (md) {
-                        md.innerHTML = (typeof marked !== 'undefined') ? marked.parse(content) : content;
-                    } else {
-                        existing.innerHTML = (typeof marked !== 'undefined') ? marked.parse(content) : content;
-                    }
-                    this._visionMsgCache[id] = content;
-                    return;
-                }
-            }
+    /**
+     * 🎯 渲染会话界面
+     */
+    renderSession() {
+        const { userMessage, researchState } = this.currentSession;
+        
+        // 🎯 修复：正确计算工具调用统计数据
+        const queryCount = researchState.queryLog?.length || 0;
+        const sourcesCount = researchState.collectedSources?.length || 0;
+        const toolCallsCount = researchState.toolCalls?.length || 0;
+        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0; // 🎯 修复：严格比较true
+        const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
 
-            // create 专用：立即创建占位（不调用原函数，避免 race）
-            if (create && id) {
-                _createAIMessageElement(id, content ? (typeof marked !== 'undefined' ? marked.parse(content) : content) : '');
-                this._visionMsgCache[id] = content || '';
-                return;
-            }
+        // 🎯 修复：计算已用时间
+        const elapsedTime = this._calculateElapsedTime();
 
-            // 回退：调用原来的显示方法（保持兼容）
-            if (typeof originalDisplayVision === 'function') {
-                originalDisplayVision(content);
-            } else {
-                // 极端回退：简单创建 DOM
-                _createAIMessageElement('fallback-' + Date.now(), (typeof marked !== 'undefined') ? marked.parse(content) : content);
-            }
+        this.container.innerHTML = `
+            <div class="agent-session">
+                <div class="session-header">
+                    <div class="session-title">
+                        <span class="session-icon">🔍</span>
+                        <h3>DeepResearch 深度研究</h3>
+                        <span class="session-badge">${this.getStatusText(this.currentSession.status)}</span>
+                    </div>
+                    <div class="session-controls">
+                        <button class="btn-minimize">−</button>
+                        <button class="btn-close">×</button>
+                    </div>
+                </div>
+                
+                <div class="session-content">
+                    <!-- 用户研究请求 -->
+                    <div class="user-query-section">
+                        <div class="section-title">🎯 研究主题</div>
+                        <div class="user-query">${this.escapeHtml(userMessage)}</div>
+                    </div>
+                    
+                    <!-- 研究统计 -->
+                    <div class="research-stats-section section-content-wrapper ${this.sectionStates['stats-content'] ? 'minimized' : ''}">
+                        <div class="section-title" data-target="stats-content">
+                            📈 研究统计 <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content" id="stats-content">
+                            <div class="research-stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-value">${queryCount}</span>
+                                    <span class="stat-label">搜索次数</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${sourcesCount}</span>
+                                    <span class="stat-label">收集来源</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${toolCallsCount}</span>
+                                    <span class="stat-label">工具调用</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${successfulTools}</span>
+                                    <span class="stat-label">成功调用</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${tokenUsage.total_tokens.toLocaleString()}</span>
+                                    <span class="stat-label">Token 消耗</span>
+                                    <div class="token-details">
+                                        <span>上行: ${tokenUsage.prompt_tokens.toLocaleString()}</span>
+                                        <span>下行: ${tokenUsage.completion_tokens.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value" id="elapsed-time">${elapsedTime}</span>
+                                    <span class="stat-label">已用时间</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 🎯 搜索记录 -->
+                    <div class="query-log-section section-content-wrapper ${this.sectionStates['query-log-content'] ? 'minimized' : ''}">
+                        <div class="section-title" data-target="query-log-content">
+                            🔍 搜索记录 <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content" id="query-log-content">
+                            <div class="query-log" id="query-log">
+                                ${this.renderQueryLog(researchState.queryLog)}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 🎯 执行日志 -->
+                    <div class="execution-log-section section-content-wrapper ${this.sectionStates['execution-log-content'] ? 'minimized' : ''}">
+                        <div class="section-title" data-target="execution-log-content">
+                            📜 执行日志 <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content" id="execution-log-content">
+                            <div class="execution-log" id="execution-log">
+                                ${this.renderExecutionLog()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.attachContainerEvents();
+        this.attachCollapsibleEvents();
+        this.startTimeUpdate();
+    }
+
+    /**
+     * 🎯 修复：计算已用时间
+     */
+    _calculateElapsedTime() {
+        if (!this.currentSession) return '0s';
+        
+        const endTime = this.currentSession.endTime || Date.now();
+        const elapsedSeconds = Math.floor((endTime - this.currentSession.startTime) / 1000);
+        return `${elapsedSeconds}s`;
+    }
+
+    /**
+     * 🎯 渲染搜索记录
+     */
+    renderQueryLog(queryLog) {
+        if (!queryLog || queryLog.length === 0) {
+            return '<div class="log-placeholder">暂无搜索记录</div>';
+        }
+
+        return queryLog.map((query, index) => `
+            <div class="query-log-entry">
+                <div class="query-number">${index + 1}</div>
+                <div class="query-text">${this.escapeHtml(query.query)}</div>
+                <div class="query-status">${query.success ? '✅' : '❌'}</div>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * 🎯 渲染执行日志
+     */
+    renderExecutionLog() {
+        if (!this.executionLog || this.executionLog.length === 0) {
+            return '<div class="log-placeholder">等待DeepResearch开始分析...</div>';
+        }
+
+        return this.executionLog.map(log => `
+            <div class="log-entry log-type-${log.type}">
+                <div class="log-icon">${this.getLogIcon(log.type)}</div>
+                <div class="log-content">
+                    <div class="log-meta">${this.getLogTypeText(log.type)} - ${log.timestamp}</div>
+                    <div class="log-text">${this.escapeHtml(log.content)}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * 🎯 获取日志图标
+     */
+    getLogIcon(type) {
+        const iconMap = {
+            'research_start': '🚀',
+            'plan': '📋',
+            'thought': '💭',
+            'tool_start': '🛠️',
+            'tool_success': '✅',
+            'tool_error': '❌',
+            'summary': '📝',
+            'info': 'ℹ️'
         };
+        return iconMap[type] || '•';
     }
 
     /**
-     * 辅助函数：从 localStorage 获取 API Key
-     * @returns {string} API Key
+     * 🎯 获取日志类型文本
      */
-    _getApiKey() {
-        return localStorage.getItem('gemini_api_key') || '';
+    getLogTypeText(type) {
+        const textMap = {
+            'research_start': '研究开始',
+            'plan': '研究计划',
+            'thought': '模型思考',
+            'tool_start': '工具调用',
+            'tool_success': '工具成功',
+            'tool_error': '工具错误',
+            'summary': '研究总结',
+            'info': '信息'
+        };
+        return textMap[type] || type;
     }
 
     /**
-     * 辅助函数：设置延时
-     * @param {number} ms - 延时毫秒数
+     * 🎯 添加执行日志
      */
-    _delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    /**
-     * 内部辅助函数：将 FEN 字符串转换为 ASCII 文本棋盘 - 修复版
-     * @param {string} fen - FEN 字符串
-     * @returns {string} ASCII 棋盘表示
-     */
-    _fenToAscii(fen) {
-        // 验证 FEN 格式
-        const fenParts = fen.split(' ');
-        if (fenParts.length !== 6) {
-            throw new Error(`无效的FEN格式: ${fen}`);
-        }
-
-        const [piecePlacement] = fenParts;
-        let ascii = '  +------------------------+\n';
-        const rows = piecePlacement.split('/');
+    addExecutionLog(content, type = 'info') {
+        const logEntry = {
+            content,
+            type,
+            timestamp: new Date().toLocaleTimeString()
+        };
         
-        for (let i = 0; i < rows.length; i++) {
-            let rowStr = `${8 - i} |`;
-            let fileIndex = 0;
-            
-            for (const char of rows[i]) {
-                if (isNaN(parseInt(char, 10))) {
-                    // 棋子
-                    rowStr += ` ${char} `;
-                    fileIndex++;
-                } else {
-                    // 空格 - 逐个文件处理
-                    const spaces = parseInt(char, 10);
-                    for (let s = 0; s < spaces; s++) {
-                        rowStr += ' . ';
-                        fileIndex++;
-                    }
-                }
-            }
-            ascii += rowStr + '|\n';
-        }
-        ascii += '  +------------------------+\n';
-        ascii += '    a  b  c  d  e  f  g  h\n';
-        return ascii;
-    }
-
-    /**
-     * 主方法：请求AI并执行其返回的最佳走法
-     */
-    async askAIForMove() {
-        try {
-            // 在获取FEN前确保影子引擎同步
-            this.chessGame.forceShadowSync();
-            
-            const currentFEN = this.chessGame.getCurrentFEN();
-
-            // --- 第一阶段：获取AI的详细分析 ---
-            this.logMessage('第一阶段：向AI请求棋局分析...', 'system');
-            const analysisPrompt = this.buildAnalysisPrompt(currentFEN);
-            // 使用固定 id 来把流追加到同一条消息中（阶段一）
-            const analysisId = `chess-analysis-${Date.now()}`;
-            this.displayVisionMessage('**♟️ 国际象棋AI分析**', { id: analysisId, create: true });
-            const analysisResponse = await this.sendToAI(analysisPrompt, 'models/gemini-2.5-flash', analysisId);
-            const analysisLog = typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse, null, 2);
-            this.logMessage(`AI分析响应: ${analysisLog}`, 'ai-analysis');
-
-            // 🚨 关键：在两次模型请求之间设置延时，避免 429 速率限制
-            const delayMs = 1000; // 1 秒延时
-            this.logMessage(`等待 ${delayMs}ms 后进行第二次模型请求...`, 'system');
-            await this._delay(delayMs);
-
-            // --- 第二阶段：使用第二个AI精确提取最佳走法 ---
-            this.logMessage('第二阶段：使用AI精确提取最佳走法...', 'system');
-            const extractionPrompt = this.buildPreciseExtractionPrompt(analysisResponse);
-            // 阶段二：走法提取，使用不同 id
-            const extractionId = `chess-extract-${Date.now()}`;
-            this.displayVisionMessage('**🎯 推荐走法**', { id: extractionId, create: true });
-            const extractedResponse = await this.sendToAI(extractionPrompt, 'models/gemini-2.0-flash', extractionId);
-            const extractionLog = typeof extractedResponse === 'string' ? extractedResponse : JSON.stringify(extractedResponse, null, 2);
-            this.logMessage(`AI提取响应: "${extractionLog}"`, 'ai-extraction');
-
-            // --- 第三阶段：验证并决策 ---
-            this.logMessage('第三阶段：验证提取的走法并决策...', 'system');
-            const finalMoves = this.extractAllSANFromText(extractedResponse);
-            this.logMessage(`最终提取并验证了 ${finalMoves.length} 个走法: [${finalMoves.join(', ')}]`, 'debug');
-
-            let chosenMove = null;
-
-            if (finalMoves.length === 0) {
-                throw new Error('AI未能提取出任何有效走法');
-            } else {
-                // 修改：无论有多少个选项，都显示选择模态框
-                this.logMessage(`决策：找到 ${finalMoves.length} 个推荐走法，请求用户选择...`, 'system');
-                
-                // 在视觉聊天区显示选项
-                const optionsText = finalMoves.length === 1 
-                    ? `唯一推荐走法: **${finalMoves[0]}**`
-                    : `请从以下走法中选择: ${finalMoves.join(', ')}`;
-                this.displayVisionMessage(`**🤔 走法选择**\n\n${optionsText}`);
-                
-                try {
-                    chosenMove = await this.showMoveChoiceModal(analysisResponse, finalMoves);
-                    this.logMessage(`用户选择了走法: "${chosenMove}"`, 'user-choice');
-                    this.displayVisionMessage(`**👤 用户确认**\n\n已确认执行走法: **${chosenMove}**`);
-                } catch (error) {
-                    this.showToast('用户取消了选择');
-                    this.logMessage('用户取消了AI走法选择', 'info');
-                    this.displayVisionMessage(`**❌ 操作取消**\n\n用户取消了走法选择`);
-                    return false;
-                }
-            }
-
-            // --- 第四阶段：执行 ---
-            this.logMessage(`第四阶段：执行最终确定的走法 "${chosenMove}"`, 'system');
-            const moveResult = await this.executeSANMove(chosenMove, currentFEN);
-            
-            // 新增：在视觉聊天区显示执行结果
-            if (moveResult) {
-                this.displayVisionMessage(`**🎊 执行成功**\n\n走法 **${chosenMove}** 已成功执行`);
-            } else {
-                this.displayVisionMessage(`**⚠️ 执行失败**\n\n走法 **${chosenMove}** 执行失败`);
-            }
-            
-            return moveResult;
-
-        } catch (error) {
-            this.showToast(`AI走法获取失败: ${error.message}`);
-            this.logMessage(`AI处理流程错误: ${error.message}`, 'error');
-            // 新增：在视觉聊天区显示错误信息
-            this.displayVisionMessage(`**💥 错误信息**\n\nAI走法获取失败: ${error.message}`);
-            console.error('AI Error:', error);
-            return false;
-        }
-    }
-
-    /**
-     * 第一阶段：构建分析提示词 - 修复版
-     */
-    buildAnalysisPrompt(currentFEN) {
-        // 验证 FEN 格式
-        const fenParts = currentFEN.split(' ');
-        if (fenParts.length !== 6) {
-            throw new Error(`无效的FEN格式: ${currentFEN}`);
-        }
-
-        const [piecePlacement, turnColor, castling, enPassant, halfMove, fullMove] = fenParts;
-        const turn = turnColor === 'w' ? '白方 (White)' : '黑方 (Black)';
-        const asciiBoard = this._fenToAscii(currentFEN);
-
-        // ================== 修复：棋子数量和阶段判断逻辑 ==================
-        // 计算棋子数量
-        const pieceCount = piecePlacement.replace(/[^a-zA-Z]/g, '').length;
+        this.executionLog.push(logEntry);
         
-        // 计算子力价值
-        const value = { p:1, n:3, b:3, r:5, q:9, k:0, P:1, N:3, B:3, R:5, Q:9, K:0 };
-        let material = 0;
-        for (const char of piecePlacement.replace(/\//g, '')) {
-            if (value[char]) {
-                material += value[char];
-            }
-        }
-
-        // 简化的阶段判断逻辑
-        let gamePhase;
-        if (material > 60) {
-            gamePhase = '开局 (Opening)';
-        } else if (material > 25) {
-            gamePhase = '中局 (Middlegame)';
-        } else {
-            gamePhase = '残局 (Endgame)';
+        // 限制日志数量，防止内存泄漏
+        if (this.executionLog.length > 50) {
+            this.executionLog = this.executionLog.slice(-40);
         }
         
-        // 🚨 明确棋子颜色与大小写规则
-        const pieceConstraints = turnColor === 'w' 
-            ? '🚨🚨 极其关键：当前为白方回合，所有推荐走法必须使用大写字母（K、Q、R、B、N、P），且必须是白方棋子的合法移动。'
-            : '🚨🚨 极其关键：当前为黑方回合，所有推荐走法必须使用小写字母（k、q、r、b、n、p），且必须是黑方棋子的合法移动。';
-
-        return `你是一位国际象棋特级大师兼规则验证专家。请基于精确的当前棋盘状态进行分析。
-
-## 🎯 核心目标
-1.  **首先，极其严格地确认当前回合方。**
-2.  深度分析当前局面 → 评估优劣势 → 推荐**合法且最优的 1–2 个走法**。
-3.  **绝对禁止推荐非当前回合方的走法。**
-
-## 📋 输入信息
-
-### 📊 当前棋盘 (ASCII 视图)
-\`\`\`
-${asciiBoard}
-\`\`\`
-
-🎯 当前局面 FEN: \`${currentFEN}\`
-⚡ 当前回合方: ${turn}
-📈 局面阶段: ${gamePhase} (基于棋子数量: ${pieceCount})
-🏰 易位权利: ${castling || '无'}
-🎯 吃过路兵目标格: ${enPassant !== '-' ? enPassant : '无'}
-
-${pieceConstraints}
-
-⚠️ 严格区分大小写。所有推荐走法必须符合当前颜色的棋子规则。（如 "Nf3" 或 "qf6"）。
-
----
-
-## ✅ 验证要求（执行顺序）
-1. **棋盘精确匹配**  
-   - 必须对照ASCII棋盘并逐子验证起始位置有对应颜色的棋子，确保每个推荐走法的起始格确实有对应颜色的棋子。
-   - 仔细解析 FEN 的棋子布局，确保每个推荐走法的起始位置确实有对应颜色的棋子。  
-2. **合法性检查（推荐前必须验证）**  
-   - 在推荐前，请先 mentally 模拟执行走法，确认它在该局面下是合法的。
-   - 所有走法必须完全符合国际象棋规则  
-   - 必须符合棋子的移动规则。  
-   - 不得导致己方王被将军。  
-   - 包含特殊规则（王车易位、吃过路兵、升变）。  
-3. **格式标准化**  
-   - 严格使用 SAN 记法（标准代数符号）。  
-   - 确保大小写正确。
-   - 包含所有必要符号（如 x、+、#、= 等）。
-   - 确保所有必要信息都被包含。
----
-
-## 🧠 深度分析框架
-
-### 局面摘要
-1. **核心优势**: [简述当前回合方最主要的优势，例如：空间、子力协调、兵形]
-2. **主要弱点**: [简述当前回合方最需要注意的弱点或威胁，例如：王的安全、孤兵]
-3. **战略目标**: [用一句话概括当前最主要的任务，例如：完成出子并王车易位、对f7格展开攻击]
-
-### 走法推荐优先级
-1. **强制战术**: 将军、得子、致命威胁
-2. **战略发展**: 控制关键格、改善子力位置
-3. **局面巩固**: 加强防御、消除弱点
-
----
-
-## 📝 输出格式
-请严格按照以下模板组织输出：
-
-\`\`\`
-### 局面分析
-**当前回合方确认：${turn}**
-**局面阶段判断**: ${gamePhase}
-[基于上述深度分析框架的专业分析，简要总结局面倾向（如：白方稍优/均势），并点出关键的战术和战略要点。]
-
-### 走法推荐
-1. **最佳走法** [走法1的SAN格式, 如: Nf3]
-   - 战略意图: [简要说明此走法的核心目标]
-   - 预期效果: [此走法对局面的直接影响，例如：控制中心、准备易位]
-   - 对手可能应对: [预测对手最可能的一步或两步强力应对，用逗号分隔并可附带简要说明，格式如: "2. c4 (进入后翼弃兵), 2. Nf3 (灵活发展)"]
-   
-
-2. **备选走法**: [走法2的SAN格式, 如: e4]
-   - 战略意图: [简要说明此走法的核心目标]
-   - 预期效果: [此走法对局面的直接影响，例如：控制中心、准备易位]
-   - 对手可能应对: [预测对手最可能的几个应对。请直接列出走法，用逗号分隔并可附带简要说明，格式如: "c4 (进入后翼弃兵), Nf3 (灵活发展)"]
-   
-### 最终推荐
-⚡ **此行必须唯一且严格遵守以下格式：**
-最佳走法推荐: [走法1的SAN格式, 如: Nf3]
-（不添加任何解释、符号或多余文字）
-\`\`\`
-
----
-
-## 🚫 严格禁止
-- ❌ 推荐当前棋盘不存在的棋子移动  
-- ❌ 建议非法或导致己方被将军的走法  
-- ❌ 使用模糊描述代替 SAN 记法  
-- ❌ 推荐错误颜色方的走法  
-- ❌ 依赖历史局面信息 - 只基于当前FEN分析
-
-请基于精确的棋盘验证与规则逻辑，输出专业、合法、可执行的最佳走法建议。`;
+        this.renderSession();
     }
 
     /**
-     * 第二阶段：构建精确提取提示词 - 优化版本
-     * 专门针对第一阶段输出的结构化格式设计
+     * 🎯 添加搜索记录
      */
-    buildPreciseExtractionPrompt(analysisResponse) {
-        return `你是一个专业的国际象棋走法提取引擎。你的任务是从下面的AI分析文本中，找出所有被明确推荐的走法。
-
-## 🎯 提取目标
-从以下结构化分析文本中提取**所有**被推荐的SAN走法：
-
-### 提取范围包括：
-1. **候选走法部分**：标记为"候选走法"中的所有走法（如 "Nf3", "e4" 等）
-2. **最终推荐部分**：标记为"最佳走法推荐"后的走法
-
-## 📋 输入文本
----
-${analysisResponse}
----
-
-## ✅ 提取规则
-
-### 必须提取的走法类型：
-- ✅ 标准棋子移动：Nf3, e4, Bb5, exd5
-- ✅ 王车易位：O-O, O-O-O (保持原始大小写)
-- ✅ 兵升变：e8=Q, a1=R (保持原始格式)
-- ✅ 吃子走法：Nxf3, exd5
-- ✅ 将军/将死：Qh5+, Rd8#
-- ✅ 所有出现在"候选走法"和"最佳走法推荐"中的SAN走法
-
-### 格式处理规则：
-- 🔄 **保持原始大小写**：不要"纠正"大小写，原样保留
-- 🔄 **保留完整符号**：包括x、+、#、=等所有符号
-- 🔄 **王车易位特殊处理**：O-O和O-O-O必须作为一个整体提取
-- 🔄 **去重处理**：如果同一走法多次出现，只保留一次
-
-### 严格禁止：
-- ❌ 不要提取分析中提到的历史走法或对方走法
-- ❌ 不要提取被评价为"不好"、"劣势"的走法
-- ❌ 不要修改任何走法的原始格式
-- ❌ 不要添加分析文本中不存在的走法
-
-## 🎪 特殊情形处理
-
-### 遇到以下情况时：
-1. **多个候选走法**：提取所有编号的候选走法（1. 2. 3.）
-2. **最终推荐与候选重复**：仍然保留在列表中
-3. **分析中散落的推荐**：如果明确用"推荐"、"好着"、"可以考虑"等词语，则提取
-4. **格式略有偏差**：如"Nf3"写为"N f3"，尝试修正为"Nf3"
-
-## 📝 输出格式
-
-**必须且仅返回**一个逗号分隔的SAN走法列表。
-
-示例输出：
-Nf3, e4, Bb5, O-O, exd5
-
-text
-
-或（如果只有一个走法）：
-Nf3
-
-text
-
-## 🚨 关键检查点
-在输出前，请确认：
-1. 已提取所有"候选走法"中的走法
-2. 已提取"最佳走法推荐"的走法  
-3. 已检查分析正文中的明确推荐
-4. 所有走法保持原始大小写和格式
-5. 输出是纯SAN列表，没有其他文字
-
-现在，请从上面的分析文本中提取所有推荐的SAN走法：`;
-    }
-
-    /**
-     * 解析并执行AI返回的SAN走法（含智能降级和详细诊断）
-     */
-    async executeSANMove(sanMove, currentFEN) {
-        if (!sanMove) {
-            throw new Error('最终确定的走法为空');
+    addQueryRecord(query, success = true) {
+        if (!this.currentSession) return;
+        
+        if (!this.currentSession.researchState.queryLog) {
+            this.currentSession.researchState.queryLog = [];
         }
-
-        // 初始清理
-        let cleanedMove = sanMove.replace(/^["'\s]+|["'\s.,;:]+$/g, '').trim();
-        this.logMessage(`执行走法: 原始="${sanMove}" -> 清理="${cleanedMove}"`, 'debug');
-
-        // 王车易位标准化
-        cleanedMove = cleanedMove
-            .replace(/\b0-0-0\b/g, 'O-O-O')
-            .replace(/\b0-0\b/g, 'O-O')
-            .replace(/\bo-o-o\b/gi, 'O-O-O')
-            .replace(/\bo-o\b/gi, 'O-O');
-
-        // 特殊处理：单独的"O"自动修正
-        if (cleanedMove === 'O') {
-            this.logMessage('检测到单独"O"，尝试自动修正为王车易位', 'warn');
-            this.chess.load(currentFEN); // 确保内部棋局状态正确
-            
-            let foundCastlingMove = false;
-            // 检查短易位 O-O 是否合法
-            if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O')) {
-                cleanedMove = 'O-O';
-                this.logMessage(`自动修正: "O" -> "${cleanedMove}" (短易位)`, 'info');
-                foundCastlingMove = true;
-            } else if (this.chess.moves({ verbose: true }).some(m => m.san === 'O-O-O')) { // 检查长易位 O-O-O 是否合法
-                cleanedMove = 'O-O-O';
-                this.logMessage(`自动修正: "O" -> "${cleanedMove}" (长易位)`, 'info');
-                foundCastlingMove = true;
-            }
-            
-            if (!foundCastlingMove) {
-                 this.logMessage('无法将单独"O"修正为合法的王车易位', 'warn');
-                 // 如果修正失败，就让它继续尝试原始的 'O'，因为后续的降级策略可能会处理
-            }
-        }
-
-        // 加载局面并尝试执行
-        this.chess.load(currentFEN);
-        let moveObject = this.chess.move(cleanedMove, { sloppy: true });
-
-        // 如果失败，启动智能降级尝试
-        if (moveObject === null) {
-            this.logMessage(`初始执行失败: "${cleanedMove}"，启动降级策略...`, 'warn');
-            
-            const alternativeMoves = this.generateAlternativeMoves(cleanedMove, currentFEN);
-            
-            for (const altMove of alternativeMoves) {
-                this.logMessage(`尝试替代走法: "${altMove}"`, 'debug');
-                this.chess.load(currentFEN); // 重置局面
-                moveObject = this.chess.move(altMove, { sloppy: true });
-                
-                if (moveObject !== null) {
-                    cleanedMove = altMove;
-                    this.logMessage(`降级成功: 使用"${cleanedMove}"`, 'info');
-                    break;
-                }
-            }
-        }
-
-        // 最终验证
-        if (moveObject === null) {
-            const availableMoves = this.chess.moves();
-            this.logMessage(`所有执行尝试失败。可用走法: [${availableMoves.join(', ')}]`, 'error');
-            throw new Error(`无法执行走法: "${sanMove}"。请检查走法是否合法。`);
-        }
-
-        // 执行物理移动
-        const from = this.squareToIndices(moveObject.from);
-        const to = this.squareToIndices(moveObject.to);
-
-        this.showToast(`AI走法: ${cleanedMove} (${moveObject.from} → ${moveObject.to})`);
-
-        const moveResult = this.chessGame.movePiece(from.row, from.col, to.row, to.col);
-        this.chessGame.renderBoard();
-
-        return moveResult;
-    }
-
-    /**
-     * 使用健壮的正则从文本中提取所有SAN走法，并进行全面规范化
-     */
-    extractAllSANFromText(text) {
-        if (!text || typeof text !== 'string') {
-            this.logMessage('提取走法：输入文本为空或非字符串', 'warn');
-            return [];
-        }
-
-        this.logMessage(`原始提取文本: ${text.substring(0, 200)}...`, 'debug');
-
-        // 全面文本预处理
-        let normalized = text
-            // ✅ 合并优点：从您的版本中借鉴的增强预处理
-            .replace(/[\uFEFF\xA0]/g, ' ')             // 清理不可见字符
-            .replace(/[🤖🤔👤🎊]/g, ' ')                // 移除特定 Emoji
-            .replace(/[，、；：]/g, ',')                // 标准化中文标点
-            // 保留现有版本的优点
-            .replace(/（/g, '(').replace(/）/g, ')')    // 全角括号转半角
-            .replace(/\b0-0-0\b/g, 'O-O-O')            // 数字零写法标准化
-            .replace(/\b0-0\b/g, 'O-O')
-            .replace(/\b(o-o-o)\b/gi, 'O-O-O')         // 小写字母标准化
-            .replace(/\b(o-o)\b/gi, 'O-O')
-            // 移除常见注释和标点
-            .replace(/\([^)]*\)/g, ' ')                // 移除括号内容
-            .replace(/\[[^\]]*\]/g, ' ')               // 移除方括号内容
-            .replace(/[!?{}]/g, ' ')                   // 移除特殊标点
-            // 压缩空白
-            .replace(/\s+/g, ' ')
-            .trim();
-
-        this.logMessage(`预处理后文本: ${normalized.substring(0, 200)}...`, 'debug');
-
-        // 进一步优化的SAN正则表达式，避免重复匹配 (✅ 合并优点：增加 i 标志变为大小写不敏感)
-        const sanPattern = /\b(?:O-O-O|O-O|(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)|[a-h][1-8])\b/gi;
-
-        const rawMatches = normalized.match(sanPattern) || [];
-        this.logMessage(`原始匹配: [${rawMatches.join(', ')}]`, 'debug');
-
-        // 深度清理和规范化
-        const cleaned = rawMatches.map(s => {
-            let move = s
-                .replace(/^[,.;:"'!?()\s]+|[,.;:"'!?()\s]+$/g, '') // 移除两端标点
-                .trim()
-                // 二次标准化（保险）
-                .replace(/\b0-0-0\b/g, 'O-O-O')
-                .replace(/\b0-0\b/g, 'O-O')
-                .replace(/\bo-o-o\b/gi, 'O-O-O')
-                .replace(/\bo-o\b/gi, 'O-O');
-
-            return move;
-        }).filter(move => {
-            // 过滤掉明显无效的走法
-            if (!move || move.length === 0) return false;
-            if (move.length === 1 && move !== 'O') return false; // 单独的字符（除了O）都无效
-            if (move === '-' || move === 'x') return false; // 单独的符号无效
-            return true;
+        
+        this.currentSession.researchState.queryLog.push({
+            query,
+            success,
+            timestamp: Date.now()
         });
-
-        // 去重并保留顺序
-        const seen = new Set();
-        const unique = [];
-        for (const mv of cleaned) {
-            if (mv && !seen.has(mv)) {
-                seen.add(mv);
-                unique.push(mv);
-            }
-        }
-
-        this.logMessage(`最终提取走法: [${unique.join(', ')}]`, 'info');
-        return unique;
+        
+        this.renderSession();
     }
 
     /**
-     * 将棋盘坐标（如 'e4'）转换为行列索引 (已修复)
+     * 🎯 更新研究统计数据
      */
-    squareToIndices(square) {
-        const files = 'abcdefgh';
-        // 修复：从 square 字符串的不同部分提取 file 和 rank
-        const fileChar = square.charAt(0);
-        const rankChar = square.charAt(1);
-        const col = files.indexOf(fileChar);
-        const row = 8 - parseInt(rankChar, 10);
-        if (isNaN(col) || isNaN(row) || col < 0 || row < 0 || row > 7) {
-            console.error(`无效的棋盘坐标: ${square}`);
-            // 提供一个安全的回退值，尽管理论上不应发生
-            return { row: 0, col: 0 };
+    updateResearchStats(stats) {
+        if (!this.currentSession) return;
+        
+        // 更新研究状态数据
+        if (stats.sources) {
+            this.currentSession.researchState.collectedSources = stats.sources;
         }
-        return { row, col };
-    }
-
-    /**
-     * 改进版：SSE 流式解析，支持按 messageId 更新同一条消息（避免重复气泡）
-     * @param {string} prompt
-     * @param {string} model
-     * @param {string|null} messageId - 可选：用于将流追加到已有消息块
-     */
-    async sendToAI(prompt, model = 'models/gemini-2.5-flash', messageId = null) {
-        try {
-            this.logMessage(`发送AI请求 (模型: ${model}): ${prompt.substring(0, 120)}...`, 'debug');
-
-            // ==== 占位消息安全创建 ====
-            const msgId = messageId || `ai-${Date.now()}`;
-            const existingMsg = document.querySelector(`[data-msg-id="${msgId}"]`);
-            if (!existingMsg) {
-                this.displayVisionMessage('', { id: msgId, create: true });
-            }
-
-            const requestBody = {
-                model,
-                messages: [{ role: 'user', content: prompt }],
-                stream: true,
-                enableReasoning: true,  // ✅ 改成 worker.mjs 能识别的字段
-                temperature: 1.0,
-                top_p: 0.9
+        if (stats.toolCalls) {
+            this.currentSession.researchState.toolCalls = stats.toolCalls;
+        }
+        if (stats.metrics) {
+            this.currentSession.researchState.metrics = {
+                ...this.currentSession.researchState.metrics,
+                ...stats.metrics
             };
+        }
 
-            const response = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody),
+        this.renderSession();
+    }
+
+    /**
+     * 🎯 修复：添加工具调用记录 - 确保success属性正确设置
+     */
+    addToolCallRecord(toolName, parameters, success = true, result = null) {
+        if (!this.currentSession) return;
+
+        // 🎯 修复：确保success是布尔值
+        const toolSuccess = Boolean(success);
+
+        const toolCall = {
+            tool: toolName,
+            parameters,
+            success: toolSuccess, // 🎯 修复：确保是布尔值
+            result: result ? this.formatStepResult(result) : null,
+            timestamp: Date.now()
+        };
+
+        if (!this.currentSession.researchState.toolCalls) {
+            this.currentSession.researchState.toolCalls = [];
+        }
+        
+        this.currentSession.researchState.toolCalls.push(toolCall);
+        
+        // 🎯 特殊处理：如果是搜索工具，记录query
+        if (toolName === 'tavily_search' && parameters.query) {
+            this.addQueryRecord(parameters.query, toolSuccess);
+        }
+        
+        this.renderSession();
+    }
+
+    /**
+     * 🎯 获取状态文本
+     */
+    getStatusText(status) {
+        const statusMap = {
+            'initializing': '初始化',
+            'planning': '规划中',
+            'executing': '执行中',
+            'summarizing': '总结中',
+            'completed': '已完成',
+            'error': '错误'
+        };
+        return statusMap[status] || status;
+    }
+
+    /**
+     * 🎯 格式化步骤结果
+     */
+    formatStepResult(result) {
+        if (typeof result === 'string') {
+            if (result.length > 100) {
+                return result.substring(0, 100) + '...';
+            }
+            return result;
+        }
+        return JSON.stringify(result).substring(0, 100) + '...';
+    }
+
+    /**
+     * 🎯 转义HTML
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /**
+     * 🎯 附加容器事件
+     */
+    attachContainerEvents() {
+        // 最小化按钮
+        const minimizeBtn = this.container.querySelector('.btn-minimize');
+        if (minimizeBtn) {
+            minimizeBtn.addEventListener('click', () => {
+                this.container.classList.toggle('minimized');
             });
+        }
 
-            if (!response.ok) {
-                const errText = await response.text().catch(() => '');
-                throw new Error(`API请求失败: ${response.status} ${errText}`);
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-
-            let buffer = '';
-            let accumulatedText = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                // 处理片段（可能不是完整 JSON）
-                const chunk = decoder.decode(value, { stream: true });
-                buffer += chunk;
-
-                // 将 buffer 按 SSE 的空行分段，保留最后一段（可能不完整）
-                const parts = buffer.split('\n\n');
-                buffer = parts.pop(); // 不完整部分留给下轮
-
-                for (const part of parts) {
-                    if (!part || !part.startsWith('data: ')) continue;
-                    const dataStr = part.slice(6).trim();
-                    if (dataStr === '[DONE]') {
-                        // 流结束
-                        break;
-                    }
-                    try {
-                        const data = JSON.parse(dataStr);
-                        const delta = data.choices?.[0]?.delta;
-                        // delta 里可能是 content、reasoning_content 等
-                        const newText = delta?.content || delta?.reasoning_content || '';
-                        if (newText) {
-                            accumulatedText += newText;
-                            // 立即更新同一个消息块（不会创建新气泡）
-                            this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
-                        }
-                    } catch (e) {
-                        // 忽略解析错误（可能是分片）
-                    }
-                }
-            }
-
-            // 流结束之后，buffer 里可能有尾部
-            if (buffer && buffer.startsWith('data: ')) {
-                const tail = buffer.slice(6).trim();
-                if (tail !== '[DONE]') {
-                    try {
-                        const data = JSON.parse(tail);
-                        const delta = data.choices?.[0]?.delta;
-                        const newText = delta?.content || delta?.reasoning_content || '';
-                        if (newText) {
-                            accumulatedText += newText;
-                            this.displayVisionMessage(accumulatedText, { id: msgId, append: true });
-                        }
-                    } catch (e) {
-                        // ignore
-                    }
-                }
-            }
-
-            return accumulatedText.trim();
-        } catch (error) {
-            this.logMessage(`AI请求错误: ${error.message}`, 'error');
-            // 显示错误到该占位（如果没指定 id，就创建一个新消息显示错误）
-            const errId = `ai-err-${Date.now()}`;
-            this.displayVisionMessage(`💥 AI请求失败: ${error.message}`, { id: errId, create: true });
-            throw error;
+        // 关闭按钮
+        const closeBtn = this.container.querySelector('.btn-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                this.hide();
+            });
         }
     }
 
     /**
-     * 默认的模态框处理器（修复版，支持单个选项）
+     * 🎯 修复：为所有可折叠的section标题添加点击事件 - 保存折叠状态
      */
-    defaultMoveChoiceModal(analysis, moves) {
-        return new Promise((resolve, reject) => {
-            // 对于单个选项，提供更友好的提示
-            if (moves.length === 1) {
-                const confirmMessage = `AI分析:\n${analysis}\n\nAI推荐唯一走法: ${moves[0]}\n\n点击"确定"执行此走法，或"取消"放弃。`;
-                const confirmed = confirm(confirmMessage);
-                if (confirmed) {
-                    resolve(moves[0]);
-                } else {
-                    reject(new Error('用户取消了选择'));
+    attachCollapsibleEvents() {
+        this.container.querySelectorAll('.section-title[data-target]').forEach(title => {
+            title.addEventListener('click', () => {
+                const contentWrapper = title.closest('.section-content-wrapper');
+                if (contentWrapper) {
+                    const target = title.dataset.target;
+                    // 🎯 修复：切换并保存折叠状态
+                    const isMinimized = !contentWrapper.classList.contains('minimized');
+                    contentWrapper.classList.toggle('minimized');
+                    this.sectionStates[target] = isMinimized;
+                    
+                    console.log(`[AgentThinkingDisplay] 折叠状态更新: ${target} = ${isMinimized}`);
                 }
-            } else {
-                // 多个选项的原始逻辑
-                const choice = prompt(
-                    `AI分析:\n${analysis}\n\nAI提供了多个选项，请输入您想执行的走法:\n${moves.join(', ')}`,
-                    moves[0] // 默认选择第一个
+            });
+        });
+    }
+
+    /**
+     * 🎯 修复：开始时间更新 - 确保完成后不重置
+     */
+    startTimeUpdate() {
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
+        }
+
+        // 🎯 修复：只在会话未完成时更新计时器
+        if (this.currentSession && this.currentSession.status !== 'completed') {
+            this.timeUpdateInterval = setInterval(() => {
+                if (this.currentSession && this.currentSession.status !== 'completed') {
+                    const elapsedTime = this._calculateElapsedTime();
+                    const timeElement = this.container.querySelector('#elapsed-time');
+                    if (timeElement) {
+                        timeElement.textContent = elapsedTime;
+                    }
+                } else {
+                    // 会话完成时清理计时器
+                    clearInterval(this.timeUpdateInterval);
+                    this.timeUpdateInterval = null;
+                }
+            }, 1000);
+        }
+    }
+
+    /**
+     * 🎯 显示容器
+     */
+    show() {
+        if (this.container) {
+            this.container.style.display = 'block';
+        }
+    }
+
+    /**
+     * 🎯 隐藏容器
+     */
+    hide() {
+        if (this.container) {
+            this.container.style.display = 'none';
+            if (this.timeUpdateInterval) {
+                clearInterval(this.timeUpdateInterval);
+                this.timeUpdateInterval = null;
+            }
+        }
+    }
+
+    /**
+     * 🎯 修复：完成会话 - 确保时间正确显示
+     */
+    completeSession(finalResult = {}) {
+        if (!this.currentSession) return;
+
+        this.currentSession.status = 'completed';
+        this.currentSession.endTime = Date.now();
+        
+        // 🎯 修复：强制更新一次最终时间
+        const elapsedTime = this._calculateElapsedTime();
+        const timeElement = this.container.querySelector('#elapsed-time');
+        if (timeElement) {
+            timeElement.textContent = elapsedTime;
+        }
+
+        // 清理时间更新
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
+            this.timeUpdateInterval = null;
+        }
+
+        this.addDeepResearchSummary(finalResult);
+        this.renderSession(); // 🎯 重新渲染以确保所有状态正确显示
+    }
+
+    /**
+     * 🎯 增强DeepResearch完成总结
+     */
+    addDeepResearchSummary(finalResult = {}) {
+        const { researchState, startTime, endTime } = this.currentSession;
+        const totalTime = ((endTime - startTime) / 1000).toFixed(1);
+        
+        const queryCount = researchState.queryLog?.length || 0;
+        const sourcesCount = researchState.collectedSources?.length || 0;
+        const toolCallsCount = researchState.toolCalls?.length || 0;
+        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0; // 🎯 修复：严格比较
+        const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0 };
+
+        const iterations = finalResult.iterations || 0;
+        const researchMode = finalResult.research_mode || 'standard';
+
+        const summary = `
+🔍 DeepResearch 执行完成！
+
+• 研究主题: ${this.currentSession.userMessage}
+• 研究模式: ${researchMode}
+• 搜索次数: ${queryCount}次
+• 收集来源: ${sourcesCount}个
+• 工具调用: ${toolCallsCount}次 (成功: ${successfulTools}次)
+• 研究迭代: ${iterations}次
+• Token消耗: ${tokenUsage.total_tokens.toLocaleString()}
+• 总用时: ${totalTime}秒
+• 完成时间: ${new Date().toLocaleTimeString()}
+        `;
+
+        this.addExecutionLog(summary, 'summary');
+    }
+
+    /**
+     * 🎯 设置事件监听器
+     */
+    setupEventListeners() {
+        console.log('🔍 AgentThinkingDisplay 设置事件监听器...');
+
+        const handlers = {
+            'research:start': (event) => {
+                console.log('🔍 research:start 接收:', event.detail.data);
+                const { topic, researchData } = event.detail.data;
+                this.startSession(topic, 8, researchData);
+            },
+            'research:plan_generated': (event) => {
+                console.log('🔍 research:plan_generated 接收:', event.detail.data);
+                const { plan, research_mode } = event.detail.data;
+                
+                let planText = `研究计划已生成 (${research_mode}模式):\n`;
+                if (plan && Array.isArray(plan)) {
+                    plan.forEach((step, index) => {
+                        planText += `${index + 1}. ${step.sub_question || step}\n`;
+                    });
+                }
+                this.addExecutionLog(planText, 'plan');
+            },
+            'research:progress': (event) => {
+                console.log('🔍 research:progress 接收:', event.detail.data);
+                const { iteration, total_iterations, plan_completion } = event.detail.data;
+                this.addExecutionLog(`研究进度: 第 ${iteration}/${total_iterations} 次迭代 (完成度: ${Math.round(plan_completion * 100)}%)`, 'info');
+            },
+            'research:tool_start': (event) => {
+                console.log('🔍 research:tool_start 接收:', event.detail.data);
+                const { tool_name, parameters, thought } = event.detail.data;
+                
+                if (thought) {
+                    this.addExecutionLog(thought, 'thought');
+                }
+                
+                let toolText = `调用工具: ${tool_name}`;
+                if (parameters.query) {
+                    toolText += `\n搜索查询: "${parameters.query}"`;
+                }
+                if (parameters.url) {
+                    toolText += `\n目标URL: ${parameters.url}`;
+                }
+                
+                this.addExecutionLog(toolText, 'tool_start');
+            },
+            'research:tool_end': (event) => {
+                console.log('🔍 research:tool_end 接收:', event.detail.data);
+                const { tool_name, output, success, sources_found } = event.detail.data;
+                
+                const status = success ? '成功' : '失败';
+                const type = success ? 'tool_success' : 'tool_error';
+                const resultText = `工具 ${tool_name} 执行${status}`;
+                const details = sources_found > 0 ? `，发现 ${sources_found} 个来源` : '';
+                const outputPreview = output ? `\n结果摘要: ${output.substring(0, 200)}...` : '';
+                
+                this.addExecutionLog(resultText + details + outputPreview, type);
+            },
+            'research:stats_updated': (event) => {
+                console.log('🔍 research:stats_updated 接收:', event.detail.data);
+                this.updateResearchStats(event.detail.data);
+            },
+            'research:tool_called': (event) => {
+                console.log('🔍 research:tool_called 接收:', event.detail.data);
+                this.addToolCallRecord(
+                    event.detail.data.toolName,
+                    event.detail.data.parameters,
+                    event.detail.data.success,
+                    event.detail.data.result
                 );
-                if (choice && moves.includes(choice)) {
-                    resolve(choice);
-                } else {
-                    reject(new Error('用户取消或输入了无效的选择'));
-                }
+            },
+            'research:end': (event) => {
+                console.log('🔍 research:end 接收:', event.detail.data);
+                this.completeSession(event.detail.data);
             }
+        };
+
+        // 注册所有事件监听器
+        Object.entries(handlers).forEach(([eventName, handler]) => {
+            window.addEventListener(eventName, handler);
         });
+
+        console.log('✅ AgentThinkingDisplay 事件监听器设置完成');
     }
 
     /**
-     * 生成可能的替代走法（降级策略）
+     * 🎯 销毁组件
      */
-    generateAlternativeMoves(originalMove, currentFEN) {
-        const alternatives = new Set();
-
-        // 1. 移除后缀符号
-        const withoutSuffix = originalMove.replace(/[+#!?]$/g, '');
-        if (withoutSuffix !== originalMove) alternatives.add(withoutSuffix);
-
-        // 2. 大小写修正
-        alternatives.add(originalMove.toUpperCase());
-        alternatives.add(originalMove.toLowerCase());
-
-        // 3. 移除空格
-        const noSpaces = originalMove.replace(/\s+/g, '');
-        if (noSpaces !== originalMove) alternatives.add(noSpaces);
-
-        // 提前加载 FEN 以便复用
-        this.chess.load(currentFEN);
-        const legalMoves = this.chess.moves({ verbose: true });
-
-        // 4. 自然语言解析 (改进版，基于合法走法)
-        const moveLower = originalMove.toLowerCase();
-        if (/castle|king.?side|queen.?side/i.test(moveLower)) {
-            const canCastleShort = legalMoves.some(m => m.san === 'O-O');
-            const canCastleLong = legalMoves.some(m => m.san === 'O-O-O');
-
-            if (/queen.?side/i.test(moveLower) && canCastleLong) {
-                alternatives.add('O-O-O');
-            } else if (/king.?side/i.test(moveLower) && canCastleShort) {
-                alternatives.add('O-O');
-            } else if (/castle/i.test(moveLower)) { // 通用 "castle"
-                if (canCastleShort) alternatives.add('O-O');
-                if (canCastleLong) alternatives.add('O-O-O');
-            }
+    destroy() {
+        if (this.timeUpdateInterval) {
+            clearInterval(this.timeUpdateInterval);
         }
-
-        // 5. 基于当前局面的智能建议
-        // 尝试匹配类似的合法走法
-        legalMoves.forEach(legalMove => {
-            const legalSAN = legalMove.san;
-            // 简单的相似度匹配
-            if (legalSAN.includes(originalMove) ||
-                originalMove.includes(legalSAN) ||
-                this.moveSimilarity(originalMove, legalSAN) > 0.7) {
-                alternatives.add(legalSAN);
-            }
-        });
-
-        // 移除原始走法（已经失败）和空值
-        alternatives.delete(originalMove);
-        alternatives.delete('');
-
-        return Array.from(alternatives);
-    }
-
-    /**
-     * 简单的走法相似度计算（基于字符交集比例）
-     */
-    moveSimilarity(move1, move2) {
-        const longer = move1.length > move2.length ? move1 : move2;
-        const shorter = move1.length > move2.length ? move2 : move1;
-
-        if (longer.length === 0) return 1.0;
-
-        let matches = 0;
-        for (let i = 0; i < shorter.length; i++) {
-            if (longer.includes(shorter[i])) {
-                matches++;
-            }
+        
+        if (this.container) {
+            this.container.remove();
+            this.container = null;
         }
-
-        // 返回相似度比例（0~1）
-        return matches / longer.length;
-    }
-}
-
-let chessAIEnhancedInstance = null;
-
-/**
- * 初始化国际象棋AI增强模块（单例模式）
- * @param {ChessGame} chessGame - 国际象棋游戏核心实例
- * @param {object} options - 配置选项
- */
-export function initializeChessAIEnhanced(chessGame, options = {}) {
-    if (chessAIEnhancedInstance) {
-        console.warn('ChessAIEnhanced 模块已初始化。正在更新配置。');
-        // 可以在这里添加更新逻辑，例如更新 showToast
-        if (options.showToast) {
-            chessAIEnhancedInstance.showToast = options.showToast;
+        
+        const styleElement = document.getElementById('agent-thinking-styles');
+        if (styleElement) {
+            styleElement.remove();
         }
-        if (options.chatApiHandler) {
-            chessAIEnhancedInstance.chatApiHandler = options.chatApiHandler;
-        }
-        return;
+        
+        this.stylesInjected = false;
+        this.currentSession = null;
+        this.executionLog = [];
+        this.sectionStates = {}; // 🎯 清理折叠状态
     }
-    chessAIEnhancedInstance = new ChessAIEnhanced(chessGame, options);
-    console.log('ChessAIEnhanced 模块初始化成功。');
-}
-
-/**
- * 获取国际象棋AI增强模块实例
- * @returns {ChessAIEnhanced|null}
- */
-export function getChessAIEnhancedInstance() {
-    if (!chessAIEnhancedInstance) {
-        console.error('ChessAIEnhanced 模块尚未初始化！');
-    }
-    return chessAIEnhancedInstance;
 }
