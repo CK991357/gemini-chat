@@ -1,4 +1,4 @@
-// src/static/js/agent/AgentThinkingDisplay.js - 最终修复版
+// src/static/js/agent/AgentThinkingDisplay.js - 折叠状态修复版
 
 export class AgentThinkingDisplay {
     constructor() {
@@ -8,12 +8,8 @@ export class AgentThinkingDisplay {
         this.timeUpdateInterval = null;
         this.executionLog = [];
         
-        // 🎯 新增：折叠状态管理
-        this.sectionStates = {
-            'stats-content': false,      // 研究统计 - 默认展开
-            'query-log-content': false,  // 搜索记录 - 默认折叠
-            'execution-log-content': false // 执行日志 - 默认折叠
-        };
+        // 🎯 修复：折叠状态管理 - 只在会话开始时初始化
+        this.sectionStates = {};
         
         this.init();
     }
@@ -37,7 +33,7 @@ export class AgentThinkingDisplay {
         if (document.getElementById(styleId)) return;
 
         const css = `
-/* Agent Thinking Display Styles - 最终修复版 */
+/* Agent Thinking Display Styles - 折叠状态修复版 */
 #agent-thinking-container {
     display: none;
     position: fixed;
@@ -412,7 +408,7 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 开始会话
+     * 🎯 修复：开始会话 - 只在启动时自动折叠
      */
     startSession(userMessage, maxIterations = 6, researchData = {}) {
         if (!this.container) {
@@ -439,16 +435,21 @@ export class AgentThinkingDisplay {
             executionLog: []
         };
 
-        // 🎯 重置折叠状态为默认值
-        this.sectionStates = {
-            'stats-content': false,      // 研究统计 - 默认展开
-            'query-log-content': false,  // 搜索记录 - 默认折叠
-            'execution-log-content': false // 执行日志 - 默认折叠
-        };
+        // 🎯 修复：只在会话开始时初始化折叠状态
+        // 如果已经有折叠状态，保持现有状态；否则初始化默认状态
+        if (Object.keys(this.sectionStates).length === 0) {
+            this.sectionStates = {
+                'stats-content': false,      // 研究统计 - 默认展开
+                'query-log-content': false,  // 搜索记录 - 默认折叠
+                'execution-log-content': false // 执行日志 - 默认折叠
+            };
+        }
 
         this.renderSession();
         this.show();
-        this.container.classList.add('minimized'); // 启动时自动折叠整个面板
+        
+        // 🎯 修复：只在启动时自动折叠整个面板
+        this.container.classList.add('minimized');
         
         // 🎯 记录研究开始
         this.addExecutionLog(`开始研究: "${this.currentSession.userMessage}"`, 'research_start');
@@ -457,7 +458,7 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 渲染会话界面
+     * 🎯 修复：渲染会话界面 - 保持折叠状态
      */
     renderSession() {
         const { userMessage, researchState } = this.currentSession;
@@ -466,11 +467,14 @@ export class AgentThinkingDisplay {
         const queryCount = researchState.queryLog?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const toolCallsCount = researchState.toolCalls?.length || 0;
-        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0; // 🎯 修复：严格比较true
+        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0;
         const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
 
         // 🎯 修复：计算已用时间
         const elapsedTime = this._calculateElapsedTime();
+
+        // 🎯 修复：保存当前整体面板的折叠状态
+        const isPanelMinimized = this.container?.classList?.contains('minimized') || false;
 
         this.container.innerHTML = `
             <div class="agent-session">
@@ -481,7 +485,7 @@ export class AgentThinkingDisplay {
                         <span class="session-badge">${this.getStatusText(this.currentSession.status)}</span>
                     </div>
                     <div class="session-controls">
-                        <button class="btn-minimize">−</button>
+                        <button class="btn-minimize">${isPanelMinimized ? '+' : '−'}</button>
                         <button class="btn-close">×</button>
                     </div>
                 </div>
@@ -558,6 +562,13 @@ export class AgentThinkingDisplay {
                 </div>
             </div>
         `;
+
+        // 🎯 修复：恢复整体面板的折叠状态
+        if (isPanelMinimized) {
+            this.container.classList.add('minimized');
+        } else {
+            this.container.classList.remove('minimized');
+        }
 
         this.attachContainerEvents();
         this.attachCollapsibleEvents();
@@ -719,7 +730,7 @@ export class AgentThinkingDisplay {
         const toolCall = {
             tool: toolName,
             parameters,
-            success: toolSuccess, // 🎯 修复：确保是布尔值
+            success: toolSuccess,
             result: result ? this.formatStepResult(result) : null,
             timestamp: Date.now()
         };
@@ -776,7 +787,7 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 附加容器事件
+     * 🎯 修复：附加容器事件 - 保持整体面板状态
      */
     attachContainerEvents() {
         // 最小化按钮
@@ -784,6 +795,9 @@ export class AgentThinkingDisplay {
         if (minimizeBtn) {
             minimizeBtn.addEventListener('click', () => {
                 this.container.classList.toggle('minimized');
+                // 更新按钮文本
+                const isMinimized = this.container.classList.contains('minimized');
+                minimizeBtn.textContent = isMinimized ? '+' : '−';
             });
         }
 
@@ -887,7 +901,7 @@ export class AgentThinkingDisplay {
         }
 
         this.addDeepResearchSummary(finalResult);
-        this.renderSession(); // 🎯 重新渲染以确保所有状态正确显示
+        this.renderSession();
     }
 
     /**
@@ -900,7 +914,7 @@ export class AgentThinkingDisplay {
         const queryCount = researchState.queryLog?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const toolCallsCount = researchState.toolCalls?.length || 0;
-        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0; // 🎯 修复：严格比较
+        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0;
         const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0 };
 
         const iterations = finalResult.iterations || 0;
@@ -1030,6 +1044,6 @@ export class AgentThinkingDisplay {
         this.stylesInjected = false;
         this.currentSession = null;
         this.executionLog = [];
-        this.sectionStates = {}; // 🎯 清理折叠状态
+        this.sectionStates = {};
     }
 }
