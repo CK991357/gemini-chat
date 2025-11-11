@@ -1,4 +1,4 @@
-// src/static/js/agent/AgentThinkingDisplay.js - 修复成功调用统计版
+// src/static/js/agent/AgentThinkingDisplay.js - 最终修复版
 
 export class AgentThinkingDisplay {
     constructor() {
@@ -458,7 +458,7 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 修复：渲染会话界面 - 保持折叠状态
+     * 🎯 ✨✨✨ 核心修复1：渲染会话界面 - 即时计算成功调用次数 ✨✨✨
      */
     renderSession() {
         const { userMessage, researchState } = this.currentSession;
@@ -468,7 +468,7 @@ export class AgentThinkingDisplay {
         const sourcesCount = researchState.collectedSources?.length || 0;
         const toolCallsCount = researchState.toolCalls?.length || 0;
         
-        // 🎯 修复：严格统计成功调用次数
+        // ✨✨✨ 核心修复1：每次渲染时即时计算成功调用次数 ✨✨✨
         const successfulTools = researchState.toolCalls?.filter(t => {
             // 多种方式确保成功状态的正确识别
             if (t.success === true) return true;
@@ -488,7 +488,7 @@ export class AgentThinkingDisplay {
         // 🎯 调试：打印统计信息
         console.log(`[AgentThinkingDisplay] 渲染统计:`, {
             toolCallsCount,
-            successfulTools,
+            successfulTools, // ✨ 现在这个值应该是正确的
             allToolCalls: researchState.toolCalls?.map(t => ({ tool: t.tool, success: t.success })) || []
         });
 
@@ -731,11 +731,11 @@ export class AgentThinkingDisplay {
             };
         }
 
-        this.renderSession();
+        this.renderSession(); // ✨ 重新渲染时会自动计算正确的成功次数
     }
 
     /**
-     * 🎯 修复：添加工具调用记录 - 确保success属性正确设置
+     * 🎯 ✨✨✨ 核心修复2：添加工具调用记录 - 兼容query和queries参数 ✨✨✨
      */
     addToolCallRecord(toolName, parameters, success = true, result = null) {
         if (!this.currentSession) return;
@@ -770,9 +770,23 @@ export class AgentThinkingDisplay {
         
         this.currentSession.researchState.toolCalls.push(toolCall);
         
-        // 🎯 特殊处理：如果是搜索工具，记录query
-        if (toolName === 'tavily_search' && parameters.query) {
-            this.addQueryRecord(parameters.query, toolSuccess);
+        // ✨✨✨ 核心修复2：健壮地处理搜索记录 - 兼容query和queries参数 ✨✨✨
+        if (toolName === 'tavily_search') {
+            let searchQuery = '';
+            
+            // 处理多种查询参数格式
+            if (parameters.query && typeof parameters.query === 'string') {
+                searchQuery = parameters.query;
+            } else if (Array.isArray(parameters.queries) && parameters.queries.length > 0) {
+                console.log("[AgentThinkingDisplay] 检测到 'queries' 数组，合并为单一查询。");
+                searchQuery = parameters.queries.join('; '); // 用分号连接多个查询
+            } else if (parameters.queries && typeof parameters.queries === 'string' && parameters.queries.trim() !== '') {
+                searchQuery = parameters.queries;
+            }
+
+            if (searchQuery) {
+                this.addQueryRecord(searchQuery, toolSuccess);
+            }
         }
         
         // 🎯 调试：打印当前工具调用统计
