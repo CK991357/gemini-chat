@@ -1190,7 +1190,20 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                 displayAgentSummary(agentResult);
                 // 显示完整的报告
                 if (agentResult.report) {
-                    chatUI.addMessage({ role: 'assistant', content: agentResult.report });
+                    // START: 使用更直接、更可靠的方式来显示最终报告，绕过可能被污染的全局状态
+                    const reportElement = chatUI.createAIMessageElement();
+                    if (reportElement && reportElement.markdownContainer) {
+                        reportElement.rawMarkdownBuffer = agentResult.report; // 填充原始数据
+                        reportElement.markdownContainer.innerHTML = window.marked.parse(agentResult.report);
+
+                        // 确保数学公式也能被渲染
+                        if (typeof window.MathJax !== 'undefined' && window.MathJax.startup) {
+                            window.MathJax.startup.promise.then(() => {
+                                window.MathJax.typeset([reportElement.markdownContainer]);
+                            }).catch((err) => console.error('MathJax typesetting failed:', err));
+                        }
+                    }
+                    // END: 新增的代码
                 }
                 console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
             } else {
