@@ -1,4 +1,4 @@
-// src/static/js/agent/AgentThinkingDisplay.js - 折叠状态修复版
+// src/static/js/agent/AgentThinkingDisplay.js - 修复成功调用统计版
 
 export class AgentThinkingDisplay {
     constructor() {
@@ -467,7 +467,16 @@ export class AgentThinkingDisplay {
         const queryCount = researchState.queryLog?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const toolCallsCount = researchState.toolCalls?.length || 0;
-        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0;
+        
+        // 🎯 修复：严格统计成功调用次数
+        const successfulTools = researchState.toolCalls?.filter(t => {
+            // 多种方式确保成功状态的正确识别
+            if (t.success === true) return true;
+            if (t.success === 'true') return true;
+            if (String(t.success).toLowerCase() === 'true') return true;
+            return false;
+        })?.length || 0;
+        
         const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
 
         // 🎯 修复：计算已用时间
@@ -475,6 +484,13 @@ export class AgentThinkingDisplay {
 
         // 🎯 修复：保存当前整体面板的折叠状态
         const isPanelMinimized = this.container?.classList?.contains('minimized') || false;
+
+        // 🎯 调试：打印统计信息
+        console.log(`[AgentThinkingDisplay] 渲染统计:`, {
+            toolCallsCount,
+            successfulTools,
+            allToolCalls: researchState.toolCalls?.map(t => ({ tool: t.tool, success: t.success })) || []
+        });
 
         this.container.innerHTML = `
             <div class="agent-session">
@@ -724,13 +740,26 @@ export class AgentThinkingDisplay {
     addToolCallRecord(toolName, parameters, success = true, result = null) {
         if (!this.currentSession) return;
 
-        // 🎯 修复：确保success是布尔值
-        const toolSuccess = Boolean(success);
+        // 🎯 修复：确保success是布尔值，并且正确处理各种类型的success值
+        let toolSuccess;
+        if (typeof success === 'boolean') {
+            toolSuccess = success;
+        } else if (typeof success === 'string') {
+            toolSuccess = success.toLowerCase() === 'true';
+        } else {
+            toolSuccess = Boolean(success);
+        }
+
+        console.log(`[AgentThinkingDisplay] 记录工具调用: ${toolName}, 成功状态: ${toolSuccess}`, {
+            parameters,
+            successValue: success,
+            convertedSuccess: toolSuccess
+        });
 
         const toolCall = {
             tool: toolName,
             parameters,
-            success: toolSuccess,
+            success: toolSuccess, // 🎯 修复：确保是布尔值
             result: result ? this.formatStepResult(result) : null,
             timestamp: Date.now()
         };
@@ -745,6 +774,13 @@ export class AgentThinkingDisplay {
         if (toolName === 'tavily_search' && parameters.query) {
             this.addQueryRecord(parameters.query, toolSuccess);
         }
+        
+        // 🎯 调试：打印当前工具调用统计
+        console.log(`[AgentThinkingDisplay] 当前工具调用统计:`, {
+            total: this.currentSession.researchState.toolCalls.length,
+            successful: this.currentSession.researchState.toolCalls.filter(t => t.success === true).length,
+            allCalls: this.currentSession.researchState.toolCalls.map(t => ({ tool: t.tool, success: t.success }))
+        });
         
         this.renderSession();
     }
@@ -1002,11 +1038,21 @@ export class AgentThinkingDisplay {
             },
             'research:tool_called': (event) => {
                 console.log('🔍 research:tool_called 接收:', event.detail.data);
+                const { toolName, parameters, success, result } = event.detail.data;
+                
+                // 🎯 修复：确保success值正确传递
+                console.log(`[AgentThinkingDisplay] 接收工具调用事件:`, {
+                    toolName,
+                    success,
+                    successType: typeof success,
+                    successValue: success
+                });
+                
                 this.addToolCallRecord(
-                    event.detail.data.toolName,
-                    event.detail.data.parameters,
-                    event.detail.data.success,
-                    event.detail.data.result
+                    toolName,
+                    parameters,
+                    success, // 直接传递原始值，在addToolCallRecord中处理
+                    result
                 );
             },
             'research:end': (event) => {
