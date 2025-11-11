@@ -40,20 +40,24 @@ export class DeepResearchAgent {
 
     async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
-        const { topic, availableTools, researchMode } = researchRequest;
+        // ✨✨✨ 核心修复：解构出 displayTopic ✨✨✨
+        const { topic, displayTopic, availableTools, researchMode } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
-        // ✨ 修复：清理主题中的感叹号
-        const cleanTopic = topic.replace(/！\s*$/, '').trim();
-        const detectedMode = researchMode || 'standard'; // 确保有一个默认值
+        // 原始 topic (enrichedTopic) 用于 Agent 内部逻辑
+        const internalTopic = topic.replace(/！\s*$/, '').trim();
+        // displayTopic 用于 UI 显示
+        const uiTopic = (displayTopic || topic).replace(/！\s*$/, '').trim();
         
-        console.log(`[DeepResearchAgent] 开始研究: "${cleanTopic}"，接收到模式: ${detectedMode}`);
+        const detectedMode = researchMode || 'standard';
         
-        // 🎯 修复：传递研究数据到监控面板
+        console.log(`[DeepResearchAgent] 开始研究: "${uiTopic}"，接收到模式: ${detectedMode}`);
+        
+        // ✨✨✨ 核心修复：在 on_research_start 事件中使用 uiTopic ✨✨✨
         await this.callbackManager.invokeEvent('on_research_start', {
             run_id: runId,
             data: {
-                topic: cleanTopic,
+                topic: uiTopic, // <--- 使用干净的 topic
                 availableTools: availableTools.map(t => t.name),
                 researchMode: detectedMode,
                 researchData: {
@@ -86,7 +90,8 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] 阶段1：生成${detectedMode}研究计划...`);
         let researchPlan;
         try {
-            const planResult = await this.agentLogic.createInitialPlan(cleanTopic, detectedMode);
+            // ✨✨✨ 核心修复：规划时使用完整的 internalTopic (enrichedTopic) ✨✨✨
+            const planResult = await this.agentLogic.createInitialPlan(internalTopic, detectedMode);
             researchPlan = planResult;
             this._updateTokenUsage(planResult.usage); // 🎯 新增
             
@@ -105,7 +110,7 @@ export class DeepResearchAgent {
             console.log(`[DeepResearchAgent] ${detectedMode}研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
         } catch (error) {
             console.error('[DeepResearchAgent] 研究计划生成失败，使用降级方案:', error);
-            researchPlan = this.agentLogic._createFallbackPlan(cleanTopic, detectedMode);
+            researchPlan = this.agentLogic._createFallbackPlan(internalTopic, detectedMode);
         }
 
         // ✨ 阶段2：自适应执行
@@ -139,9 +144,11 @@ export class DeepResearchAgent {
 
             try {
                 // 🎯 构建AgentLogic输入数据
-                const logicInput = { 
-                    topic: cleanTopic, 
-                    intermediateSteps, 
+                // ✨✨✨ 核心修复：将 internalTopic 和 uiTopic 都传递给 AgentLogic ✨✨✨
+                const logicInput = {
+                    topic: internalTopic,     // 供 LLM 使用的完整上下文
+                    displayTopic: uiTopic,      // 备用，以防需要
+                    intermediateSteps,
                     availableTools,
                     researchPlan,
                     researchMode: detectedMode
@@ -233,7 +240,7 @@ export class DeepResearchAgent {
                     }
                     
                     // 处理过长内容
-                    const summarizedObservation = await this._smartSummarizeObservation(cleanTopic, rawObservation, detectedMode);
+                    const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode);
                     
                     // ✨ 评估信息增益
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, intermediateSteps);
@@ -356,7 +363,7 @@ export class DeepResearchAgent {
 
         // 提取所有观察结果用于关键词分析
         const allObservationsForKeywords = intermediateSteps.map(s => s.observation).join(' ');
-        const keywords = this._extractKeywords(cleanTopic, allObservationsForKeywords);
+        const keywords = this._extractKeywords(uiTopic, allObservationsForKeywords);
         
         // 更新关键词统计
         updateResearchStats({ keywords });
@@ -367,7 +374,8 @@ export class DeepResearchAgent {
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
-            finalReport = await this._generateFinalReport(cleanTopic, intermediateSteps, researchPlan, allSources, detectedMode);
+            // ✨✨✨ 核心修复：生成报告时使用 uiTopic ✨✨✨
+            finalReport = await this._generateFinalReport(uiTopic, intermediateSteps, researchPlan, allSources, detectedMode);
         }
 
         // ✨ 附加所有收集到的资料来源
@@ -377,7 +385,7 @@ export class DeepResearchAgent {
 
         const result = {
             success: true, // 只要能生成报告就视为成功
-            topic: cleanTopic,
+            topic: uiTopic, // 最终返回给 UI 的 topic 也应该是干净的
             report: finalReport,
             iterations,
             intermediateSteps,

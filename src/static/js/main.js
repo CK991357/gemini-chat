@@ -1186,11 +1186,7 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
         // 🎯 修复：传递所有可用工具，让Orchestrator内部处理研究工具过滤
         const availableTools = getAvailableToolNames(modelName);
         
-        console.log(`[Agent] 可用工具: ${availableTools.join(', ')}`);
-        
-        // 启动思考过程显示
-        const sessionId = agentThinkingDisplay.startSession(messageText, 8);
-        console.log(`🤖 Agent会话启动: ${sessionId}`);
+        console.log(`[Agent] 可用工具: ${availableTools.join(', ')}`);      
         
         // 使用真正的 Orchestrator 处理请求
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
@@ -1218,13 +1214,12 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                         if (finalResult.skipped) {
                             // 工作流被跳过，回退到标准聊天
                             handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
-                                .then(() => agentThinkingDisplay.completeSession('success'))
                                 .finally(resolve);
                         } else {
                             // 显示最终结果
                             chatUI.addMessage({ role: 'assistant', content: finalResult.content });
                             console.log('工作流执行详情:', finalResult);
-                            agentThinkingDisplay.completeSession('success');
+                            // agentThinkingDisplay.completeSession('success'); // ✨ 核心修复：移除手动完成
                             resolve();
                         }
                     };
@@ -1248,25 +1243,28 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
                 }
                 console.log('Agent执行详情:', agentResult);
-                agentThinkingDisplay.completeSession('success');
+                // agentThinkingDisplay.completeSession('success'); // ✨ 核心修复：移除手动完成
             } else {
                 // 其他增强结果
                 chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 console.log('增强结果详情:', agentResult);
-                agentThinkingDisplay.completeSession('success');
+                // agentThinkingDisplay.completeSession('success'); // ✨ 核心修复：移除手动完成
             }
         } else {
             // 标准回退处理
-            console.log("💬 未触发增强模式，使用标准对话，立即停止Agent思考显示");
-            agentThinkingDisplay.completeSession('skipped');
+            console.log("💬 未触发增强模式，使用标准对话");
+            // ✨✨✨ 核心修复：如果 AgentThinkingDisplay 被意外启动，在这里关闭它 ✨✨✨
+            if (window.agentThinkingDisplay && window.agentThinkingDisplay.currentSession) {
+                 window.agentThinkingDisplay.hide();
+            }
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
         }
         
     } catch (error) {
         console.error("🤖 Agent模式执行失败:", error);
         // 发生错误时隐藏思考显示
-        if (agentThinkingDisplay) {
-            agentThinkingDisplay.completeSession('error');
+        if (window.agentThinkingDisplay) {
+            window.agentThinkingDisplay.hide(); // 确保出错时隐藏
         }
         // 回退到普通聊天模式
         await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);

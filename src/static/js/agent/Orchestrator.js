@@ -132,8 +132,10 @@ ${cleanTopic}
             const availableToolDefinitions = (await this.skillManager.baseSkillManager.getAllSkills())
                 .filter(skill => this.researchTools.includes(skill.tool_name));
 
+            // ✨✨✨ 核心修复：同时传递 cleanTopic 和 enrichedTopic ✨✨✨
             const researchRequest = {
-                topic: enrichedTopic, // ✅ 使用增强版的主题，包含技能指南
+                topic: enrichedTopic,           // 用于 Agent 思考的完整主题
+                displayTopic: cleanTopic,       // 用于 UI 显示的原始主题
                 availableTools: availableToolDefinitions,
                 researchMode: detectedMode
             };
