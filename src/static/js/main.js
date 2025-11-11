@@ -1238,6 +1238,20 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     // agentResult.report 包含了由 _generateFinalReport 生成的完整 Markdown 内容
                     if (agentResult.report) {
                         chatUI.addMessage({ role: 'assistant', content: agentResult.report });
+
+                        // --- [新增] AGENT历史记录保存 ---
+                        // 1. 将最终报告以标准格式添加到 chatHistory 状态数组中
+                        chatHistory.push({
+                            role: 'assistant',
+                            content: agentResult.report
+                        });
+
+                        // 2. 手动触发历史记录保存
+                        if (historyManager) {
+                            historyManager.saveHistory();
+                            console.log('📝 [Agent History] Agent执行结果已触发历史记录保存。');
+                        }
+                        // --- [新增] 结束 ---
                     }
                     
                     console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
