@@ -1,7 +1,9 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 更新版
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - DRY原则最终版
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
+// 🎯 核心修改：从 ReportTemplates.js 导入工具函数
+import { getTemplateByResearchMode } from './ReportTemplates.js';
 
 export class DeepResearchAgent {
     constructor(chatApiHandler, tools, callbackManager, config = {}) {
@@ -316,7 +318,7 @@ export class DeepResearchAgent {
                 // 🎯 简化错误处理：完全信任ChatApiHandler的重试机制
                 console.error(`[DeepResearchAgent] 迭代 ${iterations} 失败:`, error);
                 
-                // --- START: 增强错误处理 ---
+                // 增强错误处理
                 let thoughtText = `在第 ${iterations} 次迭代中遇到错误，尝试继续。错误: ${error.message}`;
                 let observationText = '系统执行错误，将尝试在下一步骤中恢复。';
 
@@ -327,7 +329,6 @@ export class DeepResearchAgent {
                     // 遭遇速率限制时，强制增加"无增益"计数，以加速跳出无效循环
                     consecutiveNoGain++;
                 }
-                // --- END: 增强错误处理 ---
 
                 intermediateSteps.push({
                     action: {
@@ -350,7 +351,7 @@ export class DeepResearchAgent {
             metrics: this.metrics // 🎯 确保包含 tokenUsage
         });
         
-        // ✨ 阶段3：统一的报告生成 (最终优化 #2)
+        // ✨ 阶段3：统一的报告生成
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
         // 提取所有观察结果用于关键词分析
@@ -393,7 +394,7 @@ export class DeepResearchAgent {
         return result;
     }
 
-    // ✨ 最终优化 #2: _generateFinalReport 现在只负责合成
+    // ✨ 最终报告生成 - 现在只负责合成
     async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
         try {
             // 1. 提取补充资料来源
@@ -517,187 +518,32 @@ export class DeepResearchAgent {
             .map(([term, count]) => ({ term, count }));
     }
 
-    // ✨ 更新：构建报告提示词（基于最新的研究模式）
+    // 🎯 核心重构：构建报告提示词 - 使用单一来源原则
     _buildReportPrompt(topic, plan, observations, researchMode) {
-        const modeConfigs = {
-            deep: {
-                title: "深度研究模式",
-                structure: `# 主标题
-## 一、问题深度解构
-### 核心问题识别与边界界定
-### 关键假设检验与维度分析
-## 二、多维度探索分析
-### 技术可行性深度验证
-### 实践应用场景探索
-### 历史脉络与社会影响
-## 三、权威验证与专业深化
-### 权威理论与前沿研究整合
-### 多源数据与事实验证
-## 四、辩证解决方案
-### 三种可行方案设计与评估
-### 反对观点与局限性分析
-## 五、创新建议与执行路径
-### 最优方案选择与决策依据
-### 分阶段实施路线图`,
-                wordCount: "2800-3500字",
-                requirements: "所有关键论点必须基于权威验证，包含反对观点分析，提供可执行的创新建议"
-            },
-            academic: {
-                title: "学术论文整理模式", 
-                structure: `# 论文深度解析报告
-## 一、研究核心价值评估
-### 研究问题与创新点提炼
-### 理论贡献与实践意义
-## 二、方法论验证与分析
-### 研究方法合理性评估
-### 实验设计与数据可靠性
-## 三、核心发现深度验证
-### 实验结果与结论验证
-### 算法/模型有效性分析
-## 四、扩展应用与局限分析
-### 方法优缺点系统评估
-### 应用场景扩展可能性
-## 五、研究价值总结
-### 学术价值与实践意义
-### 后续研究方向建议`,
-                wordCount: "1800-2500字",
-                requirements: "重点验证论文核心发现，分析方法的可靠性，提出有价值的扩展方向"
-            },
-            business: {
-                title: "行业分析模式",
-                structure: `# 行业全景扫描
-## 一、行业核心概览
-### 行业定义与范畴界定
-### 市场规模与增长动力
-### 生命周期阶段判断
-## 二、产业链与价值分布
-### 上下游产业链分析
-### 价值链与利润分布
-### 关键环节与瓶颈识别
-## 三、竞争格局深度分析
-### 市场集中度与竞争态势
-### 主要参与者战略分析
-### 竞争优势与壁垒评估
-## 四、驱动因素与趋势判断
-### 技术/政策/需求驱动因素
-### 短期与中长期趋势预测
-### 潜在颠覆性变化预警
-## 五、机会识别与战略建议
-### 投资机会与风险提示
-### 进入/退出策略建议
-### 成功关键要素总结`,
-                wordCount: "2200-3000字",
-                requirements: "基于权威数据和事实，提供可验证的趋势判断和实用战略建议"
-            },
-            technical: {
-                title: "技术实现模式",
-                structure: `# 技术方案完整实现
-## 一、需求分析与技术选型
-### 核心需求与技术评估
-### 架构设计与技术栈选择
-## 二、核心实现方案
-### 系统架构与模块设计
-### 关键算法与代码实现
-## 三、部署与验证指南
-### 环境配置与部署流程
-### 测试方案与性能验证
-## 四、最佳实践总结
-### 开发经验与优化建议
-### 常见问题解决方案`,
-                wordCount: "2000-2800字", 
-                requirements: "提供可直接参考的代码示例和完整实现方案，包含实用最佳实践"
-            },
-            cutting_edge: {
-                title: "前沿技术分析模式",
-                structure: `# 技术发展全景分析
-## 一、技术本质与核心特性
-### 基本概念与创新点
-### 与传统技术对比优势
-## 二、发展历程与现状
-### 关键技术突破历程
-### 当前发展阶段判断
-## 三、核心技术解析
-### 底层原理与工作机制
-### 性能指标与局限性
-## 四、应用前景与挑战
-### 潜在应用领域分析
-### 商业化前景评估
-## 五、发展趋势判断
-### 技术演进方向预测
-### 投资与研究建议`,
-                wordCount: "1800-2500字",
-                requirements: "基于最新研究和发展动态，提供有洞察力的趋势判断和实用建议"
-            },
-            shopping_guide: {
-                title: "奢侈品导购模式",
-                structure: `# 个性化商品对比分析报告
-## 一、用户需求分析
-### 用户基本情况总结
-### 核心需求与偏好梳理
-### 预算与使用场景分析
-## 二、候选商品基本信息
-### 品牌背景与定位分析
-### 商品系列与目标人群
-### 价格区间与价值定位
-## 三、个性化匹配度分析
-### 与用户肤质/需求匹配度
-### 适用性深度评估
-### 潜在问题预警
-## 四、核心参数详细对比
-### 成分/材质与用户需求匹配
-### 功能特性针对性分析
-### 使用便捷性与舒适度
-## 五、实际效果与口碑验证
-### 同类用户真实反馈分析
-### 专业评测结果参考
-### 长期使用效果评估
-## 六、价值与成本分析
-### 性价比深度分析
-### 维护成本与使用成本
-### 投资价值与保值率
-## 七、个性化购买建议
-### 最适合用户的具体推荐
-### 使用注意事项
-### 替代方案备选
-### 购买渠道与时机建议`,
-                wordCount: "2500-3500字",
-                requirements: "基于用户提供的具体信息进行深度个性化分析，结合权威商品信息和真实用户反馈，提供针对性的购买建议"
-            },
-            standard: {
-                title: "标准报告模式",
-                structure: `# 主题深度解析
-## 一、核心概念与背景
-### 基本定义与发展背景
-### 相关领域与影响范围
-## 二、深度内容分析
-### 核心原理与关键特性
-### 应用场景与实践案例
-## 三、多维视角洞察
-### 技术/商业/社会视角
-### 发展趋势与挑战
-## 四、价值总结与建议
-### 核心价值提炼
-### 学习与应用建议`,
-                wordCount: "1200-1800字",
-                requirements: "关键信息标注来源，提供可操作的学习建议和深度洞察"
-            }
-        };
-
-        const config = modeConfigs[researchMode] || modeConfigs.standard;
+        // 🎯 DRY原则优化：从 ReportTemplates.js 动态获取配置
+        const template = getTemplateByResearchMode(researchMode);
+        
+        // 如果找不到模板，提供安全的回退
+        if (!template) {
+            console.warn(`[DeepResearchAgent] 未能为 researchMode "${researchMode}" 找到报告模板，将使用标准降级报告。`);
+            return this._generateFallbackReport(topic, [{observation: observations}], [], researchMode);
+        }
+        
+        const config = template.config;
 
         return `
 基于以下研究内容，生成一份专业、结构完整的研究报告。
 
 研究主题：${topic}
 ${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_question))}` : ''}
-收集信息：${observations.substring(0, 3000)} ${observations.length > 3000 ? '...（内容过长已截断）' : ''}
+收集信息：${observations.substring(0, 4000)} ${observations.length > 4000 ? '...（内容过长已截断）' : ''}
 
-报告要求（${config.title}）：
+报告要求（${template.name}）：
 1. 格式：Markdown
 2. 结构：
-${config.structure}
+${config.structure.map(section => `   - ${section}`).join('\n')}
 3. 字数：${config.wordCount}
-4. 风格：专业、客观、信息密集
+4. 风格：${config.style}
 5. 要求：${config.requirements}
 
 请生成最终报告（不要包含"资料来源"章节，我们会自动添加）：`;

@@ -1,4 +1,7 @@
-// src/static/js/agent/deepresearch/AgentLogic.js - 关键词触发最终版
+// src/static/js/agent/deepresearch/AgentLogic.js - DRY原则优化版
+
+// 🎯 核心修改：导入 ReportTemplates 中的工具函数
+import { getTemplatePromptFragment } from './ReportTemplates.js';
 
 export class AgentLogic {
     constructor(chatApiHandler) {
@@ -409,7 +412,7 @@ ${config.instructions}
         return detectedMode;
     }
 
-    // ✨ 重构：主提示词构建
+    // ✨ 重构：主提示词构建 - 核心DRY原则优化
     _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard' }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
@@ -417,8 +420,8 @@ ${config.instructions}
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
         
-        // 🎯 根据模式选择不同的配置
-        const modeConfigs = {
+        // 🎯 DRY优化：只保留Agent思考相关的配置，报告要求从ReportTemplates动态获取
+        const agentPersonaConfigs = {
             deep: {
                 role: "深度研究专家",
                 description: "你是一个专业的研究专家和问题解决顾问。你的任务是为复杂的用户查询提供深度、全面且专业的分析报告。",
@@ -427,24 +430,7 @@ ${config.instructions}
 - **多源验证**：每个关键论点至少需要2个独立来源验证
 - **权威优先**：优先搜索学术论文、行业报告、官方数据
 - **辩证思考**：主动寻找反对观点和局限性分析
-- **深度挖掘**：不要停留在表面信息，深入探索底层机制`,
-                reportRequirements: `
-## 5. 最终报告要求（深度研究模式）
-
-**核心章节**：
-# 主标题
-## 问题解构与分析
-## 多维度深度探索（至少从技术、实践、历史三个维度）
-## 权威验证与专业深化  
-## 辩证解决方案（至少3个可行方案+反对观点）
-## 创新建议与执行路径
-
-**质量要求**：
-- 字数：2500-3500字
-- 内容：深度、全面、专业、辩证
-- 风格：专业术语但易于理解，**加粗**关键结论
-- 引用：所有关键数据必须验证并标注来源[1][2]
-- 深度标准：至少两个分析层次，数据支撑的论点，创新性见解`
+- **深度挖掘**：不要停留在表面信息，深入探索底层机制`
             },
             shopping_guide: {
                 role: "奢侈品导购专家",
@@ -455,24 +441,7 @@ ${config.instructions}
 - **成分解析**：分析化妆品/护肤品的核心成分和功效
 - **工艺评估**：评估包包等商品的制作工艺和材质
 - **用户体验**：基于真实用户反馈和使用体验
-- **价值分析**：考虑性价比、保值率和投资价值`,
-                reportRequirements: `
-## 5. 最终报告要求（奢侈品导购模式）
-
-**核心章节**：
-# 商品深度对比分析
-## 对比商品基本信息
-## 核心参数详细对比
-## 性能与使用体验
-## 成分与工艺深度解析
-## 市场表现与口碑
-## 价值评估与购买建议
-
-**质量要求**：
-- 字数：2000-3000字
-- 内容：专业细致、数据驱动、实用导向
-- 风格：客观专业，避免商业吹捧
-- 引用：基于权威商品信息和真实用户反馈`
+- **价值分析**：考虑性价比、保值率和投资价值`
             },
             academic: {
                 role: "学术论文分析专家",
@@ -482,25 +451,7 @@ ${config.instructions}
 - **文献严谨**：优先引用权威学术来源和期刊论文
 - **方法论**：关注研究设计、数据收集和分析方法
 - **理论框架**：注重理论支撑和概念清晰度
-- **引用规范**：严格按照学术引用格式`,
-                reportRequirements: `
-## 5. 最终报告要求（学术论文模式）
-
-**核心章节**：
-# 标题
-## 摘要
-## 引言与研究背景
-## 文献综述
-## 方法论
-## 分析与讨论
-## 结论
-## 参考文献
-
-**质量要求**：
-- 字数：2500-3500字
-- 内容：学术严谨、逻辑清晰、论证充分
-- 风格：正式学术语言，避免口语化
-- 引用：严格标注来源，使用标准引用格式`
+- **引用规范**：严格按照学术引用格式`
             },
             business: {
                 role: "行业分析专家",
@@ -510,24 +461,7 @@ ${config.instructions}
 - **市场导向**：关注市场规模、增长趋势和用户需求
 - **竞争意识**：分析竞争对手和差异化优势
 - **可行性**：评估技术可行性和商业可行性
-- **ROI思维**：关注投资回报和商业价值`,
-                reportRequirements: `
-## 5. 最终报告要求（商业分析模式）
-
-**核心章节**：
-# 执行摘要
-## 市场分析
-## 竞争格局
-## 机会与挑战
-## 战略建议
-## 财务影响
-## 实施路线图
-
-**质量要求**：
-- 字数：1500-2500字
-- 内容：商业洞察、数据支撑、可行性分析
-- 风格：专业但易懂，突出关键商业价值
-- 引用：市场数据必须标注来源`
+- **ROI思维**：关注投资回报和商业价值`
             },
             technical: {
                 role: "技术实现专家",
@@ -537,24 +471,7 @@ ${config.instructions}
 - **技术深度**：深入技术细节和实现机制
 - **架构思维**：关注系统架构和组件设计
 - **性能意识**：评估性能指标和优化空间
-- **实践导向**：提供可落地的技术方案`,
-                reportRequirements: `
-## 5. 最终报告要求（技术文档模式）
-
-**核心章节**：
-# 技术概述
-## 架构设计
-## 核心组件
-## 实现细节
-## 性能评估
-## 最佳实践
-## 故障排除
-
-**质量要求**：
-- 字数：1800-2800字
-- 内容：技术准确、细节丰富、方案可行
-- 风格：技术专业但不晦涩，代码示例清晰
-- 引用：技术规格和性能数据必须验证`
+- **实践导向**：提供可落地的技术方案`
             },
             cutting_edge: {
                 role: "前沿技术分析专家",
@@ -565,46 +482,19 @@ ${config.instructions}
 - **技术解构**：深入分析技术原理、关键挑战和突破点
 - **应用前景**：评估潜在的应用场景和商业价值
 - **生态系统**：分析相关技术栈和社区活跃度
-- **风险评估**：预测技术成熟度和潜在的伦理/安全风险`,
-                reportRequirements: `
-## 5. 最终报告要求（前沿技术模式）
-
-**核心章节**：
-# 前沿技术深度分析报告
-## 技术概述与核心原理
-## 关键挑战与突破性进展
-## 潜在应用场景与商业价值
-## 行业生态与竞争格局
-## 发展趋势与风险预测
-
-**质量要求**：
-- 字数：2000-3000字
-- 内容：前瞻性、技术深度、市场洞察
-- **风格**：专业、富有远见，突出创新点
-- 引用：新兴技术报告和权威专家观点`
+- **风险评估**：预测技术成熟度和潜在的伦理/安全风险`
             },
             standard: {
                 role: "策略型AI研究专家",
                 description: "你是一个高效、精准的研究专家，擅长使用多种工具组合来获取深度信息。",
-                specialInstructions: '',
-                reportRequirements: `
-## 5. 最终报告要求
-**结构**：
-# 主标题
-## 一、引言与背景
-## 二、核心内容分析（至少3个子部分）
-## 三、深度洞察与总结
-## 四、资料来源
-
-**质量要求**：
-- 字数：800-1200字
-- 内容：全面、准确、深度
-- 风格：专业、客观、信息密集
-- 引用：关键信息标注来源[1][2]`
+                specialInstructions: ''
             }
         };
 
-        const config = modeConfigs[researchMode] || modeConfigs.standard;
+        const config = agentPersonaConfigs[researchMode] || agentPersonaConfigs.standard;
+        
+        // 🎯 核心DRY优化：动态获取报告要求，避免硬编码重复
+        const reportRequirements = getTemplatePromptFragment(researchMode);
 
         const prompt = `
 # 角色：${config.role}
@@ -657,7 +547,7 @@ ${config.specialInstructions}
 - 关键问题都已得到充分回答
 - 连续2次迭代没有获得新信息
 
-${config.reportRequirements}
+${reportRequirements}
 
 # 输出格式 (严格遵守)
 

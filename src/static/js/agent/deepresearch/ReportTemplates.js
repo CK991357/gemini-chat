@@ -154,7 +154,7 @@ export const ReportTemplates = {
         researchMode: "cutting_edge"
     },
 
-// 🛍️ 优化后的：奢侈品导购对比模式
+    // 🛍️ 优化后的：奢侈品导购对比模式
     shopping_guide: {
         name: "奢侈品导购对比",
         description: "基于用户个人情况的专业奢侈品对比分析，提供个性化购买建议",
@@ -250,7 +250,7 @@ export function getTemplateByResearchMode(researchMode) {
         'business': 'business',
         'technical': 'technical',
         'cutting_edge': 'cutting_edge',
-        'shopping_guide': 'shopping_guide', // 新增导购模式
+        'shopping_guide': 'shopping_guide',
         'standard': 'standard'
     };
     
@@ -258,17 +258,20 @@ export function getTemplateByResearchMode(researchMode) {
     return getTemplateConfig(templateKey);
 }
 
-// ✨ 新增：获取模板的提示词片段
+// ✨ 新增：获取模板的提示词片段 - 核心DRY函数
 export function getTemplatePromptFragment(templateKey) {
     const template = getTemplateConfig(templateKey);
     if (!template) return '';
     
     return `
-报告结构要求（${template.name}）：
+## 5. 最终报告要求（${template.name}）
+
+**报告结构**：
 ${template.config.structure.map(section => `- ${section}`).join('\n')}
 
-字数要求：${template.config.wordCount}
-风格要求：${template.config.style}
-质量要求：${template.config.requirements}
+**详细要求**：
+- 字数：${template.config.wordCount}
+- 风格：${template.config.style}
+- 质量：${template.config.requirements}
 `;
 }
