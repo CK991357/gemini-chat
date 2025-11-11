@@ -653,8 +653,6 @@ document.addEventListener('DOMContentLoaded', () => {
    // 🎯 添加调试状态检查
    setTimeout(debugAgentSystem, 2000);
    
-   // 确保工作流样式加载
-   loadWorkflowStyles();
 });
 
 // State variables
@@ -921,50 +919,6 @@ function ensureBasicAgentFunctionality() {
     }
 }
 
-/**
- * 🚀 加载工作流样式
- */
-function loadWorkflowStyles() {
-  if (!document.querySelector('link[href*="workflow-ui.css"]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'css/workflow-ui.css';
-    document.head.appendChild(link);
-    
-    // 添加加载错误处理
-    link.onerror = () => {
-      console.warn('工作流样式加载失败，使用备用样式');
-      injectFallbackStyles();
-    };
-  }
-}
-
-/**
- * 🚀 备用样式注入
- */
-function injectFallbackStyles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    .workflow-container { 
-      display: none; 
-      margin: 20px 0; 
-      padding: 16px; 
-      background: #f8f9fa; 
-      border-radius: 8px; 
-      border: 1px solid #ddd; 
-    }
-    .workflow-step { 
-      margin: 8px 0; 
-      padding: 12px; 
-      background: white; 
-      border-radius: 6px; 
-    }
-    .workflow-step-running { background: #f0f8ff; }
-    .workflow-step-success { background: #f0fff0; }
-    .workflow-step-failed { background: #fff0f0; }
-  `;
-  document.head.appendChild(style);
-}
 
 
 /**
