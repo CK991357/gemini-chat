@@ -1,5 +1,3 @@
-[file name]: main.js
-[file content begin]
 import { AttachmentManager } from './attachments/file-attachment.js'; // T2 新增
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
@@ -22,7 +20,6 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
 
 // 🚀 新增导入：智能代理系统
-import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
 
 // 🎯 获取基础技能管理器的函数
 // 这个函数应该在技能系统初始化后调用
@@ -2682,4 +2679,3 @@ function displayAgentSummary(agentResult) {
     messageHistoryElement.appendChild(summaryDiv);
     chatUI.scrollToBottom();
 }
-[file content end]
