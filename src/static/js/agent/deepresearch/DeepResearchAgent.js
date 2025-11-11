@@ -540,21 +540,31 @@ export class DeepResearchAgent {
         const config = template.config;
 
         return `
-基于以下研究内容，生成一份专业、结构完整的研究报告。
+你是一个专业的报告撰写专家。请基于以下收集到的信息，生成一份专业、结构完整的研究报告。
 
-研究主题：${topic}
-${plan ? `研究计划：${JSON.stringify(plan.research_plan.map(p => p.sub_question))}` : ''}
-收集信息：${observations.substring(0, 4000)} ${observations.length > 4000 ? '...（内容过长已截断）' : ''}
+# 研究主题
+${topic}
 
-报告要求（${template.name}）：
-1. 格式：Markdown
-2. 结构：
-${config.structure.map(section => `   - ${section}`).join('\n')}
-3. 字数：${config.wordCount}
-4. 风格：${config.style}
-5. 要求：${config.requirements}
+# 已收集的关键信息摘要
+${observations.substring(0, 4000)} ${observations.length > 4000 ? '...（内容过长已截断）' : ''}
 
-请生成最终报告（不要包含"资料来源"章节，我们会自动添加）：`;
+# 报告要求 (${template.name})
+
+1.  **格式**: 必须是完整的 Markdown 格式。
+2.  **结构**: 严格按照以下结构组织内容：
+${config.structure.map(section => `    - ${section}`).join('\n')}
+3.  **字数**: 报告总字数应在 ${config.wordCount} 左右。
+4.  **风格**: ${config.style}
+5.  **核心要求**: ${config.requirements}
+
+---
+**🛑 重要指令 🛑**
+-   **绝对不要**在报告的任何部分（包括标题和章节名）提及或包含 "步骤"、"研究计划" 或任何相关的编号 (例如 "(步骤 1)")。
+-   报告内容应流畅、连贯，直接呈现最终的研究成果，而不是研究过程的复述。
+-   不要包含 "资料来源" 章节，我们会自动添加。
+---
+
+现在，请生成最终的研究报告：`;
     }
 
     _generateFallbackReport(topic, intermediateSteps, sources, researchMode) {
