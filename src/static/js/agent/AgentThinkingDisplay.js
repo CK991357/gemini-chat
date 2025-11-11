@@ -1,4 +1,4 @@
-// src/static/js/agent/AgentThinkingDisplay.js - 最终优化版
+// src/static/js/agent/AgentThinkingDisplay.js - 最终修复版
 
 export class AgentThinkingDisplay {
     constructor() {
@@ -7,6 +7,13 @@ export class AgentThinkingDisplay {
         this.stylesInjected = false;
         this.timeUpdateInterval = null;
         this.executionLog = [];
+        
+        // 🎯 新增：折叠状态管理
+        this.sectionStates = {
+            'stats-content': false,      // 研究统计 - 默认展开
+            'query-log-content': false,  // 搜索记录 - 默认折叠
+            'execution-log-content': false // 执行日志 - 默认折叠
+        };
         
         this.init();
     }
@@ -30,7 +37,7 @@ export class AgentThinkingDisplay {
         if (document.getElementById(styleId)) return;
 
         const css = `
-/* Agent Thinking Display Styles - 最终优化版 */
+/* Agent Thinking Display Styles - 最终修复版 */
 #agent-thinking-container {
     display: none;
     position: fixed;
@@ -352,35 +359,35 @@ export class AgentThinkingDisplay {
     margin-right: 8px;
 }
 
-/* ✨ 新增：可折叠 Section 样式 */
+/* ✨ 修复：可折叠 Section 样式 */
 .section-title {
-    cursor: pointer; /* ✨ 让标题看起来可以点击 */
-    user-select: none; /* ✨ 防止意外选中文本 */
+    cursor: pointer;
+    user-select: none;
 }
 
 .section-title .toggle-icon {
-    margin-left: auto; /* ✨ 将图标推到最右侧 */
+    margin-left: auto;
     transition: transform 0.2s ease;
     font-size: 12px;
 }
 
 .section-content-wrapper.minimized .toggle-icon {
-    transform: rotate(-90deg); /* ✨ 最小化时旋转图标 */
+    transform: rotate(-90deg);
 }
 
 .section-content-wrapper .section-content {
-    max-height: 500px; /* ✨ 设置一个足够大的最大高度 */
+    max-height: 500px;
     overflow: hidden;
-    transition: all 0.3s ease-in-out; /* ✨ 平滑过渡动画 */
+    transition: all 0.3s ease-in-out;
 }
 
 .section-content-wrapper.minimized .section-content {
-    max-height: 0; /* ✨ 最小化时高度为0 */
+    max-height: 0;
     padding-top: 0;
     padding-bottom: 0;
     margin-top: 0;
     margin-bottom: 0;
-    opacity: 0; /* ✨ 渐隐效果 */
+    opacity: 0;
 }
         `;
 
@@ -421,7 +428,7 @@ export class AgentThinkingDisplay {
             startTime: Date.now(),
             status: 'initializing',
             researchState: {
-                queryLog: [], // 🎯 新增：搜索记录
+                queryLog: [],
                 collectedSources: researchData.sources || [],
                 toolCalls: researchData.toolCalls || [],
                 metrics: {
@@ -429,12 +436,19 @@ export class AgentThinkingDisplay {
                     ...researchData.metrics
                 }
             },
-            executionLog: [] // 🎯 新增：执行日志
+            executionLog: []
+        };
+
+        // 🎯 重置折叠状态为默认值
+        this.sectionStates = {
+            'stats-content': false,      // 研究统计 - 默认展开
+            'query-log-content': false,  // 搜索记录 - 默认折叠
+            'execution-log-content': false // 执行日志 - 默认折叠
         };
 
         this.renderSession();
         this.show();
-        this.container.classList.add('minimized');
+        this.container.classList.add('minimized'); // 启动时自动折叠整个面板
         
         // 🎯 记录研究开始
         this.addExecutionLog(`开始研究: "${this.currentSession.userMessage}"`, 'research_start');
@@ -448,12 +462,15 @@ export class AgentThinkingDisplay {
     renderSession() {
         const { userMessage, researchState } = this.currentSession;
         
-        // 🎯 计算统计数据
+        // 🎯 修复：正确计算工具调用统计数据
         const queryCount = researchState.queryLog?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const toolCallsCount = researchState.toolCalls?.length || 0;
-        const successfulTools = researchState.toolCalls?.filter(t => t.success)?.length || 0;
+        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0; // 🎯 修复：严格比较true
         const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
+
+        // 🎯 修复：计算已用时间
+        const elapsedTime = this._calculateElapsedTime();
 
         this.container.innerHTML = `
             <div class="agent-session">
@@ -477,7 +494,7 @@ export class AgentThinkingDisplay {
                     </div>
                     
                     <!-- 研究统计 -->
-                    <div class="research-stats-section section-content-wrapper">
+                    <div class="research-stats-section section-content-wrapper ${this.sectionStates['stats-content'] ? 'minimized' : ''}">
                         <div class="section-title" data-target="stats-content">
                             📈 研究统计 <span class="toggle-icon">▼</span>
                         </div>
@@ -508,7 +525,7 @@ export class AgentThinkingDisplay {
                                     </div>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="stat-value" id="elapsed-time">0s</span>
+                                    <span class="stat-value" id="elapsed-time">${elapsedTime}</span>
                                     <span class="stat-label">已用时间</span>
                                 </div>
                             </div>
@@ -516,7 +533,7 @@ export class AgentThinkingDisplay {
                     </div>
                     
                     <!-- 🎯 搜索记录 -->
-                    <div class="query-log-section section-content-wrapper">
+                    <div class="query-log-section section-content-wrapper ${this.sectionStates['query-log-content'] ? 'minimized' : ''}">
                         <div class="section-title" data-target="query-log-content">
                             🔍 搜索记录 <span class="toggle-icon">▼</span>
                         </div>
@@ -528,7 +545,7 @@ export class AgentThinkingDisplay {
                     </div>
                     
                     <!-- 🎯 执行日志 -->
-                    <div class="execution-log-section section-content-wrapper">
+                    <div class="execution-log-section section-content-wrapper ${this.sectionStates['execution-log-content'] ? 'minimized' : ''}">
                         <div class="section-title" data-target="execution-log-content">
                             📜 执行日志 <span class="toggle-icon">▼</span>
                         </div>
@@ -543,8 +560,19 @@ export class AgentThinkingDisplay {
         `;
 
         this.attachContainerEvents();
-        this.attachCollapsibleEvents(); // ✨ 新增：附加折叠事件
+        this.attachCollapsibleEvents();
         this.startTimeUpdate();
+    }
+
+    /**
+     * 🎯 修复：计算已用时间
+     */
+    _calculateElapsedTime() {
+        if (!this.currentSession) return '0s';
+        
+        const endTime = this.currentSession.endTime || Date.now();
+        const elapsedSeconds = Math.floor((endTime - this.currentSession.startTime) / 1000);
+        return `${elapsedSeconds}s`;
     }
 
     /**
@@ -680,15 +708,18 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 添加工具调用记录
+     * 🎯 修复：添加工具调用记录 - 确保success属性正确设置
      */
     addToolCallRecord(toolName, parameters, success = true, result = null) {
         if (!this.currentSession) return;
 
+        // 🎯 修复：确保success是布尔值
+        const toolSuccess = Boolean(success);
+
         const toolCall = {
             tool: toolName,
             parameters,
-            success,
+            success: toolSuccess, // 🎯 修复：确保是布尔值
             result: result ? this.formatStepResult(result) : null,
             timestamp: Date.now()
         };
@@ -701,7 +732,7 @@ export class AgentThinkingDisplay {
         
         // 🎯 特殊处理：如果是搜索工具，记录query
         if (toolName === 'tavily_search' && parameters.query) {
-            this.addQueryRecord(parameters.query, success);
+            this.addQueryRecord(parameters.query, toolSuccess);
         }
         
         this.renderSession();
@@ -766,36 +797,49 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 新增：为所有可折叠的section标题添加点击事件
+     * 🎯 修复：为所有可折叠的section标题添加点击事件 - 保存折叠状态
      */
     attachCollapsibleEvents() {
         this.container.querySelectorAll('.section-title[data-target]').forEach(title => {
             title.addEventListener('click', () => {
                 const contentWrapper = title.closest('.section-content-wrapper');
                 if (contentWrapper) {
+                    const target = title.dataset.target;
+                    // 🎯 修复：切换并保存折叠状态
+                    const isMinimized = !contentWrapper.classList.contains('minimized');
                     contentWrapper.classList.toggle('minimized');
+                    this.sectionStates[target] = isMinimized;
+                    
+                    console.log(`[AgentThinkingDisplay] 折叠状态更新: ${target} = ${isMinimized}`);
                 }
             });
         });
     }
 
     /**
-     * 🎯 开始时间更新
+     * 🎯 修复：开始时间更新 - 确保完成后不重置
      */
     startTimeUpdate() {
         if (this.timeUpdateInterval) {
             clearInterval(this.timeUpdateInterval);
         }
 
-        this.timeUpdateInterval = setInterval(() => {
-            if (this.currentSession && this.currentSession.status !== 'completed') {
-                const elapsed = Math.floor((Date.now() - this.currentSession.startTime) / 1000);
-                const timeElement = this.container.querySelector('#elapsed-time');
-                if (timeElement) {
-                    timeElement.textContent = `${elapsed}s`;
+        // 🎯 修复：只在会话未完成时更新计时器
+        if (this.currentSession && this.currentSession.status !== 'completed') {
+            this.timeUpdateInterval = setInterval(() => {
+                if (this.currentSession && this.currentSession.status !== 'completed') {
+                    const elapsedTime = this._calculateElapsedTime();
+                    const timeElement = this.container.querySelector('#elapsed-time');
+                    if (timeElement) {
+                        timeElement.textContent = elapsedTime;
+                    }
+                } else {
+                    // 会话完成时清理计时器
+                    clearInterval(this.timeUpdateInterval);
+                    this.timeUpdateInterval = null;
                 }
-            }
-        }, 1000);
+            }, 1000);
+        }
     }
 
     /**
@@ -821,7 +865,7 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 完成会话
+     * 🎯 修复：完成会话 - 确保时间正确显示
      */
     completeSession(finalResult = {}) {
         if (!this.currentSession) return;
@@ -829,11 +873,11 @@ export class AgentThinkingDisplay {
         this.currentSession.status = 'completed';
         this.currentSession.endTime = Date.now();
         
-        // 🎯 修复：在停止计时前更新最终时间
-        const finalElapsedTime = Math.floor((this.currentSession.endTime - this.currentSession.startTime) / 1000);
+        // 🎯 修复：强制更新一次最终时间
+        const elapsedTime = this._calculateElapsedTime();
         const timeElement = this.container.querySelector('#elapsed-time');
         if (timeElement) {
-            timeElement.textContent = `${finalElapsedTime}s`;
+            timeElement.textContent = elapsedTime;
         }
 
         // 清理时间更新
@@ -843,7 +887,7 @@ export class AgentThinkingDisplay {
         }
 
         this.addDeepResearchSummary(finalResult);
-        this.renderSession();
+        this.renderSession(); // 🎯 重新渲染以确保所有状态正确显示
     }
 
     /**
@@ -856,7 +900,7 @@ export class AgentThinkingDisplay {
         const queryCount = researchState.queryLog?.length || 0;
         const sourcesCount = researchState.collectedSources?.length || 0;
         const toolCallsCount = researchState.toolCalls?.length || 0;
-        const successfulTools = researchState.toolCalls?.filter(t => t.success)?.length || 0;
+        const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0; // 🎯 修复：严格比较
         const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0 };
 
         const iterations = finalResult.iterations || 0;
@@ -986,5 +1030,6 @@ export class AgentThinkingDisplay {
         this.stylesInjected = false;
         this.currentSession = null;
         this.executionLog = [];
+        this.sectionStates = {}; // 🎯 清理折叠状态
     }
 }
