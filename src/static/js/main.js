@@ -20,6 +20,7 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
 
 // 🚀 新增导入：智能代理系统
+import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
 
 // 🎯 获取基础技能管理器的函数
 // 这个函数应该在技能系统初始化后调用
@@ -1154,11 +1155,12 @@ async function handleHttpMessage(messageText, attachedFiles) {
 }
 
 /**
- * 🚀 处理智能代理模式 - 新增历史记录保存功能
+ * 🚀 处理智能代理模式
  */
+// 🎯 修改消息处理函数中的 Agent 调用逻辑
 async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames) {
     console.log("🤖 Agent Mode ON: 智能路由用户请求");
-
+    
     try {
         // 🎯 关键修复：检查开关状态
         if (!orchestrator.isEnabled) {
@@ -1180,26 +1182,6 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                 return;
             }
         }
-
-        // ========================================================================
-        // ✨ 步骤 1: 将用户请求添加到 chatHistory
-        // ========================================================================
-        const userContent = [];
-        if (messageText) {
-            userContent.push({ type: 'text', text: messageText });
-        }
-        // 如果 Agent 未来支持文件处理，这里的逻辑也已准备好
-        attachedFiles.forEach(file => {
-            if (file.type.startsWith('image/')) {
-                userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-            } else if (file.type === 'application/pdf') {
-                userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
-            } else if (file.type.startsWith('audio/')) {
-                userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
-            }
-        });
-        chatHistory.push({ role: 'user', content: userContent });
-        console.log('[History] 已将用户的 Agent 请求添加到历史记录。');
         
         // 🎯 修复：传递所有可用工具，让Orchestrator内部处理研究工具过滤
         const availableTools = getAvailableToolNames(modelName);
@@ -1223,49 +1205,60 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
         
         // 🎯 处理结果
         if (agentResult.enhanced) {
-            let finalContent = ''; // 用于保存最终要存入历史记录的内容
-
-            if (agentResult.type === 'user_guide') {
-                // 使用指南请求
-                finalContent = agentResult.content;
-                chatUI.addMessage({ role: 'assistant', content: finalContent });
-            } else if (agentResult.type === 'research_result') {
-                // 研究结果
-                finalContent = agentResult.report || agentResult.content;
-                // 显示简洁的执行摘要卡片
-                displayAgentSummary(agentResult);
-                // 显示完整的报告
-                if (agentResult.report) {
-                    chatUI.addMessage({ role: 'assistant', content: agentResult.report });
+            if (agentResult.type === 'workflow_pending') {
+                // 显示工作流UI
+                showWorkflowUI(agentResult.workflow);
+                console.log("🎯 工作流等待执行");
+                
+                return new Promise((resolve) => {
+                    const handleWorkflowResult = (event) => {
+                        const finalResult = event.detail;
+                        window.removeEventListener('workflow:result', handleWorkflowResult);
+                        
+                        if (finalResult.skipped) {
+                            // 工作流被跳过，回退到标准聊天
+                            handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
+                                .then(() => agentThinkingDisplay.completeSession('success'))
+                                .finally(resolve);
+                        } else {
+                            // 显示最终结果
+                            chatUI.addMessage({ role: 'assistant', content: finalResult.content });
+                            console.log('工作流执行详情:', finalResult);
+                            agentThinkingDisplay.completeSession('success');
+                            resolve();
+                        }
+                    };
+                    window.addEventListener('workflow:result', handleWorkflowResult);
+                });
+            } else if (agentResult.type === 'agent_result') {
+                if (agentResult.fallback) {
+                    // 降级情况：显示降级结果
+                    chatUI.addMessage({ role: 'assistant', content: agentResult.content });
+                } else {
+                    // 正常Agent执行：
+                    // 1. (保留) 显示简洁的执行摘要卡片，提供快速反馈
+                    displayAgentSummary(agentResult);
+                    
+                    // 2. ✨ 核心修复：将包含资料来源的完整报告，通过 chatUI.addMessage 渲染到聊天窗口
+                    // agentResult.report 包含了由 _generateFinalReport 生成的完整 Markdown 内容
+                    if (agentResult.report) {
+                        chatUI.addMessage({ role: 'assistant', content: agentResult.report });
+                    }
+                    
+                    console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
                 }
-                console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
+                console.log('Agent执行详情:', agentResult);
+                agentThinkingDisplay.completeSession('success');
             } else {
                 // 其他增强结果
-                finalContent = agentResult.content || 'Agent 已完成任务，无文本输出。';
-                chatUI.addMessage({ role: 'assistant', content: finalContent });
+                chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 console.log('增强结果详情:', agentResult);
+                agentThinkingDisplay.completeSession('success');
             }
-
-            // ========================================================================
-            // ✨ 步骤 2 & 3: 将 Agent 最终报告添加到历史记录，并触发保存
-            // ========================================================================
-            if (finalContent) {
-                chatHistory.push({ role: 'assistant', content: finalContent });
-                console.log('[History] 已将 Agent 的最终报告添加到历史记录。');
-
-                // 调用 historyManager 保存完整的对话回合
-                await historyManager.saveHistory();
-                console.log('[History] Agent 会话已成功保存。');
-            }
-
-            agentThinkingDisplay.completeSession('success');
-            
         } else {
             // 标准回退处理
             console.log("💬 未触发增强模式，使用标准对话，立即停止Agent思考显示");
             agentThinkingDisplay.completeSession('skipped');
-            // 重要：标准请求处理函数 `handleStandardChatRequest` 内部已经包含了历史记录保存逻辑，
-            // 所以我们不需要在这里重复操作。
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
         }
         
@@ -1275,7 +1268,7 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
         if (agentThinkingDisplay) {
             agentThinkingDisplay.completeSession('error');
         }
-        // 即使 Agent 失败，也回退到普通聊天模式，确保用户的输入不会丢失
+        // 回退到普通聊天模式
         await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
     }
 }
@@ -2679,3 +2672,4 @@ function displayAgentSummary(agentResult) {
     messageHistoryElement.appendChild(summaryDiv);
     chatUI.scrollToBottom();
 }
+
