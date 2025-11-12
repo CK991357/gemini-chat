@@ -409,8 +409,8 @@ class DeepResearchToolAdapter {
                     if (dataFromProxy && (dataFromProxy.content || dataFromProxy.markdown)) {
                         const content = dataFromProxy.content || dataFromProxy.markdown;
                         
-                        // 🎯 增强：检查内容是否真的有效
-                        const isContentValid = this.isContentMeaningful(content);
+                        // 🎯 关键修复：使用宽松的内容有效性检查
+                        const isContentValid = this.isContentMeaningfulRelaxed(content);
                         
                         if (isContentValid) {
                             output = this.formatWebContentForMode(dataFromProxy, researchMode);
@@ -425,23 +425,27 @@ class DeepResearchToolAdapter {
                             }
                             success = true;
                         } else {
-                            // 🎯 关键修复：内容无效时返回明确的错误信息
-                            output = `❌ **网页内容提取失败**: 虽然页面抓取成功，但无法提取到有意义的正文内容。\n\n` +
-                                    `**可能原因**:\n` +
-                                    `• 页面需要JavaScript动态加载内容\n` +
-                                    `• 页面需要登录或验证\n` +
-                                    `• 页面结构复杂，无法自动识别主要内容\n` +
-                                    `• 目标网站有反爬虫机制\n\n` +
-                                    `**建议**: 尝试使用 tavily_search 工具搜索相关信息，或提供其他可访问的URL。`;
+                            // 🎯 关键修复：提供详细的调试信息
+                            const contentLength = content?.length || 0;
+                            console.log(`[DeepResearchAdapter] 内容有效性检查失败: 长度=${contentLength}`);
+                            output = `❌ **网页内容提取失败**: 页面抓取成功，但提取到的内容不符合要求。\n\n` +
+                                    `**技术详情**:\n` +
+                                    `• 提取内容长度: ${contentLength} 字符\n` +
+                                    `• 内容预览: ${content ? content.substring(0, 100) + '...' : '空内容'}\n\n` +
+                                    `**建议**: 尝试使用其他模式如 'extract' 或 'deep_crawl'，或使用 tavily_search 工具搜索相关信息。`;
                             success = false;
                         }
                     } else if (dataFromProxy && typeof dataFromProxy === 'object') {
-                        // 处理结构化数据
-                        if (Object.keys(dataFromProxy).length > 0) {
-                            output = `📊 **结构化数据**:\n${JSON.stringify(dataFromProxy, null, 2)}`;
+                        // 🎯 关键修复：即使没有content字段，也尝试处理其他数据
+                        const hasUsefulData = Object.keys(dataFromProxy).some(key => 
+                            key !== 'success' && dataFromProxy[key] != null
+                        );
+                        
+                        if (hasUsefulData) {
+                            output = `📊 **网页抓取结果**:\n${JSON.stringify(dataFromProxy, null, 2)}`;
                             success = true;
                         } else if (success) {
-                            output = `❌ **网页内容提取失败**: 页面抓取成功，但未能提取到有效的主要内容。这可能意味着页面是空的、需要登录、是404页面或内容是动态加载的。`;
+                            output = `❌ **网页内容提取失败**: 页面抓取成功，但未能提取到有效的主要内容。`;
                             success = false;
                         }
                     } else if (success) {
@@ -537,7 +541,7 @@ class DeepResearchToolAdapter {
     }
     
     /**
-     * 🎯 检查内容是否真正有意义
+     * 🎯 检查内容是否真正有意义 - 原始严格版本
      */
     static isContentMeaningful(content) {
         if (!content || typeof content !== 'string') return false;
@@ -589,6 +593,37 @@ class DeepResearchToolAdapter {
         }
         
         console.log(`[ContentCheck] 内容有效: 总长度 ${trimmedContent.length}, 纯文本长度 ${textOnly.length}`);
+        return true;
+    }
+    
+    /**
+     * 🎯 新增：宽松的内容有效性检查 - 专门用于crawl4ai工具
+     */
+    static isContentMeaningfulRelaxed(content) {
+        if (!content || typeof content !== 'string') return false;
+        
+        const trimmedContent = content.trim();
+        
+        // 🎯 大幅降低长度要求
+        if (trimmedContent.length < 30) {
+            console.log(`[ContentCheck-Relaxed] 内容过短: ${trimmedContent.length} 字符`);
+            return false;
+        }
+        
+        // 🎯 移除无意义内容检查，因为文档页面可能包含这些内容
+        
+        // 🎯 大幅降低纯文本密度要求
+        const textOnly = trimmedContent.replace(/\[.*?\]\(.*?\)/g, '') // 移除markdown链接
+                                     .replace(/<[^>]*>/g, '') // 移除HTML标签
+                                     .replace(/\s+/g, ' ') // 合并空格
+                                     .trim();
+        
+        if (textOnly.length < 20) {
+            console.log(`[ContentCheck-Relaxed] 纯文本内容过少: ${textOnly.length} 字符`);
+            return false;
+        }
+        
+        console.log(`[ContentCheck-Relaxed] 内容有效: 总长度 ${trimmedContent.length}, 纯文本长度 ${textOnly.length}`);
         return true;
     }
     

@@ -26,6 +26,14 @@ export async function handleCrawl4AI(tool_params, env) {
         return createJsonResponse({ success: false, error: 'Missing or invalid nested "parameters" object for crawl4ai tool.' }, 400);
     }
 
+    // 🎯 关键修复：验证URL参数
+    if (!parameters.url) {
+        return createJsonResponse({ 
+            success: false, 
+            error: 'Missing required parameter: "url" in parameters object.' 
+        }, 400);
+    }
+
     // Validate mode against allowed values - UPDATED with all 7 modes
     const allowedModes = ['scrape', 'crawl', 'deep_crawl', 'extract', 'batch_crawl', 'pdf_export', 'screenshot'];
     if (!allowedModes.includes(mode)) {
@@ -47,28 +55,60 @@ export async function handleCrawl4AI(tool_params, env) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
+            // 🎯 关键修复：增加超时设置
+            signal: AbortSignal.timeout(30000) // 30秒超时
         });
 
-        const responseData = await toolResponse.json();
-
+        // 🎯 关键修复：更好的错误处理
         if (!toolResponse.ok) {
-            console.error('Crawl4AI Tool Server Error:', responseData);
+            let errorDetails;
+            try {
+                errorDetails = await toolResponse.text();
+            } catch {
+                errorDetails = toolResponse.statusText;
+            }
+            
+            console.error('Crawl4AI Tool Server Error:', {
+                status: toolResponse.status,
+                statusText: toolResponse.statusText,
+                details: errorDetails
+            });
+            
             return createJsonResponse({
                 success: false,
                 error: `Crawl4AI tool server request failed with status ${toolResponse.status}`,
-                details: responseData
+                details: errorDetails.substring(0, 500) // 限制错误信息长度
             }, toolResponse.status);
         }
         
-        // The external server already returns a success:true/false format,
-        // so we can directly forward its response body.
+        const responseData = await toolResponse.json();
+        
+        // 🎯 关键修复：验证响应数据结构
+        if (!responseData || typeof responseData !== 'object') {
+            return createJsonResponse({
+                success: false,
+                error: 'Invalid response format from tool server'
+            }, 500);
+        }
+        
         return createJsonResponse(responseData);
 
     } catch (error) {
         console.error('Failed to fetch from Crawl4AI tool server:', error);
+        
+        // 🎯 关键修复：区分不同类型的错误
+        let errorMessage = 'Failed to connect to the external tool server.';
+        if (error.name === 'TimeoutError') {
+            errorMessage = 'Tool server request timed out (30s).';
+        } else if (error.name === 'AbortError') {
+            errorMessage = 'Tool server request was aborted.';
+        } else if (error.message.includes('fetch')) {
+            errorMessage = 'Network error: Unable to reach the tool server.';
+        }
+        
         return createJsonResponse({
             success: false,
-            error: 'Failed to connect to the external tool server.',
+            error: errorMessage,
             details: error.message
         }, 500);
     }
