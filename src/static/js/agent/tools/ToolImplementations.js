@@ -1,9 +1,9 @@
-// src/static/js/agent/tools/ToolImplementations.js - 最终修复版
+// src/static/js/agent/tools/ToolImplementations.js - 完整修复版
 
 import { BaseTool } from './BaseTool.js';
 
 /**
- * 🎯 DeepResearch专用工具适配器 - 完全修复参数结构问题
+ * 🎯 DeepResearch专用工具适配器 - 完整修复参数结构问题
  */
 class DeepResearchToolAdapter {
     /**
@@ -163,7 +163,7 @@ class DeepResearchToolAdapter {
     }
 
     /**
-     * DeepResearch模式专用参数适配 - ✅✅✅ 最终修复版 ✅✅✅
+     * DeepResearch模式专用参数适配 - ✅✅✅ 完整修复版 ✅✅✅
      */
     static normalizeParametersForDeepResearch(toolName, rawParameters, researchMode = 'deep') {
         console.log(`[DeepResearchAdapter] ${researchMode}模式参数适配: ${toolName}`, rawParameters);
@@ -175,7 +175,7 @@ class DeepResearchToolAdapter {
         
         switch (toolName) {
             case 'tavily_search': {
-                // ✅✅✅ 核心修复：正确处理查询参数 ✅✅✅
+                // ✅✅✅ 正确处理查询参数
                 let finalQuery = '';
                 if (agentParams.query && typeof agentParams.query === 'string') {
                     finalQuery = agentParams.query;
@@ -202,7 +202,7 @@ class DeepResearchToolAdapter {
             }
                 
             case 'crawl4ai': {
-                // ✅✅✅ 核心修复：强制重构为双层嵌套结构 ✅✅✅
+                // ✅✅✅ 核心修复：强制重构为纯净的双层嵌套结构
                 console.log(`[DeepResearchAdapter] 重构 crawl4ai 参数:`, agentParams);
                 
                 // 1. 确定 mode，Agent 提供的值优先，否则默认为 'scrape'
@@ -211,17 +211,26 @@ class DeepResearchToolAdapter {
                 // 2. 获取该 mode 下的模式特定默认配置
                 const modeDefaultConfig = modeSpecific[mode] || {};
                 
-                // 3. 准备内部的 'parameters' 对象
-                // Agent 提供的参数（如 url, prompt 等）会覆盖模式默认配置
-                const innerParameters = {
-                    ...modeDefaultConfig,
-                    ...agentParams
-                };
+                // 3. 准备内部的 'parameters' 对象 - 只包含后端真正需要的核心参数
+                const innerParameters = {};
                 
-                // 4. 清理内部 'parameters' 对象中不应存在的顶层字段
-                delete innerParameters.mode; // 'mode' 字段只应存在于顶层
+                // 4. 从 Agent 参数中提取核心字段
+                if (agentParams.url) innerParameters.url = agentParams.url;
+                if (agentParams.prompt) innerParameters.prompt = agentParams.prompt;
+                if (agentParams.schema_definition) innerParameters.schema_definition = agentParams.schema_definition;
+                if (agentParams.keywords) innerParameters.keywords = agentParams.keywords;
+                if (agentParams.urls) innerParameters.urls = agentParams.urls;
+                if (agentParams.max_pages) innerParameters.max_pages = agentParams.max_pages;
+                if (agentParams.max_depth) innerParameters.max_depth = agentParams.max_depth;
+                
+                // 5. 合并模式特定配置（但避免覆盖Agent明确提供的参数）
+                Object.keys(modeDefaultConfig).forEach(key => {
+                    if (innerParameters[key] === undefined) {
+                        innerParameters[key] = modeDefaultConfig[key];
+                    }
+                });
 
-                // 5. 构建最终的、符合后端期望的双层嵌套结构
+                // 6. 构建最终的、符合后端期望的双层嵌套结构
                 const finalParams = {
                     mode: mode,
                     parameters: innerParameters
@@ -329,7 +338,6 @@ class DeepResearchToolAdapter {
         console.log(`[DeepResearchAdapter] ${researchMode}模式响应处理: ${toolName}`);
         
         // ✅✅✅ 核心修复：正确处理空响应和错误
-        // 关键：处理工具调用失败或返回完全空数据的情况，防止Agent因缺少Observation而卡住。
         if (!rawResponse) {
             return {
                 success: false,
@@ -380,27 +388,45 @@ class DeepResearchToolAdapter {
                 case 'crawl4ai': {
                     if (dataFromProxy && (dataFromProxy.content || dataFromProxy.markdown)) {
                         const content = dataFromProxy.content || dataFromProxy.markdown;
-                        output = this.formatWebContentForMode(dataFromProxy, researchMode);
                         
-                        if (dataFromProxy.url) {
-                            sources.push({
-                                title: dataFromProxy.title || dataFromProxy.url,
-                                url: dataFromProxy.url,
-                                description: content.substring(0, 150) + '...',
-                                source_type: 'web_page'
-                            });
+                        // 🎯 增强：检查内容是否真的有效
+                        const isContentValid = this.isContentMeaningful(content);
+                        
+                        if (isContentValid) {
+                            output = this.formatWebContentForMode(dataFromProxy, researchMode);
+                            
+                            if (dataFromProxy.url) {
+                                sources.push({
+                                    title: dataFromProxy.title || dataFromProxy.url,
+                                    url: dataFromProxy.url,
+                                    description: content.substring(0, 150) + '...',
+                                    source_type: 'web_page'
+                                });
+                            }
+                            success = true;
+                        } else {
+                            // 🎯 关键修复：内容无效时返回明确的错误信息
+                            output = `❌ **网页内容提取失败**: 虽然页面抓取成功，但无法提取到有意义的正文内容。\n\n` +
+                                    `**可能原因**:\n` +
+                                    `• 页面需要JavaScript动态加载内容\n` +
+                                    `• 页面需要登录或验证\n` +
+                                    `• 页面结构复杂，无法自动识别主要内容\n` +
+                                    `• 目标网站有反爬虫机制\n\n` +
+                                    `**建议**: 尝试使用 tavily_search 工具搜索相关信息，或提供其他可访问的URL。`;
+                            success = false;
                         }
-                        success = true;
                     } else if (dataFromProxy && typeof dataFromProxy === 'object') {
                         // 处理结构化数据
                         if (Object.keys(dataFromProxy).length > 0) {
                             output = `📊 **结构化数据**:\n${JSON.stringify(dataFromProxy, null, 2)}`;
                             success = true;
                         } else if (success) {
-                            output = `[工具信息]: 页面抓取成功，但未能提取到有效的主要内容。这可能意味着页面是空的、需要登录、是 404 页面或内容是动态加载的。`;
+                            output = `❌ **网页内容提取失败**: 页面抓取成功，但未能提取到有效的主要内容。这可能意味着页面是空的、需要登录、是404页面或内容是动态加载的。`;
+                            success = false;
                         }
                     } else if (success) {
-                        output = `[工具信息]: 页面抓取成功，但未能提取到有效的主要内容。`;
+                        output = `❌ **网页内容提取失败**: 页面抓取成功，但未能提取到有效的主要内容。`;
+                        success = false;
                     }
                     break;
                 }
@@ -467,7 +493,6 @@ class DeepResearchToolAdapter {
         }
         
         // ✅✅✅ 最终保障：确保output不为空
-        // 关键：处理工具成功执行但未返回任何内容的边缘情况，防止Agent陷入死循环。
         if (success && !output) {
             output = `[工具信息]: ${toolName} 执行成功，但没有返回文本输出。`;
         }
@@ -489,6 +514,62 @@ class DeepResearchToolAdapter {
                 analysisSuggestions: this._generateResearchSuggestions(toolName, output, researchMode)
             }
         };
+    }
+    
+    /**
+     * 🎯 检查内容是否真正有意义
+     */
+    static isContentMeaningful(content) {
+        if (!content || typeof content !== 'string') return false;
+        
+        const trimmedContent = content.trim();
+        
+        // 检查内容长度
+        if (trimmedContent.length < 200) {
+            console.log(`[ContentCheck] 内容过短: ${trimmedContent.length} 字符`);
+            return false;
+        }
+        
+        // 检查是否只包含导航/页脚内容
+        const meaninglessPatterns = [
+            'skip to main content',
+            'skip to content', 
+            'generated using AI',
+            'may contain mistakes',
+            'copyright',
+            'all rights reserved',
+            'privacy policy',
+            'terms of service',
+            'login',
+            'sign up',
+            'navigation',
+            'menu'
+        ];
+        
+        const lowerContent = trimmedContent.toLowerCase();
+        const meaninglessCount = meaninglessPatterns.filter(pattern => 
+            lowerContent.includes(pattern)
+        ).length;
+        
+        // 如果包含太多无意义内容模式，则认为内容无效
+        if (meaninglessCount > 3) {
+            console.log(`[ContentCheck] 检测到过多无意义内容模式: ${meaninglessCount}`);
+            return false;
+        }
+        
+        // 检查实际文本密度（排除HTML标签、链接等）
+        const textOnly = trimmedContent.replace(/\[.*?\]\(.*?\)/g, '') // 移除markdown链接
+                                     .replace(/<[^>]*>/g, '') // 移除HTML标签
+                                     .replace(/\s+/g, ' ') // 合并空格
+                                     .trim();
+        
+        if (textOnly.length < 150) {
+            console.log(`[ContentCheck] 纯文本内容过少: ${textOnly.length} 字符`);
+            return false;
+        }
+        
+        console.log(`[ContentCheck] 内容有效: 总长度 ${trimmedContent.length}, 纯文本长度 ${textOnly.length}`);
+        return true;
     }
     
     /**
