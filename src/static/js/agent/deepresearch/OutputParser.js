@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/OutputParser.js - 最终版（修复Markdown格式容错性）
+// src/static/js/agent/deepresearch/OutputParser.js - 最终修复版
 
 export class AgentOutputParser {
     parse(text) {
@@ -96,37 +96,30 @@ export class AgentOutputParser {
         }
     }
 
-    // ✨ 核心方法：解析AgentLogic要求的格式 - 修复Markdown格式容错性
+    // ✨ 核心方法：解析AgentLogic要求的格式 - 最终修复版
     _parseToolCallFormat(text) {
         try {
             console.log('[OutputParser] 🔍 开始解析工具调用格式...');
             
             // ✅✅✅ --- 核心修复 --- ✅✅✅
-            // 使用更灵活的正则表达式，允许 "行动" 和 "行动输入" 标签前后出现可选的 Markdown 星号 (**)
-            // 我们使用 \b 来确保匹配的是完整的单词 "行动" 或 "行动输入"。
-            
-            // 修复后的正则表达式，用于匹配 "行动: tool_name"
-            const actionLineMatch = text.match(/\b行动\b\s*:\s*([a-zA-Z0-9_]+)/i);
+            // 使用更强大的文本预处理，移除所有可能的干扰字符
+            const preprocessedText = this._preprocessText(text);
+            console.log('[OutputParser] 预处理后文本:', preprocessedText.substring(0, 200) + '...');
+
+            // 🎯 修复1：使用更灵活的正则表达式，移除单词边界限制
+            const actionLineMatch = preprocessedText.match(/行动\s*:\s*([a-zA-Z0-9_]+)/i);
             if (!actionLineMatch) {
-                // 如果第一次匹配失败，尝试去掉文本中的所有星号再试一次，作为降级方案
-                const cleanedText = text.replace(/\*/g, '');
-                const fallbackActionMatch = cleanedText.match(/\b行动\b\s*:\s*([a-zA-Z0-9_]+)/i);
-                if (!fallbackActionMatch) {
-                    console.log('[OutputParser] ❌ 未找到"行动:"行');
-                    return { success: false };
-                }
-                // 如果降级方案成功，则继续使用清理过的文本进行后续匹配
-                text = cleanedText;
+                console.log('[OutputParser] ❌ 未找到"行动:"行');
+                return { success: false };
             }
 
-            // 从第一次或降级匹配中获取工具名
-            const tool_name = (actionLineMatch || text.match(/\b行动\b\s*:\s*([a-zA-Z0-9_]+)/i))[1].trim();
+            const tool_name = actionLineMatch[1].trim();
             console.log(`[OutputParser] 🔍 找到工具名: ${tool_name}`);
             
-            // 修复后的正则表达式，用于匹配 "行动输入: {json}"
-            const inputLineMatch = text.match(/\b行动输入\b\s*:\s*(\{[\s\S]*?\})(?=\s*(?:思考|\b行动\b|\b最终答案\b)|$)/i);
+            // 🎯 修复2：使用更强大的JSON提取正则表达式
+            const inputLineMatch = preprocessedText.match(/行动输入\s*:\s*(\{[\s\S]*?\})(?=\s*(?:思考|行动|最终答案)|$)/i);
             if (!inputLineMatch) {
-                console.log('[OutputParser] ❌ 未找到"行动输入:"行');
+                console.log('[OutputParser] ❌ 未找到"行动输入:"行或JSON格式不正确');
                 return { success: false };
             }
 
@@ -151,7 +144,49 @@ export class AgentOutputParser {
         }
     }
 
-    // ✨ 新增：宽松解析方法
+    // ✨ 新增：强大的文本预处理方法
+    _preprocessText(text) {
+        let processed = text;
+        
+        // 1. 移除所有星号（Markdown格式干扰）
+        processed = processed.replace(/\*/g, '');
+        
+        // 2. 移除零宽度空格和其他不可见字符
+        processed = processed.replace(/[\u200B-\u200D\uFEFF]/g, '');
+        
+        // 3. 标准化空白字符：将多个连续空白字符替换为单个空格
+        processed = processed.replace(/\s+/g, ' ');
+        
+        // 4. 移除行首行尾的空白
+        processed = processed.trim();
+        
+        // 5. 确保中英文冒号统一（将英文冒号替换为中文冒号）
+        processed = processed.replace(/行动\s*:/g, '行动:').replace(/行动输入\s*:/g, '行动输入:');
+        
+        console.log('[OutputParser] 文本预处理完成，长度:', processed.length);
+        return processed;
+    }
+
+    // ✨ 新增：强化JSON清理方法
+    _cleanJsonString(str) {
+        let cleaned = str;
+        
+        // 1. 移除尾随逗号（JSON不允许尾随逗号）
+        cleaned = cleaned.replace(/,\s*}$/, '}');
+        
+        // 2. 修复可能的JSON格式问题
+        cleaned = cleaned.replace(/([{,]\s*)([a-zA-Z0-9_]+)(\s*:)/g, '$1"$2"$3'); // 确保键被引号包围
+        
+        // 3. 移除JSON外的任何文本
+        const jsonMatch = cleaned.match(/^(\{.*\})$/s);
+        if (jsonMatch) {
+            cleaned = jsonMatch[1];
+        }
+        
+        return cleaned.trim();
+    }
+
+    // ✨ 宽松解析方法 - 保持不变
     _lenientParse(text) {
         console.log('[OutputParser] 执行宽松解析...');
         
@@ -179,7 +214,7 @@ export class AgentOutputParser {
         return { success: false };
     }
 
-    // 🛠️ 判断是否应该是最终答案
+    // 🛠️ 判断是否应该是最终答案 - 保持不变
     _shouldBeFinalAnswer(thought, fullText) {
         if (!thought) return false;
         
@@ -198,7 +233,7 @@ export class AgentOutputParser {
         return hasCompletionIndicator || hasReportStructure;
     }
 
-    // 🛠️ 推断最终答案
+    // 🛠️ 推断最终答案 - 保持不变
     _inferFinalAnswer(fullText, thought) {
         try {
             // 如果思考后面直接跟着报告结构，提取整个报告
@@ -223,11 +258,5 @@ export class AgentOutputParser {
             console.warn('[OutputParser] 推断最终答案失败:', e.message);
             return null;
         }
-    }
-
-    _cleanJsonString(str) {
-        // 移除尾随逗号（JSON不允许尾随逗号）
-        let cleaned = str.replace(/,\s*}$/, '}');
-        return cleaned.trim();
     }
 }
