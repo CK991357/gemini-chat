@@ -24,12 +24,17 @@ class DeepResearchToolAdapter {
                         word_count_threshold: 10,
                         only_main_content: false,
                         include_links: true,
-                        format: 'markdown'
+                        format: 'markdown',
+                        wait_for: 5000
                     },
                     deep_crawl: {
                         max_pages: 20,
                         max_depth: 3,
                         strategy: 'bfs'
+                    },
+                    extract: {
+                        extraction_type: 'llm',
+                        format: 'markdown'
                     }
                 },
                 python_sandbox: {
@@ -50,7 +55,8 @@ class DeepResearchToolAdapter {
                     scrape: {
                         only_main_content: true,
                         include_tables: true,
-                        format: 'markdown'
+                        format: 'markdown',
+                        wait_for: 3000
                     }
                 }
             },
@@ -68,7 +74,8 @@ class DeepResearchToolAdapter {
                         format: 'markdown',
                         include_math: true,
                         include_code: true,
-                        word_count_threshold: 5
+                        word_count_threshold: 5,
+                        wait_for: 4000
                     }
                 }
             },
@@ -84,7 +91,8 @@ class DeepResearchToolAdapter {
                     scrape: {
                         include_code: true,
                         include_links: true,
-                        format: 'markdown'
+                        format: 'markdown',
+                        wait_for: 3000
                     }
                 },
                 python_sandbox: {
@@ -105,7 +113,8 @@ class DeepResearchToolAdapter {
                     scrape: {
                         word_count_threshold: 5,
                         only_main_content: false,
-                        format: 'markdown'
+                        format: 'markdown',
+                        wait_for: 3000
                     }
                 }
             },
@@ -121,7 +130,8 @@ class DeepResearchToolAdapter {
                     scrape: {
                         only_main_content: true,
                         include_images: false,
-                        format: 'markdown'
+                        format: 'markdown',
+                        wait_for: 3000
                     }
                 }
             },
@@ -135,7 +145,15 @@ class DeepResearchToolAdapter {
                 crawl4ai: {
                     scrape: {
                         only_main_content: true,
-                        format: 'markdown'
+                        format: 'markdown',
+                        wait_for: 3000
+                    },
+                    deep_crawl: {
+                        max_pages: 5,
+                        max_depth: 1
+                    },
+                    extract: {
+                        extraction_type: 'llm'
                     }
                 }
             }
@@ -145,33 +163,33 @@ class DeepResearchToolAdapter {
     }
 
     /**
-     * DeepResearch模式专用参数适配 - 完全修复参数结构问题
+     * DeepResearch模式专用参数适配 - ✅✅✅ 最终修复版 ✅✅✅
      */
     static normalizeParametersForDeepResearch(toolName, rawParameters, researchMode = 'deep') {
         console.log(`[DeepResearchAdapter] ${researchMode}模式参数适配: ${toolName}`, rawParameters);
         
         if (!rawParameters) rawParameters = {};
         
-        const parameters = { ...rawParameters };
+        const agentParams = { ...rawParameters };
         const modeSpecific = this.getModeSpecificParameters(researchMode, toolName);
         
         switch (toolName) {
             case 'tavily_search': {
                 // ✅✅✅ 核心修复：正确处理查询参数 ✅✅✅
                 let finalQuery = '';
-                if (parameters.query && typeof parameters.query === 'string') {
-                    finalQuery = parameters.query;
-                } else if (Array.isArray(parameters.queries) && parameters.queries.length > 0) {
+                if (agentParams.query && typeof agentParams.query === 'string') {
+                    finalQuery = agentParams.query;
+                } else if (Array.isArray(agentParams.queries) && agentParams.queries.length > 0) {
                     console.log("[DeepResearchAdapter] 检测到 'queries' 数组，合并为单一查询。");
-                    finalQuery = parameters.queries.join(' ');
-                    delete parameters.queries;
-                } else if (parameters.queries && typeof parameters.queries === 'string' && parameters.queries.trim() !== '') {
-                    finalQuery = parameters.queries;
-                    delete parameters.queries;
+                    finalQuery = agentParams.queries.join(' ');
+                    delete agentParams.queries;
+                } else if (agentParams.queries && typeof agentParams.queries === 'string' && agentParams.queries.trim() !== '') {
+                    finalQuery = agentParams.queries;
+                    delete agentParams.queries;
                 }
 
                 return {
-                    ...parameters,
+                    ...agentParams,
                     query: finalQuery, // 确保 'query' 字段是正确的字符串
                     max_results: modeSpecific.max_results || 12,
                     include_raw_content: modeSpecific.include_raw_content !== false,
@@ -184,40 +202,29 @@ class DeepResearchToolAdapter {
             }
                 
             case 'crawl4ai': {
-                // ✅✅✅ 核心修复：完全重建 crawl4ai 参数结构 ✅✅✅
-                console.log(`[DeepResearchAdapter] 处理 crawl4ai 参数:`, parameters);
+                // ✅✅✅ 核心修复：强制重构为双层嵌套结构 ✅✅✅
+                console.log(`[DeepResearchAdapter] 重构 crawl4ai 参数:`, agentParams);
                 
-                // 检查是否已经有正确的嵌套结构
-                if (parameters.mode && parameters.parameters) {
-                    console.log(`[DeepResearchAdapter] 使用现有的嵌套参数结构`);
-                    // 合并模式特定的配置
-                    const modeConfig = modeSpecific[parameters.mode] || {};
-                    return {
-                        ...parameters,
-                        parameters: {
-                            ...parameters.parameters,
-                            ...modeConfig
-                        }
-                    };
-                }
+                // 1. 确定 mode，Agent 提供的值优先，否则默认为 'scrape'
+                const mode = agentParams.mode || 'scrape';
                 
-                // 构建正确的参数结构
-                const mode = parameters.mode || 'scrape';
-                const modeConfig = modeSpecific[mode] || {};
+                // 2. 获取该 mode 下的模式特定默认配置
+                const modeDefaultConfig = modeSpecific[mode] || {};
                 
-                // 提取基础参数
-                const baseParams = { ...parameters };
-                delete baseParams.mode; // 移除重复的mode字段
+                // 3. 准备内部的 'parameters' 对象
+                // Agent 提供的参数（如 url, prompt 等）会覆盖模式默认配置
+                const innerParameters = {
+                    ...modeDefaultConfig,
+                    ...agentParams
+                };
                 
+                // 4. 清理内部 'parameters' 对象中不应存在的顶层字段
+                delete innerParameters.mode; // 'mode' 字段只应存在于顶层
+
+                // 5. 构建最终的、符合后端期望的双层嵌套结构
                 const finalParams = {
                     mode: mode,
-                    parameters: {
-                        ...baseParams,
-                        ...modeConfig,
-                        // 确保必要参数存在
-                        url: parameters.url || parameters.parameters?.url,
-                        format: parameters.format || parameters.parameters?.format || 'markdown'
-                    }
+                    parameters: innerParameters
                 };
 
                 console.log(`[DeepResearchAdapter] 构建的最终参数:`, finalParams);
@@ -228,46 +235,46 @@ class DeepResearchToolAdapter {
                 const baseConfig = {
                     timeout: modeSpecific.timeout || 90,
                     allow_network: modeSpecific.allow_network !== false,
-                    ...parameters
+                    ...agentParams
                 };
                 
-                if (parameters.parameters && parameters.parameters.code) {
-                    return { ...baseConfig, ...parameters.parameters };
+                if (agentParams.parameters && agentParams.parameters.code) {
+                    return { ...baseConfig, ...agentParams.parameters };
                 }
-                if (parameters.code) {
-                    return { ...baseConfig, code: parameters.code };
+                if (agentParams.code) {
+                    return { ...baseConfig, code: agentParams.code };
                 }
                 return baseConfig;
             }
                 
             case 'glm4v_analyze_image': {
                 return {
-                    image_url: parameters.image_url,
-                    prompt: parameters.prompt || '请详细分析这张图片的内容、特征和潜在含义',
-                    detail: parameters.detail || 'high',
-                    ...parameters
+                    image_url: agentParams.image_url,
+                    prompt: agentParams.prompt || '请详细分析这张图片的内容、特征和潜在含义',
+                    detail: agentParams.detail || 'high',
+                    ...agentParams
                 };
             }
                 
             case 'stockfish_analyzer': {
                 return {
-                    fen: parameters.fen,
-                    depth: parameters.depth || 18,
-                    ...parameters
+                    fen: agentParams.fen,
+                    depth: agentParams.depth || 18,
+                    ...agentParams
                 };
             }
 
             case 'firecrawl': {
                 // ✅✅✅ 修复：为可能传入但未启用的工具提供降级处理
                 console.warn(`[DeepResearchAdapter] 工具 'firecrawl' 在Agent模式下可能不可用，提供兼容参数`);
-                if (parameters.url && !parameters.parameters && !parameters.mode) {
-                    return { mode: 'scrape', parameters: { url: parameters.url } };
+                if (agentParams.url && !agentParams.parameters && !agentParams.mode) {
+                    return { mode: 'scrape', parameters: { url: agentParams.url } };
                 }
-                return parameters;
+                return agentParams;
             }
         }
         
-        return { ...parameters, ...modeSpecific };
+        return { ...agentParams, ...modeSpecific };
     }
     
     /**
