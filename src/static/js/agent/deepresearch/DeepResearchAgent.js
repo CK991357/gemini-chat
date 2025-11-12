@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - DRY原则最终版
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 最终修复版
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -239,8 +239,8 @@ export class DeepResearchAgent {
                         }
                     }
                     
-                    // 处理过长内容
-                    const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode);
+                    // ✅✅✅ --- 核心修复：传入工具名称以应用不同的摘要策略 --- ✅✅✅
+                    const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
                     
                     // ✨ 评估信息增益
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, intermediateSteps);
@@ -626,17 +626,38 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
     }
 
     /**
-     * 🎯 智能摘要方法 - 带有优雅降级
+     * 🎯 智能摘要方法 - 带有工具特定策略和优雅降级
+     * ✅✅✅ 核心修复：为不同工具设置不同的摘要策略 ✅✅✅
      */
-    async _smartSummarizeObservation(mainTopic, observation, researchMode) {
-        const threshold = 2000;
+    async _smartSummarizeObservation(mainTopic, observation, researchMode, toolName) {
+        // ✅✅✅ --- 核心修复：为不同工具设置不同的摘要策略 --- ✅✅✅
+        // 搜索工具的结果本身就是摘要，不应再被摘要，否则会丢失关键信息
+        const noSummarizeTools = ['tavily_search']; 
+        const summarizationThresholds = {
+            'crawl4ai': 2000,
+            'firecrawl': 2000,
+            'default': 4000 // 其他工具使用更高的阈值
+        };
+
+        // 🎯 对于搜索工具，跳过摘要直接返回原始结果
+        if (noSummarizeTools.includes(toolName)) {
+            console.log(`[DeepResearchAgent] 工具 "${toolName}" 跳过摘要，直接使用原始输出。`);
+            // 即使不摘要，也进行一次长度硬截断，防止极端情况
+            const hardLimit = 15000; 
+            return observation.length > hardLimit ? 
+                observation.substring(0, hardLimit) + "\n[...内容已截断]" : 
+                observation;
+        }
+
+        const threshold = summarizationThresholds[toolName] || summarizationThresholds.default;
+        
         if (!observation || typeof observation !== 'string' || observation.length < threshold) {
             return observation.length > threshold ? 
                 observation.substring(0, threshold) + "\n[...内容已截断]" : 
                 observation;
         }
 
-        console.log(`[DeepResearchAgent] 内容过长 (${observation.length} > ${threshold})，启动摘要子代理...`);
+        console.log(`[DeepResearchAgent] 工具 "${toolName}" 内容过长 (${observation.length} > ${threshold})，启动摘要子代理...`);
         
         // 🎯 添加Agent模式专用延迟，降低请求频率
         if (researchMode && researchMode !== 'standard') {
