@@ -1,4 +1,4 @@
-// src/static/js/agent/tools/ToolImplementations.js - 最终健壮版
+// src/static/js/agent/tools/ToolImplementations.js - 最终修复版
 
 import { BaseTool } from './BaseTool.js';
 
@@ -177,29 +177,27 @@ class DeepResearchToolAdapter {
             case 'firecrawl':
             case 'crawl4ai': {
                 if (parameters.url) {
-                    const baseParams = {
-                        mode: 'scrape',
+                    // ✅✅✅ --- 核心修复：构建正确的双重嵌套结构 --- ✅✅✅
+                    // 参照非 Agent 模式下成功的日志，我们必须生成一个包含 `mode` 和 嵌套 `parameters` 的对象。
+                    const finalParams = {
+                        mode: parameters.mode || 'scrape', // 优先使用 Agent 提供的 mode，否则默认为 scrape
                         parameters: {
                             url: parameters.url,
-                            format: 'markdown',
+                            // 合并模式特定的默认值
+                            format: modeSpecific.parameters?.format || 'markdown',
                             word_count_threshold: modeSpecific.parameters?.word_count_threshold || 20,
-                            exclude_external_links: false,
-                            include_links: modeSpecific.parameters?.include_links !== false,
-                            wait_for: 2000,
-                            only_main_content: modeSpecific.parameters?.only_main_content !== false,
-                            include_tables: modeSpecific.parameters?.include_tables,
-                            include_math: modeSpecific.parameters?.include_math,
-                            include_code: modeSpecific.parameters?.include_code,
-                            include_images: modeSpecific.parameters?.include_images
+                            exclude_external_links: modeSpecific.parameters?.exclude_external_links !== false, // 默认为 true
+                            include_links: modeSpecific.parameters?.include_links !== false, // 默认为 true
+                            wait_for: 2000
                         }
                     };
-                    
-                    // 合并自定义参数
+
+                    // 如果 Agent 传入了更复杂的嵌套 parameters，也进行合并
                     if (parameters.parameters) {
-                        baseParams.parameters = { ...baseParams.parameters, ...parameters.parameters };
+                        finalParams.parameters = { ...finalParams.parameters, ...parameters.parameters };
                     }
                     
-                    return baseParams;
+                    return finalParams;
                 }
                 break;
             }
