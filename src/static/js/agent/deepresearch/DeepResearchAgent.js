@@ -703,22 +703,28 @@ ${observation.substring(0, 10000)}
                 choice.message.content : '摘要生成失败。';
             
             console.log("[DeepResearchAgent] ✅ 摘要子代理完成，摘要长度:", summary.length);
-            return `[AI生成的摘要]:\n${summary}`;
+            
+            // 🎯 核心修复：提供结构化的上下文信息，弥合Agent的期望落差
+            const originalLength = observation.length;
+            return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，因此已自动生成以下摘要]:\n\n${summary}`;
 
         } catch (error) {
             console.error("[DeepResearchAgent] ❌ 摘要子代理调用失败:", error);
             
             // 🎯 优雅降级策略：根据错误类型返回不同的降级内容
+            const originalLength = observation.length;
             if (error.message.includes('429') || error.message.includes('速率限制')) {
                 // 速率限制：返回智能截断版本
                 const truncated = this._intelligentTruncate(observation, threshold);
-                return `[摘要生成失败-速率限制，已智能截断]:\n${truncated}`;
+                return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，且摘要生成因速率限制失败，已智能截断]:\n${truncated}`;
             } else if (error.message.includes('超时')) {
                 // 超时错误
-                return observation.substring(0, threshold) + "\n\n[...内容过长，摘要超时，内容已截断...]";
+                const truncated = observation.substring(0, threshold) + "\n\n[...内容过长，摘要超时，内容已截断...]";
+                return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，且摘要生成超时，已截断]:\n${truncated}`;
             } else {
                 // 其他错误
-                return observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，内容已截断...]";
+                const truncated = observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，内容已截断...]";
+                return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，且摘要生成失败，已截断]:\n${truncated}`;
             }
         }
     }
