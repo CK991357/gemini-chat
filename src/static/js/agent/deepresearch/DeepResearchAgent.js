@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 最终修复版
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 集成时间校准版
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -39,29 +39,33 @@ export class DeepResearchAgent {
     }
 
     async conductResearch(researchRequest) {
-        // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
-        // ✨✨✨ 核心修复：解构出 displayTopic ✨✨✨
         const { topic, displayTopic, availableTools, researchMode } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
-        // 原始 topic (enrichedTopic) 用于 Agent 内部逻辑
         const internalTopic = topic.replace(/！\s*$/, '').trim();
-        // displayTopic 用于 UI 显示
         const uiTopic = (displayTopic || topic).replace(/！\s*$/, '').trim();
-        
         const detectedMode = researchMode || 'standard';
         
-        console.log(`[DeepResearchAgent] 开始研究: "${uiTopic}"，接收到模式: ${detectedMode}`);
+        console.log(`[DeepResearchAgent] 开始研究: "${uiTopic}"，模式: ${detectedMode}`);
         
-        // ✨✨✨ 核心修复：在 on_research_start 事件中使用 uiTopic ✨✨✨
+        // 🎯 核心修复：在研究开始前强制执行时间校准
+        console.log('[DeepResearchAgent] 启动时间校准系统...');
+        const groundingContext = await this._performTemporalAlignment(internalTopic, runId, detectedMode);
+        
+        // 发送研究开始事件（校准完成后）
         await this.callbackManager.invokeEvent('on_research_start', {
             run_id: runId,
             data: {
-                topic: uiTopic, // <--- 使用干净的 topic
+                topic: uiTopic,
                 availableTools: availableTools.map(t => t.name),
                 researchMode: detectedMode,
+                temporal_alignment: {
+                    performed: true,
+                    success: !!groundingContext,
+                    context_preview: groundingContext ? groundingContext.substring(0, 200) + '...' : null
+                },
                 researchData: {
-                    keywords: [], // 初始化空数组，后续更新
+                    keywords: [],
                     sources: [],
                     analyzedContent: [],
                     toolCalls: [],
@@ -86,14 +90,18 @@ export class DeepResearchAgent {
             });
         };
 
-        // ✨ 阶段1：智能规划
+        // ✨ 阶段1：智能规划（现在传递 groundingContext）
         console.log(`[DeepResearchAgent] 阶段1：生成${detectedMode}研究计划...`);
         let researchPlan;
         try {
-            // ✨✨✨ 核心修复：规划时使用完整的 internalTopic (enrichedTopic) ✨✨✨
-            const planResult = await this.agentLogic.createInitialPlan(internalTopic, detectedMode);
+            // 🎯 关键修改：传递 groundingContext 给规划器
+            const planResult = await this.agentLogic.createInitialPlan(
+                internalTopic, 
+                detectedMode, 
+                groundingContext  // 🆕 新增参数
+            );
             researchPlan = planResult;
-            this._updateTokenUsage(planResult.usage); // 🎯 新增
+            this._updateTokenUsage(planResult.usage);
             
             // 实时通知UI研究计划
             await this.callbackManager.invokeEvent('on_research_plan_generated', {
@@ -151,7 +159,8 @@ export class DeepResearchAgent {
                     intermediateSteps,
                     availableTools,
                     researchPlan,
-                    researchMode: detectedMode
+                    researchMode: detectedMode,
+                    groundingContext // 🆕 新增：传递时间校准结果
                 };
 
                 const agentDecision = await this.agentLogic.plan(logicInput, {
@@ -408,6 +417,230 @@ export class DeepResearchAgent {
             data: result
         });
         return result;
+    }
+
+    /**
+     * 🎯 核心修复：时间校准与事实锚定系统
+     * 在研究开始前强制进行实时事实验证，解决知识截止日期问题
+     */
+    async _performTemporalAlignment(topic, runId, researchMode) {
+        console.log('[DeepResearchAgent] 🕐 阶段0：执行时间校准与事实锚定...');
+        
+        // 1. 发送校准开始事件
+        await this.callbackManager.invokeEvent('on_temporal_alignment_start', {
+            run_id: runId,
+            data: {
+                topic: topic,
+                research_mode: researchMode,
+                timestamp: new Date().toISOString()
+            }
+        });
+
+        try {
+            // 2. 生成时效性优化的搜索查询
+            const alignmentQuery = this._generateTemporalAlignmentQuery(topic, researchMode);
+            console.log(`[DeepResearchAgent] 时间校准搜索查询: "${alignmentQuery}"`);
+
+            // 3. 执行快速事实搜索
+            const searchTool = this.tools['tavily_search'];
+            if (!searchTool) {
+                throw new Error('tavily_search 工具不可用，无法执行时间校准');
+            }
+
+            const searchResult = await searchTool.invoke({ 
+                query: alignmentQuery,
+                max_results: 5, // 限制结果数量，快速获取
+                search_depth: 'basic'
+            }, {
+                mode: 'deep_research',
+                researchMode: 'standard'
+            });
+
+            if (!searchResult.success) {
+                throw new Error('时间校准搜索失败: ' + (searchResult.error || '未知错误'));
+            }
+
+            // 4. 提取和总结关键事实
+            const groundingContext = await this._extractGroundingContext(
+                topic, searchResult.output, researchMode
+            );
+
+            // 5. 记录校准结果
+            await this.callbackManager.invokeEvent('on_temporal_alignment_complete', {
+                run_id: runId,
+                data: {
+                    query: alignmentQuery,
+                    grounding_context: groundingContext,
+                    source_count: searchResult.sources?.length || 0,
+                    success: true
+                }
+            });
+
+            console.log('[DeepResearchAgent] ✅ 时间校准完成，生成事实基准');
+            return groundingContext;
+
+        } catch (error) {
+            console.error('[DeepResearchAgent] ❌ 时间校准失败:', error);
+            
+            await this.callbackManager.invokeEvent('on_temporal_alignment_failed', {
+                run_id: runId,
+                data: {
+                    error: error.message,
+                    fallback_strategy: 'proceed_with_caution'
+                }
+            });
+
+            // 优雅降级：返回一个基本的时效性提醒
+            return this._createFallbackGroundingContext(topic);
+        }
+    }
+
+    /**
+     * 🎯 生成时效性优化的校准查询
+     */
+    _generateTemporalAlignmentQuery(topic, researchMode) {
+        const currentYear = new Date().getFullYear();
+        const currentDate = new Date().toISOString().split('T')[0];
+        
+        // 检测主题的时间敏感性
+        const temporalSignals = this._analyzeTemporalSensitivity(topic);
+        
+        let baseQuery = topic;
+        
+        // 根据时间敏感性调整查询策略
+        if (temporalSignals.isHighlyTimeSensitive) {
+            // AI模型、技术产品等高时效性主题
+            baseQuery = `最新 ${topic} ${currentYear} 当前状态 版本`;
+        } else if (temporalSignals.isModeratelyTimeSensitive) {
+            // 行业趋势、发展现状等中等时效性主题
+            baseQuery = `${topic} 发展现状 ${currentYear} 最新趋势`;
+        } else {
+            // 基础概念、理论等低时效性主题
+            baseQuery = `${topic} 概述 核心概念`;
+        }
+        
+        // 为特定研究模式优化查询
+        const modeSpecificEnhancements = {
+            'technical': `技术规格 性能参数`,
+            'business': `市场现状 竞争格局`,
+            'academic': `研究进展 最新论文`,
+            'cutting_edge': `技术突破 创新应用`,
+            'deep': `深度分析 多维视角`
+        };
+        
+        const enhancement = modeSpecificEnhancements[researchMode] || '';
+        
+        return `${baseQuery} ${enhancement}`.trim();
+    }
+
+    /**
+     * 🎯 分析主题的时间敏感性
+     */
+    _analyzeTemporalSensitivity(topic) {
+        const lowerTopic = topic.toLowerCase();
+        
+        // 高时效性关键词
+        const highTemporalKeywords = [
+            '模型', 'gpt', 'glm', 'llm', 'ai', '人工智能', '大语言模型',
+            '最新', '当前', '现在', '今年', '2025', '现状', '发布',
+            'model', 'release', 'version', 'update', 'current'
+        ];
+        
+        // 中等时效性关键词  
+        const mediumTemporalKeywords = [
+            '发展', '趋势', '前景', '未来', '行业', '市场', '竞争',
+            '技术', '创新', '突破', '进展', '动态'
+        ];
+        
+        const isHighlyTimeSensitive = highTemporalKeywords.some(keyword => 
+            lowerTopic.includes(keyword)
+        );
+        
+        const isModeratelyTimeSensitive = !isHighlyTimeSensitive && 
+            mediumTemporalKeywords.some(keyword => lowerTopic.includes(keyword));
+        
+        return {
+            isHighlyTimeSensitive,
+            isModeratelyTimeSensitive,
+            isTimeInsensitive: !isHighlyTimeSensitive && !isModeratelyTimeSensitive
+        };
+    }
+
+    /**
+     * 🎯 从搜索结果中提取事实基准
+     */
+    async _extractGroundingContext(topic, searchResults, researchMode) {
+        const currentDate = new Date().toISOString().split('T')[0];
+        
+        const extractionPrompt = `
+# 角色：事实核查专家
+当前日期：${currentDate}
+你的任务：从实时搜索结果中提取关于"${topic}"的最新核心事实，特别是版本号、发布日期、关键特性等时效性信息。
+
+# 提取要求
+1. 识别搜索结果中提到的**最新产品/技术版本**
+2. 记录**关键性能指标**和**发布日期**
+3. 提取**主要竞争对手**和**对比基准**
+4. 总结**当前发展状态**（如：已发布、测试中、计划中）
+5. 所有信息必须基于搜索结果，不要使用你的固有知识
+
+# 实时搜索结果
+${searchResults.substring(0, 3000)} ${searchResults.length > 3000 ? '...（内容过长已截断）' : ''}
+
+# 输出格式
+请以清晰的结构输出提取到的事实基准：
+
+## 最新版本与状态
+- [列出最新版本号、状态等]
+
+## 关键事实与数据  
+- [提取关键性能、特性等]
+
+## 时间相关上下文
+- [发布日期、当前发展阶段等]
+
+## 研究建议
+- [基于事实的建议研究方向]
+
+现在开始提取：`;
+
+        try {
+            const response = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: extractionPrompt }],
+                model: 'gemini-2.0-flash-exp-summarizer',
+                temperature: 0.1,
+                max_tokens: 800
+            });
+
+            return response?.choices?.[0]?.message?.content || '无法从搜索结果中提取明确的事实基准。';
+            
+        } catch (error) {
+            console.warn('[DeepResearchAgent] 事实提取失败，使用降级方案:', error);
+            return `基于实时搜索的${topic}最新信息提取失败。研究将基于通用知识进行，请注意时效性限制。`;
+        }
+    }
+
+    /**
+     * 🎯 创建降级的事实基准
+     */
+    _createFallbackGroundingContext(topic) {
+        const currentYear = new Date().getFullYear();
+        return `
+## ⚠️ 时间校准降级模式
+由于技术原因，无法为"${topic}"执行完整的时间校准。
+
+## 🕐 重要提醒
+- 当前日期：${new Date().toISOString().split('T')[0]}
+- 研究可能受到知识截止日期（2024年）的影响
+- 建议在研究过程中优先搜索"${topic} 最新"、"${topic} ${currentYear}"等关键词来获取最新信息
+
+## 🔍 建议策略
+在后续研究中主动验证以下信息的时效性：
+1. 产品版本号和发布日期
+2. 技术规格和性能数据  
+3. 市场现状和竞争格局
+4. 相关政策和法规变化
+`;
     }
 
     // ✨ 最终报告生成 - 现在只负责合成

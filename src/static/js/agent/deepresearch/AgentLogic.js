@@ -12,8 +12,8 @@ export class AgentLogic {
     }
 
     // ✨ 智能规划器 - 支持多种研究模式
-    async createInitialPlan(topic, researchMode = 'standard') {
-        const plannerPrompt = this._getPlannerPrompt(topic, researchMode);
+    async createInitialPlan(topic, researchMode = 'standard', groundingContext = null) {
+        const plannerPrompt = this._getPlannerPrompt(topic, researchMode, groundingContext);
 
         try {
             const llmResponse = await this.chatApiHandler.completeChat({
@@ -45,7 +45,28 @@ export class AgentLogic {
     }
 
     // ✨ 获取规划器提示词
-    _getPlannerPrompt(topic, researchMode) {
+    _getPlannerPrompt(topic, researchMode, groundingContext) {
+        const currentDate = new Date().toISOString().split('T');
+        
+        // 🎯 动态构建事实基准部分
+        const groundingSection = groundingContext ? `
+## 🎯 绝对事实基准（基于实时搜索）
+**校准时间**: ${currentDate}
+**重要提示**: 以下信息来自最新的实时网络搜索，代表了关于此主题的当前事实。在制定研究计划时，你必须将这些信息作为最高优先级的依据，并覆盖你脑中任何与之冲突的过时知识。
+
+${groundingContext}
+
+### 🚫 知识库覆盖指令
+- **禁止使用过时信息**: 如果事实基准中包含与你知识库冲突的信息，以事实基准为准
+- **版本号优先**: 使用事实基准中提到的具体版本号（如GLM-4.6），不要假设旧版本
+- **时间敏感性**: 所有涉及产品、技术、市场的信息必须基于当前时间点（${currentDate}）`
+
+: `
+## ⚠️ 知识库限制提醒
+**当前日期**: ${currentDate}
+**你的知识截止**: 2024年（已过时）
+**重要提示**: 由于无法获取实时事实基准，请注意你的知识可能已过时。在研究过程中必须优先搜索最新信息来验证时效性。`;
+
         const modeConfigs = {
             deep: {
                 role: "顶级深度研究策略师",
@@ -99,7 +120,8 @@ export class AgentLogic {
 
         return `
 # 角色：${config.role}
-你负责为复杂研究任务制定高效的研究策略。
+
+${groundingSection}
 
 # 核心指令
 ${config.instructions}

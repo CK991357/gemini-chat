@@ -342,6 +342,45 @@ export class CallbackManager {
         });
     }
 
+    /**
+     * 🎯 新增：时间校准事件
+     */
+    async onTemporalAlignmentStart(alignmentData) {
+        return await this.invokeEvent('on_temporal_alignment_start', {
+            name: 'temporal_alignment',
+            run_id: this.currentRunId,
+            data: alignmentData,
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'temporal_alignment_start'
+            }
+        });
+    }
+
+    async onTemporalAlignmentComplete(alignmentResult) {
+        return await this.invokeEvent('on_temporal_alignment_complete', {
+            name: 'temporal_alignment',
+            run_id: this.currentRunId,
+            data: alignmentResult,
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'temporal_alignment_complete'
+            }
+        });
+    }
+
+    async onTemporalAlignmentFailed(errorInfo) {
+        return await this.invokeEvent('on_temporal_alignment_failed', {
+            name: 'temporal_alignment',
+            run_id: this.currentRunId,
+            data: errorInfo,
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'temporal_alignment_failed'
+            }
+        });
+    }
+
     // 🎯 工具方法
     getCurrentRunEvents() {
         if (this._isDisposed) return [];

@@ -376,6 +376,10 @@ ${cleanTopic}
             'on_research_end': forwardEvent('on_research_end', 'research:end'),
             'on_research_stats_updated': forwardEvent('on_research_stats_updated', 'research:stats_updated'),
             'on_tool_called': forwardEvent('on_tool_called', 'research:tool_called'),
+            // 🎯 新增：时间校准事件
+            'on_temporal_alignment_start': forwardEvent('on_temporal_alignment_start', 'research:temporal_alignment_start'),
+            'on_temporal_alignment_complete': forwardEvent('on_temporal_alignment_complete', 'research:temporal_alignment_complete'),
+            'on_temporal_alignment_failed': forwardEvent('on_temporal_alignment_failed', 'research:temporal_alignment_failed'),
             'on_agent_think_start': (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
         });
         console.log('[Orchestrator] 最终版事件处理器已设置。');
