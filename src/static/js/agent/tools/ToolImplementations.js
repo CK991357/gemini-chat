@@ -228,11 +228,18 @@ class DeepResearchToolAdapter {
                 // 4. 从 Agent 参数中提取核心字段
                 if (agentParams.url) innerParameters.url = agentParams.url;
                 if (agentParams.prompt) innerParameters.prompt = agentParams.prompt;
-                if (agentParams.schema_definition) innerParameters.schema_definition = agentParams.schema_definition;
                 if (agentParams.keywords) innerParameters.keywords = agentParams.keywords;
                 if (agentParams.urls) innerParameters.urls = agentParams.urls;
                 if (agentParams.max_pages) innerParameters.max_pages = agentParams.max_pages;
                 if (agentParams.max_depth) innerParameters.max_depth = agentParams.max_depth;
+
+                // 🎯 关键修复：当模式为 'extract' 且 Agent 未提供 schema 时，提供一个默认空对象
+                if (mode === 'extract' && agentParams.schema_definition === undefined) {
+                    console.log(`[DeepResearchAdapter] 为 extract 模式补充默认的 schema_definition`);
+                    innerParameters.schema_definition = {};
+                } else if (agentParams.schema_definition) {
+                    innerParameters.schema_definition = agentParams.schema_definition;
+                }
                 
                 // 5. 🎯 关键修复：文档类URL优化配置 - 完全移除内容过滤
                 if (isDocumentationUrl && mode === 'scrape') {
@@ -604,26 +611,14 @@ class DeepResearchToolAdapter {
         
         const trimmedContent = content.trim();
         
-        // 🎯 大幅降低长度要求
-        if (trimmedContent.length < 30) {
+        // 🎯 进一步放宽：只要非空就认为有效
+        if (trimmedContent.length < 10) { // 从30降低到10
             console.log(`[ContentCheck-Relaxed] 内容过短: ${trimmedContent.length} 字符`);
             return false;
         }
         
-        // 🎯 移除无意义内容检查，因为文档页面可能包含这些内容
-        
-        // 🎯 大幅降低纯文本密度要求
-        const textOnly = trimmedContent.replace(/\[.*?\]\(.*?\)/g, '') // 移除markdown链接
-                                     .replace(/<[^>]*>/g, '') // 移除HTML标签
-                                     .replace(/\s+/g, ' ') // 合并空格
-                                     .trim();
-        
-        if (textOnly.length < 20) {
-            console.log(`[ContentCheck-Relaxed] 纯文本内容过少: ${textOnly.length} 字符`);
-            return false;
-        }
-        
-        console.log(`[ContentCheck-Relaxed] 内容有效: 总长度 ${trimmedContent.length}, 纯文本长度 ${textOnly.length}`);
+        // 🎯 完全移除纯文本密度检查
+        console.log(`[ContentCheck-Relaxed] 内容有效: 长度 ${trimmedContent.length}`);
         return true;
     }
     
@@ -1200,3 +1195,4 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
+
