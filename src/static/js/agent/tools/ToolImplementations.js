@@ -474,7 +474,12 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'python_sandbox': {
-                    if (dataFromProxy && dataFromProxy.stdout) {
+                    // 🎯 优化：优先处理和突出显示错误
+                    if (dataFromProxy && dataFromProxy.stderr) {
+                        console.error(`[DeepResearchAdapter] Python Sandbox 返回错误:`, dataFromProxy.stderr);
+                        output = `🐍 **代码执行出错**:\n\n\`\`\`\n${dataFromProxy.stderr}\n\`\`\`\n\n**请检查你的代码逻辑和语法，然后重试。**`;
+                        success = false; // 明确标记为失败
+                    } else if (dataFromProxy && dataFromProxy.stdout) {
                         output = this.formatCodeOutputForMode(dataFromProxy, researchMode);
                         success = true;
                     } else if (dataFromProxy && dataFromProxy.result) {
