@@ -207,7 +207,8 @@ export class DeepResearchAgent {
                                 researchMode: detectedMode
                             });
                             rawObservation = toolResult.output || JSON.stringify(toolResult);
-                            toolSuccess = true; // 工具执行成功
+                            // ✅✅✅ 核心修复：从工具返回结果中获取真实的成功状态 ✅✅✅
+                            toolSuccess = toolResult.success !== false; // 默认true，除非明确为false
                             
                             // 🎯 提取来源信息
                             if (toolResult.sources && Array.isArray(toolResult.sources)) {
@@ -221,7 +222,12 @@ export class DeepResearchAgent {
                                 console.log(`[DeepResearchAgent] 提取到 ${toolSources.length} 个来源`);
                             }
                             
-                            console.log(`[DeepResearchAgent] ✅ 工具执行成功，结果长度: ${rawObservation.length}`);
+                            // ✅✅✅ 核心修复：根据实际成功状态记录日志 ✅✅✅
+                            if (toolSuccess) {
+                                console.log(`[DeepResearchAgent] ✅ 工具执行成功，结果长度: ${rawObservation.length}`);
+                            } else {
+                                console.log(`[DeepResearchAgent] ⚠️ 工具执行失败，结果长度: ${rawObservation.length}`);
+                            }
                             
                             // ✨ 追踪工具使用
                             if (this.metrics.toolUsage[tool_name] !== undefined) {
@@ -229,7 +235,7 @@ export class DeepResearchAgent {
                             }
                             
                             // 🎯 修复：记录工具调用
-                            recordToolCall(tool_name, parameters, true, rawObservation);
+                            recordToolCall(tool_name, parameters, toolSuccess, rawObservation);
 
                         } catch (error) {
                             rawObservation = `错误: 工具 "${tool_name}" 执行失败: ${error.message}`;
@@ -262,7 +268,8 @@ export class DeepResearchAgent {
                             thought: thought || `执行工具 ${tool_name} 来获取更多信息。`
                         },
                         observation: summarizedObservation,
-                        sources: toolSources
+                        sources: toolSources,
+                        success: toolSuccess // ✅ 新增：记录工具执行状态
                     });
                     
                     // 🎯 合并到总来源列表
@@ -344,7 +351,8 @@ export class DeepResearchAgent {
                         thought: thoughtText, // 使用新的思考文本
                         type: 'error'
                     },
-                    observation: observationText // 使用新的观察文本
+                    observation: observationText, // 使用新的观察文本
+                    success: false // ✅ 新增：明确标记为失败
                 });
                 
                 // 增加连续无增益计数，避免在连续错误中死循环

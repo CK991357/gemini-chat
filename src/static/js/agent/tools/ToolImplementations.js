@@ -21,7 +21,7 @@ class DeepResearchToolAdapter {
                 },
                 crawl4ai: {
                     scrape: {
-                        word_count_threshold: 10,
+                        word_count_threshold: 1, // ✅ 完美平衡：既能去噪，又不误伤
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_links: true,
                         format: 'markdown',
@@ -76,7 +76,7 @@ class DeepResearchToolAdapter {
                         format: 'markdown',
                         include_math: true,
                         include_code: true,
-                        word_count_threshold: 5,
+                        word_count_threshold: 1, // ✅ 完美平衡：既能去噪，又不误伤
                         wait_for: 4000,
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         exclude_external_links: false  // 🎯 修复：不禁用外部链接
@@ -117,7 +117,7 @@ class DeepResearchToolAdapter {
                 },
                 crawl4ai: {
                     scrape: {
-                        word_count_threshold: 5,
+                        word_count_threshold: 1, // ✅ 完美平衡：既能去噪，又不误伤
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         format: 'markdown',
                         wait_for: 3000,
@@ -155,7 +155,7 @@ class DeepResearchToolAdapter {
                         only_main_content: false,     // 🎯 关键修复：完全禁用内容过滤
                         format: 'markdown',
                         wait_for: 3000,
-                        word_count_threshold: 5,      // 🎯 降低字数阈值，适应文档页面
+                        word_count_threshold: 1, // ✅ 完美平衡：既能去噪，又不误伤
                         exclude_external_links: false // 🎯 修复：不禁用外部链接
                     },
                     deep_crawl: {
@@ -1167,3 +1167,4 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
+
