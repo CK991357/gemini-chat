@@ -607,7 +607,7 @@ ${searchResults.substring(0, 3000)} ${searchResults.length > 3000 ? '...（内�
         try {
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: extractionPrompt }],
-                model: 'models/gemini-2.5-flash',
+                model: 'gemini-2.5-flash-preview-09-2025',
                 temperature: 0.1,
                 max_tokens: 800
             });
