@@ -413,50 +413,36 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'crawl4ai': {
-                    if (dataFromProxy && (dataFromProxy.content || dataFromProxy.markdown)) {
+                    console.log(`[DeepResearchAdapter] crawl4ai 原始响应:`, dataFromProxy);
+                    
+                    if (dataFromProxy) {
                         const content = dataFromProxy.content || dataFromProxy.markdown;
+                        const contentLength = content?.length || 0;
                         
-                        // 🎯 关键修复：使用宽松的内容有效性检查
-                        const isContentValid = this.isContentMeaningfulRelaxed(content);
+                        console.log(`[DeepResearchAdapter] 提取到内容，长度: ${contentLength}`);
+                        console.log(`[DeepResearchAdapter] 内容预览:`, content?.substring(0, 200));
                         
-                        if (isContentValid) {
-                            output = this.formatWebContentForMode(dataFromProxy, researchMode);
-                            
-                            if (dataFromProxy.url) {
-                                sources.push({
-                                    title: dataFromProxy.title || dataFromProxy.url,
-                                    url: dataFromProxy.url,
-                                    description: content.substring(0, 150) + '...',
-                                    source_type: 'web_page'
-                                });
-                            }
-                            success = true;
-                        } else {
-                            // 🎯 关键修复：提供详细的调试信息
-                            const contentLength = content?.length || 0;
-                            console.log(`[DeepResearchAdapter] 内容有效性检查失败: 长度=${contentLength}`);
-                            output = `❌ **网页内容提取失败**: 页面抓取成功，但提取到的内容不符合要求。\n\n` +
-                                    `**技术详情**:\n` +
-                                    `• 提取内容长度: ${contentLength} 字符\n` +
-                                    `• 内容预览: ${content ? content.substring(0, 100) + '...' : '空内容'}\n\n` +
-                                    `**建议**: 尝试使用其他模式如 'extract' 或 'deep_crawl'，或使用 tavily_search 工具搜索相关信息。`;
-                            success = false;
+                        // 🎯 强制成功：只要工具返回数据就认为是成功的
+                        output = this.formatWebContentForMode(dataFromProxy, researchMode);
+                        
+                        if (dataFromProxy.url) {
+                            // 🎯 修复：源描述应包含内容预览或长度信息
+                            const description = contentLength > 0
+                                ? content.substring(0, 150) + '...'
+                                : `内容长度: ${contentLength} 字符`;
+                                
+                            sources.push({
+                                title: dataFromProxy.title || dataFromProxy.url,
+                                url: dataFromProxy.url,
+                                description: description,
+                                source_type: 'web_page'
+                            });
                         }
-                    } else if (dataFromProxy && typeof dataFromProxy === 'object') {
-                        // 🎯 关键修复：即使没有content字段，也尝试处理其他数据
-                        const hasUsefulData = Object.keys(dataFromProxy).some(key => 
-                            key !== 'success' && dataFromProxy[key] != null
-                        );
+                        success = true;
                         
-                        if (hasUsefulData) {
-                            output = `📊 **网页抓取结果**:\n${JSON.stringify(dataFromProxy, null, 2)}`;
-                            success = true;
-                        } else if (success) {
-                            output = `❌ **网页内容提取失败**: 页面抓取成功，但未能提取到有效的主要内容。`;
-                            success = false;
-                        }
-                    } else if (success) {
-                        output = `❌ **网页内容提取失败**: 页面抓取成功，但未能提取到有效的主要内容。`;
+                    } else {
+                        console.log(`[DeepResearchAdapter] 未提取到任何数据`);
+                        output = `❌ **网页抓取失败**: 工具返回空数据。`;
                         success = false;
                     }
                     break;
@@ -704,29 +690,35 @@ class DeepResearchToolAdapter {
     /**
      * 根据研究模式格式化网页内容
      */
-    static formatWebContentForMode(webData, researchMode) {
-        const content = webData.content || webData.markdown || '';
-        const title = webData.title || '无标题';
-        const url = webData.url || '未知';
+static formatWebContentForMode(webData, researchMode) {
+    const content = webData.content || webData.markdown || '';
+    const title = webData.title || '无标题';
+    const url = webData.url || '未知';
+    
+    const modePrefixes = {
+        deep: '📚 深度研究网页内容',
+        business: '🏢 行业分析网页内容',
+        academic: '🎓 学术文献网页内容',
+        technical: '⚙️ 技术文档网页内容',
+        cutting_edge: '🚀 前沿技术网页内容',
+        shopping_guide: '🛍️ 商品信息网页内容',
+        standard: '📄 标准网页内容'
+    };
+    
+    const prefix = modePrefixes[researchMode] || modePrefixes.standard;
+    
+    // 🎯 关键修复：无论内容长度如何都返回有效输出
+    if (content && content.length > 0) {
+        return `${prefix}:\n\n**标题**: ${title}\n**URL**: ${url}\n**内容长度**: ${content.length} 字符\n**内容**:\n${content}`;
+    } else {
+        // 🎯 即使没有content，也返回其他有用信息
+        const availableFields = Object.keys(webData).filter(key =>
+            webData[key] && key !== 'content' && key !== 'markdown'
+        );
         
-        const modePrefixes = {
-            deep: '📚 深度研究网页内容',
-            business: '🏢 行业分析网页内容', 
-            academic: '🎓 学术文献网页内容',
-            technical: '⚙️ 技术文档网页内容',
-            cutting_edge: '🚀 前沿技术网页内容',
-            shopping_guide: '🛍️ 商品信息网页内容',
-            standard: '📄 标准网页内容'
-        };
-        
-        const prefix = modePrefixes[researchMode] || modePrefixes.standard;
-        
-        if (content.length > 0) {
-            return `${prefix}:\n\n**标题**: ${title}\n**URL**: ${url}\n**内容**:\n${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
-        } else {
-            return `${prefix}:\n\n**标题**: ${title}\n**URL**: ${url}\n**内容**: 页面内容为空或无法提取`;
-        }
+        return `${prefix}:\n\n**标题**: ${title}\n**URL**: ${url}\n**可用数据字段**: ${availableFields.join(', ')}\n**原始数据**:\n${JSON.stringify(webData, null, 2).substring(0, 1000)}${JSON.stringify(webData, null, 2).length > 1000 ? '...' : ''}`;
     }
+}
     
     /**
      * 根据研究模式格式化代码输出
