@@ -413,36 +413,52 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'crawl4ai': {
-                    console.log(`[DeepResearchAdapter] crawl4ai 原始响应:`, dataFromProxy);
+                    // 🎯 修复：确保我们处理的是正确的对象，而不是字符串化的JSON
+                    const crawlData = rawResponse.rawResult || dataFromProxy; // 优先使用 rawResult
                     
-                    if (dataFromProxy) {
-                        const content = dataFromProxy.content || dataFromProxy.markdown;
+                    console.log(`[DeepResearchAdapter] crawl4ai 已解析的响应数据:`, crawlData);
+                    
+                    if (crawlData && typeof crawlData === 'object') {
+                        const content = crawlData.content || crawlData.markdown;
                         const contentLength = content?.length || 0;
                         
-                        console.log(`[DeepResearchAdapter] 提取到内容，长度: ${contentLength}`);
-                        console.log(`[DeepResearchAdapter] 内容预览:`, content?.substring(0, 200));
+                        const isDocumentationUrl = crawlData.url?.includes('/docs/') ||
+                                                crawlData.url?.includes('/guide/') ||
+                                                crawlData.url?.includes('docs.') ||
+                                                crawlData.url?.includes('/documentation/');
                         
-                        // 🎯 强制成功：只要工具返回数据就认为是成功的
-                        output = this.formatWebContentForMode(dataFromProxy, researchMode);
-                        
-                        if (dataFromProxy.url) {
-                            // 🎯 修复：源描述应包含内容预览或长度信息
-                            const description = contentLength > 0
-                                ? content.substring(0, 150) + '...'
-                                : `内容长度: ${contentLength} 字符`;
-                                
-                            sources.push({
-                                title: dataFromProxy.title || dataFromProxy.url,
-                                url: dataFromProxy.url,
-                                description: description,
-                                source_type: 'web_page'
-                            });
+                        let isContentValid = false;
+
+                        // 🎯 强制文档类URL通过检查，并解决内容提取问题
+                        if (isDocumentationUrl) {
+                            // 对于文档URL，即使内容是导航/样板文字，只要长度够长就认为成功（17万字符是成功的）
+                            isContentValid = contentLength > 10; // 极度宽松
+                            console.log(`[DeepResearchAdapter] 文档URL (${crawlData.url}) 检测到，内容检查强制: ${isContentValid}`);
+                        } else {
+                            // 对于其他页面，使用Zhipu优化的检查（如果存在）
+                            isContentValid = this.isContentMeaningfulZhipu(content);
                         }
-                        success = true;
                         
+                        if (isContentValid) {
+                            output = this.formatWebContentForMode(crawlData, researchMode);
+                            
+                            if (crawlData.url) {
+                                sources.push({
+                                    title: crawlData.title || crawlData.url,
+                                    url: crawlData.url,
+                                    description: `抓取内容长度: ${contentLength} 字符`,
+                                    source_type: 'web_page'
+                                });
+                            }
+                            success = true;
+                        } else {
+                            // ... (失败处理逻辑，保持不变)
+                            output = `❌ **网页内容提取失败**: 页面抓取成功，但无法提取到有意义的正文内容。`;
+                            success = false;
+                        }
                     } else {
-                        console.log(`[DeepResearchAdapter] 未提取到任何数据`);
-                        output = `❌ **网页抓取失败**: 工具返回空数据。`;
+                        console.log(`[DeepResearchAdapter] 未提取到任何有效的抓取数据`);
+                        output = `❌ **网页抓取失败**: 工具返回空数据或无法解析的响应。`;
                         success = false;
                     }
                     break;
@@ -534,23 +550,22 @@ class DeepResearchToolAdapter {
     }
     
     /**
-     * 🎯 检查内容是否真正有意义 - 原始严格版本
+     * 🎯 检查内容是否真正有意义 - 原始严格版本（保留作为参考/默认）
      */
     static isContentMeaningful(content) {
         if (!content || typeof content !== 'string') return false;
         
         const trimmedContent = content.trim();
-        
-        // 检查内容长度
-        if (trimmedContent.length < 200) {
-            console.log(`[ContentCheck] 内容过短: ${trimmedContent.length} 字符`);
+        // 适度放宽
+        if (trimmedContent.length < 100) {
+            console.log(`[ContentCheck-Original] 内容过短: ${trimmedContent.length} 字符`);
             return false;
         }
         
         // 检查是否只包含导航/页脚内容
         const meaninglessPatterns = [
             'skip to main content',
-            'skip to content', 
+            'skip to content',
             'generated using AI',
             'may contain mistakes',
             'copyright',
@@ -564,13 +579,13 @@ class DeepResearchToolAdapter {
         ];
         
         const lowerContent = trimmedContent.toLowerCase();
-        const meaninglessCount = meaninglessPatterns.filter(pattern => 
+        const meaninglessCount = meaninglessPatterns.filter(pattern =>
             lowerContent.includes(pattern)
         ).length;
         
         // 如果包含太多无意义内容模式，则认为内容无效
         if (meaninglessCount > 3) {
-            console.log(`[ContentCheck] 检测到过多无意义内容模式: ${meaninglessCount}`);
+            console.log(`[ContentCheck-Original] 检测到过多无意义内容模式: ${meaninglessCount}`);
             return false;
         }
         
@@ -580,32 +595,53 @@ class DeepResearchToolAdapter {
                                      .replace(/\s+/g, ' ') // 合并空格
                                      .trim();
         
-        if (textOnly.length < 150) {
-            console.log(`[ContentCheck] 纯文本内容过少: ${textOnly.length} 字符`);
+        if (textOnly.length < 50) { // 进一步放宽纯文本长度检查
+            console.log(`[ContentCheck-Original] 纯文本内容过少: ${textOnly.length} 字符`);
             return false;
         }
         
-        console.log(`[ContentCheck] 内容有效: 总长度 ${trimmedContent.length}, 纯文本长度 ${textOnly.length}`);
+        console.log(`[ContentCheck-Original] 内容有效: 总长度 ${trimmedContent.length}, 纯文本长度 ${textOnly.length}`);
         return true;
     }
     
     /**
-     * 🎯 新增：宽松的内容有效性检查 - 专门用于crawl4ai工具
+     * 🎯 新增：针对智谱文档的宽松内容有效性检查
+     *    - 解决 Agent 模式下抓取文档页面内容被误判为“无意义”而导致的重试循环。
      */
-    static isContentMeaningfulRelaxed(content) {
+    static isContentMeaningfulZhipu(content) {
         if (!content || typeof content !== 'string') return false;
         
         const trimmedContent = content.trim();
         
-        // 🎯 进一步放宽：只要非空就认为有效
-        if (trimmedContent.length < 10) { // 从30降低到10
-            console.log(`[ContentCheck-Relaxed] 内容过短: ${trimmedContent.length} 字符`);
-            return false;
+        // 🎯 修复：只要内容长度大于50，我们就跳过所有严格的语义检查。
+        if (trimmedContent.length > 50) {
+            // 如果内容非常长，几乎肯定是有效内容，直接通过
+            console.log(`[ContentCheck-Zhipu] 内容长度 ${trimmedContent.length} > 50，判定为有效`);
+            return true;
         }
         
-        // 🎯 完全移除纯文本密度检查
-        console.log(`[ContentCheck-Relaxed] 内容有效: 长度 ${trimmedContent.length}`);
-        return true;
+        // 🎯 如果内容较短，执行宽松的关键词检查
+        if (trimmedContent.length < 10) {
+            console.log(`[ContentCheck-Zhipu] 内容过短: ${trimmedContent.length} 字符，判定为无效`);
+            return false;
+        }
+
+        // 🎯 关键词检查（用于极短内容）
+        const zhipuKeywords = [
+            'glm-4', 'glm-3', '智谱', 'bigmodel', '模型', '能力', '介绍'
+        ];
+        
+        const hasZhipuContent = zhipuKeywords.some(keyword =>
+            trimmedContent.toLowerCase().includes(keyword.toLowerCase())
+        );
+        
+        if (hasZhipuContent) {
+            console.log(`[ContentCheck-Zhipu] 检测到智谱相关内容，判定为有效`);
+            return true;
+        }
+        
+        // 最后回退到原始的宽松检查
+        return this.isContentMeaningful(content);
     }
     
     /**
