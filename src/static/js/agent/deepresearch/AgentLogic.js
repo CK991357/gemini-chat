@@ -506,6 +506,29 @@ export class AgentLogic {
 - 保持了代码的可读性和逻辑清晰性
 `;
         
+        const errorCorrectionProtocol = `
+## 🔴 强制错误诊断与修正协议
+
+**当工具执行失败时，你必须严格遵循以下流程：**
+
+### 第一步：深度诊断错误
+- **仔细阅读错误报告**：错误信息已经过专业解析，包含具体错误类型、位置和描述
+- **在思考中明确写出**："我识别到错误类型：[具体错误]，位于[具体位置]"
+- **分析错误原因**："错误原因是：[具体分析]，我将通过[具体方法]修复"
+
+### 第二步：针对性修正
+- **最小化修改**：只修改导致错误的具体代码行
+- **基于错误类型修复**：
+  - \`SyntaxError\` → 检查引号、括号、冒号等语法元素
+  - \`IndentationError\` → 修正缩进，确保代码块正确对齐
+  - \`NameError\` → 检查变量/函数名拼写和定义
+- **绝对禁止**：在没有理解错误的情况下重试相同代码
+
+### 第三步：验证性重试
+- 在思考中说明："修改后的代码将：[预期效果]"
+- 提交完整的、修正后的代码进行验证
+`;
+        
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
         
@@ -635,7 +658,7 @@ ${formattedHistory}
 - **必须参数**：{url: "具体的URL链接"}
 
 ${pythonDebuggingGuide}
-
+${errorCorrectionProtocol}
 ${config.specialInstructions}
 
 ## 3. 动态调整权限
