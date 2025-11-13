@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 最终修复版
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 修复版本
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -378,19 +378,20 @@ export class DeepResearchAgent {
         // 更新关键词统计
         updateResearchStats({ keywords });
         
+        // ✨✨✨ 核心修复：在这里提前处理来源，而不是等到后面 ✨✨✨
+        const uniqueSources = this._deduplicateSources(allSources);
+
         let finalReport;
         if (finalAnswerFromIteration) {
             console.log('[DeepResearchAgent] 使用迭代中生成的答案作为报告基础');
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
-            // ✨✨✨ 核心修复：生成报告时使用 uiTopic ✨✨✨
-            finalReport = await this._generateFinalReport(uiTopic, intermediateSteps, researchPlan, allSources, detectedMode);
+            finalReport = await this._generateFinalReport(uiTopic, intermediateSteps, researchPlan, uniqueSources, detectedMode); // 传递 uniqueSources
         }
 
         // ✨ 附加所有收集到的资料来源
-        const uniqueSources = this._deduplicateSources(allSources);
-        finalReport += this._generateSourcesSection(uniqueSources);
+        finalReport += this._generateSourcesSection(uniqueSources); // 始终使用 uniqueSources
         console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${uniqueSources.length} 个资料来源`);
 
         // =================================================================
@@ -435,15 +436,15 @@ export class DeepResearchAgent {
     }
 
     // ✨ 最终报告生成 - 现在只负责合成
-    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
+    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) { // 参数中的 sources 现在已经是去重后的
         try {
-            // 1. 提取补充资料来源
-            const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
-            const combinedSources = [...sources, ...extractedSources];
-            const uniqueSources = this._deduplicateSources(combinedSources);
-            console.log(`[DeepResearchAgent] 提取到 ${extractedSources.length} 个补充来源，总计 ${uniqueSources.length} 个潜在来源`);
+            // 🔴 移除来源提取和去重逻辑，因为已经在 conductResearch 中完成
+            // const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
+            // const combinedSources = [...sources, ...extractedSources];
+            // const uniqueSources = this._deduplicateSources(combinedSources);
+            // console.log(`[DeepResearchAgent] 提取到 ${extractedSources.length} 个补充来源，总计 ${uniqueSources.length} 个潜在来源`);
             
-            // 2. 收集所有观察结果
+            // 1. 收集所有观察结果
             const allObservations = intermediateSteps
                 .filter(step => step.observation && 
                                step.observation !== '系统执行错误，继续研究' &&
@@ -459,7 +460,7 @@ export class DeepResearchAgent {
                 .filter(obs => obs.length > 50) // 只保留有内容的观察
                 .join('\n\n');
             
-            // 3. 使用LLM生成结构化报告（基于研究模式）
+            // 2. 使用LLM生成结构化报告（基于研究模式）
             const reportPrompt = this._buildReportPrompt(topic, plan, allObservations, researchMode);
 
             const reportResponse = await this.chatApiHandler.completeChat({
@@ -470,14 +471,14 @@ export class DeepResearchAgent {
             this._updateTokenUsage(reportResponse.usage); // 🎯 新增
             
             let finalReport = reportResponse?.choices?.[0]?.message?.content || 
-                this._generateFallbackReport(topic, intermediateSteps, uniqueSources, researchMode);
+                this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 传递 sources
             
             console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
             return finalReport;
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 传递 sources
         }
     }
 
