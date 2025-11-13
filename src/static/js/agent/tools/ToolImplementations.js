@@ -1,4 +1,4 @@
-// src/static/js/agent/tools/ToolImplementations.js - 参数一致性修复最终版
+// src/static/js/agent/tools/ToolImplementations.js - 参数一致性修复最终版 + Python错误反馈修复
 
 import { BaseTool } from './BaseTool.js';
 
@@ -473,125 +473,78 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'python_sandbox': {
-                    console.log(`[DeepResearchAdapter] 开始处理python_sandbox响应:`, dataFromProxy);
-                    
+                    console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应:`, dataFromProxy);
+
+                    let finalOutput = null;
+                    let finalError = null;
                     let success = false;
-                    let output = '';
-                    let toolSuccess = true; // 默认成功，除非明确失败
+                    // output 变量在 switch 外部已经声明，此处无需重复 let
 
                     try {
-                        // 🎯 核心修复：增强的嵌套JSON解析逻辑
-                        const extractFinalOutput = (data) => {
-                            let currentLevel = data;
-                            let maxDepth = 5; // 防止无限递归
-                            let depth = 0;
-                            
-                            while (depth < maxDepth) {
-                                depth++;
-                                
-                                // 如果当前层级是字符串，尝试解析为JSON
-                                if (typeof currentLevel === 'string') {
-                                    try {
-                                        const parsed = JSON.parse(currentLevel);
-                                        if (parsed && typeof parsed === 'object') {
-                                            currentLevel = parsed;
-                                            continue; // 继续深入解析
-                                        }
-                                    } catch (e) {
-                                        // 解析失败，说明是最终文本内容
-                                        console.log(`[PythonOutput] 第${depth}层解析失败，视为最终文本`);
-                                        return currentLevel;
-                                    }
-                                }
-                                
-                                // 如果当前层级是对象，检查是否有嵌套输出
-                                if (currentLevel && typeof currentLevel === 'object') {
-                                    // 优先检查 stdout
-                                    if (currentLevel.stdout && typeof currentLevel.stdout === 'string') {
-                                        currentLevel = currentLevel.stdout;
+                        // 🎯 步骤 1: 深度解析，提取最深层的 stdout 和 stderr
+                        let currentData = dataFromProxy;
+                        
+                        // 确保我们从最原始的数据开始解析
+                        if (rawResponse.rawResult?.data) {
+                            currentData = rawResponse.rawResult.data;
+                        }
+
+                        // 循环解析，以处理多层嵌套
+                        for (let i = 0; i < 5; i++) { // 最多解析5层
+                            if (currentData && typeof currentData.stdout === 'string' && currentData.stdout.trim().startsWith('{')) {
+                                try {
+                                    const nestedData = JSON.parse(currentData.stdout);
+                                    if (nestedData && (nestedData.stdout !== undefined || nestedData.stderr !== undefined)) {
+                                        currentData = nestedData;
+                                        console.log(`[PythonOutput] 成功解析第 ${i + 1} 层嵌套输出`);
                                         continue;
                                     }
-                                    // 检查 output
-                                    if (currentLevel.output && typeof currentLevel.output === 'string') {
-                                        currentLevel = currentLevel.output;
-                                        continue;
-                                    }
-                                    // 检查 result
-                                    if (currentLevel.result && typeof currentLevel.result === 'string') {
-                                        currentLevel = currentLevel.result;
-                                        continue;
-                                    }
-                                    
-                                    // 如果没有嵌套字段，直接返回当前对象
-                                    return JSON.stringify(currentLevel, null, 2);
-                                }
-                                
-                                // 如果既不是字符串也不是对象，直接返回
-                                break;
+                                } catch (e) { /* 解析失败则跳出循环 */ break; }
                             }
-                            
-                            return currentLevel;
-                        };
-
-                        // 从原始响应中提取数据
-                        const responseData = rawResponse.rawResult?.data || dataFromProxy || rawResponse;
-                        console.log(`[PythonOutput] 原始响应数据类型:`, typeof responseData, responseData);
-
-                        // 提取最终输出
-                        let finalOutput = extractFinalOutput(responseData);
-                        
-                        // 确保最终输出是字符串
-                        if (finalOutput && typeof finalOutput !== 'string') {
-                            finalOutput = JSON.stringify(finalOutput, null, 2);
+                            break; // 不符合嵌套条件则跳出
                         }
 
-                        console.log(`[PythonOutput] 最终提取的输出:`, {
-                            length: finalOutput?.length,
-                            preview: finalOutput?.substring(0, 200),
-                            type: typeof finalOutput
-                        });
+                        finalOutput = currentData.stdout;
+                        finalError = currentData.stderr;
+                        
+                        console.log(`[PythonOutput] 解析结果 - stdout:`, finalOutput?.length || 0, '字符');
+                        console.log(`[PythonOutput] 解析结果 - stderr:`, finalError?.length || 0, '字符');
 
-                        // 检查是否有错误输出
-                        const hasStderr = dataFromProxy?.stderr && dataFromProxy.stderr.trim().length > 0;
-                        
-                        // 🎯 关键：获取原始参数中的代码，用于错误报告
-                        const rawParameters = rawResponse.rawParameters;
-                        
-                        if (hasStderr) {
-                            // 处理错误情况
-                            const errorDetails = this._analyzePythonErrorDeeply(dataFromProxy.stderr);
-                            output = this._buildPythonErrorReport(errorDetails, rawParameters?.code);
-                            toolSuccess = false;
-                        } else if (finalOutput && finalOutput.trim().length > 0) {
-                            // 成功情况：有实际输出
+                        // 🎯 步骤 2: 优先判断是否存在真实错误
+                        if (finalError && finalError.trim()) {
+                            console.log(`[PythonOutput] 🔴 检测到 stderr 错误输出，长度: ${finalError.length}`);
+                            
+                            const originalCode = rawResponse.rawParameters?.code || '';
+                            const errorDetails = this._analyzePythonErrorDeeply(finalError);
+                            output = this._buildPythonErrorReport(errorDetails, originalCode);
+                            success = false;
+
+                        } else if (finalOutput && finalOutput.trim()) {
+                            // 步骤 3: 处理成功输出
+                            console.log(`[PythonOutput] ✅ 检测到 stdout 有效输出，长度: ${finalOutput.length}`);
                             output = this.formatCodeOutputForMode({ stdout: finalOutput }, researchMode);
-                            toolSuccess = true;
-                            
-                            console.log(`[PythonOutput] ✅ 成功提取Python输出，长度: ${finalOutput.length}`);
-                        } else {
-                            // 无输出情况
-                            output = `[工具信息]: Python代码执行完成，无标准输出内容。`;
-                            toolSuccess = true;
-                            
-                            console.log(`[PythonOutput] ℹ️ Python执行完成但无输出内容`);
-                        }
+                            success = true;
 
-                        success = toolSuccess;
+                        } else {
+                            // 步骤 4: 处理无任何输出的成功情况
+                            console.log(`[PythonOutput] ℹ️ Python 执行完成，无任何标准输出或错误。`);
+                            output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
+                            success = true;
+                        }
 
                     } catch (error) {
-                        console.error(`[DeepResearchAdapter] python_sandbox响应处理异常:`, error);
-                        output = `❌ **Python响应处理错误**: ${error.message}\n\n原始数据: ${JSON.stringify(dataFromProxy).substring(0, 500)}...`;
+                        console.error(`[DeepResearchAdapter] python_sandbox 响应处理异常:`, error);
+                        output = `❌ **Python响应处理时发生内部错误**: ${error.message}\n\n原始数据: ${JSON.stringify(dataFromProxy).substring(0, 500)}...`;
                         success = false;
                     }
                     
                     console.log(`[PythonOutput] 处理完成:`, {
                         success,
                         outputLength: output?.length,
-                        hasActualOutput: output && !output.includes('[工具信息]: Python代码执行完成，无输出内容。')
+                        isErrorFeedback: !success && output.includes('Python代码执行失败')
                     });
                     
-                    // 🎯 修复：移除冗余的 return 语句，让流程继续到外部的 return
-                    // return { ... };
+                    // ⚠️ 关键补充：添加 break 语句！
                     break;
                 }
                     
@@ -893,10 +846,6 @@ ${suggestions.map((suggestion, index) => `${index + 1}. ${suggestion}`).join('\n
 
 严格按照方案修改代码，输出修改后的完整代码，我用于替换`;
     }
-    
-    /**
-     * 根据研究模式格式化搜索结果
-     */
     
     /**
      * 🎯 深度诊断Python输出问题
@@ -1355,7 +1304,18 @@ class ProxiedTool extends BaseTool {
                 setTimeout(() => reject(new Error(`工具"${this.name}"调用超时 (${timeoutMs}ms)`)), timeoutMs);
             });
             
-            const rawResult = await Promise.race([toolPromise, timeoutPromise]);
+            let rawResult = await Promise.race([toolPromise, timeoutPromise]);
+            
+            // 🎯 关键修复：将 normalizedInput 附加到 rawResult 中，供错误处理使用
+            if (rawResult && typeof rawResult === 'object') {
+                rawResult.rawParameters = normalizedInput;
+            } else {
+                // 如果 rawResult 不是对象，创建一个包装对象
+                rawResult = {
+                    output: rawResult,
+                    rawParameters: normalizedInput
+                };
+            }
             
             // 🎯 统一响应处理
             const normalizedResult = DeepResearchToolAdapter.normalizeResponse(
