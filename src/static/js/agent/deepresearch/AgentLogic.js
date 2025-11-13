@@ -361,7 +361,7 @@ export class AgentLogic {
     }
 
     async plan(inputs, runManager) {
-        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard' } = inputs;
+        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard', skillInjection } = inputs;
         
         // 🎯 关键词检测逻辑
         const detectedMode = this._detectResearchMode(topic);
@@ -371,12 +371,13 @@ export class AgentLogic {
         
         const prompt = this._constructFinalPrompt({
             topic,
-            intermediateSteps, 
+            intermediateSteps,
             availableTools,
             researchPlan,
             currentStep,
             researchMode: detectedMode,
-            currentDate: new Date().toISOString() // 添加当前日期
+            currentDate: new Date().toISOString(), // 添加当前日期
+            skillInjection // 🎯 新增：传递技能指导
         });
         
         console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
@@ -465,9 +466,23 @@ export class AgentLogic {
     }
 
     // ✨ 重构：主提示词构建 - 核心DRY原则优化
-    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate }) {
+    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, skillInjection }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
+        
+        // 新增技能指导强制引用部分
+        const skillGuidanceSection = skillInjection ? `
+## 🛠️ 技能系统专业指导（必须参考）
+
+${skillInjection}
+
+### 技能使用要求：
+1. **工具选择必须基于技能匹配度** - 优先使用技能系统推荐的工具
+2. **参数设置参考技能建议** - 按照技能描述优化工具参数
+3. **在思考中明确说明** - 必须解释如何利用技能系统指导
+
+**违反后果**：如果忽略技能指导且无法合理解释，系统将强制重新规划
+` : '';
         
         // 🎯 核心修复：添加Python代码调试专业指南
         const pythonDebuggingGuide = `
@@ -610,6 +625,8 @@ ${planText}
 
 # 可用工具
 ${availableToolsText}
+
+${skillGuidanceSection}  // 🎯 新增技能指导部分
 
 # 研究历史与观察
 ${formattedHistory}
