@@ -1458,75 +1458,10 @@ export class McpToolCatalogTool extends ProxiedTool {}
 export class FirecrawlTool extends ProxiedTool {} // 即使不可用也提供类定义
 
 /**
- * @class SkillSearchTool
- * @description 一个特殊的内部工具，允许Agent在运行时动态查询可用技能。
- */
-class SkillSearchTool extends BaseTool {
-    constructor(chatApiHandler, skillManager) {
-        super(chatApiHandler);
-        if (!skillManager) {
-            throw new Error("SkillSearchTool requires a valid SkillManager instance.");
-        }
-        this.skillManager = skillManager;
-    }
-
-    async invoke(input, context = {}) {
-        const startTime = Date.now();
-        const query = input.query || '';
-        
-        console.log(`[SkillSearchTool] Agent 正在动态查询技能，关键词: "${query}"`);
-
-        if (!query) {
-            return {
-                success: false,
-                output: "错误：请提供一个查询关键词来描述你想要寻找的工具或任务。"
-            };
-        }
-
-        try {
-            // 使用 skillManager 查找相关技能
-            const relevantSkills = await this.skillManager.findRelevantSkills(query, {
-                availableTools: Object.keys(context.availableTools || {}) 
-            });
-
-            if (!relevantSkills || relevantSkills.length === 0) {
-                return {
-                    success: true,
-                    output: `根据关键词 "${query}"，没有找到相关的可用工具。`
-                };
-            }
-
-            // 格式化结果，使其对 Agent 友好
-            const formattedOutput = `根据关键词 "${query}"，找到了以下 ${relevantSkills.length} 个相关工具：\n\n` +
-                relevantSkills.map((skill, index) => {
-                    const schema = skill.schema ? JSON.stringify(skill.schema, null, 2) : '无可用参数';
-                    return `--- 工具 ${index + 1} ---\n` +
-                           `工具名称 (tool_name): ${skill.tool_name}\n` +
-                           `功能描述: ${skill.description}\n` +
-                           `如何使用 (行动输入/parameters): \n\`\`\`json\n${schema}\n\`\`\``;
-                }).join('\n\n');
-
-            return {
-                success: true,
-                output: formattedOutput,
-                executionTime: Date.now() - startTime
-            };
-
-        } catch (error) {
-            console.error('[SkillSearchTool] 动态技能查询失败:', error);
-            return {
-                success: false,
-                output: `查询技能时发生内部错误: ${error.message}`,
-                executionTime: Date.now() - startTime
-            };
-        }
-    }
-}
-/**
  * 🎯 工具工厂：便于动态创建工具实例
  */
 export class ToolFactory {
-    static createTool(toolName, chatApiHandler, metadata, dependencies = {}) { // 添加 dependencies 参数
+    static createTool(toolName, chatApiHandler, metadata) {
         const toolClasses = {
             'python_sandbox': PythonSandboxTool,
             'tavily_search': TavilySearchTool,
@@ -1534,8 +1469,7 @@ export class ToolFactory {
             'stockfish_analyzer': StockfishAnalyzerTool,
             'glm4v_analyze_image': Glm4vAnalyzeImageTool,
             'mcp_tool_catalog': McpToolCatalogTool,
-            'firecrawl': FirecrawlTool, // 即使不可用也提供映射
-            'skill_search': SkillSearchTool // 🎯 新增
+            'firecrawl': FirecrawlTool // 即使不可用也提供映射
         };
         
         const ToolClass = toolClasses[toolName];
@@ -1543,27 +1477,19 @@ export class ToolFactory {
             throw new Error(`未知的工具类型: ${toolName}`);
         }
         
-        // 🎯 关键：处理依赖注入
-        let toolInstance;
-        if (toolName === 'skill_search') {
-            toolInstance = new ToolClass(chatApiHandler, dependencies.skillManager);
-        } else {
-            toolInstance = new ToolClass(chatApiHandler);
-        }
-
+        const toolInstance = new ToolClass(chatApiHandler);
         return toolInstance.configure(metadata);
     }
     
     /**
      * 🎯 批量创建工具
      */
-    static createTools(toolDefinitions, chatApiHandler, dependencies = {}) { // 添加 dependencies 参数
+    static createTools(toolDefinitions, chatApiHandler) {
         const tools = {};
         
         for (const [toolName, metadata] of Object.entries(toolDefinitions)) {
             try {
-                // 🎯 传递依赖
-                tools[toolName] = this.createTool(toolName, chatApiHandler, metadata, dependencies);
+                tools[toolName] = this.createTool(toolName, chatApiHandler, metadata);
             } catch (error) {
                 console.warn(`[ToolFactory] 创建工具 ${toolName} 失败:`, error);
             }
@@ -1622,5 +1548,5 @@ export class ToolFactory {
     }
 }
 
-export { DeepResearchToolAdapter, ProxiedTool, SkillSearchTool };
+export { DeepResearchToolAdapter, ProxiedTool };
 

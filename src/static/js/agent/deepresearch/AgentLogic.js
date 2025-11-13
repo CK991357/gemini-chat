@@ -361,7 +361,7 @@ export class AgentLogic {
     }
 
     async plan(inputs, runManager) {
-        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard', skillInjection } = inputs;
+        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard' } = inputs;
         
         // 🎯 关键词检测逻辑
         const detectedMode = this._detectResearchMode(topic);
@@ -371,13 +371,12 @@ export class AgentLogic {
         
         const prompt = this._constructFinalPrompt({
             topic,
-            intermediateSteps,
+            intermediateSteps, 
             availableTools,
             researchPlan,
             currentStep,
             researchMode: detectedMode,
-            currentDate: new Date().toISOString(), // 添加当前日期
-            skillInjection // 🎯 新增：传递技能指导
+            currentDate: new Date().toISOString() // 添加当前日期
         });
         
         console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
@@ -466,23 +465,9 @@ export class AgentLogic {
     }
 
     // ✨ 重构：主提示词构建 - 核心DRY原则优化
-    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, skillInjection }) {
+    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
-        
-        // 新增技能指导强制引用部分
-        const skillGuidanceSection = skillInjection ? `
-## 🛠️ 技能系统专业指导（必须参考）
-
-${skillInjection}
-
-### 技能使用要求：
-1. **工具选择必须基于技能匹配度** - 优先使用技能系统推荐的工具
-2. **参数设置参考技能建议** - 按照技能描述优化工具参数
-3. **在思考中明确说明** - 必须解释如何利用技能系统指导
-
-**违反后果**：如果忽略技能指导且无法合理解释，系统将强制重新规划
-` : '';
         
         // 🎯 核心修复：添加Python代码调试专业指南
         const pythonDebuggingGuide = `
@@ -611,28 +596,6 @@ ${skillInjection}
         
         // 🎯 核心DRY优化：动态获取报告要求，避免硬编码重复
         const reportRequirements = getTemplatePromptFragment(researchMode);
-        
-        // 新增技能引用格式要求
-        const skillReferenceRequirement = skillInjection ? `
-## 🎯 技能系统引用要求（强制执行）
-
-在"思考:"部分必须包含以下内容：
-
-### 技能匹配分析：
-- "技能系统推荐了 [工具名称] 用于 [用途]"
-- "该工具的特性包括: [技能描述的关键特性]"
-
-### 工具选择理由：
-- "我选择 [工具名称] 是因为 [基于技能匹配的具体理由]"
-- "我将利用技能建议的 [具体建议] 来优化参数"
-
-### 预期效果：
-- "基于技能指导，我期望达到 [预期效果]"
-- "相比其他工具，这个选择在 [方面] 更有优势"
-
-**示例**：
-思考: 技能系统推荐了crawl4ai用于深度网页内容提取，该工具的特性包括：完整的Markdown格式输出、智能内容提取、支持复杂页面结构。我选择crawl4ai是因为需要获取智谱官方文档的完整技术规格，相比tavily_search的摘要格式，crawl4ai能提供更详细的结构化信息。基于技能建议，我将使用scrape模式并禁用内容过滤来确保获取完整内容。
-` : '';
 
         const prompt = `
 # 角色：${config.role}
@@ -647,8 +610,6 @@ ${planText}
 
 # 可用工具
 ${availableToolsText}
-
-${skillGuidanceSection}  // 🎯 新增技能指导部分
 
 # 研究历史与观察
 ${formattedHistory}
@@ -685,49 +646,11 @@ ${config.specialInstructions}
 
 请在"思考:"部分明确提出调整建议。
 
-## 4. 探索与学习新能力
-在你已有的工具之外，你还拥有一个特殊的元工具 skill_search。
-
-### ⚡️ skill_search 使用时机：
-在你已有的工具之外，你还拥有一个特殊的元工具 skill_search，用于发现解决特定问题的新方法或更专业的工具。
-
-### ⚡️ skill_search 使用时机：
-- **场景一 (发现新任务类型):** 当你通过研究（例如 crawl4ai 或 tavily_search）发现了一个需要特定专业工具才能解决的新任务时（例如，分析图表、处理特定格式的文件等）。
-- **场景二 (寻求最优解):** 当你感觉当前工具（尤其是 python_sandbox）虽然能完成任务但实现过程会非常复杂或低效时，你应该主动怀疑并查询是否有更直接、更专业的工具存在。
-
-**使用流程与示例 (基于现有工具):**
-
-1.  **识别问题**: 在"思考:"部分清晰地描述你遇到的挑战。
-    *   **思考 (示例):** "我使用 crawl4ai 抓取了一个包含大量非结构化文本的网页。我需要从中提取所有AI模型的名称、参数量和发布日期，并整理成一个表格。虽然我**可以**尝试在 python_sandbox 中编写一个复杂的正则表达式脚本来解析这段文本，但这非常容易出错且效率低下。我想确认一下，系统里是否有一个专门用于'从文本中提取结构化信息'的更高级工具？"
-
-2.  **调用 skill_search**: 将你的核心需求作为 query 参数，调用 skill_search 工具。
-    *   **行动:** skill_search
-    *   **行动输入:** {"query": "从非结构化文本中提取结构化数据"}
-
-3.  **分析结果并行动**: skill_search 会返回最匹配的工具及其使用方法。
-    *   **如果找到新工具**: "观察: skill_search 结果显示，存在一个名为 structured_data_extractor 的工具，它更适合此任务。我将在下一步中使用它。"
-    *   **如果未找到**: "观察: skill_search 结果表明，目前没有更专业的工具。最佳实践仍然是使用 python_sandbox。建议在 Python 脚本中使用 re 或 pandas 库来提高解析的准确性和效率。我将采纳此建议，在下一步中编写一个更健壮的 Python 脚本。"
-
-## 5. 终止条件
-在你认为信息已经足够并准备生成最终答案之前，**你必须在"思考:"部分进行一次严格的自我评估**，并明确回答以下问题。只有所有问题的答案都是肯定的，你才能输出最终答案。
-
-**思考 (示例):**
-我已完成信息收集，现在进行最终检查：
-1.  **核心问题回答完毕？** 是的，我已经收集了关于智谱和OpenAI旗舰模型的规格、性能和价格，足以回答用户的对比请求。
-2.  **关键论点交叉验证？** 是的，关于GLM-4.6的性能数据，我从多个科技新闻网站获得了相似的报道，信息来源一致。
-3.  **数据时效性确认？** 是的，我获取到的所有模型信息和性能数据都是基于2025年的最新发布，时效性很高。
-所有检查项均已满足，我将开始撰写最终报告。
-
-**最终答案:**
-...
-
----
-**检查清单**:
-1.  **核心问题完整性**: 我是否已经明确回答了用户原始问题中的**每一个核心要点**？（例如，如果用户要求对比A和B，我是否同时拥有A和B的详细信息？）
-2.  **关键论点可信度**: 我的每一个关键论点或数据点，是否都得到了**至少两个独立、可靠来源**的支持或交叉验证？
-3.  **数据时效性**: 对于所有涉及时间敏感性的数据（如版本号、性能指标、价格、市场趋势），我是否已通过工具获取并确认了**这是当前最新的信息**？
-
-${skillReferenceRequirement}
+## 4. 终止条件
+当满足以下条件时立即终止研究：
+- 所有计划步骤已完成
+- 关键问题都已得到充分回答
+- 连续2次迭代没有获得新信息
 
 ${reportRequirements}
 
