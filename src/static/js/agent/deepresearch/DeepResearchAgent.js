@@ -403,9 +403,14 @@ export class DeepResearchAgent {
             finalReport = await this._generateFinalReport(uiTopic, intermediateSteps, researchPlan, uniqueSources, detectedMode);
         }
 
+        // ✨ 阶段3.5：智能资料来源过滤
+        console.log('[DeepResearchAgent] 阶段3.5：执行智能资料来源过滤...');
+        const filteredSources = this._filterUsedSources(uniqueSources, finalReport);
+        console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
+
         // 🎯 关键修复：确保资料来源部分正确附加
-        finalReport += this._generateSourcesSection(uniqueSources);
-        console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${uniqueSources.length} 个资料来源`);
+        finalReport += this._generateSourcesSection(filteredSources);
+        console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${filteredSources.length} 个资料来源`);
 
         // =================================================================
         // 🔥🔥 核心修改点：在这里插入阶段4的逻辑 🔥🔥
@@ -428,7 +433,7 @@ export class DeepResearchAgent {
             report: finalReport,
             iterations,
             intermediateSteps,
-            sources: uniqueSources,
+            sources: filteredSources,
             metrics: this.metrics,
             plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
             research_mode: detectedMode,
@@ -625,17 +630,174 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         return report;
     }
 
-    // 🎯 保留：生成资料来源部分的方法
+    // 🎯 更新资料来源生成方法
     _generateSourcesSection(sources) {
         if (!sources || sources.length === 0) {
             return '\n\n## 资料来源\n本次研究未收集到外部资料来源。';
         }
         
-        const sourcesList = sources.map((source, index) => {
-            return `[${index + 1}] ${source.title} - ${source.url}`;
-        }).join('\n');
+        // 分类展示来源
+        const officialSources = sources.filter(s =>
+            s.url?.includes('.gov.cn') ||
+            s.url?.includes('.edu.cn') ||
+            s.url?.includes('official') ||
+            s.source_type === 'official'
+        );
         
-        return `\n\n## 资料来源\n${sourcesList}`;
+        const academicSources = sources.filter(s =>
+            s.url?.includes('arxiv.org') ||
+            s.url?.includes('research') ||
+            s.source_type === 'academic'
+        );
+        
+        const industrySources = sources.filter(s =>
+            s.url?.includes('.com') ||
+            s.source_type === 'industry'
+        );
+        
+        let sourcesList = '';
+        
+        if (officialSources.length > 0) {
+            sourcesList += `### 官方文件与政策\n`;
+            sourcesList += officialSources.map((source, index) => {
+                return `[${index + 1}] ${source.title} - ${source.url}`;
+            }).join('\n') + '\n\n';
+        }
+        
+        if (academicSources.length > 0) {
+            sourcesList += `### 学术研究\n`;
+            sourcesList += academicSources.map((source, index) => {
+                const offset = officialSources.length;
+                return `[${offset + index + 1}] ${source.title} - ${source.url}`;
+            }).join('\n') + '\n\n';
+        }
+        
+        if (industrySources.length > 0) {
+            sourcesList += `### 行业报告与案例分析\n`;
+            sourcesList += industrySources.map((source, index) => {
+                const offset = officialSources.length + academicSources.length;
+                return `[${offset + index + 1}] ${source.title} - ${source.url}`;
+            }).join('\n');
+        }
+        
+        return `\n\n## 资料来源\n\n${sourcesList}`;
+    }
+
+    // 🎯 新增：智能资料来源过滤方法
+    _filterUsedSources(sources, reportContent) {
+        if (!sources || sources.length === 0) return [];
+        if (!reportContent || reportContent.length < 100) return sources;
+        
+        console.log(`[SourceFilter] 开始过滤 ${sources.length} 个来源，报告长度: ${reportContent.length}`);
+        
+        const usedSources = new Set();
+        const reportLower = reportContent.toLowerCase();
+        
+        // 🎯 策略1：直接引用检测
+        sources.forEach(source => {
+            // 检测标题引用
+            if (source.title && reportLower.includes(source.title.toLowerCase().substring(0, 30))) {
+                usedSources.add(source);
+                return;
+            }
+            
+            // 检测域名引用
+            if (source.url) {
+                try {
+                    const domain = new URL(source.url).hostname;
+                    if (reportLower.includes(domain)) {
+                        usedSources.add(source);
+                        return;
+                    }
+                } catch (e) {
+                    // URL解析失败，跳过
+                }
+            }
+            
+            // 🎯 策略2：内容相关性检测
+            const relevanceScore = this._calculateSourceRelevance(source, reportContent);
+            if (relevanceScore > 0.6) {
+                usedSources.add(source);
+            }
+        });
+        
+        // 🎯 策略3：确保至少保留核心来源
+        const finalSources = this._ensureCoreSources(Array.from(usedSources), sources, reportContent);
+        
+        console.log(`[SourceFilter] 过滤完成: ${sources.length} → ${finalSources.length} 个来源`);
+        
+        return finalSources;
+    }
+
+    // 🎯 计算来源相关性
+    _calculateSourceRelevance(source, reportContent) {
+        let score = 0;
+        const reportLower = reportContent.toLowerCase();
+        
+        // 1. 标题关键词匹配
+        if (source.title) {
+            const titleKeywords = source.title.toLowerCase().split(/[\s\-_]+/).filter(k => k.length > 2);
+            titleKeywords.forEach(keyword => {
+                if (reportLower.includes(keyword)) {
+                    score += 0.2;
+                }
+            });
+        }
+        
+        // 2. 描述内容匹配
+        if (source.description) {
+            const descKeywords = source.description.toLowerCase().split(/\s+/).filter(k => k.length > 3);
+            let descMatchCount = 0;
+            descKeywords.forEach(keyword => {
+                if (reportLower.includes(keyword)) {
+                    descMatchCount++;
+                }
+            });
+            score += (descMatchCount / Math.max(descKeywords.length, 1)) * 0.3;
+        }
+        
+        // 3. 来源类型权重
+        if (source.source_type === 'official' || source.url?.includes('.gov.cn') || source.url?.includes('.edu.cn')) {
+            score += 0.3; // 官方来源额外权重
+        }
+        
+        // 4. 时间相关性（如果来源有时间信息）
+        if (source.publish_date) {
+            const currentYear = new Date().getFullYear();
+            const sourceYear = new Date(source.publish_date).getFullYear();
+            if (sourceYear >= currentYear - 1) {
+                score += 0.2; // 近期来源额外权重
+            }
+        }
+        
+        return Math.min(score, 1.0);
+    }
+
+    // 🎯 确保保留核心来源
+    _ensureCoreSources(usedSources, allSources, reportContent) {
+        if (usedSources.length >= 5) return usedSources;
+        
+        console.log(`[SourceFilter] 使用的来源过少 (${usedSources.length})，补充核心来源`);
+        
+        // 按相关性排序所有来源
+        const scoredSources = allSources.map(source => ({
+            source,
+            score: this._calculateSourceRelevance(source, reportContent)
+        })).sort((a, b) => b.score - a.score);
+        
+        // 取前10个最高相关性的来源
+        const topSources = scoredSources.slice(0, 10).map(item => item.source);
+        
+        // 合并并去重
+        const combined = [...usedSources, ...topSources];
+        const uniqueMap = new Map();
+        combined.forEach(source => {
+            if (source.url) {
+                uniqueMap.set(source.url, source);
+            }
+        });
+        
+        return Array.from(uniqueMap.values()).slice(0, 15); // 最多保留15个
     }
 
     // ✨ 新增：信息增益计算
