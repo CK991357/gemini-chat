@@ -41,7 +41,7 @@ export class DeepResearchAgent {
     async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
         // ✨✨✨ 核心修复：解构出 displayTopic ✨✨✨
-        const { topic, displayTopic, availableTools, researchMode } = researchRequest;
+        const { topic, displayTopic, availableTools, researchMode, currentDate } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
         // 原始 topic (enrichedTopic) 用于 Agent 内部逻辑
@@ -91,7 +91,7 @@ export class DeepResearchAgent {
         let researchPlan;
         try {
             // ✨✨✨ 核心修复：规划时使用完整的 internalTopic (enrichedTopic) ✨✨✨
-            const planResult = await this.agentLogic.createInitialPlan(internalTopic, detectedMode);
+            const planResult = await this.agentLogic.createInitialPlan(internalTopic, detectedMode, currentDate);
             researchPlan = planResult;
             this._updateTokenUsage(planResult.usage); // 🎯 新增
             
@@ -103,14 +103,15 @@ export class DeepResearchAgent {
                     keywords: [], // 占位符，将在后续更新
                     estimated_iterations: researchPlan.estimated_iterations,
                     risk_assessment: researchPlan.risk_assessment,
-                    research_mode: detectedMode
+                    research_mode: detectedMode,
+                    temporal_awareness: researchPlan.temporal_awareness // 🎯 新增：传递时效性评估
                 }
             });
 
             console.log(`[DeepResearchAgent] ${detectedMode}研究计划生成完成，预计${researchPlan.estimated_iterations}次迭代`);
         } catch (error) {
             console.error('[DeepResearchAgent] 研究计划生成失败，使用降级方案:', error);
-            researchPlan = this.agentLogic._createFallbackPlan(internalTopic, detectedMode);
+            researchPlan = this.agentLogic._createFallbackPlan(internalTopic, detectedMode, currentDate);
         }
 
         // ✨ 阶段2：自适应执行
@@ -151,7 +152,8 @@ export class DeepResearchAgent {
                     intermediateSteps,
                     availableTools,
                     researchPlan,
-                    researchMode: detectedMode
+                    researchMode: detectedMode,
+                    currentDate: new Date().toISOString() // 🎯 新增：传递当前日期
                 };
 
                 const agentDecision = await this.agentLogic.plan(logicInput, {
@@ -391,22 +393,44 @@ export class DeepResearchAgent {
         finalReport += this._generateSourcesSection(uniqueSources);
         console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${uniqueSources.length} 个资料来源`);
 
+        // =================================================================
+        // 🔥🔥 核心修改点：在这里插入阶段4的逻辑 🔥🔥
+        // =================================================================
+
+        console.log('[DeepResearchAgent] 阶段4：生成时效性质量评估报告...');
+
+        // 🎯 4.1. 调用质量评估方法
+        const temporalQualityReport = this._generateTemporalQualityReport(
+            researchPlan,
+            intermediateSteps,
+            uiTopic, // 使用干净的 topic
+            detectedMode
+        );
+        
+        // 🎯 4.2. 构建最终的、包含质量报告的 result 对象
         const result = {
-            success: true, // 只要能生成报告就视为成功
-            topic: uiTopic, // 最终返回给 UI 的 topic 也应该是干净的
+            success: true,
+            topic: uiTopic,
             report: finalReport,
             iterations,
             intermediateSteps,
             sources: uniqueSources,
             metrics: this.metrics,
             plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
-            research_mode: detectedMode
+            research_mode: detectedMode,
+            temporal_quality: temporalQualityReport // 包含完整时效性质量报告
         };
         
+        // 🎯 4.3. 调用性能记录方法
+        this._recordTemporalPerformance(temporalQualityReport);
+        
+        // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
         await this.callbackManager.invokeEvent('on_research_end', {
             run_id: runId,
             data: result
         });
+        
+        // 🎯 4.5. 返回最终结果
         return result;
     }
 
@@ -760,5 +784,352 @@ ${observation.substring(0, 10000)}
         
         // 实在找不到合适的边界，直接截断
         return text.substring(0, maxLength) + "...";
+    }
+
+    // =============================================
+    // 阶段3：质量评估层 - 基于"唯一事实来源"
+    // =============================================
+
+    // 核心：时效性质量评估系统
+    _generateTemporalQualityReport(researchPlan, intermediateSteps, topic, researchMode) {
+        const currentDate = new Date().toISOString().split('T')[0];
+        
+        // 🎯 唯一事实来源：模型自主评估结果
+        const modelAssessedSensitivity = researchPlan.temporal_awareness?.overall_sensitivity || '未知';
+        
+        // 🎯 系统程序化评估（仅用于对比分析）
+        const systemAssessedSensitivity = this._assessTemporalSensitivity(topic, researchMode);
+        
+        // 分析计划层面的时效性意识
+        const planAnalysis = this._analyzePlanTemporalAwareness(researchPlan);
+        
+        // 分析执行层面的时效性行为  
+        const executionAnalysis = this._analyzeExecutionTemporalBehavior(intermediateSteps, researchPlan);
+        
+        // 综合评估（基于模型自主评估的一致性）
+        const overallScore = this._calculateTemporalScore(planAnalysis, executionAnalysis, modelAssessedSensitivity);
+
+        return {
+            // 元数据
+            assessment_date: currentDate,
+            topic: topic,
+            research_mode: researchMode,
+            
+            // 🎯 核心：模型自主评估结果（唯一事实来源）
+            model_assessment: {
+                overall_sensitivity: modelAssessedSensitivity,
+                step_sensitivities: researchPlan.research_plan.map(step => ({
+                    step: step.step,
+                    sensitivity: step.temporal_sensitivity,
+                    sub_question: step.sub_question
+                }))
+            },
+            
+            // 系统程序化评估（用于对比分析）
+            system_assessment: {
+                overall_sensitivity: systemAssessedSensitivity,
+                is_consistent: modelAssessedSensitivity === systemAssessedSensitivity,
+                consistency_note: this._getConsistencyNote(modelAssessedSensitivity, systemAssessedSensitivity)
+            },
+            
+            // 质量分析
+            quality_metrics: {
+                overall_temporal_score: overallScore,
+                plan_quality: planAnalysis,
+                execution_quality: executionAnalysis,
+                quality_rating: this._getQualityRating(overallScore)
+            },
+            
+            // 改进建议
+            improvement_recommendations: this._getImprovementRecommendations(
+                planAnalysis, 
+                executionAnalysis, 
+                overallScore,
+                modelAssessedSensitivity,
+                systemAssessedSensitivity
+            ),
+            
+            // 执行总结
+            summary: this._generateTemporalSummary(planAnalysis, executionAnalysis, overallScore, modelAssessedSensitivity)
+        };
+    }
+
+    // 系统程序化评估方法
+    _assessTemporalSensitivity(topic, researchMode) {
+        const currentYear = new Date().getFullYear().toString();
+        const currentYearMinus1 = (new Date().getFullYear() - 1).toString();
+        
+        // 高敏感度关键词
+        const highSensitivityKeywords = [
+            '最新', '当前', '现状', '趋势', '发展', '前景', '202', currentYear, currentYearMinus1,
+            '版本', '更新', '发布', 'AI', '人工智能', '模型', '技术', '市场', '政策', '法规'
+        ];
+        
+        // 低敏感度关键词
+        const lowSensitivityKeywords = [
+            '历史', '起源', '发展史', '经典', '理论', '基础', '概念', '定义', '原理'
+        ];
+        
+        const topicLower = topic.toLowerCase();
+        
+        // 检查高敏感度关键词
+        const hasHighSensitivity = highSensitivityKeywords.some(keyword => 
+            topicLower.includes(keyword.toLowerCase())
+        );
+        
+        // 检查低敏感度关键词
+        const hasLowSensitivity = lowSensitivityKeywords.some(keyword => 
+            topicLower.includes(keyword.toLowerCase())
+        );
+        
+        // 基于研究模式的调整
+        const modeSensitivity = {
+            'deep': '高',
+            'academic': '中', 
+            'business': '高',
+            'technical': '高',
+            'cutting_edge': '高',
+            'standard': '中'
+        };
+        
+        if (hasHighSensitivity) return '高';
+        if (hasLowSensitivity) return '低';
+        
+        return modeSensitivity[researchMode] || '中';
+    }
+
+    // 分析计划层面的时效性意识
+    _analyzePlanTemporalAwareness(researchPlan) {
+        const steps = researchPlan.research_plan;
+        const totalSteps = steps.length;
+        
+        // 统计敏感度分布
+        const sensitivityCount = { '高': 0, '中': 0, '低': 0 };
+        let stepsWithTemporalQueries = 0;
+        let totalTemporalQueries = 0;
+        
+        steps.forEach(step => {
+            sensitivityCount[step.temporal_sensitivity] = (sensitivityCount[step.temporal_sensitivity] || 0) + 1;
+            
+            // 检查步骤是否包含时效性查询建议
+            const hasTemporalQuery = step.initial_queries?.some(query => 
+                query.includes('最新') || query.includes('202') || query.includes('版本')
+            );
+            
+            if (hasTemporalQuery) {
+                stepsWithTemporalQueries++;
+                totalTemporalQueries += step.initial_queries.filter(q => 
+                    q.includes('最新') || q.includes('202') || q.includes('版本')
+                ).length;
+            }
+        });
+        
+        return {
+            total_steps: totalSteps,
+            sensitivity_distribution: sensitivityCount,
+            high_sensitivity_ratio: sensitivityCount['高'] / totalSteps,
+            temporal_coverage: stepsWithTemporalQueries / totalSteps,
+            avg_temporal_queries_per_step: stepsWithTemporalQueries > 0 ? 
+                (totalTemporalQueries / stepsWithTemporalQueries) : 0,
+            plan_quality: this._ratePlanQuality(sensitivityCount, stepsWithTemporalQueries, totalSteps)
+        };
+    }
+
+    // 分析执行层面的时效性行为
+    _analyzeExecutionTemporalBehavior(intermediateSteps, researchPlan) {
+        const currentYear = new Date().getFullYear().toString();
+        const totalActions = intermediateSteps.length;
+        
+        let temporalAwareActions = 0;
+        let temporalKeywordUsage = 0;
+        let versionVerificationAttempts = 0;
+        let officialSourceAccess = 0;
+        
+        // 构建步骤敏感度映射
+        const stepSensitivityMap = {};
+        researchPlan.research_plan.forEach(step => {
+            stepSensitivityMap[step.step] = step.temporal_sensitivity;
+        });
+        
+        intermediateSteps.forEach(step => {
+            const stepSensitivity = stepSensitivityMap[step.step] || '中';
+            let isTemporalAware = false;
+            
+            if (step.action?.tool_name === 'tavily_search') {
+                const query = step.action.parameters?.query || '';
+                
+                // 检查是否使用时序性关键词
+                const usedTemporalKeyword = query.includes('最新') || 
+                                          query.includes(currentYear) || 
+                                          query.includes('版本');
+                
+                if (usedTemporalKeyword) {
+                    temporalKeywordUsage++;
+                    isTemporalAware = true;
+                }
+                
+                // 检查版本验证尝试
+                if (query.includes('版本') || query.includes('v') || query.match(/\d+\.\d+/)) {
+                    versionVerificationAttempts++;
+                    isTemporalAware = true;
+                }
+            }
+            
+            // 检查crawl4ai是否用于获取官方信息
+            if (step.action?.tool_name === 'crawl4ai') {
+                const url = step.action.parameters?.url || '';
+                const isOfficialSource = url.includes('github.com') || 
+                                       url.includes('official') || 
+                                       url.includes('website');
+                
+                if (isOfficialSource) {
+                    officialSourceAccess++;
+                    isTemporalAware = true;
+                }
+            }
+            
+            if (isTemporalAware) {
+                temporalAwareActions++;
+            }
+        });
+        
+        return {
+            total_actions: totalActions,
+            temporal_aware_actions: temporalAwareActions,
+            temporal_action_ratio: totalActions > 0 ? (temporalAwareActions / totalActions) : 0,
+            temporal_keyword_usage: temporalKeywordUsage,
+            version_verification_attempts: versionVerificationAttempts,
+            official_source_access: officialSourceAccess,
+            execution_quality: this._rateExecutionQuality(temporalAwareActions, totalActions, temporalKeywordUsage)
+        };
+    }
+
+    // 综合评分（基于模型自主评估）
+    _calculateTemporalScore(planAnalysis, executionAnalysis, modelAssessedSensitivity) {
+        // 计划质量权重
+        const planScore = planAnalysis.temporal_coverage * 0.3 + 
+                         planAnalysis.high_sensitivity_ratio * 0.2;
+        
+        // 执行质量权重
+        const executionScore = executionAnalysis.temporal_action_ratio * 0.4 +
+                             (executionAnalysis.temporal_keyword_usage > 0 ? 0.1 : 0);
+        
+        let baseScore = planScore + executionScore;
+        
+        // 🎯 基于模型评估调整分数
+        if (modelAssessedSensitivity === '高' && executionAnalysis.temporal_action_ratio < 0.5) {
+            baseScore *= 0.7; // 高敏感主题但执行不足，严重扣分
+        } else if (modelAssessedSensitivity === '低' && executionAnalysis.temporal_action_ratio > 0.7) {
+            baseScore *= 0.9; // 低敏感主题但过度关注时效性，轻微扣分
+        }
+        
+        return Math.min(baseScore, 1.0);
+    }
+
+    // 计划质量评级
+    _ratePlanQuality(sensitivityCount, stepsWithTemporalQueries, totalSteps) {
+        const highSensitivityRatio = sensitivityCount['高'] / totalSteps;
+        const temporalCoverage = stepsWithTemporalQueries / totalSteps;
+        
+        if (highSensitivityRatio > 0.5 && temporalCoverage > 0.6) return '优秀';
+        if (highSensitivityRatio > 0.3 && temporalCoverage > 0.4) return '良好';
+        if (highSensitivityRatio > 0.2 && temporalCoverage > 0.2) return '一般';
+        return '待改进';
+    }
+
+    // 执行质量评级
+    _rateExecutionQuality(temporalAwareActions, totalActions, temporalKeywordUsage) {
+        const temporalActionRatio = totalActions > 0 ? (temporalAwareActions / totalActions) : 0;
+        
+        if (temporalActionRatio > 0.6 && temporalKeywordUsage > 0) return '优秀';
+        if (temporalActionRatio > 0.4 && temporalKeywordUsage > 0) return '良好';
+        if (temporalActionRatio > 0.2) return '一般';
+        return '待改进';
+    }
+
+    // 一致性说明
+    _getConsistencyNote(modelSensitivity, systemSensitivity) {
+        if (modelSensitivity === systemSensitivity) {
+            return '模型评估与系统评估一致，判断准确';
+        } else if (modelSensitivity === '高' && systemSensitivity === '低') {
+            return '模型评估比系统更严格，可能过度关注时效性';
+        } else if (modelSensitivity === '低' && systemSensitivity === '高') {
+            return '模型评估比系统更宽松，可能低估时效性需求';
+        } else {
+            return '模型与系统评估存在差异，需要人工复核';
+        }
+    }
+
+    // 质量评级
+    _getQualityRating(score) {
+        if (score >= 0.8) return { level: '优秀', emoji: '✅', description: '时效性管理卓越' };
+        if (score >= 0.6) return { level: '良好', emoji: '⚠️', description: '时效性管理良好' };
+        if (score >= 0.4) return { level: '一般', emoji: '🔶', description: '时效性管理一般' };
+        return { level: '待改进', emoji: '❌', description: '时效性管理需要改进' };
+    }
+
+    // 改进建议
+    _getImprovementRecommendations(planAnalysis, executionAnalysis, overallScore, modelSensitivity, systemSensitivity) {
+        const recommendations = [];
+        
+        // 基于模型评估的建议
+        if (modelSensitivity === '高' && executionAnalysis.temporal_action_ratio < 0.5) {
+            recommendations.push('对于高敏感度主题，建议在执行中更多关注信息时效性验证');
+        }
+        
+        if (modelSensitivity === '低' && executionAnalysis.temporal_action_ratio > 0.7) {
+            recommendations.push('对于低敏感度主题，当前对时效性的关注可能过度，建议更专注于准确性');
+        }
+        
+        // 基于执行质量的建议
+        if (executionAnalysis.temporal_keyword_usage === 0 && modelSensitivity === '高') {
+            recommendations.push('高敏感度主题中未使用时序性搜索关键词，建议在搜索中更多使用"最新"、"2025"等关键词');
+        }
+        
+        if (executionAnalysis.official_source_access === 0 && modelSensitivity === '高') {
+            recommendations.push('高敏感度主题中未访问官方来源，建议直接访问官网获取准确版本信息');
+        }
+        
+        // 基于计划质量的建议
+        if (planAnalysis.temporal_coverage < 0.3) {
+            recommendations.push('研究计划中对时效性的考虑不足，建议在规划阶段更多关注信息时效性');
+        }
+        
+        if (recommendations.length === 0) {
+            recommendations.push('当前时效性管理策略适当，模型判断与执行一致');
+        }
+        
+        return recommendations;
+    }
+
+    // 生成总结
+    _generateTemporalSummary(planAnalysis, executionAnalysis, overallScore, modelSensitivity) {
+        const rating = this._getQualityRating(overallScore);
+        const coveragePercent = (planAnalysis.temporal_coverage * 100).toFixed(0);
+        const actionPercent = (executionAnalysis.temporal_action_ratio * 100).toFixed(0);
+        const scorePercent = (overallScore * 100).toFixed(0);
+        
+        return `${rating.emoji} 时效性管理${rating.level} | 模型评估:${modelSensitivity} | 计划覆盖:${coveragePercent}% | 执行验证:${actionPercent}% | 综合得分:${scorePercent}分`;
+    }
+    // 确保 _recordTemporalPerformance 方法存在于 DeepResearchAgent.js 中
+    _recordTemporalPerformance(performanceData) {
+        if (!performanceData) return;
+        try {
+            const analyticsData = {
+                timestamp: new Date().toISOString(),
+                topic: performanceData.topic,
+                research_mode: performanceData.research_mode,
+                model_assessed_sensitivity: performanceData.model_assessment.overall_sensitivity,
+                system_assessed_sensitivity: performanceData.system_assessment.overall_sensitivity,
+                consistency: performanceData.system_assessment.is_consistent,
+                overall_score: performanceData.quality_metrics.overall_temporal_score,
+                quality_rating: performanceData.quality_metrics.quality_rating.level,
+                plan_coverage: performanceData.quality_metrics.plan_quality.temporal_coverage,
+                execution_ratio: performanceData.quality_metrics.execution_quality.temporal_action_ratio
+            };
+            console.log('[TemporalAnalytics] 记录时效性性能:', analyticsData);
+        } catch (error) {
+            console.warn('[TemporalAnalytics] 记录性能数据失败:', error);
+        }
     }
 }

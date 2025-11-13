@@ -132,12 +132,16 @@ ${cleanTopic}
             const availableToolDefinitions = (await this.skillManager.baseSkillManager.getAllSkills())
                 .filter(skill => this.researchTools.includes(skill.tool_name));
 
+            // 🔥 1. 准备初始上下文，获取当前日期
+            const currentDate = new Date().toISOString().split('T')[0];
+
             // ✨✨✨ 核心修复：同时传递 cleanTopic 和 enrichedTopic ✨✨✨
             const researchRequest = {
                 topic: enrichedTopic,           // 用于 Agent 思考的完整主题
                 displayTopic: cleanTopic,       // 用于 UI 显示的原始主题
                 availableTools: availableToolDefinitions,
-                researchMode: detectedMode
+                researchMode: detectedMode,
+                currentDate: currentDate // 🔥 2. 将当前日期添加到请求对象中
             };
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
@@ -158,7 +162,9 @@ ${cleanTopic}
                 iterations: researchResult.iterations,
                 intermediateSteps: researchResult.intermediateSteps,
                 sources: researchResult.sources,
-                researchMode: researchResult.research_mode
+                researchMode: researchResult.research_mode,
+                // 从Agent的结果中获取质量报告，并将其传递给前端
+                temporal_quality: researchResult.temporal_quality
             };
         } catch (error) {
             console.error('[Orchestrator] DeepResearch Agent执行失败:', error);

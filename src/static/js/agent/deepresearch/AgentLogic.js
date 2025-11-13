@@ -12,8 +12,8 @@ export class AgentLogic {
     }
 
     // ✨ 智能规划器 - 支持多种研究模式
-    async createInitialPlan(topic, researchMode = 'standard') {
-        const plannerPrompt = this._getPlannerPrompt(topic, researchMode);
+    async createInitialPlan(topic, researchMode = 'standard', currentDate) {
+        const plannerPrompt = this._getPlannerPrompt(topic, researchMode, currentDate);
 
         try {
             const llmResponse = await this.chatApiHandler.completeChat({
@@ -28,9 +28,28 @@ export class AgentLogic {
             const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, responseText];
             const plan = JSON.parse(jsonMatch[1]);
             
+            // 🔥 核心：验证模型是否进行了时效性评估
+            if (!plan.temporal_awareness?.assessed) {
+                console.warn('[AgentLogic] 模型未进行时效性评估，强制添加默认评估');
+                plan.temporal_awareness = {
+                    assessed: true,
+                    overall_sensitivity: '中', // 默认中等
+                    current_date: currentDate,
+                    system_note: '模型未评估，系统默认添加'
+                };
+            }
+
+            // 验证每个步骤都有敏感度标注
+            plan.research_plan.forEach((step, index) => {
+                if (!step.temporal_sensitivity) {
+                    step.temporal_sensitivity = '中'; // 默认中等
+                    console.warn(`[AgentLogic] 步骤${index + 1}未标注敏感度，使用默认值`);
+                }
+            });
+
             // 验证计划结构
             if (plan?.research_plan?.length > 0) {
-                console.log(`[AgentLogic] 生成${researchMode}研究计划成功，共${plan.research_plan.length}个步骤`);
+                console.log(`[AgentLogic] 生成研究计划成功，整体敏感度: ${plan.temporal_awareness.overall_sensitivity}`);
                 return {
                     ...plan,
                     usage: llmResponse.usage // 🎯 新增：返回 token usage
@@ -40,12 +59,17 @@ export class AgentLogic {
             
         } catch (error) {
             console.error('[AgentLogic] 规划失败，使用降级方案:', error);
-            return this._createFallbackPlan(topic, researchMode);
+            return this._createFallbackPlan(topic, researchMode, currentDate);
         }
     }
 
-    // ✨ 获取规划器提示词
-    _getPlannerPrompt(topic, researchMode) {
+    // ✨ 获取规划器提示词 - 增强时效性评估版本
+    _getPlannerPrompt(topic, researchMode, currentDate) {
+        const currentYear = new Date().getFullYear();
+        const currentDateReadable = new Date().toLocaleDateString('zh-CN', { 
+            year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+        });
+        
         const modeConfigs = {
             deep: {
                 role: "顶级深度研究策略师",
@@ -99,35 +123,48 @@ export class AgentLogic {
 
         return `
 # 角色：${config.role}
-你负责为复杂研究任务制定高效的研究策略。
+# 任务：为"${topic}"制定研究计划
 
-# 核心指令
-${config.instructions}
+# 🕒 时效性自主评估
+**知识状态**：你的训练数据截止于2024年初，当前系统日期为${currentDateReadable}
+
+## 评估指南
+请自主判断该主题的时效性需求：
+- **高敏感度**：AI模型、软件版本、市场趋势、政策法规 → 必须验证最新信息
+- **低敏感度**：历史研究、经典理论、基础概念 → 专注准确性
+- **中等敏感度**：其他情况 → 选择性验证
+
+## 输出要求
+- 每个步骤必须标注\`temporal_sensitivity\` ("高", "中", "低")
+- 整体计划必须包含\`temporal_awareness\`评估
 
 # 输出格式（严格JSON）
 {
   "research_plan": [
     {
       "step": 1,
-      "sub_question": "需要回答的关键问题",
-      "initial_queries": ["关键词1", "关键词2"],
-      "depth_required": "浅层概览|中层分析|深度挖掘",
-      "expected_tools": ["tavily_search", "crawl4ai"]
+      "sub_question": "关键问题",
+      "initial_queries": ["关键词"],
+      "depth_required": "浅层概览|中层分析|深度挖掘", 
+      "expected_tools": ["tavily_search", "crawl4ai"],
+      "temporal_sensitivity": "高|中|低"
     }
   ],
   "estimated_iterations": ${config.iterations},
   "risk_assessment": "${config.risk}",
-  "research_mode": "${researchMode}"
+  "research_mode": "${researchMode}",
+  "temporal_awareness": {
+    "assessed": true,
+    "overall_sensitivity": "高|中|低",
+    "current_date": "${currentDate}"
+  }
 }
 
-# 研究主题
-"${topic}"
-
-现在生成研究计划：`;
+现在开始评估并生成计划：`;
     }
 
     // ✨ 降级方案 - 支持所有模式
-    _createFallbackPlan(topic, researchMode = 'standard') {
+    _createFallbackPlan(topic, researchMode = 'standard', currentDate) {
         const fallbackPlans = {
             deep: {
                 research_plan: [
@@ -306,7 +343,21 @@ ${config.instructions}
             }
         };
 
-        return fallbackPlans[researchMode] || fallbackPlans.standard;
+        const basePlan = fallbackPlans[researchMode] || fallbackPlans.standard;
+        
+        // 为降级方案添加时效性评估
+        basePlan.temporal_awareness = {
+            assessed: true,
+            overall_sensitivity: '中', // 降级方案默认中等
+            current_date: currentDate,
+            is_fallback: true
+        };
+        
+        basePlan.research_plan.forEach(step => {
+            step.temporal_sensitivity = step.temporal_sensitivity || '中';
+        });
+        
+        return basePlan;
     }
 
     async plan(inputs, runManager) {
@@ -324,7 +375,8 @@ ${config.instructions}
             availableTools,
             researchPlan,
             currentStep,
-            researchMode: detectedMode
+            researchMode: detectedMode,
+            currentDate: new Date().toISOString() // 添加当前日期
         });
         
         console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
@@ -413,12 +465,24 @@ ${config.instructions}
     }
 
     // ✨ 重构：主提示词构建 - 核心DRY原则优化
-    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard' }) {
+    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
+        
+        // 🎯 核心：使用模型自主评估的结果
+        const currentStepPlan = researchPlan.research_plan.find(step => step.step === currentStep);
+        const stepSensitivity = currentStepPlan?.temporal_sensitivity || '中';
+        const modelOverallSensitivity = researchPlan.temporal_awareness?.overall_sensitivity || '中';
+        
+        // 构建基于模型评估的动态指导
+        const temporalGuidance = this._buildDynamicTemporalGuidance(
+            currentDate, 
+            stepSensitivity,
+            modelOverallSensitivity // 传递整体敏感度用于上下文
+        );
         
         // 🎯 DRY优化：只保留Agent思考相关的配置，报告要求从ReportTemplates动态获取
         const agentPersonaConfigs = {
@@ -500,6 +564,8 @@ ${config.instructions}
 # 角色：${config.role}
 ${config.description}
 
+${temporalGuidance}
+
 ${planText}
 
 # 研究目标
@@ -576,6 +642,87 @@ ${reportRequirements}
         return prompt;
     }
 
+    // ✨ 构建动态时效性指导 - 基于模型自主评估
+    _buildDynamicTemporalGuidance(currentDate, stepSensitivity, modelOverallSensitivity) {
+        const currentDateReadable = new Date().toLocaleDateString('zh-CN', { 
+            year: 'numeric', month: 'long', day: 'numeric' 
+        });
+        
+        const baseAwareness = `
+## 🎯 自主时效性管理
+
+**事实基准**:
+- 你的知识截止: 2024年初
+- 当前系统日期: ${currentDateReadable}
+- 信息差距: 2024年初之后的发展需通过工具验证
+
+**核心原则**: 你负责基于专业判断自主管理信息时效性。`;
+
+        const guidanceTemplates = {
+            '高': {
+                title: '🔥 高时效性敏感步骤',
+                content: `**当前步骤敏感度**: 高 | **整体主题敏感度**: ${modelOverallSensitivity}
+                
+**专业建议**:
+1. 必须验证产品版本和发布时间
+2. 搜索时强烈建议使用时序性关键词
+3. 直接访问官方网站获取准确信息
+4. 关注${new Date().getFullYear()}年最新动态
+
+**推荐策略**:
+- "产品名 最新版本 ${new Date().getFullYear()}"
+- "技术名 当前状态 最新"
+- "市场趋势 2025年发展"`,
+                reminder: '⚠️ 注意：此步骤对时效性要求极高，过时信息将严重影响研究价值'
+            },
+            '中': {
+                title: '⚠️ 中等时效性敏感步骤', 
+                content: `**当前步骤敏感度**: 中 | **整体主题敏感度**: ${modelOverallSensitivity}
+                
+**专业建议**:
+1. 选择性验证关键信息的时效性  
+2. 关注技术产品的版本信息
+3. 在深度研究和时效性验证间取得平衡
+
+**灵活策略**:
+- 根据需要添加"最新"关键词
+- 优先但不强制时效性验证`,
+                reminder: '💡 提示：适当关注信息时效性可显著提升研究质量'
+            },
+            '低': {
+                title: '✅ 低时效性敏感步骤',
+                content: `**当前步骤敏感度**: 低 | **整体主题敏感度**: ${modelOverallSensitivity}
+                
+**专业建议**:
+1. 专注于信息的准确性和完整性
+2. 关注历史脉络和发展历程
+3. 引用权威经典来源
+
+**研究重点**:
+- 不需要强制添加时效性关键词  
+- 专注于主题本身的核心信息`,
+                reminder: '📚 提示：历史研究应注重准确性和学术完整性'
+            }
+        };
+
+        const strategy = guidanceTemplates[stepSensitivity] || guidanceTemplates['中'];
+        
+        return `
+# ${strategy.title}
+${baseAwareness}
+
+${strategy.content}
+
+${strategy.reminder}
+
+## 可用工具与策略
+- **tavily_search**: 自主决定是否使用时序性关键词
+- **crawl4ai**: 访问官网获取准确版本信息  
+- **python_sandbox**: 对信息进行时间相关性分析
+
+**最终决策权在你手中，请基于专业判断选择最佳研究策略。**`;
+    }
+
     // ✨ 格式化研究计划
     _formatResearchPlan(plan, currentStep) {
         if (!plan || !plan.research_plan) return '';
@@ -591,6 +738,7 @@ ${plan.research_plan.map(item =>
 **预计总迭代**: ${plan.estimated_iterations || 4} 次
 **复杂度评估**: ${plan.risk_assessment || '未知'}
 **研究模式**: ${plan.research_mode || 'standard'}
+**时效性敏感度**: ${plan.temporal_awareness?.overall_sensitivity || '未知'}
 `;
     }
 
