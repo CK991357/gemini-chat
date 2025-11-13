@@ -38,6 +38,104 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
     }
 
+    // 🎯 新增：报告大纲生成方法
+    /**
+     * @description 使用主模型，基于研究过程中的关键发现，生成一份高质量的报告大纲。
+     * @param {string} topic - 核心研究主题
+     * @param {string[]} keyFindings - 从各步骤中提炼出的关键发现列表
+     * @param {string} researchMode - 当前的研究模式 (e.g., 'academic', 'business')
+     * @returns {Promise<string>} - 返回Markdown格式的详细报告大纲
+     */
+    async _generateReportOutline(topic, keyFindings, researchMode) {
+        console.log(`[DeepResearchAgent] 开始为模式 "${researchMode}" 生成报告大纲...`);
+
+        // 动态调整大纲侧重点的指令
+        const modeSpecificInstructions = {
+            academic: "大纲应侧重于：文献综述、研究方法、核心论证、结论与未来展望。结构必须严谨。",
+            business: "大纲应侧重于：市场背景、竞争格局、核心发现、商业影响、战略建议。必须有明确的商业洞察。",
+            technical: "大纲应侧重于：问题定义、技术架构、实现细节、性能评估、最佳实践。必须包含技术深度。",
+            deep: "大纲需要体现多维度、辩证的分析，包含问题解构、多角度论证、解决方案评估和创新性见解。",
+            standard: "大纲应结构清晰，覆盖主题的核心方面，逻辑连贯，易于理解。"
+        };
+
+        const prompt = `
+# 角色：你是一位顶级的报告架构师和内容策略师。
+
+# 任务
+你的任务是基于一个研究项目已经收集到的"关键信息发现"，为一份专业的最终报告设计一份逻辑严谨、结构完整、深度十足的报告大纲。
+
+## 核心研究主题
+${topic}
+
+## 关键信息发现 (Key Findings)
+${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
+
+## 大纲设计要求
+1.  **逻辑性**: 大纲的章节顺序必须构成一个流畅且有说服力的叙事逻辑。
+2.  **完整性**: 必须覆盖所有"关键信息发现"，并将它们合理地分配到各个章节。
+3.  **深度**: 大纲不应只是简单地罗列要点，而应体现出分析的层次感。在每个章节下，用2-3个子要点来阐述该部分将要探讨的核心内容。
+4.  **模式适配**: ${modeSpecificInstructions[researchMode] || modeSpecificInstructions.standard}
+5.  **输出格式**: 必须严格使用Markdown格式，包含主标题、二级标题（##）和三级标题（###）。
+
+## 示例输出格式
+\`\`\`markdown
+# [报告主标题]
+
+## 1. 引言与背景
+### 1.1 研究背景与问题定义
+### 1.2 核心概念解析
+
+## 2. 核心分析与发现
+### 2.1 [关键发现A的深入分析]
+### 2.2 [关键发现B与C的对比]
+
+## 3. [根据模式调整的章节，如：商业影响或方法论]
+### 3.1 ...
+
+## 4. 结论与建议
+### 4.1 核心结论总结
+### 4.2 未来展望与建议
+\`\`\`
+
+现在，请生成这份高质量的Markdown报告大纲：`;
+
+        try {
+            const response = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: prompt }],
+                model: 'gemini-2.5-flash-preview-09-2025', // 🎯 必须使用主模型
+                temperature: 0.1, // 较低的温度以确保结构化输出
+            });
+            const outline = response?.choices?.[0]?.message?.content || '### 错误：未能生成大纲';
+            console.log(`[DeepResearchAgent] ✅ 报告大纲生成成功。`);
+            return outline;
+        } catch (error) {
+            console.error('[DeepResearchAgent] ❌ 报告大纲生成失败:', error);
+            // 降级方案：返回一个基于关键发现的简单列表
+            return `# 报告大纲 (降级)\n\n## 核心发现\n${keyFindings.map(f => `- ${f}`).join('\n')}`;
+        }
+    }
+
+    // 🎯 新增：关键发现生成方法
+    /**
+     * @description 从观察结果中提取最核心、最有价值的关键发现
+     * @param {string} observation - 工具调用后的观察结果
+     * @returns {Promise<string>} - 返回一句话的关键发现摘要
+     */
+    async _generateKeyFinding(observation) {
+        try {
+            const prompt = `从以下文本中，用一句话总结最核心、最有价值的信息发现。总结必须简明扼要。\n\n文本：\n${observation.substring(0, 2000)}`;
+            const response = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: prompt }],
+                model: 'gemini-2.0-flash-exp-summarizer', // 使用快速模型
+                temperature: 0.0,
+            });
+            return response?.choices?.[0]?.message?.content || '未能提取关键发现。';
+        } catch (error) {
+            console.warn('[DeepResearchAgent] 关键发现生成失败:', error);
+            return '关键发现提取异常。';
+        }
+    }
+
     async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
         // ✨✨✨ 核心修复：解构出 displayTopic ✨✨✨
@@ -95,11 +193,13 @@ export class DeepResearchAgent {
             researchPlan = planResult;
             this._updateTokenUsage(planResult.usage); // 🎯 新增
             
-            // 实时通知UI研究计划
+            // 🎯 优化：传递完整的研究计划对象和文本
             await this.callbackManager.invokeEvent('on_research_plan_generated', {
                 run_id: runId,
                 data: {
                     plan: researchPlan.research_plan,
+                    plan_text: JSON.stringify(researchPlan, null, 2), // 🎯 新增：传递完整计划文本
+                    plan_object: researchPlan, // 🎯 新增：传递完整对象
                     keywords: [], // 占位符，将在后续更新
                     estimated_iterations: researchPlan.estimated_iterations,
                     risk_assessment: researchPlan.risk_assessment,
@@ -183,6 +283,28 @@ export class DeepResearchAgent {
                     break; // 跳出循环
                 }
 
+                // 🎯 处理报告大纲生成
+                if (parsedAction.type === 'generate_outline') {
+                    console.log('[DeepResearchAgent] 📝 Agent已完成信息收集，正在生成报告大纲...');
+                    // 🎯 调用新方法，并传入 researchMode
+                    const reportOutline = await this._generateReportOutline(
+                        uiTopic, // 使用干净的主题
+                        parsedAction.parameters.key_findings,
+                        detectedMode // 传递当前的研究模式
+                    );
+                    // 将大纲作为观察结果，送入下一次迭代，指导Agent撰写最终报告
+                    intermediateSteps.push({
+                        action: { 
+                            tool_name: 'generate_outline', 
+                            parameters: parsedAction.parameters,
+                            thought: parsedAction.thought 
+                        },
+                        observation: `已成功生成报告大纲。下一步的任务是基于这份大纲，撰写最终的、完整的Markdown研究报告。\n\n---\n\n${reportOutline}`,
+                        key_finding: `已生成报告大纲，包含${parsedAction.parameters.key_findings.length}个关键发现的逻辑组织` // 🎯 新增关键发现
+                    });
+                    continue; // 继续下一次迭代
+                }
+
                 // 🎯 处理工具调用
                 if (parsedAction.type === 'tool_call') {
                     const { tool_name, parameters, thought } = parsedAction;
@@ -260,6 +382,9 @@ export class DeepResearchAgent {
                     } else {
                         consecutiveNoGain = 0;
                     }
+
+                    // 🎯 新增：生成关键发现摘要
+                    const keyFinding = await this._generateKeyFinding(summarizedObservation);
                     
                     // 保存完整的步骤信息
                     intermediateSteps.push({
@@ -270,6 +395,7 @@ export class DeepResearchAgent {
                             thought: thought || `执行工具 ${tool_name} 来获取更多信息。`
                         },
                         observation: summarizedObservation,
+                        key_finding: keyFinding, // 🎯 新增：存储关键发现
                         sources: toolSources,
                         success: toolSuccess // ✅ 新增：记录工具执行状态
                     });
@@ -316,7 +442,8 @@ export class DeepResearchAgent {
                             thought: parsedAction.thought || agentDecisionText.substring(0, 500),
                             type: 'error'
                         }, 
-                        observation 
+                        observation,
+                        key_finding: '输出解析失败，需要重新规划' // 🎯 新增关键发现
                     });
                     
                     await this.callbackManager.invokeEvent('on_research_progress', {
@@ -354,6 +481,7 @@ export class DeepResearchAgent {
                         type: 'error'
                     },
                     observation: observationText, // 使用新的观察文本
+                    key_finding: `迭代 ${iterations} 遇到错误: ${error.message}`, // 🎯 新增关键发现
                     success: false // ✅ 新增：明确标记为失败
                 });
                 
@@ -446,7 +574,7 @@ export class DeepResearchAgent {
         // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
         await this.callbackManager.invokeEvent('on_research_end', {
             run_id: runId,
-            data: result
+            data: result // 🎯 优化：直接传递完整的 result 对象
         });
         
         // 🎯 4.5. 返回最终结果

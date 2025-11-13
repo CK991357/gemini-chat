@@ -529,6 +529,25 @@ export class AgentLogic {
 - 提交完整的、修正后的代码进行验证
 `;
         
+        // 🎯 新增：报告大纲生成策略指导
+        const outlineGenerationGuide = `
+## 5. 报告大纲生成策略
+
+### 何时生成大纲：
+- 当收集到3-5个高质量的关键发现时
+- 当信息收集达到计划完成度的70%以上时
+- 当连续2次迭代信息增益低于阈值时
+
+### 如何生成大纲：
+思考: [分析当前信息完整性，判断是否适合生成大纲]
+行动: generate_outline
+行动输入: {"key_findings": ["发现1", "发现2", "发现3"]}
+
+### 大纲生成后的工作：
+- 基于生成的大纲继续完善信息收集
+- 或直接进入最终报告撰写阶段
+`;
+        
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
         
@@ -637,6 +656,8 @@ ${availableToolsText}
 # 研究历史与观察
 ${formattedHistory}
 
+${outlineGenerationGuide}  // 🎯 新增：大纲生成指导
+
 ## 🔍 多源信息整合策略
 
 **信息验证与整合要求**：
@@ -650,10 +671,15 @@ ${formattedHistory}
 
 # 🎯 核心决策框架（严格执行）
 
-## 1. 状态评估
-- 回顾研究计划，确认当前步骤：${currentStep}
-- 评估已有信息是否足够回答当前子问题
-- 检查信息缺口和需要验证的内容
+## 1. 状态评估 & 信息满足度 (**必须回答**)
+- **当前子问题**: [明确复述当前研究计划的步骤目标]
+- **信息满足度评估**: 基于"研究历史与观察"，我已经获得的信息是否**完全且清晰地**回答了上述子问题？
+- **信息缺口分析**:
+  - 如果**是**，请明确指出“信息已满足”，并直接规划**下一个**研究步骤。
+  - 如果**否**，请明确列出还缺少**哪些具体**的信息点（例如：“我还不清楚Wilson的六个观点具体是哪六个”）。
+
+## 2. 工具选择策略
+[基于上述信息缺口分析，选择最合适的工具和参数来填补缺口...]
 
 ## 2. 工具选择策略
 
@@ -695,8 +721,13 @@ ${reportRequirements}
 行动: tool_name_here
 行动输入: {"parameter_name": "parameter_value"}
 
-## 如果研究完成：
-思考: [判断研究完成的理由，信息完整性评估]
+## 如果信息收集完成，准备撰写报告：
+思考: [判断信息已足够，并从历史记录的“关键发现”中提炼出核心要点，用于构建大纲]
+行动: generate_outline
+行动输入: {"topic": "报告主题", "key_findings": ["从关键发现中总结的要点1", "要点2", "要点3"]}
+
+## 如果已收到并审核过大纲：
+思考: [基于收到的高质量大纲，现在开始填充细节，撰写最终报告]
 最终答案:
 # 报告标题
 ## 章节一
@@ -707,9 +738,7 @@ ${reportRequirements}
 ## 🚫 严格禁止：
 1. 不要在"思考"部分包含JSON代码块或工具调用格式
 2. 不要在"行动输入"的JSON之外添加任何额外文本
-3. 不要混合使用两种格式（要么全部工具调用，要么全部最终答案）
-4. 最终答案必须是完整的Markdown报告，不要包含"思考"或"行动"部分
-
+3. 最终答案必须是完整的Markdown报告，不要包含"思考"或"行动"部分
 ## ✅ 正确示例：
 思考: 我已经收集了足够的信息...
 最终答案:
@@ -844,43 +873,51 @@ ${plan.research_plan.map(item =>
     }
 
     // 🎯 格式化历史记录
-    _formatHistory(intermediateSteps) {
-        if (!intermediateSteps || intermediateSteps.length === 0) {
-            return "这是研究的第一步，还没有历史记录。";
-        }
-
-        console.log(`[AgentLogic] 构建历史记录，步骤数: ${intermediateSteps.length}`);
-        
-        const formattedSteps = intermediateSteps.map((step, index) => {
-            const toolName = step.action?.tool_name || 'unknown_action';
-            const parameters = step.action?.parameters || {};
-            
-            const actionJson = JSON.stringify({
-                tool_name: toolName,
-                parameters: parameters
-            }, null, 2);
-            
-            let thought = step.action?.thought;
-            if (!thought) {
-                if (toolName === 'self_correction') {
-                    thought = '上一步格式错误，需要重新规划。';
-                } else if (toolName === 'tavily_search') {
-                    thought = `我需要搜索关于"${parameters.query || '相关主题'}"的更多信息。`;
-                } else if (toolName === 'crawl4ai') {
-                    thought = `我需要抓取网页"${parameters.url || '相关网页'}"来获取详细信息。`;
-                } else {
-                    thought = `我需要使用${toolName}工具来获取相关信息。`;
-                }
-            }
-            
-            return `## 步骤 ${index + 1}\n思考: ${thought}\n行动:\n\`\`\`json\n${actionJson}\n\`\`\`\n观察: ${step.observation}`;
-        });
-        
-        const history = formattedSteps.join('\n\n');
-        console.log(`[AgentLogic] 历史记录构建完成，总长度: ${history.length}`);
-        
-        return history;
+_formatHistory(intermediateSteps) {
+    if (!intermediateSteps || intermediateSteps.length === 0) {
+        return "这是研究的第一步，还没有历史记录。";
     }
+
+    console.log(`[AgentLogic] 构建历史记录，步骤数: ${intermediateSteps.length}`);
+    
+    const formattedSteps = intermediateSteps.map((step, index) => {
+        const toolName = step.action?.tool_name || 'unknown_action';
+        const parameters = step.action?.parameters || {};
+        
+        const actionJson = JSON.stringify({
+            tool_name: toolName,
+            parameters: parameters
+        }, null, 2);
+        
+        let thought = step.action?.thought;
+        if (!thought) {
+            if (toolName === 'self_correction') {
+                thought = '上一步格式错误，需要重新规划。';
+            } else if (toolName === 'tavily_search') {
+                thought = `我需要搜索关于"${parameters.query || '相关主题'}"的更多信息。`;
+            } else if (toolName === 'crawl4ai') {
+                thought = `我需要抓取网页"${parameters.url || '相关网页'}"来获取详细信息。`;
+            } else {
+                thought = `我需要使用${toolName}工具来获取相关信息。`;
+            }
+        }
+        
+        return `## 步骤 ${index + 1}
+思考: ${thought}
+行动:
+\`\`\`json
+${actionJson}
+\`\`\`
+观察: ${step.observation.substring(0, 300)}... (内容已折叠)
+💡 
+**关键发现**: ${step.key_finding || '无'}`;
+    });
+    
+    const history = formattedSteps.join('\n\n');
+    console.log(`[AgentLogic] 历史记录构建完成，总长度: ${history.length}`);
+    
+    return history;
+}
 
     // 🎯 格式化工具描述
     _formatTools(availableTools) {
