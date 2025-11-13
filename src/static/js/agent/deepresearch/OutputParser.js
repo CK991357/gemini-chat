@@ -86,7 +86,7 @@ export class AgentOutputParser {
             console.log('[OutputParser] 提取思考内容:', thought.substring(0, 200) + (thought.length > 200 ? '...' : ''));
 
             // 🎯 2. 最终答案检测 - 精确匹配AgentLogic格式
-            const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]*)/i);
+            const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
             if (finalAnswerMatch && finalAnswerMatch[1]) {
                 const answer = finalAnswerMatch[1].trim();
                 if (answer.length > 50) {
