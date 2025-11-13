@@ -827,37 +827,42 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         const usedSources = new Set();
         const reportLower = reportContent.toLowerCase();
         
-        // 🎯 策略1：直接引用检测
+        // 🎯 策略1：直接引用检测 (已增强)
         sources.forEach(source => {
-            // 检测标题引用
+            // ---- 第一层检测：完整标题片段匹配 (快速且精确) ----
             if (source.title && reportLower.includes(source.title.toLowerCase().substring(0, 30))) {
                 usedSources.add(source);
-                return;
+                return; // 匹配成功，跳过对此来源的后续检测
             }
 
-            // 2. 🎯 新增：核心关键词匹配
+            // ---- 第二层检测：核心关键词匹配 (更具弹性) ----
             if (source.title) {
                 const titleLower = source.title.toLowerCase();
-                const titleKeywords = titleLower.split(/[\s\-:_]+/).filter(k => k.length > 5 && !['http', 'https', 'www'].includes(k)); // 提取长关键词
-                const significantKeywords = titleKeywords.slice(0, 3); // 只取前3个最重要的
+                // 提取标题中长度大于5的、有意义的单词作为关键词
+                const titleKeywords = titleLower.split(/[\s\-:_(),]+/).filter(k => k.length > 5 && !['http', 'https', 'www', 'arxiv', 'medium'].includes(k));
                 
-                let matchCount = 0;
-                for (const keyword of significantKeywords) {
-                    if (reportLower.includes(keyword)) {
-                        matchCount++;
+                // 只取最重要的前3个关键词进行匹配，避免噪音
+                const significantKeywords = titleKeywords.slice(0, 3);
+                
+                if (significantKeywords.length > 0) {
+                    let matchCount = 0;
+                    for (const keyword of significantKeywords) {
+                        if (reportLower.includes(keyword)) {
+                            matchCount++;
+                        }
+                    }
+                    // 匹配度阈值：如果标题中超过一半的核心关键词在报告中出现，就认为被引用
+                    if ((matchCount / significantKeywords.length) >= 0.5) {
+                        usedSources.add(source);
+                        return; // 匹配成功，跳过后续检测
                     }
                 }
-                // 如果标题中超过一半的核心关键词在报告中出现，就认为被引用
-                if (significantKeywords.length > 0 && (matchCount / significantKeywords.length) >= 0.5) {
-                    usedSources.add(source);
-                    return;
-                }
             }
-            
-            // 检测域名引用
+
+            // ---- 第三层检测：域名匹配 (作为补充) ----
             if (source.url) {
                 try {
-                    const domain = new URL(source.url).hostname;
+                    const domain = new URL(source.url).hostname.replace('www.', ''); // 清理域名
                     if (reportLower.includes(domain)) {
                         usedSources.add(source);
                         return;
@@ -866,8 +871,16 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
                     // URL解析失败，跳过
                 }
             }
+        });
+
+        // 🎯 策略2：内容相关性检测 (在一个新的、独立的循环中完成)
+        sources.forEach(source => {
+            // 首先检查这个来源是否已经被策略1选中了
+            if (usedSources.has(source)) {
+                return; // 如果已选中，直接跳过，不做昂贵的计算
+            }
             
-            // 🎯 策略2：内容相关性检测
+            // 只对那些未被选中的来源，执行昂贵的相关性计算
             const relevanceScore = this._calculateSourceRelevance(source, reportContent);
             if (relevanceScore > 0.6) {
                 usedSources.add(source);
