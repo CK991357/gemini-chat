@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/OutputParser.js - 增强版修复
+// src/static/js/agent/deepresearch/OutputParser.js - 增强稳健版本
 
 export class AgentOutputParser {
     parse(text) {
@@ -6,6 +6,19 @@ export class AgentOutputParser {
             text = String(text || '');
         }
         text = text.trim();
+
+        console.log('[OutputParser] 原始文本长度:', text.length);
+
+        // 🎯 增强：智能检测完整报告并直接返回
+        if (this._isLikelyFinalReport(text)) {
+            console.log('[OutputParser] 🎯 检测到完整报告结构，直接作为最终答案');
+            return {
+                type: 'final_answer',
+                answer: text,
+                thought: '检测到完整的报告结构，直接作为最终答案输出',
+                thought_length: 0
+            };
+        }
 
         console.log('[OutputParser] 原始文本:', text.substring(0, 300) + (text.length > 300 ? '...' : ''));
 
@@ -96,52 +109,152 @@ export class AgentOutputParser {
         }
     }
 
-    // ✨ 核心方法：解析AgentLogic要求的格式 - 增强修复版
+    // 🎯 完全重写的稳健解析方法
     _parseToolCallFormat(text) {
+        console.log('[OutputParser] 🔍 开始稳健解析工具调用格式...');
+        
         try {
-            console.log('[OutputParser] 🔍 开始解析工具调用格式...');
-            
-            // ✅✅✅ --- 核心修复 --- ✅✅✅
-            // 使用更强大的文本预处理，移除所有可能的干扰字符
             const preprocessedText = this._enhancedPreprocessText(text);
-            console.log('[OutputParser] 预处理后文本:', preprocessedText.substring(0, 200) + '...');
+            console.log('[OutputParser] 预处理后文本长度:', preprocessedText.length);
 
-            // 🎯 修复1：使用更灵活的正则表达式，移除单词边界限制
+            // 1. 提取工具名
             const actionLineMatch = preprocessedText.match(/行动\s*:\s*([a-zA-Z0-9_]+)/i);
             if (!actionLineMatch) {
                 console.log('[OutputParser] ❌ 未找到"行动:"行');
                 return { success: false };
             }
-
             const tool_name = actionLineMatch[1].trim();
             console.log(`[OutputParser] 🔍 找到工具名: ${tool_name}`);
-            
-            // 🎯 修复2：使用更强大的JSON提取正则表达式 - 支持多行和复杂结构
-            const inputLineMatch = preprocessedText.match(/行动输入\s*:\s*(\{[\s\S]*?\})(?=\s*(?:思考|行动|最终答案)|$)/i);
-            if (!inputLineMatch) {
-                console.log('[OutputParser] ❌ 未找到"行动输入:"行或JSON格式不正确');
+
+            // 2. 🎯 核心修复：使用精确的JSON边界检测
+            const inputKeyword = '行动输入:';
+            const inputIndex = preprocessedText.indexOf(inputKeyword);
+            if (inputIndex === -1) {
+                console.log('[OutputParser] ❌ 未找到"行动输入:"关键字');
                 return { success: false };
             }
 
-            let parametersJson = inputLineMatch[1].trim();
-            console.log(`[OutputParser] 🔍 找到参数JSON: ${parametersJson.substring(0, 100)}...`);
-            
-            // 增强的JSON清理方法
+            // 在"行动输入:"后查找第一个 '{'
+            const jsonStartIndex = preprocessedText.indexOf('{', inputIndex);
+            if (jsonStartIndex === -1) {
+                console.log('[OutputParser] ❌ 在"行动输入:"后未找到JSON起始括号"{"');
+                return { success: false };
+            }
+
+            // 3. 🎯 使用括号计数法精确提取完整JSON对象
+            let braceCount = 0;
+            let inString = false;
+            let escapeNext = false;
+            let jsonEndIndex = -1;
+
+            // 从第一个 '{' 开始扫描
+            for (let i = jsonStartIndex; i < preprocessedText.length; i++) {
+                const char = preprocessedText[i];
+                
+                if (escapeNext) {
+                    escapeNext = false;
+                    continue;
+                }
+                
+                if (char === '\\') {
+                    escapeNext = true;
+                    continue;
+                }
+                
+                if (char === '"' && !escapeNext) {
+                    inString = !inString;
+                    continue;
+                }
+                
+                if (!inString) {
+                    if (char === '{') {
+                        braceCount++;
+                    } else if (char === '}') {
+                        braceCount--;
+                        
+                        if (braceCount === 0) {
+                            jsonEndIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (jsonEndIndex === -1) {
+                console.log('[OutputParser] ❌ JSON括号不匹配，无法找到完整的JSON对象');
+                
+                // 🎯 优雅降级：尝试查找最后一个 '}' 
+                const lastBraceIndex = preprocessedText.lastIndexOf('}');
+                if (lastBraceIndex > jsonStartIndex) {
+                    console.log('[OutputParser] 🟡 使用最后一个右括号作为降级方案');
+                    jsonEndIndex = lastBraceIndex;
+                } else {
+                    return { success: false };
+                }
+            }
+
+            // 4. 提取JSON字符串
+            let parametersJson = preprocessedText.substring(jsonStartIndex, jsonEndIndex + 1);
+            console.log(`[OutputParser] 🔍 提取的原始JSON (${parametersJson.length}字符):`, parametersJson.substring(0, 200) + '...');
+
+            // 5. 清理和验证JSON
             parametersJson = this._enhancedCleanJsonString(parametersJson);
             
-            const parameters = JSON.parse(parametersJson);
+            try {
+                const parameters = JSON.parse(parametersJson);
+                console.log(`[OutputParser] ✅ 工具调用解析成功: ${tool_name}`, {
+                    parametersKeys: Object.keys(parameters),
+                    parametersPreview: JSON.stringify(parameters).substring(0, 100)
+                });
+                
+                return { 
+                    success: true, 
+                    tool_name, 
+                    parameters 
+                };
+                
+            } catch (jsonError) {
+                console.warn('[OutputParser] ❌ JSON解析失败:', jsonError.message);
+                
+                // 🎯 深度修复尝试
+                const repairedJson = this._deepJsonRepair(parametersJson);
+                if (repairedJson) {
+                    try {
+                        const parameters = JSON.parse(repairedJson);
+                        console.log(`[OutputParser] ✅ 深度修复成功: ${tool_name}`);
+                        return { success: true, tool_name, parameters };
+                    } catch (repairedError) {
+                        console.warn('[OutputParser] ❌ 深度修复也失败:', repairedError.message);
+                    }
+                }
+                
+                return { success: false };
+            }
             
-            console.log(`[OutputParser] ✅ 工具调用解析成功: ${tool_name}`, parameters);
-            return { 
-                success: true, 
-                tool_name, 
-                parameters 
-            };
-            
-        } catch (e) {
-            console.warn('[OutputParser] ❌ 工具调用解析失败:', e.message);
+        } catch (error) {
+            console.error('[OutputParser] 💥 解析过程中发生严重错误:', error);
             return { success: false };
         }
+    }
+
+    // 🎯 新增：智能报告检测方法
+    _isLikelyFinalReport(text) {
+        if (!text || text.length < 300) return false;
+        
+        // 检查报告结构特征
+        const hasMultipleHeadings = (text.match(/^#+\s+.+$/gm) || []).length >= 2;
+        const hasStructuredContent = text.includes('##') || text.includes('###');
+        const hasTableStructure = text.includes('|') && text.includes('---');
+        const hasConclusionKeywords = /(总结|结论|报告|对比|分析|建议)/.test(text);
+        
+        // 检查是否包含工具调用格式（如果有则不是最终报告）
+        const hasToolCallFormat = /行动\s*:\s*\w+/i.test(text) && 
+                                /行动输入\s*:\s*\{/i.test(text);
+        
+        // 综合判断：有结构化内容且没有工具调用格式
+        return (hasMultipleHeadings || hasStructuredContent) && 
+               !hasToolCallFormat &&
+               (hasTableStructure || hasConclusionKeywords);
     }
 
     // ✨ 新增：增强的文本预处理方法

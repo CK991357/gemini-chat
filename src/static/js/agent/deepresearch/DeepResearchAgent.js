@@ -973,8 +973,8 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             
             if (hasTemporalQuery) {
                 stepsWithTemporalQueries++;
-                totalTemporalQueries += step.initial_queries.filter(q => 
-                    q.includes('最新') || q.includes('202') || query.includes('版本')
+                totalTemporalQueries += step.initial_queries.filter(q =>
+                    q.includes('最新') || q.includes('202') || q.includes('版本')
                 ).length;
             }
         });

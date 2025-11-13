@@ -475,112 +475,123 @@ class DeepResearchToolAdapter {
                 case 'python_sandbox': {
                     console.log(`[DeepResearchAdapter] 开始处理python_sandbox响应:`, dataFromProxy);
                     
-                    let parsedSuccess = true;
-                    let parsedOutput = '';
-                    let errorDetails = null;
+                    let success = false;
+                    let output = '';
+                    let toolSuccess = true; // 默认成功，除非明确失败
 
                     try {
-                        // 🎯 核心修复：深度嵌套JSON解析
-                        let finalStdout = '';
-                        let finalStderr = '';
-                        
-                        if (dataFromProxy && typeof dataFromProxy.stdout === 'string' && dataFromProxy.stdout.trim()) {
-                            console.log(`[DeepResearchAdapter] 检测到stdout内容，开始深度嵌套解析`);
+                        // 🎯 核心修复：增强的嵌套JSON解析逻辑
+                        const extractFinalOutput = (data) => {
+                            let currentLevel = data;
+                            let maxDepth = 5; // 防止无限递归
+                            let depth = 0;
                             
-                            let currentContent = dataFromProxy.stdout;
-                            let parseDepth = 0;
-                            const maxParseDepth = 3; // 防止无限递归
-                            
-                            // 循环解析嵌套的JSON结构
-                            while (parseDepth < maxParseDepth) {
-                                try {
-                                    const parsed = JSON.parse(currentContent);
-                                    console.log(`[DeepResearchAdapter] 第${parseDepth + 1}层解析成功:`, typeof parsed);
-                                    
-                                    if (parsed && typeof parsed === 'object') {
-                                        // 检查是否有嵌套的stdout
-                                        if (parsed.stdout && typeof parsed.stdout === 'string') {
-                                            currentContent = parsed.stdout;
-                                            parseDepth++;
-                                            continue;
+                            while (depth < maxDepth) {
+                                depth++;
+                                
+                                // 如果当前层级是字符串，尝试解析为JSON
+                                if (typeof currentLevel === 'string') {
+                                    try {
+                                        const parsed = JSON.parse(currentLevel);
+                                        if (parsed && typeof parsed === 'object') {
+                                            currentLevel = parsed;
+                                            continue; // 继续深入解析
                                         }
-                                        // 检查是否有嵌套的stderr
-                                        if (parsed.stderr && typeof parsed.stderr === 'string') {
-                                            finalStderr = parsed.stderr;
-                                        }
-                                        // 如果是最终的内容对象
-                                        if (parsed.type === 'text' && parsed.stdout) {
-                                            finalStdout = parsed.stdout;
-                                            break;
-                                        }
-                                        // 如果是其他格式，直接使用
-                                        if (parsed.stdout) {
-                                            finalStdout = parsed.stdout;
-                                            break;
-                                        }
+                                    } catch (e) {
+                                        // 解析失败，说明是最终文本内容
+                                        console.log(`[PythonOutput] 第${depth}层解析失败，视为最终文本`);
+                                        return currentLevel;
                                     }
-                                    // 如果无法继续解析，使用当前内容
-                                    finalStdout = currentContent;
-                                    break;
-                                } catch (parseError) {
-                                    // JSON解析失败，说明是纯文本内容
-                                    console.log(`[DeepResearchAdapter] 第${parseDepth + 1}层解析失败，视为纯文本`);
-                                    finalStdout = currentContent;
-                                    break;
                                 }
+                                
+                                // 如果当前层级是对象，检查是否有嵌套输出
+                                if (currentLevel && typeof currentLevel === 'object') {
+                                    // 优先检查 stdout
+                                    if (currentLevel.stdout && typeof currentLevel.stdout === 'string') {
+                                        currentLevel = currentLevel.stdout;
+                                        continue;
+                                    }
+                                    // 检查 output
+                                    if (currentLevel.output && typeof currentLevel.output === 'string') {
+                                        currentLevel = currentLevel.output;
+                                        continue;
+                                    }
+                                    // 检查 result
+                                    if (currentLevel.result && typeof currentLevel.result === 'string') {
+                                        currentLevel = currentLevel.result;
+                                        continue;
+                                    }
+                                    
+                                    // 如果没有嵌套字段，直接返回当前对象
+                                    return JSON.stringify(currentLevel, null, 2);
+                                }
+                                
+                                // 如果既不是字符串也不是对象，直接返回
+                                break;
                             }
                             
-                            console.log(`[DeepResearchAdapter] 嵌套解析完成，深度: ${parseDepth}, 最终输出长度: ${finalStdout.length}`);
+                            return currentLevel;
+                        };
+
+                        // 从原始响应中提取数据
+                        const responseData = rawResponse.rawResult?.data || dataFromProxy || rawResponse;
+                        console.log(`[PythonOutput] 原始响应数据类型:`, typeof responseData, responseData);
+
+                        // 提取最终输出
+                        let finalOutput = extractFinalOutput(responseData);
+                        
+                        // 确保最终输出是字符串
+                        if (finalOutput && typeof finalOutput !== 'string') {
+                            finalOutput = JSON.stringify(finalOutput, null, 2);
                         }
 
-                        // 🎯 修复：检查是否真的没有输出内容
-                        if (finalStdout && finalStdout.trim()) {
-                            // 有实际输出内容
-                            parsedOutput = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
-                            parsedSuccess = true;
+                        console.log(`[PythonOutput] 最终提取的输出:`, {
+                            length: finalOutput?.length,
+                            preview: finalOutput?.substring(0, 200),
+                            type: typeof finalOutput
+                        });
+
+                        // 检查是否有错误输出
+                        const hasStderr = dataFromProxy?.stderr && dataFromProxy.stderr.trim().length > 0;
+                        
+                        // 🎯 关键：获取原始参数中的代码，用于错误报告
+                        const rawParameters = rawResponse.rawParameters;
+                        
+                        if (hasStderr) {
+                            // 处理错误情况
+                            const errorDetails = this._analyzePythonErrorDeeply(dataFromProxy.stderr);
+                            output = this._buildPythonErrorReport(errorDetails, rawParameters?.code);
+                            toolSuccess = false;
+                        } else if (finalOutput && finalOutput.trim().length > 0) {
+                            // 成功情况：有实际输出
+                            output = this.formatCodeOutputForMode({ stdout: finalOutput }, researchMode);
+                            toolSuccess = true;
                             
-                            console.log(`[DeepResearchAdapter] ✅ 提取到实际Python输出:`, {
-                                outputLength: finalStdout.length,
-                                preview: finalStdout.substring(0, 200)
-                            });
-                        } else if (finalStderr && finalStderr.trim()) {
-                            // 只有错误输出
-                            // 🎯 修复：移除未定义的 agentParams 引用
-                            errorDetails = this._analyzePythonErrorDeeply(finalStderr);
-                            parsedOutput = this._buildPythonErrorReport(errorDetails);
-                            parsedSuccess = false;
+                            console.log(`[PythonOutput] ✅ 成功提取Python输出，长度: ${finalOutput.length}`);
                         } else {
-                            // 真正的无输出
-                            parsedOutput = `[工具信息]: Python代码执行完成，无输出内容。`;
-                            parsedSuccess = true;
+                            // 无输出情况
+                            output = `[工具信息]: Python代码执行完成，无标准输出内容。`;
+                            toolSuccess = true;
                             
-                            console.log(`[DeepResearchAdapter] ℹ️ 确认Python代码无输出内容`);
+                            console.log(`[PythonOutput] ℹ️ Python执行完成但无输出内容`);
                         }
+
+                        success = toolSuccess;
 
                     } catch (error) {
                         console.error(`[DeepResearchAdapter] python_sandbox响应处理异常:`, error);
-                        parsedOutput = `❌ **响应处理错误**: ${error.message}\n\n原始数据: ${JSON.stringify(dataFromProxy).substring(0, 500)}`;
-                        parsedSuccess = false;
-                    }
-
-                    // 应用解析结果
-                    success = parsedSuccess;
-                    output = parsedOutput;
-                    
-                    // 🎯 修正：使用静态方法调用
-                    output = DeepResearchToolAdapter._validatePythonOutput(output, rawResponse, researchMode);
-                    
-                    // 重新检查 success 状态，如果验证后发现有实际输出，则确保 success 为 true
-                    if (output && !output.includes('[工具信息]: Python代码执行完成，无输出内容。')) {
-                        success = true;
+                        output = `❌ **Python响应处理错误**: ${error.message}\n\n原始数据: ${JSON.stringify(dataFromProxy).substring(0, 500)}...`;
+                        success = false;
                     }
                     
-                    console.log(`[DeepResearchAdapter] python_sandbox处理完成:`, {
+                    console.log(`[PythonOutput] 处理完成:`, {
                         success,
                         outputLength: output?.length,
-                        hasActualOutput: !output.includes('[工具信息]: Python代码执行完成，无输出内容。')
+                        hasActualOutput: output && !output.includes('[工具信息]: Python代码执行完成，无输出内容。')
                     });
                     
+                    // 🎯 修复：移除冗余的 return 语句，让流程继续到外部的 return
+                    // return { ... };
                     break;
                 }
                     
@@ -1538,3 +1549,4 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
+
