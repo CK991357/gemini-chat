@@ -378,20 +378,33 @@ export class DeepResearchAgent {
         // 更新关键词统计
         updateResearchStats({ keywords });
         
-        // ✨✨✨ 核心修复：在这里提前处理来源，而不是等到后面 ✨✨✨
-        const uniqueSources = this._deduplicateSources(allSources);
+        // 在循环结束后，报告生成前，确保所有来源都被正确传递：
 
+        // 🎯 关键修复：确保所有来源都被收集和传递
+        const allSourcesFromSteps = intermediateSteps.flatMap(step => step.sources || []);
+        const combinedSources = [...allSources, ...allSourcesFromSteps];
+        const uniqueSources = this._deduplicateSources(combinedSources);
+
+        console.log(`[DeepResearchAgent] 🔍 来源统计:`, {
+            allSourcesCount: allSources.length,
+            stepsSourcesCount: allSourcesFromSteps.length,
+            combinedCount: combinedSources.length,
+            uniqueCount: uniqueSources.length
+        });
+
+        // 🎯 关键修复：无论是否有最终答案，都调用报告生成以确保信息整合
         let finalReport;
         if (finalAnswerFromIteration) {
-            console.log('[DeepResearchAgent] 使用迭代中生成的答案作为报告基础');
+            console.log('[DeepResearchAgent] 使用迭代中生成的答案作为报告基础，但会整合所有来源');
+            // 仍然使用Agent生成的答案，但确保来源正确附加
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
-            finalReport = await this._generateFinalReport(uiTopic, intermediateSteps, researchPlan, uniqueSources, detectedMode); // 传递 uniqueSources
+            finalReport = await this._generateFinalReport(uiTopic, intermediateSteps, researchPlan, uniqueSources, detectedMode);
         }
 
-        // ✨ 附加所有收集到的资料来源
-        finalReport += this._generateSourcesSection(uniqueSources); // 始终使用 uniqueSources
+        // 🎯 关键修复：确保资料来源部分正确附加
+        finalReport += this._generateSourcesSection(uniqueSources);
         console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${uniqueSources.length} 个资料来源`);
 
         // =================================================================
