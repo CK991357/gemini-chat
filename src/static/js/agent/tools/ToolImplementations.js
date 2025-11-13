@@ -482,74 +482,83 @@ class DeepResearchToolAdapter {
                     let finalOutput = null;
                     let finalError = null;
                     let success = false;
-                    // output 变量在 switch 外部已经声明，此处无需重复 let
 
                     try {
-                        // 🎯 步骤 1: 深度解析，提取最深层的 stdout 和 stderr
+                        // 🎯 关键修复：深度解析嵌套JSON
                         let currentData = dataFromProxy;
                         
-                        // 确保我们从最原始的数据开始解析
-                        if (rawResponse.rawResult?.data) {
-                            currentData = rawResponse.rawResult.data;
-                        }
-
-                        // 循环解析，以处理多层嵌套
-                        for (let i = 0; i < 5; i++) { // 最多解析5层
+                        // 处理多层嵌套：后端返回的stdout可能包含字符串化的JSON
+                        for (let i = 0; i < 3; i++) {
                             if (currentData && typeof currentData.stdout === 'string' && currentData.stdout.trim().startsWith('{')) {
                                 try {
-                                    const nestedData = JSON.parse(currentData.stdout);
-                                    if (nestedData && (nestedData.stdout !== undefined || nestedData.stderr !== undefined)) {
-                                        currentData = nestedData;
-                                        console.log(`[PythonOutput] 成功解析第 ${i + 1} 层嵌套输出`);
+                                    const parsed = JSON.parse(currentData.stdout);
+                                    console.log(`[PythonOutput] 第${i+1}层解析成功:`, Object.keys(parsed));
+                                    if (parsed.stdout !== undefined || parsed.stderr !== undefined) {
+                                        currentData = parsed;
                                         continue;
                                     }
-                                } catch (e) { /* 解析失败则跳出循环 */ break; }
+                                } catch (e) {
+                                    break;
+                                }
                             }
-                            break; // 不符合嵌套条件则跳出
+                            break;
                         }
 
+                        // 🎯 关键修复：正确提取错误信息
                         finalOutput = currentData.stdout;
                         finalError = currentData.stderr;
                         
-                        console.log(`[PythonOutput] 解析结果 - stdout:`, finalOutput?.length || 0, '字符');
-                        console.log(`[PythonOutput] 解析结果 - stderr:`, finalError?.length || 0, '字符');
+                        console.log(`[PythonOutput] 🔍 深度解析结果:`, {
+                            stdoutLength: finalOutput?.length || 0,
+                            stderrLength: finalError?.length || 0,
+                            hasStderr: !!(finalError && finalError.trim()),
+                            stderrPreview: finalError?.substring(0, 200) || '无'
+                        });
 
-                        // 🎯 步骤 2: 优先判断是否存在真实错误
+                        // 🎯 关键修复：严格错误判断逻辑
                         if (finalError && finalError.trim()) {
-                            console.log(`[PythonOutput] 🔴 检测到 stderr 错误输出，长度: ${finalError.length}`);
+                            console.log(`[PythonOutput] 🔴 确认Python执行失败，错误长度: ${finalError.length}`);
                             
                             const originalCode = rawResponse.rawParameters?.code || '';
                             const errorDetails = this._analyzePythonErrorDeeply(finalError);
                             output = this._buildPythonErrorReport(errorDetails, originalCode);
-                            success = false;
+                            success = false; // 🚨 必须设为false！
 
                         } else if (finalOutput && finalOutput.trim()) {
-                            // 步骤 3: 处理成功输出
-                            console.log(`[PythonOutput] ✅ 检测到 stdout 有效输出，长度: ${finalOutput.length}`);
+                            console.log(`[PythonOutput] ✅ Python执行成功，输出长度: ${finalOutput.length}`);
                             output = this.formatCodeOutputForMode({ stdout: finalOutput }, researchMode);
                             success = true;
 
                         } else {
-                            // 步骤 4: 处理无任何输出的成功情况
-                            console.log(`[PythonOutput] ℹ️ Python 执行完成，无任何标准输出或错误。`);
+                            console.log(`[PythonOutput] ℹ️ Python执行完成，无输出`);
                             output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
                             success = true;
                         }
 
                     } catch (error) {
                         console.error(`[DeepResearchAdapter] python_sandbox 响应处理异常:`, error);
-                        output = `❌ **Python响应处理时发生内部错误**: ${error.message}\n\n原始数据: ${JSON.stringify(dataFromProxy).substring(0, 500)}...`;
+                        output = `❌ **Python响应处理时发生内部错误**: ${error.message}`;
                         success = false;
                     }
                     
-                    console.log(`[PythonOutput] 处理完成:`, {
-                        success,
-                        outputLength: output?.length,
-                        isErrorFeedback: !success && output.includes('Python代码执行失败')
+                    // 🎯 关键修复：确保返回正确的成功状态
+                    const result = {
+                        success: success,
+                        output: output,
+                        sources: [],
+                        rawResponse,
+                        isError: !success,
+                        mode: 'deep_research',
+                        researchMode: researchMode
+                    };
+                    
+                    console.log(`[PythonOutput] 🎯 最终返回结果:`, {
+                        success: result.success,
+                        outputLength: result.output?.length,
+                        isError: result.isError
                     });
                     
-                    // ⚠️ 关键补充：添加 break 语句！
-                    break;
+                    return result;
                 }
                     
                 case 'glm4v_analyze_image': {
@@ -757,6 +766,8 @@ class DeepResearchToolAdapter {
      */
     static _analyzePythonErrorDeeply(stderr) {
         const errorText = stderr.trim();
+        console.log(`[ErrorAnalyzer] 开始分析错误:`, errorText.substring(0, 200));
+        
         const analysis = {
             rawError: errorText,
             type: '未知错误',
@@ -1558,4 +1569,3 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
-
