@@ -676,7 +676,7 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         // 🎯 搜索工具的结果本身就是摘要，不应再被摘要
         const noSummarizeTools = ['tavily_search']; 
         const summarizationThresholds = {
-            'crawl4ai': 8000,  // 🎯 从2000提高到8000，降低压缩率
+            'crawl4ai': 5000,  // 🎯 从2000提高到5000，降低压缩率
             'firecrawl': 5000,
             'default': 10000
         };

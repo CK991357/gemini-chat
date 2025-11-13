@@ -44,7 +44,11 @@ export class Orchestrator {
                 this.skillManager = new EnhancedSkillManager();
                 await this.skillManager.waitUntilReady();
                 
-                this.tools = await this._initializeTools();
+                // 🎯 关键：将 skillManager 作为依赖项传入
+                this.tools = await this._initializeTools({ skillManager: this.skillManager });
+
+                this.researchTools.push('skill_search'); // 🎯 动态添加新工具到研究工具列表
+
                 this.researchToolsSet = this._initializeResearchTools();
                 this.deepResearchAgent = this._initializeDeepResearchAgent();
                 this.setupHandlers();
@@ -349,7 +353,7 @@ ${cleanTopic}
         return new DeepResearchAgent(this.chatApiHandler, this.researchToolsSet, this.callbackManager, { maxIterations: 8 });
     }
 
-    async _initializeTools() {
+    async _initializeTools(dependencies = {}) { // 🎯 接收依赖项
         try {
             const skills = getSkillsRegistry();
             const defs = {};
@@ -359,7 +363,25 @@ ${cleanTopic}
                     defs[toolName] = { name: toolName, description: skillData.metadata.description, schema: mcpToolsMap[toolName].function.parameters };
                 }
             }
-            return ToolFactory.createTools(defs, this.chatApiHandler);
+
+            // 🎯 为 skill_search 添加定义
+            defs['skill_search'] = {
+                name: 'skill_search',
+                description: '当你需要寻找一个能执行特定任务（如图表分析、文件处理等）的工具，或者不确定当前工具是否是最佳选择时使用。它能根据你的任务描述，在可用工具库中进行搜索。',
+                schema: {
+                    type: "object",
+                    properties: {
+                        query: {
+                            type: "string",
+                            description: "对你想要完成的任务或寻找的工具功能的自然语言描述，例如 '分析国际象棋棋局' 或 '生成图表'。"
+                        }
+                    },
+                    required: ["query"]
+                }
+            };
+            
+            // 🎯 将依赖项传递给 ToolFactory
+            return ToolFactory.createTools(defs, this.chatApiHandler, dependencies);
         } catch (error) {
             console.error('[Orchestrator] 工具初始化失败:', error);
             return {};
