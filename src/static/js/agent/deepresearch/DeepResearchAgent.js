@@ -663,93 +663,148 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
      */
     async _smartSummarizeObservation(mainTopic, observation, researchMode, toolName) {
         // ✅✅✅ --- 核心修复：为不同工具设置不同的摘要策略 --- ✅✅✅
-        // 搜索工具的结果本身就是摘要，不应再被摘要，否则会丢失关键信息
+        
+        // 输入验证
+        if (!observation || typeof observation !== 'string') {
+            console.warn(`[DeepResearchAgent] 无效的观察结果，工具: ${toolName}`);
+            return observation || '无观察结果';
+        }
+
+        const originalLength = observation.length;
+        console.log(`[DeepResearchAgent] 开始处理工具 "${toolName}" 的输出，长度: ${originalLength} 字符`);
+
+        // 🎯 搜索工具的结果本身就是摘要，不应再被摘要
         const noSummarizeTools = ['tavily_search']; 
         const summarizationThresholds = {
-            'crawl4ai': 2000,
-            'firecrawl': 2000,
-            'default': 4000 // 其他工具使用更高的阈值
+            'crawl4ai': 8000,  // 🎯 从2000提高到8000，降低压缩率
+            'firecrawl': 5000,
+            'default': 10000
         };
 
         // 🎯 对于搜索工具，跳过摘要直接返回原始结果
         if (noSummarizeTools.includes(toolName)) {
             console.log(`[DeepResearchAgent] 工具 "${toolName}" 跳过摘要，直接使用原始输出。`);
-            // 即使不摘要，也进行一次长度硬截断，防止极端情况
+            
+            // 统一的硬截断保护
             const hardLimit = 15000; 
-            return observation.length > hardLimit ? 
-                observation.substring(0, hardLimit) + "\n[...内容已截断]" : 
-                observation;
+            if (originalLength > hardLimit) {
+                console.log(`[DeepResearchAgent] 内容超过硬截断限制 ${hardLimit}，进行安全截断`);
+                return observation.substring(0, hardLimit) + "\n[...内容过长已安全截断]";
+            }
+            return observation;
         }
 
         const threshold = summarizationThresholds[toolName] || summarizationThresholds.default;
         
-        if (!observation || typeof observation !== 'string' || observation.length < threshold) {
-            return observation.length > threshold ? 
-                observation.substring(0, threshold) + "\n[...内容已截断]" : 
-                observation;
+        // 🎯 修正逻辑：只有超过阈值才触发摘要
+        if (originalLength <= threshold) {
+            console.log(`[DeepResearchAgent] 工具 "${toolName}" 内容长度 ${originalLength} ≤ 阈值 ${threshold}，直接返回`);
+            return observation;
         }
 
-        console.log(`[DeepResearchAgent] 工具 "${toolName}" 内容过长 (${observation.length} > ${threshold})，启动摘要子代理...`);
+        console.log(`[DeepResearchAgent] 工具 "${toolName}" 内容过长 (${originalLength} > ${threshold})，启动智能摘要...`);
         
         // 🎯 添加Agent模式专用延迟，降低请求频率
         if (researchMode && researchMode !== 'standard') {
+            console.log(`[DeepResearchAgent] 研究模式 "${researchMode}" 添加500ms延迟`);
             await new Promise(resolve => setTimeout(resolve, 500));
         }
         
+        // 通知UI摘要开始
         await this.callbackManager.invokeEvent('agent:thinking', { 
             detail: { 
-                content: '正在调用摘要子代理压缩上下文...', 
+                content: `正在为 ${toolName} 生成智能摘要...`, 
                 type: 'summarize', 
                 agentType: 'deep_research' 
             } 
         });
 
-        const summarizerPrompt = `你是一个专业的信息分析师。基于"主要研究主题"，从以下原始文本中提取最关键和相关的信息，创建一个简洁的摘要。摘要必须保留关键数据、名称、结论和核心论点。控制在400字以内。
+        // 🎯 优化摘要提示词，要求保留更多技术细节
+        const summarizerPrompt = `你是一个专业的技术信息分析师。基于"主要研究主题"，从以下原始文本中提取最关键和相关的信息，创建一个详细的技术摘要。
+
+**严格的摘要要求**：
+1. 📊 **必须保留所有数字数据**：版本号、性能指标、分数、百分比、时间、尺寸等
+2. 🔧 **保留技术规格**：模型名称、参数数量、上下文长度、技术特性
+3. 💡 **保持核心结论**：研究发现、比较结果、优势劣势分析
+4. 🎯 **准确性优先**：专业术语、专有名词必须准确无误
+5. 📝 **长度控制**：控制在800-1200字之间，确保信息完整性
+
+**绝对禁止**：
+- 删除或模糊化具体的数字和技术参数
+- 丢失关键的技术比较和性能数据
+- 改变原始的技术术语和专有名词
 
 ---
 主要研究主题: "${mainTopic}"
 ---
-原始文本:
-${observation.substring(0, 10000)} 
+原始文本 (前15000字符):
+${observation.substring(0, 15000)}
+${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字符，此处显示前15000字符 ...]` : ''}
 ---
 
-你的简洁摘要:`;
+请生成详细的技术摘要（必须包含所有关键细节和数字）:`;
 
         try {
+            const startTime = Date.now();
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: summarizerPrompt }],
                 model: 'gemini-2.0-flash-exp-summarizer',
                 stream: false,
             });
 
+            const executionTime = Date.now() - startTime;
             const choice = response && response.choices && response.choices[0];
             const summary = choice && choice.message && choice.message.content ? 
-                choice.message.content : '摘要生成失败。';
+                choice.message.content.trim() : '❌ 摘要生成失败';
+
+            // 🎯 计算并记录压缩率
+            const compressionRatio = summary !== '❌ 摘要生成失败' ? 
+                (1 - (summary.length / originalLength)).toFixed(3) : 1;
             
-            console.log("[DeepResearchAgent] ✅ 摘要子代理完成，摘要长度:", summary.length);
+            console.log(`[DeepResearchAgent] ✅ 智能摘要完成`, {
+                tool: toolName,
+                originalLength,
+                summaryLength: summary.length,
+                compressionRatio: `${(compressionRatio * 100).toFixed(1)}%`,
+                executionTime: `${executionTime}ms`,
+                researchMode
+            });
             
-            // 🎯 核心修复：提供结构化的上下文信息，弥合Agent的期望落差
-            const originalLength = observation.length;
-            return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，因此已自动生成以下摘要]:\n\n${summary}`;
+            // 🎯 提供详细的结构化上下文信息
+            if (summary === '❌ 摘要生成失败') {
+                throw new Error('摘要模型返回空内容');
+            }
+            
+            return `## 📋 ${toolName} 内容摘要\n**原始长度**: ${originalLength} 字符 | **摘要长度**: ${summary.length} 字符 | **压缩率**: ${(compressionRatio * 100).toFixed(1)}%\n\n${summary}\n\n---\n*摘要基于 ${toolName} 工具返回的原始内容生成*`;
 
         } catch (error) {
-            console.error("[DeepResearchAgent] ❌ 摘要子代理调用失败:", error);
+            console.error(`[DeepResearchAgent] ❌ 摘要子代理调用失败:`, {
+                tool: toolName,
+                error: error.message,
+                originalLength
+            });
             
-            // 🎯 优雅降级策略：根据错误类型返回不同的降级内容
-            const originalLength = observation.length;
+            // 🎯 增强的优雅降级策略
+            let fallbackSolution;
+            
             if (error.message.includes('429') || error.message.includes('速率限制')) {
-                // 速率限制：返回智能截断版本
-                const truncated = this._intelligentTruncate(observation, threshold);
-                return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，且摘要生成因速率限制失败，已智能截断]:\n${truncated}`;
-            } else if (error.message.includes('超时')) {
-                // 超时错误
-                const truncated = observation.substring(0, threshold) + "\n\n[...内容过长，摘要超时，内容已截断...]";
-                return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，且摘要生成超时，已截断]:\n${truncated}`;
+                // 速率限制：使用智能截断
+                fallbackSolution = this._intelligentTruncate(observation, threshold * 1.2);
+                console.log(`[DeepResearchAgent] 🟡 速率限制，使用智能截断降级`);
+            } else if (error.message.includes('超时') || error.message.includes('timeout')) {
+                // 超时错误：直接截断
+                fallbackSolution = observation.substring(0, threshold) + `\n\n[... 内容过长，摘要超时，已截断前 ${threshold} 字符 ...]`;
+                console.log(`[DeepResearchAgent] 🟡 超时错误，使用直接截断降级`);
             } else {
-                // 其他错误
-                const truncated = observation.substring(0, threshold) + "\n\n[...内容过长，摘要失败，内容已截断...]";
-                return `[工具"${toolName}"执行成功，但返回内容过长(原始长度: ${originalLength}字符)，且摘要生成失败，已截断]:\n${truncated}`;
+                // 其他错误：使用扩展截断阈值
+                const fallbackThreshold = Math.min(threshold * 1.5, 20000);
+                fallbackSolution = originalLength > fallbackThreshold ?
+                    this._intelligentTruncate(observation, fallbackThreshold) :
+                    observation;
+                console.log(`[DeepResearchAgent] 🟡 其他错误，使用扩展截断降级，阈值: ${fallbackThreshold}`);
             }
+            
+            return `## ⚠️ ${toolName} 内容降级处理\n**原因**: ${error.message}\n**原始长度**: ${originalLength} 字符\n**降级方案**: ${fallbackSolution === observation ? '保持原始内容' : '智能截断'}\n\n${fallbackSolution}\n\n---\n*因摘要服务不可用，已使用降级方案显示内容*`;
         }
     }
 
@@ -919,7 +974,7 @@ ${observation.substring(0, 10000)}
             if (hasTemporalQuery) {
                 stepsWithTemporalQueries++;
                 totalTemporalQueries += step.initial_queries.filter(q => 
-                    q.includes('最新') || q.includes('202') || q.includes('版本')
+                    q.includes('最新') || q.includes('202') || query.includes('版本')
                 ).length;
             }
         });
