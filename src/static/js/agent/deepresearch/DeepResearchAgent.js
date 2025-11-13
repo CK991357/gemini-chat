@@ -834,6 +834,25 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
                 usedSources.add(source);
                 return;
             }
+
+            // 2. 🎯 新增：核心关键词匹配
+            if (source.title) {
+                const titleLower = source.title.toLowerCase();
+                const titleKeywords = titleLower.split(/[\s\-:_]+/).filter(k => k.length > 5 && !['http', 'https', 'www'].includes(k)); // 提取长关键词
+                const significantKeywords = titleKeywords.slice(0, 3); // 只取前3个最重要的
+                
+                let matchCount = 0;
+                for (const keyword of significantKeywords) {
+                    if (reportLower.includes(keyword)) {
+                        matchCount++;
+                    }
+                }
+                // 如果标题中超过一半的核心关键词在报告中出现，就认为被引用
+                if (significantKeywords.length > 0 && (matchCount / significantKeywords.length) >= 0.5) {
+                    usedSources.add(source);
+                    return;
+                }
+            }
             
             // 检测域名引用
             if (source.url) {
