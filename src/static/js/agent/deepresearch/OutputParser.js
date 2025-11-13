@@ -287,18 +287,42 @@ export class AgentOutputParser {
             parametersJson = this._fixCommonJsonErrors(parametersJson);
 
             try {
+                // 如果工具是 python_sandbox，使用更安全的解析策略
+                if (tool_name === 'python_sandbox') {
+                    // 🎯 特殊处理：保护 code 参数免受过度清理
+                    const codeRegex = /"code"\s*:\s*"((?:\\.|[^"\\])*)"/;
+                    const codeMatch = parametersJson.match(codeRegex);
+
+                    if (codeMatch && codeMatch[1]) {
+                        // 1. 提取原始代码内容 (已转义)
+                        let codeContent = codeMatch[1];
+                        
+                        // 2. 清理JSON的其余部分
+                        // 注意：用一个安全的占位符替换代码，以解析其他参数
+                        const otherParamsJson = parametersJson.replace(codeRegex, '"code": "PLACEHOLDER"');
+                        const otherParams = JSON.parse(this._fixCommonJsonErrors(otherParamsJson));
+
+                        // 3. 将未被破坏的代码重新组合回去
+                        const parameters = { ...otherParams, code: codeContent };
+                        
+                        console.log(`[OutputParser] ✅ Python Sandbox安全解析成功`);
+                        return { success: true, tool_name, parameters };
+                    }
+                }
+
+                // 对于其他工具，继续进行常规解析
                 const parameters = JSON.parse(parametersJson);
                 console.log(`[OutputParser] ✅ 智能解析成功: ${tool_name}`, {
                     parametersKeys: Object.keys(parameters),
                     parametersPreview: JSON.stringify(parameters).substring(0, 100)
                 });
                 
-                return { 
-                    success: true, 
-                    tool_name, 
-                    parameters 
+                return {
+                    success: true,
+                    tool_name,
+                    parameters
                 };
-                
+
             } catch (jsonError) {
                 console.warn('[OutputParser] ❌ 主解析失败，启动深度修复:', jsonError.message);
                 return this._executeDeepRepairStrategy(parametersJson, tool_name, text);

@@ -275,11 +275,15 @@ class DeepResearchToolAdapter {
                     ...agentParams
                 };
                 
+                // 🎯 核心修复：应用代码转义修复
+                let finalCode = '';
                 if (agentParams.parameters && agentParams.parameters.code) {
-                    return { ...baseConfig, ...agentParams.parameters };
+                    finalCode = this._fixPythonCodeEscaping(agentParams.parameters.code);
+                    return { ...baseConfig, ...agentParams.parameters, code: finalCode };
                 }
                 if (agentParams.code) {
-                    return { ...baseConfig, code: agentParams.code };
+                    finalCode = this._fixPythonCodeEscaping(agentParams.code);
+                    return { ...baseConfig, code: finalCode };
                 }
                 return baseConfig;
             }
@@ -701,6 +705,51 @@ class DeepResearchToolAdapter {
         
         // 最后回退到原始的宽松检查
         return this.isContentMeaningful(content);
+    }
+    
+    /**
+     * 🎯 核心修复：Python代码转义问题解决方案
+     */
+    static _fixPythonCodeEscaping(codeString) {
+        if (!codeString || typeof codeString !== 'string') return codeString;
+        
+        const originalLength = codeString.length;
+        console.log(`[CodeEscapingFix] 开始修复代码转义，原始长度: ${originalLength}`);
+        
+        // 创建修复映射表
+        const escapeMap = {
+            '\\\\n': '\n',    // 修复换行符
+            '\\\\t': '\t',    // 修复制表符
+            '\\\\r': '\r',    // 修复回车符
+            '\\\\"': '"',     // 修复双引号
+            "\\\\'": "'",     // 修复单引号
+            '\\\\\\\\': '\\'  // 修复反斜杠
+        };
+        
+        let fixedCode = codeString;
+        let changesMade = false;
+        
+        // 应用所有转义修复
+        Object.entries(escapeMap).forEach(([escaped, unescaped]) => {
+            const original = fixedCode;
+            // 使用 new RegExp(escaped, 'g') 来确保全局替换
+            fixedCode = fixedCode.replace(new RegExp(escaped, 'g'), unescaped);
+            if (original !== fixedCode) {
+                changesMade = true;
+                console.log(`[CodeEscapingFix] 修复了 ${escaped} -> ${unescaped}`);
+            }
+        });
+        
+        if (changesMade) {
+            console.log(`[CodeEscapingFix] 修复完成: ${originalLength} -> ${fixedCode.length} 字符`);
+            // 记录修改前后的代码片段用于调试
+            console.log(`[CodeEscapingFix] 修改前片段: ${codeString.substring(0, 100)}...`);
+            console.log(`[CodeEscapingFix] 修改后片段: ${fixedCode.substring(0, 100)}...`);
+        } else {
+            console.log(`[CodeEscapingFix] 无需修复，代码保持原样`);
+        }
+        
+        return fixedCode;
     }
     
     /**
