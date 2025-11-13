@@ -474,23 +474,74 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'python_sandbox': {
-                    // 🎯 优化：优先处理和突出显示错误
-                    if (dataFromProxy && dataFromProxy.stderr) {
-                        console.error(`[DeepResearchAdapter] Python Sandbox 返回错误:`, dataFromProxy.stderr);
-                        output = `🐍 **代码执行出错**:\n\n\`\`\`\n${dataFromProxy.stderr}\n\`\`\`\n\n**请检查你的代码逻辑和语法，然后重试。**`;
-                        success = false; // 明确标记为失败
-                    } else if (dataFromProxy && dataFromProxy.stdout) {
-                        output = this.formatCodeOutputForMode(dataFromProxy, researchMode);
-                        success = true;
-                    } else if (dataFromProxy && dataFromProxy.result) {
-                        output = `📋 **执行结果**: ${dataFromProxy.result}`;
-                        success = true;
-                    } else if (dataFromProxy && typeof dataFromProxy === 'string') {
-                        output = dataFromProxy;
-                        success = true;
-                    } else if (success) {
-                        output = `[工具信息]: Python代码执行成功，但没有输出结果。`;
+                    // 🎯 核心修复：智能解析后端嵌套错误信息
+                    console.log(`[DeepResearchAdapter] 开始处理python_sandbox响应:`, dataFromProxy);
+                    
+                    let parsedSuccess = true;
+                    let parsedOutput = '';
+                    let errorDetails = null;
+
+                    try {
+                        // 1. 检查是否存在嵌套的JSON错误信息
+                        if (dataFromProxy && typeof dataFromProxy.stdout === 'string' && dataFromProxy.stdout.trim()) {
+                            console.log(`[DeepResearchAdapter] 检测到stdout内容，尝试解析嵌套JSON`);
+                            
+                            // 清理可能的转义字符
+                            const cleanStdout = dataFromProxy.stdout.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                            
+                            try {
+                                // 尝试解析第一层JSON
+                                const innerResponse = JSON.parse(cleanStdout);
+                                console.log(`[DeepResearchAdapter] 第一层JSON解析成功:`, innerResponse);
+                                
+                                // 2. 检查内部是否包含stderr错误信息
+                                if (innerResponse && innerResponse.stderr && innerResponse.stderr.trim()) {
+                                    console.error(`[DeepResearchAdapter] 检测到Python执行错误:`, innerResponse.stderr);
+                                    
+                                    // 3. 深度分析错误类型和位置
+                                    errorDetails = this._analyzePythonErrorDeeply(innerResponse.stderr);
+                                    
+                                    // 4. 构建极其友好的调试报告
+                                    parsedOutput = this._buildPythonErrorReport(errorDetails, agentParams?.code);
+                                    parsedSuccess = false;
+                                    
+                                } else if (innerResponse && innerResponse.stdout) {
+                                    // 正常输出情况
+                                    parsedOutput = this.formatCodeOutputForMode({ stdout: innerResponse.stdout }, researchMode);
+                                    parsedSuccess = true;
+                                } else {
+                                    // 其他未知情况，回退到原始处理
+                                    parsedOutput = this.formatCodeOutputForMode(dataFromProxy, researchMode);
+                                    parsedSuccess = true;
+                                }
+                                
+                            } catch (jsonError) {
+                                // 如果JSON解析失败，说明是普通输出
+                                console.log(`[DeepResearchAdapter] stdout不是JSON，按普通文本处理`);
+                                parsedOutput = this.formatCodeOutputForMode(dataFromProxy, researchMode);
+                                parsedSuccess = true;
+                            }
+                        } else {
+                            // 没有stdout的情况
+                            parsedOutput = `[工具信息]: Python代码执行完成，无输出内容。`;
+                            parsedSuccess = true;
+                        }
+                    } catch (error) {
+                        console.error(`[DeepResearchAdapter] python_sandbox响应处理异常:`, error);
+                        parsedOutput = `❌ **响应处理错误**: ${error.message}\n\n原始数据: ${JSON.stringify(dataFromProxy).substring(0, 500)}`;
+                        parsedSuccess = false;
                     }
+
+                    // 应用解析结果
+                    success = parsedSuccess;
+                    output = parsedOutput;
+                    
+                    console.log(`[DeepResearchAdapter] python_sandbox处理完成:`, { 
+                        success, 
+                        outputLength: output?.length,
+                        hasError: !!errorDetails 
+                    });
+                    
                     break;
                 }
                     
@@ -611,7 +662,7 @@ class DeepResearchToolAdapter {
     
     /**
      * 🎯 新增：针对智谱文档的宽松内容有效性检查
-     *    - 解决 Agent 模式下抓取文档页面内容被误判为“无意义”而导致的重试循环。
+     *    - 解决 Agent 模式下抓取文档页面内容被误判为"无意义"而导致的重试循环。
      */
     static isContentMeaningfulZhipu(content) {
         if (!content || typeof content !== 'string') return false;
@@ -647,6 +698,148 @@ class DeepResearchToolAdapter {
         
         // 最后回退到原始的宽松检查
         return this.isContentMeaningful(content);
+    }
+    
+    /**
+     * 🎯 深度分析Python错误信息
+     */
+    static _analyzePythonErrorDeeply(stderr) {
+        const errorText = stderr.trim();
+        const analysis = {
+            rawError: errorText,
+            type: '未知错误',
+            location: '未知位置',
+            lineNumber: null,
+            errorMessage: '',
+            suggestions: []
+        };
+
+        // 1. 提取错误类型
+        const errorTypeMatch = errorText.match(/(\w+Error):/);
+        if (errorTypeMatch) {
+            analysis.type = errorTypeMatch[1];
+        }
+
+        // 2. 提取行号
+        const lineMatch = errorText.match(/line (\d+)/);
+        if (lineMatch) {
+            analysis.lineNumber = parseInt(lineMatch[1]);
+            analysis.location = `第 ${analysis.lineNumber} 行`;
+        }
+
+        // 3. 提取具体错误信息（通常是最后一行）
+        const lines = errorText.split('\n').filter(line => line.trim());
+        if (lines.length > 0) {
+            analysis.errorMessage = lines[lines.length - 1];
+        }
+
+        // 4. 根据错误类型提供具体建议
+        analysis.suggestions = this._getPythonErrorSuggestions(analysis.type, analysis.lineNumber);
+
+        console.log(`[ErrorAnalyzer] 错误分析完成:`, analysis);
+        return analysis;
+    }
+
+    /**
+     * 🎯 根据错误类型提供修复建议
+     */
+    static _getPythonErrorSuggestions(errorType, lineNumber) {
+        const suggestionsMap = {
+            'IndentationError': [
+                `检查第 ${lineNumber} 行及其附近代码的缩进`,
+                '确保使用一致的缩进（推荐4个空格）',
+                '检查 if/for/while/def/class 语句后的代码块是否正确缩进',
+                '不要混用空格和Tab键进行缩进'
+            ],
+            'SyntaxError': [
+                `检查第 ${lineNumber} 行附近的语法`,
+                '确保括号、引号、方括号正确配对',
+                '检查冒号的使用（条件语句、循环、函数定义后需要冒号）',
+                '检查是否有拼写错误或缺少的标点符号'
+            ],
+            'NameError': [
+                `检查第 ${lineNumber} 行使用的变量名或函数名`,
+                '确认变量在使用前已经正确定义',
+                '检查函数名是否正确定义或正确导入',
+                '检查变量名拼写是否正确（注意大小写）'
+            ],
+            'TypeError': [
+                `检查第 ${lineNumber} 行的数据类型和操作`,
+                '确认函数参数的类型是否正确',
+                '检查操作符两边的数据类型是否兼容',
+                '确认方法调用时参数数量是否正确'
+            ],
+            'AttributeError': [
+                `检查第 ${lineNumber} 行的对象属性访问`,
+                '确认对象是否具有您尝试访问的属性或方法',
+                '检查属性名拼写是否正确',
+                '确认对象类型是否符合预期'
+            ],
+            'IndexError': [
+                `检查第 ${lineNumber} 行的列表或字符串索引`,
+                '确认索引值是否在有效范围内',
+                '检查列表/字符串是否为空',
+                '考虑使用 len() 函数检查长度后再访问'
+            ],
+            'KeyError': [
+                `检查第 ${lineNumber} 行的字典键访问`,
+                '确认字典中是否存在您尝试访问的键',
+                '考虑使用 dict.get() 方法提供默认值',
+                '检查键名拼写是否正确'
+            ]
+        };
+
+        return suggestionsMap[errorType] || [
+            '仔细阅读错误信息，理解错误原因',
+            '检查相关代码行的语法和逻辑',
+            '考虑将复杂任务分解为更小的步骤',
+            '如果需要，可以尝试使用更简单的实现方式'
+        ];
+    }
+
+    /**
+     * 🎯 构建对LLM极其友好的Python错误报告
+     */
+    static _buildPythonErrorReport(errorDetails, originalCode = '') {
+        const { type, location, errorMessage, suggestions, rawError } = errorDetails;
+        
+        let codeContext = '';
+        if (originalCode && errorDetails.lineNumber) {
+            const lines = originalCode.split('\n');
+            const startLine = Math.max(0, errorDetails.lineNumber - 3);
+            const endLine = Math.min(lines.length, errorDetails.lineNumber + 2);
+            
+            codeContext = '\n**相关代码上下文**:\n```python\n';
+            for (let i = startLine; i < endLine; i++) {
+                const marker = (i + 1 === errorDetails.lineNumber) ? '>>> ' : '    ';
+                codeContext += `${marker}${i + 1}: ${lines[i]}\n`;
+            }
+            codeContext += '```\n';
+        }
+
+        return `🐍 **Python代码执行失败** 🔴
+
+**错误类型**: \`${type}\`
+**错误位置**: ${location}
+**错误信息**: \`${errorMessage}\`
+
+${codeContext}
+**完整错误日志**:
+\`\`\`
+${rawError}
+\`\`\`
+
+**🛠️ 修复指南**:
+${suggestions.map((suggestion, index) => `${index + 1}. ${suggestion}`).join('\n')}
+
+**💡 关键行动**:
+• **仔细阅读上述错误信息**，特别是错误类型和具体描述
+• **定位到问题代码行**，理解错误原因
+• **只进行最小必要的修改**来修复这个具体错误
+• **在思考中明确说明**你识别到了什么错误以及如何修复
+• **绝对禁止**在没有理解错误的情况下重复提交相似代码
+
+请基于以上分析进行精确修复。`;
     }
     
     /**
@@ -1228,4 +1421,3 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
-

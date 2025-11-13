@@ -469,6 +469,43 @@ export class AgentLogic {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
+        // 🎯 核心修复：添加Python代码调试专业指南
+        const pythonDebuggingGuide = `
+## 🐍 Python代码调试专业指南
+
+### 当代码执行失败时，你必须遵循以下专业调试流程：
+
+**📋 诊断阶段**：
+1.  **仔细阅读错误报告**：错误报告已经过专业解析，包含错误类型、位置和具体描述
+2.  **理解错误性质**：区分语法错误（IndentationError, SyntaxError）和运行时错误（NameError, TypeError）
+3.  **定位问题代码**：根据报告中的行号定位到具体的问题代码行
+
+**🔧 修复阶段**：
+4.  **最小化修改**：只修改导致错误的具体代码行，保持其他代码不变
+5.  **针对性修复**：
+    - **缩进错误** → 修正缩进，确保代码块正确对齐
+    - **语法错误** → 检查括号、引号、冒号等语法元素
+    - **名称错误** → 检查变量/函数名拼写和定义
+    - **类型错误** → 检查数据类型和操作兼容性
+
+**💡 思考要求**：
+在"思考:"部分必须明确包含：
+- "我识别到错误类型：[错误类型]，位于[位置]"
+- "错误原因是：[具体原因分析]"
+- "我将通过[具体修复方法]来修正这个问题"
+- "修改后的代码将：[预期效果]"
+
+**🚫 绝对禁止**：
+- 在没有理解错误原因的情况下重试相同代码
+- 进行与错误无关的大范围代码修改
+- 忽略错误报告中的具体建议
+
+**✅ 成功标准**：
+- 代码能够无错误执行
+- 输出符合任务要求的结果
+- 保持了代码的可读性和逻辑清晰性
+`;
+        
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
         
@@ -596,6 +633,8 @@ ${formattedHistory}
 - 需要获取完整内容而非摘要时
 - 信息片段不足以回答深度问题时
 - **必须参数**：{url: "具体的URL链接"}
+
+${pythonDebuggingGuide}
 
 ${config.specialInstructions}
 
