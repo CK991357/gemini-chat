@@ -133,9 +133,35 @@ export class EnhancedSkillManager {
    */
   async findRelevantSkills(userQuery, context = {}) {
     await this.waitUntilReady();
+
+    // 🎯 URL检测与预处理
+    const urlRegex = /https?:\/\/[^\s]+/g;
+    const urls = userQuery.match(urlRegex);
+    let processedQuery = userQuery;
+    let urlBonus = 0;
     
-    // 🎯 直接重用基础匹配，不进行增强过滤
-    return await this.baseSkillManager.findRelevantSkills(userQuery, context);
+    if (urls && urls.length > 0) {
+        console.log(`[EnhancedSkillManager] 检测到URL: ${urls[0]}`);
+        // 为包含URL的查询添加crawl4ai权重加成
+        urlBonus = 0.5;
+        // 保留URL作为查询上下文，但移除特殊字符影响
+        processedQuery = userQuery.replace(urlRegex, '').trim() + ' 网页内容分析';
+    }
+    
+    // 原有技能匹配逻辑...
+    const basicMatches = await this.baseSkillManager.findRelevantSkills(processedQuery, context);
+    
+    // 🎯 URL权重应用
+    if (urlBonus > 0) {
+        basicMatches.forEach(match => {
+            if (match.toolName === 'crawl4ai') {
+                match.score += urlBonus;
+                console.log(`[EnhancedSkillManager] 为crawl4ai添加URL权重加成: +${urlBonus}`);
+            }
+        });
+    }
+    
+    return basicMatches;
   }
 
   /**
