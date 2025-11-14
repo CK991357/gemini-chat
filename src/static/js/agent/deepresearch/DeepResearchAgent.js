@@ -976,14 +976,12 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             const title = source.title?.trim() || '未命名来源';
             const url = source.url || '#';
             
-            // 🎨 高级格式设计 - 带边框的卡片式布局
+            // 🎨 高级格式设计 - 带边框的卡片式布局 (用户要求保留样式)
             sourcesList += `<div style="border-left: 3px solid #4CAF50; padding-left: 12px; margin: 8px 0;">\n`;
             
-            // 编号和标题（突出显示）
+            //  用户要求的格式：标题一行，链接一行，且链接可点击
             sourcesList += `**${index + 1}. ${title}**\n`;
-            
-            // URL链接
-            sourcesList += `   🔗 [访问链接](${url})\n`;
+            sourcesList += `🔗 [${url}](${url})\n`;
             
             sourcesList += `</div>\n\n`;
         });
