@@ -63,13 +63,46 @@ export class AgentOutputParser {
 
         console.log('[OutputParser] 原始文本长度:', text.length);
 
-        // 🎯 增强：智能检测完整报告并直接返回
-        if (this._isLikelyFinalReport(text)) {
-            console.log('[OutputParser] 🎯 检测到完整报告结构，直接作为最终答案');
+        // 🎯 核心修复：增强最终报告的智能提取 - 防止返回被污染的报告
+        const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
+        const isLikelyReport = this._isLikelyFinalReport(text);
+
+        if (finalAnswerMatch && finalAnswerMatch[1] && finalAnswerMatch[1].trim().length > 50) {
+            // 优先使用 '最终答案:' 标签提取
+            const answer = finalAnswerMatch[1].trim();
+            console.log('[OutputParser] ✅ 通过 "最终答案:" 标签检测到最终答案，长度:', answer.length);
+            this.metrics.recordAttempt('final_answer', true, 'final_answer_tag', 0);
             return {
                 type: 'final_answer',
-                answer: text,
-                thought: '检测到完整的报告结构，直接作为最终答案输出',
+                answer: answer,
+                // 尝试从标签前提取思考
+                thought: (text.split(/最终答案\s*:/i)[0] || '').replace(/思考\s*:/i, '').trim(),
+                thought_length: 0
+            };
+        } else if (isLikelyReport) {
+            // 如果没有 '最终答案:' 标签，但结构像报告，则进行智能提取
+            console.log('[OutputParser] 🎯 检测到完整报告结构，尝试智能提取干净的报告内容...');
+            let cleanReport = text;
+            
+            // 策略1：从第一个Markdown一级标题开始提取
+            const firstHeadingMatch = text.match(/^#\s+.+/m);
+            if (firstHeadingMatch) {
+                cleanReport = text.substring(firstHeadingMatch.index);
+                console.log('[OutputParser] ✅ 从第一个一级标题开始提取报告内容');
+            } else {
+                // 策略2：如果找不到一级标题，尝试移除思考部分
+                const thoughtEndIndex = text.indexOf('行动:');
+                if (thoughtEndIndex !== -1) {
+                    cleanReport = text.substring(thoughtEndIndex).replace(/行动\s*:.*?(?=#|\n#)/s, '').trim();
+                    console.log('[OutputParser] 🔧 通过移除思考部分清理报告内容');
+                }
+            }
+            
+            this.metrics.recordAttempt('final_answer', true, 'structure_detection', 1);
+            return {
+                type: 'final_answer',
+                answer: cleanReport,
+                thought: '检测到完整的报告结构，并智能提取了报告内容',
                 thought_length: 0
             };
         }
@@ -86,9 +119,10 @@ export class AgentOutputParser {
             console.log('[OutputParser] 提取思考内容:', thought.substring(0, 200) + (thought.length > 200 ? '...' : ''));
 
             // 🎯 2. 最终答案检测 - 精确匹配AgentLogic格式
-            const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
-            if (finalAnswerMatch && finalAnswerMatch[1]) {
-                const answer = finalAnswerMatch[1].trim();
+            // 注意：这个检查现在在函数开头已经执行，这里作为冗余检查
+            const finalAnswerMatch2 = text.match(/最终答案\s*:\s*([\s\S]+)/i);
+            if (finalAnswerMatch2 && finalAnswerMatch2[1]) {
+                const answer = finalAnswerMatch2[1].trim();
                 if (answer.length > 50) {
                     console.log('[OutputParser] ✅ 检测到最终答案，长度:', answer.length);
                     this.metrics.recordAttempt('final_answer', true, 'final_answer_match', 0);

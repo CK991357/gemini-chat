@@ -609,8 +609,19 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
         
-        // 🎯 核心：使用模型自主评估的结果
+        // 🎯 核心修复：聚焦当前任务 - 防止Agent跳过步骤产生幻觉
         const currentStepPlan = researchPlan.research_plan.find(step => step.step === currentStep);
+        const currentTaskSection = `
+# 🎯 当前任务 (你的唯一焦点)
+**你现在正在执行研究计划的第 ${currentStep} 步。**
+**你当前唯一的目标是解决以下子问题：** "${currentStepPlan?.sub_question}"
+
+**🛑 重要指令 🛑**
+- 你所有的思考都必须围绕如何完成上述任务，并生成**唯一一个**工具调用。
+- **绝对禁止**执行计划中的未来步骤。
+- **绝对禁止**生成最终报告或任何形式的摘要。你的响应**必须**是一个工具调用。
+`;
+        
         const stepSensitivity = currentStepPlan?.temporal_sensitivity || '中';
         const modelOverallSensitivity = researchPlan.temporal_awareness?.overall_sensitivity || '中';
         
@@ -712,11 +723,19 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
 行动输入: {"code": "具体实现代码..."}
 `;
 
+        // 🎯 核心修复：最终指令强化纪律
+        const finalInstruction = `
+# ⚡ 最终指令
+请严格依据**当前任务**，决策出下一步的**唯一行动**。你的响应格式**必须**严格遵循"思考、行动、行动输入"的格式。除非所有计划步骤均已完成，否则不要生成最终报告。
+`;
+
         const prompt = `
 # 角色：${config.role}
 ${config.description}
 
 ${temporalGuidance}
+
+${currentTaskSection}  // 🎯 核心修复：聚焦当前任务，防止跳过步骤
 
 ${planText}
 
@@ -823,6 +842,8 @@ ${knowledgeRetrievalOutputFormat}
 # 我的研究报告
 ## 介绍
 内容...
+
+${finalInstruction}  // 🎯 核心修复：最终指令强化纪律
 
 现在开始决策：`;
 
@@ -1011,49 +1032,42 @@ ${plan.research_plan.map(item =>
         );
     }
 
-    // 🎯 格式化历史记录
-_formatHistory(intermediateSteps) {
-    if (!intermediateSteps || intermediateSteps.length === 0) {
-        return "这是研究的第一步，还没有历史记录。";
-    }
+    // 🎯 格式化历史记录 - 核心修复：简化旧历史记录以降低干扰
+    _formatHistory(intermediateSteps) {
+        if (!intermediateSteps || intermediateSteps.length === 0) {
+            return "这是研究的第一步，还没有历史记录。";
+        }
 
-    console.log(`[AgentLogic] 构建历史记录，步骤数: ${intermediateSteps.length}`);
-    
-    const formattedSteps = intermediateSteps.map((step, index) => {
-        const toolName = step.action?.tool_name || 'unknown_action';
-        const parameters = step.action?.parameters || {};
-        
-        const actionJson = JSON.stringify({
-            tool_name: toolName,
-            parameters: parameters
-        }, null, 2);
-        
-        let thought = step.action?.thought;
-        if (!thought) {
-            if (toolName === 'self_correction') {
-                thought = '上一步格式错误，需要重新规划。';
-            } else if (toolName === 'tavily_search') {
-                thought = `我需要搜索关于"${parameters.query || '相关主题'}"的更多信息。`;
-            } else if (toolName === 'crawl4ai') {
-                thought = `我需要抓取网页"${parameters.url || '相关网页'}"来获取详细信息。`;
+        console.log(`[AgentLogic] 构建历史记录，步骤数: ${intermediateSteps.length}`);
+        const totalSteps = intermediateSteps.length;
+
+        const formattedSteps = intermediateSteps.map((step, index) => {
+            const toolName = step.action?.tool_name || 'unknown_action';
+            const parameters = step.action?.parameters || {};
+
+            const actionJson = JSON.stringify({
+                tool_name: toolName,
+                parameters: parameters
+            }, null, 2);
+
+            let thought = step.action?.thought || `执行 ${toolName}。`;
+
+            // 🎯 核心修复：简化旧历史记录以降低干扰
+            let observationText;
+            const isRecent = (totalSteps - 1 - index) < 2; // 是否是最近的两个步骤之一?
+
+            if (!isRecent) {
+                // 对于旧步骤，只显示关键发现
+                observationText = `[发现摘要]: ${step.key_finding || '未总结关键发现。'}`;
+            } else if (step.action?.tool_name === 'python_sandbox' && step.success === false) {
+                // 对于最近的、失败的 Python 步骤，显示完整错误
+                observationText = typeof step.observation === 'string' ? step.observation : 'Python 执行失败。';
             } else {
-                thought = `我需要使用${toolName}工具来获取相关信息。`;
+                // 对于其他最近的步骤，显示截断的观察结果
+                observationText = `${(step.observation || '').substring(0, 300)}... (内容已折叠)`;
             }
-        }
-        
-        // --- START FIX: 强化错误反馈循环，确保 Python 错误报告不被截断 ---
-        let observationText = step.observation;
-        // 检查是否为 python_sandbox 失败调用
-        if (step.action?.tool_name === 'python_sandbox' && step.success === false) {
-             // 确保 observationText 至少是字符串
-             observationText = typeof step.observation === 'string' ? step.observation : 'Python执行失败，无详细错误报告';
-        } else {
-             // 默认截断逻辑
-             observationText = `${step.observation.substring(0, 300)}... (内容已折叠)`;
-        }
-        // --- END FIX ---
-        
-        return `## 步骤 ${index + 1}
+
+            return `## 步骤 ${index + 1}
 思考: ${thought}
 行动:
 \`\`\`json
@@ -1062,13 +1076,13 @@ ${actionJson}
 观察: ${observationText}
 💡
 **关键发现**: ${step.key_finding || '无'}`;
-    });
-    
-    const history = formattedSteps.join('\n\n');
-    console.log(`[AgentLogic] 历史记录构建完成，总长度: ${history.length}`);
-    
-    return history;
-}
+        });
+
+        const history = formattedSteps.join('\n\n');
+        console.log(`[AgentLogic] 历史记录构建完成，最终长度: ${history.length}`);
+
+        return history;
+    }
 
     // 🎯 格式化工具描述
     _formatTools(availableTools) {
