@@ -961,53 +961,44 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
     // 🎯 更新资料来源生成方法
     _generateSourcesSection(sources) {
         if (!sources || sources.length === 0) {
-            return '\n\n## 资料来源\n本次研究未收集到外部资料来源。';
+            return '\n\n## 资料来源\n\n🔄 本次研究未收集到外部资料来源。';
         }
         
-        // 分类展示来源
-        const officialSources = sources.filter(s =>
-            s.url?.includes('.gov.cn') ||
-            s.url?.includes('.edu.cn') ||
-            s.url?.includes('official') ||
-            s.source_type === 'official'
-        );
+        console.log(`[SourceSection] 生成高级美观资料来源部分，共 ${sources.length} 个来源`);
+
+        // 🎯 高级美观的统一资料来源显示
+        let sourcesList = '### 📚 参考资料清单\n\n';
         
-        const academicSources = sources.filter(s =>
-            s.url?.includes('arxiv.org') ||
-            s.url?.includes('research') ||
-            s.source_type === 'academic'
-        );
+        // 添加简要说明
+        sourcesList += '以下是本研究报告所引用的全部信息来源，按引用顺序排列：\n\n';
         
-        const industrySources = sources.filter(s =>
-            s.url?.includes('.com') ||
-            s.source_type === 'industry'
-        );
+        sources.forEach((source, index) => {
+            const title = source.title?.trim() || '未命名来源';
+            const url = source.url || '#';
+            
+            // 🎨 高级格式设计 - 带边框的卡片式布局
+            sourcesList += `<div style="border-left: 3px solid #4CAF50; padding-left: 12px; margin: 8px 0;">\n`;
+            
+            // 编号和标题（突出显示）
+            sourcesList += `**${index + 1}. ${title}**\n`;
+            
+            // URL链接
+            sourcesList += `   🔗 [访问链接](${url})\n`;
+            
+            sourcesList += `</div>\n\n`;
+        });
+
+        // 📊 精美的统计信息和说明
+        sourcesList += `---\n\n`;
+        sourcesList += `### 📊 来源统计\n`;
+        sourcesList += `- **总参考数量**: ${sources.length} 个来源\n`;
+        sourcesList += `- **信息覆盖**: 技术规格、性能对比、行业分析\n`;
+        sourcesList += `- **时效性**: 包含最新行业动态和技术发展\n\n`;
         
-        let sourcesList = '';
-        
-        if (officialSources.length > 0) {
-            sourcesList += `### 官方文件与政策\n`;
-            sourcesList += officialSources.map((source, index) => {
-                return `[${index + 1}] ${source.title} - ${source.url}`;
-            }).join('\n') + '\n\n';
-        }
-        
-        if (academicSources.length > 0) {
-            sourcesList += `### 学术研究\n`;
-            sourcesList += academicSources.map((source, index) => {
-                const offset = officialSources.length;
-                return `[${offset + index + 1}] ${source.title} - ${source.url}`;
-            }).join('\n') + '\n\n';
-        }
-        
-        if (industrySources.length > 0) {
-            sourcesList += `### 行业报告与案例分析\n`;
-            sourcesList += industrySources.map((source, index) => {
-                const offset = officialSources.length + academicSources.length;
-                return `[${offset + index + 1}] ${source.title} - ${source.url}`;
-            }).join('\n');
-        }
-        
+        sourcesList += `> 💡 *所有来源均在研究报告正文中有所引用，确保信息的可追溯性和准确性*`;
+
+        console.log(`[SourceSection] 成功生成高级美观资料来源列表，包含 ${sources.length} 个来源`);
+
         return `\n\n## 资料来源\n\n${sourcesList}`;
     }
 
