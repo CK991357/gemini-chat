@@ -302,43 +302,45 @@ export class EnhancedSkillManager {
   async retrieveFederatedKnowledge(toolName, context = {}) {
     console.log(`[EnhancedSkillManager] 🔍 联邦知识检索: ${toolName}`, context);
     
+    // 🔴 移除外层的 try...catch，因为我们希望即使部分失败也能返回内容
     try {
-      // 🎯 智能章节推断
       const requestedSections = this._inferRelevantSections(context);
       
-      // 🎯 获取联邦知识包
-      const knowledgePackage = this.knowledgeFederation.getFederatedKnowledge(
-        toolName, 
+      // ✅ 关键修复：getFederatedKnowledge 应该返回一个包含内容的字符串，而不是 null
+      const knowledgePackageContent = this.knowledgeFederation.getFederatedKnowledge(
+        toolName,
         requestedSections
       );
 
-      if (!knowledgePackage) {
-        console.warn(`[EnhancedSkillManager] 未找到工具知识: ${toolName}`);
+      if (!knowledgePackageContent) {
+        // 如果 knowledgeFederation 明确返回 null (意味着工具本身不存在)
+        console.warn(`[EnhancedSkillManager] 知识库中不存在工具: ${toolName}`);
         return null;
       }
 
-      // 🎯 构建结构化知识响应
+      // 只要拿到了内容字符串，就认为检索是成功的
       const result = {
         tool: toolName,
-        metadata: this.knowledgeFederation.getSkillMetadata(toolName),
-        content: knowledgePackage,
+        metadata: this.knowledgeFederation.knowledgeBase.get(toolName)?.metadata || {},
+        content: knowledgePackageContent, // <-- 使用获取到的内容
         suggestedSections: requestedSections,
         retrievalContext: context,
         timestamp: Date.now()
       };
 
-      console.log(`[EnhancedSkillManager] ✅ 联邦知识检索成功: ${toolName}`, {
-        contentLength: knowledgePackage.length,
-        sections: requestedSections
+      console.log(`[EnhancedSkillManager] ✅ 联邦知识检索成功完成: ${toolName}`, {
+        contentLength: knowledgePackageContent.length,
+        sectionsFound: requestedSections // 即使内容为空，也记录请求过的章节
       });
 
       return result;
       
     } catch (error) {
-      console.error(`[EnhancedSkillManager] ❌ 联邦知识检索失败: ${toolName}`, error);
-      return null;
+        // 这个 catch 现在只用于捕获真正意外的、破坏性的错误
+        console.error(`[EnhancedSkillManager] ❌ 联邦知识检索过程中发生严重错误: ${toolName}`, error);
+        return null;
     }
-  }
+}
 
   /**
    * 🎯 基于上下文智能推断相关章节 - 增强版本

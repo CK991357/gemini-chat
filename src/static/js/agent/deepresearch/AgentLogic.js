@@ -938,15 +938,22 @@ ${strategy.reminder}
         const suggestedTools = [];
         
         const currentStepPlan = researchPlan.research_plan.find(step => step.step === currentStep);
-        const hasPythonTasks = currentStepPlan?.sub_question?.includes('python_sandbox') || 
+        const hasPythonTasks = currentStepPlan?.sub_question?.includes('python_sandbox') ||
                               currentStepPlan?.expected_tools?.includes('python_sandbox') ||
                               currentStepPlan?.sub_question?.includes('数据') ||
                               currentStepPlan?.sub_question?.includes('表格') ||
                               currentStepPlan?.sub_question?.includes('图表');
         
-        // 条件1：首次使用复杂工具 (python_sandbox)
+        // ✅ 关键修复：检查是否已经学习过
+        const hasAlreadyLearnedPython = intermediateSteps.some(step =>
+            step.action?.tool_name === 'retrieve_knowledge' &&
+            step.action?.parameters?.tool_name === 'python_sandbox' &&
+            step.success !== false // 检查是否成功
+        );
+
+        // 条件1：首次使用复杂工具 (python_sandbox) 且尚未学习过
         const usedTools = intermediateSteps.map(step => step.action?.tool_name).filter(Boolean);
-        if (!usedTools.includes('python_sandbox') && hasPythonTasks) {
+        if (!usedTools.includes('python_sandbox') && hasPythonTasks && !hasAlreadyLearnedPython) {
             conditions.push('首次使用 `python_sandbox` 进行数据处理或图表生成');
             suggestedTools.push({
                 name: 'python_sandbox',
@@ -954,26 +961,26 @@ ${strategy.reminder}
             });
         }
         
-        // 条件2：复杂数据处理任务
+        // 条件2：复杂数据处理任务 (保留原有逻辑，但如果条件1触发，这里不会重复添加)
         const complexDataTasks = ['提取', '表格', '处理', '分析', '清洗', '图表', '可视化'];
-        const hasComplexDataTask = complexDataTasks.some(task => 
+        const hasComplexDataTask = complexDataTasks.some(task =>
             currentStepPlan?.sub_question?.includes(task)
         );
         
-        if (hasComplexDataTask && !suggestedTools.some(t => t.name === 'python_sandbox')) {
+        if (hasComplexDataTask && !suggestedTools.some(t => t.name === 'python_sandbox') && hasPythonTasks && !hasAlreadyLearnedPython) {
             conditions.push('执行复杂的数据提取、处理或可视化任务');
             suggestedTools.push({
-                name: 'python_sandbox', 
+                name: 'python_sandbox',
                 reason: '获取数据提取和表格/图表生成的专业工作流'
             });
         }
         
-        // 条件3：之前步骤有网页抓取且当前需要处理数据
-        const hasCrawledData = intermediateSteps.some(step => 
+        // 条件3：之前步骤有网页抓取且当前需要处理数据 且尚未学习过
+        const hasCrawledData = intermediateSteps.some(step =>
             step.action?.tool_name === 'crawl4ai' && step.observation?.includes('成功')
         );
         
-        if (hasCrawledData && hasPythonTasks) {
+        if (hasCrawledData && hasPythonTasks && !hasAlreadyLearnedPython) {
             conditions.push('需要处理之前抓取的网页数据');
             suggestedTools.push({
                 name: 'python_sandbox',
