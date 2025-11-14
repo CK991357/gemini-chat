@@ -564,6 +564,29 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
 - 保持了代码的可读性和逻辑清晰性
 `;
         
+        const pythonStateInjectionGuide = `
+## 🐍 Python Sandbox 数据注入规则 (强制遵循)
+
+**当你的任务是处理上一步的数据时（例如处理 crawl4ai 的抓取结果），你必须遵循以下规则：**
+
+1.  **定义占位符变量**: 在你的 Python 代码中，定义一个名为 \`input_data\` 的变量。
+2.  **分配占位符字符串**: 将一个特殊的、不可更改的字符串 \`"{{LAST_OBSERVATION}}"\` 赋给这个变量。
+3.  **编写处理逻辑**: 像往常一样编写你的数据处理代码，直接使用 \`input_data\` 变量，就好像它已经包含了上一步的完整数据一样。
+
+**系统会自动在后台将上一步的观察结果安全地注入到你的代码中。**
+
+**✅ 正确示例**:
+思考: 我需要处理上一步 crawl4ai 获取的网页内容，提取其中的表格。
+行动: python_sandbox
+行动输入: {
+  "code": "import re\\n\\n# 系统将会把上一步的观察结果注入到这里\\ninput_data = \\"{{LAST_OBSERVATION}}\\"\\n\\n# 现在，我可以直接使用 input_data 变量进行处理\\nprint(f\\"接收到的数据长度: {len(input_data)}\\")"
+}
+
+**🚫 绝对禁止**:
+- 在代码中硬编码或粘贴上一步的观察结果。
+- 假设数据会自动出现在某个未定义的变量中（如 \`web_content\`)。
+`;
+
         const errorCorrectionProtocol = `
 ## 🔴 强制错误诊断与修正协议
 
