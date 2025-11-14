@@ -286,11 +286,16 @@ ${content}
                     const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
                     
                     if (lastStep && typeof lastStep.observation === 'string') {
-                        // 为了安全地将字符串注入到 Python 代码中，我们使用 JSON 序列化，它会处理好所有的转义字符
-                        const dataToInject = JSON.stringify(lastStep.observation);
-                        
-                        // 替换占位符。注意，我们替换的是包含引号的整个占位符
-                        parameters.code = parameters.code.replace('"{{LAST_OBSERVATION}}"', dataToInject);
+                        // --- START OF FINAL FIX ---
+                        // 使用 JSON.stringify 来安全地转义所有特殊字符（如引号、反斜杠）
+                        const safelyEscapedData = JSON.stringify(lastStep.observation);
+
+                        // 将占位符替换为一个 Python 多行字符串 ("""...""")
+                        // 我们需要移除 JSON.stringify 添加的首尾双引号
+                        const pythonStringLiteral = `"""${safelyEscapedData.slice(1, -1)}"""`;
+
+                        parameters.code = parameters.code.replace('"{{LAST_OBSERVATION}}"', pythonStringLiteral);
+                        // --- END OF FINAL FIX ---
                         console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
                     } else {
                         console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。将占位符替换为空字符串。');
