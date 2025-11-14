@@ -469,6 +469,23 @@ export class AgentLogic {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
+        // --- START FIX: 注入上一步的观察结果作为上下文 ---
+        let lastObservation = '';
+        if (intermediateSteps.length > 0) {
+            const lastStep = intermediateSteps[intermediateSteps.length - 1];
+            // 确保观察结果是字符串且足够长，避免注入无用信息
+            if (typeof lastStep.observation === 'string' && lastStep.observation.length > 50) {
+                 lastObservation = `
+📋 Context from Previous Step (Observation)
+You have just received the following information from the last tool call. You MUST use this data for your next action if relevant.
+\`\`\`
+${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 ? '... (content truncated)' : ''}
+\`\`\`
+`;
+            }
+        }
+        // --- END FIX ---
+        
         // 🎯 增强：动态知识检索触发器
         const knowledgeRetrievalTriggers = this._buildKnowledgeRetrievalTriggers(intermediateSteps, researchPlan, currentStep);
         
@@ -705,6 +722,7 @@ ${planText}
 
 # 研究目标
 **最终主题**：${topic}
+${lastObservation}
 
 # 可用工具
 ${availableToolsText}
@@ -1023,14 +1041,26 @@ _formatHistory(intermediateSteps) {
             }
         }
         
+        // --- START FIX: 强化错误反馈循环，确保 Python 错误报告不被截断 ---
+        let observationText = step.observation;
+        // 检查是否为 python_sandbox 失败调用
+        if (step.action?.tool_name === 'python_sandbox' && step.success === false) {
+             // 确保 observationText 至少是字符串
+             observationText = typeof step.observation === 'string' ? step.observation : 'Python执行失败，无详细错误报告';
+        } else {
+             // 默认截断逻辑
+             observationText = `${step.observation.substring(0, 300)}... (内容已折叠)`;
+        }
+        // --- END FIX ---
+        
         return `## 步骤 ${index + 1}
 思考: ${thought}
 行动:
 \`\`\`json
 ${actionJson}
 \`\`\`
-观察: ${step.observation.substring(0, 300)}... (内容已折叠)
-💡 
+观察: ${observationText}
+💡
 **关键发现**: ${step.key_finding || '无'}`;
     });
     

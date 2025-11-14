@@ -529,6 +529,15 @@ ${content}
                 // 🎯 处理工具调用
                 if (parsedAction.type === 'tool_call') {
                     const { tool_name, parameters, thought } = parsedAction;
+
+                    // --- START FIX: 拦截知识检索调用 ---
+                    if (tool_name === 'retrieve_knowledge') {
+                        console.log('[DeepResearchAgent] 🧠 Intercepting knowledge retrieval call...');
+                        await this._handleKnowledgeRetrieval(parsedAction, intermediateSteps, runId);
+                        continue; // Skip the rest of the loop and start next iteration
+                    }
+                    // --- END FIX ---
+
                     console.log(`[DeepResearchAgent] 🔧 执行工具调用: ${tool_name}`, parameters);
                     
                     await this.callbackManager.invokeEvent('on_tool_start', {
@@ -1073,7 +1082,18 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         });
         
         // 🎯 策略3：确保至少保留核心来源
-        const finalSources = this._ensureCoreSources(Array.from(usedSources), sources, reportContent);
+        const finalUsedSources = Array.from(usedSources);
+
+        // --- START FIX: 资料来源过滤降级策略 ---
+        // Fallback Strategy: If filtering removes all sources, but we had sources to begin with,
+        // it means the report failed to cite them. In this case, retain all original sources.
+        if (finalUsedSources.length === 0 && sources.length > 0) {
+            console.warn('[SourceFilter] ⚠️智能过滤移除了所有来源，已触发降级策略，将保留所有原始来源。');
+            return sources;
+        }
+        // --- END FIX ---
+        
+        const finalSources = this._ensureCoreSources(finalUsedSources, sources, reportContent);
         
         console.log(`[SourceFilter] 过滤完成: ${sources.length} → ${finalSources.length} 个来源`);
         
