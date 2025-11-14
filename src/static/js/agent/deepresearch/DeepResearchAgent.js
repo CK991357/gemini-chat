@@ -261,6 +261,9 @@ ${content}
      * @param {function} recordToolCall
      * @returns {Promise<{rawObservation: string, toolSources: Array, toolSuccess: boolean}>}
      */
+    /**
+     * 增强的工具执行方法
+     */
     async _executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
         const tool = this.tools[toolName];
         let rawObservation;
@@ -277,6 +280,7 @@ ${content}
                     mode: 'deep_research',
                     researchMode: detectedMode
                 });
+                
                 rawObservation = toolResult.output || JSON.stringify(toolResult);
                 // ✅✅✅ 核心修复：从工具返回结果中获取真实的成功状态 ✅✅✅
                 toolSuccess = toolResult.success !== false; // 默认true，除非明确为false
@@ -1792,15 +1796,13 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
     }
 
     /**
-     * 🎯 新增：智能数据存储方法
+     * 智能数据存储方法
      */
     _storeRawData(stepIndex, rawData, metadata = {}) {
         const dataKey = `step_${stepIndex}`;
         
-        // 智能数据压缩：只存储关键信息
         let processedData = rawData;
         if (rawData.length > 10000) {
-            // 对于大文本，提取关键结构化部分
             processedData = this._extractStructuredData(rawData, metadata);
         }
         
@@ -1814,7 +1816,6 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             }
         });
         
-        // 清理过期数据
         this._cleanupDataBus();
         
         console.log(`[DataBus] 存储数据 ${dataKey}: ${rawData.length} -> ${processedData.length} 字符`);
@@ -1822,6 +1823,9 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
 
     /**
      * 🎯 新增：智能数据提取
+     */
+    /**
+     * 智能数据提取
      */
     _extractStructuredData(rawData, metadata) {
         // 针对网页内容特别优化
@@ -1846,65 +1850,71 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
     }
 
     /**
-     * 🎯 新增：数据总线清理
+     * 🎯 [最终版] 数据总线清理
      */
     _cleanupDataBus() {
-        const keys = Array.from(this.dataBus.keys()).sort();
-        if (keys.length > this.dataRetentionPolicy.retentionSteps) {
-            // 确保只删除旧的步骤，步骤键是 'step_X'
-            const stepIndices = keys.map(k => parseInt(k.split('_'))).filter(n => !isNaN(n)).sort((a, b) => a - b);
+        // 1. 获取所有 'step_X' 格式的键
+        const stepKeys = Array.from(this.dataBus.keys())
+                              .filter(key => key.startsWith('step_'));
+
+        // 2. 如果需要清理
+        if (stepKeys.length > this.dataRetentionPolicy.retentionSteps) {
+            // 3. 按照数字大小对键进行排序（'step_1', 'step_10', 'step_2' -> 'step_1', 'step_2', 'step_10'）
+            stepKeys.sort((a, b) => {
+                const numA = parseInt(a.split('_')[1], 10);
+                const numB = parseInt(b.split('_')[1], 10);
+                return numA - numB;
+            });
+
+            // 4. 确定要删除的旧键
+            const keysToDelete = stepKeys.slice(0, stepKeys.length - this.dataRetentionPolicy.retentionSteps);
             
-            if (stepIndices.length > this.dataRetentionPolicy.retentionSteps) {
-                const indicesToDelete = stepIndices.slice(0, stepIndices.length - this.dataRetentionPolicy.retentionSteps);
-                indicesToDelete.forEach(index => {
-                    const key = `step_${index}`;
-                    this.dataBus.delete(key);
-                    console.log(`[DataBus] 清理过期数据: ${key}`);
-                });
-            }
+            // 5. 执行删除
+            keysToDelete.forEach(key => {
+                this.dataBus.delete(key);
+                console.log(`[DataBus] 🧹 清理过期数据: ${key}`);
+            });
         }
     }
-}
-/**
- * 🎯 新增：Python错误智能诊断
- */
-async _diagnosePythonError(errorOutput, parameters) {
-    const diagnosis = {
-        errorType: 'unknown',
-        analysis: '',
-        suggestedFix: ''
-    };
-    
-    // 常见错误模式匹配
-    if (errorOutput.includes('SyntaxError') || errorOutput.includes('语法错误')) {
-        diagnosis.errorType = 'syntax_error';
-        diagnosis.analysis = '检测到语法错误，可能是括号、引号不匹配或缩进问题';
-        diagnosis.suggestedFix = '仔细检查代码中的括号、引号是否成对，确保缩进一致';
+    /**
+     * Python错误智能诊断
+     */
+    async _diagnosePythonError(errorOutput, parameters) {
+        const diagnosis = {
+            errorType: 'unknown',
+            analysis: '',
+            suggestedFix: ''
+        };
+        
+        if (errorOutput.includes('SyntaxError') || errorOutput.includes('语法错误')) {
+            diagnosis.errorType = 'syntax_error';
+            diagnosis.analysis = '检测到语法错误，可能是括号、引号不匹配或缩进问题';
+            diagnosis.suggestedFix = '仔细检查代码中的括号、引号是否成对，确保缩进一致';
+        }
+        
+        if (errorOutput.includes('IndentationError')) {
+            diagnosis.errorType = 'indentation_error';
+            diagnosis.analysis = '缩进错误，Python对缩进要求严格';
+            diagnosis.suggestedFix = '统一使用4个空格进行缩进，不要混用空格和Tab';
+        }
+        
+        if (errorOutput.includes('NameError') || errorOutput.includes('未定义')) {
+            diagnosis.errorType = 'name_error';
+            diagnosis.analysis = '变量或函数名未定义';
+            diagnosis.suggestedFix = '检查变量名拼写，确保所有使用的变量都已正确定义';
+        }
+        
+        if (errorOutput.includes('JSON') || errorOutput.includes('json')) {
+            diagnosis.errorType = 'json_error';
+            diagnosis.analysis = 'JSON解析错误，可能是格式不正确';
+            diagnosis.suggestedFix = '使用在线JSON验证工具检查JSON格式，确保引号、括号正确';
+        }
+        
+        if (diagnosis.errorType === 'unknown') {
+            diagnosis.analysis = '无法自动诊断具体错误类型';
+            diagnosis.suggestedFix = '建议调用 `retrieve_knowledge` 获取 `python_sandbox` 的错误处理指南';
+        }
+        
+        return diagnosis;
     }
-    
-    if (errorOutput.includes('IndentationError')) {
-        diagnosis.errorType = 'indentation_error';
-        diagnosis.analysis = '缩进错误，Python对缩进要求严格';
-        diagnosis.suggestedFix = '统一使用4个空格进行缩进，不要混用空格和Tab';
-    }
-    
-    if (errorOutput.includes('NameError') || errorOutput.includes('未定义')) {
-        diagnosis.errorType = 'name_error';
-        diagnosis.analysis = '变量或函数名未定义';
-        diagnosis.suggestedFix = '检查变量名拼写，确保所有使用的变量都已正确定义';
-    }
-    
-    if (errorOutput.includes('JSON') || errorOutput.includes('json')) {
-        diagnosis.errorType = 'json_error';
-        diagnosis.analysis = 'JSON解析错误，可能是格式不正确';
-        diagnosis.suggestedFix = '使用在线JSON验证工具检查JSON格式，确保引号、括号正确';
-    }
-    
-    // 如果无法自动诊断，建议检索知识
-    if (diagnosis.errorType === 'unknown') {
-        diagnosis.analysis = '无法自动诊断具体错误类型';
-        diagnosis.suggestedFix = '建议调用 `retrieve_knowledge` 获取 `python_sandbox` 的错误处理指南';
-    }
-    
-    return diagnosis;
 }
