@@ -1,4 +1,5 @@
 // src/static/js/agent/EnhancedSkillManager.js
+import { knowledgeFederation } from '../tool-spec-system/skill-loader.js';
 import { getBaseSkillManager } from '../tool-spec-system/skill-manager.js';
 
 export class EnhancedSkillManager {
@@ -6,6 +7,7 @@ export class EnhancedSkillManager {
     this.baseSkillManager = null;
     this.isInitialized = false;
     this.executionHistory = this.loadExecutionHistory();
+    this.knowledgeFederation = knowledgeFederation;
     this.initializationPromise = this.initialize();
     this.initializationResolve = null;
     this.initializationReject = null;
@@ -28,6 +30,15 @@ export class EnhancedSkillManager {
         this.baseSkillManager = this.createFallbackSkillManager();
       }
       
+      // 🎯 新增：确保联邦知识库初始化
+      if (this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
+        const skillsRegistry = await this.getSkillsRegistry();
+        if (skillsRegistry) {
+          await this.knowledgeFederation.initializeFromRegistry(skillsRegistry);
+          console.log("[EnhancedSkillManager] ✅ 联邦知识库初始化完成");
+        }
+      }
+      
       this.isInitialized = true;
       this.initializationResolve(true);
       console.log("EnhancedSkillManager initialized with skill manager.");
@@ -37,6 +48,21 @@ export class EnhancedSkillManager {
       this.baseSkillManager = this.createFallbackSkillManager();
       this.isInitialized = true;
       this.initializationResolve(false);
+    }
+  }
+
+  /**
+   * 🎯 新增：获取技能注册表
+   */
+  async getSkillsRegistry() {
+    try {
+      // 这里需要根据您的项目结构获取技能注册表
+      // 例如：从 generated-skills.js 导入
+      const { getSkillsRegistry } = await import('../tool-spec-system/generated-skills.js');
+      return getSkillsRegistry ? getSkillsRegistry() : null;
+    } catch (error) {
+      console.warn("[EnhancedSkillManager] 无法获取技能注册表:", error);
+      return null;
     }
   }
 
@@ -268,6 +294,125 @@ export class EnhancedSkillManager {
     if (keywordCount > 1) complexity += 1;
     
     return Math.min(complexity, 4);
+  }
+
+  /**
+   * 🎯 联邦知识检索API - 修复版本
+   */
+  async retrieveFederatedKnowledge(toolName, context = {}) {
+    console.log(`[EnhancedSkillManager] 🔍 联邦知识检索: ${toolName}`, context);
+    
+    try {
+      // 🎯 智能章节推断
+      const requestedSections = this._inferRelevantSections(context);
+      
+      // 🎯 获取联邦知识包
+      const knowledgePackage = this.knowledgeFederation.getFederatedKnowledge(
+        toolName, 
+        requestedSections
+      );
+
+      if (!knowledgePackage) {
+        console.warn(`[EnhancedSkillManager] 未找到工具知识: ${toolName}`);
+        return null;
+      }
+
+      // 🎯 构建结构化知识响应
+      const result = {
+        tool: toolName,
+        metadata: this.knowledgeFederation.getSkillMetadata(toolName),
+        content: knowledgePackage,
+        suggestedSections: requestedSections,
+        retrievalContext: context,
+        timestamp: Date.now()
+      };
+
+      console.log(`[EnhancedSkillManager] ✅ 联邦知识检索成功: ${toolName}`, {
+        contentLength: knowledgePackage.length,
+        sections: requestedSections
+      });
+
+      return result;
+      
+    } catch (error) {
+      console.error(`[EnhancedSkillManager] ❌ 联邦知识检索失败: ${toolName}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 🎯 基于上下文智能推断相关章节 - 增强版本
+   */
+  _inferRelevantSections(context) {
+    const sections = [];
+    const { userQuery, currentStep, researchMode } = context;
+
+    if (!userQuery) return sections;
+
+    // 🎯 基于查询内容推断章节
+    const queryLower = userQuery.toLowerCase();
+    
+    // 数学证明相关
+    if (queryLower.includes('证明') || queryLower.includes('公式') || queryLower.includes('数学')) {
+      sections.push('公式证明工作流', 'sympy_cookbook');
+    }
+    
+    // 🎯 新增：科学计算与优化
+    if (queryLower.includes('科学计算') || queryLower.includes('优化') || queryLower.includes('统计') || 
+        queryLower.includes('数值') || queryLower.includes('计算')) {
+      sections.push('科学计算与优化', 'scipy_cookbook');
+    }
+    
+    // 数据分析相关
+    if (queryLower.includes('数据') && queryLower.includes('分析')) {
+      sections.push('数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式');
+    }
+    
+    // 可视化相关
+    if (queryLower.includes('图表') || queryLower.includes('可视化') || queryLower.includes('画图')) {
+      sections.push('数据可视化', 'matplotlib_cookbook');
+    }
+    
+    // 报告生成相关
+    if (queryLower.includes('报告') || queryLower.includes('生成') || queryLower.includes('文档')) {
+      sections.push('自动化报告生成', 'report_generator_workflow');
+    }
+    
+    // 机器学习相关
+    if (queryLower.includes('机器学习') || queryLower.includes('模型') || queryLower.includes('训练')) {
+      sections.push('机器学习', 'ml_workflow');
+    }
+    
+    // 网页抓取相关
+    if (queryLower.includes('网页') || queryLower.includes('抓取') || queryLower.includes('爬虫')) {
+      sections.push('网页抓取最佳实践', '智能内容提取');
+    }
+
+    console.log(`[EnhancedSkillManager] 🧠 智能章节推断:`, sections);
+    return sections;
+  }
+
+  /**
+   * 🎯 新增：测试联邦知识检索
+   */
+  async testFederatedKnowledgeRetrieval() {
+    console.log("[EnhancedSkillManager] 🧪 测试联邦知识检索...");
+    
+    const testCases = [
+      { tool: 'python_sandbox', context: { userQuery: '证明数学公式' } },
+      { tool: 'python_sandbox', context: { userQuery: '科学计算与优化' } },
+      { tool: 'python_sandbox', context: { userQuery: '数据分析和可视化' } },
+      { tool: 'crawl4ai', context: { userQuery: '网页抓取最佳实践' } }
+    ];
+    
+    for (const testCase of testCases) {
+      const result = await this.retrieveFederatedKnowledge(testCase.tool, testCase.context);
+      console.log(`测试 ${testCase.tool}:`, {
+        查询: testCase.context.userQuery,
+        结果: result ? '成功' : '失败',
+        章节: result?.suggestedSections
+      });
+    }
   }
 
   // 🎯 其余方法保持不变...

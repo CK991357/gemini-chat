@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/AgentLogic.js - DRY原则优化版
+// src/static/js/agent/deepresearch/AgentLogic.js - 知识检索集成版
 
 // 🎯 核心修改：导入 ReportTemplates 中的工具函数
 import { getTemplatePromptFragment } from './ReportTemplates.js';
@@ -464,10 +464,61 @@ export class AgentLogic {
         return detectedMode;
     }
 
-    // ✨ 重构：主提示词构建 - 核心DRY原则优化
+    // ✨ 重构：主提示词构建 - 核心知识检索集成
     _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
+        
+        // 🎯 核心新增：知识检索策略指导
+        const knowledgeStrategySection = `
+## 🧠 知识驱动决策框架
+
+你是一个**知识驱动的研究专家**。你拥有一个强大的内部知识库，包含所有工具的完整使用指南、工作流和最佳实践。
+
+### 📚 可用知识库
+${availableTools.map(tool => {
+  const isComplex = ['python_sandbox', 'crawl4ai', 'firecrawl'].includes(tool.name);
+  return `- **${tool.name}**: ${tool.description} ${isComplex ? '🔧' : ''}`;
+}).join('\n')}
+
+### 🎯 知识检索策略
+
+#### 何时检索知识？
+- **首次使用复杂工具**时（如 \`python_sandbox\`, \`crawl4ai\`）
+- **遇到不熟悉的任务类型**时（如数学证明、数据可视化）
+- **需要最佳实践指导**时（如报告生成、机器学习流程）
+- **工具执行失败需要诊断**时
+
+#### 如何检索知识？
+思考: [明确说明你需要使用哪个工具，以及为什么需要查阅其文档]
+行动: retrieve_knowledge
+行动输入: {"tool_name": "工具名", "context": "当前任务背景"}
+
+### 💡 知识利用工作流
+
+\`\`\`
+1. 识别复杂任务 → "我需要使用python_sandbox进行数据分析和可视化"
+2. 检索完整指南 → 调用 retrieve_knowledge 获取完整工作流
+3. 基于指南规划 → 按照文档中的"数据可视化工作流"编写代码
+4. 执行验证 → 运行代码并验证结果
+\`\`\`
+
+### 🛠️ 复杂工具专用指南
+
+#### python_sandbox 知识地图
+- **数据分析**: 参考 "数据清洗与分析" + "pandas_cheatsheet"
+- **可视化**: 参考 "数据可视化" + "matplotlib_cookbook" 
+- **数学证明**: 参考 "公式证明工作流" + "sympy_cookbook"
+- **报告生成**: 参考 "自动化报告生成" + "report_generator_workflow"
+- **机器学习**: 参考 "机器学习" + "ml_workflow"
+
+#### crawl4ai 知识地图
+- **网页抓取**: 参考 "网页抓取最佳实践"
+- **内容提取**: 参考 "智能内容提取"
+- **错误处理**: 参考 "爬虫错误诊断"
+
+记住：**知识是你最强大的工具**。在行动前先确保你拥有完整的指导！
+`;
         
         // 🎯 核心修复：添加Python代码调试专业指南
         const pythonDebuggingGuide = `
@@ -639,6 +690,21 @@ export class AgentLogic {
         // 🎯 核心DRY优化：动态获取报告要求，避免硬编码重复
         const reportRequirements = getTemplatePromptFragment(researchMode);
 
+        // 🎯 核心新增：知识检索输出格式
+        const knowledgeRetrievalOutputFormat = `
+## 如果需要查阅工具文档：
+思考: [明确说明：1) 要解决什么任务 2) 需要使用哪个工具 3) 为什么需要查阅文档 4) 期望获取什么具体指导]
+示例: "用户要求进行数据分析和生成图表。我需要使用python_sandbox，但不确定数据处理和可视化的最佳实践。我应该查阅完整文档来获取'数据可视化工作流'的具体实现方法。"
+行动: retrieve_knowledge
+行动输入: {"tool_name": "python_sandbox", "context": "数据分析和可视化任务"}
+
+## 如果已获得知识指导：
+思考: [基于获取的完整指南，详细说明你的执行计划，并引用具体的工作流步骤]
+示例: "根据python_sandbox文档中的'数据可视化工作流'，我需要：1) 导入pandas和matplotlib 2) 数据清洗处理 3) 使用subplot创建多图表 4) 添加标签和标题"
+行动: python_sandbox
+行动输入: {"code": "具体实现代码..."}
+`;
+
         const prompt = `
 # 角色：${config.role}
 ${config.description}
@@ -658,6 +724,8 @@ ${formattedHistory}
 
 ${outlineGenerationGuide}  // 🎯 新增：大纲生成指导
 
+${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
+
 ## 🔍 多源信息整合策略
 
 **信息验证与整合要求**：
@@ -675,8 +743,8 @@ ${outlineGenerationGuide}  // 🎯 新增：大纲生成指导
 - **当前子问题**: [明确复述当前研究计划的步骤目标]
 - **信息满足度评估**: 基于"研究历史与观察"，我已经获得的信息是否**完全且清晰地**回答了上述子问题？
 - **信息缺口分析**:
-  - 如果**是**，请明确指出“信息已满足”，并直接规划**下一个**研究步骤。
-  - 如果**否**，请明确列出还缺少**哪些具体**的信息点（例如：“我还不清楚Wilson的六个观点具体是哪六个”）。
+  - 如果**是**，请明确指出"信息已满足"，并直接规划**下一个**研究步骤。
+  - 如果**否**，请明确列出还缺少**哪些具体**的信息点（例如："我还不清楚Wilson的六个观点具体是哪六个"）。
 
 ## 2. 工具选择策略
 [基于上述信息缺口分析，选择最合适的工具和参数来填补缺口...]
@@ -714,7 +782,9 @@ ${config.specialInstructions}
 
 ${reportRequirements}
 
-# 输出格式 (严格遵守，否则系统将无法解析)
+# 输出格式 (知识驱动版本，严格遵守)
+
+${knowledgeRetrievalOutputFormat}
 
 ## 如果需要继续研究：
 思考: [基于研究计划的详细推理，包括当前步骤评估、信息缺口分析、工具选择理由]
@@ -722,7 +792,7 @@ ${reportRequirements}
 行动输入: {"parameter_name": "parameter_value"}
 
 ## 如果信息收集完成，准备撰写报告：
-思考: [判断信息已足够，并从历史记录的“关键发现”中提炼出核心要点，用于构建大纲]
+思考: [判断信息已足够，并从历史记录的"关键发现"中提炼出核心要点，用于构建大纲]
 行动: generate_outline
 行动输入: {"topic": "报告主题", "key_findings": ["从关键发现中总结的要点1", "要点2", "要点3"]}
 

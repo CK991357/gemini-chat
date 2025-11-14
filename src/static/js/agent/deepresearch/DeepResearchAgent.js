@@ -12,6 +12,14 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // 🎯 联邦知识系统
+        this.knowledgeSystem = {
+            enabled: config.knowledgeRetrievalEnabled !== false,
+            skillManager: config.skillManager,
+            knowledgeCache: new Map(), // tool_name -> {content, timestamp}
+            retrievalHistory: [] // 追踪知识使用情况
+        };
+
         this.agentLogic = new AgentLogic(chatApiHandler);
         this.outputParser = new AgentOutputParser();
 
@@ -136,6 +144,189 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         }
     }
 
+    /**
+     * 🎯 联邦知识检索处理
+     */
+    async _handleKnowledgeRetrieval(parsedAction, intermediateSteps, runId) {
+        const { parameters, thought } = parsedAction;
+        const { tool_name: targetTool, context } = parameters;
+        
+        console.log(`[DeepResearchAgent] 🧠 联邦知识检索请求: ${targetTool}`, { context });
+
+        // 🎯 记录知识检索历史
+        this.knowledgeSystem.retrievalHistory.push({
+            tool: targetTool,
+            context: context,
+            timestamp: Date.now(),
+            iteration: intermediateSteps.length
+        });
+
+        try {
+            // 🎯 调用联邦知识系统
+            const knowledgePackage = await this.knowledgeSystem.skillManager.retrieveFederatedKnowledge(
+                targetTool,
+                { userQuery: context, researchMode: this.currentResearchMode }
+            );
+
+            let observation;
+            if (knowledgePackage) {
+                // 🎯 缓存知识内容
+                this.knowledgeSystem.knowledgeCache.set(targetTool, {
+                    content: knowledgePackage.content,
+                    timestamp: Date.now()
+                });
+
+                observation = this._formatKnowledgeObservation(knowledgePackage);
+                console.log(`[DeepResearchAgent] ✅ 联邦知识检索成功: ${targetTool}`);
+            } else {
+                observation = `## ❌ 知识检索失败\n\n无法找到工具 \`${targetTool}\` 的联邦知识文档。`;
+            }
+
+            // 🎯 构建知识注入步骤
+            intermediateSteps.push({
+                action: {
+                    type: 'knowledge_retrieval',
+                    tool_name: 'retrieve_knowledge',
+                    parameters,
+                    thought
+                },
+                observation: observation,
+                key_finding: `已加载 ${targetTool} 的完整知识库`,
+                knowledge_package: knowledgePackage,
+                success: !!knowledgePackage
+            });
+
+            // 🎯 发送知识检索事件
+            this.callbackManager.invokeEvent('on_knowledge_retrieved', {
+                run_id: runId,
+                data: {
+                    tool: targetTool,
+                    context: context,
+                    content_length: knowledgePackage?.content?.length || 0,
+                    suggested_sections: knowledgePackage?.suggestedSections || []
+                }
+            });
+
+        } catch (error) {
+            console.error(`[DeepResearchAgent] ❌ 联邦知识检索错误: ${targetTool}`, error);
+            
+            intermediateSteps.push({
+                action: {
+                    type: 'knowledge_retrieval',
+                    tool_name: 'retrieve_knowledge',
+                    parameters,
+                    thought
+                },
+                observation: `## ❌ 知识检索系统错误\n\n检索工具 \`${targetTool}\` 知识时发生错误: ${error.message}`,
+                key_finding: `知识检索系统错误: ${error.message}`,
+                success: false
+            });
+        }
+    }
+
+    /**
+     * 🎯 格式化知识观察结果
+     */
+    _formatKnowledgeObservation(knowledgePackage) {
+        const { tool, metadata, content, suggestedSections } = knowledgePackage;
+        
+        return `## 🧠 ${tool} 联邦知识库加载成功
+
+### 📋 工具信息
+- **名称**: ${metadata.name}
+- **描述**: ${metadata.description}
+- **类别**: ${metadata.category}
+- **建议章节**: ${suggestedSections.join(', ')}
+
+### 📚 完整知识指南
+${content}
+
+---
+**💡 提示**: 请基于以上完整知识库规划你的具体实现方案。文档中包含工作流、最佳实践和代码示例。
+`;
+    }
+
+    /**
+     * 🎯 实际执行工具调用并处理结果
+     * @param {string} toolName
+     * @param {object} parameters
+     * @param {string} detectedMode
+     * @param {function} recordToolCall
+     * @returns {Promise<{rawObservation: string, toolSources: Array, toolSuccess: boolean}>}
+     */
+    async _executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
+        const tool = this.tools[toolName];
+        let rawObservation;
+        let toolSources = [];
+        let toolSuccess = false; // 新增：追踪工具执行状态
+
+        if (!tool) {
+            rawObservation = `错误: 工具 "${toolName}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
+            console.error(`[DeepResearchAgent] ❌ 工具不存在: ${toolName}`);
+        } else {
+            try {
+                console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`);
+                const toolResult = await tool.invoke(parameters, {
+                    mode: 'deep_research',
+                    researchMode: detectedMode
+                });
+                rawObservation = toolResult.output || JSON.stringify(toolResult);
+                // ✅✅✅ 核心修复：从工具返回结果中获取真实的成功状态 ✅✅✅
+                toolSuccess = toolResult.success !== false; // 默认true，除非明确为false
+
+                // 🎯 提取来源信息
+                if (toolResult.sources && Array.isArray(toolResult.sources)) {
+                    toolSources = toolResult.sources.map(source => ({
+                        title: source.title || '无标题',
+                        url: source.url || '#',
+                        description: source.description || '',
+                        collectedAt: new Date().toISOString(),
+                        used_in_report: false
+                    }));
+                    console.log(`[DeepResearchAgent] 提取到 ${toolSources.length} 个来源`);
+                }
+
+                // ✅✅✅ 核心修复：根据实际成功状态记录日志 ✅✅✅
+                if (toolSuccess) {
+                    console.log(`[DeepResearchAgent] ✅ 工具执行成功，结果长度: ${rawObservation.length}`);
+                } else {
+                    console.log(`[DeepResearchAgent] ⚠️ 工具执行失败，结果长度: ${rawObservation.length}`);
+                }
+
+                // ✨ 追踪工具使用
+                if (this.metrics.toolUsage[toolName] !== undefined) {
+                    this.metrics.toolUsage[toolName]++;
+                }
+
+                // 🎯 修复：记录工具调用
+                recordToolCall(toolName, parameters, toolSuccess, rawObservation);
+
+            } catch (error) {
+                rawObservation = `错误: 工具 "${toolName}" 执行失败: ${error.message}`;
+                console.error(`[DeepResearchAgent] ❌ 工具执行失败: ${toolName}`, error);
+                // 🎯 修复：记录工具调用失败
+                recordToolCall(toolName, parameters, false, error.message);
+            }
+        }
+        
+        return { rawObservation, toolSources, toolSuccess };
+    }
+
+    /**
+     * 🎯 知识感知的工具执行
+     */
+    async _executeToolWithKnowledge(toolName, parameters, thought, intermediateSteps, detectedMode, recordToolCall) {
+        // 🎯 检查是否有相关知识缓存
+        const cachedKnowledge = this.knowledgeSystem.knowledgeCache.get(toolName);
+        if (cachedKnowledge) {
+            console.log(`[DeepResearchAgent] 🧠 工具执行带有知识上下文: ${toolName}`);
+            // 可以在thought中引用知识指导
+        }
+
+        // 正常执行工具调用...
+        return await this._executeToolCall(toolName, parameters, detectedMode, recordToolCall);
+    }
+
     async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
         // ✨✨✨ 核心修复：解构出 displayTopic ✨✨✨
@@ -149,6 +340,9 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         
         const detectedMode = researchMode || 'standard';
         
+        // 🎯 存储当前研究模式，供知识检索系统使用
+        this.currentResearchMode = detectedMode;
+
         console.log(`[DeepResearchAgent] 开始研究: "${uiTopic}"，接收到模式: ${detectedMode}`);
         
         // ✨✨✨ 核心修复：在 on_research_start 事件中使用 uiTopic ✨✨✨
@@ -305,6 +499,12 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                     continue; // 继续下一次迭代
                 }
 
+                // 🎯 处理知识检索
+                if (parsedAction.type === 'knowledge_retrieval') {
+                    await this._handleKnowledgeRetrieval(parsedAction, intermediateSteps, runId);
+                    continue; // 知识检索完成后，跳过后续的工具执行和摘要，直接进入下一轮迭代
+                }
+
                 // 🎯 处理工具调用
                 if (parsedAction.type === 'tool_call') {
                     const { tool_name, parameters, thought } = parsedAction;
@@ -315,59 +515,15 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                         data: { tool_name, parameters, thought }
                     });
 
-                    const tool = this.tools[tool_name];
-                    let rawObservation;
-                    let toolSources = [];
-                    let toolSuccess = false; // 新增：追踪工具执行状态
-                    
-                    if (!tool) {
-                        rawObservation = `错误: 工具 "${tool_name}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
-                        console.error(`[DeepResearchAgent] ❌ 工具不存在: ${tool_name}`);
-                    } else {
-                        try {
-                            console.log(`[DeepResearchAgent] 调用工具: ${tool_name}...`);
-                            const toolResult = await tool.invoke(parameters, {
-                                mode: 'deep_research',
-                                researchMode: detectedMode
-                            });
-                            rawObservation = toolResult.output || JSON.stringify(toolResult);
-                            // ✅✅✅ 核心修复：从工具返回结果中获取真实的成功状态 ✅✅✅
-                            toolSuccess = toolResult.success !== false; // 默认true，除非明确为false
-                            
-                            // 🎯 提取来源信息
-                            if (toolResult.sources && Array.isArray(toolResult.sources)) {
-                                toolSources = toolResult.sources.map(source => ({
-                                    title: source.title || '无标题',
-                                    url: source.url || '#',
-                                    description: source.description || '',
-                                    collectedAt: new Date().toISOString(),
-                                    used_in_report: false
-                                }));
-                                console.log(`[DeepResearchAgent] 提取到 ${toolSources.length} 个来源`);
-                            }
-                            
-                            // ✅✅✅ 核心修复：根据实际成功状态记录日志 ✅✅✅
-                            if (toolSuccess) {
-                                console.log(`[DeepResearchAgent] ✅ 工具执行成功，结果长度: ${rawObservation.length}`);
-                            } else {
-                                console.log(`[DeepResearchAgent] ⚠️ 工具执行失败，结果长度: ${rawObservation.length}`);
-                            }
-                            
-                            // ✨ 追踪工具使用
-                            if (this.metrics.toolUsage[tool_name] !== undefined) {
-                                this.metrics.toolUsage[tool_name]++;
-                            }
-                            
-                            // 🎯 修复：记录工具调用
-                            recordToolCall(tool_name, parameters, toolSuccess, rawObservation);
-
-                        } catch (error) {
-                            rawObservation = `错误: 工具 "${tool_name}" 执行失败: ${error.message}`;
-                            console.error(`[DeepResearchAgent] ❌ 工具执行失败: ${tool_name}`, error);
-                            // 🎯 修复：记录工具调用失败
-                            recordToolCall(tool_name, parameters, false, error.message);
-                        }
-                    }
+                    // 🎯 知识感知的工具执行
+                    const { rawObservation, toolSources, toolSuccess } = await this._executeToolWithKnowledge(
+                        tool_name,
+                        parameters,
+                        thought,
+                        intermediateSteps,
+                        detectedMode,
+                        recordToolCall
+                    );
                     
                     // ✅✅✅ --- 核心修复：传入工具名称以应用不同的摘要策略 --- ✅✅✅
                     const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
