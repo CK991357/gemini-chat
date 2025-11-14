@@ -344,9 +344,25 @@ ${cleanTopic}
         return tools;
     }
 
+    /**
+     * 🎯 [核心修改] 初始化DeepResearchAgent时，注入skillManager依赖
+     */
     _initializeDeepResearchAgent() {
         if (Object.keys(this.researchToolsSet).length === 0) return null;
-        return new DeepResearchAgent(this.chatApiHandler, this.researchToolsSet, this.callbackManager, { maxIterations: 8 });
+        
+        console.log('[Orchestrator] 正在初始化 DeepResearchAgent 并注入依赖...');
+
+        return new DeepResearchAgent(
+          this.chatApiHandler,
+          this.researchToolsSet,
+          this.callbackManager,
+          {
+            maxIterations: 8,
+            // 🎯 关键：将 Orchestrator 持有的 skillManager 实例
+            // 🎯 通过构造函数的 config 对象传递给 DeepResearchAgent。
+            skillManager: this.skillManager
+          }
+        );
     }
 
     async _initializeTools() {
