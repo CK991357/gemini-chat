@@ -65,10 +65,13 @@ export class AgentOutputParser {
 
         // 🎯 核心修复：工具调用优先原则（采用优化版守卫条件）
         // 如果存在明确的工具调用指令，则优先解析为工具调用，防止误判为最终答案
-        const hasActionKeywords = /行动\s*:/i.test(text) &&
-            (/行动输入\s*:/i.test(text) || /\{\s*".*?"\s*:.*\}/s.test(text));
+        // 🎯 核心修复：采用更灵活的“工具调用意图”检测
+        // 只要文本中包含"行动:"或"行动输入:"，就认为它有工具调用的可能性，
+        // 从而优先进入工具调用解析流程。
+        const hasToolCallIntent = /行动\s*:/i.test(text) || /行动输入\s*:/i.test(text);
 
-        if (!hasActionKeywords) {
+        // 只有在完全没有工具调用意图时，才考虑它可能是最终答案
+        if (!hasToolCallIntent) {
             // 只有在完全没有工具调用指令时，才考虑它可能是最终答案
             
             // 🎯 核心修复：增强最终报告的智能提取 - 防止返回被污染的报告
