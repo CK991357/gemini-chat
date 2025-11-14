@@ -63,62 +63,79 @@ export class AgentOutputParser {
 
         console.log('[OutputParser] 原始文本长度:', text.length);
 
-        // 🎯 核心修复：工具调用优先原则（采用优化版守卫条件）
-        // 如果存在明确的工具调用指令，则优先解析为工具调用，防止误判为最终答案
-        // 🎯 核心修复：采用更灵活的“工具调用意图”检测
-        // 只要文本中包含"行动:"或"行动输入:"，就认为它有工具调用的可能性，
-        // 从而优先进入工具调用解析流程。
-        const hasToolCallIntent = /行动\s*:/i.test(text) || /行动输入\s*:/i.test(text);
+        // 🎯 核心修复：建立严格的优先级 - 工具调用优先
+        // 只要文本中包含明确的工具调用指令，就【只】按工具调用流程处理。
+        const hasActionKeywords = /行动\s*:/i.test(text) &&
+            (/行动输入\s*:/i.test(text) || /\{\s*".*?"\s*:.*\}/s.test(text));
 
-        // 只有在完全没有工具调用意图时，才考虑它可能是最终答案
-        if (!hasToolCallIntent) {
-            // 只有在完全没有工具调用指令时，才考虑它可能是最终答案
-            
-            // 🎯 核心修复：增强最终报告的智能提取 - 防止返回被污染的报告
-            const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
-            const isLikelyReport = this._isLikelyFinalReport(text);
+        // 🔥🔥🔥【关键修改点】🔥🔥🔥
+        // 将原来的 `if (!hasActionKeywords)` 逻辑，完全替换为下面的 `if-else` 结构
+        
+        if (hasActionKeywords) {
+            // ✅ 如果确定是工具调用，则直接进入工具解析流程
+            console.log('[OutputParser] 检测到工具调用关键词，进入工具解析流程。');
+            return this._parseAsToolCall(text);
+        } else {
+            // ❌ 如果【完全没有】工具调用关键词，才可能将其视为最终答案
+            console.log('[OutputParser] 未检测到工具调用关键词，尝试作为最终答案解析。');
+            const finalAnswerResult = this._parseAsFinalAnswer(text);
 
-            if (finalAnswerMatch && finalAnswerMatch[1] && finalAnswerMatch[1].trim().length > 50) {
-                // 优先使用 '最终答案:' 标签提取
-                const answer = finalAnswerMatch[1].trim();
-                console.log('[OutputParser] ✅ 通过 "最终答案:" 标签检测到最终答案，长度:', answer.length);
-                this.metrics.recordAttempt('final_answer', true, 'final_answer_tag', 0);
-                return {
-                    type: 'final_answer',
-                    answer: answer,
-                    // 尝试从标签前提取思考
-                    thought: (text.split(/最终答案\s*:/i)[0] || '').replace(/思考\s*:/i, '').trim(),
-                    thought_length: 0
-                };
-            } else if (isLikelyReport) {
-                // 如果没有 '最终答案:' 标签，但结构像报告，则进行智能提取
-                console.log('[OutputParser] 🎯 检测到完整报告结构（且无行动指令），尝试智能提取干净的报告内容...');
-                let cleanReport = text;
-                
-                // 策略1：从第一个Markdown一级标题开始提取
-                const firstHeadingMatch = text.match(/^#\s+.+/m);
-                if (firstHeadingMatch) {
-                    cleanReport = text.substring(firstHeadingMatch.index);
-                    console.log('[OutputParser] ✅ 从第一个一级标题开始提取报告内容');
-                } else {
-                    // 策略2：如果找不到一级标题，尝试移除思考部分
-                    const thoughtEndIndex = text.indexOf('行动:');
-                    if (thoughtEndIndex !== -1) {
-                        cleanReport = text.substring(thoughtEndIndex).replace(/行动\s*:.*?(?=#|\n#)/s, '').trim();
-                        console.log('[OutputParser] 🔧 通过移除思考部分清理报告内容');
-                    }
-                }
-                
-                this.metrics.recordAttempt('final_answer', true, 'structure_detection', 1);
-                return {
-                    type: 'final_answer',
-                    answer: cleanReport,
-                    thought: '检测到完整的报告结构，并智能提取了报告内容',
-                    thought_length: 0
-                };
+            // 如果成功解析为最终答案，则返回结果
+            if (finalAnswerResult) {
+                return finalAnswerResult;
             }
+
+            // 如果既不是工具调用，也不是最终答案，则尝试最后的宽松工具解析（作为降级）
+            console.log('[OutputParser] 作为最终答案解析失败，最后尝试一次宽松工具解析...');
+            return this._parseAsToolCall(text);
+        }
+    }
+
+    // 🎯 新增辅助方法：专门用于解析最终答案
+    _parseAsFinalAnswer(text) {
+        const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
+        const isLikelyReport = this._isLikelyFinalReport(text);
+
+        if (finalAnswerMatch && finalAnswerMatch[1] && finalAnswerMatch[1].trim().length > 50) {
+            const answer = finalAnswerMatch[1].trim();
+            console.log('[OutputParser] ✅ 通过 "最终答案:" 标签检测到最终答案。');
+            this.metrics.recordAttempt('final_answer', true, 'final_answer_tag', 0);
+            return {
+                type: 'final_answer',
+                answer: answer,
+                thought: (text.split(/最终答案\s*:/i)[0] || '').replace(/思考\s*:/i, '').trim(),
+                thought_length: 0
+            };
+        } else if (isLikelyReport) {
+            console.log('[OutputParser] 🎯 检测到完整报告结构（且无行动指令），尝试智能提取。');
+            let cleanReport = text;
+            const firstHeadingMatch = text.match(/^#\s+.+/m);
+            if (firstHeadingMatch) {
+                cleanReport = text.substring(firstHeadingMatch.index);
+                console.log('[OutputParser] ✅ 从第一个一级标题开始提取报告内容');
+            } else {
+                const thoughtEndIndex = text.indexOf('行动:');
+                if (thoughtEndIndex !== -1) {
+                    cleanReport = text.substring(thoughtEndIndex).replace(/行动\s*:.*?(?=#|\n#)/s, '').trim();
+                    console.log('[OutputParser] 🔧 通过移除思考部分清理报告内容');
+                }
+            }
+            
+            this.metrics.recordAttempt('final_answer', true, 'structure_detection', 1);
+            return {
+                type: 'final_answer',
+                answer: cleanReport,
+                thought: '检测到完整的报告结构，并智能提取了报告内容',
+                thought_length: 0
+            };
         }
 
+        // 如果两种情况都不满足，返回 null，表示不是一个最终答案
+        return null; 
+    }
+
+    // 🎯 新增辅助方法：封装所有工具调用的解析逻辑
+    _parseAsToolCall(text) {
         console.log('[OutputParser] 原始文本（疑似工具调用）:', text.substring(0, 300) + (text.length > 300 ? '...' : ''));
 
         try {
