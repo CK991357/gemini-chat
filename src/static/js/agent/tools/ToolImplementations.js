@@ -525,14 +525,30 @@ class DeepResearchToolAdapter {
                             success = false; // 🚨 必须设为false！
 
                         } else if (finalOutput && finalOutput.trim()) {
-                            console.log(`[PythonOutput] ✅ Python执行成功，输出长度: ${finalOutput.length}`);
-                            output = this.formatCodeOutputForMode({ stdout: finalOutput }, researchMode);
-                            success = true;
+                            // 2. stdout 有内容，需要进一步判断是成功输出还是“静默失败”
+                            const outputLower = finalOutput.toLowerCase();
+                            
+                            // 🔥🔥🔥【新增的“静默失败”检测逻辑】🔥🔥🔥
+                            if (outputLower.startsWith('error:') || outputLower.startsWith('错误：') || outputLower.includes('not found') || outputLower.includes('未找到')) {
+                                // 如果输出内容以“错误”开头，或包含“未找到”等失败关键词，则判定为逻辑失败
+                                console.log(`[PythonOutput] 🟡 检测到Python“静默失败”（逻辑错误），输出内容: ${finalOutput.substring(0, 100)}`);
+                                
+                                // 将其包装成一个对Agent友好的、明确的错误报告
+                                output = `🐍 **Python代码逻辑失败** 🔴\n\n**原因**: 脚本执行成功，但返回了错误信息。\n\n**代码输出**: \n\`\`\`\n${finalOutput}\n\`\`\`\n\n**诊断建议**:\n1. 检查你的代码逻辑，特别是用于定位和提取数据的标记（marker）或正则表达式是否能在上一步的观察结果中找到完全匹配。\n2. 打印 \`input_data\` 的一部分来确认其内容和结构是否符合你的预期。\n3. 调整你的代码以适应实际的输入数据结构。`;
+                                success = false; // 🚨 关键：将成功状态标记为 false！
+                                
+                            } else {
+                                // ✅ 只有在没有stderr，且stdout内容不像是错误信息时，才判定为真正成功
+                                console.log(`[PythonOutput] ✅ Python执行成功，输出长度: ${finalOutput.length}`);
+                                output = this.formatCodeOutputForMode({ stdout: finalOutput }, researchMode);
+                                success = true;
+                            }
 
                         } else {
+                            // 3. 无任何输出
                             console.log(`[PythonOutput] ℹ️ Python执行完成，无输出`);
                             output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
-                            success = true;
+                            success = true; // 无输出通常不认为是失败，可能是一些文件操作
                         }
 
                     } catch (error) {
