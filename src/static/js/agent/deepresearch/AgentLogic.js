@@ -790,6 +790,7 @@ ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
 - **必须参数**：{url: "具体的URL链接"}
 
 ${pythonDebuggingGuide}
+${pythonStateInjectionGuide}
 ${errorCorrectionProtocol}
 ${config.specialInstructions}
 

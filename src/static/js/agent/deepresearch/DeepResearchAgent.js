@@ -39,6 +39,9 @@ export class DeepResearchAgent {
             tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
         };
 
+        // 🎯 新增：将 intermediateSteps 提升为类属性以支持状态注入
+        this.intermediateSteps = [];
+
         console.log(`[DeepResearchAgent] 初始化完成，可用研究工具: ${Object.keys(tools).join(', ')}`);
     }
 
@@ -276,6 +279,25 @@ ${content}
         } else {
             try {
                 console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`);
+
+                // 🔥🔥🔥 核心修复：Python 状态注入逻辑 🔥🔥🔥
+                if (toolName === 'python_sandbox' && parameters.code && parameters.code.includes('{{LAST_OBSERVATION}}')) {
+                    console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
+                    const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
+                    
+                    if (lastStep && typeof lastStep.observation === 'string') {
+                        // 为了安全地将字符串注入到 Python 代码中，我们使用 JSON 序列化，它会处理好所有的转义字符
+                        const dataToInject = JSON.stringify(lastStep.observation);
+                        
+                        // 替换占位符。注意，我们替换的是包含引号的整个占位符
+                        parameters.code = parameters.code.replace('"{{LAST_OBSERVATION}}"', dataToInject);
+                        console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
+                    } else {
+                        console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。将占位符替换为空字符串。');
+                        parameters.code = parameters.code.replace('"{{LAST_OBSERVATION}}"', '""'); 
+                    }
+                }
+
                 const toolResult = await tool.invoke(parameters, {
                     mode: 'deep_research',
                     researchMode: detectedMode
@@ -430,7 +452,8 @@ ${content}
         }
 
         // ✨ 阶段2：自适应执行
-        let intermediateSteps = [];
+        // 🎯 核心修复：将 intermediateSteps 提升为类属性以支持状态注入
+        this.intermediateSteps = [];
         let iterations = 0;
         let consecutiveNoGain = 0;
         let allSources = [];
@@ -442,14 +465,14 @@ ${content}
             iterations++;
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
-            const planCompletion = this._calculatePlanCompletion(researchPlan, intermediateSteps); // 计算完成度
+            const planCompletion = this._calculatePlanCompletion(researchPlan, this.intermediateSteps); // 计算完成度
             
             await this.callbackManager.invokeEvent('on_research_progress', {
                 run_id: runId,
                 data: {
                     iteration: iterations,
                     total_iterations: this.maxIterations, // 统一命名
-                    current_step: intermediateSteps.length, // 统一命名
+                    current_step: this.intermediateSteps.length, // 统一命名
                     total_steps: totalSteps, // 新增
                     plan_completion: planCompletion, // 新增
                     sources_collected: allSources.length, // 新增
@@ -464,7 +487,7 @@ ${content}
                 const logicInput = {
                     topic: internalTopic,     // 供 LLM 使用的完整上下文
                     displayTopic: uiTopic,      // 备用，以防需要
-                    intermediateSteps,
+                    intermediateSteps: this.intermediateSteps,
                     availableTools,
                     researchPlan,
                     researchMode: detectedMode,
@@ -508,7 +531,7 @@ ${content}
                         detectedMode // 传递当前的研究模式
                     );
                     // 将大纲作为观察结果，送入下一次迭代，指导Agent撰写最终报告
-                    intermediateSteps.push({
+                    this.intermediateSteps.push({
                         action: { 
                             tool_name: 'generate_outline', 
                             parameters: parsedAction.parameters,
@@ -522,7 +545,7 @@ ${content}
 
                 // 🎯 处理知识检索
                 if (parsedAction.type === 'knowledge_retrieval') {
-                    await this._handleKnowledgeRetrieval(parsedAction, intermediateSteps, runId);
+                    await this._handleKnowledgeRetrieval(parsedAction, this.intermediateSteps, runId);
                     continue; // 知识检索完成后，跳过后续的工具执行和摘要，直接进入下一轮迭代
                 }
 
@@ -533,7 +556,7 @@ ${content}
                     // --- START FIX: 拦截知识检索调用 ---
                     if (tool_name === 'retrieve_knowledge') {
                         console.log('[DeepResearchAgent] 🧠 Intercepting knowledge retrieval call...');
-                        await this._handleKnowledgeRetrieval(parsedAction, intermediateSteps, runId);
+                        await this._handleKnowledgeRetrieval(parsedAction, this.intermediateSteps, runId);
                         continue; // Skip the rest of the loop and start next iteration
                     }
                     // --- END FIX ---
@@ -550,14 +573,14 @@ ${content}
                         tool_name,
                         parameters,
                         thought,
-                        intermediateSteps,
+                        this.intermediateSteps,
                         detectedMode,
                         recordToolCall
                     );
                     
                     // 🎯 新增：将原始数据存储到数据总线
                     if (toolSuccess) {
-                        this._storeRawData(intermediateSteps.length, rawObservation, {
+                        this._storeRawData(this.intermediateSteps.length, rawObservation, {
                             toolName: tool_name,
                             contentType: tool_name === 'crawl4ai' ? 'webpage' : 'text'
                         });
@@ -567,7 +590,7 @@ ${content}
                     const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
                     
                     // ✨ 评估信息增益
-                    const currentInfoGain = this._calculateInformationGain(summarizedObservation, intermediateSteps);
+                    const currentInfoGain = this._calculateInformationGain(summarizedObservation, this.intermediateSteps);
                     this.metrics.informationGain.push(currentInfoGain);
                     
                     if (currentInfoGain < 0.1) { // 信息增益阈值
@@ -581,7 +604,7 @@ ${content}
                     const keyFinding = await this._generateKeyFinding(summarizedObservation);
                     
                     // 保存完整的步骤信息
-                    intermediateSteps.push({
+                    this.intermediateSteps.push({
                         action: {
                             type: 'tool_call',
                             tool_name: tool_name,
@@ -601,7 +624,7 @@ ${content}
                     updateResearchStats({
                         sources: allSources,
                         // ✨ 核心修复：传递过滤后的数组本身，而不是它的长度
-                        toolCalls: intermediateSteps.filter(step => step.action.type === 'tool_call')
+                        toolCalls: this.intermediateSteps.filter(step => step.action.type === 'tool_call')
                     });
                     
                     await this.callbackManager.invokeEvent('on_tool_end', {
@@ -616,7 +639,7 @@ ${content}
                     });
 
                     // ✨ 智能提前终止：基于计划完成度
-                    const completionRate = this._calculatePlanCompletion(researchPlan, intermediateSteps);
+                    const completionRate = this._calculatePlanCompletion(researchPlan, this.intermediateSteps);
                     this.metrics.planCompletion = completionRate;
                     
                     if (completionRate > 0.8 && consecutiveNoGain >= 1) {
@@ -629,7 +652,7 @@ ${content}
                     console.warn('[DeepResearchAgent] ⚠️ 输出解析失败，触发自我纠正');
                     const observation = `格式错误: ${parsedAction.error || '无法解析响应'}。请严格遵循指令格式：思考: ... 行动: {...} 或 最终答案: ...`;
                     
-                    intermediateSteps.push({ 
+                    this.intermediateSteps.push({ 
                         action: { 
                             tool_name: 'self_correction', 
                             parameters: {},
@@ -667,7 +690,7 @@ ${content}
                     consecutiveNoGain++;
                 }
 
-                intermediateSteps.push({
+                this.intermediateSteps.push({
                     action: {
                         tool_name: 'internal_error',
                         parameters: {},
@@ -694,7 +717,7 @@ ${content}
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
         // 提取所有观察结果用于关键词分析
-        const allObservationsForKeywords = intermediateSteps.map(s => s.observation).join(' ');
+        const allObservationsForKeywords = this.intermediateSteps.map(s => s.observation).join(' ');
         const keywords = this._extractKeywords(uiTopic, allObservationsForKeywords);
         
         // 更新关键词统计
@@ -703,7 +726,7 @@ ${content}
         // 在循环结束后，报告生成前，确保所有来源都被正确传递：
 
         // 🎯 关键修复：确保所有来源都被收集和传递
-        const allSourcesFromSteps = intermediateSteps.flatMap(step => step.sources || []);
+        const allSourcesFromSteps = this.intermediateSteps.flatMap(step => step.sources || []);
         const combinedSources = [...allSources, ...allSourcesFromSteps];
         const uniqueSources = this._deduplicateSources(combinedSources);
 
@@ -722,7 +745,7 @@ ${content}
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
-            finalReport = await this._generateFinalReport(uiTopic, intermediateSteps, researchPlan, uniqueSources, detectedMode);
+            finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
         }
 
         // ✨ 阶段3.5：智能资料来源过滤
@@ -743,7 +766,7 @@ ${content}
         // 🎯 4.1. 调用质量评估方法
         const temporalQualityReport = this._generateTemporalQualityReport(
             researchPlan,
-            intermediateSteps,
+            this.intermediateSteps,
             uiTopic, // 使用干净的 topic
             detectedMode
         );
@@ -754,10 +777,10 @@ ${content}
             topic: uiTopic,
             report: finalReport,
             iterations,
-            intermediateSteps,
+            intermediateSteps: this.intermediateSteps,
             sources: filteredSources,
             metrics: this.metrics,
-            plan_completion: this._calculatePlanCompletion(researchPlan, intermediateSteps),
+            plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
             research_mode: detectedMode,
             temporal_quality: temporalQualityReport // 包含完整时效性质量报告
         };
@@ -981,7 +1004,7 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             
             //  用户要求的格式：标题一行，链接一行，且链接可点击
             sourcesList += `**${index + 1}. ${title}**\n`;
-            sourcesList += `🔗 [${url}](${url})\n`;
+            sourcesList += `🔗 [查看链接](${url})\n`;
             
             sourcesList += `</div>\n\n`;
         });
