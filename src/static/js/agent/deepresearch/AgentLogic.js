@@ -1044,47 +1044,23 @@ ${plan.research_plan.map(item =>
 
     // ✨ 步骤追踪逻辑
     _determineCurrentStep(plan, history) {
-        if (!plan || !plan.research_plan) return 1;
+        if (!plan || !history || history.length === 0) return 1;
         
-        let lastSuccessfulStep = 0;
-        for (const step of plan.research_plan) {
-            if (this._isStepCompleted(step, history)) {
-                lastSuccessfulStep = step.step;
-            } else {
-                // 找到第一个未完成的步骤，它的序号就是当前步骤
-                return step.step;
-            }
-        }
+        const completedSteps = plan.research_plan.filter(step => 
+            this._isStepCompleted(step, history)
+        ).length;
         
-        // 如果所有步骤都完成了，就停留在最后一步（通常是报告生成）
-        return plan.research_plan.length;
+        return Math.min(completedSteps + 1, plan.research_plan.length);
     }
 
     _isStepCompleted(step, history) {
-        // 一个步骤被视为完成，如果历史中存在一个与该步骤子问题高度相关的、成功的、非学习性质的工具调用。
-        const stepKeywords = new Set((step.sub_question.match(/\b\w{2,}\b/g) || []).map(w => w.toLowerCase()));
-        if (stepKeywords.size === 0) return false;
-
-        // 寻找与之匹配的、成功的历史动作
-        return history.some(histStep => {
-            // 必须是一个成功的工具调用，且不是自我修正或学习
-            if (histStep.success === false || !histStep.action || histStep.action.tool_name === 'self_correction' || histStep.action.tool_name === 'retrieve_knowledge') {
-                return false;
-            }
-
-            const thought = (histStep.action.thought || '').toLowerCase();
-            
-            // 计算思考内容与步骤子问题的关键词重合度
-            let matchCount = 0;
-            for (const keyword of stepKeywords) {
-                if (thought.includes(keyword)) {
-                    matchCount++;
-                }
-            }
-            
-            // 如果思考内容中包含了超过60%的步骤关键词，我们认为这个动作就是为了完成该步骤
-            return (matchCount / stepKeywords.size) > 0.6;
-        });
+        const stepKeywords = step.sub_question.toLowerCase().split(' ');
+        const recentActions = history.slice(-3).join(' ').toLowerCase();
+        
+        return stepKeywords.some(keyword => 
+            recentActions.includes(keyword) && 
+            history.some(entry => entry.includes('最终答案') || entry.includes('足够信息'))
+        );
     }
 
     // 🎯 格式化历史记录 - 核心修复：简化旧历史记录以降低干扰

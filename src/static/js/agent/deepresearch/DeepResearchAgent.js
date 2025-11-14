@@ -286,16 +286,16 @@ ${content}
                     const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
                     
                     if (lastStep && typeof lastStep.observation === 'string') {
-                        // --- START OF FINAL FIX ---
-                        // 使用 JSON.stringify 来安全地转义所有特殊字符（如引号、反斜杠）
+                        // 为了安全地将字符串注入到 Python 代码中，我们使用 JSON 序列化，它会处理好所有的转义字符
+                       
+                        // 使用 JSON.stringify 来安全地转义所有特殊字符
                         const safelyEscapedData = JSON.stringify(lastStep.observation);
 
-                        // 将占位符替换为一个 Python 多行字符串 ("""...""")
-                        // 我们需要移除 JSON.stringify 添加的首尾双引号
+                        // 然后，在剥离外层引号后，将结果包裹在Python的三引号中
                         const pythonStringLiteral = `"""${safelyEscapedData.slice(1, -1)}"""`;
 
                         parameters.code = parameters.code.replace('"{{LAST_OBSERVATION}}"', pythonStringLiteral);
-                        // --- END OF FINAL FIX ---
+                        
                         console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
                     } else {
                         console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。将占位符替换为空字符串。');
@@ -527,25 +527,31 @@ ${content}
                 }
 
                 // 🎯 处理报告大纲生成
-                if (parsedAction.type === 'generate_outline') {
+                if (parsedAction.type === 'generate_outline' || parsedAction.tool_name === 'generate_outline') { // 增加对 tool_name 的判断以增强兼容性
                     console.log('[DeepResearchAgent] 📝 Agent已完成信息收集，正在生成报告大纲...');
-                    // 🎯 调用新方法，并传入 researchMode
+                    
+                    // 🎯 1. 调用您已经写好的大纲生成方法
                     const reportOutline = await this._generateReportOutline(
                         uiTopic, // 使用干净的主题
                         parsedAction.parameters.key_findings,
                         detectedMode // 传递当前的研究模式
                     );
-                    // 将大纲作为观察结果，送入下一次迭代，指导Agent撰写最终报告
+                    
+                    // 🎯 2. 将生成的大纲作为观察结果，送入下一次迭代，以指导Agent撰写最终报告
                     this.intermediateSteps.push({
-                        action: { 
-                            tool_name: 'generate_outline', 
+                        action: {
+                            tool_name: 'generate_outline',
                             parameters: parsedAction.parameters,
-                            thought: parsedAction.thought 
+                            thought: parsedAction.thought
                         },
-                        observation: `已成功生成报告大纲。下一步的任务是基于这份大纲，撰写最终的、完整的Markdown研究报告。\n\n---\n\n${reportOutline}`,
-                        key_finding: `已生成报告大纲，包含${parsedAction.parameters.key_findings.length}个关键发现的逻辑组织` // 🎯 新增关键发现
+                        // 关键：构建一个对LLM友好的、指令清晰的观察结果
+                        observation: `✅ 报告大纲已成功生成。你的下一步任务是基于这份大纲，填充详细内容，撰写最终的、完整的Markdown研究报告。\n\n---\n\n${reportOutline}`,
+                        key_finding: `已生成包含${parsedAction.parameters.key_findings.length}个关键发现的报告大纲`,
+                        success: true
                     });
-                    continue; // 继续下一次迭代
+                    
+                    // 🎯 3. 结束本次迭代，立即进入下一轮思考
+                    continue;
                 }
 
                 // 🎯 处理知识检索
