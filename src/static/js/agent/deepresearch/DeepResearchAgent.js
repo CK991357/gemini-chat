@@ -12,6 +12,13 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // 🎯 新增：智能数据总线
+        this.dataBus = new Map(); // step_index -> {rawData, metadata, contentType}
+        this.dataRetentionPolicy = {
+            maxRawDataSize: 50000, // 最大原始数据大小
+            retentionSteps: 3      // 保留最近3步的数据
+        };
+
         // 🎯 联邦知识系统
         this.knowledgeSystem = {
             enabled: config.knowledgeRetrievalEnabled !== false,
@@ -274,6 +281,16 @@ ${content}
                 // ✅✅✅ 核心修复：从工具返回结果中获取真实的成功状态 ✅✅✅
                 toolSuccess = toolResult.success !== false; // 默认true，除非明确为false
 
+                // 🎯 新增：Python执行失败自动诊断
+                if (toolName === 'python_sandbox' && !toolSuccess) {
+                    console.log(`[DeepResearchAgent] Python执行失败，启动自动诊断...`);
+                    const diagnosis = await this._diagnosePythonError(rawObservation, parameters);
+                    if (diagnosis.suggestedFix) {
+                        rawObservation += `\n\n## 🔧 自动诊断结果\n${diagnosis.analysis}\n\n**建议修复**: ${diagnosis.suggestedFix}`;
+                        console.log(`[DeepResearchAgent] 诊断完成: ${diagnosis.analysis}`);
+                    }
+                }
+
                 // 🎯 提取来源信息
                 if (toolResult.sources && Array.isArray(toolResult.sources)) {
                     toolSources = toolResult.sources.map(source => ({
@@ -525,6 +542,14 @@ ${content}
                         recordToolCall
                     );
                     
+                    // 🎯 新增：将原始数据存储到数据总线
+                    if (toolSuccess) {
+                        this._storeRawData(intermediateSteps.length, rawObservation, {
+                            toolName: tool_name,
+                            contentType: tool_name === 'crawl4ai' ? 'webpage' : 'text'
+                        });
+                    }
+
                     // ✅✅✅ --- 核心修复：传入工具名称以应用不同的摘要策略 --- ✅✅✅
                     const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
                     
@@ -1199,6 +1224,23 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             console.log(`[DeepResearchAgent] 工具 "${toolName}" 内容长度 ${originalLength} ≤ 阈值 ${threshold}，直接返回`);
             return observation;
         }
+        
+        // 🎯 增强：对包含表格的数据特别处理
+        if (this._containsStructuredData(observation)) {
+            console.log(`[DeepResearchAgent] 检测到结构化数据，优先保留表格内容`);
+            const structuredContent = this._extractAndPreserveStructuredData(observation);
+            
+            // 🎯 优化：如果提取的结构化内容本身不长，且原始内容超过阈值，则直接返回结构化内容
+            if (structuredContent.length < threshold * 0.8 && structuredContent.length > 100) {
+                console.log(`[DeepResearchAgent] 结构化内容 (${structuredContent.length} 字符) 足够短，直接返回`);
+                return `## 📋 ${toolName} 结构化数据（已优化保留）\n\n${structuredContent}`;
+            }
+            // 如果结构化内容仍然很长，则继续走智能摘要流程，但使用结构化内容作为输入
+            if (structuredContent.length > threshold) {
+                console.log(`[DeepResearchAgent] 结构化内容 (${structuredContent.length} 字符) 仍过长，将对结构化内容进行摘要`);
+                observation = structuredContent; // 使用结构化内容替换原始内容进行摘要
+            }
+        }
 
         console.log(`[DeepResearchAgent] 工具 "${toolName}" 内容过长 (${originalLength} > ${threshold})，启动智能摘要...`);
         
@@ -1337,6 +1379,51 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         
         // 实在找不到合适的边界，直接截断
         return text.substring(0, maxLength) + "...";
+    }
+
+    /**
+     * 🎯 新增：结构化数据检测
+     */
+    _containsStructuredData(text) {
+        const structuredPatterns = [
+            /\|.*\|.*\|/, // Markdown表格
+            /<table[^>]*>.*?<\/table>/is, // HTML表格
+            /\b(模型|名称|定位|特点|上下文|输出)\b.*\n.*-{3,}/, // 中文表格特征
+            /\b(Model|Name|Positioning|Features|Context|Output)\b.*\n.*-{3,}/ // 英文表格特征
+        ];
+        
+        return structuredPatterns.some(pattern => pattern.test(text));
+    }
+
+    /**
+     * 🎯 新增：提取并保留结构化数据
+     */
+    _extractAndPreserveStructuredData(text) {
+        let preservedContent = '';
+        
+        // 提取Markdown表格
+        const markdownTables = text.match(/(\|[^\n]+\|\r?\n)((?:\|?:?-+)+\|?\r?\n)((?:\|[^\n]+\|\r?\n?)+)/g);
+        if (markdownTables) {
+            preservedContent += '## 提取的Markdown表格数据\n\n' + markdownTables.join('\n\n') + '\n\n';
+        }
+        
+        // 提取类似表格的结构化文本
+        const structuredSections = text.split(/\n## |\n# |\n### /).filter(section => {
+            // 检查每个部分是否包含结构化特征
+            return this._containsStructuredData(section);
+        });
+        
+        if (structuredSections.length > 0) {
+            preservedContent += '## 关键结构化信息\n\n' + structuredSections.join('\n\n') + '\n\n';
+        }
+        
+        // 如果没找到结构化数据，返回原始文本的前面部分
+        if (!preservedContent) {
+            // 降级：返回原始文本的前5000字符
+            return text.substring(0, Math.min(5000, text.length));
+        }
+        
+        return preservedContent;
     }
 
     // =============================================
@@ -1685,4 +1772,139 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             console.warn('[TemporalAnalytics] 记录性能数据失败:', error);
         }
     }
+
+    /**
+     * 🎯 占位符：从文本中提取表格
+     */
+    _extractTablesFromText(text) {
+        // 简单的Markdown表格提取逻辑占位符
+        const tableMatches = text.match(/\|.*\|.*\n\|[-: ]+\|[-: ]+\|.*\n(\|.*\|.*)+/g) || [];
+        return tableMatches.map(t => `### 提取表格\n${t}`);
+    }
+
+    /**
+     * 🎯 占位符：从文本中提取列表
+     */
+    _extractListsFromText(text) {
+        // 简单的Markdown列表提取逻辑占位符
+        const listMatches = text.match(/(\n\s*[-*+]\s+.*)+/g) || [];
+        return listMatches.map(l => `### 提取列表\n${l.trim()}`);
+    }
+
+    /**
+     * 🎯 新增：智能数据存储方法
+     */
+    _storeRawData(stepIndex, rawData, metadata = {}) {
+        const dataKey = `step_${stepIndex}`;
+        
+        // 智能数据压缩：只存储关键信息
+        let processedData = rawData;
+        if (rawData.length > 10000) {
+            // 对于大文本，提取关键结构化部分
+            processedData = this._extractStructuredData(rawData, metadata);
+        }
+        
+        this.dataBus.set(dataKey, {
+            rawData: processedData,
+            metadata: {
+                ...metadata,
+                originalLength: rawData.length,
+                processedLength: processedData.length,
+                timestamp: Date.now()
+            }
+        });
+        
+        // 清理过期数据
+        this._cleanupDataBus();
+        
+        console.log(`[DataBus] 存储数据 ${dataKey}: ${rawData.length} -> ${processedData.length} 字符`);
+    }
+
+    /**
+     * 🎯 新增：智能数据提取
+     */
+    _extractStructuredData(rawData, metadata) {
+        // 针对网页内容特别优化
+        if (metadata.contentType === 'webpage') {
+            // 提取表格、列表等结构化数据
+            const tables = this._extractTablesFromText(rawData);
+            const lists = this._extractListsFromText(rawData);
+            
+            if (tables.length > 0 || lists.length > 0) {
+                return `## 关键结构化数据\n\n${tables.join('\n\n')}\n\n${lists.join('\n\n')}`;
+            }
+        }
+        
+        // 通用情况：保留前8000字符 + 后2000字符
+        if (rawData.length > 10000) {
+            return rawData.substring(0, 8000) +
+                   '\n\n[...内容截断...]\n\n' +
+                   rawData.substring(rawData.length - 2000);
+        }
+        
+        return rawData;
+    }
+
+    /**
+     * 🎯 新增：数据总线清理
+     */
+    _cleanupDataBus() {
+        const keys = Array.from(this.dataBus.keys()).sort();
+        if (keys.length > this.dataRetentionPolicy.retentionSteps) {
+            // 确保只删除旧的步骤，步骤键是 'step_X'
+            const stepIndices = keys.map(k => parseInt(k.split('_'))).filter(n => !isNaN(n)).sort((a, b) => a - b);
+            
+            if (stepIndices.length > this.dataRetentionPolicy.retentionSteps) {
+                const indicesToDelete = stepIndices.slice(0, stepIndices.length - this.dataRetentionPolicy.retentionSteps);
+                indicesToDelete.forEach(index => {
+                    const key = `step_${index}`;
+                    this.dataBus.delete(key);
+                    console.log(`[DataBus] 清理过期数据: ${key}`);
+                });
+            }
+        }
+    }
+}
+/**
+ * 🎯 新增：Python错误智能诊断
+ */
+async _diagnosePythonError(errorOutput, parameters) {
+    const diagnosis = {
+        errorType: 'unknown',
+        analysis: '',
+        suggestedFix: ''
+    };
+    
+    // 常见错误模式匹配
+    if (errorOutput.includes('SyntaxError') || errorOutput.includes('语法错误')) {
+        diagnosis.errorType = 'syntax_error';
+        diagnosis.analysis = '检测到语法错误，可能是括号、引号不匹配或缩进问题';
+        diagnosis.suggestedFix = '仔细检查代码中的括号、引号是否成对，确保缩进一致';
+    }
+    
+    if (errorOutput.includes('IndentationError')) {
+        diagnosis.errorType = 'indentation_error';
+        diagnosis.analysis = '缩进错误，Python对缩进要求严格';
+        diagnosis.suggestedFix = '统一使用4个空格进行缩进，不要混用空格和Tab';
+    }
+    
+    if (errorOutput.includes('NameError') || errorOutput.includes('未定义')) {
+        diagnosis.errorType = 'name_error';
+        diagnosis.analysis = '变量或函数名未定义';
+        diagnosis.suggestedFix = '检查变量名拼写，确保所有使用的变量都已正确定义';
+    }
+    
+    if (errorOutput.includes('JSON') || errorOutput.includes('json')) {
+        diagnosis.errorType = 'json_error';
+        diagnosis.analysis = 'JSON解析错误，可能是格式不正确';
+        diagnosis.suggestedFix = '使用在线JSON验证工具检查JSON格式，确保引号、括号正确';
+    }
+    
+    // 如果无法自动诊断，建议检索知识
+    if (diagnosis.errorType === 'unknown') {
+        diagnosis.analysis = '无法自动诊断具体错误类型';
+        diagnosis.suggestedFix = '建议调用 `retrieve_knowledge` 获取 `python_sandbox` 的错误处理指南';
+    }
+    
+    return diagnosis;
 }

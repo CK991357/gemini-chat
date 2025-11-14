@@ -469,45 +469,35 @@ export class AgentLogic {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
+        // 🎯 增强：动态知识检索触发器
+        const knowledgeRetrievalTriggers = this._buildKnowledgeRetrievalTriggers(intermediateSteps, researchPlan, currentStep);
+        
         // 🎯 核心新增：知识检索策略指导
         const knowledgeStrategySection = `
-## 🧠 知识驱动决策框架
+## 🧠 知识驱动决策框架 - 强制执行版
 
-你是一个**知识驱动的研究专家**。你拥有一个强大的内部知识库，包含所有工具的完整使用指南、工作流和最佳实践。
+### 🔥 强制检索条件（遇到以下情况必须检索知识）：
+${knowledgeRetrievalTriggers.conditions.map(condition => `- ${condition}`).join('\n')}
 
-### 📚 可用知识库
-${availableTools.map(tool => {
-  const isComplex = ['python_sandbox', 'crawl4ai', 'firecrawl'].includes(tool.name);
-  return `- **${tool.name}**: ${tool.description} ${isComplex ? '🔧' : ''}`;
-}).join('\n')}
+### 📚 当前上下文建议检索的知识：
+${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **${tool.name}**: ${tool.reason}`).join('\n')}
 
-### 🎯 知识检索策略
+### 🚨 违反规则的后果：
+- 如果未检索知识直接编写复杂代码，执行成功率将低于30%
+- 系统将无法提供最佳实践和错误预防指导
+- 可能导致任务失败和迭代浪费
 
-#### 何时检索知识？
-- **首次使用复杂工具**时（如 \`python_sandbox\`, \`crawl4ai\`）
-- **遇到不熟悉的任务类型**时（如数学证明、数据可视化）
-- **需要最佳实践指导**时（如报告生成、机器学习流程）
-- **工具执行失败需要诊断**时
+${knowledgeRetrievalTriggers.conditions.length > 0 ? `
+## ⚡ 立即行动要求
+基于当前任务，你**必须**首先调用 \`retrieve_knowledge\` 来获取以下工具的完整指南：
+${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${tool.reason}`).join('\n')}
+` : ''}
 
-#### 如何检索知识？
-思考: [明确说明你需要使用哪个工具，以及为什么需要查阅其文档]
-行动: retrieve_knowledge
-行动输入: {"tool_name": "工具名", "context": "当前任务背景"}
-
-### 💡 知识利用工作流
-
-\`\`\`
-1. 识别复杂任务 → "我需要使用python_sandbox进行数据分析和可视化"
-2. 检索完整指南 → 调用 retrieve_knowledge 获取完整工作流
-3. 基于指南规划 → 按照文档中的"数据可视化工作流"编写代码
-4. 执行验证 → 运行代码并验证结果
-\`\`\`
-
-### 🛠️ 复杂工具专用指南
+### 🛠️ 复杂工具专用指南（备查）
 
 #### python_sandbox 知识地图
 - **数据分析**: 参考 "数据清洗与分析" + "pandas_cheatsheet"
-- **可视化**: 参考 "数据可视化" + "matplotlib_cookbook" 
+- **可视化**: 参考 "数据可视化" + "matplotlib_cookbook"
 - **数学证明**: 参考 "公式证明工作流" + "sympy_cookbook"
 - **报告生成**: 参考 "自动化报告生成" + "report_generator_workflow"
 - **机器学习**: 参考 "机器学习" + "ml_workflow"
@@ -901,6 +891,67 @@ ${strategy.reminder}
 
 **最终决策权在你手中，请基于专业判断选择最佳研究策略。**`;
     }
+    /**
+     * 🎯 新增：智能知识检索触发器
+     */
+    _buildKnowledgeRetrievalTriggers(intermediateSteps, researchPlan, currentStep) {
+        const conditions = [];
+        const suggestedTools = [];
+        
+        const currentStepPlan = researchPlan.research_plan.find(step => step.step === currentStep);
+        const hasPythonTasks = currentStepPlan?.sub_question?.includes('python_sandbox') || 
+                              currentStepPlan?.expected_tools?.includes('python_sandbox') ||
+                              currentStepPlan?.sub_question?.includes('数据') ||
+                              currentStepPlan?.sub_question?.includes('表格') ||
+                              currentStepPlan?.sub_question?.includes('图表');
+        
+        // 条件1：首次使用复杂工具 (python_sandbox)
+        const usedTools = intermediateSteps.map(step => step.action?.tool_name).filter(Boolean);
+        if (!usedTools.includes('python_sandbox') && hasPythonTasks) {
+            conditions.push('首次使用 `python_sandbox` 进行数据处理或图表生成');
+            suggestedTools.push({
+                name: 'python_sandbox',
+                reason: '获取数据处理和表格/图表生成的最佳实践工作流'
+            });
+        }
+        
+        // 条件2：复杂数据处理任务
+        const complexDataTasks = ['提取', '表格', '处理', '分析', '清洗', '图表', '可视化'];
+        const hasComplexDataTask = complexDataTasks.some(task => 
+            currentStepPlan?.sub_question?.includes(task)
+        );
+        
+        if (hasComplexDataTask && !suggestedTools.some(t => t.name === 'python_sandbox')) {
+            conditions.push('执行复杂的数据提取、处理或可视化任务');
+            suggestedTools.push({
+                name: 'python_sandbox', 
+                reason: '获取数据提取和表格/图表生成的专业工作流'
+            });
+        }
+        
+        // 条件3：之前步骤有网页抓取且当前需要处理数据
+        const hasCrawledData = intermediateSteps.some(step => 
+            step.action?.tool_name === 'crawl4ai' && step.observation?.includes('成功')
+        );
+        
+        if (hasCrawledData && hasPythonTasks) {
+            conditions.push('需要处理之前抓取的网页数据');
+            suggestedTools.push({
+                name: 'python_sandbox',
+                reason: '获取网页数据解析和结构化的完整指南'
+            });
+        }
+        
+        // 移除重复的工具建议
+        const uniqueSuggestedTools = suggestedTools.filter((tool, index, self) =>
+            index === self.findIndex((t) => (
+                t.name === tool.name
+            ))
+        );
+
+        return { conditions, suggestedTools: uniqueSuggestedTools };
+    }
+
 
     // ✨ 格式化研究计划
     _formatResearchPlan(plan, currentStep) {
