@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/AgentLogic.js - 知识检索集成版
+// src/static/js/agent/deepresearch/AgentLogic.js - 修复crawl4ai参数匹配版
 
 // 🎯 核心修改：导入 ReportTemplates 中的工具函数
 import { getTemplatePromptFragment } from './ReportTemplates.js';
@@ -582,7 +582,7 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
   "code": "import re\\n\\n# 系统将会把上一步的观察结果注入到这里\\ninput_data = \\"{{LAST_OBSERVATION}}\\"\\n\\n# 现在，我可以直接使用 input_data 变量进行处理\\nprint(f\\"接收到的数据长度: {len(input_data)}\\")"
 }
 
-**🚫 绝对禁止**:
+**🚫 绝对禁止**：
 - 在代码中硬编码或粘贴上一步的观察结果。
 - 假设数据会自动出现在某个未定义的变量中（如 \`web_content\`)。
 `;
@@ -594,6 +594,7 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
 
 ### 第一步：深度诊断错误
 - **仔细阅读错误报告**：错误信息已经过专业解析，包含具体错误类型、位置和描述
+- **【新增】检查参数名称**：确认你使用的参数名称是否与工具文档（SKILL.md）中规定的完全一致，特别是注意 \`crawl4ai\` 工具的 \`schema_definition\` 参数名。
 - **在思考中明确写出**："我识别到错误类型：[具体错误]，位于[具体位置]"
 - **分析错误原因**："错误原因是：[具体分析]，我将通过[具体方法]修复"
 
@@ -603,6 +604,7 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
   - \`SyntaxError\` → 检查引号、括号、冒号等语法元素
   - \`IndentationError\` → 修正缩进，确保代码块正确对齐
   - \`NameError\` → 检查变量/函数名拼写和定义
+  - **参数名称错误** → 将参数名修正为文档中规定的正确名称（例如将 \`schema\` 改为 \`schema_definition\`）
 - **绝对禁止**：在没有理解错误的情况下重试相同代码
 
 ### 第三步：验证性重试
@@ -752,6 +754,35 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
 请严格依据**当前任务**，决策出下一步的**唯一行动**。你的响应格式**必须**严格遵循"思考、行动、行动输入"的格式。除非所有计划步骤均已完成，否则不要生成最终报告。
 `;
 
+        // 🎯 核心修复：添加 crawl4ai 参数特别说明
+        const crawl4aiSpecialNote = `
+## 🕷️ crawl4ai 特别使用说明
+
+**重要**: 当使用 \`extract\` 模式时，必须提供一个名为 \`schema_definition\` 的参数来定义提取的数据结构。请勿使用 \`schema\` 作为参数名。
+
+**正确示例**:
+\`\`\`json
+{
+  "mode": "extract",
+  "parameters": {
+    "url": "https://example.com",
+    "schema_definition": {
+      "title": "string",
+      "content": "string"
+    }
+  }
+}
+\`\`\`
+`;
+
+        // 修改：构建可用工具部分，包括特别提示
+        const availableToolsSection = `
+# 可用工具
+${availableToolsText}
+
+${crawl4aiSpecialNote}
+`;
+
         const prompt = `
 # 角色：${config.role}
 ${config.description}
@@ -766,8 +797,7 @@ ${planText}
 **最终主题**：${topic}
 ${lastObservation}
 
-# 可用工具
-${availableToolsText}
+${availableToolsSection}  // 🎯 修复：使用包含crawl4ai特别说明的工具部分
 
 # 研究历史与观察
 ${formattedHistory}
@@ -812,10 +842,11 @@ ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
 - **重要提示**: \`crawl4ai\` 的返回结果（观察）通常是一个经过优化的**智能摘要**，它可能已经包含了你需要的所有结构化信息（如表格）。在进入下一个步骤，如编写下一步的\`python_sandbox\`代码时，**你应该优先尝试从这个摘要中提取数据**，因为它比解析原始HTML更简单、更可靠。只有当摘要信息确实不足时，才需要考虑处理更原始的数据。
 - 信息片段不足以回答深度问题时
 - **必须参数**：{url: "具体的URL链接"}
+- **【重要修复】**：使用 \`extract\` 模式时，参数名必须是 \`schema_definition\`，不是 \`schema\`！
 
 ${pythonDebuggingGuide}
 ${pythonStateInjectionGuide}
-${errorCorrectionProtocol}
+${errorCorrectionProtocol}  // 🎯 修复：使用包含参数检查的错误修正协议
 ${config.specialInstructions}
 
 ## 3. 动态调整权限
