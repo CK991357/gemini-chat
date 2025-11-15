@@ -564,6 +564,18 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
 - 保持了代码的可读性和逻辑清晰性
 `;
         
+        const pythonGenerationDiscipline = `
+## 💻 Python代码生成纪律 (强制遵循)
+
+**当你的行动是 \`python_sandbox\` 时，你必须在生成代码后进行一次严格的自我审查：**
+
+1.  **数据完整性检查**: 在你的"思考:"部分，你可能已经构思好了需要使用的数据（例如一个字典或列表）。在你最终输出的"行动输入:"的\`code\`字段中，**必须确保所有的数据都已完整、无遗漏地填写**。
+2.  **语法预览检查**: 快速预览你将要输出的代码。检查所有括号 \`()\`、\`[]\`、\`{}\` 是否闭合，所有字符串的引号 \`"\`、\`'\` 是否成对，所有字典的键值对是否完整。
+3.  **禁止占位符**: **绝对禁止**在最终输出的代码中包含任何形式的占位符或不完整的数据结构（例如 \`data = {'key':,}\`）。所有变量都必须有明确的、完整的值。
+
+**违反此纪律将直接导致语法错误和任务失败。在输出前请务必自查！**
+`;
+
         const pythonStateInjectionGuide = `
 ## 🐍 Python Sandbox 数据注入规则 (强制遵循)
 
@@ -735,13 +747,15 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${
 
         // 🎯 核心新增：知识检索输出格式
         const knowledgeRetrievalOutputFormat = `
-## 如果需要查阅工具文档：
+## 知识应用框架：查阅知识 vs. 应用知识
+
+### 1. 查阅知识 (检索工具文档)
 思考: [明确说明：1) 要解决什么任务 2) 需要使用哪个工具 3) 为什么需要查阅文档 4) 期望获取什么具体指导]
 示例: "用户要求进行数据分析和生成图表。我需要使用python_sandbox，但不确定数据处理和可视化的最佳实践。我应该查阅完整文档来获取'数据可视化工作流'的具体实现方法。"
 行动: retrieve_knowledge
 行动输入: {"tool_name": "python_sandbox", "context": "数据分析和可视化任务"}
 
-## 如果已获得知识指导：
+### 2. 应用知识 (执行工具操作)
 思考: [基于获取的完整指南，详细说明你的执行计划，并引用具体的工作流步骤]
 示例: "根据python_sandbox文档中的'数据可视化工作流'，我需要：1) 导入pandas和matplotlib 2) 数据清洗处理 3) 使用subplot创建多图表 4) 添加标签和标题"
 行动: python_sandbox
@@ -845,6 +859,7 @@ ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
 - **【重要修复】**：使用 \`extract\` 模式时，参数名必须是 \`schema_definition\`，不是 \`schema\`！
 
 ${pythonDebuggingGuide}
+${pythonGenerationDiscipline}
 ${pythonStateInjectionGuide}
 ${errorCorrectionProtocol}  // 🎯 修复：使用包含参数检查的错误修正协议
 ${config.specialInstructions}

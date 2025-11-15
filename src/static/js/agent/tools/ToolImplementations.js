@@ -524,27 +524,32 @@ class DeepResearchToolAdapter {
                     let success = false;
 
                     try {
-                        // 🎯 关键修复：深度解析嵌套JSON
+                        // 🎯 关键修复：深度解析"俄罗斯套娃"式的嵌套JSON
                         let currentData = dataFromProxy;
                         
-                        // 处理多层嵌套：后端返回的stdout可能包含字符串化的JSON
+                        // 🔥🔥🔥【最终版深度解析循环】🔥🔥🔥
+                        // 尝试最多3层解析，防止无限循环
                         for (let i = 0; i < 3; i++) {
                             if (currentData && typeof currentData.stdout === 'string' && currentData.stdout.trim().startsWith('{')) {
                                 try {
                                     const parsed = JSON.parse(currentData.stdout);
                                     console.log(`[PythonOutput] 第${i+1}层解析成功:`, Object.keys(parsed));
+                                    // 如果解析后的对象看起来像一个沙箱的输出，就继续深入
                                     if (parsed.stdout !== undefined || parsed.stderr !== undefined) {
                                         currentData = parsed;
-                                        continue;
+                                        continue; // 继续下一轮循环，尝试解析更深层
                                     }
                                 } catch (e) {
+                                    // 如果某一层解析失败，就使用当前层的数据，不再深入
+                                    console.warn(`[PythonOutput] 第${i+1}层解析失败，停止深入解析。`);
                                     break;
                                 }
                             }
+                            // 如果stdout不是一个JSON字符串，或已经没有更深层，则跳出循环
                             break;
                         }
 
-                        // 🎯 关键修复：正确提取错误信息
+                        // 🎯 从深度解析后的结果中正确提取输出和错误
                         finalOutput = currentData.stdout;
                         finalError = currentData.stderr;
                         
@@ -555,7 +560,7 @@ class DeepResearchToolAdapter {
                             stderrPreview: finalError?.substring(0, 200) || '无'
                         });
 
-                        // 🎯 关键修复：严格错误判断逻辑
+                        // 🎯 严格的错误判断逻辑
                         if (finalError && finalError.trim()) {
                             console.log(`[PythonOutput] 🔴 确认Python执行失败，错误长度: ${finalError.length}`);
                             
@@ -565,30 +570,20 @@ class DeepResearchToolAdapter {
                             success = false; // 🚨 必须设为false！
 
                         } else if (finalOutput && finalOutput.trim()) {
-                            // 2. stdout 有内容，需要进一步判断是成功输出还是"静默失败"
                             const outputLower = finalOutput.toLowerCase();
-                            
-                            // 🔥🔥🔥【新增的"静默失败"检测逻辑】🔥🔥🔥
                             if (outputLower.startsWith('error:') || outputLower.startsWith('错误：') || outputLower.includes('not found') || outputLower.includes('未找到')) {
-                                // 如果输出内容以"错误"开头，或包含"未找到"等失败关键词，则判定为逻辑失败
                                 console.log(`[PythonOutput] 🟡 检测到Python"静默失败"（逻辑错误），输出内容: ${finalOutput.substring(0, 100)}`);
-                                
-                                // 将其包装成一个对Agent友好的、明确的错误报告
-                                output = `🐍 **Python代码逻辑失败** 🔴\n\n**原因**: 脚本执行成功，但返回了错误信息。\n\n**代码输出**: \n\`\`\`\n${finalOutput}\n\`\`\`\n\n**诊断建议**:\n1. 检查你的代码逻辑，特别是用于定位和提取数据的标记（marker）或正则表达式是否能在上一步的观察结果中找到完全匹配。\n2. 打印 \`input_data\` 的一部分来确认其内容和结构是否符合你的预期。\n3. 调整你的代码以适应实际的输入数据结构。`;
-                                success = false; // 🚨 关键：将成功状态标记为 false！
-                                
+                                output = `🐍 **Python代码逻辑失败** 🔴\n\n**原因**: 脚本执行成功，但返回了错误信息。\n\n**代码输出**: \n\`\`\`\n${finalOutput}\n\`\`\`\n\n**诊断建议**:\n1. 检查你的代码逻辑是否能在输入数据中找到完全匹配。\n2. 打印 \`input_data\` 的一部分来确认其内容和结构是否符合你的预期。\n3. 调整你的代码以适应实际的输入数据结构。`;
+                                success = false;
                             } else {
-                                // ✅ 只有在没有stderr，且stdout内容不像是错误信息时，才判定为真正成功
                                 console.log(`[PythonOutput] ✅ Python执行成功，输出长度: ${finalOutput.length}`);
                                 output = this.formatCodeOutputForMode({ stdout: finalOutput }, researchMode);
                                 success = true;
                             }
-
                         } else {
-                            // 3. 无任何输出
                             console.log(`[PythonOutput] ℹ️ Python执行完成，无输出`);
                             output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
-                            success = true; // 无输出通常不认为是失败，可能是一些文件操作
+                            success = true;
                         }
 
                     } catch (error) {
@@ -597,7 +592,6 @@ class DeepResearchToolAdapter {
                         success = false;
                     }
                     
-                    // 🎯 关键修复：确保返回正确的成功状态
                     const result = {
                         success: success,
                         output: output,
@@ -833,26 +827,22 @@ class DeepResearchToolAdapter {
             suggestions: []
         };
 
-        // 1. 提取错误类型
         const errorTypeMatch = errorText.match(/(\w+Error):/);
         if (errorTypeMatch) {
             analysis.type = errorTypeMatch[1];
         }
 
-        // 2. 提取行号
         const lineMatch = errorText.match(/line (\d+)/);
         if (lineMatch) {
-            analysis.lineNumber = parseInt(lineMatch[1]);
+            analysis.lineNumber = parseInt(lineMatch[1], 10);
             analysis.location = `第 ${analysis.lineNumber} 行`;
         }
 
-        // 3. 提取具体错误信息（通常是最后一行）
         const lines = errorText.split('\n').filter(line => line.trim());
         if (lines.length > 0) {
             analysis.errorMessage = lines[lines.length - 1];
         }
 
-        // 4. 根据错误类型提供具体建议
         analysis.suggestions = this._getPythonErrorSuggestions(analysis.type, analysis.lineNumber);
 
         console.log(`[ErrorAnalyzer] 错误分析完成:`, analysis);
@@ -865,54 +855,39 @@ class DeepResearchToolAdapter {
     static _getPythonErrorSuggestions(errorType, lineNumber) {
         const suggestionsMap = {
             'IndentationError': [
-                `检查第 ${lineNumber} 行及其附近代码的缩进`,
-                '确保使用一致的缩进（推荐4个空格）',
-                '检查 if/for/while/def/class 语句后的代码块是否正确缩进',
-                '不要混用空格和Tab键进行缩进'
+                `检查第 ${lineNumber || '相关'} 行及其附近代码的缩进`,
+                '确保使用一致的缩进（推荐4个空格），不要混用空格和Tab键'
             ],
             'SyntaxError': [
-                `检查第 ${lineNumber} 行附近的语法`,
-                '确保括号、引号、方括号正确配对',
-                '检查冒号的使用（条件语句、循环、函数定义后需要冒号）',
-                '检查是否有拼写错误或缺少的标点符号'
+                `检查第 ${lineNumber || '相关'} 行附近的语法`,
+                '确保所有括号 `()`, `[]`, `{}` 和引号 `"` `\'` 都已正确配对和闭合'
             ],
             'NameError': [
-                `检查第 ${lineNumber} 行使用的变量名或函数名`,
-                '确认变量在使用前已经正确定义',
-                '检查函数名是否正确定义或正确导入',
-                '检查变量名拼写是否正确（注意大小写）'
+                `检查第 ${lineNumber || '相关'} 行使用的变量名或函数名，确认其在使用前已被定义`,
+                '仔细检查拼写和大小写'
             ],
             'TypeError': [
-                `检查第 ${lineNumber} 行的数据类型和操作`,
-                '确认函数参数的类型是否正确',
-                '检查操作符两边的数据类型是否兼容',
-                '确认方法调用时参数数量是否正确'
+                `检查第 ${lineNumber || '相关'} 行的数据类型和操作`,
+                '确认操作符两边的数据类型是否兼容（例如，不能将字符串和数字相加）'
             ],
             'AttributeError': [
-                `检查第 ${lineNumber} 行的对象属性访问`,
-                '确认对象是否具有您尝试访问的属性或方法',
-                '检查属性名拼写是否正确',
-                '确认对象类型是否符合预期'
+                `检查第 ${lineNumber || '相关'} 行的对象属性或方法调用`,
+                '确认对象类型是否正确，以及它是否真的拥有该属性/方法'
             ],
             'IndexError': [
-                `检查第 ${lineNumber} 行的列表或字符串索引`,
-                '确认索引值是否在有效范围内',
-                '检查列表/字符串是否为空',
-                '考虑使用 len() 函数检查长度后再访问'
+                `检查第 ${lineNumber || '相关'} 行的列表或字符串索引`,
+                '确认索引值是否在有效范围内（0 到 长度-1）'
             ],
             'KeyError': [
-                `检查第 ${lineNumber} 行的字典键访问`,
-                '确认字典中是否存在您尝试访问的键',
-                '考虑使用 dict.get() 方法提供默认值',
-                '检查键名拼写是否正确'
+                `检查第 ${lineNumber || '相关'} 行的字典键访问`,
+                '确认字典中是否存在您尝试访问的键，检查键名拼写'
             ]
         };
 
         return suggestionsMap[errorType] || [
-            '仔细阅读错误信息，理解错误原因',
-            '检查相关代码行的语法和逻辑',
-            '考虑将复杂任务分解为更小的步骤',
-            '如果需要，可以尝试使用更简单的实现方式'
+            '仔细阅读错误信息，理解其根本原因',
+            '将复杂代码分解，逐一验证每个部分',
+            '对照工具文档（SKILL.md）检查用法是否正确'
         ];
     }
 
@@ -934,11 +909,8 @@ class DeepResearchToolAdapter {
                 codeContext += `${marker}${i + 1}: ${lines[i]}\n`;
             }
             codeContext += '```\n';
-        } else {
-            codeContext = '\n**提示**: 无法获取原始代码上下文，请检查错误信息中的行号。\n';
         }
 
-        // 构建更友好的错误报告格式
         return `🐍 **Python代码执行失败 - 需要您的专业诊断** 🔴
 
 **错误摘要**：
@@ -948,19 +920,16 @@ class DeepResearchToolAdapter {
 
 **🛠️ 您的诊断任务**：
 请基于以上错误信息，在"思考"部分完成：
-1. 错误类型识别：[填写具体错误类型]
-2. 错误原因分析：[分析为什么会出现这个错误]
-3. 修复方案：[说明您将如何修正这个错误]
+1.  **错误类型识别**：[明确指出错误类型]
+2.  **错误原因分析**：[详细分析为什么会出现这个错误]
+3.  **修复方案**：[清晰说明您将如何修正代码]
 
-**完整错误上下文**：
-\`\`\`
-${rawError}
-\`\`\`
+${codeContext}
 
 **专业修复建议**：
-${suggestions.map((suggestion, index) => `${index + 1}. ${suggestion}`).join('\n')}
+${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
 
-**请严格按照诊断-修正流程操作，输出修正后的完整代码。**`;
+**请严格按照此诊断-修正流程操作，并输出修正后的完整代码。**`;
     }
     
     /**
