@@ -208,63 +208,75 @@ class DeepResearchToolAdapter {
             }
                 
             case 'crawl4ai': {
-                console.log(`[DeepResearchAdapter] 重构 crawl4ai 参数:`, agentParams);
-                
-                // 1. 确定 mode，Agent 提供的值优先，否则默认为 'scrape'
+                console.log(`[DeepResearchAdapter] 开始重构 crawl4ai 参数:`, agentParams);
+
+                // 🎯 1. 确定模式和基础配置
                 const mode = agentParams.mode || 'scrape';
-                
-                // 2. 获取该 mode 下的模式特定默认配置
-                const modeDefaultConfig = modeSpecific[mode] || {};
-                
-                // 🎯 智能检测：文档类URL特殊处理
-                const isDocumentationUrl = agentParams.url?.includes('/docs/') || 
-                                        agentParams.url?.includes('/guide/') ||
-                                        agentParams.url?.includes('docs.') ||
-                                        agentParams.url?.includes('/documentation/');
-                
-                // 3. ✅✅✅ 核心修复：构建与标准模式完全一致的双层结构
+                const modeDefaultConfig = this.getModeSpecificParameters(researchMode, toolName)[mode] || {};
+
+                // 🎯 2. 智能参数提取 - 兼容嵌套和非嵌套格式
+                // 优先使用parameters对象，同时融合顶层参数作为兜底，以修复结构错误
+                const paramsSource = (agentParams.parameters && typeof agentParams.parameters === 'object')
+                    ? { ...agentParams, ...agentParams.parameters }
+                    : agentParams;
                 const innerParameters = {};
-                
-                // 4. 从 Agent 参数中提取核心字段
-                if (agentParams.url) innerParameters.url = agentParams.url;
-                if (agentParams.prompt) innerParameters.prompt = agentParams.prompt;
-                if (agentParams.keywords) innerParameters.keywords = agentParams.keywords;
-                if (agentParams.urls) innerParameters.urls = agentParams.urls;
-                if (agentParams.max_pages) innerParameters.max_pages = agentParams.max_pages;
-                if (agentParams.max_depth) innerParameters.max_depth = agentParams.max_depth;
 
-                // 🎯 关键修复：当模式为 'extract' 且 Agent 未提供 schema 时，提供一个默认空对象
-                if (mode === 'extract' && agentParams.schema_definition === undefined) {
-                    console.log(`[DeepResearchAdapter] 为 extract 模式补充默认的 schema_definition`);
-                    innerParameters.schema_definition = {};
-                } else if (agentParams.schema_definition) {
-                    innerParameters.schema_definition = agentParams.schema_definition;
-                }
-                
-                // 5. 🎯 关键修复：文档类URL优化配置 - 完全移除内容过滤
-                if (isDocumentationUrl && mode === 'scrape') {
-                    console.log(`[DeepResearchAdapter] 检测到文档URL，应用优化配置`);
-                    // ✅ 完全禁用所有内容过滤，使用最基础的抓取参数
-                    innerParameters.only_main_content = false;
-                    innerParameters.exclude_external_links = false;
-                    // 🚫 关键：完全移除 word_count_threshold 参数
-                } else {
-                    // 6. 对于非文档URL，也只保留最基础的配置
-                    Object.keys(modeDefaultConfig).forEach(key => {
-                        // 🚫 关键：跳过所有内容过滤相关的参数
-                        if (key !== 'word_count_threshold' && innerParameters[key] === undefined) {
-                            innerParameters[key] = modeDefaultConfig[key];
+                // 🎯 3. 参数名校正与别名映射
+                const paramMap = {
+                    'url': ['url'], 'urls': ['urls'], 'format': ['format', 'output_format'],
+                    'css_selector': ['css_selector', 'selector'], 'return_screenshot': ['return_screenshot', 'screenshot'],
+                    'return_pdf': ['return_pdf', 'pdf'], 'schema_definition': ['schema_definition', 'schema'],
+                    'extraction_type': ['extraction_type', 'extract_type'], 'prompt': ['prompt'],
+                    'max_depth': ['max_depth', 'depth'], 'max_pages': ['max_pages', 'max_results', 'pages'],
+                    'strategy': ['strategy'], 'keywords': ['keywords', 'search_terms'],
+                    'stream': ['stream', 'streaming'], 'concurrent_limit': ['concurrent_limit', 'concurrency']
+                };
+
+                for (const [correctKey, aliases] of Object.entries(paramMap)) {
+                    for (const alias of aliases) {
+                        if (paramsSource[alias] !== undefined) {
+                            innerParameters[correctKey] = paramsSource[alias];
+                            console.log(`[DeepResearchAdapter] 参数校正/映射成功: '${alias}' -> '${correctKey}'`);
+                            break;
                         }
-                    });
+                    }
                 }
 
-                // 7. 构建最终的、符合后端期望的双层嵌套结构
+                // 🎯 4. 应用模式特定的默认配置（作为补充）
+                for (const [key, value] of Object.entries(modeDefaultConfig)) {
+                    if (innerParameters[key] === undefined) {
+                        innerParameters[key] = value;
+                    }
+                }
+
+                // 🎯 5. 模式特定参数的最终验证和兜底 (在应用默认值之后)
+                switch (mode) {
+                    case 'extract':
+                        if (!innerParameters.schema_definition) {
+                            console.warn(`[DeepResearchAdapter] 兜底：为 extract 模式补充默认的 schema_definition`);
+                            innerParameters.schema_definition = { "title": "string", "content": "string", "metadata": "object" };
+                        }
+                        break;
+                    case 'batch_crawl':
+                        if (innerParameters.urls && !Array.isArray(innerParameters.urls)) {
+                            console.warn(`[DeepResearchAdapter] 兜底：batch_crawl的urls参数不是数组，强制转换为数组`);
+                            innerParameters.urls = [String(innerParameters.urls)];
+                        }
+                        break;
+                }
+
+                // 🎯 6. 构建并返回绝对正确的双层嵌套结构
                 const finalParams = {
                     mode: mode,
                     parameters: innerParameters
                 };
 
-                console.log(`[DeepResearchAdapter] 构建的最终参数:`, finalParams);
+                console.log(`[DeepResearchAdapter] ✅ crawl4ai 参数重构完成，最终发送:`, {
+                    mode: finalParams.mode,
+                    parametersKeys: Object.keys(finalParams.parameters),
+                    parametersPreview: JSON.stringify(finalParams.parameters).substring(0, 200) + '...'
+                });
+                
                 return finalParams;
             }
                 
@@ -417,10 +429,38 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'crawl4ai': {
-                    // 🎯 修复：确保我们处理的是正确的对象，而不是字符串化的JSON
-                    const crawlData = rawResponse.rawResult || dataFromProxy; // 优先使用 rawResult
+                    // 🎯 关键修复：确保我们处理的是正确的对象
+                    const crawlData = rawResponse.rawResult || dataFromProxy;
+                    const calledParameters = rawResponse.rawParameters || {};
                     
                     console.log(`[DeepResearchAdapter] crawl4ai 已解析的响应数据:`, crawlData);
+                    
+                    // 🎯 增强错误检测：检查多种失败标志
+                    const isError = rawResponse.error || 
+                                   crawlData.success === false || 
+                                   (crawlData.data && crawlData.data.success === false) ||
+                                   (crawlData.status && crawlData.status >= 400);
+
+                    if (isError) {
+                        const errorDetails = this._diagnoseCrawl4AIError(rawResponse, calledParameters);
+                        const prettyCalledParams = JSON.stringify(calledParameters, null, 2);
+
+                        // 返回一个对Agent友好的、结构化的Markdown错误报告
+                        return {
+                            success: false,
+                            output: `❌ **crawl4ai (模式: ${calledParameters.mode || 'unknown'}) 执行失败**\n\n` +
+                                    `**诊断报告**:\n` +
+                                    `*   **错误类型**: ${errorDetails.type}\n` +
+                                    `*   **可能原因**: ${errorDetails.reason}\n\n` +
+                                    `**下一步修复建议**:\n` +
+                                    errorDetails.suggestions.map(s => `    - ${s}`).join('\n') +
+                                    `\n\n**用于调试的调用参数**:\n\`\`\`json\n${prettyCalledParams}\n\`\`\``,
+                            sources: [],
+                            isError: true,
+                            mode: 'deep_research',
+                            researchMode: researchMode
+                        };
+                    }
                     
                     if (crawlData && typeof crawlData === 'object') {
                         const content = crawlData.content || crawlData.markdown;
@@ -525,13 +565,13 @@ class DeepResearchToolAdapter {
                             success = false; // 🚨 必须设为false！
 
                         } else if (finalOutput && finalOutput.trim()) {
-                            // 2. stdout 有内容，需要进一步判断是成功输出还是“静默失败”
+                            // 2. stdout 有内容，需要进一步判断是成功输出还是"静默失败"
                             const outputLower = finalOutput.toLowerCase();
                             
-                            // 🔥🔥🔥【新增的“静默失败”检测逻辑】🔥🔥🔥
+                            // 🔥🔥🔥【新增的"静默失败"检测逻辑】🔥🔥🔥
                             if (outputLower.startsWith('error:') || outputLower.startsWith('错误：') || outputLower.includes('not found') || outputLower.includes('未找到')) {
-                                // 如果输出内容以“错误”开头，或包含“未找到”等失败关键词，则判定为逻辑失败
-                                console.log(`[PythonOutput] 🟡 检测到Python“静默失败”（逻辑错误），输出内容: ${finalOutput.substring(0, 100)}`);
+                                // 如果输出内容以"错误"开头，或包含"未找到"等失败关键词，则判定为逻辑失败
+                                console.log(`[PythonOutput] 🟡 检测到Python"静默失败"（逻辑错误），输出内容: ${finalOutput.substring(0, 100)}`);
                                 
                                 // 将其包装成一个对Agent友好的、明确的错误报告
                                 output = `🐍 **Python代码逻辑失败** 🔴\n\n**原因**: 脚本执行成功，但返回了错误信息。\n\n**代码输出**: \n\`\`\`\n${finalOutput}\n\`\`\`\n\n**诊断建议**:\n1. 检查你的代码逻辑，特别是用于定位和提取数据的标记（marker）或正则表达式是否能在上一步的观察结果中找到完全匹配。\n2. 打印 \`input_data\` 的一部分来确认其内容和结构是否符合你的预期。\n3. 调整你的代码以适应实际的输入数据结构。`;
@@ -921,6 +961,77 @@ ${rawError}
 ${suggestions.map((suggestion, index) => `${index + 1}. ${suggestion}`).join('\n')}
 
 **请严格按照诊断-修正流程操作，输出修正后的完整代码。**`;
+    }
+    
+    /**
+     * 🎯 crawl4ai 错误诊断（最终版）
+     */
+    static _diagnoseCrawl4AIError(rawResponse, calledParameters) {
+        const errorText = (rawResponse.error || '').toString().toLowerCase();
+        const status = rawResponse.rawResult?.status;
+        const mode = calledParameters.mode || 'unknown';
+
+        // 诊断1: 参数结构或名称错误 (最常见)
+        if ((status === 500 || errorText.includes('500')) && mode === 'extract' && !calledParameters.parameters?.schema_definition) {
+            return {
+                type: '参数缺失/名称错误',
+                reason: `调用'extract'模式时，必需的'schema_definition'参数缺失。Agent可能错误地使用了'schema'作为参数名，或者忘记提供。`,
+                suggestions: [
+                    '**修正参数名**: 确保使用 `schema_definition` 而不是 `schema`。',
+                    '**检查参数结构**: 确认所有参数都正确嵌套在 `parameters` 对象内部。',
+                    '**参考文档**: 严格按照 `SKILL.md` 中的 `extract` 模式模板重新构建调用。'
+                ]
+            };
+        }
+
+        // 诊断2: 通用服务器错误
+        if (status === 500 || errorText.includes('500')) {
+            return {
+                type: '工具后端服务错误',
+                reason: `crawl4ai 后端服务在处理请求时发生内部错误。可能原因包括目标URL无法访问、页面结构异常复杂或参数值无效。`,
+                suggestions: [
+                    '**验证URL**: 确认目标URL在浏览器中可以正常打开。',
+                    '**简化任务**: 尝试使用更基础的 `scrape` 模式测试该URL是否可被抓取。',
+                    '**检查参数值**: 确认 `max_pages`, `max_depth` 等参数的值是合理的数字。'
+                ]
+            };
+        }
+
+        // 诊断3: 超时错误
+        if (errorText.includes('timeout') || errorText.includes('timed out')) {
+            return {
+                type: '请求超时',
+                reason: `工具执行时间超过了设定的阈值。对于'deep_crawl'或'batch_crawl'模式，这通常意味着任务范围过大。`,
+                suggestions: [
+                    '**缩小范围**: 减少 `max_pages` 或 `max_depth` 的值。',
+                    '**降低并发**: 减少 `concurrent_limit` 的值。',
+                    '**分步执行**: 将大任务拆分成多个小任务分别执行。'
+                ]
+            };
+        }
+
+        // 诊断4: 网络连接错误
+        if (errorText.includes('network') || errorText.includes('fetch') || errorText.includes('connection')) {
+            return {
+                type: '网络连接错误',
+                reason: `无法连接到crawl4ai工具服务。可能是网络问题或服务暂时不可用。`,
+                suggestions: [
+                    '**检查网络**: 确认网络连接正常。',
+                    '**稍后重试**: 等待一段时间后再次尝试。',
+                    '**使用备用工具**: 考虑使用其他工具（如tavily_search）完成当前任务。'
+                ]
+            };
+        }
+        
+        // 默认诊断
+        return {
+            type: '未知错误',
+            reason: errorText || '未提供具体错误信息。',
+            suggestions: [
+                '**全面审查**: 请仔细检查完整的工具调用，包括 `mode` 和 `parameters` 对象中的所有键和值。',
+                '**对照模板**: 将您的调用与 `SKILL.md` 中的精确调用模板进行逐一比对。'
+            ]
+        };
     }
     
     /**
@@ -1585,4 +1696,3 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
-
