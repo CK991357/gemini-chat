@@ -470,23 +470,25 @@ export class AgentLogic {
         const availableToolsText = this._formatTools(availableTools);
         
         // --- START FIX: [最终修复版] 注入上一步的观察结果，并强化知识应用指令 ---
-// --- START OF FINAL FIX: 统一的、分层级的上下文注入逻辑 (健壮版 v2) ---
-let lastObservation = '';
-if (intermediateSteps && intermediateSteps.length > 0) {
-    // 1. 安全地获取最后一步
-    const lastStep = intermediateSteps[intermediateSteps.length - 1];
-    
-    // 2. 检查 lastStep 是否有效且包含有意义的 observation
-    if (lastStep && typeof lastStep.observation === 'string' && lastStep.observation.length > 50) {
+// --- START OF FINAL FIX: 统一的、分层级的上下文注入逻辑 (健壮版 v3 - 修复 lastStep 作用域) ---
+        // 🎯 核心修复：确保 lastStep 变量始终定义（作用域安全）
+        let lastStep = null;
+        let lastObservation = '';
         
-        // 🔥🔥🔥【核心逻辑分层】🔥🔥🔥
-        // 优先级 1: 判断上一步是否是【成功的知识检索】
-        if (lastStep.action && lastStep.action.tool_name === 'retrieve_knowledge' && lastStep.success !== false) {
+        if (intermediateSteps && intermediateSteps.length > 0) {
+            lastStep = intermediateSteps[intermediateSteps.length - 1];
             
-            // 如果是，则使用专门为“知识应用”设计的提示
-            const retrievedToolName = lastStep.action.parameters ? lastStep.action.parameters.tool_name : '未知工具';
-            
-            lastObservation = `
+            // 检查 lastStep 是否有效且包含有意义的 observation
+            if (lastStep && typeof lastStep.observation === 'string' && lastStep.observation.length > 50) {
+                
+                // 🔥🔥🔥【核心逻辑分层】🔥🔥🔥
+                // 优先级 1: 判断上一步是否是【成功的知识检索】
+                if (lastStep.action && lastStep.action.tool_name === 'retrieve_knowledge' && lastStep.success !== false) {
+                    
+                    // 如果是，则使用专门为"知识应用"设计的提示
+                    const retrievedToolName = lastStep.action.parameters ? lastStep.action.parameters.tool_name : '未知工具';
+                    
+                    lastObservation = `
 ## 📖 【强制应用】你已获取操作指南
 你刚刚通过 \`retrieve_knowledge\` 获取了 \`${retrievedToolName}\` 的完整操作指南。
 **你的下一步行动必须严格依据这份指南中的代码示例、Schema格式和工作流来构建。**
@@ -498,10 +500,10 @@ ${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 
 \`\`\`
 `;
 
-        } else {
-            // 优先级 2: 如果不是知识检索，则是通用的工具调用观察结果
-            // 使用统一的、语言清晰的中文提示
-            lastObservation = `
+                } else {
+                    // 优先级 2: 如果不是知识检索，则是通用的工具调用观察结果
+                    // 使用统一的、语言清晰的中文提示
+                    lastObservation = `
 ## 📋 上下文：上一步的观察结果
 你刚从上一个工具调用中收到了以下信息。如果相关，你**必须**使用这些数据来指导你的下一步行动。
 
@@ -510,41 +512,33 @@ ${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 
 ${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 ? '... (内容已截断)' : ''}
 \`\`\`
 `;
+                }
+            }
         }
-    }
-}
 // --- END OF FINAL FIX ---
         
         // 🎯 增强：动态知识检索触发器
         const knowledgeRetrievalTriggers = this._buildKnowledgeRetrievalTriggers(intermediateSteps, researchPlan, currentStep);
         
-        // 🎯 [最终修复版] 强制性岗前培训协议
+// 🔥🔥🔥【最终版】知识驱动决策协议 - 简洁高效版本
         const knowledgeStrategySection = `
-## 🚨 【强制协议】核心工具岗前培训协议 (Mandatory Pre-flight Protocol)
+## 🧠 【强制】知识驱动决策协议
 
-**协议规则：** 在调用任何核心工具（\`python_sandbox\`, \`crawl4ai\`）执行一项**新的、具体的任务**之前，你**必须**首先通过调用 \`retrieve_knowledge\` 工具来获取该工具的最新、完整的官方操作指南（SKILL.md）。
+### 决策检查清单:
+1.  **任务需求:** 我下一步是否需要使用 \`python_sandbox\` 或 \`crawl4ai\`？
+2.  **知识储备:** 我是否**在上一步**已经成功查阅了该工具的完整指南？
 
-### 检查清单 (Pre-flight Checklist):
-1.  **任务识别:** 我当前计划步骤是否需要使用 \`python_sandbox\` 或 \`crawl4ai\`？
-2.  **知识状态:** 我是否**刚刚（在上一步）**已经成功查阅了该工具的完整指南？
-
-### 决策逻辑 (Decision Logic):
-*   **如果检查清单有任何一项为"否" (e.g., 需要用，但没查过):**
-    *   🚫 **行动禁止:** 你被**禁止**直接调用 \`python_sandbox\` 或 \`crawl4ai\`。
-    *   ✅ **唯一合法行动:** 你的下一步行动**必须是**调用 \`retrieve_knowledge\`。
-    *   **思考模板:** "我需要使用 \`${knowledgeRetrievalTriggers.suggestedTools[0]?.name || '工具'}\` 来完成[任务描述]。根据岗前培训协议，我必须先查阅其操作指南以获取[具体的工作流/Schema格式]。"
-
-*   **如果检查清单全部为"是" (e.g., 刚查完指南):**
-    *   ✅ **行动授权:** 你现在被**授权**可以调用 \`python_sandbox\` 或 \`crawl4ai\`。
-    *   **思考模板:** "我已查阅 \`${lastStep?.action?.parameters?.tool_name}\` 的指南。根据[指南中的具体章节/示例]，我将按以下步骤操作..."
+### 协议规则:
+*   **如果对清单2的回答是"否"**: 你的唯一合法行动是调用 \`retrieve_knowledge\` 来获取操作指南。**禁止**直接调用目标工具。
+*   **如果对清单2的回答是"是"**: 你现在被授权可以调用目标工具。你的思考过程必须引用指南中的内容。
 
 ${knowledgeRetrievalTriggers.conditions.length > 0 ? `
-### ⚡ 当前状态：培训要求已触发！
+### ⚡ 协议已触发！立即执行培训！
 **系统检测到：** ${knowledgeRetrievalTriggers.conditions.join('; ')}
-**因此，你当前的唯一任务是：** 调用 \`retrieve_knowledge\` 获取以下工具的指南：
+**因此，你的下一步行动必须是调用 \`retrieve_knowledge\` 获取以下指南：**
 ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**: ${tool.reason}`).join('\n')}
 ` : `
-### ✅ 当前状态：培训要求未触发。
+### ✅ 协议未触发。
 你可以根据标准决策流程继续。
 `}
 `;
