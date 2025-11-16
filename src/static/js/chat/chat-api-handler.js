@@ -651,107 +651,82 @@ export class ChatApiHandler {
                 // 关键修复：处理MCP代理返回的嵌套结构
                 let actualStdout = '';
                 if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
-                    // 如果toolRawResult.stdout是字符串，直接使用
                     actualStdout = toolRawResult.stdout.trim();
                 } else if (toolRawResult && toolRawResult.type === 'text' && toolRawResult.stdout) {
-                    // 如果toolRawResult是对象且包含stdout字段
                     actualStdout = toolRawResult.stdout.trim();
                 } else if (toolRawResult && typeof toolRawResult === 'string') {
-                    // 如果toolRawResult本身就是字符串
                     actualStdout = toolRawResult.trim();
                 }
                 
-                console.log(`[${timestamp()}] [MCP] Actual stdout content:`, actualStdout.substring(0, 200) + '...');
+                console.log(`[${timestamp()}] [MCP] Actual stdout content preview:`, actualStdout.substring(0, 200) + '...');
                 
                 if (actualStdout) {
-                    // 尝试解析为JSON对象
-                    try {
-                        let fileData = JSON.parse(actualStdout);
-                        console.log(`[${timestamp()}] [MCP] First level JSON parsed:`, fileData);
-                        
-                        // 关键修复：如果解析出来的是包装结构，提取实际的stdout内容
-                        if (fileData && fileData.type === 'text' && fileData.stdout) {
-                            console.log(`[${timestamp()}] [MCP] Detected wrapped structure, extracting stdout`);
-                            actualStdout = fileData.stdout;
-                            fileData = JSON.parse(actualStdout); // 重新解析实际的Python输出
-                            console.log(`[${timestamp()}] [MCP] Second level JSON parsed:`, fileData);
-                        }
-                        
-                        // 处理图片类型
-                        if (fileData && fileData.type === 'image' && fileData.image_base64) {
-                            console.log(`[${timestamp()}] [MCP] Detected image file`);
-                            const title = fileData.title || 'Generated Chart';
-                            displayImageResult(fileData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
-                            toolResultContent = { output: `Image "${title}" generated and displayed.` };
-                            isFileHandled = true;
-                        }
-                        // 处理Office文档和PDF类型（标准格式）
-                        else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
-                            console.log(`[${timestamp()}] [MCP] Detected standard format office file:`, fileData.type);
-                            const extensionMap = { 'word': 'docx', 'excel': 'xlsx', 'ppt': 'pptx', 'pdf': 'pdf' };
-                            const fileExtension = extensionMap[fileData.type] || fileData.type;
-                            const fileName = fileData.title ? `${fileData.title}.${fileExtension}` : `download.${fileExtension}`;
-                            
-                            // *** KEY FIX START ***
-                            // 1. Create the persistent download link in its own, new message container.
-                            this._createFileDownload(fileData.data_base64, fileName, fileData.type, ui);
-                            // 2. 强制状态重置：明确设置当前消息容器为 null，确保后续文本响应创建新的容器。
-                            this.state.currentAIMessageContentDiv = null;
-                            // *** KEY FIX END ***
-                            
-                            toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileName}" generated and available for download.` };
-                            isFileHandled = true;
-                        }
-                        // 处理自定义格式
-                        else if (fileData && fileData.file && fileData.file.name && fileData.file.content) {
-                            console.log(`[${timestamp()}] [MCP] Detected custom format file:`, fileData.file.name);
-                            const { name, content } = fileData.file;
-                            const fileExtension = name.split('.').pop().toLowerCase();
-                            
-                            const fileTypeMap = { 'docx': 'word', 'xlsx': 'excel', 'pptx': 'ppt', 'pdf': 'pdf' };
-                            const fileType = fileTypeMap[fileExtension];
+                    // --- 🚀 健壮的多格式处理管道 ---
 
-                            if (fileType) {
-                                // 关键修复：创建独立下载链接并强制状态重置
-                                this._createFileDownload(content, name, fileType, ui);
-                                this.state.currentAIMessageContentDiv = null;
+                    // PRIORITY 1: 检查我们自定义的、最可靠的图片前缀
+                    const imagePrefix = "IMAGE_BASE64:";
+                    if (actualStdout.startsWith(imagePrefix)) {
+                        console.log(`[${timestamp()}] [MCP] Handled by PRIORITY 1: Custom image prefix.`);
+                        const base64Data = actualStdout.substring(imagePrefix.length);
+                        displayImageResult(base64Data, 'Generated Chart', `chart_${Date.now()}.png`);
+                        toolResultContent = { output: 'Image generated and displayed successfully.' };
+                        isFileHandled = true;
+                    }
 
-                                toolResultContent = { output: `${fileType.toUpperCase()} file "${name}" generated and available for download.` };
+                    // PRIORITY 2: 如果不是自定义前缀，则尝试解析为标准JSON对象（用于文件或带元数据的图片）
+                    if (!isFileHandled) {
+                        try {
+                            // 使用我们之前编写的健壮JSON解析器
+                            const fileData = this._robustJsonParse(actualStdout);
+                            console.log(`[${timestamp()}] [MCP] Attempting PRIORITY 2: Robust JSON parsing successful.`);
+                            
+                            // 处理标准图片JSON
+                            if (fileData && fileData.type === 'image' && fileData.image_base64) {
+                                console.log(`[${timestamp()}] [MCP] Handled JSON type: image`);
+                                const title = fileData.title || 'Generated Chart';
+                                displayImageResult(fileData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
+                                toolResultContent = { output: `Image "${title}" generated and displayed.` };
                                 isFileHandled = true;
                             }
-                        } else {
-                            console.log(`[${timestamp()}] [MCP] JSON parsed but format not recognized:`, Object.keys(fileData));
-                        }
+                            // 处理标准文件JSON (Word, Excel, PDF, etc.)
+                            else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
+                                console.log(`[${timestamp()}] [MCP] Handled JSON type: ${fileData.type} file`);
+                                this._createFileDownload(fileData.data_base64, fileData.title || `download.${fileData.type}`, fileData.type, ui);
+                                this.state.currentAIMessageContentDiv = null; // 强制创建新消息容器
+                                toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileData.title || 'download'}" generated and ready for download.` };
+                                isFileHandled = true;
+                            }
 
-                    } catch (e) {
-                        console.log(`[${timestamp()}] [MCP] JSON parse failed:`, e.message);
-                        console.log(`[${timestamp()}] [MCP] Raw content that failed to parse:`, actualStdout.substring(0, 200));
+                        } catch (e) {
+                            console.log(`[${timestamp()}] [MCP] PRIORITY 2 failed: Not a valid JSON format.`, e.message);
+                            // JSON解析失败，继续到下一优先级
+                        }
                     }
 
-                    // 如果不是JSON格式，继续原有的图片检测逻辑
+                    // PRIORITY 3: 如果以上都不是，检查是否为原始Base64字符串（兼容简单脚本）
+                    if (!isFileHandled && (actualStdout.startsWith('iVBORw0KGgo') || actualStdout.startsWith('/9j/'))) {
+                        console.log(`[${timestamp()}] [MCP] Handled by PRIORITY 3: Raw Base64 string.`);
+                        displayImageResult(actualStdout, 'Generated Chart', `chart_${Date.now()}.png`);
+                        toolResultContent = { output: 'Image generated and displayed from raw base64 string.' };
+                        isFileHandled = true;
+                    }
+
+                    // FINAL FALLBACK: 如果所有检查都失败，则视为普通文本
                     if (!isFileHandled) {
-                        console.log(`[${timestamp()}] [MCP] Checking for image format`);
-                        if (actualStdout.startsWith('iVBORw0KGgo') || actualStdout.startsWith('/9j/')) {
-                            console.log(`[${timestamp()}] [MCP] Detected image format`);
-                            displayImageResult(actualStdout, 'Generated Chart', `chart_${Date.now()}.png`);
-                            toolResultContent = { output: 'Image generated and displayed.' };
-                            isFileHandled = true;
-                        } else if (actualStdout) {
-                            console.log(`[${timestamp()}] [MCP] Treating as plain text output`);
-                            toolResultContent = { output: actualStdout };
-                        }
+                        console.log(`[${timestamp()}] [MCP] Final Fallback: Treating as plain text output.`);
+                        toolResultContent = { output: actualStdout };
                     }
-                 }
+                }
                  
-                 console.log(`[${timestamp()}] [MCP] File handling completed, isFileHandled:`, isFileHandled);
+                console.log(`[${timestamp()}] [MCP] File handling completed, isFileHandled:`, isFileHandled);
                  
-                 // 处理stderr
-                 if (toolRawResult && toolRawResult.stderr) {
+                // 处理stderr (这段逻辑保持不变，它会在stdout处理完后附加错误信息)
+                if (toolRawResult && toolRawResult.stderr) {
                      ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
                      if (toolResultContent && toolResultContent.output) {
-                         toolResultContent.output += `\nError: ${toolRawResult.stderr}`;
+                         toolResultContent.output += `\n\n--- STDERR ---\n${toolRawResult.stderr}`;
                     } else {
-                        toolResultContent = { output: `Error: ${toolRawResult.stderr}` };
+                        toolResultContent = { output: `Execution failed with STDERR:\n${toolRawResult.stderr}` };
                     }
                 }
                 
@@ -759,8 +734,7 @@ export class ChatApiHandler {
                     toolResultContent = { output: "Tool executed successfully with no output." };
                 }
             } else {
-                // For ALL other tools, wrap the raw result consistently to ensure a predictable
-                // structure for the transit worker.
+                // For ALL other tools...
                 toolResultContent = { output: toolRawResult };
             }
 
