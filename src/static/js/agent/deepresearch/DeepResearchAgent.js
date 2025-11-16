@@ -12,6 +12,9 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // ✅ 接收来自 Orchestrator 的 skillManager 实例
+        this.skillManager = config.skillManager;
+        
         // 🎯 新增：智能数据总线
         this.dataBus = new Map(); // step_index -> {rawData, metadata, contentType}
         this.dataRetentionPolicy = {
@@ -154,106 +157,42 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         }
     }
 
-    /**
-     * 🎯 联邦知识检索处理
-     */
+    // ✅ 新增：在 DeepResearchAgent 类中添加 _handleKnowledgeRetrieval 方法
     async _handleKnowledgeRetrieval(parsedAction, intermediateSteps, runId) {
         const { parameters, thought } = parsedAction;
         const { tool_name: targetTool, context } = parameters;
         
-        console.log(`[DeepResearchAgent] 🧠 联邦知识检索请求: ${targetTool}`, { context });
-
-        // 🎯 记录知识检索历史
-        this.knowledgeSystem.retrievalHistory.push({
-            tool: targetTool,
-            context: context,
-            timestamp: Date.now(),
-            iteration: intermediateSteps.length
-        });
+        console.log(`[DeepResearchAgent] 🧠 联邦知识检索请求: ${targetTool}`);
+        let observation;
+        let success = false;
 
         try {
-            // 🎯 调用联邦知识系统
-            const knowledgePackage = await this.knowledgeSystem.skillManager.retrieveFederatedKnowledge(
-                targetTool,
-                { userQuery: context, researchMode: this.currentResearchMode }
-            );
+            // 调用 EnhancedSkillManager 的核心方法
+            const knowledgePackage = await this.skillManager.retrieveFederatedKnowledge(targetTool, { userQuery: context });
 
-            let observation;
-            if (knowledgePackage) {
-                // 🎯 缓存知识内容
-                this.knowledgeSystem.knowledgeCache.set(targetTool, {
-                    content: knowledgePackage.content,
-                    timestamp: Date.now()
-                });
-
-                observation = this._formatKnowledgeObservation(knowledgePackage);
+            if (knowledgePackage && knowledgePackage.content) {
+                observation = knowledgePackage.content; // 直接使用完整的文档内容
+                success = true;
                 console.log(`[DeepResearchAgent] ✅ 联邦知识检索成功: ${targetTool}`);
             } else {
                 observation = `## ❌ 知识检索失败\n\n无法找到工具 \`${targetTool}\` 的联邦知识文档。`;
             }
-
-            // 🎯 构建知识注入步骤
-            intermediateSteps.push({
-                action: {
-                    type: 'knowledge_retrieval',
-                    tool_name: 'retrieve_knowledge',
-                    parameters,
-                    thought
-                },
-                observation: observation,
-                key_finding: `已加载 ${targetTool} 的完整知识库`,
-                knowledge_package: knowledgePackage,
-                success: !!knowledgePackage
-            });
-
-            // 🎯 发送知识检索事件
-            this.callbackManager.invokeEvent('on_knowledge_retrieved', {
-                run_id: runId,
-                data: {
-                    tool: targetTool,
-                    context: context,
-                    content_length: knowledgePackage?.content?.length || 0,
-                    suggested_sections: knowledgePackage?.suggestedSections || []
-                }
-            });
-
         } catch (error) {
             console.error(`[DeepResearchAgent] ❌ 联邦知识检索错误: ${targetTool}`, error);
-            
-            intermediateSteps.push({
-                action: {
-                    type: 'knowledge_retrieval',
-                    tool_name: 'retrieve_knowledge',
-                    parameters,
-                    thought
-                },
-                observation: `## ❌ 知识检索系统错误\n\n检索工具 \`${targetTool}\` 知识时发生错误: ${error.message}`,
-                key_finding: `知识检索系统错误: ${error.message}`,
-                success: false
-            });
+            observation = `## ❌ 知识检索系统错误\n\n检索工具 \`${targetTool}\` 知识时发生错误: ${error.message}`;
         }
-    }
 
-    /**
-     * 🎯 格式化知识观察结果
-     */
-    _formatKnowledgeObservation(knowledgePackage) {
-        const { tool, metadata, content, suggestedSections } = knowledgePackage;
-        
-        return `## 🧠 ${tool} 联邦知识库加载成功
-
-### 📋 工具信息
-- **名称**: ${metadata.name}
-- **描述**: ${metadata.description}
-- **类别**: ${metadata.category}
-- **建议章节**: ${suggestedSections.join(', ')}
-
-### 📚 完整知识指南
-${content}
-
----
-**💡 提示**: 请基于以上完整知识库规划你的具体实现方案。文档中包含工作流、最佳实践和代码示例。
-`;
+        intermediateSteps.push({
+            action: {
+                type: 'knowledge_retrieval',
+                tool_name: 'retrieve_knowledge',
+                parameters,
+                thought
+            },
+            observation: observation,
+            key_finding: `已加载 ${targetTool} 的操作指南`,
+            success: success
+        });
     }
 
     /**
@@ -377,14 +316,14 @@ ${content}
 
     async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
-        // ✨✨✨ 核心修复：解构出 displayTopic ✨✨✨
-        const { topic, displayTopic, availableTools, researchMode, currentDate } = researchRequest;
+        // ✨✨✨ 核心修复：解构出 displayTopic 和 enrichedTopic (即原始topic) ✨✨✨
+        const { topic: enrichedTopic, displayTopic: cleanTopic, availableTools, researchMode, currentDate } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         
         // 原始 topic (enrichedTopic) 用于 Agent 内部逻辑
-        const internalTopic = topic.replace(/！\s*$/, '').trim();
+        const internalTopic = enrichedTopic.replace(/！\s*$/, '').trim();
         // displayTopic 用于 UI 显示
-        const uiTopic = (displayTopic || topic).replace(/！\s*$/, '').trim();
+        const uiTopic = (cleanTopic || enrichedTopic).replace(/！\s*$/, '').trim();
         
         const detectedMode = researchMode || 'standard';
         
@@ -458,7 +397,7 @@ ${content}
 
         // ✨ 阶段2：自适应执行
         // 🎯 核心修复：将 intermediateSteps 提升为类属性以支持状态注入
-        this.intermediateSteps = [];
+        this.intermediateSteps = []; // ✅ 确保每次新研究都清空历史
         let iterations = 0;
         let consecutiveNoGain = 0;
         let allSources = [];
@@ -490,8 +429,8 @@ ${content}
                 // 🎯 构建AgentLogic输入数据
                 // ✨✨✨ 核心修复：将 internalTopic 和 uiTopic 都传递给 AgentLogic ✨✨✨
                 const logicInput = {
-                    topic: internalTopic,     // 供 LLM 使用的完整上下文
-                    displayTopic: uiTopic,      // 备用，以防需要
+                    topic: internalTopic,     // 供 LLM 使用的完整上下文 (enrichedTopic 经过清理)
+                    displayTopic: uiTopic,      // 备用，以防需要 (cleanTopic 经过清理)
                     intermediateSteps: this.intermediateSteps,
                     availableTools,
                     researchPlan,
@@ -555,22 +494,22 @@ ${content}
                 }
 
                 // 🎯 处理知识检索
-                if (parsedAction.type === 'knowledge_retrieval') {
+                // ✅ 新增：处理知识检索动作
+                if (parsedAction.type === 'knowledge_retrieval' || parsedAction.tool_name === 'retrieve_knowledge') {
+                    console.log('[DeepResearchAgent] 🧠 Agent请求查阅工具文档...');
                     await this._handleKnowledgeRetrieval(parsedAction, this.intermediateSteps, runId);
-                    continue; // 知识检索完成后，跳过后续的工具执行和摘要，直接进入下一轮迭代
+                    continue; // 查阅文档后，直接进入下一轮迭代
                 }
 
                 // 🎯 处理工具调用
                 if (parsedAction.type === 'tool_call') {
                     const { tool_name, parameters, thought } = parsedAction;
-
-                    // --- START FIX: 拦截知识检索调用 ---
+                    
+                    // 拦截知识检索调用，以防万一
                     if (tool_name === 'retrieve_knowledge') {
-                        console.log('[DeepResearchAgent] 🧠 Intercepting knowledge retrieval call...');
                         await this._handleKnowledgeRetrieval(parsedAction, this.intermediateSteps, runId);
-                        continue; // Skip the rest of the loop and start next iteration
+                        continue;
                     }
-                    // --- END FIX ---
 
                     console.log(`[DeepResearchAgent] 🔧 执行工具调用: ${tool_name}`, parameters);
                     
