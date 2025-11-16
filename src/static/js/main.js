@@ -19,6 +19,50 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
 
+// 🚀 新增导入
+import { skillContextManager } from './tool-spec-system/skill-context-manager.js';
+import { enhancedToolDefinitions } from './tools_mcp/enhanced-tool-definitions.js';
+
+// 🚀 增强的模型工具管理器
+class EnhancedModelToolManager {
+  constructor() {
+    this.modelToolsCache = new Map();
+  }
+
+  /**
+   * 获取当前模型的增强工具配置
+   */
+  async getEnhancedToolsForModel(modelName) {
+    if (this.modelToolsCache.has(modelName)) {
+      return this.modelToolsCache.get(modelName);
+    }
+
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    if (!modelConfig || !modelConfig.tools) {
+      return [];
+    }
+
+    let enhancedTools;
+    if (modelConfig.isGemini) {
+      enhancedTools = await enhancedToolDefinitions.getEnhancedTools(modelConfig.tools, modelName);
+    } else if (modelConfig.isZhipu) {
+      enhancedTools = await enhancedToolDefinitions.getEnhancedTools(modelConfig.tools, modelName);
+    } else {
+      enhancedTools = await enhancedToolDefinitions.getEnhancedTools(modelConfig.tools, modelName);
+    }
+
+    this.modelToolsCache.set(modelName, enhancedTools);
+    return enhancedTools;
+  }
+
+  clearCache() {
+    this.modelToolsCache.clear();
+  }
+}
+
+// 创建全局实例
+export const enhancedModelToolManager = new EnhancedModelToolManager();
+
 // 🚀 新增导入：智能代理系统
 import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
 
@@ -651,6 +695,9 @@ document.addEventListener('DOMContentLoaded', () => {
    // 🚀 新增：初始化智能代理系统
    initializeEnhancedAgent();
    
+   // 🚀 在DOMContentLoaded中初始化技能系统
+  initializeEnhancedSkillSystem();
+   
    // 🎯 添加调试状态检查
    setTimeout(debugAgentSystem, 2000);
    
@@ -1076,8 +1123,8 @@ async function handleSendMessage(attachmentManager) {
         // WebSocket模式 - 完全独立，不涉及任何HTTP请求
         await handleWebSocketMessage(messageText, attachedFiles);
     } else {
-        // HTTP模式 - 使用原有的逻辑
-        await handleHttpMessage(messageText, attachedFiles);
+        // HTTP模式 - 使用增强的逻辑
+        await handleEnhancedHttpMessage(messageText, attachedFiles);
     }
 }
 
@@ -1126,83 +1173,178 @@ async function handleWebSocketMessage(messageText, attachedFiles) {
 }
 
 /**
- * 🚀 处理HTTP模式消息发送
- * @description HTTP模式使用原有的智能代理和标准模式逻辑
+ * 🚀 初始化增强技能系统
  */
-async function handleHttpMessage(messageText, attachedFiles) {
-    if (!currentSessionId) {
-        historyManager.generateNewSession();
+async function initializeEnhancedSkillSystem() {
+  try {
+    console.log('🚀 正在初始化增强技能系统...');
+    
+    // 1. 初始化技能上下文管理器
+    const contextReady = await skillContextManager.ensureInitialized();
+    if (!contextReady) {
+      console.warn('❌ 技能上下文管理器初始化失败，使用降级模式');
+      return;
     }
 
-    const apiKey = apiKeyInput.value;
-    const modelName = selectedModelConfig.name;
-    const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
-    const availableToolNames = getAvailableToolNames(modelName);
-
-    try {
-        if (isAgentModeEnabled) {
-            // 智能代理模式
-            await handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames);
-        } else {
-            // 标准Skill模式
-            console.log("🛠️ Agent Mode OFF: 执行标准工具模式");
-            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-        }
-    } catch (error) {
-        console.error("🤖 消息处理失败:", error);
-        chatUI.addMessage({ role: 'assistant', content: `❌ 请求处理失败: ${error.message}` });
-    }
+    // 2. 预加载常用模型的增强定义
+    const defaultModel = CONFIG.API.MODEL_NAME;
+    await enhancedModelToolManager.getEnhancedToolsForModel(defaultModel);
+    
+    console.log('✅ 增强技能系统初始化完成');
+    
+  } catch (error) {
+    console.error('❌ 增强技能系统初始化失败:', error);
+  }
 }
 
 /**
- * 🚀 处理智能代理模式
+ * 🚀 修改核心消息处理函数
  */
-// 🎯 修改消息处理函数中的 Agent 调用逻辑
-async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames) {
-    console.log("🤖 Agent Mode ON: 智能路由用户请求");
+async function handleEnhancedHttpMessage(messageText, attachedFiles) {
+  if (!currentSessionId) {
+    historyManager.generateNewSession();
+  }
+
+  const apiKey = apiKeyInput.value;
+  const modelName = selectedModelConfig.name;
+  const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
+  
+  // 🚀 获取可用工具名称和增强工具定义
+  const availableToolNames = getAvailableToolNames(modelName);
+  const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
+
+  try {
+    // 🚀 生成技能上下文
+    const contextResult = await skillContextManager.generateRequestContext(
+      messageText,
+      availableToolNames,
+      selectedModelConfig
+    );
+
+    console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
+
+    if (isAgentModeEnabled) {
+      // 增强的智能代理模式
+      await handleEnhancedAgentMode(
+        messageText,
+        attachedFiles,
+        modelName,
+        apiKey,
+        availableToolNames,
+        enhancedTools,
+        contextResult
+      );
+    } else {
+      // 🚀 增强的标准Skill模式
+      console.log("🛠️ 执行增强的标准工具模式");
+      await handleEnhancedStandardRequest(
+        messageText,
+        attachedFiles,
+        modelName,
+        apiKey,
+        enhancedTools,
+        contextResult
+      );
+    }
+  } catch (error) {
+    console.error("🤖 增强消息处理失败:", error);
+    // 降级到原始处理
+    await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+  }
+}
+
+/**
+ * 🚀 处理增强的标准 Skill 模式请求 (修正版)
+ */
+async function handleEnhancedStandardRequest(messageText, attachedFiles, modelName, apiKey, enhancedTools, contextResult) {
+    // 1. 构造用户内容
+    const userContent = [];
+    
+    // ✅ 关键修正：直接使用 skillContextManager 生成的增强版Prompt
+    // 它已经包含了技能指南和用户的原始请求
+    userContent.push({ type: 'text', text: contextResult.enhancedPrompt });
+
+    attachedFiles.forEach(file => {
+        if (file.type.startsWith('image/')) {
+            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+        } else if (file.type === 'application/pdf') {
+            userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+        } else if (file.type.startsWith('audio/')) {
+            userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+        }
+    });
+
+    chatHistory.push({ role: 'user', content: userContent });
+
+    // 2. 构造请求体
+    const requestBody = {
+        model: modelName,
+        messages: chatHistory,
+        generationConfig: { responseModalities: ['text'] },
+        stream: true,
+        sessionId: currentSessionId
+        // ✅ 移除对 systemInstruction 的动态修改
+    };
+
+    // 3. 注入增强工具定义
+    if (enhancedTools && enhancedTools.length > 0) {
+        requestBody.tools = enhancedTools;
+        console.log(`🎯 [增强工具注入] 为模型 ${modelName} 注入 ${enhancedTools.length} 个增强工具定义`);
+    } else {
+        console.log(`🔍 [工具跳过] 模型 ${modelName} 未配置工具，使用标准请求`);
+    }
+
+    // 4. 发送请求
+    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+}
+
+/**
+ * 🚀 处理增强的智能代理模式
+ */
+async function handleEnhancedAgentMode(messageText, attachedFiles, modelName, apiKey, availableToolNames, enhancedTools, contextResult) {
+    console.log("🤖 Agent Mode ON: 智能路由用户请求 (增强模式)");
     
     try {
-        // 🎯 关键修复：检查开关状态
+        // 1. 检查开关和初始化状态
         if (!orchestrator.isEnabled) {
             console.log('🔌 Agent开关未启用，使用标准模式');
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
             return;
         }
         
-        // 🎯 关键修复：确保 Orchestrator 已初始化
         if (orchestrator._initState !== 'initialized') {
             console.log('🔄 Agent系统未初始化，立即初始化...');
             showToast('正在初始化智能代理系统...');
             
             const initSuccess = await orchestrator.ensureInitialized();
             if (!initSuccess) {
-                // 初始化失败，回退到标准模式
                 console.log('❌ Agent初始化失败，使用标准模式');
                 await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
                 return;
             }
         }
         
-        // 🎯 修复：传递所有可用工具，让Orchestrator内部处理研究工具过滤
-        const availableTools = getAvailableToolNames(modelName);
-        
-        console.log(`[Agent] 可用工具: ${availableTools.join(', ')}`);      
-        
-        // 使用真正的 Orchestrator 处理请求
-        const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, {
+        // 2. 准备 Agent 上下文
+        const agentContext = {
             model: modelName,
             apiKey: apiKey,
             messages: chatHistory,
             apiHandler: chatApiHandler,
-            availableTools: availableTools // 🎯 传递所有工具，Orchestrator内部会过滤
-        });
+            availableTools: availableToolNames, // 传递原始工具名称列表
+            enhancedTools: enhancedTools, // 传递增强工具定义
+            contextResult: contextResult // 传递技能上下文结果
+        };
+        
+        console.log(`[Agent] 可用工具: ${availableToolNames.join(', ')}`);
+        
+        // 3. 使用真正的 Orchestrator 处理请求
+        const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
         
         console.log('🎯 Orchestrator处理结果:', agentResult);
         
-        // 🎯 处理结果
+        // 4. 处理结果
         if (agentResult.enhanced) {
             if (agentResult.type === 'workflow_pending') {
-                // 显示工作流UI
                 showWorkflowUI(agentResult.workflow);
                 console.log("🎯 工作流等待执行");
                 
@@ -1212,14 +1354,11 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                         window.removeEventListener('workflow:result', handleWorkflowResult);
                         
                         if (finalResult.skipped) {
-                            // 工作流被跳过，回退到标准聊天
                             handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey)
                                 .finally(resolve);
                         } else {
-                            // 显示最终结果
                             chatUI.addMessage({ role: 'assistant', content: finalResult.content });
                             console.log('工作流执行详情:', finalResult);
-                            // agentThinkingDisplay.completeSession('success'); // ✨ 核心修复：移除手动完成
                             resolve();
                         }
                     };
@@ -1227,15 +1366,10 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                 });
             } else if (agentResult.type === 'agent_result') {
                 if (agentResult.fallback) {
-                    // 降级情况：显示降级结果
                     chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 } else {
-                    // 正常Agent执行：
-                    // 1. (保留) 显示简洁的执行摘要卡片，提供快速反馈
                     displayAgentSummary(agentResult);
                     
-                    // 2. ✨ 核心修复：将包含资料来源的完整报告，通过 chatUI.addMessage 渲染到聊天窗口
-                    // agentResult.report 包含了由 _generateFinalReport 生成的完整 Markdown 内容
                     if (agentResult.report) {
                         chatUI.addMessage({ role: 'assistant', content: agentResult.report });
                     }
@@ -1243,17 +1377,12 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
                     console.log(`Agent执行完成，${agentResult.iterations}次迭代，完整报告已显示`);
                 }
                 console.log('Agent执行详情:', agentResult);
-                // agentThinkingDisplay.completeSession('success'); // ✨ 核心修复：移除手动完成
             } else {
-                // 其他增强结果
                 chatUI.addMessage({ role: 'assistant', content: agentResult.content });
                 console.log('增强结果详情:', agentResult);
-                // agentThinkingDisplay.completeSession('success'); // ✨ 核心修复：移除手动完成
             }
         } else {
-            // 标准回退处理
             console.log("💬 未触发增强模式，使用标准对话");
-            // ✨✨✨ 核心修复：如果 AgentThinkingDisplay 被意外启动，在这里关闭它 ✨✨✨
             if (window.agentThinkingDisplay && window.agentThinkingDisplay.currentSession) {
                  window.agentThinkingDisplay.hide();
             }
@@ -1262,11 +1391,9 @@ async function handleAgentMode(messageText, attachedFiles, modelName, apiKey, av
         
     } catch (error) {
         console.error("🤖 Agent模式执行失败:", error);
-        // 发生错误时隐藏思考显示
         if (window.agentThinkingDisplay) {
-            window.agentThinkingDisplay.hide(); // 确保出错时隐藏
+            window.agentThinkingDisplay.hide();
         }
-        // 回退到普通聊天模式
         await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
     }
 }

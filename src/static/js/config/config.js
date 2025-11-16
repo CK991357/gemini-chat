@@ -68,6 +68,34 @@ export const CONFIG = {
             },
         ]
     },
+    // 🚀 增强技能系统配置
+    SKILL_SYSTEM: {
+        ENABLED: true,
+        AUTO_INJECTION: true,
+        // 复杂工具列表
+        COMPLEX_TOOLS: ['crawl4ai', 'python_sandbox'],
+        // 标准工具列表（其他4个工具）
+        STANDARD_TOOLS: ['tavily_search', 'glm4v_analyze_image', 'stockfish_analyzer', 'mcp_tool_catalog'],
+        CONTEXT_LEVELS: {
+            NONE: 'none',
+            SINGLE: 'single', 
+            MULTI: 'multi',
+            COMPLEX: 'complex'
+        },
+        MATCH_THRESHOLD: 0.15,
+        MAX_SKILLS: 3,
+        MAX_CONTEXT_LENGTH: 5000
+    },
+    
+    ENHANCED_TOOLS: {
+        ENABLED: true,
+        CACHE_TTL: 5 * 60 * 1000,
+        PRELOAD_MODELS: [
+            'models/gemini-2.5-flash',
+            'GLM-4.5-Flash', 
+            'Qwen/Qwen3-235B-A22B-Thinking-2507'
+        ]
+    },
     // System prompt settings
     PROMPT_OPTIONS: [
         {
