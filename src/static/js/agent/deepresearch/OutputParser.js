@@ -54,41 +54,69 @@ export class AgentOutputParser {
     }
 
     parse(text) {
-        this.metrics.totalAttempts++;
-        
         if (typeof text !== 'string') {
             text = String(text || '');
         }
         text = text.trim();
-
         console.log('[OutputParser] 原始文本长度:', text.length);
 
-        // 🎯 核心修复：建立严格的优先级 - 工具调用优先
-        // 只要文本中包含明确的工具调用指令，就【只】按工具调用流程处理。
-        const hasActionKeywords = /行动\s*:/i.test(text) &&
-            (/行动输入\s*:/i.test(text) || /\{\s*".*?"\s*:.*\}/s.test(text));
+        // 🔥🔥🔥【最终版修复：基于意图优先级的线性解析】🔥🔥🔥
 
-        // 🔥🔥🔥【关键修改点】🔥🔥🔥
-        // 将原来的 `if (!hasActionKeywords)` 逻辑，完全替换为下面的 `if-else` 结构
-        
-        if (hasActionKeywords) {
-            // ✅ 如果确定是工具调用，则直接进入工具解析流程
-            console.log('[OutputParser] 检测到工具调用关键词，进入工具解析流程。');
-            return this._parseAsToolCall(text);
-        } else {
-            // ❌ 如果【完全没有】工具调用关键词，才可能将其视为最终答案
-            console.log('[OutputParser] 未检测到工具调用关键词，尝试作为最终答案解析。');
-            const finalAnswerResult = this._parseAsFinalAnswer(text);
-
-            // 如果成功解析为最终答案，则返回结果
-            if (finalAnswerResult) {
-                return finalAnswerResult;
-            }
-
-            // 如果既不是工具调用，也不是最终答案，则尝试最后的宽松工具解析（作为降级）
-            console.log('[OutputParser] 作为最终答案解析失败，最后尝试一次宽松工具解析...');
-            return this._parseAsToolCall(text);
+        // 优先级1：检查是否存在明确的“最终答案”标签
+        const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
+        if (finalAnswerMatch && finalAnswerMatch && finalAnswerMatch.trim().length > 50) {
+            console.log('[OutputParser] ✅ 检测到 "最终答案:" 标签，直接判定为最终报告。');
+            this.metrics.recordAttempt('final_answer', true, 'final_answer_tag', 0);
+            return {
+                type: 'final_answer',
+                answer: finalAnswerMatch.trim(),
+                thought: (text.split(/最终答案\s*:/i) || '').replace(/思考\s*:/i, '').trim()
+            };
         }
+
+        // 优先级2：检查是否存在明确的“行动”指令
+        const hasActionKeywords = /行动\s*:/i.test(text);
+        if (hasActionKeywords) {
+            console.log('[OutputParser] 检测到 "行动:" 关键词，强制进入工具解析流程。');
+            // 尝试作为工具调用进行解析
+            const toolCallResult = this._parseAsToolCall(text);
+            // 只有当工具解析器【明确】返回一个有效的工具调用对象时，才采纳它
+            if (toolCallResult && toolCallResult.type === 'tool_call') {
+                return toolCallResult;
+            }
+            // 如果工具解析失败（例如，只有“行动:”但没有有效输入），流程会继续向下，可能会被判定为格式错误
+        }
+        
+        // 优先级3：如果没有“最终答案”标签，也没有“行动”指令，但结构上像一份报告
+        const isLikelyReport = this._isLikelyFinalReport(text);
+        if (isLikelyReport) {
+            console.log('[OutputParser] 🎯 未检测到行动指令，但结构类似报告，尝试智能提取。');
+            let cleanReport = text;
+            const firstHeadingMatch = text.match(/^#\s+.+/m);
+            if (firstHeadingMatch) {
+                cleanReport = text.substring(firstHeadingMatch.index);
+            }
+            this.metrics.recordAttempt('final_answer', true, 'structure_detection', 1);
+            return {
+                type: 'final_answer',
+                answer: cleanReport,
+                thought: '检测到完整的报告结构，并智能提取了报告内容'
+            };
+        }
+
+        // 兜底：如果以上所有判断都不满足，说明格式有问题。
+        // 但我们最后再尝试一次工具解析，以处理那些格式极其不规范但意图是工具调用的情况。
+        console.log('[OutputParser] 所有优先解析均失败，最后尝试一次通用工具解析作为兜底...');
+        const lastAttempt = this._parseAsToolCall(text);
+        if (lastAttempt && lastAttempt.type === 'tool_call') {
+            return lastAttempt;
+        }
+
+        // 如果连兜底都失败了，则确定为无法解析
+        const errorMsg = `无法解析出有效的行动或最终答案。请确保输出格式正确。`;
+        console.warn('[OutputParser] ❌ 解析彻底失败:', errorMsg);
+        this.metrics.recordAttempt('unknown', false, 'all_parsers_failed', 0);
+        throw new Error(errorMsg);
     }
 
     // 🎯 新增辅助方法：专门用于解析最终答案
