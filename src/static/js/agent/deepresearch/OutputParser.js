@@ -691,7 +691,7 @@ export class AgentOutputParser {
         
         try {
             // 1. 提取工具名 - 更灵活的正则
-            const toolMatch = text.match(/行动\s*:\s*(tavily_search|crawl4ai|python_sandbox|glm4v_analyze_image|stockfish_analyzer|firecrawl)/i);
+            const toolMatch = text.match(/行动\s*:\s*(tavily_search|crawl4ai|python_sandbox|glm4v_analyze_image|stockfish_analyzer|firecrawl|generate_outline)/i);
             if (!toolMatch || !toolMatch[1]) {
                 console.log('[OutputParser] 增强宽松解析: 未找到工具名');
                 return { success: false };
