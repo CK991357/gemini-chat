@@ -1,22 +1,6 @@
 ---
 name: python_sandbox
-description: |
-  在沙盒环境中执行Python代码。
-
-  **【操作协议】处理复杂任务时，必须遵循以下两步流程：**
-
-  **第一步：获取代码模板 (Get Help)**
-  - **规则:** 在编写任何涉及数据分析、可视化、文档生成的代码之前，**必须**先调用 `tavily_search` 工具获取官方代码模板。
-  - **查询格式:** `help(python_sandbox:<任务关键词>)`
-  - **示例:**
-    - `help(python_sandbox:visualize)` -> 获取可视化图表指南
-    - `help(python_sandbox:document_automation)` -> 获取文档生成指南
-
-  **第二步：基于模板编写代码 (Execute Code)**
-  - 根据获取到的指南和示例，编写并执行代码。
-   
-  **任务关键词目录:** `visualize`, `data-analysis`, `document_automation`, `ml`, `math`,- `scientific_computing`
-
+description: 在沙盒环境中执行Python代码，用于数据分析、可视化和生成Excel、Word、PDF等文件。支持数据清洗、统计分析、机器学习、图表生成、文档自动化等复杂工作流。
 tool_name: python_sandbox
 category: code
 priority: 10

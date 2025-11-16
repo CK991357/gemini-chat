@@ -1,20 +1,6 @@
 ---
 name: crawl4ai
-description: |
-  功能强大的网页抓取工具。
-
-  **【操作协议】使用复杂模式时，必须遵循以下两步流程：**
-
-  **第一步：获取参数格式 (Get Help)**
-  - **规则:** 在调用任何模式，特别是 `extract` 模式之前，**必须**先调用 `tavily_search` 工具获取该模式精确的参数结构和示例。
-  - **查询格式:** `help(crawl4ai:<模式名称>)`
-  - **示例:** `help(crawl4ai:extract)`
-
-  **第二步：基于格式调用工具 (Execute Tool)**
-  - 根据获取到的指南和示例，构建并调用工具。
-
-  **模式目录:** `scrape`, `deep_crawl`, `batch_crawl`, `extract`, `pdf_export`, `screenshot`
-
+description: 功能强大的开源网页抓取和数据处理工具，支持7种工作模式，包括截图、PDF导出和智能爬取
 tool_name: crawl4ai
 category: web-crawling
 priority: 9
