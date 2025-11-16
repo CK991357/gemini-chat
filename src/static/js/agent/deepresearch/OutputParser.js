@@ -64,7 +64,7 @@ export class AgentOutputParser {
 
         // 优先级1：检查是否存在明确的“最终答案”标签
         const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
-        if (finalAnswerMatch && finalAnswerMatch[1] && finalAnswerMatch.trim().length > 50) {
+        if (finalAnswerMatch && finalAnswerMatch[1] && finalAnswerMatch[1].trim().length > 50) {
             console.log('[OutputParser] ✅ 检测到 "最终答案:" 标签，直接判定为最终报告。');
             this.metrics.recordAttempt('final_answer', true, 'final_answer_tag', 0);
             return {
