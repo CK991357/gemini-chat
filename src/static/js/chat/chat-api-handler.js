@@ -1,4 +1,5 @@
 console.log("--- ChatApiHandler v3 Loaded ---");
+import { SKILLS_DATA } from '../tool-spec-system/generated-skills.js'; // 确保导入了完整的技能数据
 import { Logger } from '../utils/logger.js';
 import * as chatUI from './chat-ui.js';
 import { displayImageResult } from './chat-ui.js';
@@ -572,14 +573,48 @@ export class ChatApiHandler {
     _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
-        const callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
+        const callId = `call_${Date.now()}`;
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
 
         try {
             this.state.isUsingTool = true;
-            console.log(`[${timestamp()}] [MCP] State isUsingTool set to true.`);
+            
+            // --- 【最终修复版】“帮助请求”拦截器 ---
+            if (toolCode.tool_name === 'tavily_search') {
+                const query = (this._robustJsonParse(toolCode.arguments).query || '').trim();
+                const helpRegex = /^help\(([\w_]+):([\w_.-]+)\)$/; // 匹配文件名中的点和横线
+                const helpMatch = query.match(helpRegex);
 
-            // 显示工具调用状态UI
+                if (helpMatch) {
+                    const [, toolToHelp, sectionKeyword] = helpMatch;
+                    console.log(`[ChatApiHandler] 拦截到帮助请求: tool=${toolToHelp}, keyword=${sectionKeyword}`);
+
+                    const docContent = this._getSkillDocumentation(toolToHelp, sectionKeyword);
+                    const toolResultContent = { output: docContent };
+
+                    this.state.chatHistory.push({
+                        role: 'assistant',
+                        content: null,
+                        tool_calls: [{ id: callId, type: 'function', function: { name: 'tavily_search', arguments: toolCode.arguments } }]
+                    });
+                    this.state.chatHistory.push({
+                        role: 'tool',
+                        content: JSON.stringify(toolResultContent),
+                        tool_call_id: callId
+                    });
+                    
+                    await this.streamChatCompletion({
+                        ...requestBody,
+                        messages: this.state.chatHistory,
+                        tools: requestBody.tools
+                    }, apiKey, uiOverrides);
+
+                    return; // 拦截并处理完毕，提前返回
+                }
+            }
+            // --- 拦截器结束 ---
+
+            // ... (后面所有正常的工具调用逻辑保持不变, 从 ui.displayToolCallStatus 开始)
             console.log(`[${timestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
             ui.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
             ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
@@ -863,6 +898,65 @@ export class ChatApiHandler {
                 this.historyManager.saveHistory();
             }
         }
+    }
+
+    /**
+     * [最终修复版] 知识检索辅助方法
+     * 能从 SKILLS_DATA 中智能提取主文档章节或独立的参考文件内容
+     */
+    _getSkillDocumentation(toolName, sectionKeyword) {
+        const skillData = SKILLS_DATA[toolName];
+        if (!skillData) {
+            return `错误：未找到工具 '${toolName}' 的文档。`;
+        }
+
+        // [更新版] 知识地图
+        const referenceMap = {
+            'python_sandbox': {
+                'visualize': 'matplotlib_cookbook.md',
+                'data-analysis': 'pandas_cheatsheet.md',
+                'document_automation': 'report_generator_workflow.md',
+                'ml': 'ml_workflow.md',
+                'math': 'sympy_cookbook.md',
+                'scientific_computing': 'scipy_cookbook.md'
+            }
+        };
+
+        const sectionMap = {
+            'crawl4ai': {
+                'extract': '4. 结构化数据提取 (`extract`)',
+                'scrape': '1. 抓取单个网页 (`scrape`)',
+                'deep_crawl': '2. 深度网站爬取 (`deep_crawl`)',
+                'batch_crawl': '3. 批量 URL 处理 (`batch_crawl`)'
+            }
+        };
+        
+        // 策略1：优先在 'references' 中查找
+        const fileName = referenceMap[toolName]?.[sectionKeyword];
+        if (fileName && skillData.resources?.references?.[fileName]) {
+            console.log(`[Help Interceptor] 找到匹配的参考文件: ${fileName}`);
+            return `# ${toolName} 参考手册: ${fileName}\n\n${skillData.resources.references[fileName]}`;
+        }
+
+        // 策略2：在主 'content' 中查找章节
+        const sectionTitle = sectionMap[toolName]?.[sectionKeyword];
+        if (sectionTitle) {
+            // 策略2：在主 'content' (SKILL.md) 中查找章节标题匹配
+            const fullContent = skillData.content;
+            console.log(`[Help Interceptor] 在主文档中查找章节: ${sectionTitle}`);
+            // 匹配从标题开始到下一个二级标题或文件末尾的内容
+            // 注意：这里使用 sectionTitle 而不是 sectionKeyword 来匹配，以确保精确性
+            const regex = new RegExp(`##\\s+.*?${sectionTitle}.*?[\\s\\S]*?(?=\\n##\\s|$)`, 'i');
+            const match = fullContent.match(regex);
+            if (match) {
+                // 返回匹配到的内容，并添加一个标题
+                return `# ${toolName} 技能指南: ${sectionTitle}\n\n${match[0]}`;
+            }
+        }
+
+        // 降级方案：返回完整的 SKILL.md 内容
+        console.log(`[Help Interceptor] 未找到特定章节/文件，返回完整指南 for ${toolName}`);
+        return `这是 '${toolName}' 的完整指南：\n\n${skillData.content}`;
     }
 
     /**
