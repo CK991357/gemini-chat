@@ -100,31 +100,41 @@ async function processSkillFolder(skillPath) {
 }
 
 /**
- * 解析SKILL.md文件
+ * 解析SKILL.md文件 - 增强版本
  */
 function parseSkillMarkdown(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  
+  // 更灵活的前缀匹配，处理不同的换行符和空白
+  const frontmatterMatch = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n([\s\S]*)$/);
   
   if (!frontmatterMatch) {
+    // 调试信息：输出文件内容的前100个字符以便诊断
+    console.warn(`❌ 无法解析 frontmatter: ${filePath}`);
+    console.warn(`📄 文件开头: ${content.substring(0, 100)}`);
     throw new Error('无效的SKILL.md格式: 缺少YAML frontmatter');
   }
 
-  const frontmatter = yaml.load(frontmatterMatch[1]);
-  const markdownContent = frontmatterMatch[2].trim();
+  try {
+    const frontmatter = yaml.load(frontmatterMatch[1]);
+    const markdownContent = frontmatterMatch[2].trim();
 
-  // 验证必需字段
-  if (!frontmatter.name) {
-    throw new Error('SKILL.md必须包含name字段');
-  }
-  if (!frontmatter.description) {
-    throw new Error('SKILL.md必须包含description字段');
-  }
+    // 验证必需字段
+    if (!frontmatter.name) {
+      throw new Error('SKILL.md必须包含name字段');
+    }
+    if (!frontmatter.description) {
+      throw new Error('SKILL.md必须包含description字段');
+    }
 
-  return {
-    metadata: frontmatter,
-    content: markdownContent
-  };
+    return {
+      metadata: frontmatter,
+      content: markdownContent
+    };
+  } catch (yamlError) {
+    console.warn(`❌ YAML解析错误: ${filePath}`, yamlError.message);
+    throw new Error(`YAML解析失败: ${yamlError.message}`);
+  }
 }
 
 /**
@@ -137,7 +147,7 @@ function scanSkillResources(skillPath) {
   resourceTypes.forEach(type => {
     const typePath = path.join(skillPath, type);
     if (fs.existsSync(typePath)) {
-      resources[type] = scanDirectory(typePath);
+      resources[type] = scanDirectoryAndReadFiles(typePath);
     }
   });
 
@@ -145,11 +155,11 @@ function scanSkillResources(skillPath) {
 }
 
 /**
- * 递归扫描目录
+ * 递归扫描目录并读取文件内容
  */
-function scanDirectory(dirPath) {
-  const files = [];
-  
+function scanDirectoryAndReadFiles(dirPath) {
+  const fileContents = {};
+
   function scanRecursive(currentPath) {
     const items = fs.readdirSync(currentPath);
     
@@ -160,14 +170,14 @@ function scanDirectory(dirPath) {
       if (stat.isDirectory()) {
         scanRecursive(fullPath);
       } else {
-        const relativePath = path.relative(dirPath, fullPath);
-        files.push(relativePath);
+        const relativePath = path.relative(dirPath, fullPath).replace(/\\/g, '/'); // 统一路径分隔符
+        fileContents[relativePath] = fs.readFileSync(fullPath, 'utf8');
       }
     });
   }
   
   scanRecursive(dirPath);
-  return files;
+  return fileContents;
 }
 
 // 执行构建
