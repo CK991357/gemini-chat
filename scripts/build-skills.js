@@ -74,7 +74,8 @@ export function getSkillsRegistry() {
 }
 
 /**
- * 处理单个技能文件夹
+ * [最终修复版] 处理单个技能文件夹
+ * 核心：将所有references文件的内容合并到主content字段中
  */
 async function processSkillFolder(skillPath) {
   const skillMdPath = path.join(skillPath, 'SKILL.md');
@@ -83,17 +84,30 @@ async function processSkillFolder(skillPath) {
     throw new Error(`缺少SKILL.md文件: ${skillPath}`);
   }
 
-  const { metadata, content } = parseSkillMarkdown(skillMdPath);
+  const { metadata, content: mainContent } = parseSkillMarkdown(skillMdPath);
   const resources = scanSkillResources(skillPath);
   
+  // --- 【关键修复】知识合并逻辑 ---
+  let combinedContent = mainContent;
+
+  if (resources.references && typeof resources.references === 'object') {
+    combinedContent += '\n\n<hr>\n\n## 📚 参考指南 (Reference Manuals)\n\n';
+    for (const [fileName, fileContent] of Object.entries(resources.references)) {
+      // 为每个参考文件创建一个清晰的、可被正则表达式匹配的章节
+      const chapterTitle = fileName.replace('.md', '');
+      combinedContent += `### 📖 ${chapterTitle}\n\n`;
+      combinedContent += fileContent + '\n\n';
+    }
+  }
+  // --- 修复结束 ---
+
   return {
     metadata: {
       ...metadata,
-      // 保持向后兼容
-      tool_name: metadata.allowed_tools?.[0] || metadata.name.replace('-', '_')
+      tool_name: metadata.tool_name || metadata.name.replace('-', '_')
     },
-    content,
-    resources,
+    content: combinedContent, // <-- 使用合并后的完整内容
+    resources, // 仍然保留原始的resources结构，以备他用
     filePath: skillPath,
     lastUpdated: new Date().toISOString()
   };
