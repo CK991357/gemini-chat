@@ -1102,13 +1102,20 @@ ${plan.research_plan.map(item =>
     }
 
     _isStepCompleted(step, history) {
-        const stepKeywords = step.sub_question.toLowerCase().split(' ');
-        const recentActions = history.slice(-3).join(' ').toLowerCase();
+        // 将历史记录中的关键文本字段连接成一个大的、可搜索的字符串
+        const historyText = history.map(h => `${h.action?.thought || ''} ${h.observation || ''}`).join(' ').toLowerCase();
         
-        return stepKeywords.some(keyword => 
-            recentActions.includes(keyword) && 
-            history.some(entry => entry.includes('最终答案') || entry.includes('足够信息'))
-        );
+        // 检查历史文本中是否包含表示“完成”的关键词
+        const hasCompletionKeywords = historyText.includes('最终答案') || historyText.includes('足够信息');
+
+        if (!hasCompletionKeywords) {
+            return false;
+        }
+
+        // 检查与当前步骤相关的关键词是否也出现在历史中
+        const stepKeywords = step.sub_question.toLowerCase().split(/\s+/).filter(k => k.length > 2);
+        
+        return stepKeywords.some(keyword => historyText.includes(keyword));
     }
 
     // 🎯 格式化历史记录 - 核心修复：简化旧历史记录以降低干扰
