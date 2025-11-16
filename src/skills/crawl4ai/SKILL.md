@@ -110,10 +110,25 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "parameters": {
     "url": "https://news.example.com/article",
     "schema_definition": {
-      "title": "string",
-      "author": "string", 
-      "publish_date": "string",
-      "content": "string"
+      "name": "Article",
+      "baseSelector": ".article-content",
+      "fields": [
+        {
+          "name": "title",
+          "selector": "h1",
+          "type": "text"
+        },
+        {
+          "name": "author",
+          "selector": ".author",
+          "type": "text"
+        },
+        {
+          "name": "content",
+          "selector": ".content",
+          "type": "text"
+        }
+      ]
     },
     "extraction_type": "css"
   }
@@ -259,10 +274,30 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "parameters": {
     "url": "https://news.example.com/article",
     "schema_definition": {
-      "title": "string",
-      "author": "string",
-      "publish_date": "string",
-      "content": "string"
+      "name": "Article",
+      "baseSelector": ".article-content",
+      "fields": [
+        {
+          "name": "title",
+          "selector": "h1",
+          "type": "text"
+        },
+        {
+          "name": "author",
+          "selector": ".author",
+          "type": "text"
+        },
+        {
+          "name": "publish_date",
+          "selector": ".date",
+          "type": "text"
+        },
+        {
+          "name": "content",
+          "selector": ".content",
+          "type": "text"
+        }
+      ]
     },
     "css_selector": ".article-content",
     "extraction_type": "css"
@@ -291,6 +326,14 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 }
 ```
 
+**🛡️ 自动修复机制：**
+我们的工具会自动确保 `schema_definition` 包含所有必需字段：
+- 如果缺少 `baseSelector`，自动设置为 `css_selector` 或 `'body'`
+- 如果缺少 `fields`，自动创建默认字段配置  
+- 如果缺少 `name`，自动设置为 `"ExtractedData"`
+
+**💡 最佳实践：** 虽然工具会自动修复，但提供完整的 schema 可以获得更精确的提取结果。
+
 **⚠️ 重要提示:**
 - **参数名称**: 用于定义提取结构的参数必须命名为 `schema_definition`
 - **常见错误**: 请勿使用 `schema` 作为参数名，这会导致调用失败
@@ -301,6 +344,35 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - `css_selector`: 基础 CSS 选择器（CSS 提取时使用）
 - `extraction_type`: 提取类型，`css`(默认)/`llm`
 - `prompt`: LLM 提取的提示语
+
+## 📋 Schema Definition 结构说明
+
+### CSS 提取模式必需的 schema 结构：
+```json
+{
+  "name": "YourSchemaName",           // 必需：schema 名称
+  "baseSelector": "css-selector",     // 必需：基础 CSS 选择器
+  "fields": [                         // 必需：字段定义数组
+    {
+      "name": "field_name",           // 必需：字段名称
+      "selector": "css-selector",     // 必需：字段选择器
+      "type": "text",                 // 必需：字段类型
+      "multiple": true                // 可选：是否允许多个值
+    }
+  ]
+}
+```
+
+### LLM 提取模式 schema 结构：
+```json
+{
+  "type": "object",
+  "properties": {
+    "field1": {"type": "string"},
+    "field2": {"type": "array", "items": {"type": "string"}}
+  }
+}
+```
 
 ### 5. PDF 导出 (`pdf_export`)
 
@@ -383,6 +455,11 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - **连接失败**: 检查 URL 格式，验证网络连接
 - **被网站屏蔽**: 降低爬取速度，增加请求间隔
 
+#### Extract 模式特定问题
+- **空结果**: 检查 `fields` 数组中的 `selector` 是否准确匹配页面元素
+- **字段缺失**: 确保 `schema_definition` 包含完整的 `name`、`baseSelector`、`fields` 结构
+- **自动修复**: 工具会自动补全缺失字段，但手动提供完整 schema 效果更好
+
 ### 调试技巧
 
 1. **从简单开始**: 先用 `scrape` 模式测试单个页面
@@ -397,6 +474,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - **URL 格式**: 必须以 `http://` 或 `https://` 开头  
 - **模式选择**: 根据需求选择合适的模式
 - **内存管理**: 大量数据时使用流式处理 (`stream: true`)
+- **Schema 完整性**: 为 CSS 提取提供完整的 `name`、`baseSelector`、`fields` 结构
 
 ### ❌ 常见错误
 
@@ -474,7 +552,15 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "parameters": {
     "url": "https://example.com", 
     "schema_definition": {
-      "title": "string"
+      "name": "Article",
+      "baseSelector": ".content",
+      "fields": [
+        {
+          "name": "title",
+          "selector": "h1",
+          "type": "text"
+        }
+      ]
     }
   }
 }
@@ -536,17 +622,38 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "parameters": {
     "url": "https://news.example.com/article",
     "schema_definition": {
-      "type": "object", 
-      "properties": {
-        "headline": {"type": "string"},
-        "author": {"type": "string"},
-        "publish_date": {"type": "string"},
-        "main_content": {"type": "string"},
-        "tags": {"type": "array", "items": {"type": "string"}}
-      }
+      "name": "NewsArticle",
+      "baseSelector": ".article-container",
+      "fields": [
+        {
+          "name": "headline",
+          "selector": "h1.news-title",
+          "type": "text"
+        },
+        {
+          "name": "author",
+          "selector": ".author-name",
+          "type": "text"
+        },
+        {
+          "name": "publish_date",
+          "selector": ".publish-date",
+          "type": "text"
+        },
+        {
+          "name": "main_content",
+          "selector": ".article-body",
+          "type": "text"
+        },
+        {
+          "name": "tags",
+          "selector": ".tag",
+          "type": "text",
+          "multiple": true
+        }
+      ]
     },
-    "extraction_type": "llm",
-    "prompt": "提取新闻文章的标题、作者、发布日期、主要内容和标签"
+    "extraction_type": "css"
   }
 }
 ```
@@ -563,4 +670,5 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 8. **命名规范**: extract模式必须使用 `schema_definition` 参数名
 9. **内容控制**: 使用 `include_links` 和 `include_images` 控制输出内容
 10. **质量优化**: 使用 `word_count_threshold` 过滤低质量内容块
+11. **Schema 完整性**: 为 CSS 提取提供完整的 schema 结构以获得最佳结果
 ```

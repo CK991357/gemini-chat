@@ -600,6 +600,20 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
+            // 🎯 新增：Crawl4AI 普通模式参数修正逻辑
+            if (toolCode.tool_name === 'crawl4ai' && parsedArguments.mode === 'extract') {
+                console.log('[MCP] 检测到 crawl4ai extract 调用，执行参数修正...');
+                
+                // 兼容双重嵌套和单层嵌套
+                const paramsTarget = parsedArguments.parameters || parsedArguments;
+
+                if (paramsTarget.schema && paramsTarget.schema_definition === undefined) {
+                    console.log('[MCP] 修正参数：将 "schema" 重命名为 "schema_definition"');
+                    paramsTarget.schema_definition = paramsTarget.schema;
+                    delete paramsTarget.schema;
+                }
+            }
+
             // ✨ 修复：构建简化的请求体，不再包含 server_url
             const proxyRequestBody = {
                 tool_name: toolCode.tool_name,
