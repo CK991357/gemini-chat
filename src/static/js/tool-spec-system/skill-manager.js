@@ -85,20 +85,23 @@ class EnhancedSkillManager {
     `.toLowerCase();
     
     const keywords = this.extractKeywords(query);
+    const tagsLower = (metadata.tags || []).map(tag => tag.toLowerCase());
+    // 增强功能性动词的权重
+    const coreVerbs = ['extract', 'scrape', 'crawl', '提取', '抓取', '爬取', '搜索', '查询'];
+
     keywords.forEach(keyword => {
-      try {
-        // 🎯 修复：安全地构建正则表达式
-        const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(escapedKeyword, 'gi');
-        const matches = searchText.match(regex);
-        if (matches) {
-          score += matches.length * 0.08;
+      // 1. 基础匹配
+      if (searchText.includes(keyword)) {
+        score += 0.1; // 基础分
+
+        // 2. 标签加权 (如果是标签中的词，权重翻倍)
+        if (tagsLower.some(tag => tag.includes(keyword))) {
+          score += 0.15;
         }
-      } catch (error) {
-        console.warn(`[SkillManager] 正则表达式匹配失败，跳过关键词: ${keyword}`, error);
-        // 降级方案：使用字符串包含检查
-        if (searchText.includes(keyword)) {
-          score += 0.08;
+
+        // 3. 关键动词加权 (针对核心功能)
+        if (coreVerbs.includes(keyword)) {
+          score += 0.2;
         }
       }
     });
@@ -157,29 +160,27 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 提取关键词
+   * 提取关键词 (优化版)
    */
   extractKeywords(text) {
-    const stopWords = ['请', '帮', '我', '怎么', '如何', '什么', '为什么', 'the', 'and', 'for'];
+    const stopWords = ['请', '帮', '我', '怎么', '如何', '什么', '为什么', 'the', 'and', 'for', '从', '的', '提取', '获取'];
     
-    // 🔧 修复：安全地分割和过滤关键词
-    return text.split(/\s+/)
+    // 1. 预处理：移除 URL
+    const textWithoutUrls = text.replace(/https?:\/\/[^\s]+/g, '');
+    
+    // 2. 预处理：将非字母数字字符替换为空格 (保留中文)
+    // 这一步有助于拆分像 "crawl4ai的extract功能" 这样的连词
+    const cleanText = textWithoutUrls.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ' ');
+
+    return cleanText.split(/\s+/)
         .filter(k => {
-            // 确保关键词是有效的字符串
             if (typeof k !== 'string') return false;
-            if (k.length <= 1) return false;
+            if (k.length <= 1) return false; // 过滤单字
             if (stopWords.includes(k)) return false;
-            
-            // 检查是否包含非法正则字符
-            const regexSpecialChars = /[.*+?^${}()|[\]\\]/g;
-            if (regexSpecialChars.test(k)) {
-                console.warn(`[SkillManager] 跳过包含特殊字符的关键词: ${k}`);
-                return false;
-            }
-            
             return true;
         })
-        .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); // 转义特殊字符
+        // 移除转义逻辑，直接返回清洗后的关键词
+        .map(k => k.toLowerCase());
   }
 
   /**
