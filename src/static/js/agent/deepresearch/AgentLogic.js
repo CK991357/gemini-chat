@@ -470,15 +470,25 @@ export class AgentLogic {
         const availableToolsText = this._formatTools(availableTools);
         
         // --- START FIX: [最终修复版] 注入上一步的观察结果，并强化知识应用指令 ---
-        let lastObservation = '';
-        if (intermediateSteps.length > 0) {
-            const lastStep = intermediateSteps[intermediateSteps.length - 1];
+// --- START OF FINAL FIX: 统一的、分层级的上下文注入逻辑 (健壮版 v2) ---
+let lastObservation = '';
+if (intermediateSteps && intermediateSteps.length > 0) {
+    // 1. 安全地获取最后一步
+    const lastStep = intermediateSteps[intermediateSteps.length - 1];
+    
+    // 2. 检查 lastStep 是否有效且包含有意义的 observation
+    if (lastStep && typeof lastStep.observation === 'string' && lastStep.observation.length > 50) {
+        
+        // 🔥🔥🔥【核心逻辑分层】🔥🔥🔥
+        // 优先级 1: 判断上一步是否是【成功的知识检索】
+        if (lastStep.action && lastStep.action.tool_name === 'retrieve_knowledge' && lastStep.success !== false) {
             
-            // 检查上一步是否是知识检索
-            if (lastStep.action?.tool_name === 'retrieve_knowledge' && lastStep.success !== false) {
-                lastObservation = `
+            // 如果是，则使用专门为“知识应用”设计的提示
+            const retrievedToolName = lastStep.action.parameters ? lastStep.action.parameters.tool_name : '未知工具';
+            
+            lastObservation = `
 ## 📖 【强制应用】你已获取操作指南
-你刚刚通过 \`retrieve_knowledge\` 获取了 \`${lastStep.action.parameters.tool_name}\` 的完整操作指南。
+你刚刚通过 \`retrieve_knowledge\` 获取了 \`${retrievedToolName}\` 的完整操作指南。
 **你的下一步行动必须严格依据这份指南中的代码示例、Schema格式和工作流来构建。**
 在你的"思考"中，你必须明确引用你参考了指南的哪个部分。
 
@@ -487,17 +497,23 @@ export class AgentLogic {
 ${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 ? '... (内容已截断)' : ''}
 \`\`\`
 `;
-            } else if (typeof lastStep.observation === 'string' && lastStep.observation.length > 50) {
-                 lastObservation = `
+
+        } else {
+            // 优先级 2: 如果不是知识检索，则是通用的工具调用观察结果
+            // 使用统一的、语言清晰的中文提示
+            lastObservation = `
 ## 📋 上下文：上一步的观察结果
-你刚从上一个工具调用中收到了以下信息。如果相关，你必须使用这些数据来指导你的下一步行动。
+你刚从上一个工具调用中收到了以下信息。如果相关，你**必须**使用这些数据来指导你的下一步行动。
+
+**观察结果摘要:**
 \`\`\`
 ${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 ? '... (内容已截断)' : ''}
 \`\`\`
 `;
-            }
         }
-        // --- END FIX ---
+    }
+}
+// --- END OF FINAL FIX ---
         
         // 🎯 增强：动态知识检索触发器
         const knowledgeRetrievalTriggers = this._buildKnowledgeRetrievalTriggers(intermediateSteps, researchPlan, currentStep);
