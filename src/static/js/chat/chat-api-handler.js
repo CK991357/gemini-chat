@@ -927,7 +927,9 @@ export class ChatApiHandler {
                 'extract': '4. 结构化数据提取 (`extract`)',
                 'scrape': '1. 抓取单个网页 (`scrape`)',
                 'deep_crawl': '2. 深度网站爬取 (`deep_crawl`)',
-                'batch_crawl': '3. 批量 URL 处理 (`batch_crawl`)'
+                'batch_crawl': '3. 批量 URL 处理 (`batch_crawl`)',
+                'pdf_export': '5. PDF 导出 (`pdf_export`)',         
+                'screenshot': '6. 截图捕获 (`screenshot`)'        
             }
         };
         
