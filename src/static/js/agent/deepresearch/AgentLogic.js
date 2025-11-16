@@ -469,17 +469,30 @@ export class AgentLogic {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
-        // --- START FIX: 注入上一步的观察结果作为上下文 ---
+        // --- START FIX: [最终修复版] 注入上一步的观察结果，并强化知识应用指令 ---
         let lastObservation = '';
         if (intermediateSteps.length > 0) {
             const lastStep = intermediateSteps[intermediateSteps.length - 1];
-            // 确保观察结果是字符串且足够长，避免注入无用信息
-            if (typeof lastStep.observation === 'string' && lastStep.observation.length > 50) {
-                 lastObservation = `
-📋 Context from Previous Step (Observation)
-You have just received the following information from the last tool call. You MUST use this data for your next action if relevant.
+            
+            // 检查上一步是否是知识检索
+            if (lastStep.action?.tool_name === 'retrieve_knowledge' && lastStep.success !== false) {
+                lastObservation = `
+## 📖 【强制应用】你已获取操作指南
+你刚刚通过 \`retrieve_knowledge\` 获取了 \`${lastStep.action.parameters.tool_name}\` 的完整操作指南。
+**你的下一步行动必须严格依据这份指南中的代码示例、Schema格式和工作流来构建。**
+在你的"思考"中，你必须明确引用你参考了指南的哪个部分。
+
+**指南内容摘要:**
+\`\`\`markdown
+${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 ? '... (内容已截断)' : ''}
 \`\`\`
-${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 ? '... (content truncated)' : ''}
+`;
+            } else if (typeof lastStep.observation === 'string' && lastStep.observation.length > 50) {
+                 lastObservation = `
+## 📋 上下文：上一步的观察结果
+你刚从上一个工具调用中收到了以下信息。如果相关，你必须使用这些数据来指导你的下一步行动。
+\`\`\`
+${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 ? '... (内容已截断)' : ''}
 \`\`\`
 `;
             }
@@ -489,42 +502,35 @@ ${lastStep.observation.substring(0, 4000)} ${lastStep.observation.length > 4000 
         // 🎯 增强：动态知识检索触发器
         const knowledgeRetrievalTriggers = this._buildKnowledgeRetrievalTriggers(intermediateSteps, researchPlan, currentStep);
         
-        // 🎯 核心新增：知识检索策略指导
+        // 🎯 [最终修复版] 强制性岗前培训协议
         const knowledgeStrategySection = `
-## 🧠 知识驱动决策框架 - 强制执行版
+## 🚨 【强制协议】核心工具岗前培训协议 (Mandatory Pre-flight Protocol)
 
-### 🔥 强制检索条件（遇到以下情况必须检索知识）：
-${knowledgeRetrievalTriggers.conditions.map(condition => `- ${condition}`).join('\n')}
+**协议规则：** 在调用任何核心工具（\`python_sandbox\`, \`crawl4ai\`）执行一项**新的、具体的任务**之前，你**必须**首先通过调用 \`retrieve_knowledge\` 工具来获取该工具的最新、完整的官方操作指南（SKILL.md）。
 
-### 📚 当前上下文建议检索的知识：
-${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **${tool.name}**: ${tool.reason}`).join('\n')}
+### 检查清单 (Pre-flight Checklist):
+1.  **任务识别:** 我当前计划步骤是否需要使用 \`python_sandbox\` 或 \`crawl4ai\`？
+2.  **知识状态:** 我是否**刚刚（在上一步）**已经成功查阅了该工具的完整指南？
 
-### 🚨 违反规则的后果：
-- 如果未检索知识直接编写复杂代码，执行成功率将低于30%
-- 系统将无法提供最佳实践和错误预防指导
-- 可能导致任务失败和迭代浪费
+### 决策逻辑 (Decision Logic):
+*   **如果检查清单有任何一项为"否" (e.g., 需要用，但没查过):**
+    *   🚫 **行动禁止:** 你被**禁止**直接调用 \`python_sandbox\` 或 \`crawl4ai\`。
+    *   ✅ **唯一合法行动:** 你的下一步行动**必须是**调用 \`retrieve_knowledge\`。
+    *   **思考模板:** "我需要使用 \`${knowledgeRetrievalTriggers.suggestedTools[0]?.name || '工具'}\` 来完成[任务描述]。根据岗前培训协议，我必须先查阅其操作指南以获取[具体的工作流/Schema格式]。"
+
+*   **如果检查清单全部为"是" (e.g., 刚查完指南):**
+    *   ✅ **行动授权:** 你现在被**授权**可以调用 \`python_sandbox\` 或 \`crawl4ai\`。
+    *   **思考模板:** "我已查阅 \`${lastStep?.action?.parameters?.tool_name}\` 的指南。根据[指南中的具体章节/示例]，我将按以下步骤操作..."
 
 ${knowledgeRetrievalTriggers.conditions.length > 0 ? `
-## ⚡ 立即行动要求
-基于当前任务，你**必须**首先调用 \`retrieve_knowledge\` 来获取以下工具的完整指南：
-${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- \`${tool.name}\` - ${tool.reason}`).join('\n')}
-` : ''}
-
-### 🛠️ 复杂工具专用指南（备查）
-
-#### python_sandbox 知识地图
-- **数据分析**: 参考 "数据清洗与分析" + "pandas_cheatsheet"
-- **可视化**: 参考 "数据可视化" + "matplotlib_cookbook"
-- **数学证明**: 参考 "公式证明工作流" + "sympy_cookbook"
-- **报告生成**: 参考 "自动化报告生成" + "report_generator_workflow"
-- **机器学习**: 参考 "机器学习" + "ml_workflow"
-
-#### crawl4ai 知识地图
-- **网页抓取**: 参考 "网页抓取最佳实践"
-- **内容提取**: 参考 "智能内容提取"
-- **错误处理**: 参考 "爬虫错误诊断"
-
-记住：**知识是你最强大的工具**。在行动前先确保你拥有完整的指导！
+### ⚡ 当前状态：培训要求已触发！
+**系统检测到：** ${knowledgeRetrievalTriggers.conditions.join('; ')}
+**因此，你当前的唯一任务是：** 调用 \`retrieve_knowledge\` 获取以下工具的指南：
+${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**: ${tool.reason}`).join('\n')}
+` : `
+### ✅ 当前状态：培训要求未触发。
+你可以根据标准决策流程继续。
+`}
 `;
         
         // 🎯 核心修复：添加Python代码调试专业指南
@@ -1001,74 +1007,59 @@ ${strategy.reminder}
 
 **最终决策权在你手中，请基于专业判断选择最佳研究策略。**`;
     }
+
     /**
-     * 🎯 新增：智能知识检索触发器
+     * [最终修复版] 智能知识检索触发器
+     * 核心：检测当前计划步骤是否需要使用复杂工具，并检查Agent是否已"学习"过
      */
     _buildKnowledgeRetrievalTriggers(intermediateSteps, researchPlan, currentStep) {
         const conditions = [];
-        const suggestedTools = [];
-        
+        const suggestedTools = new Map(); // 使用Map确保唯一性
+
         const currentStepPlan = researchPlan.research_plan.find(step => step.step === currentStep);
-        const hasPythonTasks = currentStepPlan?.sub_question?.includes('python_sandbox') ||
-                              currentStepPlan?.expected_tools?.includes('python_sandbox') ||
-                              currentStepPlan?.sub_question?.includes('数据') ||
-                              currentStepPlan?.sub_question?.includes('表格') ||
-                              currentStepPlan?.sub_question?.includes('图表');
-        
-        // ✅ 关键修复：检查是否已经学习过
-        const hasAlreadyLearnedPython = intermediateSteps.some(step =>
-            step.action?.tool_name === 'retrieve_knowledge' &&
-            step.action?.parameters?.tool_name === 'python_sandbox' &&
-            step.success !== false // 检查是否成功
-        );
+        if (!currentStepPlan) return { conditions, suggestedTools: [] };
 
-        // 条件1：首次使用复杂工具 (python_sandbox) 且尚未学习过
-        const usedTools = intermediateSteps.map(step => step.action?.tool_name).filter(Boolean);
-        if (!usedTools.includes('python_sandbox') && hasPythonTasks && !hasAlreadyLearnedPython) {
-            conditions.push('首次使用 `python_sandbox` 进行数据处理或图表生成');
-            suggestedTools.push({
-                name: 'python_sandbox',
-                reason: '获取数据处理和表格/图表生成的最佳实践工作流'
-            });
-        }
+        const expectedTools = currentStepPlan.expected_tools || [];
+        const subQuestion = (currentStepPlan.sub_question || '').toLowerCase();
         
-        // 条件2：复杂数据处理任务 (保留原有逻辑，但如果条件1触发，这里不会重复添加)
-        const complexDataTasks = ['提取', '表格', '处理', '分析', '清洗', '图表', '可视化'];
-        const hasComplexDataTask = complexDataTasks.some(task =>
-            currentStepPlan?.sub_question?.includes(task)
-        );
-        
-        if (hasComplexDataTask && !suggestedTools.some(t => t.name === 'python_sandbox') && hasPythonTasks && !hasAlreadyLearnedPython) {
-            conditions.push('执行复杂的数据提取、处理或可视化任务');
-            suggestedTools.push({
-                name: 'python_sandbox',
-                reason: '获取数据提取和表格/图表生成的专业工作流'
-            });
-        }
-        
-        // 条件3：之前步骤有网页抓取且当前需要处理数据 且尚未学习过
-        const hasCrawledData = intermediateSteps.some(step =>
-            step.action?.tool_name === 'crawl4ai' && step.observation?.includes('成功')
-        );
-        
-        if (hasCrawledData && hasPythonTasks && !hasAlreadyLearnedPython) {
-            conditions.push('需要处理之前抓取的网页数据');
-            suggestedTools.push({
-                name: 'python_sandbox',
-                reason: '获取网页数据解析和结构化的完整指南'
-            });
-        }
-        
-        // 移除重复的工具建议
-        const uniqueSuggestedTools = suggestedTools.filter((tool, index, self) =>
-            index === self.findIndex((t) => (
-                t.name === tool.name
-            ))
-        );
+        // --- 核心工具的检测逻辑 ---
+        const coreToolsToCheck = {
+            'python_sandbox': ['python', '代码', '分析', '图表', '表格', '计算', '证明'],
+            'crawl4ai': ['extract', '提取'] // 重点关注最复杂的 extract 模式
+        };
 
-        return { conditions, suggestedTools: uniqueSuggestedTools };
+        // 检查最近一次交互是否是针对该工具的知识检索
+        const lastStep = intermediateSteps.length > 0 ? intermediateSteps[intermediateSteps.length - 1] : null;
+        const hasJustLearned = (toolName) => {
+            return lastStep &&
+                   lastStep.action?.tool_name === 'retrieve_knowledge' &&
+                   lastStep.action?.parameters?.tool_name === toolName &&
+                   lastStep.success !== false;
+        };
+
+        for (const [toolName, keywords] of Object.entries(coreToolsToCheck)) {
+            // 触发条件：1) 计划中明确需要该工具，或 2) 子问题包含相关关键词
+            const needsTool = expectedTools.includes(toolName) || keywords.some(kw => subQuestion.includes(kw));
+            
+            if (needsTool && !hasJustLearned(toolName)) {
+                // 如果需要使用该工具，但Agent"还没学过"，则强制学习
+                conditions.push(`计划执行需要使用复杂工具 \`${toolName}\`，但尚未查阅其最新操作指南。`);
+                
+                let reason = '获取该工具的基础用法和最佳实践。';
+                if (toolName === 'crawl4ai') {
+                    reason = '获取 `extract` 等高级模式的精确 `schema_definition` 格式和示例。';
+                } else if (toolName === 'python_sandbox') {
+                    reason = '获取特定任务（如数据可视化、文档生成）的标准化工作流和代码模板。';
+                }
+
+                if (!suggestedTools.has(toolName)) {
+                    suggestedTools.set(toolName, { name: toolName, reason });
+                }
+            }
+        }
+
+        return { conditions, suggestedTools: Array.from(suggestedTools.values()) };
     }
-
 
     // ✨ 格式化研究计划
     _formatResearchPlan(plan, currentStep) {

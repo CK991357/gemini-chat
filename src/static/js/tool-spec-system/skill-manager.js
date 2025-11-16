@@ -183,32 +183,80 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 智能生成注入内容
+   * [最终修复版] 智能生成单个技能的注入内容
+   * 能够提取并注入完整的、与用户查询最相关的文档章节
    */
   generateSkillInjection(skill, userQuery = '') {
     const { metadata, content } = skill;
     
-    // 智能提取相关内容片段
-    const relevantContent = this.extractRelevantContent(content, userQuery);
-    const keyInstructions = this.extractKeyInstructions(content);
-    const callingFormat = this.extractCallingFormat(content);
+    let injectionContent = `## 🛠️ 工具指南: ${metadata.name} (${metadata.tool_name})\n\n`;
+    injectionContent += `**核心功能**: ${metadata.description}\n\n`;
     
-    let injectionContent = `## 🛠️ 工具指南: ${metadata.name}\n\n`;
-    injectionContent += `${metadata.description}\n\n`;
+    // --- 智能章节提取逻辑 ---
+    // 目标：根据用户查询，从完整的 SKILL.md 内容中提取最相关的章节
     
-    if (keyInstructions) {
-      injectionContent += `**关键指令:**\n${keyInstructions}\n\n`;
+    // 1. 定义关键词与章节标题的映射关系
+    const sectionKeywords = {
+      'extract': ['结构化数据提取 (`extract`)', 'Schema Definition 结构说明'],
+      'scrape': ['抓取单个网页 (`scrape`)'],
+      'deep_crawl': ['深度网站爬取 (`deep_crawl`)'],
+      'batch': ['批量 URL 处理 (`batch_crawl`)'],
+      'screenshot': ['截图捕获 (`screenshot`)'],
+      'pdf': ['PDF 导出 (`pdf_export`)']
+    };
+    
+    // 2. 根据用户查询找到相关的关键词
+    let relevantSectionTitle = null;
+    const queryLower = userQuery.toLowerCase();
+    for (const keyword in sectionKeywords) {
+      if (queryLower.includes(keyword)) {
+        relevantSectionTitle = sectionKeywords[keyword];
+        break;
+      }
     }
     
-    injectionContent += `**调用格式:**\n\`\`\`json\n${callingFormat}\n\`\`\`\n\n`;
-    
-    if (relevantContent) {
-      injectionContent += `${relevantContent}\n\n`;
+    // 3. 如果找到了相关章节，提取其完整内容
+    if (relevantSectionTitle) {
+      injectionContent += `### 📖 相关操作指南 (已为您提取)\n\n`;
+      let sectionFound = false;
+      relevantSectionTitle.forEach(title => {
+        // 使用正则表达式精确提取从标题 (##) 到下一个同级或更高级标题之间的所有内容
+        const regex = new RegExp(`##\\s+${this.escapeRegex(title)}[\\s\\S]*?(?=\\n##\\s|$)`, 'i');
+        const match = content.match(regex);
+        
+        if (match) {
+          injectionContent += match[0] + '\n\n';
+          sectionFound = true;
+        }
+      });
+      
+      if (!sectionFound) {
+         injectionContent += `*未找到与'${relevantSectionTitle.join(', ')}'直接相关的详细章节，请参考通用指南。*\n\n`;
+      }
     }
-    
-    injectionContent += `请严格遵循上述指南使用 **${metadata.tool_name}** 工具。`;
+
+    // 4. 无论如何，总是提供通用调用结构和错误示例，这是最重要的！
+    injectionContent += `### 🚨 【强制遵守】通用调用结构与常见错误\n\n`;
+    const generalStructureRegex = /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i;
+    const generalStructureMatch = content.match(generalStructureRegex);
+    if(generalStructureMatch){
+        injectionContent += generalStructureMatch[0] + '\n\n';
+    }
+
+    const commonErrorsRegex = /### ❌ 常见致命错误[\s\S]*?(?=\n##\s|$)/i;
+    const commonErrorsMatch = content.match(commonErrorsRegex);
+    if(commonErrorsMatch){
+        injectionContent += commonErrorsMatch[0] + '\n\n';
+    }
+
+    injectionContent += `请严格遵循上述指南和示例来使用 **${metadata.tool_name}** 工具。`;
     
     return injectionContent;
+  }
+
+  // 辅助函数，用于安全地创建正则表达式
+  escapeRegex(string) {
+      return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
   }
 
   /**
@@ -246,13 +294,19 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 多技能注入内容生成
+   * [最终修复版] 多技能注入内容生成
+   * 对 crawl4ai 等复杂工具进行特殊处理，注入更详细的指南
    */
   generateMultiSkillInjection(skills, userQuery) {
-    if (skills.length === 1) {
-      return this.generateSkillInjection(skills[0].skill, userQuery);
+    if (skills.length === 0) return '';
+    
+    // 如果只有一个技能，或者最重要的技能是 crawl4ai，则使用单技能的详细注入
+    const primarySkill = skills[0];
+    if (skills.length === 1 || primarySkill.toolName === 'crawl4ai') {
+      return this.generateSkillInjection(primarySkill.skill, userQuery);
     }
     
+    // 对于多个非关键技能，保持摘要模式
     let content = `## 🎯 多个相关工具推荐\n\n`;
     content += `基于您的查询，以下工具可能有用：\n\n`;
     
