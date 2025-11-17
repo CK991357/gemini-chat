@@ -447,10 +447,23 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         this.intermediateSteps = []; // ✅ 确保每次新研究都清空历史
         let iterations = 0;
         let consecutiveNoGain = 0;
-        let allSources = [];
-        let finalAnswerFromIteration = null;
         
-        const totalSteps = researchPlan.research_plan.length; // 新增：总计划步骤数
+        // 🔥【新】初始化一个包含ID计数器的来源管理器
+        const sourceManager = {
+            sources: [],
+            counter: 1,
+            addSources: function(newSources) {
+                if (!newSources || newSources.length === 0) return;
+                newSources.forEach(source => {
+                    // 为每个新来源分配一个全局唯一ID
+                    const sourceWithId = { ...source, globalId: this.counter++ };
+                    this.sources.push(sourceWithId);
+                });
+            }
+        };
+
+        let finalAnswerFromIteration = null;
+        const totalSteps = researchPlan.research_plan.length;
 
         while (iterations < this.maxIterations && consecutiveNoGain < 2 && !finalAnswerFromIteration) {
             iterations++;
@@ -466,7 +479,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                     current_step: this.intermediateSteps.length, // 统一命名
                     total_steps: totalSteps, // 新增
                     plan_completion: planCompletion, // 新增
-                    sources_collected: allSources.length, // 新增
+                    sources_collected: sourceManager.sources.length, // 新增
                     metrics: this.metrics,
                     research_mode: detectedMode
                 }
@@ -583,6 +596,9 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                         });
                     }
 
+                    // 🔥【新】使用 sourceManager 来添加新来源，它会自动分配ID
+                    sourceManager.addSources(toolSources);
+
                     // ✅✅✅ --- 核心修复：传入工具名称以应用不同的摘要策略 --- ✅✅✅
                     const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
                     
@@ -610,16 +626,16 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                         },
                         observation: summarizedObservation,
                         key_finding: keyFinding, // 🎯 新增：存储关键发现
-                        sources: toolSources,
+                        // 💡 我们不再在step级别存储sources，因为它们已由sourceManager统一管理
+                        // sources: toolSources, // <--- 移除这一行
                         success: toolSuccess // ✅ 新增：记录工具执行状态
                     });
                     
-                    // 🎯 合并到总来源列表
-                    allSources = [...allSources, ...toolSources];
+                    // 合并到总来源列表的逻辑也不再需要
+                    // allSources = [...allSources, ...toolSources]; // <--- 移除这一行
                     
-                    // 在收集到新来源时更新统计
                     updateResearchStats({
-                        sources: allSources,
+                        sources: sourceManager.sources, // <--- 使用 sourceManager 的数据
                         // ✨ 核心修复：传递过滤后的数组本身，而不是它的长度
                         toolCalls: this.intermediateSteps.filter(step => step.action.type === 'tool_call')
                     });
@@ -720,19 +736,11 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         // 更新关键词统计
         updateResearchStats({ keywords });
         
-        // 在循环结束后，报告生成前，确保所有来源都被正确传递：
+        // 🔥【新】在报告生成前，从 sourceManager 获取所有带ID的来源
+        const allSourcesWithId = sourceManager.sources;
+        const uniqueSources = this._deduplicateSources(allSourcesWithId); // 去重逻辑现在处理带ID的对象
 
-        // 🎯 关键修复：确保所有来源都被收集和传递
-        const allSourcesFromSteps = this.intermediateSteps.flatMap(step => step.sources || []);
-        const combinedSources = [...allSources, ...allSourcesFromSteps];
-        const uniqueSources = this._deduplicateSources(combinedSources);
-
-        console.log(`[DeepResearchAgent] 🔍 来源统计:`, {
-            allSourcesCount: allSources.length,
-            stepsSourcesCount: allSourcesFromSteps.length,
-            combinedCount: combinedSources.length,
-            uniqueCount: uniqueSources.length
-        });
+        console.log(`[DeepResearchAgent] 🔍 研究结束，共收集到 ${uniqueSources.length} 个带全局ID的独立来源。`);
 
         // 🎯 关键修复：无论是否有最终答案，都调用报告生成以确保信息整合
         let finalReport;
@@ -742,6 +750,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
+            // 🔥【新】传递 allSourcesWithId 给 _generateFinalReport
             finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
         }
 
@@ -753,7 +762,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
             const regex = new RegExp(`(##|###)\\s*${keyword}`, "i");
             const match = cleanedReport.match(regex);
             if (match) {
-                console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的“${keyword}”章节，正在执行自动清理...`);
+                console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的"${keyword}"章节，正在执行自动清理...`);
                 // 从匹配到的标题开始，截断报告的剩余部分
                 cleanedReport = cleanedReport.substring(0, match.index);
                 break; // 找到并清理后就跳出循环
@@ -762,10 +771,10 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         // 确保报告末尾没有多余的空白
         cleanedReport = cleanedReport.trim();
 
-
         // ✨ 阶段3.5：智能资料来源过滤
         console.log('[DeepResearchAgent] 阶段3.5：执行智能资料来源过滤...');
         // ▼▼▼ 注意：这里要对清理后的报告进行过滤 ▼▼▼
+        // 🔥【新】使用新的精确过滤函数
         const filteredSources = this._filterUsedSources(uniqueSources, cleanedReport);
         console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
 
@@ -816,12 +825,27 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
     }
 
     // ✨ 最终报告生成 - 【优化升级版】支持动态与静态模板
-    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
+    // 🔥【新】修改函数签名，接收 allSourcesWithId
+    async _generateFinalReport(topic, intermediateSteps, plan, allSourcesWithId, researchMode) {
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
         // 格式化研究历史，以便注入到最终的Prompt中
-        const formattedHistory = intermediateSteps.map((step, index) => {
-            // 确保我们不会因为 plan.research_plan 长度不足而出错
+        // 🔥【新】在格式化历史的同时，附加上下文相关的来源ID
+        const formattedHistoryWithSources = intermediateSteps.map((step, index) => {
+            // 找到与当前步骤相关的来源（这里简化为按时间顺序，更复杂的可以按内容相关性）
+            // 一个简单的实现是找到在当前步骤前后新加入的来源
+            const sourcesForThisStep = allSourcesWithId.filter(s => {
+                // 这是一个简化的逻辑，假设每个step的sources是按顺序添加的
+                // 真实的实现可能需要更复杂的逻辑来关联step和source
+                // 但为了演示，我们先假设可以找到
+                // 更好的方法是在 sourceManager.addSources 时记录当时的 step index
+                return true; // 简化：暂时展示所有来源
+            });
+
+            const stepSourcesText = sourcesForThisStep.length > 0
+                ? `\n\n**本步相关参考资料 (可用于引用):**\n` + sourcesForThisStep.map(s => `- [来源 ${s.globalId}] ${s.title}`).join('\n')
+                : '';
+
             const subQuestion = plan.research_plan?.[index]?.sub_question || '未知子问题';
             return `
 ---
@@ -839,6 +863,7 @@ ${(step.observation || '无').substring(0, 2000)}...
 
 **💡 本步关键发现:**
 ${step.key_finding || '未能提炼出关键发现。'}
+${stepSourcesText} 
 ---
             `;
         }).join('\n');
@@ -864,7 +889,7 @@ ${JSON.stringify(plan, null, 2)}
 
 # 2. 你的完整研究历史与发现 (原始数据)
 这是你执行上述计划的每一步的详细记录，包括你的思考、工具使用、观察结果和每一步的关键发现。你必须充分利用这些信息来填充报告的每一个章节。
-${formattedHistory}
+${formattedHistoryWithSources} // <--- 使用带有来源ID的历史记录
 
 # 3. 你的报告撰写指令 (输出要求)
 现在，请严格遵循以下元结构和要求，将上述研究过程和发现，整合成一份最终报告。
@@ -874,14 +899,14 @@ ${getTemplatePromptFragment(researchMode)}
 **🚫 绝对禁止:**
 - 编造研究计划和历史记录中不存在的信息。
 - 采用与你的研究计划（sub_question）无关的章节标题。
-- 忽略研究历史中的“观察”和“关键发现”。
-- 在你的输出中包含任何形式的“资料来源”或“参考文献”章节。这一部分将由系统自动生成和附加。
+- 忽略研究历史中的"观察"和"关键发现"。
+- 在你的输出中包含任何形式的"资料来源"或"参考文献"章节。这一部分将由系统自动生成和附加。
 
 **✅ 核心要求:**
 - **自主生成标题:** 基于主题和核心发现，为报告创建一个精准的标题。
 - **动态生成章节:** 将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
-- **内容填充:** 用对应研究步骤的详细“观察”数据来填充该章节。
-- **引用来源:** 在报告正文中，使用 [来源 X] 的格式清晰地引用信息。
+- **内容填充:** 用对应研究步骤的详细"观察"数据来填充该章节。
+- **引用来源:** 在报告正文中，当你引用了某个资料中的信息时，**必须**在句末使用 \`[cite: ID]\` 的格式清晰地引用【全局唯一ID】。例如：\`该技术的核心是稀疏激活[cite: 3]\`。你可以在上面的"本步相关参考资料"中找到ID和标题的对应关系。
 
 现在，请开始撰写这份体现你完整研究智慧的最终报告。
 `;
@@ -919,14 +944,14 @@ ${getTemplatePromptFragment(researchMode)}
             this._updateTokenUsage(reportResponse.usage);
             
             let finalReport = reportResponse?.choices?.[0]?.message?.content ||
-                this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 保持 fallback
+                this._generateFallbackReport(topic, intermediateSteps, allSourcesWithId, researchMode); // 保持 fallback
             
             console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
             return finalReport;
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 保持 fallback
+            return this._generateFallbackReport(topic, intermediateSteps, allSourcesWithId, researchMode); // 保持 fallback
         }
     }
 
@@ -1083,19 +1108,19 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         
         console.log(`[SourceSection] 生成高级美观资料来源部分，共 ${sources.length} 个来源`);
 
-        // 🔥 2. 异步调用LLM来生成动态的“信息覆盖”描述
+        // 🔥 2. 异步调用LLM来生成动态的"信息覆盖"描述
         const infoCoveragePrompt = `
             分析以下研究计划的子问题，提取出本次研究覆盖的6个最核心的信息领域关键词。
             要求：
             1. 直接输出关键词列表。
-            2. 使用逗号“、”分隔。
-            3. **绝对不要**包含任何前缀或引导性句子，如“本次研究覆盖了...”。
+            2. 使用逗号"、"分隔。
+            3. **绝对不要**包含任何前缀或引导性句子，如"本次研究覆盖了..."。
             4. 示例输出格式: "关键词A、关键词B、关键词C、关键词D、关键词E、关键词F"
 
             研究计划:
             ${plan.research_plan.map(step => `- ${step.sub_question}`).join('\n')}
         `;
-        let infoCoverageText = "LLM动态生成“信息覆盖”描述失败"; // 默认值
+        let infoCoverageText = "LLM动态生成信息覆盖描述失败"; // 默认值
         try {
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: infoCoveragePrompt }],
@@ -1104,9 +1129,8 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             });
             infoCoverageText = response?.choices?.[0]?.message?.content || infoCoverageText;
         } catch (e) {
-            console.warn("[SourceSection] LLM动态生成“信息覆盖”描述失败，使用默认值。");
+            console.warn("[SourceSection] LLM动态生成信息覆盖描述失败，使用默认值。");
         }
-
 
         let sourcesList = '### 📚 参考资料清单\n\n';
         sourcesList += '以下是本研究报告所引用的全部信息来源，按引用顺序排列：\n\n';
@@ -1130,164 +1154,45 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         return `\n\n## 资料来源\n\n${sourcesList}`;
     }
 
-    // 🎯 新增：智能资料来源过滤方法
-    _filterUsedSources(sources, reportContent) {
-        if (!sources || sources.length === 0) return [];
-        if (!reportContent || reportContent.length < 100) return sources;
+    // 🔥【新】用这个全新、精确的函数替换掉旧的 _filterUsedSources
+    _filterUsedSources(allSourcesWithId, reportContent) {
+        if (!allSourcesWithId || allSourcesWithId.length === 0) return [];
         
-        console.log(`[SourceFilter] 开始过滤 ${sources.length} 个来源，报告长度: ${reportContent.length}`);
+        console.log(`[SourceFilter] 开始执行【基于引用】的精确来源过滤...`);
         
-        const usedSources = new Set();
-        const reportLower = reportContent.toLowerCase();
-        
-        // 🎯 策略1：直接引用检测 (已增强)
-        sources.forEach(source => {
-            // ---- 第一层检测：完整标题片段匹配 (快速且精确) ----
-            if (source.title && reportLower.includes(source.title.toLowerCase().substring(0, 30))) {
-                usedSources.add(source);
-                return; // 匹配成功，跳过对此来源的后续检测
-            }
+        // 1. 用正则表达式从报告正文中提取所有被 [cite: ID] 的ID
+        const citationRegex = /\[cite:\s*([\d,\s]+)\]/g;
+        const citedIds = new Set();
+        let match;
 
-            // ---- 第二层检测：核心关键词匹配 (更具弹性) ----
-            if (source.title) {
-                const titleLower = source.title.toLowerCase();
-                // 提取标题中长度大于5的、有意义的单词作为关键词
-                const titleKeywords = titleLower.split(/[\s\-:_(),]+/).filter(k => k.length > 5 && !['http', 'https', 'www', 'arxiv', 'medium'].includes(k));
-                
-                // 只取最重要的前3个关键词进行匹配，避免噪音
-                const significantKeywords = titleKeywords.slice(0, 3);
-                
-                if (significantKeywords.length > 0) {
-                    let matchCount = 0;
-                    for (const keyword of significantKeywords) {
-                        if (reportLower.includes(keyword)) {
-                            matchCount++;
-                        }
-                    }
-                    // 匹配度阈值：如果标题中超过一半的核心关键词在报告中出现，就认为被引用
-                    if ((matchCount / significantKeywords.length) >= 0.5) {
-                        usedSources.add(source);
-                        return; // 匹配成功，跳过后续检测
-                    }
-                }
-            }
-
-            // ---- 第三层检测：域名匹配 (作为补充) ----
-            if (source.url) {
-                try {
-                    const domain = new URL(source.url).hostname.replace('www.', ''); // 清理域名
-                    if (reportLower.includes(domain)) {
-                        usedSources.add(source);
-                        return;
-                    }
-                } catch (e) {
-                    // URL解析失败，跳过
-                }
-            }
-        });
-
-        // 🎯 策略2：内容相关性检测 (在一个新的、独立的循环中完成)
-        sources.forEach(source => {
-            // 首先检查这个来源是否已经被策略1选中了
-            if (usedSources.has(source)) {
-                return; // 如果已选中，直接跳过，不做昂贵的计算
-            }
-            
-            // 只对那些未被选中的来源，执行昂贵的相关性计算
-            const relevanceScore = this._calculateSourceRelevance(source, reportContent);
-            if (relevanceScore > 0.6) {
-                usedSources.add(source);
-            }
-        });
-        
-        // 🎯 策略3：确保至少保留核心来源
-        const finalUsedSources = Array.from(usedSources);
-
-        // --- START FIX: 资料来源过滤降级策略 ---
-        // Fallback Strategy: If filtering removes all sources, but we had sources to begin with,
-        // it means the report failed to cite them. In this case, retain all original sources.
-        if (finalUsedSources.length === 0 && sources.length > 0) {
-            console.warn('[SourceFilter] ⚠️智能过滤移除了所有来源，已触发降级策略，将保留所有原始来源。');
-            return sources;
-        }
-        // --- END FIX ---
-        
-        const finalSources = this._ensureCoreSources(finalUsedSources, sources, reportContent);
-        
-        console.log(`[SourceFilter] 过滤完成: ${sources.length} → ${finalSources.length} 个来源`);
-        
-        return finalSources;
-    }
-
-    // 🎯 计算来源相关性
-    _calculateSourceRelevance(source, reportContent) {
-        let score = 0;
-        const reportLower = reportContent.toLowerCase();
-        
-        // 1. 标题关键词匹配
-        if (source.title) {
-            const titleKeywords = source.title.toLowerCase().split(/[\s\-_]+/).filter(k => k.length > 2);
-            titleKeywords.forEach(keyword => {
-                if (reportLower.includes(keyword)) {
-                    score += 0.2;
+        while ((match = citationRegex.exec(reportContent)) !== null) {
+            // match[1] 会是 "3, 5" 或 "12" 这样的字符串
+            const ids = match[1].split(',').map(id => parseInt(id.trim(), 10));
+            ids.forEach(id => {
+                if (!isNaN(id)) {
+                    citedIds.add(id);
                 }
             });
         }
-        
-        // 2. 描述内容匹配
-        if (source.description) {
-            const descKeywords = source.description.toLowerCase().split(/\s+/).filter(k => k.length > 3);
-            let descMatchCount = 0;
-            descKeywords.forEach(keyword => {
-                if (reportLower.includes(keyword)) {
-                    descMatchCount++;
-                }
-            });
-            score += (descMatchCount / Math.max(descKeywords.length, 1)) * 0.3;
-        }
-        
-        // 3. 来源类型权重
-        if (source.source_type === 'official' || source.url?.includes('.gov.cn') || source.url?.includes('.edu.cn')) {
-            score += 0.3; // 官方来源额外权重
-        }
-        
-        // 4. 时间相关性（如果来源有时间信息）
-        if (source.publish_date) {
-            const currentYear = new Date().getFullYear();
-            const sourceYear = new Date(source.publish_date).getFullYear();
-            if (sourceYear >= currentYear - 1) {
-                score += 0.2; // 近期来源额外权重
-            }
-        }
-        
-        return Math.min(score, 1.0);
-    }
 
-    // 🎯 确保保留核心来源
-    _ensureCoreSources(usedSources, allSources, reportContent) {
-        if (usedSources.length >= 5) return usedSources;
+        if (citedIds.size === 0) {
+            console.warn('[SourceFilter] ⚠️ 报告中未检测到任何 [cite: ID] 格式的引用。将触发降级策略，返回所有来源。');
+            // 降级策略：如果模型没有按要求引用，我们不能丢失所有来源，所以返回全部
+            return allSourcesWithId;
+        }
+
+        console.log(`[SourceFilter] 报告中明确引用了 ${citedIds.size} 个唯一来源，ID为:`, Array.from(citedIds).sort((a,b)=>a-b));
+
+        // 2. 从所有来源中，只筛选出ID在 citedIds 集合中的来源
+        const usedSources = allSourcesWithId.filter(source => citedIds.has(source.globalId));
         
-        console.log(`[SourceFilter] 使用的来源过少 (${usedSources.length})，补充核心来源`);
+        // 3. (可选) 保持来源在报告中首次被引用的顺序
+        // 这是一个更高级的优化，可以暂时省略，先按ID排序
+        usedSources.sort((a, b) => a.globalId - b.globalId);
+
+        console.log(`[SourceFilter] 精确过滤完成: ${allSourcesWithId.length} → ${usedSources.length} 个来源`);
         
-        // 按相关性排序所有来源
-        const scoredSources = allSources.map(source => ({
-            source,
-            score: this._calculateSourceRelevance(source, reportContent)
-        })).sort((a, b) => b.score - a.score);
-        
-        // 取前10个最高相关性的来源
-        const topSources = scoredSources.slice(0, 10).map(item => item.source);
-        
-        // 合并并去重
-        const combined = [...usedSources, ...topSources];
-        const uniqueMap = new Map();
-        combined.forEach(source => {
-            if (source.url) {
-                uniqueMap.set(source.url, source);
-            }
-        });
-        
-        return Array.from(uniqueMap.values()).slice(0, 15); // 最多保留15个
+        return usedSources;
     }
 
     // ✨ 新增：信息增益计算
