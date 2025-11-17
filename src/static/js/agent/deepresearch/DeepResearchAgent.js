@@ -751,7 +751,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
 
         // 🎯 关键修复：确保资料来源部分正确附加
-        finalReport += this._generateSourcesSection(filteredSources);
+        finalReport += await this._generateSourcesSection(filteredSources, researchPlan);
         console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${filteredSources.length} 个资料来源`);
 
         // =================================================================
@@ -1055,35 +1055,50 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         return report;
     }
 
-    // 🎯 更新资料来源生成方法
-    _generateSourcesSection(sources) {
+    // 🎯 【优化版】资料来源生成方法
+    async _generateSourcesSection(sources, plan) { // 🔥 1. 增加 plan 参数，并改为 async
         if (!sources || sources.length === 0) {
             return '\n\n## 资料来源\n\n🔄 本次研究未收集到外部资料来源。';
         }
         
         console.log(`[SourceSection] 生成高级美观资料来源部分，共 ${sources.length} 个来源`);
 
-        // 🎯 高级美观的统一资料来源显示
+        // 🔥 2. 异步调用LLM来生成动态的“信息覆盖”描述
+        const infoCoveragePrompt = `
+            基于以下研究计划的子问题，用数个关键词高度概括本次研究覆盖了哪些核心信息领域。
+            要求：简明扼要，使用专业术语，例如：“数学原理、架构演进、技术规格、行业分析。”
+            
+            研究计划:
+            ${plan.research_plan.map(step => `- ${step.sub_question}`).join('\n')}
+        `;
+        let infoCoverageText = "LLM动态生成“信息覆盖”描述失败"; // 默认值
+        try {
+            const response = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: infoCoveragePrompt }],
+                model: 'gemini-2.0-flash-exp-summarizer', // 使用快速模型
+                temperature: 0.0,
+            });
+            infoCoverageText = response?.choices?.[0]?.message?.content || infoCoverageText;
+        } catch (e) {
+            console.warn("[SourceSection] LLM动态生成“信息覆盖”描述失败，使用默认值。");
+        }
+
+
         let sourcesList = '### 📚 参考资料清单\n\n';
-        
-        // 添加简要说明
         sourcesList += '以下是本研究报告所引用的全部信息来源，按引用顺序排列：\n\n';
         
         sources.forEach((source, index) => {
             const title = source.title?.trim() || '未命名来源';
             const url = source.url || '#';
-            
-            // 🎨 修复：移除 HTML <div> 标签以确保链接可点击
-            //  用户要求的格式：标题一行，链接一行，且链接可点击
             sourcesList += `**${index + 1}. ${title}**\n`;
             sourcesList += `🔗 [查看链接](${url})\n\n`;
         });
 
-        // 📊 精美的统计信息和说明
         sourcesList += `---\n\n`;
         sourcesList += `### 📊 来源统计\n`;
         sourcesList += `- **总参考数量**: ${sources.length} 个来源\n`;
-        sourcesList += `- **信息覆盖**: 技术规格、性能对比、行业分析\n`;
+        // 🔥 3. 使用动态生成的文本替换硬编码内容
+        sourcesList += `- **信息覆盖**: ${infoCoverageText.replace(/["\.]/g, '')}\n`;
         sourcesList += `- **时效性**: 包含最新行业动态和技术发展\n\n`;
         
         sourcesList += `> 💡 *所有来源均在研究报告正文中有所引用，确保信息的可追溯性和准确性*`;
