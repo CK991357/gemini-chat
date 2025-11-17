@@ -324,13 +324,37 @@ export class AgentOutputParser {
             let parametersJson = preprocessedText.substring(jsonStartIndex, jsonEndIndex + 1);
             console.log(`[OutputParser] 🔍 提取的原始JSON:`, parametersJson.substring(0, 200) + '...');
 
+            // 🔥🔥🔥【新增的进阶优化】🔥🔥🔥
+            let codeContent = null;
+            // 匹配 "code": "..."，其中 ... 可以包含转义的双引号和任何字符
+            const codeRegex = /"code"\s*:\s*"((?:\\.|[^"\\])*)"/;
+            const codeMatch = parametersJson.match(codeRegex);
+
+            if (tool_name === 'python_sandbox' && codeMatch) {
+                // 1. 提取并保存原始的、未被破坏的 code 内容
+                codeContent = codeMatch[1];
+                // 2. 用一个安全的占位符替换它
+                parametersJson = parametersJson.replace(codeRegex, '"code": "##CODE_PLACEHOLDER##"');
+                console.log('[OutputParser] 🐍 已为 python_sandbox 的 code 字段创建保护');
+            }
+            // 🔥🔥🔥【优化结束】🔥🔥🔥
+
             // 🔥🔥🔥【最终修复的核心】🔥🔥🔥
             // 步骤 4: 应用强化的、专门针对 LLM 输出的 JSON 修复逻辑
             const repairedJson = this._fixJsonFromLLM(parametersJson);
             
             // 步骤 5: 最后一次尝试解析
             try {
-                const parameters = JSON.parse(repairedJson);
+                let parameters = JSON.parse(repairedJson);
+
+                // 🔥🔥🔥【新增的进阶优化】🔥🔥🔥
+                if (codeContent !== null) {
+                    // 3. 将原始的 code 内容恢复回去
+                    parameters.code = codeContent;
+                    console.log('[OutputParser] 🐍 已恢复 python_sandbox 的 code 字段');
+                }
+                // 🔥🔥🔥【优化结束】🔥🔥🔥
+
                 console.log(`[OutputParser] ✅ 强化修复后解析成功: ${tool_name}`);
                 return { success: true, tool_name, parameters };
             } catch (finalError) {

@@ -761,6 +761,25 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
         // 🎯 核心DRY优化：动态获取报告要求，避免硬编码重复
         const reportRequirements = getTemplatePromptFragment(researchMode);
 
+        // 🎯 核心新增：JSON 格式纪律
+        const strictJsonFormatGuideline = `
+## 🚨【强制】JSON 输出纪律
+
+当你的行动是调用工具时，"行动输入"部分**必须**是一个**严格有效**的 JSON 对象。
+
+**检查清单**:
+1.  **所有键名 (keys)** 必须用**双引号** (") 包围。
+2.  **所有字符串值 (string values)** 必须用**双引号** (") 包围。
+3.  对象的最后一个键值对**之后不能有逗号** (trailing comma)。
+4.  **禁止**任何形式的注释 (\`//\` 或 \`/* */\`)。
+
+**🚫 错误示例**:
+行动输入: { tool_name: 'python_sandbox', 'code': 'print("hello")' } // 键名 tool_name 无引号
+
+**✅ 正确示例**:
+行动输入: { "tool_name": "python_sandbox", "code": "print(\\"hello\\")" }
+`;
+
         // 🎯 核心新增：知识检索输出格式
         const knowledgeRetrievalOutputFormat = `
 ## 知识应用框架：查阅知识 vs. 应用知识
@@ -818,6 +837,8 @@ ${crawl4aiSpecialNote}
 ${config.description}
 
 ${temporalGuidance}
+
+${strictJsonFormatGuideline} // 🎯 核心新增：JSON 格式纪律
 
 ${currentTaskSection}  // 🎯 核心修复：聚焦当前任务，防止跳过步骤
 
