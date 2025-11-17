@@ -1153,24 +1153,29 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
 
         return `\n\n## 资料来源\n\n${sourcesList}`;
     }
-
+    
     // 🔥【新】用这个全新、精确的函数替换掉旧的 _filterUsedSources
     _filterUsedSources(allSourcesWithId, reportContent) {
         if (!allSourcesWithId || allSourcesWithId.length === 0) return [];
         
         console.log(`[SourceFilter] 开始执行【基于引用】的精确来源过滤...`);
         
-        // 1. 用正则表达式从报告正文中提取所有被 [cite: ID] 的ID
-        const citationRegex = /\[cite:\s*([\d,\s]+)\]/g;
+        // 🔥【核心修复】升级正则表达式，使其能够匹配 [cite: 8.1, 3.3, 5] 这样的格式
+        // 原来的: /\[cite:\s*([\d,\s]+)\]/g
+        // 新的:   /\[cite:\s*([\d\.,\s]+)\]/g  (增加了对点号 "." 的匹配)
+        const citationRegex = /\[cite:\s*([\d\.,\s]+)\]/g;
         const citedIds = new Set();
         let match;
 
         while ((match = citationRegex.exec(reportContent)) !== null) {
-            // match[1] 会是 "3, 5" 或 "12" 这样的字符串
-            const ids = match[1].split(',').map(id => parseInt(id.trim(), 10));
-            ids.forEach(id => {
-                if (!isNaN(id)) {
-                    citedIds.add(id);
+            // match[1] 会是 "8.1, 8.2, 3.3, 5" 这样的字符串
+            const idsAndSubIds = match[1].split(',').map(item => item.trim());
+            
+            idsAndSubIds.forEach(item => {
+                // 🔥【核心修复】我们只关心点号“.”前面的主ID
+                const mainId = parseInt(item.split('.')[0], 10);
+                if (!isNaN(mainId)) {
+                    citedIds.add(mainId);
                 }
             });
         }
@@ -1186,8 +1191,7 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         // 2. 从所有来源中，只筛选出ID在 citedIds 集合中的来源
         const usedSources = allSourcesWithId.filter(source => citedIds.has(source.globalId));
         
-        // 3. (可选) 保持来源在报告中首次被引用的顺序
-        // 这是一个更高级的优化，可以暂时省略，先按ID排序
+        // 3. 按ID排序，确保最终列表的顺序是可预测的
         usedSources.sort((a, b) => a.globalId - b.globalId);
 
         console.log(`[SourceFilter] 精确过滤完成: ${allSourcesWithId.length} → ${usedSources.length} 个来源`);
