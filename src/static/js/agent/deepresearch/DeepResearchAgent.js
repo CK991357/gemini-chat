@@ -815,33 +815,19 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         return result;
     }
 
-    // ✨ 最终报告生成 - 【优化升级版】支持动态与静态模板
+    // ✨ 最终报告生成 - 【上下文简化优化版】支持动态与静态模板
     async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
-        // 格式化研究历史，以便注入到最终的Prompt中
-        const formattedHistory = intermediateSteps.map((step, index) => {
-            // 确保我们不会因为 plan.research_plan 长度不足而出错
-            const subQuestion = plan.research_plan?.[index]?.sub_question || '未知子问题';
-            return `
----
-### 研究步骤 ${index + 1}: ${subQuestion}
-
-**思考:**
-${step.action?.thought || '无'}
-
-**行动:**
-工具: ${step.action?.tool_name || '无'}
-参数: ${JSON.stringify(step.action?.parameters || {}, null, 2)}
-
-**观察 (结果摘要):**
-${(step.observation || '无').substring(0, 2000)}...
-
-**💡 本步关键发现:**
-${step.key_finding || '未能提炼出关键发现。'}
----
-            `;
-        }).join('\n');
+        // 🎯 核心优化：构建纯净的证据集合（同时用于动态和静态模板）
+        const evidenceCollection = this._buildEvidenceCollection(intermediateSteps, plan);
+        
+        console.log(`[DeepResearchAgent] 证据集合构建完成:`, {
+            总步骤数: intermediateSteps.length,
+            有效证据数: evidenceCollection.evidenceEntries.length,
+            关键发现数: evidenceCollection.keyFindings.length,
+            证据总长度: evidenceCollection.totalLength
+        });
 
         let finalPrompt;
         const reportTemplate = getTemplateByResearchMode(researchMode);
@@ -850,9 +836,10 @@ ${step.key_finding || '未能提炼出关键发现。'}
         if (reportTemplate.config.dynamic_structure) {
             console.log(`[DeepResearchAgent] 检测到动态报告模板 (${researchMode}模式)，构建研究驱动的Prompt...`);
             
+            // 🎯 动态模板：使用简化后的证据集合，但保持动态结构特性
             finalPrompt = `
 # 角色：首席研究分析师
-# 任务：基于以下完整的、逐步进行的研究过程，撰写一份高质量、结构化、体现深度思考的最终研究报告。
+# 任务：基于以下研究证据集合，撰写一份高质量、结构化、体现深度思考的最终研究报告。
 
 # 最终研究主题: "${topic}"
 
@@ -862,49 +849,51 @@ ${step.key_finding || '未能提炼出关键发现。'}
 ${JSON.stringify(plan, null, 2)}
 \`\`\`
 
-# 2. 你的完整研究历史与发现 (原始数据)
-这是你执行上述计划的每一步的详细记录，包括你的思考、工具使用、观察结果和每一步的关键发现。你必须充分利用这些信息来填充报告的每一个章节。
-${formattedHistory}
+# 2. 研究证据集合 (纯净数据)
+这是你在研究过程中收集到的所有关键信息和发现，已经过清洗和整理，去除了过程性噪音。
+
+## 关键发现总结
+${evidenceCollection.keyFindings.map((finding, index) => `${index + 1}. ${finding}`).join('\n')}
+
+## 详细证据内容
+${evidenceCollection.evidenceEntries.map(entry => `
+### ${entry.subQuestion}
+
+${entry.evidence}
+
+${entry.keyFinding ? `**💡 本步关键发现:** ${entry.keyFinding}` : ''}
+`).join('\n\n')}
 
 # 3. 你的报告撰写指令 (输出要求)
-现在，请严格遵循以下元结构和要求，将上述研究过程和发现，整合成一份最终报告。
+现在，请严格遵循以下元结构和要求，将上述研究证据整合成一份最终报告。
 
 ${getTemplatePromptFragment(researchMode)}
 
 **🚫 绝对禁止:**
-- 编造研究计划和历史记录中不存在的信息。
+- 编造研究计划和证据集合中不存在的信息。
 - 采用与你的研究计划（sub_question）无关的章节标题。
-- 忽略研究历史中的“观察”和“关键发现”。
-- 在你的输出中包含任何形式的“资料来源”或“参考文献”章节。这一部分将由系统自动生成和附加。
+- 在报告中提及"思考"、"行动"、"工具调用"等研究过程细节。
+- 在你的输出中包含任何形式的"资料来源"或"参考文献"章节。这一部分将由系统自动生成和附加。
 
 **✅ 核心要求:**
 - **自主生成标题:** 基于主题和核心发现，为报告创建一个精准的标题。
 - **动态生成章节:** 将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
-- **内容填充:** 用对应研究步骤的详细“观察”数据来填充该章节。
-- **引用来源:** 在报告正文中，使用 [来源 X] 的格式清晰地引用信息。
+- **内容填充:** 用对应研究步骤的详细证据数据来填充该章节。
+- **引用来源:** 在报告正文中，自然地引用信息来源的标题。
 
-现在，请开始撰写这份体现你完整研究智慧的最终报告。
+现在，请开始撰写这份基于纯净证据的最终研究报告。
 `;
         } else {
-            // 保持对旧静态模板的兼容
-            console.log(`[DeepResearchAgent] 使用静态报告模板 (${researchMode}模式)...`);
-            // 1. 收集所有观察结果
-            const allObservations = intermediateSteps
-                .filter(step => step.observation &&
-                               step.observation !== '系统执行错误，继续研究' &&
-                               !step.observation.includes('OutputParser解析失败'))
-                .map(step => {
-                    let observation = step.observation;
-                    // 清理观察结果中的冗余信息
-                    if (observation.includes('【来源')) {
-                        observation = observation.split('【来源')[0].trim();
-                    }
-                    return observation;
-                })
-                .filter(obs => obs.length > 50) // 只保留有内容的观察
+            // 🎯 静态模板：使用简化后的观察结果集合
+            console.log(`[DeepResearchAgent] 使用静态报告模板 (${researchMode}模式)，应用简化上下文...`);
+            
+            // 构建静态模板所需的观察结果集合
+            const allObservations = evidenceCollection.evidenceEntries
+                .map(entry => entry.evidence)
+                .filter(evidence => evidence.length > 50)
                 .join('\n\n');
             
-            // 2. 使用旧的 _buildReportPrompt 方法生成Prompt
+            // 使用旧的 _buildReportPrompt 方法生成Prompt，但传入纯净证据
             finalPrompt = this._buildReportPrompt(topic, plan, allObservations, researchMode);
         }
 
@@ -919,16 +908,143 @@ ${getTemplatePromptFragment(researchMode)}
             this._updateTokenUsage(reportResponse.usage);
             
             let finalReport = reportResponse?.choices?.[0]?.message?.content ||
-                this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 保持 fallback
+                this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
             
             console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
             return finalReport;
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 保持 fallback
+            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
         }
     }
+
+    // 🎯 新增：构建证据集合方法（供动态和静态模板共用）
+    /**
+     * @description 从中间步骤中提取纯净的证据数据，去除过程性噪音
+     * @param {Array} intermediateSteps - 原始中间步骤
+     * @param {Object} plan - 研究计划
+     * @returns {Object} - 包含证据条目、关键发现等信息的证据集合
+     */
+    _buildEvidenceCollection(intermediateSteps, plan) {
+        const evidenceEntries = [];
+        const keyFindings = [];
+        let totalLength = 0;
+
+        intermediateSteps.forEach((step, index) => {
+            // 🎯 过滤无效步骤
+            if (!step.observation || 
+                step.observation === '系统执行错误，继续研究' ||
+                step.observation.includes('OutputParser解析失败') ||
+                step.observation.includes('代码预检失败') ||
+                step.observation.length < 10) {
+                return;
+            }
+
+            // 🎯 清理观察结果中的过程性噪音
+            let cleanEvidence = this._cleanObservation(step.observation);
+            if (!cleanEvidence || cleanEvidence.length < 20) return;
+
+            // 🎯 获取对应的子问题
+            const subQuestion = plan.research_plan?.[index]?.sub_question || 
+                               `研究步骤 ${index + 1}`;
+
+            // 🎯 构建证据条目
+            const evidenceEntry = {
+                stepIndex: index + 1,
+                subQuestion: subQuestion,
+                evidence: cleanEvidence,
+                keyFinding: step.key_finding,
+                tool: step.action?.tool_name,
+                originalLength: step.observation.length,
+                cleanedLength: cleanEvidence.length
+            };
+
+            evidenceEntries.push(evidenceEntry);
+            totalLength += cleanEvidence.length;
+
+            // 🎯 收集关键发现
+            if (step.key_finding && 
+                step.key_finding !== '未能提取关键发现。' && 
+                step.key_finding !== '关键发现提取异常。') {
+                keyFindings.push(step.key_finding);
+            }
+        });
+
+        return {
+            evidenceEntries,
+            keyFindings: [...new Set(keyFindings)], // 去重
+            totalLength,
+            totalSteps: intermediateSteps.length,
+            validEvidenceSteps: evidenceEntries.length
+        };
+    }
+
+    // 🎯 新增：观察结果清理方法
+    /**
+     * @description 清理观察结果中的过程性噪音和冗余信息
+     * @param {string} observation - 原始观察结果
+     * @returns {string} - 清理后的纯净证据
+     */
+    _cleanObservation(observation) {
+        if (!observation || typeof observation !== 'string') {
+            return '';
+        }
+
+        let cleaned = observation;
+
+        // 🎯 移除摘要头部信息（如果存在）
+        const summaryHeaders = [
+            /## 📋 [^\n]+ 内容摘要\s*\*\*原始长度\*\*: [^\n]+\s*\*\*摘要长度\*\*: [^\n]+\s*\*\*压缩率\*\*: [^\n]+\s*/,
+            /## ⚠️ [^\n]+ 内容降级处理\s*\*\*原因\*\*: [^\n]+\s*\*\*原始长度\*\*: [^\n]+\s*\*\*降级方案\*\*: [^\n]+\s*/
+        ];
+        
+        summaryHeaders.forEach(pattern => {
+            cleaned = cleaned.replace(pattern, '');
+        });
+
+        // 🎯 移除工具特定的过程性描述
+        const processPatterns = [
+            /【来源\s*\d+】[^】]*?(?:https?:\/\/[^\s)]+)?\s*/g, // 来源标记
+            /工具执行(?:成功|失败)[^\n]*\n/gi,
+            /正在为[^\n]+生成智能摘要[^\n]*\n/gi,
+            /智能摘要完成[^\n]*\n/gi,
+            /原始长度[^\n]*压缩率[^\n]*\n/gi,
+            /## [^\n]* (?:内容摘要|内容降级处理)[^\n]*\n/gi
+        ];
+
+        processPatterns.forEach(pattern => {
+            cleaned = cleaned.replace(pattern, '');
+        });
+
+        // 🎯 移除冗余的说明文本
+        const redundantTexts = [
+            '摘要基于',
+            '因摘要服务不可用',
+            '已使用降级方案',
+            '工具调用',
+            '思考:',
+            '行动:',
+            '观察:',
+            '---\n*摘要基于',
+            '---\n*因摘要服务不可用'
+        ];
+
+        redundantTexts.forEach(text => {
+            const regex = new RegExp(text + '[^\n]*\n?', 'gi');
+            cleaned = cleaned.replace(regex, '');
+        });
+
+        // 🎯 清理多余的换行和空白
+        cleaned = cleaned
+            .replace(/\n{3,}/g, '\n\n') // 多个换行合并为两个
+            .replace(/^\s+|\s+$/g, '')   // 去除首尾空白
+            .trim();
+
+        return cleaned;
+    }
+
+}
 
     // ✨ 新增：强化资料来源提取
     _extractSourcesFromIntermediateSteps(intermediateSteps) {
