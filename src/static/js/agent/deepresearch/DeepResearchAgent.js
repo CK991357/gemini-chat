@@ -452,14 +452,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         const sourceManager = {
             sources: [],
             counter: 1,
-            addSources: function(newSources) {
-                if (!newSources || newSources.length === 0) return;
-                newSources.forEach(source => {
-                    // 为每个新来源分配一个全局唯一ID
-                    const sourceWithId = { ...source, globalId: this.counter++ };
-                    this.sources.push(sourceWithId);
-                });
-            }
+            // addSources 逻辑已移动到 conductResearch 中，以将来源与步骤绑定
         };
 
         let finalAnswerFromIteration = null;
@@ -596,8 +589,17 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                         });
                     }
 
-                    // 🔥【新】使用 sourceManager 来添加新来源，它会自动分配ID
-                    sourceManager.addSources(toolSources);
+                    // 🔥【核心修复】不再在这里调用 sourceManager.addSources
+                    // sourceManager.addSources(toolSources);
+
+                    // 为本次调用获取的来源分配ID
+                    const sourcesForThisStep = toolSources.map(source => {
+                        const sourceWithId = { ...source, globalId: sourceManager.counter++ };
+                        return sourceWithId;
+                    });
+
+                    // 将所有来源（包括本次的）添加到总管理器中，用于最终去重
+                    sourceManager.sources.push(...sourcesForThisStep);
 
                     // ✅✅✅ --- 核心修复：传入工具名称以应用不同的摘要策略 --- ✅✅✅
                     const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
@@ -626,8 +628,8 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                         },
                         observation: summarizedObservation,
                         key_finding: keyFinding, // 🎯 新增：存储关键发现
-                        // 💡 我们不再在step级别存储sources，因为它们已由sourceManager统一管理
-                        // sources: toolSources, // <--- 移除这一行
+                        // 🔥【核心修复】在这里，将【带ID的】、只属于【当前步骤】的来源存进去
+                        sources: sourcesForThisStep,
                         success: toolSuccess // ✅ 新增：记录工具执行状态
                     });
                     
@@ -826,21 +828,14 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
 
     // ✨ 最终报告生成 - 【优化升级版】支持动态与静态模板
     // 🔥【新】修改函数签名，接收 allSourcesWithId
-    async _generateFinalReport(topic, intermediateSteps, plan, allSourcesWithId, researchMode) {
+    async _generateFinalReport(topic, intermediateSteps, plan, uniqueSources, researchMode) { // uniqueSources 实际可以不传了
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
         // 格式化研究历史，以便注入到最终的Prompt中
         // 🔥【新】在格式化历史的同时，附加上下文相关的来源ID
         const formattedHistoryWithSources = intermediateSteps.map((step, index) => {
-            // 找到与当前步骤相关的来源（这里简化为按时间顺序，更复杂的可以按内容相关性）
-            // 一个简单的实现是找到在当前步骤前后新加入的来源
-            const sourcesForThisStep = allSourcesWithId.filter(s => {
-                // 这是一个简化的逻辑，假设每个step的sources是按顺序添加的
-                // 真实的实现可能需要更复杂的逻辑来关联step和source
-                // 但为了演示，我们先假设可以找到
-                // 更好的方法是在 sourceManager.addSources 时记录当时的 step index
-                return true; // 简化：暂时展示所有来源
-            });
+            // 🔥【核心修复】直接从 step 对象中获取只属于这一步的来源
+            const sourcesForThisStep = step.sources || []; // sources 数组现在就在 step 对象里！
 
             const stepSourcesText = sourcesForThisStep.length > 0
                 ? `\n\n**本步相关参考资料 (可用于引用):**\n` + sourcesForThisStep.map(s => `- [来源 ${s.globalId}] ${s.title}`).join('\n')
@@ -851,19 +846,9 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
 ---
 ### 研究步骤 ${index + 1}: ${subQuestion}
 
-**思考:**
-${step.action?.thought || '无'}
-
-**行动:**
-工具: ${step.action?.tool_name || '无'}
-参数: ${JSON.stringify(step.action?.parameters || {}, null, 2)}
-
 **观察 (结果摘要):**
-${(step.observation || '无').substring(0, 2000)}...
-
-**💡 本步关键发现:**
-${step.key_finding || '未能提炼出关键发现。'}
-${stepSourcesText} 
+${step.observation || '无'}
+${stepSourcesText}
 ---
             `;
         }).join('\n');
@@ -888,7 +873,7 @@ ${JSON.stringify(plan, null, 2)}
 \`\`\`
 
 # 2. 你的完整研究历史与发现 (原始数据)
-这是你执行上述计划的每一步的详细记录，包括你的思考、工具使用、观察结果和每一步的关键发现。你必须充分利用这些信息来填充报告的每一个章节。
+这是你执行研究计划的每一步的观察结果，以及每一步对应的【可引用资料】。
 ${formattedHistoryWithSources} // <--- 使用带有来源ID的历史记录
 
 # 3. 你的报告撰写指令 (输出要求)
