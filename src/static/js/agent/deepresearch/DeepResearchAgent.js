@@ -1065,9 +1065,13 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
 
         // 🔥 2. 异步调用LLM来生成动态的“信息覆盖”描述
         const infoCoveragePrompt = `
-            基于以下研究计划的子问题，用数个关键词高度概括本次研究覆盖了哪些核心信息领域。
-            要求：简明扼要，使用专业术语，例如：“数学原理、架构演进、技术规格、行业分析。”
-            
+            分析以下研究计划的子问题，提取出本次研究覆盖的6个最核心的信息领域关键词。
+            要求：
+            1. 直接输出关键词列表。
+            2. 使用逗号“、”分隔。
+            3. **绝对不要**包含任何前缀或引导性句子，如“本次研究覆盖了...”。
+            4. 示例输出格式: "关键词A、关键词B、关键词C、关键词D、关键词E、关键词F"
+
             研究计划:
             ${plan.research_plan.map(step => `- ${step.sub_question}`).join('\n')}
         `;
@@ -1098,9 +1102,7 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         sourcesList += `### 📊 来源统计\n`;
         sourcesList += `- **总参考数量**: ${sources.length} 个来源\n`;
         // 🔥 3. 使用动态生成的文本替换硬编码内容
-        sourcesList += `- **信息覆盖**: ${infoCoverageText.replace(/["\.]/g, '')}\n`;
-        sourcesList += `- **时效性**: 包含最新行业动态和技术发展\n\n`;
-        
+        sourcesList += `- **信息覆盖**: ${infoCoverageText}\n`;
         sourcesList += `> 💡 *所有来源均在研究报告正文中有所引用，确保信息的可追溯性和准确性*`;
 
         console.log(`[SourceSection] 成功生成高级美观资料来源列表，包含 ${sources.length} 个来源`);
