@@ -682,9 +682,10 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
         
         // 构建基于模型评估的动态指导
         const temporalGuidance = this._buildDynamicTemporalGuidance(
-            currentDate, 
+            currentDate,
             stepSensitivity,
-            modelOverallSensitivity // 传递整体敏感度用于上下文
+            modelOverallSensitivity, // 传递整体敏感度用于上下文
+            researchMode // 🔥 注入 researchMode
         );
         
         // 🎯 DRY优化：只保留Agent思考相关的配置，报告要求从ReportTemplates动态获取
@@ -960,21 +961,31 @@ ${finalInstruction}  // 🎯 核心修复：最终指令强化纪律
         return prompt;
     }
 
-    // ✨ 构建动态时效性指导 - 基于模型自主评估
-    _buildDynamicTemporalGuidance(currentDate, stepSensitivity, modelOverallSensitivity) {
-        const currentDateReadable = new Date().toLocaleDateString('zh-CN', { 
-            year: 'numeric', month: 'long', day: 'numeric' 
+    // 🔥【核心修改】重构 _buildDynamicTemporalGuidance 方法，使其能感知 researchMode
+    _buildDynamicTemporalGuidance(currentDate, stepSensitivity, modelOverallSensitivity, researchMode) {
+        const currentDateReadable = new Date().toLocaleDateString('zh-CN', {
+            year: 'numeric', month: 'long', day: 'numeric'
         });
-        
+
+        // 基础的时效性警告，所有模式通用
         const baseAwareness = `
-## 🎯 自主时效性管理
+## 🎯 自主时效性管理 (Mandatory Temporal Awareness Protocol)
 
-**事实基准**:
-- 你的知识截止: 2024年初
-- 当前系统日期: ${currentDateReadable}
-- 信息差距: 2024年初之后的发展需通过工具验证
+**事实基准 (Factual Baseline):**
+- **你的内部知识截止日期**: 2024年初。这是一个硬性限制，你必须时刻牢记。
+- **当前系统日期**: ${currentDateReadable}
+- **核心原则**: 任何涉及2024年之后的人、事、技术、市场趋势等，你都**必须**通过工具（如 \`tavily_search\`）进行外部验证。**绝对禁止**依赖你过时的内部知识来回答时效性问题。`;
 
-**核心原则**: 你负责基于专业判断自主管理信息时效性。`;
+        // 🔥 模式特定的强化指令
+        let modeSpecificGuidance = '';
+        if (researchMode === 'deep') {
+            modeSpecificGuidance = `
+### ⚡ 深度研究模式特别指令 (Deep Research Mode Directive)
+作为深度专家，你对信息的“新鲜度”和“准确度”负有最高责任。
+- **前沿追踪 (Edge-Tracking):** 对于技术、市场、科学等领域，你必须主动搜索 ${new Date().getFullYear()} 及 ${new Date().getFullYear()-1} 年的最新进展、论文和报告。
+- **事实核查 (Fact-Checking):** 即使是你认为“已知”的事实（如某公司的CEO、某产品的最新版本），如果它可能随时间变化，也必须进行快速核查。
+- **避免“常识性”错误:** 你的报告将被视为权威来源，任何因知识过时导致的错误都是不可接受的。`;
+        }
 
         const guidanceTemplates = {
             '高': {
@@ -986,7 +997,7 @@ ${finalInstruction}  // 🎯 核心修复：最终指令强化纪律
 2. 搜索时强烈建议使用时序性关键词
 3. 直接访问官方网站获取准确信息
 4. 关注${new Date().getFullYear()}年最新动态
-
+ 
 **推荐策略**:
 - "产品名 最新版本 ${new Date().getFullYear()}"
 - "技术名 当前状态 最新"
@@ -994,14 +1005,14 @@ ${finalInstruction}  // 🎯 核心修复：最终指令强化纪律
                 reminder: '⚠️ 注意：此步骤对时效性要求极高，过时信息将严重影响研究价值'
             },
             '中': {
-                title: '⚠️ 中等时效性敏感步骤', 
+                title: '⚠️ 中等时效性敏感步骤',
                 content: `**当前步骤敏感度**: 中 | **整体主题敏感度**: ${modelOverallSensitivity}
                 
 **专业建议**:
-1. 选择性验证关键信息的时效性  
+1. 选择性验证关键信息的时效性
 2. 关注技术产品的版本信息
 3. 在深度研究和时效性验证间取得平衡
-
+ 
 **灵活策略**:
 - 根据需要添加"最新"关键词
 - 优先但不强制时效性验证`,
@@ -1015,9 +1026,9 @@ ${finalInstruction}  // 🎯 核心修复：最终指令强化纪律
 1. 专注于信息的准确性和完整性
 2. 关注历史脉络和发展历程
 3. 引用权威经典来源
-
+ 
 **研究重点**:
-- 不需要强制添加时效性关键词  
+- 不需要强制添加时效性关键词
 - 专注于主题本身的核心信息`,
                 reminder: '📚 提示：历史研究应注重准确性和学术完整性'
             }
@@ -1028,16 +1039,17 @@ ${finalInstruction}  // 🎯 核心修复：最终指令强化纪律
         return `
 # ${strategy.title}
 ${baseAwareness}
+${modeSpecificGuidance}
 
 ${strategy.content}
-
+ 
 ${strategy.reminder}
-
+ 
 ## 可用工具与策略
 - **tavily_search**: 自主决定是否使用时序性关键词
-- **crawl4ai**: 访问官网获取准确版本信息  
+- **crawl4ai**: 访问官网获取准确版本信息
 - **python_sandbox**: 对信息进行时间相关性分析
-
+ 
 **最终决策权在你手中，请基于专业判断选择最佳研究策略。**`;
     }
 
