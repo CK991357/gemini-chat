@@ -59,6 +59,36 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
     }
 
+    // 🎯 新增：代码预检函数
+    _preflightCodeCheck(code) {
+        // 1. 检查不完整的赋值语句，如 "my_var =" 后面直接跟换行符
+        if (/\w+\s*=\s*$/m.test(code)) {
+            return { valid: false, error: "检测到不完整的赋值语句。请确保赋值符号 `=` 后有值。" };
+        }
+        // 2. 检查未闭合的单引号或双引号（简单检查）
+        const singleQuotes = (code.match(/'/g) || []).length;
+        const doubleQuotes = (code.match(/"/g) || []).length;
+        if (singleQuotes % 2 !== 0) {
+            return { valid: false, error: "检测到未闭合的单引号 `'`。" };
+        }
+        if (doubleQuotes % 2 !== 0) {
+            return { valid: false, error: "检测到未闭合的双引号 `\"`。" };
+        }
+        // 3. 检查未闭合的括号（简单检查）
+        const openParens = (code.match(/\(/g) || []).length;
+        const closeParens = (code.match(/\)/g) || []).length;
+        if (openParens !== closeParens) {
+            return { valid: false, error: `检测到括号不匹配: 有 ${openParens} 个开括号和 ${closeParens} 个闭括号。` };
+        }
+        
+        // 4. 检查代码块是否为空（例如：def func():\n\n）
+        if (/(def|class|if|for|while)\s+.*:\s*(\n\s*\n|\n\s*$)/m.test(code)) {
+            return { valid: false, error: "检测到空的代码块（如函数或循环体为空）。" };
+        }
+
+        return { valid: true };
+    }
+
     // 🎯 新增：报告大纲生成方法
     /**
      * @description 使用主模型，基于研究过程中的关键发现，生成一份高质量的报告大纲。
@@ -242,6 +272,23 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                     }
                 }
 
+                // 🎯 新增：Python 代码预检 (Linter)
+                if (toolName === 'python_sandbox' && parameters.code) {
+                    const check = this._preflightCodeCheck(parameters.code);
+                    if (!check.valid) {
+                        // 如果检查不通过，直接构造一个失败的observation，跳过实际的工具调用
+                        rawObservation = `代码预检失败: ${check.error} 请修正代码。`;
+                        toolSuccess = false;
+                        console.warn(`[DeepResearchAgent] ❌ Python代码预检失败: ${check.error}`);
+                        
+                        // 记录工具调用失败，但跳过实际的 tool.invoke
+                        recordToolCall(toolName, parameters, false, rawObservation);
+                        
+                        // 提前返回，避免执行昂贵的工具调用
+                        return { rawObservation, toolSources: [], toolSuccess };
+                    }
+                }
+                
                 const toolResult = await tool.invoke(parameters, {
                     mode: 'deep_research',
                     researchMode: detectedMode
