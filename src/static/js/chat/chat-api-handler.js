@@ -1,4 +1,3 @@
-console.log("--- ChatApiHandler v3 Loaded ---");
 import { Logger } from '../utils/logger.js';
 import * as chatUI from './chat-ui.js';
 import { displayImageResult } from './chat-ui.js';
@@ -638,107 +637,49 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
+            // 🔥🔥🔥【核心简化逻辑开始】🔥🔥🔥
             const toolRawResult = await proxyResponse.json();
-            console.log(`[${timestamp()}] [MCP] Successfully parsed JSON from proxy response:`, toolRawResult);
+            console.log(`[${timestamp()}] [MCP] Received unified result from backend:`, toolRawResult);
 
-            let toolResultContent; // Declare without initializing
+            let toolResultContent;
 
-            // Enhanced handling for python_sandbox output to detect and display images and download files
+            // 1. 统一处理 Python 沙盒的返回
             if (toolCode.tool_name === 'python_sandbox') {
-                console.log(`[${timestamp()}] [MCP] Processing python_sandbox output`);
-                let isFileHandled = false;
-                
-                // 关键修复：处理MCP代理返回的嵌套结构
-                let actualStdout = '';
-                if (toolRawResult && toolRawResult.stdout && typeof toolRawResult.stdout === 'string') {
-                    actualStdout = toolRawResult.stdout.trim();
-                } else if (toolRawResult && toolRawResult.type === 'text' && toolRawResult.stdout) {
-                    actualStdout = toolRawResult.stdout.trim();
-                } else if (toolRawResult && typeof toolRawResult === 'string') {
-                    actualStdout = toolRawResult.trim();
-                }
-                
-                console.log(`[${timestamp()}] [MCP] Actual stdout content preview:`, actualStdout.substring(0, 200) + '...');
-                
-                if (actualStdout) {
-                    // --- 🚀 健壮的多格式处理管道 ---
+                const stdout = toolRawResult.stdout || '';
+                const stderr = toolRawResult.stderr || '';
 
-                    // PRIORITY 1: 检查我们自定义的、最可靠的图片前缀
-                    const imagePrefix = "IMAGE_BASE64:";
-                    if (actualStdout.startsWith(imagePrefix)) {
-                        console.log(`[${timestamp()}] [MCP] Handled by PRIORITY 1: Custom image prefix.`);
-                        const base64Data = actualStdout.substring(imagePrefix.length);
-                        displayImageResult(base64Data, 'Generated Chart', `chart_${Date.now()}.png`);
-                        toolResultContent = { output: 'Image generated and displayed successfully.' };
-                        isFileHandled = true;
-                    }
-
-                    // PRIORITY 2: 如果不是自定义前缀，则尝试解析为标准JSON对象（用于文件或带元数据的图片）
-                    if (!isFileHandled) {
-                        try {
-                            // 使用我们之前编写的健壮JSON解析器
-                            const fileData = this._robustJsonParse(actualStdout);
-                            console.log(`[${timestamp()}] [MCP] Attempting PRIORITY 2: Robust JSON parsing successful.`);
-                            
-                            // 处理标准图片JSON
-                            if (fileData && fileData.type === 'image' && fileData.image_base64) {
-                                console.log(`[${timestamp()}] [MCP] Handled JSON type: image`);
-                                const title = fileData.title || 'Generated Chart';
-                                displayImageResult(fileData.image_base64, title, `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.png`);
-                                toolResultContent = { output: `Image "${title}" generated and displayed.` };
-                                isFileHandled = true;
-                            }
-                            // 处理标准文件JSON (Word, Excel, PDF, etc.)
-                            else if (fileData && fileData.type && ['excel', 'word', 'ppt', 'pdf'].includes(fileData.type) && fileData.data_base64) {
-                                console.log(`[${timestamp()}] [MCP] Handled JSON type: ${fileData.type} file`);
-                                this._createFileDownload(fileData.data_base64, fileData.title || `download.${fileData.type}`, fileData.type, ui);
-                                this.state.currentAIMessageContentDiv = null; // 强制创建新消息容器
-                                toolResultContent = { output: `${fileData.type.toUpperCase()} file "${fileData.title || 'download'}" generated and ready for download.` };
-                                isFileHandled = true;
-                            }
-
-                        } catch (e) {
-                            console.log(`[${timestamp()}] [MCP] PRIORITY 2 failed: Not a valid JSON format.`, e.message);
-                            // JSON解析失败，继续到下一优先级
+                if (stderr.trim()) {
+                    // 如果有错误，直接将整个后端返回作为输出，前端适配器会处理它
+                    toolResultContent = { output: toolRawResult };
+                    console.warn(`[MCP] Python Sandbox executed with error.`);
+                } else {
+                    // 如果没有错误，尝试解析 stdout
+                    try {
+                        const outputData = JSON.parse(stdout.trim());
+                        // 如果 stdout 是一个 JSON (图片或文件)，直接处理
+                        if (outputData.type === 'image' && outputData.image_base64) {
+                            displayImageResult(outputData.image_base64, outputData.title || 'Generated Image', `image_${Date.now()}.png`);
+                            toolResultContent = { output: `Image "${outputData.title || 'image'}" generated and displayed.` };
+                        } else if (['excel', 'word', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
+                            this._createFileDownload(outputData.data_base64, outputData.title || `download.${outputData.type}`, outputData.type, ui);
+                            this.state.currentAIMessageContentDiv = null;
+                            toolResultContent = { output: `${outputData.type.toUpperCase()} file generated and ready for download.` };
+                        } else {
+                            // 如果是其他JSON，则字符串化
+                            toolResultContent = { output: stdout };
                         }
+                    } catch (e) {
+                        // 如果 stdout 不是 JSON，则直接作为纯文本输出
+                        toolResultContent = { output: stdout };
                     }
-
-                    // PRIORITY 3: 如果以上都不是，检查是否为原始Base64字符串（兼容简单脚本）
-                    if (!isFileHandled && (actualStdout.startsWith('iVBORw0KGgo') || actualStdout.startsWith('/9j/'))) {
-                        console.log(`[${timestamp()}] [MCP] Handled by PRIORITY 3: Raw Base64 string.`);
-                        displayImageResult(actualStdout, 'Generated Chart', `chart_${Date.now()}.png`);
-                        toolResultContent = { output: 'Image generated and displayed from raw base64 string.' };
-                        isFileHandled = true;
-                    }
-
-                    // FINAL FALLBACK: 如果所有检查都失败，则视为普通文本
-                    if (!isFileHandled) {
-                        console.log(`[${timestamp()}] [MCP] Final Fallback: Treating as plain text output.`);
-                        toolResultContent = { output: actualStdout };
-                    }
-                }
-                 
-                console.log(`[${timestamp()}] [MCP] File handling completed, isFileHandled:`, isFileHandled);
-                 
-                // 处理stderr (这段逻辑保持不变，它会在stdout处理完后附加错误信息)
-                if (toolRawResult && toolRawResult.stderr) {
-                     ui.logMessage(`Python Sandbox STDERR: ${toolRawResult.stderr}`, 'system');
-                     if (toolResultContent && toolResultContent.output) {
-                         toolResultContent.output += `\n\n--- STDERR ---\n${toolRawResult.stderr}`;
-                    } else {
-                        toolResultContent = { output: `Execution failed with STDERR:\n${toolRawResult.stderr}` };
-                    }
-                }
-                
-                if (!toolResultContent) {
-                    toolResultContent = { output: "Tool executed successfully with no output." };
                 }
             } else {
-                // For ALL other tools...
+                // 2. 其他所有工具的返回保持不变
                 toolResultContent = { output: toolRawResult };
             }
+            // 🔥🔥🔥【核心简化逻辑结束】🔥🔥🔥
 
-            // --- Special handling for mcp_tool_catalog tool ---
+            // --- (保留 mcp_tool_catalog 的特殊处理逻辑) ---
             if (toolCode.tool_name === 'mcp_tool_catalog' && toolRawResult && toolRawResult.data && Array.isArray(toolRawResult.data)) {
                 console.log(`[${timestamp()}] [MCP] Discovered new tools via mcp_tool_catalog. Merging...`);
                 
@@ -747,7 +688,7 @@ export class ChatApiHandler {
                 let allCurrentTools = currentModelConfig && currentModelConfig.tools ? [...currentModelConfig.tools] : [];
 
                 // 过滤掉重复的工具，然后合并
-                const newToolsToAdd = toolResult.data.filter(newTool =>
+                const newToolsToAdd = toolRawResult.data.filter(newTool =>
                     !allCurrentTools.some(existingTool => existingTool.function.name === newTool.function.name)
                 );
                 allCurrentTools = [...allCurrentTools, ...newToolsToAdd];
@@ -757,42 +698,29 @@ export class ChatApiHandler {
                 console.log(`[${timestamp()}] [MCP] Updated requestBody.tools with ${newToolsToAdd.length} new tools.`);
             }
 
-            // --- Refactored History Logging based on AliCloud Docs ---
-            // 1. Push the assistant's decision to call the tool.
-            // This must be an object with a `tool_calls` array.
-            console.log(`[${timestamp()}] [MCP] Pushing assistant 'tool_calls' message to history...`);
+            // --- (保留历史记录日志的逻辑) ---
             this.state.chatHistory.push({
                 role: 'assistant',
-                content: null, // Qwen expects content to be null when tool_calls are present
+                content: null,
                 tool_calls: [{
-                    id: callId, // Generate a unique ID for the call
+                    id: callId,
                     type: 'function',
-                    function: {
-                        name: toolCode.tool_name,
-                        arguments: JSON.stringify(parsedArguments) // 使用 parsedArguments
-                    }
+                    function: { name: toolCode.tool_name, arguments: JSON.stringify(parsedArguments) }
                 }]
             });
-
-            // 2. Push the result from the tool execution.
-            // This must be an object with `role: 'tool'`.
-            console.log(`[${timestamp()}] [MCP] Pushing 'tool' result message to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify(toolResultContent), // Use the possibly modified content
-                tool_call_id: callId // 确保匹配 assistant message 中的 ID
+                content: JSON.stringify(toolResultContent),
+                tool_call_id: callId
             });
 
-            // 再次调用模型以获得最终答案
-            console.log(`[${timestamp()}] [MCP] Resuming chat completion with tool result...`);
+            // --- (保留再次调用 streamChatCompletion 的逻辑) ---
             await this.streamChatCompletion({
                 ...requestBody,
                 messages: this.state.chatHistory,
-                // 确保再次传递工具定义，以防需要连续调用
-                tools: requestBody.tools // Now 'requestBody.tools' might be updated with newly discovered tools
+                tools: requestBody.tools
             }, apiKey, uiOverrides);
-            console.log(`[${timestamp()}] [MCP] Chat completion stream finished.`);
- 
+
         } catch (toolError) {
             console.error(`[${timestamp()}] [MCP] --- CATCH BLOCK ERROR ---`, toolError);
             Logger.error('MCP 工具执行失败:', toolError);
@@ -816,8 +744,8 @@ export class ChatApiHandler {
             console.log(`[${timestamp()}] [MCP] Pushing 'tool' error result to history...`);
             this.state.chatHistory.push({
                 role: 'tool',
-                content: JSON.stringify({ error: toolError.message }), // Use the possibly modified content
-                tool_call_id: callId // 确保匹配 assistant message 中的 ID
+                content: JSON.stringify({ error: toolError.message }),
+                tool_call_id: callId
             });
             
             // 再次调用模型，让它知道工具失败了
