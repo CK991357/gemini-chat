@@ -176,7 +176,18 @@ class DeepResearchToolAdapter {
         
         if (!rawParameters) rawParameters = {};
         
-        const agentParams = { ...rawParameters };
+        // 🔥【核心修复】智能参数解包逻辑
+        // 检查传入的参数是否是Agent错误生成的嵌套结构
+        let unwrappedParams = rawParameters;
+        if (unwrappedParams.tool_name && unwrappedParams.parameters && typeof unwrappedParams.parameters === 'object') {
+            console.warn(`[DeepResearchAdapter] ⚠️ 检测到Agent生成的错误嵌套JSON结构，正在进行智能解包...`);
+            // 如果是，我们只取内部的 parameters 对象作为真正的参数
+            unwrappedParams = unwrappedParams.parameters;
+        }
+        // 🔥【修复结束】现在 unwrappedParams 已经是正确的参数对象了
+        
+        // 确保我们操作的是一个可修改的副本，以兼容后续的 delete 操作
+        const agentParams = { ...unwrappedParams };
         const modeSpecific = this.getModeSpecificParameters(researchMode, toolName);
         
         switch (toolName) {
