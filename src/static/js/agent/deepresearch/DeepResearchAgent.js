@@ -447,12 +447,16 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         this.intermediateSteps = []; // ✅ 确保每次新研究都清空历史
         let iterations = 0;
         let consecutiveNoGain = 0;
+        
+        // 🔥 核心修改：在deep模式下，提高终止的难度
+        const noGainThreshold = (detectedMode === 'deep') ? 3 : 2;
+        
         let allSources = [];
         let finalAnswerFromIteration = null;
         
         const totalSteps = researchPlan.research_plan.length; // 新增：总计划步骤数
 
-        while (iterations < this.maxIterations && consecutiveNoGain < 2 && !finalAnswerFromIteration) {
+        while (iterations < this.maxIterations && consecutiveNoGain < noGainThreshold && !finalAnswerFromIteration) {
             iterations++;
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
