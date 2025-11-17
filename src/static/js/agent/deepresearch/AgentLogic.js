@@ -364,7 +364,7 @@ export class AgentLogic {
         const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard' } = inputs;
         
         // 🎯 关键词检测逻辑
-        const detectedMode = this._detectResearchMode(topic);
+        const detectedMode = researchMode; // 直接使用传入的、正确的模式！
         
         // 动态计算当前步骤
         const currentStep = this._determineCurrentStep(researchPlan, intermediateSteps);
