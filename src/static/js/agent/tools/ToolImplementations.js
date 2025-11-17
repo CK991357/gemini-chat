@@ -520,16 +520,14 @@ class DeepResearchToolAdapter {
                     console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应:`, dataFromProxy);
 
                     let output = '';
-                    let errorOutput = '';
-                    // ✅ 关键：默认 success 为 false，只有在明确成功时才设为 true
                     let success = false;
 
                     try {
                         let currentData = dataFromProxy;
                         
-                        // 深度解析"俄罗斯套娃"式的嵌套JSON（保留您优秀的解析逻辑）
+                        // 深度解析"俄罗斯套娃"式的嵌套JSON
                         for (let i = 0; i < 3; i++) {
-                            if (currentData && typeof currentData.stdout === 'string') {
+                            if (currentData && typeof currentData.stdout === 'string' && currentData.stdout.trim().startsWith('{')) {
                                 try {
                                     const parsed = JSON.parse(currentData.stdout.trim());
                                     if (parsed.stdout !== undefined || parsed.stderr !== undefined) {
@@ -540,18 +538,17 @@ class DeepResearchToolAdapter {
                             }
                             break;
                         }
-
+                        
                         // 统一从最深层的数据中提取 stdout 和 stderr
                         const finalStdout = currentData.stdout;
                         const finalStderr = currentData.stderr;
 
-                        console.log(`[PythonOutput] 🔍 最终解析结果:`, {
+                        console.log(`[PythonOutput] 🔍 最终解析结果 :`, {
                             stdoutLength: finalStdout?.length || 0,
                             stderrLength: finalStderr?.length || 0,
                             hasStderr: !!(finalStderr && finalStderr.trim()),
                         });
 
-                        // 🔥🔥🔥【最终修复的核心逻辑】🔥🔥🔥
                         if (finalStderr && finalStderr.trim()) {
                             // 1. 如果有 stderr，则明确为失败
                             success = false;
@@ -563,8 +560,8 @@ class DeepResearchToolAdapter {
                             success = true;
                             output = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
                             console.log(`[PythonOutput] ✅ 检测到有效输出 (stdout)。`);
-                        } else {
                             // 3. 如果两者都为空，也视为成功，但返回提示信息
+                        } else {
                             success = true;
                             output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
                             console.log(`[PythonOutput] ℹ️ 执行成功，但 stdout 和 stderr 均为空。`);
@@ -575,7 +572,7 @@ class DeepResearchToolAdapter {
                         success = false;
                         output = `❌ **Python响应处理时发生内部错误**: ${error.message}`;
                     }
-                    
+
                     // 统一构建返回对象
                     return {
                         success,
@@ -585,7 +582,7 @@ class DeepResearchToolAdapter {
                         isError: !success,
                         mode: 'deep_research',
                         researchMode: researchMode,
-                        // ... (保留 researchMetadata 的生成逻辑)
+                        // ... (其余字段不变)
                     };
                 }
                     
