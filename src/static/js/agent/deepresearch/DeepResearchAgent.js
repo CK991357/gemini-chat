@@ -745,13 +745,33 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
             finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
         }
 
+        // 🔥【核心修复】在这里增加事后清理逻辑
+        const sourceKeywords = ["资料来源", "参考文献", "Sources", "References", "参考资料清单"];
+        let cleanedReport = finalReport;
+        for (const keyword of sourceKeywords) {
+            // 寻找模型可能生成的来源章节标题
+            const regex = new RegExp(`(##|###)\\s*${keyword}`, "i");
+            const match = cleanedReport.match(regex);
+            if (match) {
+                console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的“${keyword}”章节，正在执行自动清理...`);
+                // 从匹配到的标题开始，截断报告的剩余部分
+                cleanedReport = cleanedReport.substring(0, match.index);
+                break; // 找到并清理后就跳出循环
+            }
+        }
+        // 确保报告末尾没有多余的空白
+        cleanedReport = cleanedReport.trim();
+
+
         // ✨ 阶段3.5：智能资料来源过滤
         console.log('[DeepResearchAgent] 阶段3.5：执行智能资料来源过滤...');
-        const filteredSources = this._filterUsedSources(uniqueSources, finalReport);
+        // ▼▼▼ 注意：这里要对清理后的报告进行过滤 ▼▼▼
+        const filteredSources = this._filterUsedSources(uniqueSources, cleanedReport);
         console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
 
         // 🎯 关键修复：确保资料来源部分正确附加
-        finalReport += await this._generateSourcesSection(filteredSources, researchPlan);
+        // ▼▼▼ 注意：这里要附加到清理后的报告上 ▼▼▼
+        cleanedReport += await this._generateSourcesSection(filteredSources, researchPlan);
         console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${filteredSources.length} 个资料来源`);
 
         // =================================================================
@@ -772,7 +792,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         const result = {
             success: true,
             topic: uiTopic,
-            report: finalReport,
+            report: cleanedReport, // <--- 使用 cleanedReport
             iterations,
             intermediateSteps: this.intermediateSteps,
             sources: filteredSources,
