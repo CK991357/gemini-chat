@@ -3,7 +3,7 @@
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
 // 🎯 核心修改：从 ReportTemplates.js 导入工具函数
-import { getTemplateByResearchMode } from './ReportTemplates.js';
+import { getTemplateByResearchMode, getTemplatePromptFragment } from './ReportTemplates.js';
 
 export class DeepResearchAgent {
     constructor(chatApiHandler, tools, callbackManager, config = {}) {
@@ -795,18 +795,81 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         return result;
     }
 
-    // ✨ 最终报告生成 - 现在只负责合成
-    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) { // 参数中的 sources 现在已经是去重后的
-        try {
-            // 🔴 移除来源提取和去重逻辑，因为已经在 conductResearch 中完成
-            // const extractedSources = this._extractSourcesFromIntermediateSteps(intermediateSteps);
-            // const combinedSources = [...sources, ...extractedSources];
-            // const uniqueSources = this._deduplicateSources(combinedSources);
-            // console.log(`[DeepResearchAgent] 提取到 ${extractedSources.length} 个补充来源，总计 ${uniqueSources.length} 个潜在来源`);
+    // ✨ 最终报告生成 - 【优化升级版】支持动态与静态模板
+    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
+        console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
+
+        // 格式化研究历史，以便注入到最终的Prompt中
+        const formattedHistory = intermediateSteps.map((step, index) => {
+            // 确保我们不会因为 plan.research_plan 长度不足而出错
+            const subQuestion = plan.research_plan?.[index]?.sub_question || '未知子问题';
+            return `
+---
+### 研究步骤 ${index + 1}: ${subQuestion}
+
+**思考:**
+${step.action?.thought || '无'}
+
+**行动:**
+工具: ${step.action?.tool_name || '无'}
+参数: ${JSON.stringify(step.action?.parameters || {}, null, 2)}
+
+**观察 (结果摘要):**
+${(step.observation || '无').substring(0, 2000)}...
+
+**💡 本步关键发现:**
+${step.key_finding || '未能提炼出关键发现。'}
+---
+            `;
+        }).join('\n');
+
+        let finalPrompt;
+        const reportTemplate = getTemplateByResearchMode(researchMode);
+
+        // 🔥 核心逻辑：检查是否为动态模板
+        if (reportTemplate.config.dynamic_structure) {
+            console.log(`[DeepResearchAgent] 检测到动态报告模板 (${researchMode}模式)，构建研究驱动的Prompt...`);
             
+            finalPrompt = `
+# 角色：首席研究分析师
+# 任务：基于以下完整的、逐步进行的研究过程，撰写一份高质量、结构化、体现深度思考的最终研究报告。
+
+# 最终研究主题: "${topic}"
+
+# 1. 你的研究计划 (纲领)
+这是你最初为本次研究制定的总体规划，你的最终报告结构必须严格遵循并反映这个计划。
+\`\`\`json
+${JSON.stringify(plan, null, 2)}
+\`\`\`
+
+# 2. 你的完整研究历史与发现 (原始数据)
+这是你执行上述计划的每一步的详细记录，包括你的思考、工具使用、观察结果和每一步的关键发现。你必须充分利用这些信息来填充报告的每一个章节。
+${formattedHistory}
+
+# 3. 你的报告撰写指令 (输出要求)
+现在，请严格遵循以下元结构和要求，将上述研究过程和发现，整合成一份最终报告。
+
+${getTemplatePromptFragment(researchMode)}
+
+**🚫 绝对禁止:**
+- 编造研究计划和历史记录中不存在的信息。
+- 采用与你的研究计划（sub_question）无关的章节标题。
+- 忽略研究历史中的“观察”和“关键发现”。
+
+**✅ 核心要求:**
+- **自主生成标题:** 基于主题和核心发现，为报告创建一个精准的标题。
+- **动态生成章节:** 将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
+- **内容填充:** 用对应研究步骤的详细“观察”数据来填充该章节。
+- **引用来源:** 在报告正文中，使用 [来源 X] 的格式清晰地引用信息。
+
+现在，请开始撰写这份体现你完整研究智慧的最终报告。
+`;
+        } else {
+            // 保持对旧静态模板的兼容
+            console.log(`[DeepResearchAgent] 使用静态报告模板 (${researchMode}模式)...`);
             // 1. 收集所有观察结果
             const allObservations = intermediateSteps
-                .filter(step => step.observation && 
+                .filter(step => step.observation &&
                                step.observation !== '系统执行错误，继续研究' &&
                                !step.observation.includes('OutputParser解析失败'))
                 .map(step => {
@@ -820,25 +883,29 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                 .filter(obs => obs.length > 50) // 只保留有内容的观察
                 .join('\n\n');
             
-            // 2. 使用LLM生成结构化报告（基于研究模式）
-            const reportPrompt = this._buildReportPrompt(topic, plan, allObservations, researchMode);
+            // 2. 使用旧的 _buildReportPrompt 方法生成Prompt
+            finalPrompt = this._buildReportPrompt(topic, plan, allObservations, researchMode);
+        }
 
+        console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
+        
+        try {
             const reportResponse = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: reportPrompt }],
+                messages: [{ role: 'user', content: finalPrompt }],
                 model: 'gemini-2.5-flash-preview-09-2025',
                 temperature: 0.3,
             });
-            this._updateTokenUsage(reportResponse.usage); // 🎯 新增
+            this._updateTokenUsage(reportResponse.usage);
             
-            let finalReport = reportResponse?.choices?.[0]?.message?.content || 
-                this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 传递 sources
+            let finalReport = reportResponse?.choices?.[0]?.message?.content ||
+                this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 保持 fallback
             
             console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
             return finalReport;
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 传递 sources
+            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode); // 保持 fallback
         }
     }
 
