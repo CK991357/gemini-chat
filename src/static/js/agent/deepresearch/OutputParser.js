@@ -73,7 +73,7 @@ export class AgentOutputParser {
 
         // 🔥🔥🔥【最终版修复：基于意图优先级的线性解析】🔥🔥🔥
 
-        // 优先级1：检查是否存在明确的"最终答案"标签
+        // 优先级1：检查是否存在明确的“最终答案”标签
         const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
         if (finalAnswerMatch && finalAnswerMatch[1] && finalAnswerMatch[1].trim().length > 50) {
             console.log('[OutputParser] ✅ 检测到 "最终答案:" 标签，直接判定为最终报告。');
@@ -85,7 +85,7 @@ export class AgentOutputParser {
             };
         }
 
-        // 优先级2：检查是否存在明确的"行动"指令
+        // 优先级2：检查是否存在明确的“行动”指令
         const hasActionKeywords = /行动\s*:/i.test(text);
         if (hasActionKeywords) {
             console.log('[OutputParser] 检测到 "行动:" 关键词，强制进入工具解析流程。');
@@ -95,10 +95,10 @@ export class AgentOutputParser {
             if (toolCallResult && toolCallResult.type === 'tool_call') {
                 return toolCallResult;
             }
-            // 如果工具解析失败（例如，只有"行动:"但没有有效输入），流程会继续向下，可能会被判定为格式错误
+            // 如果工具解析失败（例如，只有“行动:”但没有有效输入），流程会继续向下，可能会被判定为格式错误
         }
         
-        // 优先级3：如果没有"最终答案"标签，也没有"行动"指令，但结构上像一份报告
+        // 优先级3：如果没有“最终答案”标签，也没有“行动”指令，但结构上像一份报告
         const isLikelyReport = this._isLikelyFinalReport(text);
         if (isLikelyReport) {
             console.log('[OutputParser] 🎯 未检测到行动指令，但结构类似报告，尝试智能提取。');
@@ -270,128 +270,173 @@ export class AgentOutputParser {
         }
     }
 
-    // 🎯 完全重写的稳健解析方法 - 最终版 v2
+    // 🎯 完全重写的稳健解析方法 - 五层防御性解析
     _parseToolCallFormat(text) {
-        console.log('[OutputParser] 🔍 开始智能JSON边界检测 (v2)...');
+        console.log('[OutputParser] 🔍 开始智能JSON边界检测...');
         
         try {
-            // 步骤 1: 使用您已有的、效果很好的预处理
             const preprocessedText = this._enhancedPreprocessText(text);
+            console.log('[OutputParser] 预处理后文本长度:', preprocessedText.length);
 
+            // 1. 提取工具名（增强正则）
             const actionLineMatch = preprocessedText.match(/行动\s*:\s*([a-zA-Z0-9_]+)/i);
-            if (!actionLineMatch) return { success: false, error: "未找到'行动:'行" };
+            if (!actionLineMatch) {
+                console.log('[OutputParser] ❌ 未找到"行动:"行');
+                return { success: false };
+            }
             const tool_name = actionLineMatch[1].trim();
+            console.log(`[OutputParser] 🔍 找到工具名: ${tool_name}`);
 
+            // 2. 🎯 增强的JSON边界检测
             const inputKeyword = '行动输入:';
             const inputIndex = preprocessedText.indexOf(inputKeyword);
-            if (inputIndex === -1) return { success: false, error: "未找到'行动输入:'关键字" };
+            if (inputIndex === -1) {
+                console.log('[OutputParser] ❌ 未找到"行动输入:"关键字');
+                return { success: false };
+            }
 
+            // 在"行动输入:"后查找第一个 '{'
             const jsonStartIndex = preprocessedText.indexOf('{', inputIndex);
-            if (jsonStartIndex === -1) return { success: false, error: "在'行动输入:'后未找到JSON起始括号'{'" };
+            if (jsonStartIndex === -1) {
+                console.log('[OutputParser] ❌ 在"行动输入:"后未找到JSON起始括号"{"');
+                return { success: false };
+            }
 
-            // 步骤 2: 使用您已有的、效果很好的括号计数法来寻找 JSON 结尾
-            let braceCount = 1;
+            // 3. 🎯 增强的括号计数法（处理嵌套和字符串）
+            let braceCount = 0;
             let inString = false;
             let escapeNext = false;
             let jsonEndIndex = -1;
+            let inCodeBlock = false; // 新增：代码块状态
 
-            for (let i = jsonStartIndex + 1; i < preprocessedText.length; i++) {
+            for (let i = jsonStartIndex; i < preprocessedText.length; i++) {
                 const char = preprocessedText[i];
-                if (escapeNext) { escapeNext = false; continue; }
-                if (char === '\\') { escapeNext = true; continue; }
-                if (char === '"') inString = !inString;
-                if (!inString) {
-                    if (char === '{') braceCount++;
-                    else if (char === '}') braceCount--;
+                const prevChar = i > 0 ? preprocessedText[i-1] : '';
+                const nextChar = i < preprocessedText.length - 1 ? preprocessedText[i+1] : '';
+                
+                // 处理转义字符
+                if (escapeNext) {
+                    escapeNext = false;
+                    continue;
                 }
-                if (braceCount === 0) {
-                    jsonEndIndex = i;
-                    break;
+                
+                if (char === '\\') {
+                    escapeNext = true;
+                    continue;
+                }
+                
+                // 处理字符串边界
+                if (char === '"' && !escapeNext) {
+                    // 检查是否是代码块标记
+                    if (prevChar === ' ' && nextChar === ' ') {
+                        // 可能是独立的引号，不改变字符串状态
+                    } else {
+                        inString = !inString;
+                    }
+                    continue;
+                }
+                
+                // 不在字符串中时处理括号
+                if (!inString) {
+                    if (char === '{') {
+                        braceCount++;
+                    } else if (char === '}') {
+                        braceCount--;
+                        
+                        if (braceCount === 0) {
+                            jsonEndIndex = i;
+                            break;
+                        }
+                    }
                 }
             }
 
-            // 如果括号计数失败，使用您已有的降级策略
+            // 4. 🎯 多重降级策略
             if (jsonEndIndex === -1) {
+                console.log('[OutputParser] 🟡 JSON括号不匹配，启动降级策略');
+                
+                // 降级策略1：查找最后一个 '}'
                 const lastBraceIndex = preprocessedText.lastIndexOf('}');
                 if (lastBraceIndex > jsonStartIndex) {
+                    console.log('[OutputParser] 🟡 使用最后一个右括号作为降级方案');
                     jsonEndIndex = lastBraceIndex;
-                } else {
-                    return { success: false, error: "JSON括号不匹配且降级失败" };
+                } 
+                // 降级策略2：查找下一个"行动"或"最终答案"
+                else {
+                    const nextActionIndex = preprocessedText.indexOf('行动:', jsonStartIndex);
+                    const nextFinalAnswerIndex = preprocessedText.indexOf('最终答案:', jsonStartIndex);
+                    const nextMarkerIndex = Math.min(
+                        nextActionIndex !== -1 ? nextActionIndex : Infinity,
+                        nextFinalAnswerIndex !== -1 ? nextFinalAnswerIndex : Infinity
+                    );
+                    
+                    if (nextMarkerIndex !== Infinity && nextMarkerIndex > jsonStartIndex) {
+                        console.log('[OutputParser] 🟡 使用下一个标记作为边界');
+                        jsonEndIndex = nextMarkerIndex - 1;
+                    } else {
+                        console.log('[OutputParser] ❌ 所有降级策略失败');
+                        return { success: false };
+                    }
                 }
             }
 
-            // 步骤 3: 提取原始 JSON 字符串
+            // 5. 提取并清理JSON字符串
             let parametersJson = preprocessedText.substring(jsonStartIndex, jsonEndIndex + 1);
-            console.log(`[OutputParser] 🔍 提取的原始JSON:`, parametersJson.substring(0, 200) + '...');
+            console.log(`[OutputParser] 🔍 提取的原始JSON (${parametersJson.length}字符):`, parametersJson.substring(0, 200) + '...');
 
-            // 🔥🔥🔥【最终修复的核心】🔥🔥🔥
-            // 步骤 4: 应用强化的、专门针对 LLM 输出的 JSON 修复逻辑
-            const repairedJson = this._fixJsonFromLLM(parametersJson);
-            
-            // 步骤 5: 最后一次尝试解析
+            // 应用多层清理
+            parametersJson = this._enhancedCleanJsonString(parametersJson);
+            parametersJson = this._fixCommonJsonErrors(parametersJson);
+
             try {
-                const parameters = JSON.parse(repairedJson);
-                console.log(`[OutputParser] ✅ 强化修复后解析成功: ${tool_name}`);
-                return { success: true, tool_name, parameters };
-            } catch (finalError) {
-                console.error(`[OutputParser] ❌ 即使在强化修复后，JSON解析依然失败:`, finalError.message);
-                console.error(`[OutputParser] 失败的JSON内容:`, repairedJson);
-                // 保留您原有的深度修复策略作为最后防线
-                return this._executeDeepRepairStrategy(repairedJson, tool_name, text);
-            }
+                // 如果工具是 python_sandbox，使用更安全的解析策略
+                if (tool_name === 'python_sandbox') {
+                    // 🎯 特殊处理：保护 code 参数免受过度清理
+                    const codeRegex = /"code"\s*:\s*"((?:\\.|[^"\\])*)"/;
+                    const codeMatch = parametersJson.match(codeRegex);
 
+                    if (codeMatch && codeMatch[1]) {
+                        // 1. 提取原始代码内容 (已转义)
+                        let codeContent = codeMatch[1];
+                        
+                        // 2. 清理JSON的其余部分
+                        // 注意：用一个安全的占位符替换代码，以解析其他参数
+                        const otherParamsJson = parametersJson.replace(codeRegex, '"code": "PLACEHOLDER"');
+                        const otherParams = JSON.parse(this._fixCommonJsonErrors(otherParamsJson));
+
+                        // 3. 将未被破坏的代码重新组合回去
+                        const parameters = { ...otherParams, code: codeContent };
+                        
+                        console.log(`[OutputParser] ✅ Python Sandbox安全解析成功`);
+                        return { success: true, tool_name, parameters };
+                    }
+                }
+
+                // 对于其他工具，继续进行常规解析
+                const parameters = JSON.parse(parametersJson);
+                console.log(`[OutputParser] ✅ 智能解析成功: ${tool_name}`, {
+                    parametersKeys: Object.keys(parameters),
+                    parametersPreview: JSON.stringify(parameters).substring(0, 100)
+                });
+                
+                return {
+                    success: true,
+                    tool_name,
+                    parameters
+                };
+
+            } catch (jsonError) {
+                console.warn('[OutputParser] ❌ 主解析失败，启动深度修复:', jsonError.message);
+                return this._executeDeepRepairStrategy(parametersJson, tool_name, text);
+            }
+            
         } catch (error) {
             console.error('[OutputParser] 💥 解析过程中发生严重错误:', error);
-            return { success: false, error: error.message };
+            return { success: false };
         }
     }
 
-    // 🔥🔥🔥【新增的、更强大的 JSON 修复函数】🔥🔥🔥
-    _fixJsonFromLLM(jsonStr) {
-        let fixed = jsonStr.trim();
-
-        // 1. 移除开头和结尾可能存在的 ```json ... ``` 标记
-        fixed = fixed.replace(/^```json\s*/, '').replace(/```\s*$/, '');
-
-        // 2. (最关键的修复) 为没有加引号的键名添加双引号
-        // 匹配: { key: value }, "key": value, 'key': value
-        // 并将其统一为: { "key": value }
-        fixed = fixed.replace(/([{,]\s*)'([^"']*)'(\s*:)/g, '$1"$2"$3'); // 单引号键 -> 双引号键
-        fixed = fixed.replace(/([{,]\s*)([a-zA-Z0-9_$]+)(\s*:)/g, '$1"$2"$3'); // 无引号键 -> 双引号键
-
-        // 3. 将所有单引号值替换为双引号值，同时处理转义
-        fixed = fixed.replace(/'((?:\\.|[^'\\])*)'/g, (match, content) => {
-            // 将内容中的双引号转义，然后用双引号包裹
-            return '"' + content.replace(/"/g, '\\"') + '"';
-        });
-
-        // 4. 移除尾随逗号 (trailing commas)
-        fixed = fixed.replace(/,\s*([}\]])/g, '$1');
-
-        // 5. 移除注释 (//... 和 /*...*/)
-        fixed = fixed.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-        
-        // 6. 处理字符串中未转义的换行符 (这是一个常见错误)
-        // 这个复杂的正则表达式查找不在引号内的换行符
-        let in_string = false;
-        let result = "";
-        for (let i = 0; i < fixed.length; i++) {
-            let char = fixed[i];
-            if (char === '"' && (i === 0 || fixed[i-1] !== '\\')) {
-                in_string = !in_string;
-            }
-            if (!in_string && (char === '\n' || char === '\r')) {
-                continue; // 丢弃结构中的换行符
-            }
-            result += char;
-        }
-        fixed = result;
-
-        console.log(`[OutputParser] 🔧 强化修复后的JSON:`, fixed.substring(0, 200) + '...');
-        return fixed;
-    }
-
-    // 🎯 智能报告检测方法
+    // 🎯 新增：智能报告检测方法
     _isLikelyFinalReport(text) {
         if (!text || text.length < 300) return false;
         
@@ -463,7 +508,7 @@ export class AgentOutputParser {
         return processed.trim();
     }
 
-    // ✨ 常见JSON错误自动修复 - 第三层防御（保留作为备用）
+    // ✨ 新增：常见JSON错误自动修复 - 第三层防御
     _fixCommonJsonErrors(jsonStr) {
         let fixed = jsonStr;
         
