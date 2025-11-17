@@ -519,12 +519,25 @@ class DeepResearchToolAdapter {
                 case 'python_sandbox': {
                     console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应 (v3 Simplified):`, dataFromProxy);
 
-                    // 🔥🔥🔥【最终修复的核心逻辑】🔥🔥🔥
-                    // 步骤 1: 直接从 dataFromProxy 获取最终的 stdout 和 stderr。不再需要任何循环或嵌套解析。
-                    const finalStdout = dataFromProxy.stdout || '';
-                    const finalStderr = dataFromProxy.stderr || '';
+                    // 🔥🔥🔥【建议的修复方案开始】🔥🔥🔥
+                    let parsedData = dataFromProxy;
+                    // 检查收到的数据是否为字符串类型
+                    if (typeof parsedData === 'string') {
+                        try {
+                            // 如果是字符串，尝试将其解析为JSON对象
+                            parsedData = JSON.parse(parsedData);
+                            console.log(`[PythonOutput] ✅ 成功解析了字符串化的JSON响应。`);
+                        } catch (e) {
+                            // 如果解析失败，发出警告，但继续使用原始字符串（以防万一）
+                            console.warn(`[PythonOutput] ⚠️ 无法解析字符串响应，将继续使用原始字符串。`, parsedData);
+                        }
+                    }
+                    // 现在，使用 'parsedData' 来访问属性，而不是 'dataFromProxy'
+                    const finalStdout = parsedData.stdout || '';
+                    const finalStderr = parsedData.stderr || '';
                     let output = '';
                     let success = false;
+                    // 🔥🔥🔥【建议的修复方案结束】🔥🔥🔥
 
                     console.log(`[PythonOutput] 🔍 最终解析结果:`, {
                         stdoutLength: finalStdout.length,
@@ -550,7 +563,6 @@ class DeepResearchToolAdapter {
                         output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
                         console.log(`[PythonOutput] ℹ️ 执行成功，但 stdout 和 stderr 均为空。`);
                     }
-                    // 🔥🔥🔥【修复结束】🔥🔥🔥
 
                     // 统一构建返回对象
                     return {
