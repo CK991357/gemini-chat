@@ -324,37 +324,13 @@ export class AgentOutputParser {
             let parametersJson = preprocessedText.substring(jsonStartIndex, jsonEndIndex + 1);
             console.log(`[OutputParser] 🔍 提取的原始JSON:`, parametersJson.substring(0, 200) + '...');
 
-            // 🔥🔥🔥【新增的进阶优化】🔥🔥🔥
-            let codeContent = null;
-            // 匹配 "code": "..."，其中 ... 可以包含转义的双引号和任何字符
-            const codeRegex = /"code"\s*:\s*"((?:\\.|[^"\\])*)"/;
-            const codeMatch = parametersJson.match(codeRegex);
-
-            if (tool_name === 'python_sandbox' && codeMatch) {
-                // 1. 提取并保存原始的、未被破坏的 code 内容
-                codeContent = codeMatch[1];
-                // 2. 用一个安全的占位符替换它
-                parametersJson = parametersJson.replace(codeRegex, '"code": "##CODE_PLACEHOLDER##"');
-                console.log('[OutputParser] 🐍 已为 python_sandbox 的 code 字段创建保护');
-            }
-            // 🔥🔥🔥【优化结束】🔥🔥🔥
-
             // 🔥🔥🔥【最终修复的核心】🔥🔥🔥
             // 步骤 4: 应用强化的、专门针对 LLM 输出的 JSON 修复逻辑
             const repairedJson = this._fixJsonFromLLM(parametersJson);
             
             // 步骤 5: 最后一次尝试解析
             try {
-                let parameters = JSON.parse(repairedJson);
-
-                // 🔥🔥🔥【新增的进阶优化】🔥🔥🔥
-                if (codeContent !== null) {
-                    // 3. 将原始的 code 内容恢复回去
-                    parameters.code = codeContent;
-                    console.log('[OutputParser] 🐍 已恢复 python_sandbox 的 code 字段');
-                }
-                // 🔥🔥🔥【优化结束】🔥🔥🔥
-
+                const parameters = JSON.parse(repairedJson);
                 console.log(`[OutputParser] ✅ 强化修复后解析成功: ${tool_name}`);
                 return { success: true, tool_name, parameters };
             } catch (finalError) {
@@ -370,58 +346,48 @@ export class AgentOutputParser {
         }
     }
 
-    // 🔥🔥🔥【最终版 v2 - 统一且更强大的 JSON 修复函数】🔥🔥🔥
+    // 🔥🔥🔥【新增的、更强大的 JSON 修复函数】🔥🔥🔥
     _fixJsonFromLLM(jsonStr) {
         let fixed = jsonStr.trim();
 
-        // 步骤 0: 早期清理，移除代码块标记和注释
+        // 1. 移除开头和结尾可能存在的 ```json ... ``` 标记
         fixed = fixed.replace(/^```json\s*/, '').replace(/```\s*$/, '');
-        fixed = fixed.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
-        // 🔥🔥🔥【本次修复的核心】🔥🔥🔥
-        // 步骤 1: 将所有字符串字面量之外的换行符和多余空格移除，
-        // 同时将字符串字面量之内的换行符转换为合法的 \\n 转义。
-        // 这是处理 LLM 在 JSON 结构中随意插入换行符的最健壮方法。
-        let result = '';
-        let inString = false;
-        for (let i = 0; i < fixed.length; i++) {
-            const char = fixed[i];
-            
-            // 检查是否进入或退出字符串
-            if (char === '"' && (i === 0 || fixed[i-1] !== '\\')) {
-                inString = !inString;
-            }
+        // 2. (最关键的修复) 为没有加引号的键名添加双引号
+        // 匹配: { key: value }, "key": value, 'key': value
+        // 并将其统一为: { "key": value }
+        fixed = fixed.replace(/([{,]\s*)'([^"']*)'(\s*:)/g, '$1"$2"$3'); // 单引号键 -> 双引号键
+        fixed = fixed.replace(/([{,]\s*)([a-zA-Z0-9_$]+)(\s*:)/g, '$1"$2"$3'); // 无引号键 -> 双引号键
 
-            if (inString) {
-                // 在字符串内部
-                if (char === '\n' || char === '\r') {
-                    result += '\\n'; // 将真实换行符转换为转义序列
-                } else {
-                    result += char;
-                }
-            } else {
-                // 在字符串外部（即 JSON 结构中）
-                if (char !== '\n' && char !== '\r') {
-                    result += char; // 只保留非换行符字符
-                }
-            }
-        }
-        fixed = result.replace(/\s+/g, ' '); // 顺便压缩一下多余的空格
-        // 🔥🔥🔥【修复结束】🔥🔥🔥
+        // 3. 将所有单引号值替换为双引号值，同时处理转义
+        fixed = fixed.replace(/'((?:\\.|[^'\\])*)'/g, (match, content) => {
+            // 将内容中的双引号转义，然后用双引号包裹
+            return '"' + content.replace(/"/g, '\\"') + '"';
+        });
 
-
-        // 步骤 2: 确保被大括号包围
-        if (!fixed.startsWith('{')) fixed = '{' + fixed;
-        if (!fixed.endsWith('}')) fixed = fixed + '}';
-
-        // 步骤 3: 修复键名引号
-        fixed = fixed.replace(/([{,]\s*)'([^"']*)'(\s*:)/g, '$1"$2"$3');
-        fixed = fixed.replace(/([{,]\s*)([a-zA-Z0-9_$]+)(\s*:)/g, '$1"$2"$3');
-
-        // 步骤 4: 移除尾随逗号
+        // 4. 移除尾随逗号 (trailing commas)
         fixed = fixed.replace(/,\s*([}\]])/g, '$1');
 
-        console.log(`[OutputParser] 🔧 最终修复后的JSON:`, fixed.substring(0, 200) + '...');
+        // 5. 移除注释 (//... 和 /*...*/)
+        fixed = fixed.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        
+        // 6. 处理字符串中未转义的换行符 (这是一个常见错误)
+        // 这个复杂的正则表达式查找不在引号内的换行符
+        let in_string = false;
+        let result = "";
+        for (let i = 0; i < fixed.length; i++) {
+            let char = fixed[i];
+            if (char === '"' && (i === 0 || fixed[i-1] !== '\\')) {
+                in_string = !in_string;
+            }
+            if (!in_string && (char === '\n' || char === '\r')) {
+                continue; // 丢弃结构中的换行符
+            }
+            result += char;
+        }
+        fixed = result;
+
+        console.log(`[OutputParser] 🔧 强化修复后的JSON:`, fixed.substring(0, 200) + '...');
         return fixed;
     }
 
