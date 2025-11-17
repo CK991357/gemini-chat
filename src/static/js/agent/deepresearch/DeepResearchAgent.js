@@ -1171,10 +1171,10 @@ ${reportContent}
         try {
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: attributionPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025', // 可以用一个快速模型
+                model: 'gemini-2.0-flash-exp-summarizer', // 可以用一个快速模型
                 temperature: 0.0,
             });
-            const citedReport = response?.choices?.?.message?.content || reportContent;
+            const citedReport = (response && response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content) || reportContent;
             console.log('[DeepResearchAgent] ✅ 引用归因完成。');
             return citedReport;
         } catch (e) {
