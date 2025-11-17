@@ -517,61 +517,40 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'python_sandbox': {
-                    console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应:`, dataFromProxy);
+                    console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应 (v3 Simplified):`, dataFromProxy);
 
+                    // 🔥🔥🔥【最终修复的核心逻辑】🔥🔥🔥
+                    // 步骤 1: 直接从 dataFromProxy 获取最终的 stdout 和 stderr。不再需要任何循环或嵌套解析。
+                    const finalStdout = dataFromProxy.stdout || '';
+                    const finalStderr = dataFromProxy.stderr || '';
                     let output = '';
                     let success = false;
 
-                    try {
-                        let currentData = dataFromProxy;
-                        
-                        // 深度解析"俄罗斯套娃"式的嵌套JSON
-                        for (let i = 0; i < 3; i++) {
-                            if (currentData && typeof currentData.stdout === 'string' && currentData.stdout.trim().startsWith('{')) {
-                                try {
-                                    const parsed = JSON.parse(currentData.stdout.trim());
-                                    if (parsed.stdout !== undefined || parsed.stderr !== undefined) {
-                                        currentData = parsed;
-                                        continue;
-                                    }
-                                } catch (e) { break; }
-                            }
-                            break;
-                        }
-                        
-                        // 统一从最深层的数据中提取 stdout 和 stderr
-                        const finalStdout = currentData.stdout;
-                        const finalStderr = currentData.stderr;
+                    console.log(`[PythonOutput] 🔍 最终解析结果:`, {
+                        stdoutLength: finalStdout.length,
+                        stderrLength: finalStderr.length,
+                        hasStderr: !!(finalStderr && finalStderr.trim()),
+                    });
 
-                        console.log(`[PythonOutput] 🔍 最终解析结果 :`, {
-                            stdoutLength: finalStdout?.length || 0,
-                            stderrLength: finalStderr?.length || 0,
-                            hasStderr: !!(finalStderr && finalStderr.trim()),
-                        });
-
-                        if (finalStderr && finalStderr.trim()) {
-                            // 1. 如果有 stderr，则明确为失败
-                            success = false;
-                            const errorDetails = this._analyzePythonErrorDeeply(finalStderr);
-                            output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
-                            console.log(`[PythonOutput] 🔴 检测到执行错误 (stderr)。`);
-                        } else if (finalStdout && finalStdout.trim()) {
-                            // 2. 如果有 stdout，则明确为成功
-                            success = true;
-                            output = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
-                            console.log(`[PythonOutput] ✅ 检测到有效输出 (stdout)。`);
-                            // 3. 如果两者都为空，也视为成功，但返回提示信息
-                        } else {
-                            success = true;
-                            output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
-                            console.log(`[PythonOutput] ℹ️ 执行成功，但 stdout 和 stderr 均为空。`);
-                        }
-
-                    } catch (error) {
-                        console.error(`[DeepResearchAdapter] python_sandbox 响应处理时发生内部错误:`, error);
+                    // 步骤 2: 使用您已经写好的、完全正确的判断逻辑
+                    if (finalStderr && finalStderr.trim()) {
+                        // 如果有 stderr，则明确为失败
                         success = false;
-                        output = `❌ **Python响应处理时发生内部错误**: ${error.message}`;
+                        const errorDetails = this._analyzePythonErrorDeeply(finalStderr);
+                        output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
+                        console.log(`[PythonOutput] 🔴 检测到执行错误 (stderr)。`);
+                    } else if (finalStdout && finalStdout.trim()) {
+                        // 如果有 stdout，则明确为成功
+                        success = true;
+                        output = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
+                        console.log(`[PythonOutput] ✅ 检测到有效输出 (stdout)。`);
+                    } else {
+                        // 如果两者都为空，也视为成功，但返回提示信息
+                        success = true;
+                        output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
+                        console.log(`[PythonOutput] ℹ️ 执行成功，但 stdout 和 stderr 均为空。`);
                     }
+                    // 🔥🔥🔥【修复结束】🔥🔥🔥
 
                     // 统一构建返回对象
                     return {
