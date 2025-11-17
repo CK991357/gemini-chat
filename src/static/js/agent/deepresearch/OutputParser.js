@@ -57,8 +57,19 @@ export class AgentOutputParser {
         if (typeof text !== 'string') {
             text = String(text || '');
         }
-        text = text.trim();
+
+        // 🔥🔥🔥【新增的最终修复】🔥🔥🔥
+        // 步骤 1: 预处理 - 移除 Markdown 粗体标记并规范化关键词
+        let preprocessedText = text.trim()
+            .replace(/\*\*\s*(思考|行动|行动输入|最终答案)\s*\*\*/g, '$1') // 移除 "思考", "行动" 等关键词的 **
+            .replace(/(思考|行动|行动输入|最终答案)\s*:/g, '$1: '); // 确保关键词后的冒号后有空格
+
         console.log('[OutputParser] 原始文本长度:', text.length);
+        console.log('[OutputParser] 预处理后文本长度:', preprocessedText.length);
+
+        // 步骤 2: 使用预处理后的文本进行后续解析
+        text = preprocessedText;
+        // 🔥🔥🔥【修复结束】🔥🔥🔥
 
         // 🔥🔥🔥【最终版修复：基于意图优先级的线性解析】🔥🔥🔥
 
