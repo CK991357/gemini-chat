@@ -281,23 +281,28 @@ class DeepResearchToolAdapter {
             }
                 
             case 'python_sandbox': {
-                const baseConfig = {
+                const modeSpecific = this.getModeSpecificParameters(researchMode, toolName);
+                
+                // 🔥🔥🔥【最终的核心修复】🔥🔥🔥
+                // 彻底移除 _fixPythonCodeEscaping 调用。
+                // 我们现在完全信任 OutputParser 的“豁免保护”机制会提供一个
+                // 包含正确转义的、可以直接发送给后端的 code 字符串。
+                
+                let parameters;
+                if (rawParameters.parameters && rawParameters.parameters.code) {
+                    parameters = rawParameters.parameters;
+                } else {
+                    parameters = rawParameters;
+                }
+
+                console.log('[DeepResearchAdapter] 🐍 python_sandbox 参数适配完成 (v4 - 无转义修复)');
+
+                return {
                     timeout: modeSpecific.timeout || 90,
                     allow_network: modeSpecific.allow_network !== false,
-                    ...agentParams
+                    ...parameters // 直接传递从 Parser 传来的、未经修改的参数
                 };
-                
-                // 🎯 核心修复：应用代码转义修复
-                let finalCode = '';
-                if (agentParams.parameters && agentParams.parameters.code) {
-                    finalCode = this._fixPythonCodeEscaping(agentParams.parameters.code);
-                    return { ...baseConfig, ...agentParams.parameters, code: finalCode };
-                }
-                if (agentParams.code) {
-                    finalCode = this._fixPythonCodeEscaping(agentParams.code);
-                    return { ...baseConfig, code: finalCode };
-                }
-                return baseConfig;
+                // 🔥🔥🔥【修复结束】🔥🔥🔥
             }
                 
             case 'glm4v_analyze_image': {
@@ -732,50 +737,6 @@ class DeepResearchToolAdapter {
         return this.isContentMeaningful(content);
     }
     
-    /**
-     * 🎯 核心修复：Python代码转义问题解决方案
-     */
-    static _fixPythonCodeEscaping(codeString) {
-        if (!codeString || typeof codeString !== 'string') return codeString;
-        
-        const originalLength = codeString.length;
-        console.log(`[CodeEscapingFix] 开始修复代码转义，原始长度: ${originalLength}`);
-        
-        // 创建修复映射表
-        const escapeMap = {
-            '\\\\n': '\n',    // 修复换行符
-            '\\\\t': '\t',    // 修复制表符
-            '\\\\r': '\r',    // 修复回车符
-            '\\\\"': '"',     // 修复双引号
-            "\\\\'": "'",     // 修复单引号
-            '\\\\\\\\': '\\'  // 修复反斜杠
-        };
-        
-        let fixedCode = codeString;
-        let changesMade = false;
-        
-        // 应用所有转义修复
-        Object.entries(escapeMap).forEach(([escaped, unescaped]) => {
-            const original = fixedCode;
-            // 使用 new RegExp(escaped, 'g') 来确保全局替换
-            fixedCode = fixedCode.replace(new RegExp(escaped, 'g'), unescaped);
-            if (original !== fixedCode) {
-                changesMade = true;
-                console.log(`[CodeEscapingFix] 修复了 ${escaped} -> ${unescaped}`);
-            }
-        });
-        
-        if (changesMade) {
-            console.log(`[CodeEscapingFix] 修复完成: ${originalLength} -> ${fixedCode.length} 字符`);
-            // 记录修改前后的代码片段用于调试
-            console.log(`[CodeEscapingFix] 修改前片段: ${codeString.substring(0, 100)}...`);
-            console.log(`[CodeEscapingFix] 修改后片段: ${fixedCode.substring(0, 100)}...`);
-        } else {
-            console.log(`[CodeEscapingFix] 无需修复，代码保持原样`);
-        }
-        
-        return fixedCode;
-    }
     
     /**
      * 🎯 深度分析Python错误信息
