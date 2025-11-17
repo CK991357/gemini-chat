@@ -1044,8 +1044,6 @@ ${getTemplatePromptFragment(researchMode)}
         return cleaned;
     }
 
-}
-
     // ✨ 新增：强化资料来源提取
     _extractSourcesFromIntermediateSteps(intermediateSteps) {
         const sources = new Map(); // 使用Map避免重复来源
