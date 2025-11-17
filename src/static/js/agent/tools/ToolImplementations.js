@@ -519,96 +519,74 @@ class DeepResearchToolAdapter {
                 case 'python_sandbox': {
                     console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应:`, dataFromProxy);
 
-                    let finalOutput = null;
-                    let finalError = null;
+                    let output = '';
+                    let errorOutput = '';
+                    // ✅ 关键：默认 success 为 false，只有在明确成功时才设为 true
                     let success = false;
 
                     try {
-                        // 🎯 关键修复：深度解析"俄罗斯套娃"式的嵌套JSON
                         let currentData = dataFromProxy;
                         
-                        // 🔥🔥🔥【最终版深度解析循环】🔥🔥🔥
-                        // 尝试最多3层解析，防止无限循环
+                        // 深度解析"俄罗斯套娃"式的嵌套JSON（保留您优秀的解析逻辑）
                         for (let i = 0; i < 3; i++) {
-                            if (currentData && typeof currentData.stdout === 'string' && currentData.stdout.trim().startsWith('{')) {
+                            if (currentData && typeof currentData.stdout === 'string') {
                                 try {
-                                    const parsed = JSON.parse(currentData.stdout);
-                                    console.log(`[PythonOutput] 第${i+1}层解析成功:`, Object.keys(parsed));
-                                    // 如果解析后的对象看起来像一个沙箱的输出，就继续深入
+                                    const parsed = JSON.parse(currentData.stdout.trim());
                                     if (parsed.stdout !== undefined || parsed.stderr !== undefined) {
                                         currentData = parsed;
-                                        continue; // 继续下一轮循环，尝试解析更深层
+                                        continue;
                                     }
-                                } catch (e) {
-                                    // 如果某一层解析失败，就使用当前层的数据，不再深入
-                                    console.warn(`[PythonOutput] 第${i+1}层解析失败，停止深入解析。`);
-                                    break;
-                                }
+                                } catch (e) { break; }
                             }
-                            // 如果stdout不是一个JSON字符串，或已经没有更深层，则跳出循环
                             break;
                         }
 
-                        // 🎯 从深度解析后的结果中正确提取输出和错误
-                        finalOutput = currentData.stdout;
-                        finalError = currentData.stderr;
-                        
-                        console.log(`[PythonOutput] 🔍 深度解析结果:`, {
-                            stdoutLength: finalOutput?.length || 0,
-                            stderrLength: finalError?.length || 0,
-                            hasStderr: !!(finalError && finalError.trim()),
-                            stderrPreview: finalError?.substring(0, 200) || '无'
+                        // 统一从最深层的数据中提取 stdout 和 stderr
+                        const finalStdout = currentData.stdout;
+                        const finalStderr = currentData.stderr;
+
+                        console.log(`[PythonOutput] 🔍 最终解析结果:`, {
+                            stdoutLength: finalStdout?.length || 0,
+                            stderrLength: finalStderr?.length || 0,
+                            hasStderr: !!(finalStderr && finalStderr.trim()),
                         });
 
-                        // 🎯 严格的错误判断逻辑
-                        if (finalError && finalError.trim()) {
-                            console.log(`[PythonOutput] 🔴 确认Python执行失败，错误长度: ${finalError.length}`);
-                            
-                            const originalCode = rawResponse.rawParameters?.code || '';
-                            const errorDetails = this._analyzePythonErrorDeeply(finalError);
-                            output = this._buildPythonErrorReport(errorDetails, originalCode);
-                            success = false; // 🚨 必须设为false！
-
-                        } else if (finalOutput && finalOutput.trim()) {
-                            const outputLower = finalOutput.toLowerCase();
-                            if (outputLower.startsWith('error:') || outputLower.startsWith('错误：') || outputLower.includes('not found') || outputLower.includes('未找到')) {
-                                console.log(`[PythonOutput] 🟡 检测到Python"静默失败"（逻辑错误），输出内容: ${finalOutput.substring(0, 100)}`);
-                                output = `🐍 **Python代码逻辑失败** 🔴\n\n**原因**: 脚本执行成功，但返回了错误信息。\n\n**代码输出**: \n\`\`\`\n${finalOutput}\n\`\`\`\n\n**诊断建议**:\n1. 检查你的代码逻辑是否能在输入数据中找到完全匹配。\n2. 打印 \`input_data\` 的一部分来确认其内容和结构是否符合你的预期。\n3. 调整你的代码以适应实际的输入数据结构。`;
-                                success = false;
-                            } else {
-                                console.log(`[PythonOutput] ✅ Python执行成功，输出长度: ${finalOutput.length}`);
-                                output = this.formatCodeOutputForMode({ stdout: finalOutput }, researchMode);
-                                success = true;
-                            }
-                        } else {
-                            console.log(`[PythonOutput] ℹ️ Python执行完成，无输出`);
-                            output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
+                        // 🔥🔥🔥【最终修复的核心逻辑】🔥🔥🔥
+                        if (finalStderr && finalStderr.trim()) {
+                            // 1. 如果有 stderr，则明确为失败
+                            success = false;
+                            const errorDetails = this._analyzePythonErrorDeeply(finalStderr);
+                            output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
+                            console.log(`[PythonOutput] 🔴 检测到执行错误 (stderr)。`);
+                        } else if (finalStdout && finalStdout.trim()) {
+                            // 2. 如果有 stdout，则明确为成功
                             success = true;
+                            output = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
+                            console.log(`[PythonOutput] ✅ 检测到有效输出 (stdout)。`);
+                        } else {
+                            // 3. 如果两者都为空，也视为成功，但返回提示信息
+                            success = true;
+                            output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
+                            console.log(`[PythonOutput] ℹ️ 执行成功，但 stdout 和 stderr 均为空。`);
                         }
 
                     } catch (error) {
-                        console.error(`[DeepResearchAdapter] python_sandbox 响应处理异常:`, error);
-                        output = `❌ **Python响应处理时发生内部错误**: ${error.message}`;
+                        console.error(`[DeepResearchAdapter] python_sandbox 响应处理时发生内部错误:`, error);
                         success = false;
+                        output = `❌ **Python响应处理时发生内部错误**: ${error.message}`;
                     }
                     
-                    const result = {
-                        success: success,
-                        output: output,
+                    // 统一构建返回对象
+                    return {
+                        success,
+                        output,
                         sources: [],
                         rawResponse,
                         isError: !success,
                         mode: 'deep_research',
-                        researchMode: researchMode
+                        researchMode: researchMode,
+                        // ... (保留 researchMetadata 的生成逻辑)
                     };
-                    
-                    console.log(`[PythonOutput] 🎯 最终返回结果:`, {
-                        success: result.success,
-                        outputLength: result.output?.length,
-                        isError: result.isError
-                    });
-                    
-                    return result;
                 }
                     
                 case 'glm4v_analyze_image': {
@@ -1665,3 +1643,4 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
+

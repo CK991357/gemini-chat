@@ -90,37 +90,34 @@ class KnowledgeFederationLoader {
   }
 
   /**
-   * 🎯 提取引用章节 (保持优化后的版本)
+   * 🎯 [最终修复版] 提取引用章节
    */
   _extractReferenceSection(skill, sectionKeyword) {
-    const keywordLower = sectionKeyword.toLowerCase().trim();
+    const keywordLower = sectionKeyword.toLowerCase().trim().replace(/ /g, '_'); // 标准化关键词
 
-    // 策略1: 精确文件名匹配 (不含后缀)
-    for (const [refFile, content] of skill.references) {
-        const fileNameWithoutExt = refFile.replace(/\.md$/, '').toLowerCase();
-        if (fileNameWithoutExt === keywordLower) {
-            return content;
+    // 策略1: 智能匹配合并后的内容中的章节标题
+    // build-skills.js 会生成 `### 📖 filename_without_ext` 格式的标题
+    // 这个正则表达式可以匹配不同级别的标题 (##, ###) 和可选的 emoji
+    const regex = new RegExp(`^#{2,4}\\s+(?:📖\\s+)?(${keywordLower.replace(/_/g, '[_\\s-]*')})`, 'im');
+    
+    const sections = skill.content.split(/(?=^#{2,4}\s)/m); // 按标题分割
+    for (const section of sections) {
+        const match = section.match(regex);
+        if (match) {
+            console.log(`[KnowledgeFederation] 智能匹配成功: "${sectionKeyword}" -> 章节标题 "${match[0]}"`);
+            return section;
         }
     }
-      
-    // 策略2: 在文件内容中搜索章节标题
-    for (const [refFile, content] of skill.references) {
-        const sections = content.split(/(?=^#+\s)/m);
-        const relevantSection = sections.find(sec =>
-            sec.trim().toLowerCase().startsWith(`# ${keywordLower}`)
-        );
-        if (relevantSection) {
-            return relevantSection;
-        }
-    }
-
-    // 策略3: 模糊的文件名包含匹配
-    for (const [refFile, content] of skill.references) {
+    
+    // 策略2: 降级到模糊文件名匹配 (从原始 references Map 中查找)
+    for (const [refFile, content] of skill.references.entries()) {
         if (refFile.toLowerCase().includes(keywordLower)) {
+            console.log(`[KnowledgeFederation] 降级文件名匹配成功: "${sectionKeyword}" -> 文件 "${refFile}"`);
             return content;
         }
     }
 
+    // 如果两种策略都失败，则返回 null
     return null;
   }
 }
