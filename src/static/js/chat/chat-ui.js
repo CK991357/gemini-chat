@@ -365,62 +365,73 @@ export function displayToolCallStatus(toolName, _args) {
     elements.messageHistory.appendChild(statusDiv);
     scrollToBottom();
 }
+
 /**
- * Displays a Base64 encoded image in the chat history with a download option.
- * @param {string} base64Image - The Base64 encoded image string (e.g., PNG format).
+ * Displays an image in the chat history. Handles both full Data URLs and raw Base64 strings.
+ * @param {string} imageData - The full Data URL (e.g., 'data:image/png;base64,...') or a raw Base64 string.
  * @param {string} [altText='Generated Image'] - Alternative text for the image.
  * @param {string} [fileName='generated_image.png'] - The default filename for download.
  */
-export function displayImageResult(base64Image, altText = 'Generated Image', _fileName = 'generated_image.png') {
+export function displayImageResult(imageData, altText = 'Generated Image', _fileName = 'generated_image.png') {
     if (!elements.messageHistory) return;
 
     const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', 'ai'); // Assume AI is generating images
+    messageDiv.classList.add('message', 'ai');
 
     const avatarDiv = document.createElement('div');
     avatarDiv.classList.add('avatar');
-    avatarDiv.textContent = '🤖'; // AI avatar
+    avatarDiv.textContent = '🤖';
 
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('content', 'image-result-content');
 
     const imageElement = document.createElement('img');
-    imageElement.src = `data:image/png;base64,${base64Image}`;
+    
+    // ================================================================
+    // 🚀 [最终方案] 智能 URL 构造逻辑
+    // ================================================================
+    let finalSrc = imageData;
+    // 检查传入的字符串是否已经是一个完整的 Data URL
+    if (!imageData.startsWith('data:image/')) {
+        // 如果不是，则假定它是一个裸的 Base64 字符串，并为其添加前缀
+        console.warn('[displayImageResult] Received raw Base64 string. Adding Data URL prefix. This might indicate a legacy call.');
+        finalSrc = `data:image/png;base64,${imageData}`;
+    }
+    // ================================================================
+
+    imageElement.src = finalSrc; // 使用处理过的 finalSrc
     imageElement.alt = altText;
-    imageElement.classList.add('chat-image-result'); // 添加一个类以便 CSS 样式控制
+    imageElement.classList.add('chat-image-result');
     contentDiv.appendChild(imageElement);
+    
+    // ... (后续的 onload 和 onerror 逻辑保持不变) ...
 
-    // 获取图片尺寸和类型
     let dimensions = 'N/A';
-    let imageType = 'image/png'; // 默认为 PNG
+    let imageType = 'image/png';
 
-    // 尝试从 base64 字符串中提取实际的 MIME 类型
-    const mimeMatch = base64Image.match(/^data:(image\/[a-zA-Z0-9-.+]+);base64,/);
+    // 从 finalSrc 中提取 MIME 类型
+    const mimeMatch = finalSrc.match(/^data:(image\/[a-zA-Z0-9-.+]+);base64,/);
     if (mimeMatch && mimeMatch[1]) {
         imageType = mimeMatch[1];
-    } else if (base64Image.startsWith('/9j/')) {
-        imageType = 'image/jpeg';
-    } else if (base64Image.startsWith('iVBORw0KGgo')) {
-        imageType = 'image/png';
     }
-
-
+    
     imageElement.onload = () => {
         dimensions = `${imageElement.naturalWidth}x${imageElement.naturalHeight} px`;
-        // 计算图片大小 (粗略估算，因为 Base64 编码会增加大小)
-        const base64Length = base64Image.length;
-        const sizeInBytes = (base64Length * 0.75) - (base64Image.endsWith('==') ? 2 : (base64Image.endsWith('=') ? 1 : 0));
+        const base64Data = finalSrc.split(',')[1] || '';
+        const sizeInBytes = (base64Data.length * 0.75) - (base64Data.endsWith('==') ? 2 : (base64Data.endsWith('=') ? 1 : 0));
         const sizeInKB = (sizeInBytes / 1024).toFixed(2);
         const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
-    const size = sizeInKB < 1024 ? `${sizeInKB} KB` : `${sizeInMB} MB`;
+        const size = sizeInKB < 1024 ? `${sizeInKB} KB` : `${sizeInMB} MB`;
 
         imageElement.addEventListener('click', () => {
-            openImageModal(imageElement.src, altText, dimensions, size, imageType);
+            // 传递 finalSrc，确保模态框接收到正确的 Data URL
+            openImageModal(finalSrc, altText, dimensions, size, imageType);
         });
     };
 
     imageElement.onerror = () => {
-        console.error('Failed to load image for modal preview:', imageElement.src);
+        // 在 onerror 日志中打印 finalSrc，便于调试
+        console.error('Failed to load image for modal preview:', finalSrc);
     };
 
     messageDiv.appendChild(avatarDiv);
