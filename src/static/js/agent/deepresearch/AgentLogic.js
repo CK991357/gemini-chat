@@ -650,6 +650,23 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 - 在思考中说明："修改后的代码将：[预期效果]"
 - 提交完整的、修正后的代码进行验证
 `;
+
+        const formatComplianceProtocol = `
+## 格式遵从与自我纠正协议
+
+**系统警告**: 你的输出**必须**严格遵循“思考、行动、行动输入”的格式。任何多余的字符、Markdown标记或不规范的JSON都将导致**解析失败 (Parsing Failure)**。
+
+**当上一步的观察结果是“格式错误”或“解析失败”时，你必须执行以下操作：**
+
+1.  **诊断**: 在“思考”中明确承认：“我上一步的输出格式不正确，导致了解析失败。”
+2.  **复现**: 回顾你上一步**想要执行的** \`行动\` 和 \`行动输入\`。
+3.  **修正**: 重新生成完全相同的 \`行动\` 和 \`行动输入\`，但这一次**确保格式绝对纯净**。
+    *   \`思考:\` 部分只能包含文本。
+    *   \`行动:\` 后面只能是工具名。
+    *   \`行动输入:\` 后面只能是一个干净、无注释、无额外文本的 JSON 对象。
+
+**🚫 绝对禁止**: 因为一次解析失败就放弃当前任务或跳到未来的步骤。**你必须在原地修正格式并重试。**
+`;
         
         // 🎯 新增：报告大纲生成策略指导
         const outlineGenerationGuide = `
@@ -932,6 +949,7 @@ ${pythonDebuggingGuide}
 ${pythonGenerationDiscipline}
 ${pythonStateInjectionGuide}
 ${errorCorrectionProtocol}  // 🎯 修复：使用包含参数检查的错误修正协议
+${formatComplianceProtocol} // 🎯 新增：格式遵从与自我纠正协议
 ${config.specialInstructions}
 
 ## 3. 动态调整权限
