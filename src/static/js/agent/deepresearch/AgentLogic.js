@@ -608,29 +608,37 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
         const pythonImageDiscipline = `
 ## 🖼️ 可视化任务指南 (图像生成)
 
-**任务**: 当你需要通过图表（条形图、折线图等）来展示数据时，你必须使用 \`python_sandbox\` 和 \`matplotlib\` 库。
+**任务**: 当你需要通过图表展示数据时，你必须使用 \`python_sandbox\` 和 \`matplotlib\`。
 
 **🚨【强制输出协议】**:
-你的 Python 代码在完成绘图后，**绝对禁止**输出描述如何绘图的 JSON 指令。你的代码的**唯一、最终、且必须的输出**，是通过 \`print()\` 函数打印出的、由 \`matplotlib\` 和 \`base64\` 库生成的**标准 JSON 对象**。
+你的 Python 代码在完成绘图后，**必须**使用 \`json\` 库来生成最终的输出。**绝对禁止**使用复杂的 f-string 手动拼接 JSON。
 
-**该 JSON 对象必须严格遵循以下格式**:
-\`\`\`json
-{
-  "type": "image",
-  "title": "你的图表标题",
-  "image_base64": "iVBORw0KGgo..."
+**✅【代码模板 - 必须遵循】**:
+在你完成 \`plt.savefig(...)\` 之后，**必须**使用以下这段**不可更改**的代码来输出结果：
+
+\`\`\`python
+# --- 标准化输出模块 ---
+import json
+plt.close('all') # 确保关闭所有图表，释放内存
+image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+# 使用 json.dumps() 确保格式正确
+output_data = {
+    "type": "image",
+    "title": "你的图表标题", # <--- 你只需要修改这里的标题
+    "image_base64": image_base64
 }
+print(json.dumps(output_data))
 \`\`\`
 
 **工作流**:
-1.  **调用**: 你调用 \`python_sandbox\` 执行包含 \`matplotlib\` 和 \`base64\` 转换的完整 Python 代码。
-2.  **观察**: 如果成功，系统会自动识别你输出的图像 JSON，你将收到一条简洁的确认信息，例如：\`[✅ 图像生成成功] 标题: "销售额对比图"\`。在最终报告中，你可以使用占位符 \`![销售额对比图](placeholder:generated_image_1)\` 来引用这张图片。
-3.  **引用**: 在撰写最终报告时，你必须将这个完整的 Markdown 占位符复制并粘贴到报告中需要显示图片的位置。
+1.  **调用**: 你调用 \`python_sandbox\`，代码末尾包含上述“标准化输出模块”。
+2.  **观察**: 你会收到 \`[✅ 图像生成成功]...\` 的确认信息和占位符。
+3.  **引用**: 在最终报告中使用 Markdown 占位符引用图片。
 
 **🚫 绝对禁止**:
--   \`print\` 任何描述图表配置的自定义 JSON。
--   \`print\` 裸的 base64 字符串（虽然系统能兼容，但最佳实践是输出标准JSON）。
--   认为前端或其他工具会替你完成绘图。绘图是你唯一的责任。
+-   \`print\` 任何不符合上述模板的 JSON 结构。
+-   \`print\` 裸的 base64 字符串。
 `;
 
         const pythonGenerationDiscipline = `
@@ -717,6 +725,20 @@ const crawlTimeoutProtocol = `
 ### 第三步：验证性重试
 - 在思考中说明："修改后的代码将：[预期效果]"
 - 提交完整的、修正后的代码进行验证
+
+## 🛡️ 代码预检失败 (Preflight Check Failure) 恢复协议
+
+**情景**: 当你上一步的观察结果是 "代码预检失败: ..." 时。
+
+**这表示你生成的 Python 代码存在基础语法错误，它甚至没有机会被执行。**
+
+**你必须执行以下操作**:
+1.  **仔细阅读错误信息**: 例如 "检测到未闭合的单引号"。
+2.  **定位问题代码**: 回顾你上一步提交的完整代码，找到导致错误的具体部分。特别是检查你手动构建的字符串，比如 f-string。
+3.  **应用模板**: **优先使用并严格遵循“可视化任务指南”中提供的“标准化输出模块”**。不要试图自己发明复杂的 \`print\` 语句。
+4.  **修正并重试**: 在“思考”中说明你如何修正了语法错误，然后提交**完整的、修正后的**代码。
+
+**🚫 绝对禁止**: 忽略预检错误，或者提交与上次几乎完全相同的错误代码。
 `;
 
         const formatComplianceProtocol = `

@@ -705,30 +705,6 @@ document.addEventListener('DOMContentLoaded', () => {
    loadWorkflowStyles();
 });
 
-// 🚀 [最终方案] 监听 Agent 实时生成的图片事件
-// 这个事件由 DeepResearchAgent.js 中的 on_image_generated 触发，
-// 并通过 Orchestrator.js 的 setupHandlers 转发为 'research:image_generated'
-window.addEventListener('research:image_generated', (e) => {
-    const { title, base64 } = e.detail.data;
-    
-    // 直接复用您在 chat-ui.js 中已有的、功能强大的 displayImageResult 函数
-    // 它会自动处理图片显示、添加点击事件、并连接到 image-manager.js 的模态框
-    if (window.chatUI && typeof window.chatUI.displayImageResult === 'function') {
-        const dataUrl = `data:image/png;base64,${base64}`; // 构造完整的 Data URL
-        // displayImageResult 期望的是一个 Data URL
-        window.chatUI.displayImageResult(dataUrl, title, `${title.replace(/\s/g, '_')}.png`);
-        showToast(`✅ Agent 已生成图表: ${title}`);
-    } else {
-        console.warn('chatUI.displayImageResult function not found. Cannot display generated image.');
-        // 降级方案：直接在日志中输出
-        chatUI.logMessage(`Agent generated an image: "${title}"`, 'system');
-    }
-});
-
-
-// ‼️ 重要：不要在这里添加 research:end 的监听器来渲染报告。相关功能已经移到Orchestrator.js。
-// 让 main.js 中已有的、处理 handleEnhancedHttpMessage 返回结果的逻辑来负责渲染。
-
 // State variables
 let isRecording = false;
 let audioStreamer = null;
@@ -1224,57 +1200,77 @@ async function initializeEnhancedSkillSystem() {
 /**
  * 🚀 修改核心消息处理函数
  */
+// =========================================================================
+// 🚀 [最终方案 V2 - 替换] 增强的消息处理函数，仅负责启动 Agent
+// =========================================================================
 async function handleEnhancedHttpMessage(messageText, attachedFiles) {
-  if (!currentSessionId) {
-    historyManager.generateNewSession();
-  }
-
-  const apiKey = apiKeyInput.value;
-  const modelName = selectedModelConfig.name;
-  const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
-  
-  // 🚀 获取可用工具名称和增强工具定义
-  const availableToolNames = getAvailableToolNames(modelName);
-  const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
-
-  try {
-    // 🚀 生成技能上下文
-    const contextResult = await skillContextManager.generateRequestContext(
-      messageText,
-      availableToolNames,
-      selectedModelConfig
-    );
-
-    console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
-
-    if (isAgentModeEnabled) {
-      // 增强的智能代理模式
-      await handleEnhancedAgentMode(
-        messageText,
-        attachedFiles,
-        modelName,
-        apiKey,
-        availableToolNames,
-        enhancedTools,
-        contextResult
-      );
-    } else {
-      // 🚀 增强的标准Skill模式
-      console.log("🛠️ 执行增强的标准工具模式");
-      await handleEnhancedStandardRequest(
-        messageText,
-        attachedFiles,
-        modelName,
-        apiKey,
-        enhancedTools,
-        contextResult
-      );
+    if (!currentSessionId) {
+        historyManager.generateNewSession();
     }
-  } catch (error) {
-    console.error("🤖 增强消息处理失败:", error);
-    // 降级到原始处理
-    await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-  }
+
+    const apiKey = apiKeyInput.value;
+    const modelName = selectedModelConfig.name;
+    const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
+    
+    // 如果 Agent 模式未启用，直接回退到标准模式
+    if (!isAgentModeEnabled) {
+        console.log("💬 Agent 模式未启用，使用标准对话");
+        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+        return;
+    }
+
+    try {
+        // 🚀 获取可用工具名称和增强工具定义
+        const availableToolNames = getAvailableToolNames(modelName);
+        const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
+        
+        // 🚀 生成技能上下文
+        const contextResult = await skillContextManager.generateRequestContext(
+            messageText,
+            availableToolNames,
+            selectedModelConfig
+        );
+
+        console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
+
+        // 2. 准备 Agent 上下文
+        const agentContext = {
+            model: modelName,
+            apiKey: apiKey,
+            messages: chatHistory,
+            apiHandler: chatApiHandler,
+            availableTools: availableToolNames, // 传递原始工具名称列表
+            enhancedTools: enhancedTools, // 传递增强工具定义
+            contextResult: contextResult // 传递技能上下文结果
+        };
+        
+        // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
+        // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
+        const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
+
+        // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
+        if (agentResult && !agentResult.enhanced) {
+            console.log("💬 Orchestrator 决定不处理，回退到标准对话");
+            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+        }
+        
+        // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
+        // 我们相信 'research:end' 事件会最终触发渲染。
+        // 对于 user_guide 等简单情况，Orchestrator 内部会直接触发事件或返回可直接显示的内容，
+        // 我们可以在这里做一个简单的处理。
+        if (agentResult && agentResult.type === 'user_guide') {
+             const aiMessage = chatUI.createAIMessageElement();
+             aiMessage.markdownContainer.innerHTML = marked.parse(agentResult.content);
+             chatUI.scrollToBottom();
+        }
+
+    } catch (error) {
+        console.error("🤖 Agent 模式执行失败:", error);
+        if (window.agentThinkingDisplay) {
+            window.agentThinkingDisplay.hide();
+        }
+        showSystemMessage(`智能代理执行时发生错误: ${error.message}`);
+    }
 }
 
 /**
@@ -2457,6 +2453,83 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     // --- END: Add Voice Input Listeners for Chat Mode ---
+});
+// =========================================================================
+// 🚀 [最终方案 - 新增] 监听 Agent 实时生成的图片事件
+// =========================================================================
+// 这个事件由 DeepResearchAgent.js 中的 _handleGeneratedImage 方法触发，
+// 并通过 Orchestrator.js 的 setupHandlers 转发为 'research:image_generated'。
+// 它的唯一职责是实时显示图片，不参与最终报告的生成。
+window.addEventListener('research:image_generated', (e) => {
+    // 从事件详情中解构出标题和 base64 数据
+    const { title, base64 } = e.detail.data;
+    
+    // 检查 chatUI 模块及其 displayImageResult 函数是否可用
+    if (window.chatUI && typeof window.chatUI.displayImageResult === 'function') {
+        // 构造一个完整的 Data URL，这是 <img> 标签和 displayImageResult 函数所期望的格式
+        const dataUrl = `data:image/png;base64,${base64}`;
+        
+        // 调用您现有的、功能强大的 displayImageResult 函数
+        // 它会自动处理图片在聊天窗口的显示、添加点击事件，并连接到 image-manager.js 的模态框
+        window.chatUI.displayImageResult(dataUrl, title, `${title.replace(/\s/g, '_')}.png`);
+        
+        // 给出清晰的用户反馈
+        showToast(`✅ Agent 已生成图表: ${title}`);
+    } else {
+        // 如果 UI 函数不可用，提供一个健壮的降级方案
+        console.warn('chatUI.displayImageResult function not found. Cannot display generated image in chat window.');
+        chatUI.logMessage(`Agent generated an image: "${title}" (display function unavailable)`, 'system');
+    }
+});
+
+// =========================================================================
+// 🚀 [最终方案 V2 - 新增] Agent 专属的最终报告渲染入口
+// =========================================================================
+// 这个监听器是 Agent 模式下 UI 渲染的“最后一站”。
+// 它只关心 'research:end' 事件，并负责将最终报告渲染到主聊天窗口。
+window.addEventListener('research:end', (e) => {
+    console.log("🏁 [Main.js] 接收到 research:end 事件，准备渲染最终报告...");
+    const result = e.detail.data;
+
+    // 1. 健壮性检查：确保有报告内容可以渲染
+    if (!result || !result.report) {
+        console.warn("[Main.js] 'research:end' 事件未包含有效的报告内容，跳过渲染。");
+        // 可以在这里显示一个降级消息
+        showSystemMessage("研究已结束，但未能生成最终报告。");
+        return;
+    }
+
+    // 2. 隐藏思考动画
+    if (window.agentThinkingDisplay) {
+        window.agentThinkingDisplay.hide();
+    }
+
+    // 3. (可选但推荐) 显示一个简洁的摘要卡片
+    if (result.success) {
+        displayAgentSummary(result);
+    }
+    
+    // 4. 获取已经由 Orchestrator 处理过的、包含 Base64 图片的最终 Markdown
+    const finalReportMarkdown = result.report;
+    
+    // 5. 创建并显示最终的报告消息
+    console.log("🎨 正在渲染最终报告...", finalReportMarkdown.substring(0, 200) + '...');
+    const aiMessage = chatUI.createAIMessageElement();
+    aiMessage.rawMarkdownBuffer = finalReportMarkdown;
+    aiMessage.markdownContainer.innerHTML = marked.parse(finalReportMarkdown);
+    
+    // 应用数学公式和代码高亮
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            MathJax.typeset([aiMessage.markdownContainer]);
+        });
+    }
+    // 确保对新添加的内容应用高亮
+    aiMessage.markdownContainer.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+    });
+    
+    chatUI.scrollToBottom();
 });
 
 /**
