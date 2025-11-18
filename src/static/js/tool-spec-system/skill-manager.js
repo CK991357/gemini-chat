@@ -1,48 +1,17 @@
 // src/tool-spec-system/skill-manager.js
-// ‼️ [核心修改] 不再静态导入，因为静态导入会被缓存
-// import { getSkillsRegistry } from './generated-skills.js';
+import { getSkillsRegistry } from './generated-skills.js';
 
 class EnhancedSkillManager {
   constructor(synonyms) {
-    this.skills = new Map(); // ‼️ 初始化为空
+    this.skills = getSkillsRegistry();
     this.synonymMap = synonyms;
-    
-    // ‼️ 创建一个 Promise，用于表示初始化过程
-    this.initializationPromise = this.initialize();
-  }
-
-  /**
-   * 🚀 [新增] 异步初始化方法，用于动态加载技能文件
-   */
-  async initialize() {
-    try {
-        // 1. 创建一个每次都不同的版本号（时间戳）来“破坏”缓存
-        const cacheBuster = new Date().getTime();
-        
-        // 2. 使用动态 import() 来加载模块，并附带版本号
-        const { getSkillsRegistry } = await import(`./generated-skills.js?v=${cacheBuster}`);
-        
-        // 3. 填充技能
-        this.skills = getSkillsRegistry();
-        console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
-
-    } catch (error) {
-        console.error("❌ 动态加载技能文件失败:", error);
-        // 即使失败，也要确保 this.skills 是一个 Map
-        this.skills = new Map();
-    }
+    console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
   }
 
   /**
    * 增强的技能匹配算法
    */
-  /**
-   * 增强的技能匹配算法
-   */
-  async findRelevantSkills(userQuery, context = {}) { // ‼️ 设为 async
-    // ‼️ [核心修改] 在执行任何操作前，等待初始化完成
-    await this.initializationPromise;
-    
+  findRelevantSkills(userQuery, context = {}) {
     const query = userQuery.toLowerCase().trim();
     if (!query || query.length < 2) {
       return [];
@@ -329,8 +298,7 @@ class EnhancedSkillManager {
    * [最终修复版] 多技能注入内容生成
    * 对 crawl4ai 等复杂工具进行特殊处理，注入更详细的指南
    */
-  async generateMultiSkillInjection(skills, userQuery) {
-    await this.initializationPromise;
+  generateMultiSkillInjection(skills, userQuery) {
     if (skills.length === 0) return '';
     
     // 如果只有一个技能，或者最重要的技能是 crawl4ai，则使用单技能的详细注入
@@ -407,8 +375,11 @@ class EnhancedSkillManager {
   }
 
   // 保持向后兼容的方法
-  async getAllSkills() { // ‼️ 设为 async
-    await this.initializationPromise;
+  get isInitialized() {
+    return this.skills.size > 0;
+  }
+
+  getAllSkills() {
     return Array.from(this.skills.values()).map(skill => ({
       tool_name: skill.metadata.tool_name,
       name: skill.metadata.name,
@@ -417,28 +388,47 @@ class EnhancedSkillManager {
     }));
   }
 
-  async getSystemStatus() { // ‼️ 设为 async
-    await this.initializationPromise;
-    const allSkills = await this.getAllSkills();
+  getSystemStatus() {
     return {
-      initialized: this.skills.size > 0,
+      initialized: this.isInitialized,
       skillCount: this.skills.size,
-      tools: allSkills.map(t => t.tool_name),
+      tools: this.getAllSkills().map(t => t.tool_name),
       timestamp: new Date().toISOString()
     };
   }
 
-  async waitUntilReady() { // ‼️ 设为 async
-    await this.initializationPromise;
-    return this.skills.size > 0;
+  /**
+   * 🎯 新增：等待技能管理器就绪
+   */
+  async waitUntilReady() {
+    // 如果技能已经加载完成，直接返回
+    if (this.isInitialized) {
+      return Promise.resolve(true);
+    }
+    
+    // 否则等待一小段时间再检查
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (this.isInitialized) {
+          clearInterval(checkInterval);
+          resolve(true);
+        }
+      }, 100);
+      
+      // 10秒超时
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        console.warn('[SkillManager] 技能管理器初始化超时');
+        resolve(false);
+      }, 10000);
+    });
   }
 }
 
 // ✨ 步骤 2: 创建一个异步工厂函数来初始化
 async function getBaseSkillManager() {
   try {
-    // ‼️ 注意：这里加载的是同义词，技能加载在 EnhancedSkillManager 内部处理
-    const response = await fetch('./synonyms.json');
+    const response = await fetch('./synonyms.json'); // ✨ 使用 fetch 加载
     if (!response.ok) {
       throw new Error(`Failed to load synonyms.json: ${response.statusText}`);
     }
@@ -461,4 +451,4 @@ skillManagerPromise.then(instance => {
 });
 
 // 导出函数以便外部模块可以获取基础技能管理器
-export { EnhancedSkillManager, getBaseSkillManager, skillManager };
+export { EnhancedSkillManager, getBaseSkillManager };

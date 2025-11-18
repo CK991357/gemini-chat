@@ -153,25 +153,24 @@ finally:
     sys.stderr = old_stderr
 
 # --- Format output ---
-stripped_stdout = stdout_val.strip()
 output_processed = False
+stripped_stdout = stdout_val.strip()
 
-# 1. 智能提取核心内容 (保持不变)
+# 1. 智能提取核心内容
 core_content = stripped_stdout
 if (core_content.startswith('[') and core_content.endswith(']')) or \
    (core_content.startswith('(') and core_content.endswith(')')):
     core_content = core_content[1:-1].strip()
 
-# 2. 优先检查核心内容是否是任何我们期望的、由模型主动生成的标准 JSON 格式
+# 2. 优先检查核心内容是否是任何我们期望的标准 JSON 格式
 if core_content.startswith('{{') and core_content.endswith('}}'):
     try:
         parsed = json.loads(core_content)
-        # ✅ [关键修复] 恢复对所有文件类型的检查！
         if parsed.get('type') in ['image', 'excel', 'word', 'ppt', 'pdf', 'plotly_advanced_dashboard']:
-            print(core_content, end='') # 完全信任并透传模型生成的标准 JSON
+            print(core_content, end='')
             output_processed = True
     except json.JSONDecodeError:
-        pass # 不是合法的 JSON，继续
+        pass
 
 # 3. 如果尚未处理，再检查核心内容是否是裸的 Base64 图片
 if not output_processed:
@@ -184,7 +183,7 @@ if not output_processed:
             is_image = False
     
     if is_image:
-        # 兜底：将裸的 base64 强制封装成标准图像 JSON
+        # 将裸的或被错误包裹的 base64 封装成标准 JSON
         captured_title = title_holder[0] if title_holder[0] else "Generated Chart"
         output_data = {{
             "type": "image",
@@ -194,13 +193,17 @@ if not output_processed:
         print(json.dumps(output_data), end='')
         output_processed = True
 
-# 4. 如果所有“主动输出”的检查都失败了，启动最终的“自动接管”
+# 4. 🔥 [新增] 如果所有“主动输出”的检查都失败了，启动最终的“自动接管”
+#    这个机制专门用来拯救那些调用了 plt.show() 或画了图但什么都没输出的代码
 if not output_processed and plt.get_fignums():
     try:
+        # 获取当前活动的图表（很可能是 plt.show() 想要显示的那个）
         fig = plt.gcf()
+        
+        # --- 复用我们的标准化输出模块 ---
         buf = io.BytesIO()
         fig.savefig(buf, format='png', bbox_inches='tight')
-        plt.close('all')
+        plt.close('all') # 必须关闭，防止资源泄漏
         buf.seek(0)
         image_base64 = base64.b64encode(buf.read()).decode('utf-8')
         
@@ -208,11 +211,13 @@ if not output_processed and plt.get_fignums():
         output_data = {{
             "type": "image",
             "title": captured_title,
-            "image_base64": image_base_64
+            "image_base64": image_base64
         }}
+        # 系统打印标准的 JSON，覆盖掉用户代码可能产生的任何无效 stdout (如空字符串)
         print(json.dumps(output_data), end='')
         output_processed = True
     except Exception as auto_capture_error:
+        # 如果自动接管失败，则在 stderr 中报告问题
         print(f"\\n[SYSTEM_ERROR] Failed to auto-capture Matplotlib figure: {{auto_capture_error}}", file=sys.stderr, end='')
 
 # 5. 如果以上所有方法都失败了，则打印原始的、未经修改的 stdout
