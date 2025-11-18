@@ -434,5 +434,31 @@ class EnhancedSkillManager {
   }
 }
 
-// 导出类
-export { EnhancedSkillManager };
+// ✨ 步骤 2: 创建一个异步工厂函数来初始化
+async function getBaseSkillManager() {
+  try {
+    // ‼️ 注意：这里加载的是同义词，技能加载在 EnhancedSkillManager 内部处理
+    const response = await fetch('./synonyms.json');
+    if (!response.ok) {
+      throw new Error(`Failed to load synonyms.json: ${response.statusText}`);
+    }
+    const synonymsData = await response.json();
+    return new EnhancedSkillManager(synonymsData);
+  } catch (error) {
+    console.error("Error initializing EnhancedSkillManager:", error);
+    // 在加载失败时，返回一个没有同义词功能的实例，确保程序不崩溃
+    return new EnhancedSkillManager({});
+  }
+}
+
+// ✨ 步骤 3: 导出异步创建的单例实例
+export const skillManagerPromise = getBaseSkillManager();
+export let skillManager; // 导出一个变量，稍后填充
+
+// ✨ 步骤 4: 异步填充 skillManager 实例
+skillManagerPromise.then(instance => {
+  skillManager = instance;
+});
+
+// 导出函数以便外部模块可以获取基础技能管理器
+export { EnhancedSkillManager, getBaseSkillManager, skillManager };
