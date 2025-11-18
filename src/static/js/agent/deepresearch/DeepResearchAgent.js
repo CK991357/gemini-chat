@@ -255,20 +255,21 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                     const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
                     
                     if (lastStep && typeof lastStep.observation === 'string') {
-                        // 为了安全地将字符串注入到 Python 代码中，我们使用 JSON 序列化，它会处理好所有的转义字符
-                       
-                        // 使用 JSON.stringify 来安全地转义所有特殊字符
+                        // 1. 使用 JSON.stringify 来安全地转义所有特殊字符（如引号、换行符、反斜杠）。
+                        //    这是解决`SyntaxError: unterminated string literal`的根本方法。
                         const safelyEscapedData = JSON.stringify(lastStep.observation);
 
-                        // 然后，在剥离外层引号后，将结果包裹在Python的三引号中
+                        // 2. 剥离 JSON.stringify 添加在最外层的双引号，
+                        //    然后将这个已完全转义的字符串放入 Python 的三引号多行字符串中。
                         const pythonStringLiteral = `"""${safelyEscapedData.slice(1, -1)}"""`;
 
-                        parameters.code = parameters.code.replace('"{{LAST_OBSERVATION}}"', pythonStringLiteral);
+                        // 3. 使用正则表达式全局替换占位符，确保代码中若有多个占位符也能被处理。
+                        parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, pythonStringLiteral);
                         
                         console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
                     } else {
                         console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。将占位符替换为空字符串。');
-                        parameters.code = parameters.code.replace('"{{LAST_OBSERVATION}}"', '""'); 
+                        parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, '""');
                     }
                 }
 
@@ -288,7 +289,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                         return { rawObservation, toolSources: [], toolSuccess };
                     }
                 }
-                
+
                 const toolResult = await tool.invoke(parameters, {
                     mode: 'deep_research',
                     researchMode: detectedMode
