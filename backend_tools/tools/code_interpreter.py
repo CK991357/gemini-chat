@@ -156,16 +156,20 @@ finally:
 stripped_stdout = stdout_val.strip()
 output_processed = False
 
-# 1. 优先尝试解析为JSON对象 - 关键修复：使用单花括号
+# 1. 优先检查输出是否已经是我们期望的JSON格式
 if stripped_stdout.startswith('{') and stripped_stdout.endswith('}'):
     try:
-        json.loads(stripped_stdout)
-        print(stripped_stdout, end='')
-        output_processed = True
+        # 验证它是否是合法的JSON
+        parsed = json.loads(stripped_stdout)
+        # 如果它已经是图片或文件JSON，直接打印并标记为已处理
+        if parsed.get('type') in ['image', 'excel', 'word', 'ppt', 'pdf', 'plotly_advanced_dashboard']:
+            print(stripped_stdout, end='')
+            output_processed = True
     except json.JSONDecodeError:
+        # 如果解析失败，说明它不是JSON，继续往下走
         pass
 
-# 2. 如果不是JSON，回退检查是否为纯Base64图片
+# 2. 如果尚未处理，再检查它是否是裸的Base64图片
 if not output_processed:
     is_image = False
     if stripped_stdout.startswith(('iVBORw0KGgo', '/9j/')):
@@ -176,6 +180,7 @@ if not output_processed:
             is_image = False
 
     if is_image:
+        # 🔥 核心保障：将裸的 base64 封装成标准 JSON
         captured_title = title_holder[0] if title_holder[0] else "Generated Chart"
         output_data = {{
             "type": "image",

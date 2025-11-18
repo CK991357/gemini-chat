@@ -12,6 +12,11 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // 🎯 图像生成追踪
+        this.generatedImages = new Map(); // 用于存储 base64 数据
+        this.imageCounter = 0;
+        this.runId = null; // 用于隔离不同研究任务的图片
+        
         // ✅ 接收来自 Orchestrator 的 skillManager 实例
         this.skillManager = config.skillManager;
         
@@ -57,6 +62,28 @@ export class DeepResearchAgent {
         this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
         
         console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
+    }
+
+    // 🎯 新增：图像生成结果处理
+    _handleGeneratedImage(imageData) {
+        this.imageCounter++;
+        const imageId = `agent_image_${this.imageCounter}`;
+        
+        // 1. 存储图像数据
+        this.generatedImages.set(imageId, imageData);
+
+        // 2. 触发一个专门的事件，让UI可以立即显示图片
+        this.callbackManager.invokeEvent('on_image_generated', {
+            run_id: this.runId, // 假设 runId 在 conductResearch 开始时设置
+            data: {
+                imageId: imageId,
+                title: imageData.title,
+                base64: imageData.image_base64
+            }
+        });
+
+        // 3. 返回一个给Agent看的简洁确认信息
+        return `[✅ 图像生成成功] 标题: "${imageData.title}". 在最终报告中，你可以使用占位符 ![${imageData.title}](placeholder:${imageId}) 来引用这张图片。`;
     }
 
     // 🎯 新增：代码预检函数
@@ -296,7 +323,25 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                 });
                 
                 rawObservation = toolResult.output || JSON.stringify(toolResult);
+                
+                // 🔥 核心修改：图像拦截逻辑 (针对 python_sandbox 的 JSON 输出)
+                if (toolName === 'python_sandbox' && toolResult.success) {
+                    try {
+                        // toolResult.output 是后端返回的 stdout 字符串
+                        const outputData = JSON.parse(rawObservation);
+                        if (outputData.type === 'image' && outputData.image_base64) {
+                            console.log('[DeepResearchAgent] 🐍 检测到Python沙盒生成的图像，正在处理...');
+                            // 调用新方法，并将返回的简洁信息作为 Agent 的观察结果
+                            rawObservation = this._handleGeneratedImage(outputData);
+                            // toolSuccess 保持不变 (toolResult.success 已经是 true)
+                        }
+                    } catch (e) {
+                        // 不是JSON或不是图像格式，忽略，保持 rawObservation 不变
+                    }
+                }
+
                 // ✅✅✅ 核心修复：从工具返回结果中获取真实的成功状态 ✅✅✅
+                // 注意：如果 rawObservation 被 _handleGeneratedImage 替换，toolSuccess 仍基于 toolResult.success
                 toolSuccess = toolResult.success !== false; // 默认true，除非明确为false
 
                 // 🎯 新增：Python执行失败自动诊断
@@ -367,6 +412,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         // ✨✨✨ 核心修复：解构出 displayTopic 和 enrichedTopic (即原始topic) ✨✨✨
         const { topic: enrichedTopic, displayTopic: cleanTopic, availableTools, researchMode, currentDate } = researchRequest;
         const runId = this.callbackManager.generateRunId();
+        this.runId = runId; // 关键：为当前研究会话设置唯一ID
         
         // 原始 topic (enrichedTopic) 用于 Agent 内部逻辑
         const internalTopic = enrichedTopic.replace(/！\s*$/, '').trim();

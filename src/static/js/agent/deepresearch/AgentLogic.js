@@ -590,7 +590,31 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 - 输出符合任务要求的结果
 - 保持了代码的可读性和逻辑清晰性
 `;
-        
+
+        const pythonImageDiscipline = `
+## 🖼️ Python 代码生成纪律 (可视化特别版)
+
+当你使用 Matplotlib 等库生成图表时，你的代码**必须**将最终的图表转换为 Base64 字符串并 \`print\` 出来。系统会自动捕获这个输出。
+
+**成功标志**: 在你的工具调用结束后，你会收到一条类似 \`[✅ 图像生成成功] ...\` 的观察结果。
+
+**报告撰写指令**:
+当撰写最终报告时，你**必须**使用观察结果中提供的**占位符语法**来引用你生成的图表。
+
+**✅ 正确示例**:
+思考: 我已经生成了销售对比图，现在要在报告中展示它。
+最终答案:
+...
+### 第三章：销售数据可视化分析
+
+根据我们的数据显示，2025年第一季度的销售额显著增长，如下图所示：
+
+![2025年Q1销售额对比图](placeholder:generated_image_1)
+
+这张图表清晰地表明了...
+...
+`;
+
         const pythonGenerationDiscipline = `
 ## 💻 Python代码生成纪律 (强制遵循)
 
@@ -946,6 +970,7 @@ ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
     - 如果信息仍不足或需要交叉验证，可以再次调用 \`tavily_search\` 寻找补充观点。
 
 ${pythonDebuggingGuide}
+${pythonImageDiscipline} // 🎯 新增：图像生成和引用纪律
 ${pythonGenerationDiscipline}
 ${pythonStateInjectionGuide}
 ${errorCorrectionProtocol}  // 🎯 修复：使用包含参数检查的错误修正协议
