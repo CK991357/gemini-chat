@@ -637,39 +637,66 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
-            // 🔥🔥🔥【核心简化逻辑开始】🔥🔥🔥
+            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 🔥🔥🔥
             const toolRawResult = await proxyResponse.json();
             console.log(`[${timestamp()}] [MCP] Received unified result from backend:`, toolRawResult);
 
             let toolResultContent;
 
-            // 1. 统一处理 Python 沙盒的返回
+            // 1. 只处理 Python 沙盒的返回
             if (toolCode.tool_name === 'python_sandbox') {
                 const stdout = toolRawResult.stdout || '';
                 const stderr = toolRawResult.stderr || '';
 
                 if (stderr.trim()) {
-                    // 如果有错误，直接将整个后端返回作为输出，前端适配器会处理它
+                    // 如果有错误，将整个后端返回作为输出，让前端适配器或 Agent 去分析
                     toolResultContent = { output: toolRawResult };
                     console.warn(`[MCP] Python Sandbox executed with error.`);
                 } else {
-                    // 如果没有错误，尝试解析 stdout
+                    // 如果没有错误，尝试将 stdout 解析为“智能包裹” (JSON)
                     try {
                         const outputData = JSON.parse(stdout.trim());
-                        // 如果 stdout 是一个 JSON (图片或文件)，直接处理
+                        
+                        // ================================================================
+                        // 🚀 智能调度中心：根据 'type' 字段决定如何处理
+                        // ================================================================
+
                         if (outputData.type === 'image' && outputData.image_base64) {
-                            displayImageResult(outputData.image_base64, outputData.title || 'Generated Image', `image_${Date.now()}.png`);
+                            // --- 图片处理分支 ---
+                            console.log(`[MCP] Dispatching to Image Renderer for title: "${outputData.title}"`);
+                            
+                            // 1. 构造浏览器可以识别的、完整的 Data URL
+                            const dataUrl = `data:image/png;base64,${outputData.image_base64}`;
+                            
+                            // 2. 调用专门的图片显示函数
+                            displayImageResult(dataUrl, outputData.title || 'Generated Image', `image_${Date.now()}.png`);
+                            
+                            // 3. 返回给模型的简洁确认信息
                             toolResultContent = { output: `Image "${outputData.title || 'image'}" generated and displayed.` };
+
                         } else if (['excel', 'word', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
+                            // --- 文档/文件处理分支 (您已有的、优秀的代码) ---
+                            console.log(`[MCP] Dispatching to File Downloader for type: "${outputData.type}"`);
+                            
+                            // 1. 调用通用的文件下载函数
                             this._createFileDownload(outputData.data_base64, outputData.title || `download.${outputData.type}`, outputData.type, ui);
+                            
+                            // 2. 移除当前AI消息框，因为文件下载链接在一个独立的消息框中
                             this.state.currentAIMessageContentDiv = null;
+
+                            // 3. 返回给模型的简洁确认信息
                             toolResultContent = { output: `${outputData.type.toUpperCase()} file generated and ready for download.` };
+
                         } else {
-                            // 如果是其他JSON，则字符串化
+                            // --- 其他 JSON 输出分支 ---
+                            // 如果是 JSON 但不是我们约定的文件类型，则将其字符串化后输出
+                            console.log('[MCP] Received a generic JSON object, outputting as string.');
                             toolResultContent = { output: stdout };
                         }
                     } catch (e) {
-                        // 如果 stdout 不是 JSON，则直接作为纯文本输出
+                        // --- 纯文本输出分支 (catch 块) ---
+                        // 如果 stdout 无法被解析为 JSON，则直接作为纯文本输出
+                        console.log('[MCP] stdout is not JSON, outputting as plain text.');
                         toolResultContent = { output: stdout };
                     }
                 }
@@ -677,7 +704,7 @@ export class ChatApiHandler {
                 // 2. 其他所有工具的返回保持不变
                 toolResultContent = { output: toolRawResult };
             }
-            // 🔥🔥🔥【核心简化逻辑结束】🔥🔥🔥
+            // 🔥🔥🔥 [最终方案] 逻辑结束 🔥🔥🔥
 
             // --- (保留 mcp_tool_catalog 的特殊处理逻辑) ---
             if (toolCode.tool_name === 'mcp_tool_catalog' && toolRawResult && toolRawResult.data && Array.isArray(toolRawResult.data)) {
