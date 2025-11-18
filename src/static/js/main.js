@@ -726,65 +726,8 @@ window.addEventListener('research:image_generated', (e) => {
 });
 
 
-// 🚀 [最终方案] 修改 'research:end' 事件监听器，实现报告内图片渲染
-// 假设您已有一个 'research:end' 监听器，如果没有，请添加它。
-window.addEventListener('research:end', (e) => {
-    const result = e.detail.data;
-    let finalReportMarkdown = result.report;
-
-    // 🔥 占位符替换的“魔法”在这里发生
-    if (window.orchestrator && window.orchestrator.deepResearchAgent && result.intermediateSteps) {
-        
-        // 从 agent 实例中获取本次研究生成的所有图片
-        const imageMap = window.orchestrator.deepResearchAgent.generatedImages;
-        
-        if (imageMap && imageMap.size > 0) {
-            console.log(`[Main.js] 检测到 ${imageMap.size} 张由 Agent 生成的图片，开始替换报告中的占位符...`);
-            
-            // 使用正则表达式查找所有占位符 ![alt text](placeholder:image_id)
-            finalReportMarkdown = finalReportMarkdown.replace(
-                /!\[(.*?)\]\(placeholder:(.*?)\)/g,
-                (match, altText, imageId) => {
-                    const imageData = imageMap.get(imageId.trim());
-                    if (imageData) {
-                        console.log(`[Main.js] 找到并替换占位符 for imageId: ${imageId}`);
-                        // 替换为标准的 Markdown Base64 图像语法
-                        return `![${altText}](data:image/png;base64,${imageData.image_base64})`;
-                    }
-                    // 如果由于某种原因找不到图片，返回一个错误提示
-                    console.warn(`[Main.js] 未能找到 imageId: ${imageId} 对应的图片数据。`);
-                    return `*[图像 "${altText}" 加载失败]*`;
-                }
-            );
-        }
-    }
-    
-    // 现在，finalReportMarkdown 已经包含了内联的 base64 图片
-    // 您可以使用这个处理过的 markdown 文本进行最终的渲染
-    
-    // ... 您的现有 'research:end' 逻辑，例如隐藏思考动画...
-    if (window.agentThinkingDisplay) {
-        window.agentThinkingDisplay.hide();
-    }
-    
-    // 假设您有一个函数来显示最终报告
-    // displayFinalReport(finalReportMarkdown);
-    // 或者，如果您直接将 result.report 赋值给某个元素的 innerHTML，现在应该用 finalReportMarkdown
-    console.log("最终报告（含图片）已准备好渲染:", finalReportMarkdown.substring(0, 300) + '...');
-
-    // 例如，如果您的 'research:end' 事件在 AgentThinkingDisplay.js 中处理，
-    // 您需要将替换后的 markdown 传回或在那里执行替换。
-    // 在这个场景下，我们假设 main.js 最终负责渲染。
-    const aiMessage = chatUI.createAIMessageElement();
-    aiMessage.rawMarkdownBuffer = finalReportMarkdown;
-    aiMessage.markdownContainer.innerHTML = marked.parse(finalReportMarkdown);
-    if (typeof MathJax !== 'undefined' && MathJax.startup) {
-        MathJax.startup.promise.then(() => {
-            MathJax.typeset([aiMessage.markdownContainer]);
-        });
-    }
-    chatUI.scrollToBottom();
-});
+// ‼️ 重要：不要在这里添加 research:end 的监听器来渲染报告。相关功能已经移到Orchestrator.js。
+// 让 main.js 中已有的、处理 handleEnhancedHttpMessage 返回结果的逻辑来负责渲染。
 
 // State variables
 let isRecording = false;

@@ -146,6 +146,24 @@ ${cleanTopic}
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
 
+            // 🔥 [最终方案] 占位符替换的“魔法”在这里发生
+            if (researchResult.report && this.deepResearchAgent.generatedImages.size > 0) {
+                const imageMap = this.deepResearchAgent.generatedImages;
+                console.log(`[Orchestrator] 检测到 ${imageMap.size} 张图片，开始替换报告占位符...`);
+
+                researchResult.report = researchResult.report.replace(
+                    /!\[(.*?)\]\(placeholder:(.*?)\)/g,
+                    (match, altText, imageId) => {
+                        const imageData = imageMap.get(imageId.trim());
+                        if (imageData) {
+                            console.log(`[Orchestrator] 替换占位符: ${imageId}`);
+                            return `![${altText}](data:image/png;base64,${imageData.image_base64})`;
+                        }
+                        return `*[图像 "${altText}" 加载失败]*`;
+                    }
+                );
+            }
+
             console.log('[Orchestrator] DeepResearch 完成:', {
                 success: researchResult.success,
                 iterations: researchResult.iterations,
@@ -154,16 +172,16 @@ ${cleanTopic}
                 researchMode: researchResult.research_mode
             });
 
+            // 返回已经处理过的 researchResult
             return {
                 enhanced: true,
                 type: 'research_result',
-                content: researchResult.report,
+                content: researchResult.report, // <-- 这里已经是包含 base64 图片的 markdown 了
                 success: researchResult.success,
                 iterations: researchResult.iterations,
                 intermediateSteps: researchResult.intermediateSteps,
                 sources: researchResult.sources,
                 researchMode: researchResult.research_mode,
-                // 从Agent的结果中获取质量报告，并将其传递给前端
                 temporal_quality: researchResult.temporal_quality
             };
         } catch (error) {
