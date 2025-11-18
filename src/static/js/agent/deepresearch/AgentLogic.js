@@ -591,6 +591,20 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 - 保持了代码的可读性和逻辑清晰性
 `;
 
+        const pythonDataExtractionDiscipline = `
+## 🛠️ Python 代码生成纪律 (数据提取与处理)
+
+**核心原则**: 你不能总是期望工具直接返回完美格式的数据。你必须认识到 \`python_sandbox\` 是一个强大的 **数据提取和转换工具**。
+
+**工作流：从非结构化文本中创造结构化数据**
+1.  **获取原文**: 使用 \`crawl4ai\` 获取包含潜在数据（即使是混在段落里）的完整网页文本。
+2.  **数据定位**: 在 \`python_sandbox\` 中，使用字符串方法（如 \`.find()\`, \`.split()\`) 或正则表达式（\`import re\`）来定位和抽取出包含数字和标签的文本块。
+3.  **数据清洗**: 将提取出的文本块清洗成一种结构化格式，例如 Pandas DataFrame 或字典列表。**即使数据不完整或格式不一，也要尽力提取。**
+4.  **执行分析/可视化**: 基于你刚刚在代码中创建的这个结构化数据，进行后续的计算或绘图。
+
+**🚫 绝对禁止**: 因为 \`crawl4ai\` 的摘要中没有看到完美的表格，就放弃处理，然后反复调用 \`tavily_search\`。**你必须假设完整内容里有数据，并主动去提取它。**
+`;
+
         const pythonImageDiscipline = `
 ## 🖼️ Python 代码生成纪律 (可视化特别版)
 
@@ -969,7 +983,13 @@ ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
     - 对抓取到的文本进行数据分析、提取或处理。备选工具： \`python_sandbox\` 。
     - 如果信息仍不足或需要交叉验证，可以再次调用 \`tavily_search\` 寻找补充观点。
 
+ ### 🚫 绝对禁止 (深度研究模式下):
+- **连续两次**调用 \`tavily_search\`，除非第一次搜索完全没有返回任何有价值的URL。
+- 在 \`tavily_search\` 之后，如果存在有价值的URL，却选择执行其他操作。**必须优先钻取**。
+- 在 \`crawl4ai\` 抓取到长文本后，因为摘要里没看到需要的表格或图片就再次调用 \`tavily_search\`。**如果所需要的数据已经在资料中有明确表述，你可以记录下来并优先尝试用 \`python_sandbox\` 提取或绘制数据图表**。
+
 ${pythonDebuggingGuide}
+${pythonDataExtractionDiscipline} // 🎯 新增：数据提取纪律
 ${pythonImageDiscipline} // 🎯 新增：图像生成和引用纪律
 ${pythonGenerationDiscipline}
 ${pythonStateInjectionGuide}
