@@ -1,4 +1,4 @@
-# code_interpreter.py - 最终修复版
+# code_interpreter.py - 最终优化确认版 v2.2
 
 import docker
 import asyncio
@@ -76,28 +76,19 @@ def setup_matplotlib_config():
     try:
         import matplotlib.pyplot as plt
         import matplotlib.font_manager as fm
-
         # 字体优先级列表
-        font_preferences = [
-            'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'DejaVu Sans', 
-            'Arial Unicode MS', 'SimHei'
-        ]
-        
-        # 查找系统中可用的字体
+        font_preferences = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'DejaVu Sans', 'Arial Unicode MS', 'SimHei']
         available_fonts = set(f.name for f in fm.fontManager.ttflist)
-        
-        # 设置找到的第一个偏好字体
+          # 设置找到的第一个偏好字体
         for font_name in font_preferences:
             if font_name in available_fonts:
                 plt.rcParams['font.family'] = font_name
                 break
-        
         # 金融图表常用配置
         plt.rcParams['axes.unicode_minus'] = False
         plt.rcParams['font.size'] = 10
         plt.rcParams['figure.titlesize'] = 12
         plt.rcParams['axes.labelsize'] = 10
-        
         # --- Capture matplotlib title ---
         title_holder = [None]
         original_title_func = plt.title
@@ -108,11 +99,10 @@ def setup_matplotlib_config():
         return title_holder
 
     except ImportError:
-        return [None] # Matplotlib not available
+        return [None]
     except Exception as e:
         print(f"Font setup failed inside sandbox: {{e}}", file=sys.stderr)
         return [None]
-
 # --- Redirect stdout/stderr ---
 old_stdout = sys.stdout
 old_stderr = sys.stderr
@@ -156,26 +146,37 @@ finally:
 output_processed = False
 stripped_stdout = stdout_val.strip()
 
-# 1. 智能提取核心内容
-core_content = stripped_stdout
-if (core_content.startswith('[') and core_content.endswith(']')) or \
-   (core_content.startswith('(') and core_content.endswith(')')):
-    core_content = core_content[1:-1].strip()
+# 智能提取核心内容，兼容模型可能输出的额外包裹
+def extract_core_content(s):
+    # 移除markdown代码块
+    if s.startswith("```") and s.endswith("```"):
+        lines = s.split('\\n')
+        if len(lines) > 2:
+            s = '\\n'.join(lines[1:-1])
 
-# 2. 优先检查核心内容是否是任何我们期望的标准 JSON 格式
+    # 移除常见的包裹，例如 '[...]' 或 '(...)'
+    if (s.startswith('[') and s.endswith(']')) or \\
+       (s.startswith('(') and s.endswith(')')):
+        s = s[1:-1].strip()
+    return s
+
+core_content = extract_core_content(stripped_stdout)
+
+# 优先检查核心内容是否是任何我们期望的标准 JSON 格式
 if core_content.startswith('{{') and core_content.endswith('}}'):
     try:
         parsed = json.loads(core_content)
-        if parsed.get('type') in ['image', 'excel', 'word', 'ppt', 'pdf', 'plotly_advanced_dashboard']:
+        # 扩展支持的类型
+        if parsed.get('type') in ['image', 'excel', 'word', 'ppt', 'pdf', 'analysis_report', 'ml_report', 'statistical_analysis', 'scientific_computing', 'scipy_optimization', 'scipy_integration', 'scipy_signal_processing', 'scipy_linear_algebra', 'symbolic_math', 'equation_solutions', 'calculus_results', 'mathematical_proofs', 'linear_algebra', 'numerical_approximations', 'complex_math_solution']:
             print(core_content, end='')
             output_processed = True
     except json.JSONDecodeError:
         pass
 
-# 3. 如果尚未处理，再检查核心内容是否是裸的 Base64 图片
+# 如果尚未处理，再检查核心内容是否是裸的 Base64 图片
 if not output_processed:
     is_image = False
-    if core_content.startswith(('iVBORw0KGgo', '/9j/')):
+    if len(core_content) > 100 and (core_content.startswith(('iVBORw0KGgo', '/9j/'))):
         try:
             base64.b64decode(core_content, validate=True)
             is_image = True
@@ -183,56 +184,40 @@ if not output_processed:
             is_image = False
     
     if is_image:
-        # 将裸的或被错误包裹的 base64 封装成标准 JSON
         captured_title = title_holder[0] if title_holder[0] else "Generated Chart"
-        output_data = {{
-            "type": "image",
-            "title": captured_title,
-            "image_base64": core_content
-        }}
+        output_data = {{"type": "image", "title": captured_title, "image_base64": core_content}}
         print(json.dumps(output_data), end='')
         output_processed = True
 
-# 4. 🔥 [新增] 如果所有“主动输出”的检查都失败了，启动最终的“自动接管”
-#    这个机制专门用来拯救那些调用了 plt.show() 或画了图但什么都没输出的代码
-if not output_processed and plt.get_fignums():
-    try:
-        # 获取当前活动的图表（很可能是 plt.show() 想要显示的那个）
-        fig = plt.gcf()
-        
-        # --- 复用我们的标准化输出模块 ---
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', bbox_inches='tight')
-        plt.close('all') # 必须关闭，防止资源泄漏
-        buf.seek(0)
-        image_base64 = base64.b64encode(buf.read()).decode('utf-8')
-        
-        captured_title = title_holder[0] if title_holder[0] else "Auto-Captured Chart"
-        output_data = {{
-            "type": "image",
-            "title": captured_title,
-            "image_base64": image_base64
-        }}
-        # 系统打印标准的 JSON，覆盖掉用户代码可能产生的任何无效 stdout (如空字符串)
-        print(json.dumps(output_data), end='')
-        output_processed = True
-    except Exception as auto_capture_error:
-        # 如果自动接管失败，则在 stderr 中报告问题
-        print(f"\\n[SYSTEM_ERROR] Failed to auto-capture Matplotlib figure: {{auto_capture_error}}", file=sys.stderr, end='')
+# 🚀🚀🚀 --- 核心修复：仅当 matplotlib 已导入时才尝试自动捕获 --- 🚀🚀🚀
+if not output_processed and 'matplotlib.pyplot' in sys.modules:
+    plt = sys.modules['matplotlib.pyplot']
+    if plt.get_fignums():
+        try:
+            fig = plt.gcf()
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', bbox_inches='tight')
+            plt.close('all')
+            buf.seek(0)
+            image_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            
+            captured_title = title_holder[0] if title_holder[0] else "Auto-Captured Chart"
+            output_data = {{"type": "image", "title": captured_title, "image_base64": image_base64}}
+            print(json.dumps(output_data), end='')
+            output_processed = True
+        except Exception as auto_capture_error:
+            print(f"\\n[SYSTEM_ERROR] Failed to auto-capture Matplotlib figure: {{auto_capture_error}}", file=sys.stderr, end='')
+# 🚀🚀🚀 --- 核心修复结束 --- 🚀🚀🚀
 
-# 5. 如果以上所有方法都失败了，则打印原始的、未经修改的 stdout
 if not output_processed:
     print(stdout_val, end='')
 
-# 始终打印标准错误流的内容
 print(stderr_val, file=sys.stderr, end='')
 """
-        container = None # 初始化 container 变量
+        container = None
         try:
             logger.info(f"Running code in sandbox. Code length: {len(parameters.code)}")
             
-            # 🔥🔥🔥【最终修复的核心逻辑】🔥🔥🔥
-            # 步骤 1: 创建容器但不立即运行，以便我们能获取流
             container = self.docker_client.containers.create(
                 image=image_name,
                 command=["python", "-c", runner_script],
@@ -243,58 +228,43 @@ print(stderr_val, file=sys.stderr, end='')
                 cpu_quota=50_000,
                 read_only=True,
                 tmpfs={'/tmp': 'size=100M,mode=1777'},
-                detach=True # 👈 关键：以分离模式启动
+                detach=True
             )
 
-            # 步骤 2: 启动容器
             container.start()
-            
-            # 步骤 3: 等待容器执行完成，并获取退出码
-            # 设置一个合理的超时，例如90秒
             result = container.wait(timeout=90)
             exit_code = result.get('StatusCode', -1)
 
-            # 步骤 4: 无论成功与否，都分别获取 stdout 和 stderr 的日志
             stdout = container.logs(stdout=True, stderr=False).decode('utf-8', errors='ignore')
             stderr = container.logs(stdout=False, stderr=True).decode('utf-8', errors='ignore')
             
             logger.info(f"Sandbox execution finished. Exit code: {exit_code}")
-            if stdout:
+            if stdout: 
                 logger.info(f"Sandbox stdout (first 200 chars): {stdout[:200]}")
-            if stderr:
+            if stderr: 
                 logger.warning(f"Sandbox stderr: {stderr}")
 
-            # 步骤 5: 统一返回结构
             return {
-                "success": True, # 'success' 表示工具本身成功运行，而不是代码没错误
-                "data": {
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "exit_code": exit_code
-                }
+                "success": True,
+                "data": {"stdout": stdout, "stderr": stderr, "exit_code": exit_code}
             }
             
         except ContainerError as e:
-            # 这种方式下，ContainerError 理论上不应再被触发，但保留以防万一
             logger.error(f"Sandbox ContainerError: {e}")
             stdout = e.stdout.decode('utf-8', errors='ignore') if e.stdout else ""
             stderr = e.stderr.decode('utf-8', errors='ignore') if e.stderr else ""
-            return {
-                "success": True,
-                "data": {"stdout": stdout, "stderr": stderr, "exit_code": e.exit_status}
-            }
+            return {"success": True, "data": {"stdout": stdout, "stderr": stderr, "exit_code": e.exit_status}}
         except Exception as e:
             logger.error(f"An unexpected error occurred during sandbox execution: {e}")
             return {"success": False, "error": f"Sandbox execution framework error: {e}"}
         finally:
-            # 步骤 6: 确保容器总是被清理
             if container:
                 try:
                     container.remove(force=True)
                     logger.info(f"Sandbox container {container.short_id} removed.")
-                except NotFound:
-                    pass # 容器可能已经被自动移除
-                except Exception as e:
+                except NotFound: 
+                    pass
+                except Exception as e: 
                     logger.error(f"Failed to remove container {container.short_id}: {e}")
 
 # --- FastAPI Application ---
@@ -343,7 +313,7 @@ async def root():
     """Root endpoint with basic info"""
     return {
         "message": "Python Sandbox API",
-        "version": "1.0",
+        "version": "2.2",
         "endpoints": {
             "execute_code": "POST /api/v1/python_sandbox",
             "health_check": "GET /health"
