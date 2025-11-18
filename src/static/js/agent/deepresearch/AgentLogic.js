@@ -668,6 +668,32 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 - 假设数据会自动出现在某个未定义的变量中（如 \`web_content\`)。
 `;
 
+const crawlTimeoutProtocol = `
+## 🕷️ crawl4ai 超时恢复协议 (Timeout Recovery Protocol)
+
+**情景**: 当你上一步调用 \`crawl4ai\` 后，观察结果中包含“超时”、“timeout”或“500”服务器错误。
+
+**你必须严格遵循以下多层次恢复策略，而不是立即重试相同的 URL：**
+
+### **第一步：诊断与切换 (Switch Source)**
+1.  **诊断**: 在“思考”中明确承认：“上一步 \`crawl4ai\` 调用失败，原因是超时或服务器错误，这很可能是因为目标网站存在反爬虫机制或服务器不稳定。”
+2.  **切换源**: **立即回顾**你历史记录中**上一次成功**的 \`tavily_search\` 调用的结果列表。
+3.  **行动**: 从该列表中选择一个**不同的、看起来同样权威的 URL** (例如，选择另一个官方网站、知名技术博客或权威百科)，然后使用 \`crawl4ai\` 对这个**新 URL** 进行抓取。
+
+### **第二步：重新探索 (Re-Search)**
+- **触发条件**: 如果上一次 \`tavily_search\` 的结果中没有其他可用的高质量 URL，或者对新 URL 的 \`crawl4ai\` 调用**再次失败**。
+- **诊断**: 在“思考”中说明：“尝试抓取备用 URL 失败，我需要寻找全新的数据源。”
+- **行动**: 执行一次**全新的 \`tavily_search\` 调用**。在查询中加入新的关键词，如“官方数据”、“研究报告”、“替代来源”，以发现不同类型的网站。
+
+### **第三步：最终判定 (Final Judgment)**
+- **触发条件**: 如果在**全新的数据源**上尝试 \`crawl4ai\` **仍然失败**。
+- **诊断**: 在“思考”中做出最终判断：“经过多次对不同来源的尝试，\`crawl4ai\` 工具目前可能暂时无法访问这些类型的网站或自身存在不稳定性。”
+- **行动**: **放弃**使用 \`crawl4ai\` 完成当前子问题。在思考中总结你**已经**从 \`tavily_search\` 的摘要中获取了哪些信息，然后**继续推进到研究计划的下一个步骤**。
+
+**🚫 绝对禁止**:
+- **在同一个失败的 URL 上连续重试 \`crawl4ai\`超过一次。**
+- 因为 \`crawl4ai\` 失败就卡住不动或提前终止整个研究。你必须灵活地调整策略，利用已有信息继续前进。
+`;
         const errorCorrectionProtocol = `
 ## 🔴 强制错误诊断与修正协议
 
@@ -998,6 +1024,7 @@ ${pythonImageDiscipline} // 🎯 新增：图像生成和引用纪律
 ${pythonGenerationDiscipline}
 ${pythonStateInjectionGuide}
 ${errorCorrectionProtocol}  // 🎯 修复：使用包含参数检查的错误修正协议
+${crawlTimeoutProtocol} // 🎯 新增：crawl4ai 超时恢复协议
 ${formatComplianceProtocol} // 🎯 新增：格式遵从与自我纠正协议
 ${config.specialInstructions}
 
