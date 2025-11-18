@@ -1,11 +1,31 @@
 // src/tool-spec-system/skill-manager.js
-import { getSkillsRegistry } from './generated-skills.js';
+// ‼️ [最终方案] 不再静态导入
+// import { getSkillsRegistry } from './generated-skills.js';
 
 class EnhancedSkillManager {
   constructor(synonyms) {
-    this.skills = getSkillsRegistry();
+    this.skills = new Map(); // 初始化为空
     this.synonymMap = synonyms;
-    console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
+    this.isInitialized = false;
+    // 注意：这里不再有 this.initializationPromise
+  }
+
+  /**
+   * 🚀 异步初始化方法，只在需要时由 getBaseSkillManager 调用
+   */
+  async initialize() {
+    if (this.isInitialized) return; // 防止重复初始化
+
+    try {
+        const cacheBuster = new Date().getTime();
+        const { getSkillsRegistry } = await import(`./generated-skills.js?v=${cacheBuster}`);
+        this.skills = getSkillsRegistry();
+        this.isInitialized = true;
+        console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
+    } catch (error) {
+        console.error("❌ 动态加载技能文件失败:", error);
+        this.skills = new Map();
+    }
   }
 
   /**
@@ -376,7 +396,7 @@ class EnhancedSkillManager {
 
   // 保持向后兼容的方法
   get isInitialized() {
-    return this.skills.size > 0;
+    return this.isInitialized; // 直接返回属性
   }
 
   getAllSkills() {
@@ -396,59 +416,56 @@ class EnhancedSkillManager {
       timestamp: new Date().toISOString()
     };
   }
-
-  /**
-   * 🎯 新增：等待技能管理器就绪
-   */
-  async waitUntilReady() {
-    // 如果技能已经加载完成，直接返回
-    if (this.isInitialized) {
-      return Promise.resolve(true);
-    }
-    
-    // 否则等待一小段时间再检查
-    return new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
-        if (this.isInitialized) {
-          clearInterval(checkInterval);
-          resolve(true);
-        }
-      }, 100);
-      
-      // 10秒超时
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        console.warn('[SkillManager] 技能管理器初始化超时');
-        resolve(false);
-      }, 10000);
-    });
-  }
 }
 
-// ✨ 步骤 2: 创建一个异步工厂函数来初始化
+// ======================================================================
+// --- 🔥 [最终方案] 构建友好的异步单例模式 ---
+// ======================================================================
+
+let skillManagerInstance = null;
+let skillManagerPromise = null;
+
 async function getBaseSkillManager() {
-  try {
-    const response = await fetch('./synonyms.json'); // ✨ 使用 fetch 加载
-    if (!response.ok) {
-      throw new Error(`Failed to load synonyms.json: ${response.statusText}`);
-    }
-    const synonymsData = await response.json();
-    return new EnhancedSkillManager(synonymsData);
-  } catch (error) {
-    console.error("Error initializing EnhancedSkillManager:", error);
-    // 在加载失败时，返回一个没有同义词功能的实例，确保程序不崩溃
-    return new EnhancedSkillManager({});
+  if (skillManagerInstance) {
+    return skillManagerInstance;
   }
+
+  if (skillManagerPromise) {
+    return skillManagerPromise;
+  }
+
+  skillManagerPromise = new Promise(async (resolve, reject) => {
+    try {
+      // 1. 加载同义词文件
+      const response = await fetch('./synonyms.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load synonyms.json: ${response.statusText}`);
+      }
+      const synonymsData = await response.json();
+      
+      // 2. 创建实例
+      const instance = new EnhancedSkillManager(synonymsData);
+      
+      // 3. 异步初始化实例
+      await instance.initialize();
+      
+      // 4. 将 promise 解析为已完全初始化的实例
+      skillManagerInstance = instance;
+      resolve(skillManagerInstance);
+      
+    } catch (error) {
+      console.error("Error initializing EnhancedSkillManager:", error);
+      // 在失败时，解析为一个功能有限的降级实例
+      const fallbackInstance = new EnhancedSkillManager({});
+      fallbackInstance.isInitialized = true;
+      skillManagerInstance = fallbackInstance;
+      resolve(skillManagerInstance);
+    }
+  });
+
+  return skillManagerPromise;
 }
 
-// ✨ 步骤 3: 导出异步创建的单例实例
-export const skillManagerPromise = getBaseSkillManager();
-export let skillManager; // 导出一个变量，稍后填充
-
-// ✨ 步骤 4: 异步填充 skillManager 实例
-skillManagerPromise.then(instance => {
-  skillManager = instance;
-});
-
-// 导出函数以便外部模块可以获取基础技能管理器
+// 导出异步创建的单例实例
+export const skillManager = await getBaseSkillManager();
 export { EnhancedSkillManager, getBaseSkillManager };
