@@ -1,4 +1,4 @@
-# code_interpreter.py - 最终优化确认版 v2.3 - 带文件上传功能
+# code_interpreter.py - 最终优化确认版 v2.4 - 修复启动崩溃问题
 
 import docker
 import asyncio
@@ -20,7 +20,7 @@ import time
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- 新增：会话工作区配置 ---
+# --- 会话工作区配置 ---
 SESSION_WORKSPACE_ROOT = Path("./session_workspaces")
 SESSION_WORKSPACE_ROOT.mkdir(exist_ok=True)
 SESSION_TIMEOUT_HOURS = 24  # 会话超时时间（小时）
@@ -44,9 +44,10 @@ class CodeInterpreterTool:
     input_schema = CodeInterpreterInput
 
     def __init__(self):
+        """简化构造函数，移除后台线程启动"""
         self.docker_client = None
         self.initialize_docker_client()
-        self.start_cleanup_thread()
+        # 🚀 关键修复：移除 self.start_cleanup_thread()
 
     def initialize_docker_client(self):
         """Initialize Docker client with error handling"""
@@ -67,24 +68,12 @@ class CodeInterpreterTool:
         except ImageNotFound:
             raise RuntimeError(f"Docker image '{image_name}' not found.")
 
-    def start_cleanup_thread(self):
-        """启动定时清理线程"""
-        def cleanup_worker():
-            while True:
-                try:
-                    self.cleanup_old_sessions()
-                except Exception as e:
-                    logger.error(f"Cleanup thread error: {e}")
-                time.sleep(3600)  # 每小时检查一次
-
-        thread = threading.Thread(target=cleanup_worker, daemon=True)
-        thread.start()
-        logger.info("Session cleanup thread started")
-
     def cleanup_old_sessions(self):
         """清理过期的会话工作区"""
         try:
             current_time = datetime.now()
+            cleaned_count = 0
+            
             for session_dir in SESSION_WORKSPACE_ROOT.iterdir():
                 if session_dir.is_dir():
                     # 检查目录修改时间
@@ -94,8 +83,13 @@ class CodeInterpreterTool:
                         try:
                             shutil.rmtree(session_dir)
                             logger.info(f"Cleaned up expired session: {session_dir.name}")
+                            cleaned_count += 1
                         except Exception as e:
                             logger.error(f"Failed to cleanup session {session_dir.name}: {e}")
+            
+            if cleaned_count > 0:
+                logger.info(f"Cleanup completed: {cleaned_count} sessions removed")
+                
         except Exception as e:
             logger.error(f"Cleanup process failed: {e}")
 
@@ -263,7 +257,7 @@ print(stderr_val, file=sys.stderr, end='')
         try:
             logger.info(f"Running code in sandbox. Code length: {len(parameters.code)}")
             
-            # --- 新增：文件挂载逻辑 ---
+            # --- 文件挂载逻辑 ---
             container_config = {
                 "image": image_name,
                 "command": ["python", "-c", runner_script],
@@ -329,17 +323,72 @@ print(stderr_val, file=sys.stderr, end='')
                     logger.error(f"Failed to remove container {container.short_id}: {e}")
 
 # --- FastAPI Application ---
+
+# 🚀🚀🚀 --- 核心修复：使用 lifespan 事件安全地启动后台任务 --- 🚀🚀🚀
+cleanup_thread = None
+cleanup_stop_event = threading.Event()
+
+def cleanup_worker(tool_instance):
+    """后台清理工作线程"""
+    logger.info("Cleanup worker thread started")
+    
+    while not cleanup_stop_event.is_set():
+        try:
+            tool_instance.cleanup_old_sessions()
+        except Exception as e:
+            logger.error(f"Cleanup thread error: {e}")
+        
+        # 等待1小时或直到停止事件被设置
+        cleanup_stop_event.wait(3600)
+    
+    logger.info("Cleanup worker thread stopped")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global code_interpreter_instance
+    global code_interpreter_instance, cleanup_thread
+    
+    # --- 应用启动时 ---
+    logger.info("Application starting up...")
     code_interpreter_instance = CodeInterpreterTool()
+    
+    # 启动后台清理线程
+    cleanup_thread = threading.Thread(
+        target=cleanup_worker, 
+        args=(code_interpreter_instance,),
+        daemon=True,
+        name="SessionCleanupThread"
+    )
+    cleanup_thread.start()
+    logger.info("Session cleanup thread started via lifespan event")
+    
     yield
+    
+    # --- 应用关闭时 ---
+    logger.info("Application shutting down. Stopping cleanup thread...")
+    cleanup_stop_event.set()
+    
+    # 等待线程安全退出（最多等待5秒）
+    if cleanup_thread and cleanup_thread.is_alive():
+        cleanup_thread.join(timeout=5.0)
+        if cleanup_thread.is_alive():
+            logger.warning("Cleanup thread did not stop gracefully")
+        else:
+            logger.info("Cleanup thread stopped gracefully")
+    
     if code_interpreter_instance and code_interpreter_instance.docker_client:
         code_interpreter_instance.docker_client.close()
+        logger.info("Docker client closed")
+    
+    logger.info("Application shutdown complete")
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    title="Python Sandbox API",
+    description="Secure Python code execution environment with file upload support",
+    version="2.4"
+)
 
-# --- 新增：文件上传API ---
+# --- 文件上传API ---
 @app.post("/api/v1/files/upload")
 async def upload_file(session_id: str = Form(...), file: UploadFile = File(...)):
     """上传文件到会话工作区"""
@@ -385,7 +434,7 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
         logger.error(f"File upload failed for session '{session_id}': {e}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
 
-# --- 新增：清理会话API ---
+# --- 清理会话API ---
 @app.delete("/api/v1/sessions/{session_id}")
 async def cleanup_session(session_id: str):
     """清理指定会话的工作区"""
@@ -405,7 +454,7 @@ async def cleanup_session(session_id: str):
         logger.error(f"Failed to cleanup session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Cleanup failed: {e}")
 
-# --- 修改：代码执行API，支持session_id ---
+# --- 代码执行API ---
 @app.post('/api/v1/python_sandbox')
 async def run_python_sandbox(request_data: dict):
     try:
@@ -435,7 +484,12 @@ async def health_check():
     try:
         if code_interpreter_instance and code_interpreter_instance.docker_client:
             code_interpreter_instance.docker_client.ping()
-            return {"status": "healthy", "docker": "connected"}
+            return {
+                "status": "healthy", 
+                "docker": "connected",
+                "version": "2.4",
+                "timestamp": datetime.now().isoformat()
+            }
         else:
             return {"status": "degraded", "docker": "not_available"}
     except Exception as e:
@@ -446,7 +500,7 @@ async def root():
     """Root endpoint with basic info"""
     return {
         "message": "Python Sandbox API with File Upload",
-        "version": "2.3",
+        "version": "2.4",
         "endpoints": {
             "execute_code": "POST /api/v1/python_sandbox",
             "upload_file": "POST /api/v1/files/upload",

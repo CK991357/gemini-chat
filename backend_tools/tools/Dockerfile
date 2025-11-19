@@ -39,8 +39,8 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     sympy==1.12 \
     matplotlib==3.8.4 \
     seaborn==0.13.2 \
-    statsmodels==0.14.1 \  # <--- 新增，用于回归分析
-    pyarrow \  # <--- 新增，用于处理 Parquet 文件
+    statsmodels==0.14.1 \ 
+    pyarrow==14.0.2 \  
     python-docx==1.1.2 \
     reportlab==4.0.7 \
     python-pptx==0.6.23
