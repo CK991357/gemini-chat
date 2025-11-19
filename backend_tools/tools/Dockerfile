@@ -31,6 +31,7 @@ ENV MPLBACKEND=Agg
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     fastapi \
     uvicorn \
+    python-multipart \
     docker \
     numpy==1.26.4 \
     scipy==1.14.1 \
