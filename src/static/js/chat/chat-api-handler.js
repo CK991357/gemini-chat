@@ -679,7 +679,7 @@ export class ChatApiHandler {
                             console.log(`[MCP] Dispatching to File Downloader for type: "${outputData.type}"`);
                             
                             // 1. 调用通用的文件下载函数
-                            this._createFileDownload(outputData.data_base64, outputData.title || `download.${outputData.type}`, outputData.type, ui);
+                            ui.createFileDownloadLink(outputData.data_base64, outputData.title || `download.${outputData.type}`, outputData.type);
                             
                             // 2. 移除当前AI消息框，因为文件下载链接在一个独立的消息框中
                             this.state.currentAIMessageContentDiv = null;
@@ -794,94 +794,6 @@ export class ChatApiHandler {
         }
     }
 
-    /**
-     * @private
-     * @description Creates a self-contained, persistent message element for a file download link.
-     * This function is purely for UI creation and does NOT modify the handler's state.
-     * @param {string} base64Data - The base64 encoded file data
-     * @param {string} fileName - The name of the file to download
-     * @param {string} fileType - The type of file (excel, word, ppt, pdf)
-     * @param {object} ui - The UI adapter (必须从调用者传递)
-     */
-    _createFileDownload(base64Data, fileName, fileType, ui) {
-        const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [FILE] Creating persistent download for ${fileType} file: ${fileName}`);
-        
-        try {
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            
-            const mimeTypes = {
-                'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'powerpoint': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                'pdf': 'application/pdf'
-            };
-            
-            const mimeType = mimeTypes[fileType] || 'application/octet-stream';
-            const blob = new Blob([bytes], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            
-            const downloadLink = document.createElement('a');
-            downloadLink.href = url;
-            downloadLink.download = fileName;
-            downloadLink.textContent = `📥 Download ${fileType.toUpperCase()}: ${fileName}`;
-            downloadLink.className = 'file-download-link';
-            downloadLink.style.display = 'inline-block';
-            downloadLink.style.margin = '10px 0';
-            downloadLink.style.padding = '8px 12px';
-            downloadLink.style.backgroundColor = '#f0f8ff';
-            downloadLink.style.border = '1px solid #007acc';
-            downloadLink.style.borderRadius = '4px';
-            downloadLink.style.color = '#007acc';
-            downloadLink.style.textDecoration = 'none';
-            downloadLink.style.fontWeight = 'bold';
-
-            // 关键修复：创建独立的消息容器，不依赖状态
-            // 注意：这里不传递任何参数，让 UI 库创建标准消息容器
-            const messageContainer = ui.createAIMessageElement();
-            
-            // 关键：确保这个新容器不会被设置为全局当前消息
-            // 通过不将其赋值给 this.state.currentAIMessageContentDiv 来实现
-            
-            // 添加到新容器的内容区域
-            if (messageContainer && messageContainer.markdownContainer) {
-                const successMsg = document.createElement('p');
-                successMsg.textContent = `✅ 文件 ${fileName} 已生成并可供下载。`;
-                successMsg.style.fontWeight = 'bold';
-                successMsg.style.margin = '5px 0';
-
-                messageContainer.markdownContainer.appendChild(successMsg);
-                messageContainer.markdownContainer.appendChild(downloadLink);
-                messageContainer.markdownContainer.appendChild(document.createElement('br'));
-                
-                console.log(`[${timestamp()}] [FILE] Download link added to independent container for ${fileName}`);
-            }
-            
-            downloadLink.addEventListener('click', () => {
-                setTimeout(() => { URL.revokeObjectURL(url); }, 100);
-            });
-            
-            console.log(`[${timestamp()}] [FILE] Download link created successfully in its own container for ${fileName}`);
-            
-            if (ui.scrollToBottom) {
-                ui.scrollToBottom();
-            }
-            
-        } catch (error) {
-            console.error(`[${timestamp()}] [FILE] Error creating download link:`, error);
-            const errorContainer = ui.createAIMessageElement();
-            if (errorContainer && errorContainer.markdownContainer) {
-                const errorElement = document.createElement('p');
-                errorElement.textContent = `创建文件下载时出错 ${fileName}: ${error.message}`;
-                errorElement.style.color = 'red';
-                errorContainer.markdownContainer.appendChild(errorElement);
-            }
-        }
-    }
 
     /**
      * @private

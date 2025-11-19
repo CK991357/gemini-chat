@@ -440,6 +440,83 @@ export function displayImageResult(imageData, altText = 'Generated Image', _file
 
     scrollToBottom();
 }
+// 🚀🚀🚀 [v2.2 核心新增] 可导出的文件下载链接创建函数 🚀🚀🚀
+/**
+ * @description 在聊天窗口中创建一个独立的消息气泡，用于文件下载。
+ * @param {string} base64Data - Base64编码的文件数据。
+ * @param {string} fileName - 下载时的文件名。
+ * @param {string} fileType - 文件类型 (e.g., 'word', 'excel', 'powerpoint')。
+ */
+export function createFileDownloadLink(base64Data, fileName, fileType) {
+    const timestamp = () => new Date().toISOString();
+    console.log(`[${timestamp()}] [FILE UI] Creating download link for ${fileType}: ${fileName}`);
+    
+    try {
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const mimeTypes = {
+            'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'powerpoint': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'ppt': 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // 兼容 ppt
+            'pdf': 'application/pdf'
+        };
+        
+        const mimeType = mimeTypes[fileType] || 'application/octet-stream';
+        const blob = new Blob([bytes], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        
+        const downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = fileName;
+        downloadLink.textContent = `📥 Download ${fileType.toUpperCase()}: ${fileName}`;
+        downloadLink.className = 'file-download-link';
+        
+        // --- 保证样式一致的核心 ---
+        // 将所有内联样式原封不动地复制过来
+        downloadLink.style.display = 'inline-block';
+        downloadLink.style.margin = '10px 0';
+        downloadLink.style.padding = '8px 12px';
+        downloadLink.style.backgroundColor = '#f0f8ff';
+        downloadLink.style.border = '1px solid #007acc';
+        downloadLink.style.borderRadius = '4px';
+        downloadLink.style.color = '#007acc';
+        downloadLink.style.textDecoration = 'none';
+        downloadLink.style.fontWeight = 'bold';
+        // --- 样式代码结束 ---
+
+        // 创建一个独立的消息容器来展示下载链接
+        const messageContainer = createAIMessageElement();
+        
+        if (messageContainer && messageContainer.markdownContainer) {
+            const successMsg = document.createElement('p');
+            successMsg.textContent = `✅ 文件 ${fileName} 已生成并可供下载。`;
+            // 您可以为这段文字也添加一些样式，使其更突出
+            successMsg.style.fontWeight = 'bold';
+            successMsg.style.margin = '5px 0';
+
+            messageContainer.markdownContainer.appendChild(successMsg);
+            messageContainer.markdownContainer.appendChild(downloadLink);
+        }
+        
+        downloadLink.addEventListener('click', () => {
+            setTimeout(() => { URL.revokeObjectURL(url); }, 100);
+        });
+        
+        scrollToBottom();
+        
+    } catch (error) {
+        console.error(`[${timestamp()}] [FILE UI] Error creating download link:`, error);
+        const errorContainer = createAIMessageElement();
+        if (errorContainer && errorContainer.markdownContainer) {
+            errorContainer.markdownContainer.innerHTML = `<p style="color: red;">创建文件下载时出错 ${fileName}: ${error.message}</p>`;
+        }
+    }
+}
 
 /**
  * 🎯 显示Agent思考过程在聊天区

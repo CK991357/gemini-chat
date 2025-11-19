@@ -2482,6 +2482,26 @@ window.addEventListener('research:image_generated', (e) => {
     }
 });
 
+// 🚀🚀🚀 [v2.2 核心新增] 监听 Agent 生成的文件事件 🚀🚀🚀
+// 这个事件由 DeepResearchAgent.js 中的 _executeToolCall 方法触发
+window.addEventListener('on_file_generated', (event) => {
+    const fileData = event.detail.data;
+    console.log("📦 [Main.js] 接收到 on_file_generated 事件，准备创建下载链接...");
+
+    if (fileData && fileData.data_base64) {
+        // 调用我们刚刚在 chat-ui.js 中导出的新函数
+        chatUI.createFileDownloadLink(
+            fileData.data_base64,
+            fileData.title,
+            fileData.type
+        );
+        showToast(`✅ Agent 已生成文件: ${fileData.title}`);
+    } else {
+        console.warn('[Main.js] on_file_generated 事件未包含有效的文件数据。');
+        showSystemMessage("Agent尝试生成文件，但未能成功返回文件内容。");
+    }
+});
+
 // =========================================================================
 // 🚀 [最终方案 V2 - 新增] Agent 专属的最终报告渲染入口
 // =========================================================================

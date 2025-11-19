@@ -263,132 +263,122 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
     /**
      * 增强的工具执行方法
      */
+// 🚀🚀🚀 [v2.2 核心升级] 具备完整智能分发中心的工具执行方法 🚀🚀🚀
     async _executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
         const tool = this.tools[toolName];
         let rawObservation;
         let toolSources = [];
-        let toolSuccess = false; // 新增：追踪工具执行状态
+        let toolSuccess = false;
 
         if (!tool) {
             rawObservation = `错误: 工具 "${toolName}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
             console.error(`[DeepResearchAgent] ❌ 工具不存在: ${toolName}`);
-        } else {
-            try {
-                console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`);
-
-                // 🔥🔥🔥 核心修复：Python 状态注入逻辑 🔥🔥🔥
-                if (toolName === 'python_sandbox' && parameters.code && parameters.code.includes('{{LAST_OBSERVATION}}')) {
-                    console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
-                    const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
-                    
-                    if (lastStep && typeof lastStep.observation === 'string') {
-                        // 1. 使用 JSON.stringify 来安全地转义所有特殊字符（如引号、换行符、反斜杠）。
-                        //    这是解决`SyntaxError: unterminated string literal`的根本方法。
-                        const safelyEscapedData = JSON.stringify(lastStep.observation);
-
-                        // 2. 剥离 JSON.stringify 添加在最外层的双引号，
-                        //    然后将这个已完全转义的字符串放入 Python 的三引号多行字符串中。
-                        const pythonStringLiteral = `"""${safelyEscapedData.slice(1, -1)}"""`;
-
-                        // 3. 使用正则表达式全局替换占位符，确保代码中若有多个占位符也能被处理。
-                        parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, pythonStringLiteral);
-                        
-                        console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
-                    } else {
-                        console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。将占位符替换为空字符串。');
-                        parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, '""');
-                    }
-                }
-
-                // 🎯 新增：Python 代码预检 (Linter)
-                if (toolName === 'python_sandbox' && parameters.code) {
-                    const check = this._preflightCodeCheck(parameters.code);
-                    if (!check.valid) {
-                        // 如果检查不通过，直接构造一个失败的observation，跳过实际的工具调用
-                        rawObservation = `代码预检失败: ${check.error} 请修正代码。`;
-                        toolSuccess = false;
-                        console.warn(`[DeepResearchAgent] ❌ Python代码预检失败: ${check.error}`);
-                        
-                        // 记录工具调用失败，但跳过实际的 tool.invoke
-                        recordToolCall(toolName, parameters, false, rawObservation);
-                        
-                        // 提前返回，避免执行昂贵的工具调用
-                        return { rawObservation, toolSources: [], toolSuccess };
-                    }
-                }
-
-                const toolResult = await tool.invoke(parameters, {
-                    mode: 'deep_research',
-                    researchMode: detectedMode
-                });
-                
-                rawObservation = toolResult.output || JSON.stringify(toolResult);
-                
-                // 🔥 核心修改：图像拦截逻辑 (针对 python_sandbox 的 JSON 输出)
-                if (toolName === 'python_sandbox' && toolResult.success) {
-                    try {
-                        // toolResult.output 是后端返回的 stdout 字符串
-                        const outputData = JSON.parse(rawObservation);
-                        if (outputData.type === 'image' && outputData.image_base64) {
-                            console.log('[DeepResearchAgent] 🐍 检测到Python沙盒生成的图像，正在处理...');
-                            // 调用新方法，并将返回的简洁信息作为 Agent 的观察结果
-                            rawObservation = this._handleGeneratedImage(outputData);
-                            // toolSuccess 保持不变 (toolResult.success 已经是 true)
-                        }
-                    } catch (e) {
-                        // 不是JSON或不是图像格式，忽略，保持 rawObservation 不变
-                    }
-                }
-
-                // ✅✅✅ 核心修复：从工具返回结果中获取真实的成功状态 ✅✅✅
-                // 注意：如果 rawObservation 被 _handleGeneratedImage 替换，toolSuccess 仍基于 toolResult.success
-                toolSuccess = toolResult.success !== false; // 默认true，除非明确为false
-
-                // 🎯 新增：Python执行失败自动诊断
-                if (toolName === 'python_sandbox' && !toolSuccess) {
-                    console.log(`[DeepResearchAgent] Python执行失败，启动自动诊断...`);
-                    const diagnosis = await this._diagnosePythonError(rawObservation, parameters);
-                    if (diagnosis.suggestedFix) {
-                        rawObservation += `\n\n## 🔧 自动诊断结果\n${diagnosis.analysis}\n\n**建议修复**: ${diagnosis.suggestedFix}`;
-                        console.log(`[DeepResearchAgent] 诊断完成: ${diagnosis.analysis}`);
-                    }
-                }
-
-                // 🎯 提取来源信息
-                if (toolResult.sources && Array.isArray(toolResult.sources)) {
-                    toolSources = toolResult.sources.map(source => ({
-                        title: source.title || '无标题',
-                        url: source.url || '#',
-                        description: source.description || '',
-                        collectedAt: new Date().toISOString(),
-                        used_in_report: false
-                    }));
-                    console.log(`[DeepResearchAgent] 提取到 ${toolSources.length} 个来源`);
-                }
-
-                // ✅✅✅ 核心修复：根据实际成功状态记录日志 ✅✅✅
-                if (toolSuccess) {
-                    console.log(`[DeepResearchAgent] ✅ 工具执行成功，结果长度: ${rawObservation.length}`);
-                } else {
-                    console.log(`[DeepResearchAgent] ⚠️ 工具执行失败，结果长度: ${rawObservation.length}`);
-                }
-
-                // ✨ 追踪工具使用
-                if (this.metrics.toolUsage[toolName] !== undefined) {
-                    this.metrics.toolUsage[toolName]++;
-                }
-
-                // 🎯 修复：记录工具调用
-                recordToolCall(toolName, parameters, toolSuccess, rawObservation);
-
-            } catch (error) {
-                rawObservation = `错误: 工具 "${toolName}" 执行失败: ${error.message}`;
-                console.error(`[DeepResearchAgent] ❌ 工具执行失败: ${toolName}`, error);
-                // 🎯 修复：记录工具调用失败
-                recordToolCall(toolName, parameters, false, error.message);
-            }
+            recordToolCall(toolName, parameters, false, rawObservation);
+            return { rawObservation, toolSources, toolSuccess: false };
         }
-        
+
+        try {
+            console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`, parameters);
+
+            // --- 状态注入逻辑 (保持不变, 依然健壮) ---
+            if (toolName === 'python_sandbox' && parameters.code && parameters.code.includes('{{LAST_OBSERVATION}}')) {
+                console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
+                const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
+                
+                if (lastStep && typeof lastStep.observation === 'string') {
+                    const safelyEscapedData = JSON.stringify(lastStep.observation);
+                    const pythonStringLiteral = `"""${safelyEscapedData.slice(1, -1)}"""`;
+                    parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, pythonStringLiteral);
+                    console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
+                } else {
+                    console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。');
+                    parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, '""');
+                }
+            }
+
+            // --- 代码预检 (保持不变) ---
+            if (toolName === 'python_sandbox' && parameters.code) {
+                const check = this._preflightCodeCheck(parameters.code);
+                if (!check.valid) {
+                    rawObservation = `代码预检失败: ${check.error} 请修正代码。`;
+                    toolSuccess = false;
+                    console.warn(`[DeepResearchAgent] ❌ Python代码预检失败: ${check.error}`);
+                    recordToolCall(toolName, parameters, false, rawObservation);
+                    return { rawObservation, toolSources: [], toolSuccess };
+                }
+            }
+
+            // --- 调用工具 ---
+            const toolResult = await tool.invoke(parameters, {
+                mode: 'deep_research',
+                researchMode: detectedMode
+            });
+            
+            rawObservation = toolResult.output || JSON.stringify(toolResult);
+            toolSuccess = toolResult.success !== false;
+
+            // ================================================================
+            // 🚀 全新的智能分发中心 (模仿 chat-api-handler.js)
+            // ================================================================
+            if (toolName === 'python_sandbox' && toolSuccess) {
+                try {
+                    // toolResult.output 是后端返回的 stdout 字符串
+                    const outputData = JSON.parse(rawObservation);
+
+                    if (outputData.type === 'image' && outputData.image_base64) {
+                        console.log('[DeepResearchAgent] 🐍 检测到Python沙盒生成的图像，正在处理...');
+                        // 调用图像处理方法，并将返回的简洁确认信息作为 Agent 的观察结果
+                        rawObservation = this._handleGeneratedImage(outputData);
+
+                    } else if (['excel', 'word', 'powerpoint', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
+                        console.log(`[DeepResearchAgent] 🐍 检测到Python沙盒生成的文件: ${outputData.type}`);
+                        // 对于Agent模式，我们不需要触发下载，而是给Agent一个明确的确认信息
+                        // 这样Agent就知道文件已生成，可以在最终报告中提及
+                        rawObservation = `[✅ 文件生成成功] 类型: "${outputData.type}", 标题: "${outputData.title}". 文件已准备就绪。`;
+                        // 这里可以触发一个事件，让UI知道文件已生成，但Agent本身不需要关心下载链接
+                        this.callbackManager.invokeEvent('on_file_generated', {
+                            run_id: this.runId,
+                            data: outputData
+                        });
+                    }
+                    // 对于其他JSON类型（如ml_report），保持rawObservation为原始JSON字符串，让Agent自行解析
+
+                } catch (e) {
+                    // 如果输出不是JSON，或者不是我们关心的特殊类型，则忽略，保持 rawObservation 为原始纯文本输出
+                    console.log('[DeepResearchAgent] Python输出不是特殊JSON格式，作为纯文本处理。');
+                }
+            }
+
+            // --- 错误诊断与来源提取 (保持不变) ---
+            if (toolName === 'python_sandbox' && !toolSuccess) {
+                console.log(`[DeepResearchAgent] Python执行失败，启动自动诊断...`);
+                const diagnosis = await this._diagnosePythonError(rawObservation, parameters);
+                if (diagnosis.suggestedFix) {
+                    rawObservation += `\n\n## 🔧 自动诊断结果\n${diagnosis.analysis}\n\n**建议修复**: ${diagnosis.suggestedFix}`;
+                }
+            }
+            if (toolResult.sources && Array.isArray(toolResult.sources)) {
+                toolSources = toolResult.sources.map(source => ({
+                    title: source.title || '无标题',
+                    url: source.url || '#',
+                    description: source.description || '',
+                    collectedAt: new Date().toISOString(),
+                    used_in_report: false
+                }));
+            }
+            if (toolSuccess) {
+                console.log(`[DeepResearchAgent] ✅ 工具执行成功`);
+            } else {
+                console.warn(`[DeepResearchAgent] ⚠️ 工具执行失败`);
+            }
+            
+        } catch (error) {
+            rawObservation = `错误: 工具 "${toolName}" 执行失败: ${error.message}`;
+            console.error(`[DeepResearchAgent] ❌ 工具执行失败: ${toolName}`, error);
+            toolSuccess = false;
+        }
+
+        recordToolCall(toolName, parameters, toolSuccess, rawObservation);
         return { rawObservation, toolSources, toolSuccess };
     }
 
