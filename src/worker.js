@@ -132,34 +132,35 @@ export default {
     if (url.pathname.startsWith('/api/chess/')) {
       return handleChessRequest(request, env);
     }
-// 🎯 最终的、极简的修复：直接 fetch 隧道服务
+// 🎯 最终的、经过技术校正的修复：通过服务令牌直接访问隧道
 if (url.pathname.startsWith('/api/v1/')) {
 
-  // 从环境变量中获取您的 Zero Trust 团队名称
-  // 您可以在 Zero Trust 仪表板的 Settings -> General -> Team name 中找到它
-  const teamName = env.CF_TEAM_NAME;
-  // 从环境变量中获取隧道允许的 service token
+  // 1. 从环境变量中获取隧道的服务令牌凭证
   const clientId = env.CF_CLIENT_ID;
   const clientSecret = env.CF_CLIENT_SECRET;
 
-  if (!teamName || !clientId || !clientSecret) {
-    return new Response('Tunnel authentication is not configured in Worker environment.', { status: 500 });
+  // 确保凭证已配置
+  if (!clientId || !clientSecret) {
+    return new Response('Tunnel authentication credentials are not configured in Worker environment.', { status: 500 });
   }
 
-  // 这是隧道的服务地址，格式是：https://<隧道ID>.cfargotunnel.com
-  const tunnelUrl = new URL(request.url);
-  tunnelUrl.hostname = 'https://' + '2c162088-d4fa-4dc4-8584-843717f77a28' + '.cfargotunnel.com';
+  // 2. 🎯 正确构造指向隧道原生地址的 URL
+  //    隧道的原生地址格式为：https://<隧道ID>.cfargotunnel.com
+  const tunnelHostname = '2c162088-d4fa-4dc4-8584-843717f77a28.cfargotunnel.com';
+  const targetUrl = new URL(request.url);
+  targetUrl.hostname = tunnelHostname;
+  targetUrl.protocol = 'https:'; // 确保使用 HTTPS 协议
 
-  // 创建一个新的请求，并添加认证头
-  const proxyRequest = new Request(tunnelUrl, request);
+  // 3. 创建一个新的请求副本，并添加认证头
+  const proxyRequest = new Request(targetUrl, request);
   proxyRequest.headers.set('CF-Access-Client-Id', clientId);
   proxyRequest.headers.set('CF-Access-Client-Secret', clientSecret);
 
+  // 4. 将带有认证头的请求安全地发往隧道
   try {
-    // 将带有认证头的请求发往隧道
     return await fetch(proxyRequest);
   } catch (error) {
-    console.error('Failed to fetch via tunnel service:', error);
+    console.error('Failed to fetch via tunnel service token:', error);
     return new Response('Failed to connect to the backend service via tunnel.', { status: 502 });
   }
 }
