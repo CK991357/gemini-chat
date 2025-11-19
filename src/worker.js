@@ -132,19 +132,34 @@ export default {
     if (url.pathname.startsWith('/api/chess/')) {
       return handleChessRequest(request, env);
     }
-// 🎯 最终修复：使用服务绑定直接通过隧道连接后端
+// 🎯 最终的、极简的修复：直接 fetch 隧道服务
 if (url.pathname.startsWith('/api/v1/')) {
-  // 检查名为 BACKEND_SERVICE 的服务绑定是否存在
-  if (!env.BACKEND_SERVICE) {
-    return new Response('Backend tunnel service is not bound to this Worker.', { status: 500 });
+
+  // 从环境变量中获取您的 Zero Trust 团队名称
+  // 您可以在 Zero Trust 仪表板的 Settings -> General -> Team name 中找到它
+  const teamName = env.CF_TEAM_NAME;
+  // 从环境变量中获取隧道允许的 service token
+  const clientId = env.CF_CLIENT_ID;
+  const clientSecret = env.CF_CLIENT_SECRET;
+
+  if (!teamName || !clientId || !clientSecret) {
+    return new Response('Tunnel authentication is not configured in Worker environment.', { status: 500 });
   }
 
-  // 直接通过隧道绑定的 fetch 方法将请求安全地发送到您的服务器
-  // 无需关心IP地址、端口或协议
+  // 这是隧道的服务地址，格式是：https://<隧道ID>.cfargotunnel.com
+  const tunnelUrl = new URL(request.url);
+  tunnelUrl.hostname = 'https://' + '2c162088-d4fa-4dc4-8584-843717f77a28' + '.cfargotunnel.com';
+
+  // 创建一个新的请求，并添加认证头
+  const proxyRequest = new Request(tunnelUrl, request);
+  proxyRequest.headers.set('CF-Access-Client-Id', clientId);
+  proxyRequest.headers.set('CF-Access-Client-Secret', clientSecret);
+
   try {
-    return await env.BACKEND_SERVICE.fetch(request);
+    // 将带有认证头的请求发往隧道
+    return await fetch(proxyRequest);
   } catch (error) {
-    console.error('Failed to fetch via backend tunnel:', error);
+    console.error('Failed to fetch via tunnel service:', error);
     return new Response('Failed to connect to the backend service via tunnel.', { status: 502 });
   }
 }
