@@ -821,7 +821,7 @@ async function initializeEnhancedAgent() {
                     const realOrchestrator = new Orchestrator(chatApiHandler, {
                         enabled: true,
                         containerId: 'workflow-container',
-                        maxIterations: 8
+                        maxIterations: 10,
                     });
                     
                     // 等待初始化完成
