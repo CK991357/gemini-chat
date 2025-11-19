@@ -3082,3 +3082,25 @@ input:checked + .slider:before {
 .game-actions .chess-btn-danger:hover {
     background-color: #c82333; /* 深红色 */
 }
+
+/* 数据文件预览特殊样式 */
+.file-preview-card.data-file {
+    border: 2px solid #4CAF50;
+    background: #f8fff8;
+}
+
+.data-file-preview {
+    text-align: center;
+    padding: 10px;
+}
+
+.data-file-preview i {
+    font-size: 24px;
+    margin-bottom: 5px;
+}
+
+.data-file-preview p {
+    margin: 0;
+    font-size: 12px;
+    word-break: break-all;
+}

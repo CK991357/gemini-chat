@@ -384,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
    // 附件按钮事件监听 (只绑定一次)
    attachmentButton.addEventListener('click', () => fileInput.click());
    fileInput.multiple = true; // 允许选择多个文件
-   fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat'));
+   fileInput.addEventListener('change', (event) => attachmentManager.handleFileAttachment(event, 'chat', currentSessionId));
  
    // T10: 初始化 HistoryManager
    historyManager = new HistoryManager({
@@ -2341,6 +2341,9 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {void}
      */
     newChatButton.addEventListener('click', () => {
+        if (currentSessionId) {
+            cleanupSession(currentSessionId);
+        }
         // 仅在 HTTP 模式下启用历史记录功能
         if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
             historyManager.generateNewSession();
@@ -2779,6 +2782,57 @@ export function showSystemMessage(message) {
     messageHistory.appendChild(messageDiv);
     chatUI.scrollToBottom();
 }
+
+// 新增：文件上传事件监听
+window.addEventListener('file-uploaded', (event) => {
+    const { filename, container_path, session_id, file_size } = event.detail;
+    
+    // 创建系统消息通知模型
+    const systemMessage = `文件 "${filename}" 已上传到会话工作区。在代码解释器中可以通过路径 "${container_path}" 访问该文件。`;
+    
+    // 添加到聊天历史
+    chatHistory.push({
+        role: 'system',
+        content: systemMessage
+    });
+    
+    // 显示系统消息
+    showSystemMessage(systemMessage);
+    
+    console.log(`📁 文件上传成功: ${filename} -> ${container_path} (${file_size} bytes)`);
+});
+
+// 新增：会话清理函数
+async function cleanupSession(sessionId) {
+    if (!sessionId) return;
+    
+    try {
+        const response = await fetch(`/api/v1/sessions/${sessionId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            console.log(`✅ 会话 ${sessionId} 已清理`);
+        } else {
+            console.warn(`⚠️ 会话清理失败: ${sessionId}`);
+        }
+    } catch (error) {
+        console.error('❌ 会话清理错误:', error);
+    }
+}
+
+// 新增：页面卸载时清理会话
+window.addEventListener('beforeunload', () => {
+    if (currentSessionId) {
+        // 使用同步请求确保清理完成
+        fetch(`/api/v1/sessions/${currentSessionId}`, {
+            method: 'DELETE',
+            keepalive: true // 确保在页面卸载时请求能完成
+        }).catch(() => {
+            // 忽略错误，因为页面正在卸载
+        });
+    }
+});
 
 // 🚀 添加调试工具到控制台
 window.getAgentStatus = () => orchestrator?.getStatus();

@@ -21,6 +21,46 @@ Python沙盒是一个多功能的代码执行环境，支持：
 - **科学与数学计算**: 使用Sympy进行符号计算和公式证明
 - **工作流编排**: 复杂任务的自动化执行管道
 
+## 数据文件处理指南
+
+### 📁 文件上传与访问
+
+#### 上传数据文件
+
+- 支持的文件类型: `.xlsx`, `.xls`, `.parquet`, `.csv`, `.json`, `.txt`
+- 文件会自动上传到会话工作区
+- 在代码解释器中通过绝对路径访问: `/data/文件名`
+
+#### 读取示例代码
+
+Excel 文件
+
+```python
+import pandas as pd
+df = pd.read_excel('/data/your_file.xlsx')
+```
+
+Parquet 文件
+```python
+import pandas as pd
+df = pd.read_parquet('/data/your_file.parquet')
+```
+
+CSV 文件
+```python
+import pandas as pd
+df = pd.read_csv('/data/your_file.csv')
+```
+
+### 最佳实践
+1. 先检查文件是否存在
+
+2. 处理可能的编码问题
+
+3. 及时关闭文件流
+
+4. 处理完成后清理临时文件
+
 ## 🚀 基础调用规范
 
 ### 简单代码执行

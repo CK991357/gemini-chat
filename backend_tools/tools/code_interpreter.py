@@ -1,17 +1,29 @@
-# code_interpreter.py - 最终优化确认版 v2.2
+# code_interpreter.py - 最终优化确认版 v2.3 - 带文件上传功能
 
 import docker
 import asyncio
 import logging
 from pydantic import BaseModel, Field
 from docker.errors import DockerException, ContainerError, ImageNotFound, NotFound
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from contextlib import asynccontextmanager
 import json
+import os
+import shutil
+from pathlib import Path
+import uuid
+from datetime import datetime, timedelta
+import threading
+import time
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- 新增：会话工作区配置 ---
+SESSION_WORKSPACE_ROOT = Path("./session_workspaces")
+SESSION_WORKSPACE_ROOT.mkdir(exist_ok=True)
+SESSION_TIMEOUT_HOURS = 24  # 会话超时时间（小时）
 
 # --- Pydantic Input Schema ---
 class CodeInterpreterInput(BaseModel):
@@ -34,6 +46,7 @@ class CodeInterpreterTool:
     def __init__(self):
         self.docker_client = None
         self.initialize_docker_client()
+        self.start_cleanup_thread()
 
     def initialize_docker_client(self):
         """Initialize Docker client with error handling"""
@@ -54,7 +67,39 @@ class CodeInterpreterTool:
         except ImageNotFound:
             raise RuntimeError(f"Docker image '{image_name}' not found.")
 
-    async def execute(self, parameters: CodeInterpreterInput) -> dict:
+    def start_cleanup_thread(self):
+        """启动定时清理线程"""
+        def cleanup_worker():
+            while True:
+                try:
+                    self.cleanup_old_sessions()
+                except Exception as e:
+                    logger.error(f"Cleanup thread error: {e}")
+                time.sleep(3600)  # 每小时检查一次
+
+        thread = threading.Thread(target=cleanup_worker, daemon=True)
+        thread.start()
+        logger.info("Session cleanup thread started")
+
+    def cleanup_old_sessions(self):
+        """清理过期的会话工作区"""
+        try:
+            current_time = datetime.now()
+            for session_dir in SESSION_WORKSPACE_ROOT.iterdir():
+                if session_dir.is_dir():
+                    # 检查目录修改时间
+                    stat = session_dir.stat()
+                    modify_time = datetime.fromtimestamp(stat.st_mtime)
+                    if current_time - modify_time > timedelta(hours=SESSION_TIMEOUT_HOURS):
+                        try:
+                            shutil.rmtree(session_dir)
+                            logger.info(f"Cleaned up expired session: {session_dir.name}")
+                        except Exception as e:
+                            logger.error(f"Failed to cleanup session {session_dir.name}: {e}")
+        except Exception as e:
+            logger.error(f"Cleanup process failed: {e}")
+
+    async def execute(self, parameters: CodeInterpreterInput, session_id: str = None) -> dict:
         if not self.docker_client:
             logger.warning("execute called but Docker client is not available.")
             return {"success": False, "error": "Docker daemon not available."}
@@ -218,18 +263,34 @@ print(stderr_val, file=sys.stderr, end='')
         try:
             logger.info(f"Running code in sandbox. Code length: {len(parameters.code)}")
             
-            container = self.docker_client.containers.create(
-                image=image_name,
-                command=["python", "-c", runner_script],
-                network_disabled=True,
-                environment={'MPLCONFIGDIR': '/tmp'},
-                mem_limit="1g",
-                cpu_period=100_000,
-                cpu_quota=50_000,
-                read_only=True,
-                tmpfs={'/tmp': 'size=100M,mode=1777'},
-                detach=True
-            )
+            # --- 新增：文件挂载逻辑 ---
+            container_config = {
+                "image": image_name,
+                "command": ["python", "-c", runner_script],
+                "network_disabled": True,
+                "environment": {'MPLCONFIGDIR': '/tmp'},
+                "mem_limit": "1g",
+                "cpu_period": 100_000,
+                "cpu_quota": 50_000,
+                "read_only": True,
+                "tmpfs": {'/tmp': 'size=100M,mode=1777'},
+                "detach": True
+            }
+            
+            # 如果有 session_id，挂载会话工作区
+            if session_id:
+                host_session_path = SESSION_WORKSPACE_ROOT / session_id
+                if host_session_path.exists():
+                    container_config["volumes"] = {
+                        str(host_session_path.resolve()): {
+                            'bind': '/data',
+                            'mode': 'rw'
+                        }
+                    }
+                    container_config["working_dir"] = '/data'
+                    logger.info(f"Mounting session workspace: {host_session_path} -> /data")
+            
+            container = self.docker_client.containers.create(**container_config)
 
             container.start()
             result = container.wait(timeout=90)
@@ -278,15 +339,87 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# --- 新增：文件上传API ---
+@app.post("/api/v1/files/upload")
+async def upload_file(session_id: str = Form(...), file: UploadFile = File(...)):
+    """上传文件到会话工作区"""
+    if not session_id:
+        raise HTTPException(status_code=400, detail="Session ID is required.")
+
+    # 验证文件类型
+    allowed_extensions = {'.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt'}
+    file_extension = Path(file.filename).suffix.lower()
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"不支持的文件类型: {file_extension}。支持的类型: {', '.join(allowed_extensions)}"
+        )
+
+    session_dir = SESSION_WORKSPACE_ROOT / session_id
+    session_dir.mkdir(exist_ok=True)
+    
+    file_path = session_dir / file.filename
+    
+    try:
+        # 保存文件
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # 更新目录修改时间
+        file_path.touch()
+        
+        container_path = f"/data/{file.filename}"
+        file_size = file_path.stat().st_size
+        
+        logger.info(f"File '{file.filename}' ({file_size} bytes) uploaded for session '{session_id}' -> '{container_path}'")
+        
+        return {
+            "success": True,
+            "message": "File uploaded successfully",
+            "filename": file.filename,
+            "container_path": container_path,
+            "file_size": file_size,
+            "session_id": session_id
+        }
+    except Exception as e:
+        logger.error(f"File upload failed for session '{session_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
+
+# --- 新增：清理会话API ---
+@app.delete("/api/v1/sessions/{session_id}")
+async def cleanup_session(session_id: str):
+    """清理指定会话的工作区"""
+    session_dir = SESSION_WORKSPACE_ROOT / session_id
+    
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    try:
+        shutil.rmtree(session_dir)
+        logger.info(f"Session workspace cleaned up: {session_id}")
+        return {
+            "success": True,
+            "message": f"Session {session_id} cleaned up successfully"
+        }
+    except Exception as e:
+        logger.error(f"Failed to cleanup session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {e}")
+
+# --- 修改：代码执行API，支持session_id ---
 @app.post('/api/v1/python_sandbox')
 async def run_python_sandbox(request_data: dict):
     try:
+        # 从请求中获取 session_id
+        session_id = request_data.get('session_id')
         code_to_execute = request_data.get('parameters', {}).get('code')
+        
         if not code_to_execute:
             raise HTTPException(status_code=422, detail="Missing 'code' field.")
 
         input_data = CodeInterpreterInput(code=code_to_execute)
-        result = await code_interpreter_instance.execute(input_data)
+        
+        # 将 session_id 传递给 execute 方法
+        result = await code_interpreter_instance.execute(input_data, session_id)
         
         if result.get("success"):
             return result.get("data")
@@ -312,10 +445,12 @@ async def health_check():
 async def root():
     """Root endpoint with basic info"""
     return {
-        "message": "Python Sandbox API",
-        "version": "2.2",
+        "message": "Python Sandbox API with File Upload",
+        "version": "2.3",
         "endpoints": {
             "execute_code": "POST /api/v1/python_sandbox",
+            "upload_file": "POST /api/v1/files/upload",
+            "cleanup_session": "DELETE /api/v1/sessions/{session_id}",
             "health_check": "GET /health"
         }
     }
