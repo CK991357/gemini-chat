@@ -1,213 +1,223 @@
-# 自动化报告生成工作流
+# 自动化报告生成指南 (v2.2)
 
-## 📋 报告生成标准模板
+## 🎯 工具概述
+**功能**：自动生成 Word、Excel、PDF 格式的专业报告
+**输出原则**：直接生成文件，系统自动处理输出格式
 
-### 通用文件输出函数
+## 📊 Word 报告生成
+
+### 基础 Word 报告模板
 ```python
-import io
-import base64
-import json
-
-def create_file_output(file_data, file_type, title, mime_type=None):
-    """通用文件输出函数"""
-    result = {
-        "type": file_type,
-        "title": title,
-        "data_base64": base64.b64encode(file_data).decode('utf-8')
-    }
-    if mime_type:
-        result["mime_type"] = mime_type
-    print(json.dumps(result))
-```
-
-## 📊 周报自动生成器
-
-```python
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from docx import Document
 from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-import io
-import base64
-import json
-from datetime import datetime, timedelta
+import pandas as pd
 import numpy as np
+from datetime import datetime
 
-def generate_weekly_report():
-    """完整的周报自动生成工作流"""
+def generate_simple_word_report():
+    """生成基础 Word 报告"""
     
-    # 设置中文字体（如果需要）
-    plt.rcParams['font.sans-serif'] = ['SimHei']
-    matplotlib.use('Agg')
-    
-    # 1. 模拟周数据
-    dates = pd.date_range(start='2024-01-01', periods=7, freq='D')
-    sales_data = {
-        'date': dates,
-        'revenue': np.random.normal(10000, 2000, 7),
-        'orders': np.random.randint(50, 200, 7),
-        'customers': np.random.randint(30, 150, 7),
-        'cost': np.random.normal(4000, 800, 7)
-    }
-    df = pd.DataFrame(sales_data)
-    df['profit'] = df['revenue'] - df['cost']
-    df['profit_margin'] = (df['profit'] / df['revenue'] * 100).round(2)
-    
-    # 2. 生成销售趋势图
-    plt.figure(figsize=(15, 10))
-    
-    # 子图1: 收入趋势
-    plt.subplot(2, 3, 1)
-    plt.plot(df['date'], df['revenue'], marker='o', linewidth=2, color='#2E86AB', label='收入')
-    plt.plot(df['date'], df['cost'], marker='s', linewidth=2, color='#A23B72', label='成本')
-    plt.fill_between(df['date'], df['revenue'], df['cost'], alpha=0.3, color='#4ECDC4')
-    plt.title('收入与成本趋势', fontweight='bold')
-    plt.xticks(rotation=45)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    
-    # 子图2: 订单量
-    plt.subplot(2, 3, 2)
-    plt.bar(df['date'], df['orders'], alpha=0.7, color='#F18F01')
-    plt.title('每日订单量', fontweight='bold')
-    plt.xticks(rotation=45)
-    plt.grid(True, alpha=0.3)
-    
-    # 子图3: 利润率
-    plt.subplot(2, 3, 3)
-    plt.bar(df['date'], df['profit_margin'], alpha=0.7, color='#C73E1D')
-    plt.title('每日利润率 (%)', fontweight='bold')
-    plt.xticks(rotation=45)
-    plt.grid(True, alpha=0.3)
-    
-    # 子图4: 收入分布
-    plt.subplot(2, 3, 4)
-    plt.pie(df['revenue'], labels=df['date'].dt.strftime('%m-%d'), autopct='%1.1f%%')
-    plt.title('收入分布', fontweight='bold')
-    
-    # 子图5: 客户与订单关系
-    plt.subplot(2, 3, 5)
-    plt.scatter(df['customers'], df['orders'], s=df['revenue']/100, alpha=0.6)
-    plt.xlabel('客户数')
-    plt.ylabel('订单数')
-    plt.title('客户-订单-收入关系', fontweight='bold')
-    plt.grid(True, alpha=0.3)
-    
-    # 子图6: 累计指标
-    plt.subplot(2, 3, 6)
-    cumulative_revenue = df['revenue'].cumsum()
-    cumulative_orders = df['orders'].cumsum()
-    plt.plot(df['date'], cumulative_revenue, label='累计收入', linewidth=2)
-    plt.plot(df['date'], cumulative_orders * 50, label='累计订单(缩放)', linewidth=2)
-    plt.title('累计指标趋势', fontweight='bold')
-    plt.xticks(rotation=45)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    
-    # 3. 将图表转为Base64
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-    buf.seek(0)
-    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-    buf.close()
-    plt.close('all')
-    
-    # 4. 生成Word报告
+    # 创建文档
     doc = Document()
     
     # 标题页
-    title = doc.add_heading('销售周报', 0)
+    title = doc.add_heading('业务分析报告', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     # 报告信息
-    doc.add_paragraph(f'报告周期: {df["date"].min().strftime("%Y年%m月%d日")} - {df["date"].max().strftime("%Y年%m月%d日")}')
     doc.add_paragraph(f'生成时间: {datetime.now().strftime("%Y年%m月%d日 %H:%M")}')
+    doc.add_paragraph(f'报告周期: 2024年1月1日 - 2024年1月7日')
     doc.add_paragraph()
     
     # 执行摘要
     doc.add_heading('执行摘要', level=1)
-    total_revenue = df['revenue'].sum()
-    total_orders = df['orders'].sum()
-    avg_profit_margin = df['profit_margin'].mean()
-    best_day = df.loc[df['revenue'].idxmax()]
+    summary = doc.add_paragraph()
+    summary.add_run('本周业务表现概览:\n').bold = True
+    summary.add_run('• 总营收: ¥125,000\n')
+    summary.add_run('• 总订单: 856 单\n')
+    summary.add_run('• 平均利润率: 18.5%\n')
+    summary.add_run('• 新客户增长: +12.3%\n')
     
-    summary_para = doc.add_paragraph()
-    summary_para.add_run('本周业绩亮点:\n').bold = True
-    summary_para.add_run(f'• 总营收: ¥{total_revenue:,.2f}\n')
-    summary_para.add_run(f'• 总订单: {total_orders:,} 单\n')
-    summary_para.add_run(f'• 平均利润率: {avg_profit_margin:.1f}%\n')
-    summary_para.add_run(f'• 最佳销售日: {best_day["date"].strftime("%m月%d日")} (¥{best_day["revenue"]:,.2f})')
+    # 关键指标
+    doc.add_heading('关键绩效指标', level=1)
     
-    # 关键指标表格
-    doc.add_heading('关键指标', level=1)
-    metrics_data = [
-        ['总营收', f'¥{total_revenue:,.2f}'],
-        ['总订单量', f'{total_orders:,}'],
-        ['总客户数', f'{df["customers"].sum():,}'],
-        ['平均客单价', f'¥{(df["revenue"].sum()/df["orders"].sum()):.2f}'],
-        ['平均利润率', f'{avg_profit_margin:.1f}%'],
-        ['峰值收入日', best_day['date'].strftime('%m月%d日')]
+    # 创建表格
+    table = doc.add_table(rows=5, cols=3)
+    table.style = 'Light Grid Accent 1'
+    
+    # 表头
+    table.cell(0, 0).text = '指标'
+    table.cell(0, 1).text = '本周'
+    table.cell(0, 2).text = '环比变化'
+    
+    # 数据行
+    data_rows = [
+        ['总收入', '¥125,000', '+5.2%'],
+        ['订单数量', '856', '+8.7%'],
+        ['客户数量', '324', '+12.3%'],
+        ['平均订单价值', '¥146', '-2.1%'],
+        ['客户满意度', '92%', '+1.5%']
     ]
     
-    table = doc.add_table(rows=1, cols=2)
-    table.style = 'Light Grid Accent 1'
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = '指标'
-    hdr_cells[1].text = '数值'
+    for i, row_data in enumerate(data_rows, 1):
+        table.cell(i, 0).text = row_data[0]
+        table.cell(i, 1).text = row_data[1]
+        table.cell(i, 2).text = row_data[2]
     
-    for metric, value in metrics_data:
-        row_cells = table.add_row().cells
-        row_cells[0].text = metric
-        row_cells[1].text = value
+    # 分析与建议
+    doc.add_heading('分析与建议', level=1)
+    analysis = doc.add_paragraph()
+    analysis.add_run('主要发现:\n').bold = True
+    analysis.add_run('1. 客户数量显著增长，但平均订单价值略有下降\n')
+    analysis.add_run('2. 周末订单量明显高于工作日\n')
+    analysis.add_run('3. 新产品线表现超出预期\n\n')
     
-    # 详细数据分析
-    doc.add_heading('详细分析', level=1)
-    doc.add_paragraph('本周销售表现总体稳定，具体分析如下:')
+    analysis.add_run('建议措施:\n').bold = True
+    analysis.add_run('• 优化工作日营销策略\n')
+    analysis.add_run('• 加强高价值客户关系维护\n')
+    analysis.add_run('• 扩大新产品线库存\n')
     
-    # 添加图表引用
-    doc.add_paragraph('详细趋势分析请参考附图:')
-    
-    # 保存Word文档
-    doc_output = io.BytesIO()
-    doc.save(doc_output)
-    doc_output.seek(0)
-    
-    # 5. 输出结果
-    result = {
-        "type": "word",
-        "title": f"销售周报_{datetime.now().strftime('%Y%m%d')}",
-        "data_base64": base64.b64encode(doc_output.read()).decode('utf-8'),
-        "chart_preview": chart_base64,
-        "summary": {
-            "total_revenue": total_revenue,
-            "total_orders": total_orders,
-            "avg_profit_margin": avg_profit_margin
-        }
-    }
-    print(json.dumps(result))
+    # 保存文档
+    doc.save('业务分析报告.docx')
+    print("Word 报告已生成: 业务分析报告.docx")
 
 # 使用示例
-# generate_weekly_report()
+# generate_simple_word_report()
 ```
 
-## 📈 Excel报告生成
+### 带数据的 Word 报告
+```python
+from docx import Document
+from docx.shared import Inches
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
 
+def generate_data_driven_report():
+    """生成基于数据的 Word 报告"""
+    
+    # 创建示例数据
+    np.random.seed(42)
+    dates = pd.date_range('2024-01-01', periods=7, freq='D')
+    
+    sales_data = pd.DataFrame({
+        '日期': dates,
+        '销售额': np.random.normal(10000, 2000, 7),
+        '订单数': np.random.randint(50, 200, 7),
+        '客户数': np.random.randint(30, 150, 7)
+    })
+    
+    # 计算衍生指标
+    sales_data['客单价'] = sales_data['销售额'] / sales_data['订单数']
+    sales_data['转化率'] = (sales_data['订单数'] / sales_data['客户数'] * 100).round(2)
+    
+    print("=== 销售数据报告 ===")
+    print(f"报告周期: {sales_data['日期'].min().strftime('%Y-%m-%d')} 至 {sales_data['日期'].max().strftime('%Y-%m-%d')}")
+    print(f"总销售额: ¥{sales_data['销售额'].sum():,.2f}")
+    print(f"总订单数: {sales_data['订单数'].sum():,}")
+    print(f"平均客单价: ¥{sales_data['客单价'].mean():.2f}")
+    print(f"平均转化率: {sales_data['转化率'].mean():.1f}%")
+    
+    # 创建 Word 文档
+    doc = Document()
+    
+    # 标题
+    title = doc.add_heading('销售数据报告', 0)
+    
+    # 基本信息
+    doc.add_paragraph(f'生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M")}')
+    doc.add_paragraph(f'数据周期: {sales_data["日期"].min().strftime("%Y-%m-%d")} 至 {sales_data["日期"].max().strftime("%Y-%m-%d")}')
+    doc.add_paragraph()
+    
+    # 关键指标
+    doc.add_heading('关键指标', level=1)
+    doc.add_paragraph(f'总销售额: ¥{sales_data["销售额"].sum():,.2f}')
+    doc.add_paragraph(f'总订单数: {sales_data["订单数"].sum():,}')
+    doc.add_paragraph(f'平均客单价: ¥{sales_data["客单价"].mean():.2f}')
+    doc.add_paragraph(f'平均转化率: {sales_data["转化率"].mean():.1f}%')
+    
+    # 详细数据表格
+    doc.add_heading('每日数据明细', level=1)
+    
+    # 创建表格
+    table = doc.add_table(rows=len(sales_data)+1, cols=len(sales_data.columns))
+    table.style = 'Light Grid Accent 1'
+    
+    # 表头
+    for i, col_name in enumerate(sales_data.columns):
+        table.cell(0, i).text = str(col_name)
+    
+    # 数据行
+    for i, (_, row) in enumerate(sales_data.iterrows(), 1):
+        for j, value in enumerate(row):
+            if isinstance(value, (int, np.integer)):
+                table.cell(i, j).text = f"{value:,}"
+            elif isinstance(value, float):
+                if j in [1]:  # 销售额
+                    table.cell(i, j).text = f"¥{value:,.2f}"
+                elif j in [4]:  # 客单价
+                    table.cell(i, j).text = f"¥{value:.2f}"
+                else:
+                    table.cell(i, j).text = f"{value:.2f}"
+            else:
+                table.cell(i, j).text = str(value)
+    
+    # 生成可视化图表
+    plt.figure(figsize=(12, 8))
+    
+    # 销售额趋势
+    plt.subplot(2, 2, 1)
+    plt.plot(sales_data['日期'], sales_data['销售额'], marker='o', linewidth=2)
+    plt.title('销售额趋势')
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+    
+    # 订单数分布
+    plt.subplot(2, 2, 2)
+    plt.bar(sales_data['日期'], sales_data['订单数'], alpha=0.7)
+    plt.title('订单数量')
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+    
+    # 客单价
+    plt.subplot(2, 2, 3)
+    plt.bar(sales_data['日期'], sales_data['客单价'], alpha=0.7, color='green')
+    plt.title('客单价趋势')
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+    
+    # 转化率
+    plt.subplot(2, 2, 4)
+    plt.plot(sales_data['日期'], sales_data['转化率'], marker='s', linewidth=2, color='red')
+    plt.title('转化率变化')
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # 保存文档
+    doc.save('销售数据报告.docx')
+    print("Word 报告已生成: 销售数据报告.docx")
+
+# 使用示例
+# generate_data_driven_report()
+```
+
+## 📈 Excel 报告生成
+
+### 基础 Excel 报告
 ```python
 import pandas as pd
 import numpy as np
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.chart import BarChart, Reference
-import io
-import base64
-import json
+from datetime import datetime
 
 def generate_excel_report():
-    """生成格式化的Excel报告"""
+    """生成格式化的 Excel 报告"""
     
     # 创建示例数据
     np.random.seed(42)
@@ -229,7 +239,25 @@ def generate_excel_report():
     df['支出差异'] = df['实际支出'] - df['预算']
     df['差异率'] = (df['支出差异'] / df['预算'] * 100).round(2)
     
-    # 创建Excel工作簿
+    print("=== 部门预算报告 ===")
+    print(f"数据期间: {months[0]} - {months[-1]}")
+    print(f"涉及部门: {len(departments)} 个")
+    print(f"总预算: ¥{df['预算'].sum():,}")
+    print(f"总支出: ¥{df['实际支出'].sum():,}")
+    print(f"总体差异: ¥{df['支出差异'].sum():,}")
+    
+    # 部门汇总
+    dept_summary = df.groupby('部门').agg({
+        '预算': 'sum',
+        '实际支出': 'sum',
+        '支出差异': 'sum',
+        '员工数': 'mean'
+    }).round(2)
+    
+    print("\n各部门汇总:")
+    print(dept_summary)
+    
+    # 创建 Excel 工作簿
     wb = Workbook()
     ws = wb.active
     ws.title = "部门预算报告"
@@ -240,124 +268,286 @@ def generate_excel_report():
     ws.merge_cells('A1:F1')
     ws['A1'].alignment = Alignment(horizontal='center')
     
-    # 写入数据
-    headers = ['部门', '月份', '预算', '实际支出', '支出差异', '差异率']
+    # 报告信息
+    ws['A2'] = f'生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+    ws.merge_cells('A2:F2')
+    
+    # 写入数据表头
+    headers = ['部门', '月份', '预算', '实际支出', '支出差异', '差异率%']
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=3, column=col, value=header)
+        cell = ws.cell(row=4, column=col, value=header)
         cell.font = Font(bold=True)
         cell.fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
     
-    for row, (_, record) in enumerate(df.iterrows(), 4):
-        for col, value in enumerate(record.values, 1):
-            ws.cell(row=row, column=col, value=value)
+    # 写入数据
+    for row, (_, record) in enumerate(df.iterrows(), 5):
+        ws.cell(row=row, column=1, value=record['部门'])
+        ws.cell(row=row, column=2, value=record['月份'])
+        ws.cell(row=row, column=3, value=record['预算'])
+        ws.cell(row=row, column=4, value=record['实际支出'])
+        ws.cell(row=row, column=5, value=record['支出差异'])
+        ws.cell(row=row, column=6, value=record['差异率'])
     
     # 添加汇总行
-    summary_row = len(df) + 5
+    summary_row = len(df) + 7
     ws[f'A{summary_row}'] = '总计'
     ws[f'C{summary_row}'] = df['预算'].sum()
     ws[f'D{summary_row}'] = df['实际支出'].sum()
     ws[f'E{summary_row}'] = df['支出差异'].sum()
     
-    # 保存到内存流
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
+    # 设置数字格式
+    for row in range(5, len(df) + 5):
+        for col in [3, 4, 5]:  # 预算、实际支出、支出差异列
+            ws.cell(row=row, column=col).number_format = '#,##0'
+        ws.cell(row=row, column=6).number_format = '0.00%'
     
-    # 输出结果
-    result = {
-        "type": "excel",
-        "title": "部门预算执行报告",
-        "data_base64": base64.b64encode(output.getvalue()).decode('utf-8')
-    }
-    print(json.dumps(result))
+    # 保存文件
+    wb.save('部门预算报告.xlsx')
+    print("Excel 报告已生成: 部门预算报告.xlsx")
 
+# 使用示例
 # generate_excel_report()
 ```
 
-## 📄 PDF报告生成
+## 📄 PDF 报告生成
 
+### 基础 PDF 报告
 ```python
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib import colors
-import io
-import base64
-import json
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import matplotlib.pyplot as plt
 
-def generate_pdf_report():
-    """生成专业的PDF报告"""
+def generate_pdf_report_content():
+    """生成 PDF 报告内容（通过控制台输出，可复制到 PDF 生成工具）"""
     
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, 
-                          rightMargin=72, leftMargin=72,
-                          topMargin=72, bottomMargin=18)
+    # 创建示例数据
+    np.random.seed(42)
+    products = ['产品A', '产品B', '产品C', '产品D', '产品E']
     
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='Center', alignment=1))
+    performance_data = pd.DataFrame({
+        '产品': products,
+        'Q1销售额': np.random.randint(100000, 500000, 5),
+        'Q2销售额': np.random.randint(120000, 550000, 5),
+        '增长率': np.random.uniform(0.05, 0.25, 5),
+        '市场份额': np.random.uniform(0.08, 0.25, 5)
+    })
     
-    # 构建文档内容
-    story = []
+    performance_data['总销售额'] = performance_data['Q1销售额'] + performance_data['Q2销售额']
     
-    # 标题
-    title = Paragraph("业务分析报告", styles['Title'])
-    story.append(title)
-    story.append(Spacer(1, 12))
+    print("=" * 60)
+    print("                 产品绩效分析报告")
+    print("=" * 60)
+    print(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"报告周期: 2024年第一季度 - 第二季度")
+    print()
     
-    # 报告摘要
-    story.append(Paragraph("执行摘要", styles['Heading2']))
-    story.append(Paragraph("本报告详细分析了近期的业务表现，包括关键指标趋势、部门表现对比以及未来建议。", styles['BodyText']))
-    story.append(Spacer(1, 12))
+    print("执行摘要:")
+    print("• 总体销售额呈现稳定增长趋势")
+    print("• 产品B表现突出，增长率达25%")
+    print("• 市场份额分布相对均衡")
+    print()
     
-    # 关键指标表格
-    story.append(Paragraph("关键绩效指标", styles['Heading2']))
-    data = [
-        ['指标', '当前值', '环比变化', '目标值'],
-        ['总收入', '¥1,234,567', '+5.2%', '¥1,200,000'],
-        ['新客户', '245', '+12.3%', '220'],
-        ['客户满意度', '92%', '+2.1%', '90%'],
-        ['项目完成率', '88%', '+3.5%', '85%']
-    ]
+    print("关键绩效指标:")
+    print(f"• 总销售额: ¥{performance_data['总销售额'].sum():,}")
+    print(f"• 平均增长率: {performance_data['增长率'].mean():.1%}")
+    print(f"• 最高市场份额: {performance_data['市场份额'].max():.1%}")
+    print()
     
-    table = Table(data, colWidths=[1.5*inch, 1.2*inch, 1.2*inch, 1.2*inch])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    story.append(table)
-    story.append(Spacer(1, 12))
+    print("产品绩效明细:")
+    print("-" * 80)
+    print(f"{'产品':<10} {'Q1销售额':<12} {'Q2销售额':<12} {'增长率':<8} {'市场份额':<8} {'总销售额':<12}")
+    print("-" * 80)
     
-    # 分析与建议
-    story.append(Paragraph("分析与建议", styles['Heading2']))
-    analysis_text = """
-    基于当前数据分析，我们提出以下建议：
+    for _, row in performance_data.iterrows():
+        print(f"{row['产品']:<10} ¥{row['Q1销售额']:<11,} ¥{row['Q2销售额']:<11,} {row['增长率']:<7.1%} {row['市场份额']:<7.1%} ¥{row['总销售额']:<11,}")
     
-    1. 继续加强新客户获取策略，当前增长势头良好
-    2. 优化客户服务流程，进一步提升客户满意度
-    3. 关注项目交付质量，确保完成率持续提升
-    4. 加强部门间协作，提高整体运营效率
-    """
-    story.append(Paragraph(analysis_text, styles['BodyText']))
+    print("-" * 80)
+    print()
     
-    # 生成PDF
-    doc.build(story)
-    buffer.seek(0)
+    print("分析与建议:")
+    print("1. 产品B表现优异，建议加大资源投入")
+    print("2. 产品D增长缓慢，需要重新评估市场策略")
+    print("3. 整体产品线健康，建议维持当前发展节奏")
+    print("4. 关注新兴市场机会，考虑产品线扩展")
     
-    result = {
-        "type": "pdf",
-        "title": "业务分析报告",
-        "data_base64": base64.b64encode(buffer.getvalue()).decode('utf-8')
-    }
-    print(json.dumps(result))
+    # 生成可视化图表
+    plt.figure(figsize=(12, 8))
+    
+    # 销售额对比
+    plt.subplot(2, 2, 1)
+    x_pos = np.arange(len(products))
+    width = 0.35
+    
+    plt.bar(x_pos - width/2, performance_data['Q1销售额'], width, label='Q1', alpha=0.7)
+    plt.bar(x_pos + width/2, performance_data['Q2销售额'], width, label='Q2', alpha=0.7)
+    plt.xticks(x_pos, products)
+    plt.title('各产品季度销售额对比')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # 增长率
+    plt.subplot(2, 2, 2)
+    colors = ['green' if x > 0.15 else 'orange' for x in performance_data['增长率']]
+    plt.bar(performance_data['产品'], performance_data['增长率'] * 100, color=colors, alpha=0.7)
+    plt.title('产品增长率 (%)')
+    plt.grid(True, alpha=0.3)
+    
+    # 市场份额
+    plt.subplot(2, 2, 3)
+    plt.pie(performance_data['市场份额'], labels=performance_data['产品'], autopct='%1.1f%%')
+    plt.title('市场份额分布')
+    
+    # 总销售额排名
+    plt.subplot(2, 2, 4)
+    sorted_data = performance_data.sort_values('总销售额', ascending=True)
+    plt.barh(sorted_data['产品'], sorted_data['总销售额'], alpha=0.7)
+    plt.title('总销售额排名')
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
 
-# generate_pdf_report()
+# 使用示例
+# generate_pdf_report_content()
 ```
 
-这个工作流文件提供了完整的报告生成解决方案，从数据准备到最终文档输出，支持多种格式的专业报告。
+## 🚀 综合报告工作流
+
+### 完整业务报告生成
+```python
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+def generate_comprehensive_business_report():
+    """生成完整的业务分析报告"""
+    
+    print("=== 开始生成业务分析报告 ===")
+    
+    # 1. 数据准备
+    np.random.seed(42)
+    months = ['1月', '2月', '3月', '4月', '5月', '6月']
+    
+    # 销售数据
+    sales_data = pd.DataFrame({
+        '月份': months,
+        '销售额': np.random.normal(1000000, 200000, 6),
+        '订单数': np.random.randint(5000, 8000, 6),
+        '新客户': np.random.randint(200, 500, 6),
+        '市场费用': np.random.normal(200000, 50000, 6)
+    })
+    
+    # 计算衍生指标
+    sales_data['毛利率'] = (sales_data['销售额'] - sales_data['市场费用']) / sales_data['销售额']
+    sales_data['客单价'] = sales_data['销售额'] / sales_data['订单数']
+    sales_data['获客成本'] = sales_data['市场费用'] / sales_data['新客户']
+    
+    print("数据准备完成")
+    print(f"分析期间: {months[0]} - {months[-1]}")
+    print(f"总销售额: ¥{sales_data['销售额'].sum():,.2f}")
+    print(f"总订单数: {sales_data['订单数'].sum():,}")
+    print(f"新增客户: {sales_data['新客户'].sum():,}")
+    
+    # 2. 关键指标分析
+    print("\n=== 关键业务指标 ===")
+    print(f"平均月销售额: ¥{sales_data['销售额'].mean():,.2f}")
+    print(f"平均客单价: ¥{sales_data['客单价'].mean():.2f}")
+    print(f"平均毛利率: {sales_data['毛利率'].mean():.1%}")
+    print(f"平均获客成本: ¥{sales_data['获客成本'].mean():.2f}")
+    
+    # 3. 趋势分析
+    print("\n=== 业务趋势分析 ===")
+    sales_growth = (sales_data['销售额'].iloc[-1] - sales_data['销售额'].iloc[0]) / sales_data['销售额'].iloc[0]
+    order_growth = (sales_data['订单数'].iloc[-1] - sales_data['订单数'].iloc[0]) / sales_data['订单数'].iloc[0]
+    
+    print(f"销售额增长: {sales_growth:+.1%}")
+    print(f"订单数增长: {order_growth:+.1%}")
+    print(f"客户增长: {sales_data['新客户'].sum() / len(months):.0f} 人/月")
+    
+    # 4. 生成可视化报告
+    plt.figure(figsize=(15, 10))
+    
+    # 销售额趋势
+    plt.subplot(2, 3, 1)
+    plt.plot(sales_data['月份'], sales_data['销售额']/10000, marker='o', linewidth=2)
+    plt.title('销售额趋势 (万元)')
+    plt.grid(True, alpha=0.3)
+    
+    # 订单数量
+    plt.subplot(2, 3, 2)
+    plt.bar(sales_data['月份'], sales_data['订单数'], alpha=0.7)
+    plt.title('订单数量')
+    plt.grid(True, alpha=0.3)
+    
+    # 毛利率
+    plt.subplot(2, 3, 3)
+    plt.bar(sales_data['月份'], sales_data['毛利率']*100, alpha=0.7, color='green')
+    plt.title('毛利率 (%)')
+    plt.grid(True, alpha=0.3)
+    
+    # 客单价
+    plt.subplot(2, 3, 4)
+    plt.plot(sales_data['月份'], sales_data['客单价'], marker='s', linewidth=2, color='orange')
+    plt.title('客单价趋势')
+    plt.grid(True, alpha=0.3)
+    
+    # 新客户获取
+    plt.subplot(2, 3, 5)
+    plt.bar(sales_data['月份'], sales_data['新客户'], alpha=0.7, color='purple')
+    plt.title('新客户数量')
+    plt.grid(True, alpha=0.3)
+    
+    # 获客成本
+    plt.subplot(2, 3, 6)
+    plt.bar(sales_data['月份'], sales_data['获客成本'], alpha=0.7, color='red')
+    plt.title('获客成本')
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # 5. 业务建议
+    print("\n=== 业务建议 ===")
+    print("1. 基于当前增长趋势，建议加大营销投入")
+    print("2. 客单价稳定，可考虑推出高端产品线")
+    print("3. 获客成本可控，可扩大市场覆盖范围")
+    print("4. 建议优化运营效率，进一步提升毛利率")
+    
+    print("\n=== 报告生成完成 ===")
+    print("所有分析和图表已准备就绪")
+
+# 使用示例
+# generate_comprehensive_business_report()
+```
+
+## ⚠️ 使用注意事项
+
+### ✅ 推荐做法：
+- 使用标准的 Python 库：`python-docx`, `pandas`, `matplotlib`
+- 直接使用 `print()` 输出文本内容
+- 使用 `plt.show()` 显示图表
+- 使用文件保存功能生成文档
+
+### ❌ 避免的操作：
+- 不要手动构建 JSON 输出
+- 不要使用 `base64` 编码
+- 不要创建复杂的自定义输出格式
+
+### 🔧 错误处理：
+```python
+try:
+    from docx import Document
+    # Word 文档生成代码
+except ImportError:
+    print("python-docx 库不可用，无法生成 Word 文档")
+
+try:
+    import pandas as pd
+    # 数据处理代码
+except ImportError:
+    print("pandas 库不可用")
+```
+
+**记住**：系统会自动处理图表输出，您只需要专注于报告内容的生成逻辑！

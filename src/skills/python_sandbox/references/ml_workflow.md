@@ -1,33 +1,66 @@
-# 机器学习工作流指南
+# 机器学习工作流指南 (v2.2)
 
-## 🎯 标准机器学习流程
+## 🎯 工具概述
+**功能**：机器学习模型训练、评估、统计分析和可视化
+**输出原则**：直接打印结果，系统自动处理输出格式
 
-### 完整模型训练模板
+## 📊 基础机器学习模板
+
+### 数据准备与预处理
 ```python
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 import matplotlib.pyplot as plt
 import seaborn as sns
-import io
-import base64
-import json
 
-def standard_ml_workflow(X, y, problem_type='regression'):
-    """标准机器学习工作流"""
+def prepare_ml_data():
+    """机器学习数据准备示例"""
     
-    # 数据预处理
-    if problem_type == 'classification':
-        le = LabelEncoder()
-        y = le.fit_transform(y)
+    # 创建示例数据集
+    np.random.seed(42)
+    n_samples = 1000
     
-    # 分割数据
+    # 回归问题数据
+    X_reg = np.random.normal(0, 1, (n_samples, 5))
+    y_reg = 2 * X_reg[:, 0] + 1.5 * X_reg[:, 1] - X_reg[:, 2] + np.random.normal(0, 0.5, n_samples)
+    
+    # 分类问题数据
+    X_clf = np.random.normal(0, 1, (n_samples, 4))
+    y_clf = (X_clf[:, 0] + X_clf[:, 1] > 0).astype(int)
+    
+    print("=== 数据准备完成 ===")
+    print(f"样本数量: {n_samples}")
+    print(f"回归特征维度: {X_reg.shape[1]}")
+    print(f"分类特征维度: {X_clf.shape[1]}")
+    print(f"分类标签分布: {np.unique(y_clf, return_counts=True)}")
+    
+    return X_reg, y_reg, X_clf, y_clf
+
+# 使用示例
+# X_reg, y_reg, X_clf, y_clf = prepare_ml_data()
+```
+
+### 标准机器学习工作流
+```python
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, classification_report
+from sklearn.model_selection import cross_val_score
+
+def standard_ml_pipeline(X, y, problem_type='regression'):
+    """标准机器学习流程"""
+    
+    print(f"=== 开始 {problem_type} 模型训练 ===")
+    
+    # 数据分割
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y if problem_type == 'classification' else None
+        X, y, test_size=0.2, random_state=42,
+        stratify=y if problem_type == 'classification' else None
     )
+    
+    print(f"训练集大小: {X_train.shape}")
+    print(f"测试集大小: {X_test.shape}")
     
     # 特征标准化
     scaler = StandardScaler()
@@ -46,541 +79,533 @@ def standard_ml_workflow(X, y, problem_type='regression'):
     # 预测
     y_pred = model.predict(X_test_scaled)
     
-    # 评估指标
+    # 模型评估
     if problem_type == 'regression':
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
         r2 = r2_score(y_test, y_pred)
-        metrics = {'mse': mse, 'rmse': rmse, 'r2_score': r2}
+        
+        print(f"回归模型性能:")
+        print(f"  MSE: {mse:.4f}")
+        print(f"  RMSE: {rmse:.4f}")
+        print(f"  R²: {r2:.4f}")
+        
+        metrics = {'mse': mse, 'rmse': rmse, 'r2': r2}
     else:
         accuracy = accuracy_score(y_test, y_pred)
-        report = classification_report(y_test, y_pred, output_dict=True)
-        metrics = {'accuracy': accuracy, 'classification_report': report}
+        print(f"分类模型性能:")
+        print(f"  准确率: {accuracy:.4f}")
+        print("\n详细分类报告:")
+        print(classification_report(y_test, y_pred))
+        
+        metrics = {'accuracy': accuracy}
     
-    # 特征重要性
-    feature_importance = pd.DataFrame({
-        'feature': X.columns,
-        'importance': model.feature_importances_
-    }).sort_values('importance', ascending=False)
+    # 交叉验证
+    cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5, 
+                               scoring='r2' if problem_type == 'regression' else 'accuracy')
+    print(f"交叉验证平均得分: {cv_scores.mean():.4f} (±{cv_scores.std():.4f})")
     
     return {
         'model': model,
         'metrics': metrics,
-        'feature_importance': feature_importance,
         'X_test': X_test,
         'y_test': y_test,
-        'y_pred': y_pred
+        'y_pred': y_pred,
+        'cv_scores': cv_scores
     }
+
+# 使用示例
+# X_reg, y_reg, X_clf, y_clf = prepare_ml_data()
+# regression_results = standard_ml_pipeline(X_reg, y_reg, 'regression')
+# classification_results = standard_ml_pipeline(X_clf, y_clf, 'classification')
 ```
 
-## 📊 回归分析工作流
+## 📈 回归分析完整工作流
 
 ```python
-def regression_analysis_workflow():
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+
+def complete_regression_analysis():
     """完整的回归分析工作流"""
     
-    # 生成示例数据
+    print("=== 开始回归分析 ===")
+    
+    # 1. 数据生成
     np.random.seed(42)
-    n_samples = 1000
+    n_samples = 500
     
-    # 创建特征
-    feature1 = np.random.normal(50, 15, n_samples)
-    feature2 = np.random.normal(100, 25, n_samples)
-    feature3 = np.random.normal(10, 3, n_samples)
-    feature4 = np.random.normal(0, 1, n_samples)  # 噪声特征
+    # 创建有意义的特征
+    feature1 = np.random.normal(50, 15, n_samples)  # 年龄
+    feature2 = np.random.normal(100, 25, n_samples) # 收入
+    feature3 = np.random.normal(10, 3, n_samples)   # 教育年限
+    feature4 = np.random.normal(0, 1, n_samples)    # 噪声特征
     
-    # 创建目标变量（与特征有复杂关系）
-    target = (2.5 * feature1 + 1.8 * feature2 - 3.2 * feature3 + 
-              0.5 * feature1 * feature3 + np.random.normal(0, 20, n_samples))
+    # 创建目标变量（模拟房价）
+    target = (50 * feature1 + 80 * feature2 + 5000 * feature3 + 
+              10 * feature1 * feature3 + np.random.normal(0, 10000, n_samples))
     
     df = pd.DataFrame({
-        'feature1': feature1,
-        'feature2': feature2,
-        'feature3': feature3,
-        'feature4': feature4,
-        'target': target
+        '年龄': feature1,
+        '收入': feature2,
+        '教育年限': feature3,
+        '噪声特征': feature4,
+        '房价': target
     })
     
-    # 准备数据
-    X = df[['feature1', 'feature2', 'feature3', 'feature4']]
-    y = df['target']
+    print("数据基本信息:")
+    print(f"数据集形状: {df.shape}")
+    print(f"特征列表: {list(df.columns[:-1])}")
+    print(f"目标变量: {df.columns[-1]}")
     
-    # 执行标准工作流
-    results = standard_ml_workflow(X, y, 'regression')
+    # 2. 数据探索
+    print("\n=== 数据探索 ===")
+    print("数值特征统计:")
+    print(df.describe())
     
-    # 可视化结果
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    # 相关性分析
+    correlation = df.corr()['房价'].sort_values(ascending=False)
+    print("\n特征与目标变量相关性:")
+    for feature, corr in correlation.items():
+        if feature != '房价':
+            print(f"  {feature}: {corr:.3f}")
     
-    # 1. 实际值 vs 预测值
-    axes[0,0].scatter(results['y_test'], results['y_pred'], alpha=0.6)
-    axes[0,0].plot([results['y_test'].min(), results['y_test'].max()], 
-                  [results['y_test'].min(), results['y_test'].max()], 'r--', lw=2)
-    axes[0,0].set_xlabel('实际值')
-    axes[0,0].set_ylabel('预测值')
-    axes[0,0].set_title(f'预测效果 (R² = {results["metrics"]["r2_score"]:.3f})')
-    axes[0,0].grid(True, alpha=0.3)
+    # 3. 模型训练
+    X = df.drop('房价', axis=1)
+    y = df['房价']
     
-    # 2. 残差分析
-    residuals = results['y_test'] - results['y_pred']
-    axes[0,1].scatter(results['y_pred'], residuals, alpha=0.6)
-    axes[0,1].axhline(y=0, color='r', linestyle='--')
-    axes[0,1].set_xlabel('预测值')
-    axes[0,1].set_ylabel('残差')
-    axes[0,1].set_title('残差分析')
-    axes[0,1].grid(True, alpha=0.3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    # 3. 特征重要性
-    top_features = results['feature_importance'].head(10)
-    sns.barplot(data=top_features, x='importance', y='feature', ax=axes[0,2])
-    axes[0,2].set_title('特征重要性排名')
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
     
-    # 4. 误差分布
-    axes[1,0].hist(residuals, bins=30, alpha=0.7, edgecolor='black', density=True)
-    axes[1,0].set_xlabel('残差')
-    axes[1,0].set_ylabel('密度')
-    axes[1,0].set_title('误差分布')
-    axes[1,0].grid(True, alpha=0.3)
+    y_pred = model.predict(X_test)
     
-    # 5. 预测误差箱线图
-    error_percentage = np.abs(residuals / results['y_test']) * 100
-    axes[1,1].boxplot(error_percentage)
-    axes[1,1].set_ylabel('相对误差 (%)')
-    axes[1,1].set_title('预测相对误差分布')
-    axes[1,1].grid(True, alpha=0.3)
+    # 4. 模型评估
+    mse = mean_squared_error(y_test, y_pred)
+    rmse = np.sqrt(mse)
+    r2 = r2_score(y_test, y_pred)
     
-    # 6. 学习曲线（简化版）
-    train_sizes = np.linspace(0.1, 1.0, 10)
-    train_scores = []
-    test_scores = []
+    print(f"\n=== 模型性能 ===")
+    print(f"均方误差 (MSE): {mse:,.2f}")
+    print(f"均方根误差 (RMSE): {rmse:,.2f}")
+    print(f"决定系数 (R²): {r2:.4f}")
     
-    for size in train_sizes:
-        n_train = int(size * len(X))
-        X_train_sub = X.iloc[:n_train]
-        y_train_sub = y.iloc[:n_train]
-        
-        model = RandomForestRegressor(n_estimators=50, random_state=42)
-        model.fit(X_train_sub, y_train_sub)
-        
-        train_score = model.score(X_train_sub, y_train_sub)
-        test_score = model.score(results['X_test'], results['y_test'])
-        
-        train_scores.append(train_score)
-        test_scores.append(test_score)
+    # 5. 特征重要性
+    feature_importance = pd.DataFrame({
+        '特征': X.columns,
+        '重要性': model.feature_importances_
+    }).sort_values('重要性', ascending=False)
     
-    axes[1,2].plot(train_sizes, train_scores, 'o-', label='训练得分')
-    axes[1,2].plot(train_sizes, test_scores, 'o-', label='测试得分')
-    axes[1,2].set_xlabel('训练样本比例')
-    axes[1,2].set_ylabel('R²得分')
-    axes[1,2].set_title('学习曲线')
-    axes[1,2].legend()
-    axes[1,2].grid(True, alpha=0.3)
+    print(f"\n=== 特征重要性 ===")
+    for _, row in feature_importance.iterrows():
+        print(f"  {row['特征']}: {row['重要性']:.4f}")
+    
+    # 6. 可视化分析
+    plt.figure(figsize=(15, 10))
+    
+    # 实际值 vs 预测值
+    plt.subplot(2, 3, 1)
+    plt.scatter(y_test, y_pred, alpha=0.6)
+    plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
+    plt.xlabel('实际值')
+    plt.ylabel('预测值')
+    plt.title(f'预测效果 (R² = {r2:.3f})')
+    plt.grid(True, alpha=0.3)
+    
+    # 残差分析
+    plt.subplot(2, 3, 2)
+    residuals = y_test - y_pred
+    plt.scatter(y_pred, residuals, alpha=0.6)
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.xlabel('预测值')
+    plt.ylabel('残差')
+    plt.title('残差分析')
+    plt.grid(True, alpha=0.3)
+    
+    # 特征重要性可视化
+    plt.subplot(2, 3, 3)
+    top_features = feature_importance.head(5)
+    plt.barh(top_features['特征'], top_features['重要性'])
+    plt.xlabel('重要性')
+    plt.title('Top 5 特征重要性')
+    plt.gca().invert_yaxis()
+    
+    # 误差分布
+    plt.subplot(2, 3, 4)
+    plt.hist(residuals, bins=30, alpha=0.7, edgecolor='black')
+    plt.xlabel('残差')
+    plt.ylabel('频数')
+    plt.title('误差分布')
+    plt.grid(True, alpha=0.3)
+    
+    # 相对误差
+    plt.subplot(2, 3, 5)
+    relative_error = np.abs(residuals / y_test) * 100
+    plt.hist(relative_error, bins=30, alpha=0.7, edgecolor='black')
+    plt.xlabel('相对误差 (%)')
+    plt.ylabel('频数')
+    plt.title('相对误差分布')
+    plt.grid(True, alpha=0.3)
+    
+    # 预测误差箱线图
+    plt.subplot(2, 3, 6)
+    plt.boxplot(relative_error)
+    plt.ylabel('相对误差 (%)')
+    plt.title('预测误差分布')
+    plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
+    plt.show()
     
-    # 输出图表
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-    buf.seek(0)
-    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-    buf.close()
-    plt.close('all')
+    # 7. 模型解释
+    print(f"\n=== 模型解释 ===")
+    print(f"模型性能: {'优秀' if r2 > 0.8 else '良好' if r2 > 0.6 else '一般'}")
+    print(f"最重要的特征: {feature_importance.iloc[0]['特征']}")
+    print(f"建议: 关注{feature_importance.iloc[0]['特征']}和{feature_importance.iloc[1]['特征']}的优化")
     
-    # 生成模型报告
-    result = {
-        "type": "ml_report",
-        "title": "回归分析模型报告",
-        "problem_type": "regression",
-        "model_performance": results["metrics"],
-        "feature_importance": results["feature_importance"].to_dict('records'),
-        "training_details": {
-            "training_samples": len(X) - len(results['X_test']),
-            "test_samples": len(results['X_test']),
-            "features_used": list(X.columns),
-            "model_type": "RandomForestRegressor"
-        },
-        "chart_preview": chart_base64,
-        "interpretation": {
-            "r2_interpretation": "R²值表示模型解释的目标变量方差比例",
-            "best_features": top_features['feature'].head(3).tolist(),
-            "recommendations": "建议关注重要性最高的特征进行进一步分析"
-        }
+    return {
+        'model': model,
+        'metrics': {'mse': mse, 'rmse': rmse, 'r2': r2},
+        'feature_importance': feature_importance,
+        'predictions': y_pred
     }
-    print(json.dumps(result))
 
-# regression_analysis_workflow()
+# 使用示例
+# regression_results = complete_regression_analysis()
 ```
 
-## 🔍 分类分析工作流
+## 🔍 分类分析完整工作流
 
 ```python
-def classification_analysis_workflow():
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.datasets import make_classification
+
+def complete_classification_analysis():
     """完整的分类分析工作流"""
     
-    from sklearn.datasets import make_classification
+    print("=== 开始分类分析 ===")
     
-    # 生成分类数据
+    # 1. 数据生成
     X, y = make_classification(
-        n_samples=1000, 
-        n_features=10,
-        n_informative=6,
+        n_samples=1000,
+        n_features=8,
+        n_informative=5,
         n_redundant=2,
         n_classes=3,
         random_state=42
     )
     
-    feature_names = [f'feature_{i}' for i in range(X.shape[1])]
-    X_df = pd.DataFrame(X, columns=feature_names)
+    feature_names = [f'特征_{i+1}' for i in range(X.shape[1])]
+    df = pd.DataFrame(X, columns=feature_names)
+    df['类别'] = y
     
-    # 执行标准工作流
-    results = standard_ml_workflow(X_df, y, 'classification')
+    print("数据基本信息:")
+    print(f"数据集形状: {df.shape}")
+    print(f"特征数量: {X.shape[1]}")
+    print(f"类别数量: {len(np.unique(y))}")
+    print(f"类别分布: {np.unique(y, return_counts=True)}")
     
-    # 可视化结果
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    # 2. 数据探索
+    print("\n=== 数据探索 ===")
+    print("数值特征统计:")
+    print(df.describe())
     
-    # 1. 混淆矩阵
-    from sklearn.metrics import confusion_matrix
-    cm = confusion_matrix(results['y_test'], results['y_pred'])
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[0,0])
-    axes[0,0].set_xlabel('预测标签')
-    axes[0,0].set_ylabel('真实标签')
-    axes[0,0].set_title('混淆矩阵')
+    # 3. 模型训练
+    X_data = df.drop('类别', axis=1)
+    y_data = df['类别']
     
-    # 2. 特征重要性
-    top_features = results['feature_importance'].head(10)
-    sns.barplot(data=top_features, x='importance', y='feature', ax=axes[0,1])
-    axes[0,1].set_title('特征重要性排名')
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_data, y_data, test_size=0.2, random_state=42, stratify=y_data
+    )
     
-    # 3. 类别分布
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    y_pred = model.predict(X_test)
+    
+    # 4. 模型评估
+    accuracy = accuracy_score(y_test, y_pred)
+    
+    print(f"\n=== 模型性能 ===")
+    print(f"准确率: {accuracy:.4f}")
+    print("\n详细分类报告:")
+    print(classification_report(y_test, y_pred))
+    
+    # 5. 特征重要性
+    feature_importance = pd.DataFrame({
+        '特征': X_data.columns,
+        '重要性': model.feature_importances_
+    }).sort_values('重要性', ascending=False)
+    
+    print(f"\n=== 特征重要性 ===")
+    for _, row in feature_importance.iterrows():
+        print(f"  {row['特征']}: {row['重要性']:.4f}")
+    
+    # 6. 可视化分析
+    plt.figure(figsize=(15, 10))
+    
+    # 混淆矩阵
+    plt.subplot(2, 3, 1)
+    cm = confusion_matrix(y_test, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.xlabel('预测标签')
+    plt.ylabel('真实标签')
+    plt.title('混淆矩阵')
+    
+    # 特征重要性
+    plt.subplot(2, 3, 2)
+    top_features = feature_importance.head(8)
+    plt.barh(top_features['特征'], top_features['重要性'])
+    plt.xlabel('重要性')
+    plt.title('特征重要性排名')
+    plt.gca().invert_yaxis()
+    
+    # 类别分布
+    plt.subplot(2, 3, 3)
     unique, counts = np.unique(y, return_counts=True)
-    axes[0,2].pie(counts, labels=[f'Class {cls}' for cls in unique], autopct='%1.1f%%')
-    axes[0,2].set_title('类别分布')
+    plt.pie(counts, labels=[f'类别 {cls}' for cls in unique], autopct='%1.1f%%')
+    plt.title('类别分布')
     
-    # 4. ROC曲线（多分类简化）
-    from sklearn.metrics import roc_curve, auc
-    from sklearn.preprocessing import label_binarize
+    # 分类报告热力图
+    plt.subplot(2, 3, 4)
+    report_dict = classification_report(y_test, y_pred, output_dict=True)
+    report_df = pd.DataFrame(report_dict).transpose().iloc[:-3, :-1]
+    sns.heatmap(report_df, annot=True, cmap='YlOrRd', fmt='.3f')
+    plt.title('分类指标热力图')
     
-    y_test_bin = label_binarize(results['y_test'], classes=[0, 1, 2])
-    y_pred_bin = label_binarize(results['y_pred'], classes=[0, 1, 2])
+    # 学习曲线（简化版）
+    plt.subplot(2, 3, 5)
+    train_sizes = np.linspace(0.1, 1.0, 10)
+    train_scores = []
+    test_scores = []
     
-    for i in range(3):
-        fpr, tpr, _ = roc_curve(y_test_bin[:, i], y_pred_bin[:, i])
-        roc_auc = auc(fpr, tpr)
-        axes[1,0].plot(fpr, tpr, label=f'Class {i} (AUC = {roc_auc:.2f})')
+    for size in train_sizes:
+        n_train = int(size * len(X_train))
+        X_train_sub = X_train.iloc[:n_train]
+        y_train_sub = y_train.iloc[:n_train]
+        
+        model_temp = RandomForestClassifier(n_estimators=50, random_state=42)
+        model_temp.fit(X_train_sub, y_train_sub)
+        
+        train_score = model_temp.score(X_train_sub, y_train_sub)
+        test_score = model_temp.score(X_test, y_test)
+        
+        train_scores.append(train_score)
+        test_scores.append(test_score)
     
-    axes[1,0].plot([0, 1], [0, 1], 'k--')
-    axes[1,0].set_xlabel('假正率')
-    axes[1,0].set_ylabel('真正率')
-    axes[1,0].set_title('ROC曲线')
-    axes[1,0].legend()
-    axes[1,0].grid(True, alpha=0.3)
+    plt.plot(train_sizes, train_scores, 'o-', label='训练得分')
+    plt.plot(train_sizes, test_scores, 'o-', label='测试得分')
+    plt.xlabel('训练样本比例')
+    plt.ylabel('准确率')
+    plt.title('学习曲线')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
     
-    # 5. 精确率-召回率曲线
-    from sklearn.metrics import precision_recall_curve
+    # 类别预测分布
+    plt.subplot(2, 3, 6)
+    pred_counts = pd.Series(y_pred).value_counts().sort_index()
+    true_counts = pd.Series(y_test).value_counts().sort_index()
     
-    for i in range(3):
-        precision, recall, _ = precision_recall_curve(y_test_bin[:, i], y_pred_bin[:, i])
-        axes[1,1].plot(recall, precision, label=f'Class {i}')
+    x = np.arange(len(true_counts))
+    width = 0.35
     
-    axes[1,1].set_xlabel('召回率')
-    axes[1,1].set_ylabel('精确率')
-    axes[1,1].set_title('精确率-召回率曲线')
-    axes[1,1].legend()
-    axes[1,1].grid(True, alpha=0.3)
-    
-    # 6. 分类报告热力图
-    report_df = pd.DataFrame(results['metrics']['classification_report']).transpose()
-    sns.heatmap(report_df.iloc[:-3, :-1], annot=True, cmap='YlOrRd', ax=axes[1,2])
-    axes[1,2].set_title('分类指标热力图')
+    plt.bar(x - width/2, true_counts, width, label='真实分布', alpha=0.7)
+    plt.bar(x + width/2, pred_counts, width, label='预测分布', alpha=0.7)
+    plt.xlabel('类别')
+    plt.ylabel('样本数')
+    plt.title('类别分布对比')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
+    plt.show()
     
-    # 输出图表
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-    buf.seek(0)
-    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-    buf.close()
-    plt.close('all')
+    # 7. 模型解释
+    print(f"\n=== 模型解释 ===")
+    print(f"模型性能: {'优秀' if accuracy > 0.9 else '良好' if accuracy > 0.8 else '一般'}")
+    print(f"最重要的特征: {feature_importance.iloc[0]['特征']}")
+    print(f"最容易混淆的类别: 查看混淆矩阵对角线外的最大值")
     
-    # 生成分类报告
-    result = {
-        "type": "ml_report", 
-        "title": "分类分析模型报告",
-        "problem_type": "classification",
-        "model_performance": results["metrics"],
-        "feature_importance": results["feature_importance"].to_dict('records'),
-        "training_details": {
-            "training_samples": len(X) - len(results['X_test']),
-            "test_samples": len(results['X_test']),
-            "n_classes": len(np.unique(y)),
-            "model_type": "RandomForestClassifier"
-        },
-        "chart_preview": chart_base64
+    return {
+        'model': model,
+        'metrics': {'accuracy': accuracy},
+        'feature_importance': feature_importance,
+        'predictions': y_pred
     }
-    print(json.dumps(result))
 
-# classification_analysis_workflow()
+# 使用示例
+# classification_results = complete_classification_analysis()
 ```
 
-## 📈 StatsModels 统计建模
+## 📊 统计建模分析
 
 ```python
-def statistical_analysis_with_statsmodels():
-    """使用 statsmodels 进行统计建模"""
-    import statsmodels.api as sm
-    import statsmodels.formula.api as smf
-    from statsmodels.tsa.seasonal import seasonal_decompose
-    from statsmodels.stats.outliers_influence import variance_inflation_factor
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+def statistical_modeling_analysis():
+    """统计建模分析"""
+    
+    print("=== 开始统计建模分析 ===")
     
     # 创建示例数据
     np.random.seed(42)
     n_samples = 200
     
     data = pd.DataFrame({
-        'x1': np.random.normal(0, 1, n_samples),
-        'x2': np.random.normal(0, 1, n_samples),
-        'x3': np.random.normal(0, 1, n_samples),
-        'group': np.random.choice(['A', 'B', 'C'], n_samples)
+        '广告投入': np.random.normal(1000, 300, n_samples),
+        '价格': np.random.normal(50, 15, n_samples),
+        '促销活动': np.random.choice([0, 1], n_samples, p=[0.7, 0.3]),
+        '季节性': np.random.choice([0, 1], n_samples, p=[0.5, 0.5])
     })
     
-    # 生成目标变量
-    data['y'] = 2 + 1.5 * data['x1'] + 0.8 * data['x2'] + np.random.normal(0, 0.5, n_samples)
+    # 生成销售额（与特征有真实关系）
+    data['销售额'] = (
+        500 + 0.8 * data['广告投入'] - 5 * data['价格'] + 
+        200 * data['促销活动'] + 150 * data['季节性'] + 
+        np.random.normal(0, 100, n_samples)
+    )
+    
+    print("数据基本信息:")
+    print(f"样本数量: {len(data)}")
+    print(f"特征: {list(data.columns[:-1])}")
+    print("\n数据描述:")
+    print(data.describe())
     
     # 1. OLS 回归分析
-    model = smf.ols('y ~ x1 + x2 + x3', data=data).fit()
+    print("\n=== OLS 回归分析 ===")
+    model = smf.ols('销售额 ~ 广告投入 + 价格 + 促销活动 + 季节性', data=data).fit()
     
-    # 回归结果汇总
-    regression_summary = {
-        'rsquared': model.rsquared,
-        'rsquared_adj': model.rsquared_adj,
-        'f_statistic': model.fvalue,
-        'f_pvalue': model.f_pvalue,
-        'coefficients': model.params.to_dict(),
-        'pvalues': model.pvalues.to_dict(),
-        'confidence_intervals': model.conf_int().to_dict()
-    }
+    print("回归结果摘要:")
+    print(model.summary())
     
-    # 2. 残差分析
+    # 2. 关键统计指标
+    print(f"\n=== 关键统计指标 ===")
+    print(f"R²: {model.rsquared:.4f}")
+    print(f"调整R²: {model.rsquared_adj:.4f}")
+    print(f"F统计量: {model.fvalue:.2f}")
+    print(f"F统计量p值: {model.f_pvalue:.4f}")
+    
+    # 3. 系数解释
+    print(f"\n=== 系数解释 ===")
+    for feature, coef in model.params.items():
+        p_value = model.pvalues[feature]
+        significance = "***" if p_value < 0.001 else "**" if p_value < 0.01 else "*" if p_value < 0.05 else ""
+        print(f"{feature}: {coef:.2f} {significance} (p值: {p_value:.4f})")
+    
+    # 4. 残差分析
+    print(f"\n=== 残差分析 ===")
     residuals = model.resid
-    jarque_bera = sm.stats.jarque_bera(residuals)
-    durbin_watson = sm.stats.durbin_watson(residuals)
+    print(f"残差均值: {residuals.mean():.4f}")
+    print(f"残差标准差: {residuals.std():.4f}")
     
-    diagnostic_tests = {
-        'jarque_bera_statistic': jarque_bera[0],
-        'jarque_bera_pvalue': jarque_bera[1],
-        'durbin_watson': durbin_watson
-    }
+    # 5. 可视化分析
+    plt.figure(figsize=(15, 10))
     
-    # 3. 多重共线性检查
-    X_with_const = sm.add_constant(data[['x1', 'x2', 'x3']])
-    vif_data = pd.DataFrame()
-    vif_data["feature"] = X_with_const.columns
-    vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) for i in range(X_with_const.shape[1])]
+    # 实际值 vs 预测值
+    plt.subplot(2, 3, 1)
+    y_pred_ols = model.predict(data[['广告投入', '价格', '促销活动', '季节性']])
+    plt.scatter(data['销售额'], y_pred_ols, alpha=0.6)
+    plt.plot([data['销售额'].min(), data['销售额'].max()], 
+             [data['销售额'].min(), data['销售额'].max()], 'r--', lw=2)
+    plt.xlabel('实际销售额')
+    plt.ylabel('预测销售额')
+    plt.title(f'OLS预测效果 (R² = {model.rsquared:.3f})')
+    plt.grid(True, alpha=0.3)
     
-    # 4. ANOVA 方差分析
-    anova_model = smf.ols('y ~ group', data=data).fit()
-    anova_table = sm.stats.anova_lm(anova_model, typ=2)
+    # 残差图
+    plt.subplot(2, 3, 2)
+    plt.scatter(y_pred_ols, residuals, alpha=0.6)
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.xlabel('预测值')
+    plt.ylabel('残差')
+    plt.title('残差分析')
+    plt.grid(True, alpha=0.3)
     
-    # 5. 时间序列分析（示例）
-    dates = pd.date_range('2024-01-01', periods=100, freq='D')
-    ts_data = pd.DataFrame({
-        'date': dates,
-        'value': np.random.randn(100).cumsum() + 100
-    })
-    ts_data.set_index('date', inplace=True)
+    # Q-Q图
+    plt.subplot(2, 3, 3)
+    sm.qqplot(residuals, line='45', ax=plt.gca())
+    plt.title('Q-Q图（残差正态性检验）')
     
-    # 季节性分解
-    try:
-        decomposition = seasonal_decompose(ts_data['value'], model='additive', period=7)
-        decomposition_success = True
-    except:
-        decomposition_success = False
+    # 特征与目标变量关系
+    plt.subplot(2, 3, 4)
+    plt.scatter(data['广告投入'], data['销售额'], alpha=0.6)
+    plt.xlabel('广告投入')
+    plt.ylabel('销售额')
+    plt.title('广告投入 vs 销售额')
+    plt.grid(True, alpha=0.3)
     
-    result = {
-        "type": "statistical_analysis",
-        "title": "StatsModels 统计建模分析",
-        "regression_summary": regression_summary,
-        "diagnostic_tests": diagnostic_tests,
-        "multicollinearity_check": vif_data.to_dict('records'),
-        "anova_analysis": {
-            "f_statistic": anova_table['F']['group'],
-            "p_value": anova_table['PR(>F)']['group']
-        },
-        "time_series_analysis": {
-            "decomposition_performed": decomposition_success
-        },
-        "model_interpretation": {
-            "significant_features": [var for var, pval in model.pvalues.items() if pval < 0.05 and var != 'Intercept'],
-            "model_strength": "强模型" if model.rsquared > 0.7 else "中等模型" if model.rsquared > 0.5 else "弱模型"
-        }
-    }
-    print(json.dumps(result))
-
-# statistical_analysis_with_statsmodels()
-```
-
-## 🔧 科学计算与优化（SciPy）
-
-```python
-def scipy_scientific_computing():
-    """使用 SciPy 进行科学计算"""
-    from scipy import optimize, integrate, interpolate, stats
-    from scipy.fft import fft, fftfreq
-    import matplotlib.pyplot as plt
-    import io
-    import base64
-    import json
+    plt.subplot(2, 3, 5)
+    plt.scatter(data['价格'], data['销售额'], alpha=0.6)
+    plt.xlabel('价格')
+    plt.ylabel('销售额')
+    plt.title('价格 vs 销售额')
+    plt.grid(True, alpha=0.3)
     
-    results = {}
-    
-    # 1. 优化问题 - 函数最小化
-    def objective_function(x):
-        return (x[0] - 2)**2 + (x[1] - 3)**2 + (x[0] * x[1] - 1)**2
-    
-    initial_guess = [0, 0]
-    optimization_result = optimize.minimize(objective_function, initial_guess, method='BFGS')
-    results['optimization'] = {
-        'optimal_point': optimization_result.x.tolist(),
-        'optimal_value': float(optimization_result.fun),
-        'success': bool(optimization_result.success)
-    }
-    
-    # 2. 数值积分
-    def integrand(x):
-        return np.exp(-x**2) * np.sin(x)
-    
-    integral_result, integral_error = integrate.quad(integrand, 0, np.inf)
-    results['integration'] = {
-        'integral_value': integral_result,
-        'estimated_error': integral_error
-    }
-    
-    # 3. 插值
-    x_known = np.linspace(0, 10, 10)
-    y_known = np.sin(x_known)
-    interpolation_function = interpolate.interp1d(x_known, y_known, kind='cubic')
-    x_new = 5.5
-    y_interpolated = interpolation_function(x_new)
-    results['interpolation'] = {
-        'known_points': len(x_known),
-        'interpolated_value_at_5.5': float(y_interpolated),
-        'actual_sin_5.5': float(np.sin(5.5))
-    }
-    
-    # 4. 统计检验
-    sample1 = np.random.normal(0, 1, 100)
-    sample2 = np.random.normal(0.5, 1, 100)
-    
-    # t检验
-    t_stat, t_pvalue = stats.ttest_ind(sample1, sample2)
-    
-    # 正态性检验
-    normality_stat, normality_pvalue = stats.normaltest(sample1)
-    
-    results['statistical_tests'] = {
-        't_test': {
-            't_statistic': t_stat,
-            'p_value': t_pvalue,
-            'significant_difference': t_pvalue < 0.05
-        },
-        'normality_test': {
-            'statistic': normality_stat,
-            'p_value': normality_pvalue,
-            'is_normal': normality_pvalue > 0.05
-        }
-    }
-    
-    # 5. 信号处理 - 傅里叶变换
-    t = np.linspace(0, 1, 1000)
-    signal = np.sin(2 * np.pi * 5 * t) + 0.5 * np.sin(2 * np.pi * 20 * t)
-    fft_result = fft(signal)
-    freqs = fftfreq(len(t), t[1] - t[0])
-    
-    # 找到主要频率
-    positive_freq_idx = np.where(freqs > 0)
-    dominant_freq_idx = np.argmax(np.abs(fft_result[positive_freq_idx]))
-    dominant_freq = freqs[positive_freq_idx][dominant_freq_idx]
-    
-    results['signal_processing'] = {
-        'dominant_frequency': dominant_freq,
-        'expected_frequencies': [5, 20]
-    }
-    
-    # 可视化部分结果
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # 优化函数可视化
-    x1 = np.linspace(-1, 5, 100)
-    x2 = np.linspace(-1, 5, 100)
-    X1, X2 = np.meshgrid(x1, x2)
-    Z = objective_function([X1, X2])
-    
-    contour = axes[0,0].contour(X1, X2, Z, levels=20)
-    axes[0,0].clabel(contour, inline=True, fontsize=8)
-    axes[0,0].plot(optimization_result.x[0], optimization_result.x[1], 'ro', markersize=10)
-    axes[0,0].set_title('函数优化')
-    axes[0,0].set_xlabel('x1')
-    axes[0,0].set_ylabel('x2')
-    
-    # 积分函数可视化
-    x_int = np.linspace(0, 3, 100)
-    y_int = integrand(x_int)
-    axes[0,1].plot(x_int, y_int)
-    axes[0,1].fill_between(x_int, y_int, alpha=0.3)
-    axes[0,1].set_title('数值积分')
-    axes[0,1].set_xlabel('x')
-    axes[0,1].set_ylabel('f(x)')
-    
-    # 插值可视化
-    x_fine = np.linspace(0, 10, 100)
-    y_fine = interpolation_function(x_fine)
-    axes[1,0].plot(x_known, y_known, 'o', label='已知点')
-    axes[1,0].plot(x_fine, y_fine, '-', label='插值曲线')
-    axes[1,0].set_title('插值分析')
-    axes[1,0].legend()
-    
-    # 信号处理可视化
-    axes[1,1].plot(t, signal)
-    axes[1,1].set_title('信号分析')
-    axes[1,1].set_xlabel('时间')
-    axes[1,1].set_ylabel('振幅')
+    # 系数可视化
+    plt.subplot(2, 3, 6)
+    coefficients = model.params.iloc[1:]  # 排除截距项
+    colors = ['green' if p < 0.05 else 'red' for p in model.pvalues.iloc[1:]]
+    plt.barh(coefficients.index, coefficients.values, color=colors)
+    plt.axvline(x=0, color='black', linestyle='-')
+    plt.xlabel('系数值')
+    plt.title('特征系数（绿色表示显著）')
     
     plt.tight_layout()
+    plt.show()
     
-    # 输出图表
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-    buf.seek(0)
-    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-    buf.close()
-    plt.close('all')
+    # 6. 业务解释
+    print(f"\n=== 业务解释 ===")
+    print(f"模型解释力: {'强' if model.rsquared > 0.7 else '中等' if model.rsquared > 0.5 else '弱'}")
     
-    final_result = {
-        "type": "scientific_computing",
-        "title": "SciPy 科学计算分析",
-        "results": results,
-        "chart_preview": chart_base64
+    significant_features = []
+    for feature in model.params.index[1:]:  # 排除截距
+        if model.pvalues[feature] < 0.05:
+            significant_features.append(feature)
+    
+    if significant_features:
+        print(f"显著影响特征: {', '.join(significant_features)}")
+    else:
+        print("没有发现统计显著的特征")
+    
+    return {
+        'model': model,
+        'rsquared': model.rsquared,
+        'significant_features': significant_features,
+        'residuals': residuals
     }
-    print(json.dumps(final_result))
 
-# scipy_scientific_computing()
+# 使用示例
+# stats_results = statistical_modeling_analysis()
 ```
 
-## 🧪 模型评估与优化
+## 🔧 模型优化与调参
 
-### 交叉验证与超参数调优
 ```python
 from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
-def optimize_model(X, y, problem_type='regression'):
-    """模型超参数优化"""
+def model_optimization_pipeline(X, y, problem_type='regression'):
+    """模型超参数优化流程"""
     
+    print(f"=== 开始 {problem_type} 模型优化 ===")
+    
+    # 数据分割
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # 选择模型和参数网格
     if problem_type == 'regression':
         model = RandomForestRegressor(random_state=42)
         param_grid = {
             'n_estimators': [50, 100, 200],
             'max_depth': [None, 10, 20],
-            'min_samples_split': [2, 5, 10]
+            'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [1, 2, 4]
         }
         scoring = 'r2'
     else:
@@ -588,18 +613,94 @@ def optimize_model(X, y, problem_type='regression'):
         param_grid = {
             'n_estimators': [50, 100, 200],
             'max_depth': [None, 10, 20],
-            'min_samples_split': [2, 5, 10]
+            'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [1, 2, 4]
         }
         scoring = 'accuracy'
     
-    grid_search = GridSearchCV(model, param_grid, cv=5, scoring=scoring, n_jobs=-1)
-    grid_search.fit(X, y)
+    # 网格搜索
+    print("正在进行网格搜索...")
+    grid_search = GridSearchCV(
+        model, param_grid, cv=5, scoring=scoring, 
+        n_jobs=-1, verbose=1
+    )
+    grid_search.fit(X_train, y_train)
+    
+    # 输出最优参数
+    print(f"\n=== 最优参数 ===")
+    for param, value in grid_search.best_params_.items():
+        print(f"  {param}: {value}")
+    
+    print(f"最优模型得分: {grid_search.best_score_:.4f}")
+    
+    # 测试集性能
+    best_model = grid_search.best_estimator_
+    y_pred = best_model.predict(X_test)
+    
+    if problem_type == 'regression':
+        test_score = r2_score(y_test, y_pred)
+        print(f"测试集 R²: {test_score:.4f}")
+    else:
+        test_score = accuracy_score(y_test, y_pred)
+        print(f"测试集准确率: {test_score:.4f}")
     
     return {
+        'best_model': best_model,
         'best_params': grid_search.best_params_,
         'best_score': grid_search.best_score_,
-        'best_estimator': grid_search.best_estimator_
+        'test_score': test_score
     }
+
+# 使用示例
+# X_reg, y_reg, X_clf, y_clf = prepare_ml_data()
+# optimized_regression = model_optimization_pipeline(X_reg, y_reg, 'regression')
+# optimized_classification = model_optimization_pipeline(X_clf, y_clf, 'classification')
 ```
 
-这个机器学习工作流指南现在包含了统计建模和科学计算的完整解决方案，支持从基础机器学习到高级统计分析的全流程处理。
+## ⚠️ 使用注意事项
+
+### ✅ 推荐做法：
+- 使用标准的 scikit-learn 和 statsmodels 接口
+- 直接使用 `print()` 输出结果和指标
+- 使用 `plt.show()` 显示图表
+- 对数据进行适当的预处理和标准化
+
+### ❌ 避免的操作：
+- 不要手动构建 JSON 输出
+- 不要使用 `base64` 编码
+- 不要创建复杂的自定义输出格式
+
+### 🔧 错误处理：
+```python
+try:
+    from sklearn.ensemble import RandomForestRegressor
+    # 模型训练代码
+except ImportError:
+    print("scikit-learn 不可用")
+
+try:
+    import statsmodels.api as sm
+    # 统计建模代码
+except ImportError:
+    print("statsmodels 不可用")
+```
+
+### 💡 实用技巧：
+```python
+# 快速模型评估函数
+def quick_model_evaluation(model, X_test, y_test, problem_type='regression'):
+    """快速模型评估"""
+    y_pred = model.predict(X_test)
+    
+    if problem_type == 'regression':
+        r2 = r2_score(y_test, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+        print(f"R²: {r2:.4f}, RMSE: {rmse:.4f}")
+    else:
+        accuracy = accuracy_score(y_test, y_pred)
+        print(f"准确率: {accuracy:.4f}")
+    
+    return y_pred
+```
+
+**记住**：系统会自动处理所有输出格式，您只需要专注于机器学习建模和分析逻辑！
