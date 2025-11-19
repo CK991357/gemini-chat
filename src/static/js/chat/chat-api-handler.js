@@ -674,7 +674,7 @@ export class ChatApiHandler {
                             // 3. 返回给模型的简洁确认信息
                             toolResultContent = { output: `Image "${outputData.title || 'image'}" generated and displayed.` };
 
-                        } else if (['excel', 'word', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
+                        } else if (['excel', 'word', 'powerpoint', 'pdf'].includes(outputData.type) && outputData.data_base64) {
                             // --- 文档/文件处理分支 (您已有的、优秀的代码) ---
                             console.log(`[MCP] Dispatching to File Downloader for type: "${outputData.type}"`);
                             
@@ -817,7 +817,7 @@ export class ChatApiHandler {
             const mimeTypes = {
                 'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'ppt': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'powerpoint': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
                 'pdf': 'application/pdf'
             };
             
