@@ -442,3 +442,4 @@ async readAsBase64(file, mode) {
         previewCard.appendChild(closeButton);
         return previewCard;
     }
+}
