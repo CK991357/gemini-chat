@@ -254,21 +254,37 @@ async readAsBase64(file, mode) {
 
     /**
      * @method removeChatAttachment
-     * @description Removes a specific attachment in chat mode.
+     * @description Removes a specific attachment in chat mode. (v2.4 Fix)
      * @param {number} indexToRemove - The index of the file to remove.
      */
     removeChatAttachment(indexToRemove) {
         this.chatAttachedFiles.splice(indexToRemove, 1);
+        
         // Re-render all previews to correctly update indices
         this.chatPreviewsContainer.innerHTML = '';
+        
         this.chatAttachedFiles.forEach((file, index) => {
-            this.displayFilePreview({
-                type: file.type,
-                src: file.base64,
-                name: file.name,
-                mode: 'chat',
-                index: index
-            });
+            // 🚀🚀🚀 --- 核心修复：在这里也使用“双轨制”渲染 --- 🚀🚀🚀
+            if (file.isFileHandle) {
+                // 这是一个已上传的数据文件句柄
+                this.displayFilePreview({
+                    type: file.type,
+                    name: file.name,
+                    mode: 'chat',
+                    index: index,
+                    isDataFile: true
+                });
+            } else {
+                // 这是一个标准的Base64媒体文件
+                this.displayFilePreview({
+                    type: file.type,
+                    src: file.base64,
+                    name: file.name,
+                    mode: 'chat',
+                    index: index,
+                    isDataFile: false
+                });
+            }
         });
     }
 
@@ -309,15 +325,21 @@ async readAsBase64(file, mode) {
      * @returns {boolean} True if the file is valid, false otherwise.
      */
     _validateFile(file, allFiles, mode) {
-        const allowedTypes = [
+        // 定义媒体文件的MIME类型
+        const allowedMediaTypes = [
             'image/jpeg', 'image/png', 'image/webp',
             'application/pdf',
             'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/webm',
             'audio/aac', 'audio/flac', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mpeg', 'audio/mpga',
             'audio/mp4', 'audio/opus', 'audio/pcm', 'audio/wav', 'audio/webm', 'audio/aiff', 'audio/ogg'
         ];
+        // 定义数据文件的扩展名 (与 handleFileAttachment 中保持一致)
+        const dataFileExtensions = ['.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt'];
+        
         const maxSize = 20 * 1024 * 1024; // 20MB
+        const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
 
+        // 检查多文件上传时类型是否一致 (保持不变)
         if (mode === 'chat' && allFiles.length > 1) {
             const firstFileType = allFiles[0].type.split('/')[0];
             for (let i = 1; i < allFiles.length; i++) {
@@ -327,15 +349,29 @@ async readAsBase64(file, mode) {
                 }
             }
         }
+        
+        // 🎯 核心修复：检查文件是否为允许的媒体文件或数据文件
+        let isAllowed = false;
+        // 1. 检查是否为允许的媒体文件 (按 MIME 类型)
+        if (allowedMediaTypes.includes(file.type) || file.type.startsWith('image/') || file.type.startsWith('video/')) {
+            isAllowed = true;
+        }
+        // 2. 如果不是媒体文件，检查是否为允许的数据文件 (按扩展名)
+        if (!isAllowed && dataFileExtensions.includes(fileExtension)) {
+            isAllowed = true;
+        }
 
-        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-            this.showSystemMessage(`不支持的文件类型: ${file.type}。`);
+        if (!isAllowed) {
+            this.showSystemMessage(`不支持的文件类型: ${file.type || fileExtension}。`);
             return false;
         }
+
+        // 检查文件大小
         if (file.size > maxSize) {
             this.showSystemMessage('文件大小不能超过 20MB。');
             return false;
         }
+        
         return true;
     }
 
