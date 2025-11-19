@@ -132,36 +132,25 @@ export default {
     if (url.pathname.startsWith('/api/chess/')) {
       return handleChessRequest(request, env);
     }
-// 🎯 最终的、经过技术校正的修复：通过服务令牌直接访问隧道
+// 🎯 最终的、极简的修复：直接请求已有的公共主机名
 if (url.pathname.startsWith('/api/v1/')) {
+  // 直接使用您工具调用后端已经验证过的公共主机名
+  const backendHostname = 'pythonsandbox.10110531.xyz';
 
-  // 1. 从环境变量中获取隧道的服务令牌凭证
-  const clientId = env.CF_CLIENT_ID;
-  const clientSecret = env.CF_CLIENT_SECRET;
-
-  // 确保凭证已配置
-  if (!clientId || !clientSecret) {
-    return new Response('Tunnel authentication credentials are not configured in Worker environment.', { status: 500 });
-  }
-
-  // 2. 🎯 正确构造指向隧道原生地址的 URL
-  //    隧道的原生地址格式为：https://<隧道ID>.cfargotunnel.com
-  const tunnelHostname = '2c162088-d4fa-4dc4-8584-843717f77a28.cfargotunnel.com';
+  // 构造目标的URL
   const targetUrl = new URL(request.url);
-  targetUrl.hostname = tunnelHostname;
-  targetUrl.protocol = 'https:'; // 确保使用 HTTPS 协议
+  targetUrl.hostname = backendHostname;
+  targetUrl.protocol = 'https:';
 
-  // 3. 创建一个新的请求副本，并添加认证头
+  // 直接创建一个新的请求进行转发
   const proxyRequest = new Request(targetUrl, request);
-  proxyRequest.headers.set('CF-Access-Client-Id', clientId);
-  proxyRequest.headers.set('CF-Access-Client-Secret', clientSecret);
 
-  // 4. 将带有认证头的请求安全地发往隧道
   try {
+    // 将请求发往公共主机名，Cloudflare会自动路由到您的隧道
     return await fetch(proxyRequest);
   } catch (error) {
-    console.error('Failed to fetch via tunnel service token:', error);
-    return new Response('Failed to connect to the backend service via tunnel.', { status: 502 });
+    console.error('Failed to forward request to backend hostname:', error);
+    return new Response('Failed to connect to the backend service.', { status: 502 });
   }
 }
  
