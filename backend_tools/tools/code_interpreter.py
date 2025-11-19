@@ -396,13 +396,33 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
         raise HTTPException(status_code=400, detail="Session ID is required.")
 
     # 验证文件类型
+    # 扩展允许的文件类型和对应的MIME类型
     allowed_extensions = {'.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt'}
+
+    # MIME类型到扩展名的映射
+    mime_to_extension = {
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+        'application/vnd.ms-excel': '.xls',
+        'application/octet-stream': '.parquet',  # Parquet 文件可能使用这个MIME类型
+        'text/csv': '.csv',
+        'application/json': '.json',
+        'text/plain': '.txt'
+    }
+
     file_extension = Path(file.filename).suffix.lower()
+    mime_type = file.content_type
+
+    # 检查文件扩展名
     if file_extension not in allowed_extensions:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"不支持的文件类型: {file_extension}。支持的类型: {', '.join(allowed_extensions)}"
-        )
+        # 如果扩展名不在允许列表中，检查MIME类型
+        if mime_type in mime_to_extension:
+            # MIME类型在允许范围内，可以接受
+            logger.info(f"File {file.filename} with MIME type {mime_type} is allowed")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持的文件类型: {file_extension} (MIME: {mime_type})。支持的类型: {', '.join(allowed_extensions)}"
+            )
 
     session_dir = SESSION_WORKSPACE_ROOT / session_id
     session_dir.mkdir(exist_ok=True)
