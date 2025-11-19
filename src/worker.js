@@ -132,31 +132,22 @@ export default {
     if (url.pathname.startsWith('/api/chess/')) {
       return handleChessRequest(request, env);
     }
-    // 🎯 核心修复：添加一个通用的后端API代理，只处理发往 /api/v1/ 的请求
-    // 这个规则不会影响图片、PDF等文件的处理
-    if (url.pathname.startsWith('/api/v1/')) {
-      const backendUrl = env.BACKEND_URL;
-      if (!backendUrl) {
-        return new Response('Backend service is not configured in Worker environment.', { status: 500 });
-      }
+// 🎯 最终修复：使用服务绑定直接通过隧道连接后端
+if (url.pathname.startsWith('/api/v1/')) {
+  // 检查名为 BACKEND_SERVICE 的服务绑定是否存在
+  if (!env.BACKEND_SERVICE) {
+    return new Response('Backend tunnel service is not bound to this Worker.', { status: 500 });
+  }
 
-      const targetUrl = new URL(url.pathname, backendUrl);
-
-      const proxyRequest = new Request(targetUrl, {
-        method: request.method,
-        headers: request.headers,
-        body: request.body,
-        redirect: 'follow'
-      });
-
-      try {
-        // 将请求直接转发到您的 Docker 后端
-        return await fetch(proxyRequest);
-      } catch (error) {
-        console.error('Failed to forward request to backend:', error);
-        return new Response('Failed to connect to the backend service.', { status: 502 });
-      }
-    }
+  // 直接通过隧道绑定的 fetch 方法将请求安全地发送到您的服务器
+  // 无需关心IP地址、端口或协议
+  try {
+    return await env.BACKEND_SERVICE.fetch(request);
+  } catch (error) {
+    console.error('Failed to fetch via backend tunnel:', error);
+    return new Response('Failed to connect to the backend service via tunnel.', { status: 502 });
+  }
+}
  
     // 处理静态资源
     if (url.pathname === '/' || url.pathname === '/index.html') {
