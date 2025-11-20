@@ -3105,49 +3105,179 @@ input:checked + .slider:before {
     word-break: break-all;
 }
 
-/* style.css (文件管理器最终样式) */
-.file-manager-panel { display: none; /* ... 其他样式保持不变 ... */ }
-/* ... (您之前添加的 .file-manager-panel, .panel-header 等样式) ... */
+/* style.css (文件管理器最终的浮窗样式) */
 
-/* 🎯 核心样式升级：为文件操作按钮添加样式 */
-.file-list-container li {
+/* --- 浮窗式文件管理器 --- */
+
+/* 模态框背景遮罩 */
+.file-manager-modal {
+    display: none; /* 默认隐藏 */
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    align-items: center;
+    justify-content: center;
+}
+
+/* 模态框内容区 */
+.file-manager-content {
+    background-color: var(--background-color-secondary); /* 适配光暗模式 */
+    color: var(--text-color-primary);
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 650px; /* 适当加宽 */
+    max-height: 85vh;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    animation: fm-fade-in 0.3s ease-out;
+}
+
+@keyframes fm-fade-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* 头部 */
+.fm-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 16px;
-    border-bottom: 1px solid #f0f0f0;
-    font-size: 14px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
 }
-.file-name {
-    word-break: break-all;
-    margin-right: 10px;
+
+.fm-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
 }
-.file-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 0;
-}
-.action-icon {
+
+.fm-close-btn {
     background: none;
     border: none;
+    font-size: 1.8rem;
+    line-height: 1;
+    color: var(--text-color-secondary);
     cursor: pointer;
-    color: #6c757d;
+    transition: color 0.2s ease;
+}
+.fm-close-btn:hover {
+    color: var(--text-color-primary);
+}
+
+/* 搜索框 */
+.fm-search-container {
+    margin-bottom: 16px;
+}
+
+#file-manager-search {
+    width: 100%;
+    padding: 10px 14px;
+    background-color: var(--input-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color-primary);
     font-size: 14px;
-    padding: 4px;
 }
-.action-icon:hover {
-    color: #007bff;
+#file-manager-search:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
 }
-.dark-mode .action-icon {
-    color: #adb5bd;
+
+/* 文件列表 */
+.fm-list-container {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--background-color-primary);
 }
-.dark-mode .action-icon:hover {
-    color: #4dabf7;
+
+.fm-list-container .fm-list-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s ease;
 }
-.delete-button:hover {
-    color: #dc3545;
+.fm-list-container .fm-list-item:hover {
+    background-color: var(--background-color-hover);
 }
-.dark-mode .delete-button:hover {
-    color: #ff6b6b;
+.fm-list-container .fm-list-item:last-child {
+    border-bottom: none;
+}
+
+.fm-file-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 防止长文件名撑开布局 */
+}
+
+.fm-file-name {
+    font-weight: 500;
+    word-break: break-all;
+}
+
+.fm-session-tag {
+    font-size: 0.75rem;
+    color: var(--text-color-secondary);
+    opacity: 0.8;
+    margin-top: 2px;
+}
+
+.fm-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px; /* 加大按钮间距 */
+    margin-left: 16px;
+}
+
+.fm-action-icon {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-color-secondary);
+    font-size: 16px;
+    transition: color 0.2s ease, transform 0.1s ease;
+}
+.fm-action-icon:hover {
+    transform: scale(1.1);
+    color: var(--accent-color);
+}
+.fm-action-icon.delete-button:hover {
+    color: #e53e3e; /* 危险操作颜色 */
+}
+
+/* 底部 */
+.fm-footer {
+    margin-top: 20px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* 通用按钮样式 */
+.fm-btn {
+    padding: 10px 20px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+.fm-btn-secondary {
+    background-color: var(--button-secondary-bg);
+    color: var(--text-color-primary);
+}
+.fm-btn-secondary:hover {
+    background-color: var(--button-secondary-hover-bg);
 }

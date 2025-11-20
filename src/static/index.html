@@ -347,21 +347,26 @@
         </div>
     </div>
 
-    <!-- 🎯 核心UI新增：文件管理器面板 (默认隐藏) -->
-    <div id="file-manager-panel" class="file-manager-panel">
-        <div class="panel-header">
-            <h3>会话文件列表</h3>
-            <button id="close-file-manager" class="close-button" title="关闭文件管理器"><i class="fa-solid fa-times"></i></button>
+    <!-- 🎯 核心UI升级：浮窗式文件管理器 (默认隐藏) -->
+    <div id="file-manager-modal" class="file-manager-modal">
+        <div class="file-manager-content">
+            <div class="fm-header">
+                <h2>会话文件管理器</h2>
+                <button id="close-file-manager" class="fm-close-btn">&times;</button>
+            </div>
+            <div class="fm-search-container">
+                <input type="text" id="file-manager-search" placeholder="搜索文件名..." />
+            </div>
+            <div id="file-list-container" class="fm-list-container">
+                <!-- 文件列表将动态插入此处 -->
+            </div>
+            <div class="fm-footer">
+                <button id="refresh-file-list" class="fm-btn fm-btn-secondary">
+                    <i class="fa-solid fa-sync-alt"></i> 刷新列表
+                </button>
+            </div>
         </div>
-        <ul id="file-list-container" class="file-list-container">
-            <!-- 文件列表将动态插入此处 -->
-            <li class="empty-message">工作区内暂无文件。</li>
-        </ul>
-        <button id="refresh-file-list" class="action-button">
-            <i class="fa-solid fa-sync-alt"></i> 刷新列表
-        </button>
     </div>
-    <div id="file-manager-overlay" class="file-manager-overlay"></div>
 
     <script src="js/main.js" type="module"></script>
     <!-- chess.js for SAN move validation and parsing -->

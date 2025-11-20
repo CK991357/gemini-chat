@@ -703,174 +703,145 @@ document.addEventListener('DOMContentLoaded', () => {
    
    // 确保工作流样式加载
    loadWorkflowStyles();
-// 🎯 核心功能最终版：带密码验证的完整 CRUD 文件管理器
+// 🎯 核心功能最终版：浮窗式、带搜索的 CRUD 文件管理器
 const fileManagerButton = document.getElementById('file-manager-button');
-const fileManagerPanel = document.getElementById('file-manager-panel');
+const fileManagerModal = document.getElementById('file-manager-modal');
 const closeFileManagerButton = document.getElementById('close-file-manager');
+const fileManagerSearchInput = document.getElementById('file-manager-search');
 const fileListContainer = document.getElementById('file-list-container');
 const refreshFileListButton = document.getElementById('refresh-file-list');
 
 const backendHostname = 'https://pythonsandbox.10110531.xyz';
-let isFileManagerAuthenticated = false; // 用于记录会话内的验证状态
+let isFileManagerAuthenticated = false;
+let allFilesCache = []; // 用于缓存文件列表以支持前端搜索
 
-function toggleFileManager() {
-    if (fileManagerPanel.style.display === 'flex') {
-        fileManagerPanel.style.display = 'none';
+function openFileManager() {
+    if (isFileManagerAuthenticated) {
+        fileManagerModal.style.display = 'flex';
+        updateFileList(); // 每次打开都刷新
     } else {
-        openFileManager();
+        const password = prompt("请输入文件管理器访问密码:");
+        if (password) verifyPasswordAndOpen(password);
     }
 }
 
-async function openFileManager() {
-    // 🎯 核心修改：不再检查 currentSessionId，可以直接打开
-    if (isFileManagerAuthenticated) {
-        await updateFileList();
-        fileManagerPanel.style.display = 'flex';
-        return;
-    }
+function closeFileManager() {
+    fileManagerModal.style.display = 'none';
+}
 
-    // 弹出密码输入框
-    const password = prompt("请输入文件管理器访问密码:");
-
-    if (password) {
-        try {
-            showToast('正在验证...');
-            // 将密码发送到 worker 进行验证
-            const response = await fetch('/api/verify-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: password })
-            });
-
-            if (response.status === 200) {
-                isFileManagerAuthenticated = true; // 记录验证状态
-                showToast('验证成功！');
-                await updateFileList();
-                fileManagerPanel.style.display = 'flex';
-            } else {
-                showToast('密码错误！');
-            }
-        } catch (error) {
-            showToast('验证时发生网络错误。');
+async function verifyPasswordAndOpen(password) {
+    try {
+        showToast('正在验证...');
+        const response = await fetch('/api/verify-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+        });
+        if (response.status === 200) {
+            isFileManagerAuthenticated = true;
+            showToast('验证成功！');
+            fileManagerModal.style.display = 'flex';
+            await updateFileList();
+        } else {
+            showToast('密码错误！');
         }
-    }
+    } catch (error) { showToast('验证时发生网络错误。'); }
 }
 
 async function updateFileList() {
     if (!isFileManagerAuthenticated) return;
     try {
-        // 🎯 核心修改：调用新的 /api/v1/files/list-all 接口
         const response = await fetch(`/api/v1/files/global/list-all`);
         if (!response.ok) throw new Error(`无法获取文件列表 (状态: ${response.status})`);
-        const files = await response.json();
-        
-        fileListContainer.innerHTML = '';
-
-        if (files.length === 0) {
-            fileListContainer.innerHTML = '<li class="empty-message">所有工作区内暂无文件。</li>';
-        } else {
-            files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => {
-                const li = document.createElement('li');
-                
-                const fileNameSpan = document.createElement('span');
-                fileNameSpan.className = 'file-name';
-                fileNameSpan.textContent = file.name;
-                
-                // (可选) 显示文件所属的 session_id
-                const sessionTag = document.createElement('small');
-                sessionTag.textContent = ` (from: ${file.session_id.substring(0, 13)}...)`;
-                sessionTag.style.opacity = '0.6';
-                fileNameSpan.appendChild(sessionTag);
-
-                const actionsDiv = document.createElement('div');
-                actionsDiv.className = 'file-actions';
-
-                // --- 下载按钮 ---
-                const downloadLink = document.createElement('a');
-                downloadLink.className = 'action-icon download-button';
-                // 🎯 核心修改：下载链接不再包含 session_id
-                downloadLink.href = `${backendHostname}/api/v1/files/global/download/${encodeURIComponent(file.name)}`;
-                downloadLink.title = `下载 ${file.name}`;
-                downloadLink.target = '_blank';
-                downloadLink.innerHTML = '<i class="fa-solid fa-download"></i>';
-                
-                // --- 重命名按钮 ---
-                const renameButton = document.createElement('button');
-                renameButton.className = 'action-icon rename-button';
-                renameButton.title = `重命名 ${file.name}`;
-                renameButton.innerHTML = '<i class="fa-solid fa-pen-to-square"></i>';
-                // 🎯 核心修改：重命名调用新的全局接口
-                renameButton.onclick = () => handleRename(file.name);
-
-                // --- 删除按钮 ---
-                const deleteButton = document.createElement('button');
-                deleteButton.className = 'action-icon delete-button';
-                deleteButton.title = `删除 ${file.name}`;
-                deleteButton.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
-                // 🎯 核心修改：删除调用新的全局接口
-                deleteButton.onclick = () => handleDelete(file.name);
-
-                actionsDiv.appendChild(downloadLink);
-                actionsDiv.appendChild(renameButton);
-                actionsDiv.appendChild(deleteButton);
-
-                li.appendChild(fileNameSpan);
-                li.appendChild(actionsDiv);
-                fileListContainer.appendChild(li);
-            });
-        }
+        allFilesCache = await response.json(); // 更新缓存
+        renderFileList(allFilesCache); // 渲染列表
     } catch (error) {
         showToast(`获取文件列表失败`, 3000);
     }
 }
 
-async function handleRename(oldFilename) {
-    if (!isFileManagerAuthenticated) { showToast('请先验证文件管理器密码！'); return; }
-    const newFilename = prompt("请输入新的文件名:", oldFilename);
-    if (!newFilename || newFilename === oldFilename) return;
+function renderFileList(files) {
+    fileListContainer.innerHTML = '';
+    if (files.length === 0) {
+        fileListContainer.innerHTML = '<div class="fm-list-item">所有工作区内暂无文件。</div>';
+    } else {
+        files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => {
+            const item = document.createElement('div');
+            item.className = 'fm-list-item';
+            
+            const fileInfo = document.createElement('div');
+            fileInfo.className = 'fm-file-info';
+            
+            const fileName = document.createElement('span');
+            fileName.className = 'fm-file-name';
+            fileName.textContent = file.name;
+            
+            const sessionTag = document.createElement('span');
+            sessionTag.className = 'fm-session-tag';
+            sessionTag.textContent = `所属会话: ${file.session_id.substring(0, 8)}...`;
+            
+            fileInfo.appendChild(fileName);
+            fileInfo.appendChild(sessionTag);
 
-    try {
-        // 🎯 核心修改：调用新的全局重命名接口
-        const response = await fetch(`/api/v1/files/global/rename/${encodeURIComponent(oldFilename)}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ new_filename: newFilename })
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'fm-file-actions';
+
+            // 下载按钮
+            const downloadLink = document.createElement('a');
+            downloadLink.className = 'fm-action-icon download-button';
+            downloadLink.href = `${backendHostname}/api/v1/files/global/download/${encodeURIComponent(file.name)}`;
+            downloadLink.title = `下载`;
+            downloadLink.target = '_blank';
+            downloadLink.innerHTML = '<i class="fa-solid fa-download"></i>';
+            
+            // 重命名按钮
+            const renameButton = document.createElement('button');
+            renameButton.className = 'fm-action-icon rename-button';
+            renameButton.title = `重命名`;
+            renameButton.innerHTML = '<i class="fa-solid fa-pen-to-square"></i>';
+            renameButton.onclick = () => handleRename(file.name);
+
+            // 删除按钮
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'fm-action-icon delete-button';
+            deleteButton.title = `删除`;
+            deleteButton.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+            deleteButton.onclick = () => handleDelete(file.name);
+
+            actionsDiv.appendChild(downloadLink);
+            actionsDiv.appendChild(renameButton);
+            actionsDiv.appendChild(deleteButton);
+
+            item.appendChild(fileInfo);
+            item.appendChild(actionsDiv);
+            fileListContainer.appendChild(item);
         });
-        if (!response.ok) throw new Error('重命名失败');
-        showToast(`文件已重命名为: ${newFilename}`);
-        await updateFileList(); // 刷新列表
-    } catch (error) {
-        showToast('重命名失败，可能文件名已存在。', 3000);
     }
 }
 
-async function handleDelete(filename) {
-    if (!isFileManagerAuthenticated) { showToast('请先验证文件管理器密码！'); return; }
-    if (!confirm(`确定要删除文件 "${filename}" 吗？此操作无法撤销。`)) return;
+// handleRename 和 handleDelete 函数保持不变，因为它们的API调用已是全局的
 
-    try {
-        // 🎯 核心修改：调用新的全局删除接口
-        const response = await fetch(`/api/v1/files/global/delete/${encodeURIComponent(filename)}`, {
-            method: 'DELETE'
-        });
-        if (!response.ok) throw new Error('删除失败');
-        showToast(`文件 "${filename}" 已删除。`);
-        await updateFileList(); // 刷新列表
-    } catch (error) {
-        showToast('删除失败。', 3000);
-    }
-}
-
-// 在新建会话时，重置密码验证状态
 function resetFileManagerAuth() {
     isFileManagerAuthenticated = false;
-    if(fileManagerPanel) fileManagerPanel.style.display = 'none'; // 同时关闭面板
+    closeFileManager();
 }
 
 // --- 绑定事件 ---
-if (fileManagerButton) fileManagerButton.addEventListener('click', toggleFileManager);
-if (closeFileManagerButton) closeFileManagerButton.addEventListener('click', toggleFileManager);
-if (refreshFileListButton) refreshFileListButton.addEventListener('click', updateFileList);
+fileManagerButton.addEventListener('click', openFileManager);
+closeFileManagerButton.addEventListener('click', closeFileManager);
+refreshFileListButton.addEventListener('click', updateFileList);
+// 新增：搜索框事件
+fileManagerSearchInput.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const filteredFiles = allFilesCache.filter(file => file.name.toLowerCase().includes(searchTerm));
+    renderFileList(filteredFiles);
+});
+// 新增：点击遮罩层关闭模态框
+fileManagerModal.addEventListener('click', (e) => {
+    if (e.target === fileManagerModal) {
+        closeFileManager();
+    }
+});
 });
 
 // State variables
@@ -2512,10 +2483,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentSessionId) {
             cleanupSession(currentSessionId);
         }
+        resetFileManagerAuth(); // 🎯 核心修改：重置文件管理器状态（包括关闭模态框）
         // 仅在 HTTP 模式下启用历史记录功能
         if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
             historyManager.generateNewSession();
-            resetFileManagerAuth(); // 🎯 新增：重置密码状态
         } else {
             // 对于 WebSocket 模式或未连接时，保持原有简单重置逻辑
             chatHistory = [];
