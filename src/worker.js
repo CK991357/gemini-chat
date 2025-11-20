@@ -132,6 +132,26 @@ export default {
     if (url.pathname.startsWith('/api/chess/')) {
       return handleChessRequest(request, env);
     }
+
+// 🎯 [新增功能] 添加密码验证接口
+if (url.pathname === '/api/verify-password' && request.method === 'POST') {
+  try {
+    const { password } = await request.json();
+    const correctPassword = env.FILE_MANAGER_PASSWORD;
+
+    // 安全地比较密码 (避免时序攻击，虽然在这里影响不大，但是好习惯)
+    if (password && correctPassword && password.length === correctPassword.length && crypto.subtle.timingSafeEqual(
+          new TextEncoder().encode(password),
+          new TextEncoder().encode(correctPassword)
+        )) {
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } else {
+      return new Response(JSON.stringify({ success: false, message: "Incorrect password." }), { status: 401 }); // 401 Unauthorized
+    }
+  } catch {
+    return new Response(JSON.stringify({ success: false, message: "Invalid request." }), { status: 400 }); // Bad Request
+  }
+}
 // 🎯 最终的、极简的修复：直接请求已有的公共主机名
 if (url.pathname.startsWith('/api/v1/')) {
   // 直接使用您工具调用后端已经验证过的公共主机名

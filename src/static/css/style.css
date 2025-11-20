@@ -3105,46 +3105,11 @@ input:checked + .slider:before {
     word-break: break-all;
 }
 
-/* style.css */
-.file-manager-panel {
-    position: fixed;
-    bottom: 80px; /* 调整位置，避免遮挡输入框 */
-    right: 20px;
-    width: 350px;
-    max-height: 400px;
-    background-color: #fff;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 1001;
-    display: none; /* 默认隐藏 */
-    flex-direction: column;
-}
-.dark-mode .file-manager-panel {
-    background-color: #2a2a2e;
-    border-color: #444;
-}
-.panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    border-bottom: 1px solid #eee;
-}
-.dark-mode .panel-header {
-    border-bottom-color: #444;
-}
-.panel-header h3 {
-    margin: 0;
-    font-size: 16px;
-}
-.file-list-container {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    overflow-y: auto;
-    flex-grow: 1;
-}
+/* style.css (文件管理器最终样式) */
+.file-manager-panel { display: none; /* ... 其他样式保持不变 ... */ }
+/* ... (您之前添加的 .file-manager-panel, .panel-header 等样式) ... */
+
+/* 🎯 核心样式升级：为文件操作按钮添加样式 */
 .file-list-container li {
     display: flex;
     justify-content: space-between;
@@ -3153,22 +3118,36 @@ input:checked + .slider:before {
     border-bottom: 1px solid #f0f0f0;
     font-size: 14px;
 }
-.dark-mode .file-list-container li {
-    border-bottom-color: #3a3a3a;
-}
-.file-list-container li:last-child {
-    border-bottom: none;
-}
-.file-list-container .file-name {
+.file-name {
     word-break: break-all;
+    margin-right: 10px;
 }
-.file-list-container a.download-button {
-    margin-left: 10px;
-    color: #007bff;
-    text-decoration: none;
+.file-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     flex-shrink: 0;
 }
-.file-manager-panel #refresh-file-list {
-    margin: 10px;
-    width: auto;
+.action-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6c757d;
+    font-size: 14px;
+    padding: 4px;
+}
+.action-icon:hover {
+    color: #007bff;
+}
+.dark-mode .action-icon {
+    color: #adb5bd;
+}
+.dark-mode .action-icon:hover {
+    color: #4dabf7;
+}
+.delete-button:hover {
+    color: #dc3545;
+}
+.dark-mode .delete-button:hover {
+    color: #ff6b6b;
 }

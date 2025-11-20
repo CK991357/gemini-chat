@@ -30,9 +30,13 @@ SESSION_WORKSPACE_ROOT = Path("/srv/sandbox_workspaces")
 SESSION_WORKSPACE_ROOT.mkdir(exist_ok=True)
 SESSION_TIMEOUT_HOURS = 24  # 会话超时时间（小时）
 
-# 🎯 [新增部分] 为 /list 接口定义返回数据模型
+# 🎯 [第2步 新增] 为文件管理API定义数据蓝图
 class FileInfo(BaseModel):
     name: str
+    session_id: str  # 核心修改：让前端知道文件属于哪个会话
+
+class RenameRequest(BaseModel):
+    new_filename: str
 
 # --- Pydantic Input Schema ---
 class CodeInterpreterInput(BaseModel):
@@ -466,66 +470,6 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
         logger.error(f"File upload failed for session '{session_id}': {e}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
 
-# 🎯 [新增部分] 添加“文件列表”和“文件下载”两个新的 API 接口
-
-@app.get("/api/v1/files/list/{session_id}", response_model=List[FileInfo])
-async def list_files(session_id: str):
-    """
-    列出指定会话工作区中的所有文件。
-    """
-    try:
-        session_path = SESSION_WORKSPACE_ROOT / session_id
-        
-        # 安全性检查：确保请求的目录确实在我们允许的工作区内
-        if not session_path.is_dir() or not str(session_path.resolve()).startswith(str(SESSION_WORKSPACE_ROOT.resolve())):
-            raise HTTPException(status_code=404, detail="Session workspace not found.")
-
-        logger.info(f"Listing files for session: {session_id}")
-        
-        # 获取目录下所有文件的名称
-        files = [{"name": f.name} for f in session_path.iterdir() if f.is_file()]
-        
-        return files
-        
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logger.error(f"Failed to list files for session '{session_id}': {e}")
-        raise HTTPException(status_code=500, detail="Failed to list files.")
-
-
-@app.get("/api/v1/files/download/{session_id}/{filename}")
-async def download_file(session_id: str, filename: str):
-    """
-    提供文件下载功能。
-    """
-    try:
-        # 对文件名进行URL解码，以正确处理中文等特殊字符
-        decoded_filename = urllib.parse.unquote(filename)
-        
-        # 构造文件在服务器上的绝对物理路径
-        file_path = SESSION_WORKSPACE_ROOT / session_id / decoded_filename
-        
-        # 安全性检查：确保请求的文件确实在我们允许的工作区内
-        if not file_path.is_file() or not str(file_path.resolve()).startswith(str(SESSION_WORKSPACE_ROOT.resolve())):
-            raise HTTPException(status_code=404, detail="File not found or access denied.")
-
-        logger.info(f"Downloading file: {file_path}")
-        
-        # 使用 FileResponse 将文件作为附件流式传输给用户
-        return FileResponse(
-            path=file_path,
-            filename=decoded_filename,
-            media_type='application/octet-stream' # 这是一个通用的二进制文件类型
-        )
-        
-    except HTTPException as e:
-        # 重新抛出已知的HTTP异常
-        raise e
-    except Exception as e:
-        logger.error(f"File download failed for session '{session_id}', file '{filename}': {e}")
-        raise HTTPException(status_code=500, detail=f"File download failed: {e}")
-
 # --- 清理会话API ---
 @app.delete("/api/v1/sessions/{session_id}")
 async def cleanup_session(session_id: str):
@@ -597,8 +541,93 @@ async def root():
             "execute_code": "POST /api/v1/python_sandbox",
             "upload_file": "POST /api/v1/files/upload",
             "cleanup_session": "DELETE /api/v1/sessions/{session_id}",
-            "list_files": "GET /api/v1/files/list/{session_id}",
-            "download_file": "GET /api/v1/files/download/{session_id}/{filename}",
+            "list_files_session": "GET /api/v1/files/list/{session_id}",
+            "download_file_session": "GET /api/v1/files/download/{session_id}/{filename}",
+            "list_files_global": "GET /api/v1/files/global/list-all",
+            "download_file_global": "GET /api/v1/files/global/download/{filename}",
+            "delete_file_global": "DELETE /api/v1/files/global/delete/{filename}",
+            "rename_file_global": "PATCH /api/v1/files/global/rename/{filename}",
             "health_check": "GET /health"
         }
     }
+# --- 安全性辅助函数 (保持不变) ---
+def get_safe_path(session_id: str, filename: str = None) -> Path:
+    """构造并验证特定会话的文件/目录路径。"""
+    if ".." in session_id or "/" in session_id:
+        raise HTTPException(status_code=400, detail="Invalid session ID format.")
+    session_path = (SESSION_WORKSPACE_ROOT / session_id).resolve()
+    if not str(session_path).startswith(str(SESSION_WORKSPACE_ROOT.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid session ID (Path traversal attempt).")
+    if filename:
+        decoded_filename = urllib.parse.unquote(filename)
+        if ".." in decoded_filename or "/" in decoded_filename:
+            raise HTTPException(status_code=400, detail="Invalid filename format.")
+        file_path = (session_path / decoded_filename).resolve()
+        if not str(file_path).startswith(str(session_path)):
+            raise HTTPException(status_code=400, detail="Invalid filename (Path traversal attempt).")
+        return file_path
+    return session_path
+
+# --- 针对模型的、会话内的 API (Session-Specific) ---
+
+@app.get("/api/v1/files/list/{session_id}", response_model=List[FileInfo])
+async def list_files_for_session(session_id: str):
+    """列出指定会话工作区中的所有文件。"""
+    session_path = get_safe_path(session_id)
+    if not session_path.is_dir():
+        return [] # 如果目录不存在，返回空列表而不是404
+    
+    # 🎯 采纳您的修复：为返回的每个文件对象都补上 session_id 字段
+    files = [{"name": f.name, "session_id": session_id} for f in session_path.iterdir() if f.is_file()]
+    return files
+
+@app.get("/api/v1/files/download/{session_id}/{filename}")
+async def download_session_file(session_id: str, filename: str):
+    file_path = get_safe_path(session_id, filename)
+    if not file_path.is_file(): raise HTTPException(status_code=404, detail="File not found.")
+    return FileResponse(path=file_path, filename=file_path.name, media_type='application/octet-stream')
+
+# ... (delete_session_file, rename_session_file 等，如果存在的话) ...
+
+
+# --- 针对前端UI的、全局的管理 API (Global Admin) ---
+
+def find_file_globally(filename: str) -> Path:
+    """在整个工作区内安全地查找并返回文件的绝对路径。"""
+    decoded_filename = urllib.parse.unquote(filename)
+    if ".." in decoded_filename or "/" in decoded_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename format.")
+    for session_dir in SESSION_WORKSPACE_ROOT.iterdir():
+        if session_dir.is_dir():
+            potential_path = (session_dir / decoded_filename).resolve()
+            if potential_path.is_file() and str(potential_path).startswith(str(SESSION_WORKSPACE_ROOT.resolve())):
+                return potential_path
+    raise HTTPException(status_code=404, detail=f"File '{decoded_filename}' not found in any session.")
+
+@app.get("/api/v1/files/global/list-all", response_model=List[FileInfo])
+async def list_all_global_files():
+    """列出所有会话中的所有文件。"""
+    all_files = []
+    for session_dir in SESSION_WORKSPACE_ROOT.iterdir():
+        if session_dir.is_dir():
+            session_id = session_dir.name
+            files_in_session = [{"name": f.name, "session_id": session_id} for f in session_dir.iterdir() if f.is_file()]
+            all_files.extend(files_in_session)
+    return all_files
+
+@app.get("/api/v1/files/global/download/{filename}")
+async def download_global_file(filename: str):
+    file_path = find_file_globally(filename)
+    return FileResponse(path=file_path, filename=file_path.name, media_type='application/octet-stream')
+
+@app.delete("/api/v1/files/global/delete/{filename}")
+async def delete_global_file(filename: str):
+    file_path = find_file_globally(filename)
+    file_path.unlink(); return {"success": True}
+
+@app.patch("/api/v1/files/global/rename/{filename}")
+async def rename_global_file(filename: str, request: RenameRequest):
+    old_path = find_file_globally(filename)
+    new_path = old_path.parent / request.new_filename
+    if new_path.exists(): raise HTTPException(status_code=409, detail="File with new name already exists.")
+    old_path.rename(new_path); return {"success": True}
