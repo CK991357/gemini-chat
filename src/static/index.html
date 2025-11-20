@@ -48,6 +48,10 @@
             </div>
             <div class="nav-tools">
                 <button id="new-chat-button" title="New Chat"><i class="fa-solid fa-square-plus"></i></button>
+                
+                <!-- 🎯 核心UI修改：将文件管理器按钮移动到此处 -->
+                <button id="file-manager-button" title="会话文件"><i class="fa-solid fa-folder-open"></i></button>
+
                 <button id="toggle-config" title="Settings"><i class="fa-solid fa-gear"></i></button>
                 <button id="toggle-log" title="System Log"><i class="fa-solid fa-file-lines"></i></button>
                 <button id="theme-toggle" class="mode-button" title="Toggle Theme"><i class="fa-solid fa-sun"></i></button>
@@ -342,6 +346,22 @@
             </div>
         </div>
     </div>
+
+    <!-- 🎯 核心UI新增：文件管理器面板 (默认隐藏) -->
+    <div id="file-manager-panel" class="file-manager-panel">
+        <div class="panel-header">
+            <h3>会话文件列表</h3>
+            <button id="close-file-manager" class="close-button" title="关闭文件管理器"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <ul id="file-list-container" class="file-list-container">
+            <!-- 文件列表将动态插入此处 -->
+            <li class="empty-message">工作区内暂无文件。</li>
+        </ul>
+        <button id="refresh-file-list" class="action-button">
+            <i class="fa-solid fa-sync-alt"></i> 刷新列表
+        </button>
+    </div>
+    <div id="file-manager-overlay" class="file-manager-overlay"></div>
 
     <script src="js/main.js" type="module"></script>
     <!-- chess.js for SAN move validation and parsing -->

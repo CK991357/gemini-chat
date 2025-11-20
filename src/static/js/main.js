@@ -703,6 +703,84 @@ document.addEventListener('DOMContentLoaded', () => {
    
    // 确保工作流样式加载
    loadWorkflowStyles();
+    // 🎯 核心逻辑新增：文件管理器
+    const fileManagerButton = document.getElementById('file-manager-button');
+    const fileManagerPanel = document.getElementById('file-manager-panel');
+    const closeFileManagerButton = document.getElementById('close-file-manager');
+    const fileListContainer = document.getElementById('file-list-container');
+    const refreshFileListButton = document.getElementById('refresh-file-list');
+
+    // 后端服务主机名，用于构建下载链接
+    const backendHostname = 'https://pythonsandbox.10110531.xyz';
+
+    // 函数：打开文件管理器
+    async function openFileManager() {
+        if (!currentSessionId) {
+            showToast('请先开始一个会话！');
+            return;
+        }
+        await updateFileList();
+        fileManagerPanel.style.display = 'flex';
+    }
+
+    // 函数：关闭文件管理器
+    function closeFileManager() {
+        fileManagerPanel.style.display = 'none';
+    }
+
+    // 函数：更新文件列表
+    async function updateFileList() {
+        try {
+            const response = await fetch(`/api/v1/files/list/${currentSessionId}`);
+            if (!response.ok) {
+                throw new Error('无法获取文件列表');
+            }
+            const files = await response.json();
+            
+            fileListContainer.innerHTML = ''; // 清空旧列表
+
+            if (files.length === 0) {
+                fileListContainer.innerHTML = '<li class="empty-message">工作区内暂无文件。</li>';
+            } else {
+                files.forEach(file => {
+                    const li = document.createElement('li');
+                    
+                    const fileNameSpan = document.createElement('span');
+                    fileNameSpan.className = 'file-name';
+                    fileNameSpan.textContent = file.name;
+
+                    // 构建下载链接
+                    const downloadLink = document.createElement('a');
+                    downloadLink.className = 'download-button';
+                    downloadLink.href = `${backendHostname}/api/v1/files/download/${currentSessionId}/${encodeURIComponent(file.name)}`;
+                    downloadLink.title = `下载 ${file.name}`;
+                    downloadLink.setAttribute('download', file.name); // 提示浏览器直接下载
+                    
+                    const downloadIcon = document.createElement('i');
+                    downloadIcon.className = 'fa-solid fa-download';
+                    downloadLink.appendChild(downloadIcon);
+
+                    li.appendChild(fileNameSpan);
+                    li.appendChild(downloadLink);
+                    fileListContainer.appendChild(li);
+                });
+            }
+        } catch (error) {
+            console.error('更新文件列表失败:', error);
+            fileListContainer.innerHTML = '<li class="empty-message">获取文件列表失败。</li>';
+        }
+    }
+
+    // 绑定事件
+    if (fileManagerButton) {
+        fileManagerButton.addEventListener('click', openFileManager);
+    }
+    if (closeFileManagerButton) {
+        closeFileManagerButton.addEventListener('click', closeFileManager);
+    }
+    if (refreshFileListButton) {
+        refreshFileListButton.addEventListener('click', updateFileList);
+    }
 });
 
 // State variables

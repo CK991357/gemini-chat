@@ -16,6 +16,11 @@ from datetime import datetime, timedelta
 import threading
 import time
 
+# 🎯 [新增部分] 为文件管理器功能导入新的依赖
+from typing import List
+from fastapi.responses import FileResponse
+import urllib.parse
+
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +29,10 @@ logger = logging.getLogger(__name__)
 SESSION_WORKSPACE_ROOT = Path("/srv/sandbox_workspaces")
 SESSION_WORKSPACE_ROOT.mkdir(exist_ok=True)
 SESSION_TIMEOUT_HOURS = 24  # 会话超时时间（小时）
+
+# 🎯 [新增部分] 为 /list 接口定义返回数据模型
+class FileInfo(BaseModel):
+    name: str
 
 # --- Pydantic Input Schema ---
 class CodeInterpreterInput(BaseModel):
@@ -457,6 +466,66 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
         logger.error(f"File upload failed for session '{session_id}': {e}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
 
+# 🎯 [新增部分] 添加“文件列表”和“文件下载”两个新的 API 接口
+
+@app.get("/api/v1/files/list/{session_id}", response_model=List[FileInfo])
+async def list_files(session_id: str):
+    """
+    列出指定会话工作区中的所有文件。
+    """
+    try:
+        session_path = SESSION_WORKSPACE_ROOT / session_id
+        
+        # 安全性检查：确保请求的目录确实在我们允许的工作区内
+        if not session_path.is_dir() or not str(session_path.resolve()).startswith(str(SESSION_WORKSPACE_ROOT.resolve())):
+            raise HTTPException(status_code=404, detail="Session workspace not found.")
+
+        logger.info(f"Listing files for session: {session_id}")
+        
+        # 获取目录下所有文件的名称
+        files = [{"name": f.name} for f in session_path.iterdir() if f.is_file()]
+        
+        return files
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Failed to list files for session '{session_id}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to list files.")
+
+
+@app.get("/api/v1/files/download/{session_id}/{filename}")
+async def download_file(session_id: str, filename: str):
+    """
+    提供文件下载功能。
+    """
+    try:
+        # 对文件名进行URL解码，以正确处理中文等特殊字符
+        decoded_filename = urllib.parse.unquote(filename)
+        
+        # 构造文件在服务器上的绝对物理路径
+        file_path = SESSION_WORKSPACE_ROOT / session_id / decoded_filename
+        
+        # 安全性检查：确保请求的文件确实在我们允许的工作区内
+        if not file_path.is_file() or not str(file_path.resolve()).startswith(str(SESSION_WORKSPACE_ROOT.resolve())):
+            raise HTTPException(status_code=404, detail="File not found or access denied.")
+
+        logger.info(f"Downloading file: {file_path}")
+        
+        # 使用 FileResponse 将文件作为附件流式传输给用户
+        return FileResponse(
+            path=file_path,
+            filename=decoded_filename,
+            media_type='application/octet-stream' # 这是一个通用的二进制文件类型
+        )
+        
+    except HTTPException as e:
+        # 重新抛出已知的HTTP异常
+        raise e
+    except Exception as e:
+        logger.error(f"File download failed for session '{session_id}', file '{filename}': {e}")
+        raise HTTPException(status_code=500, detail=f"File download failed: {e}")
+
 # --- 清理会话API ---
 @app.delete("/api/v1/sessions/{session_id}")
 async def cleanup_session(session_id: str):
@@ -528,6 +597,8 @@ async def root():
             "execute_code": "POST /api/v1/python_sandbox",
             "upload_file": "POST /api/v1/files/upload",
             "cleanup_session": "DELETE /api/v1/sessions/{session_id}",
+            "list_files": "GET /api/v1/files/list/{session_id}",
+            "download_file": "GET /api/v1/files/download/{session_id}/{filename}",
             "health_check": "GET /health"
         }
     }
