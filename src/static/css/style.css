@@ -3105,7 +3105,7 @@ input:checked + .slider:before {
     word-break: break-all;
 }
 
-/* style.css (文件管理器最终的浮窗样式) */
+/* style.css (最终的、适配主系统配色的美学方案) */
 
 /* --- 浮窗式文件管理器 --- */
 
@@ -3123,27 +3123,33 @@ input:checked + .slider:before {
     backdrop-filter: blur(4px);
     align-items: center;
     justify-content: center;
+    animation: fm-bg-fade-in 0.3s ease;
+}
+
+@keyframes fm-bg-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* 模态框内容区 */
 .file-manager-content {
-    background-color: var(--background-color-secondary); /* 适配光暗模式 */
+    background-color: var(--background-color-secondary); /* 核心：使用主系统变量 */
     color: var(--text-color-primary);
-    padding: 20px;
+    padding: 24px;
     border: 1px solid var(--border-color);
     border-radius: 12px;
     width: 90%;
-    max-width: 650px; /* 适当加宽 */
+    max-width: 650px;
     max-height: 85vh;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
-    animation: fm-fade-in 0.3s ease-out;
+    animation: fm-content-slide-up 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-@keyframes fm-fade-in {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
+@keyframes fm-content-slide-up {
+    from { opacity: 0; transform: translateY(20px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* 头部 */
@@ -3152,7 +3158,7 @@ input:checked + .slider:before {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 16px;
-    padding-bottom: 12px;
+    padding-bottom: 16px;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -3168,10 +3174,11 @@ input:checked + .slider:before {
     line-height: 1;
     color: var(--text-color-secondary);
     cursor: pointer;
-    transition: color 0.2s ease;
+    transition: color 0.2s ease, transform 0.2s ease;
 }
 .fm-close-btn:hover {
     color: var(--text-color-primary);
+    transform: rotate(90deg);
 }
 
 /* 搜索框 */
@@ -3187,11 +3194,12 @@ input:checked + .slider:before {
     border-radius: 6px;
     color: var(--text-color-primary);
     font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 #file-manager-search:focus {
     outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
+    border-color: var(--accent-color); /* 核心：使用主系统蓝色 */
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
 }
 
 /* 文件列表 */
@@ -3203,7 +3211,7 @@ input:checked + .slider:before {
     background-color: var(--background-color-primary);
 }
 
-.fm-list-container .fm-list-item {
+.fm-list-item {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
@@ -3211,10 +3219,10 @@ input:checked + .slider:before {
     align-items: center;
     transition: background-color 0.2s ease;
 }
-.fm-list-container .fm-list-item:hover {
+.fm-list-item:hover {
     background-color: var(--background-color-hover);
 }
-.fm-list-container .fm-list-item:last-child {
+.fm-list-item:last-child {
     border-bottom: none;
 }
 
@@ -3222,40 +3230,49 @@ input:checked + .slider:before {
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* 防止长文件名撑开布局 */
+    overflow: hidden;
 }
 
 .fm-file-name {
     font-weight: 500;
+    color: var(--text-color-primary);
     word-break: break-all;
 }
 
 .fm-session-tag {
     font-size: 0.75rem;
     color: var(--text-color-secondary);
-    opacity: 0.8;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 
 .fm-file-actions {
     display: flex;
     align-items: center;
-    gap: 16px; /* 加大按钮间距 */
+    gap: 16px;
     margin-left: 16px;
 }
 
+/* 🎯 核心：三色按钮图标样式 */
 .fm-action-icon {
     background: none; border: none; cursor: pointer;
-    color: var(--text-color-secondary);
+    color: var(--text-color-secondary); /* 默认灰色 */
     font-size: 16px;
     transition: color 0.2s ease, transform 0.1s ease;
 }
 .fm-action-icon:hover {
-    transform: scale(1.1);
-    color: var(--accent-color);
+    transform: scale(1.15);
 }
+/* 下载按钮 - 蓝色 */
+.fm-action-icon.download-button:hover {
+    color: var(--accent-color); 
+}
+/* 重命名按钮 - 中性色 (可以是强调色，也可以是更亮的中性色) */
+.fm-action-icon.rename-button:hover {
+    color: var(--text-color-primary); 
+}
+/* 删除按钮 - 红色 */
 .fm-action-icon.delete-button:hover {
-    color: #e53e3e; /* 危险操作颜色 */
+    color: #e53e3e; 
 }
 
 /* 底部 */
@@ -3264,20 +3281,4 @@ input:checked + .slider:before {
     display: flex;
     justify-content: flex-end;
 }
-
-/* 通用按钮样式 */
-.fm-btn {
-    padding: 10px 20px;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s ease;
-}
-.fm-btn-secondary {
-    background-color: var(--button-secondary-bg);
-    color: var(--text-color-primary);
-}
-.fm-btn-secondary:hover {
-    background-color: var(--button-secondary-hover-bg);
-}
+.fm-btn { /* ... (通用按钮样式，与主系统按钮风格一致) ... */ }
