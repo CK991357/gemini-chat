@@ -52,7 +52,7 @@ export async function handleMcpProxyRequest(request, env) {
     let payload;
     try {
         payload = await request.json();
-        const { tool_name, parameters, requestId } = payload;
+        const { tool_name, parameters, requestId, session_id } = payload;
 
         // 记录工具调用开始
         console.log('🔧 [工具调用监控]', JSON.stringify({
@@ -72,7 +72,8 @@ export async function handleMcpProxyRequest(request, env) {
 
         if (toolHandler) {
             // 如果找到处理器，执行并返回响应
-            const response = await toolHandler(parameters, env);
+            // 传递 session_id 给工具处理器
+            const response = await toolHandler(parameters, env, session_id);
             const responseTime = Date.now() - startTime;
 
             // 记录工具调用成功

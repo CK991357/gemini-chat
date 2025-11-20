@@ -617,7 +617,9 @@ export class ChatApiHandler {
             const proxyRequestBody = {
                 tool_name: toolCode.tool_name,
                 parameters: parsedArguments, // Send the full, parsed arguments object
-                requestId: `tool_call_${Date.now()}`
+                requestId: `tool_call_${Date.now()}`,
+                // 🎯 核心修复：在这里明确地添加当前的 session_id
+                session_id: this.state.currentSessionId
             };
             console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
 

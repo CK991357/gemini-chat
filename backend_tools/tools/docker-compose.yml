@@ -1,23 +1,17 @@
-# docker-compose.yml (最终推荐版)
-version: '3.8'
+# docker-compose.yml (最终的、绝对路径绑定版本)
 
 services:
   python-sandbox:
-    # 使用当前目录的Dockerfile进行构建
     build: .
-    # 设置一个固定的容器名，方便管理
     container_name: python-sandbox-service
-    # 端口映射
     ports:
       - "127.0.0.1:8828:8828"
-    # 卷挂载
     volumes:
-      # [关键] 将主机的Docker socket挂载到容器中
+      # 挂载 Docker socket，保持不变
       - /var/run/docker.sock:/var/run/docker.sock
-    # [推荐] 如果容器意外退出，会自动重启
+      # 🎯 核心修复：将主机的绝对路径 /srv/sandbox_workspaces 挂载到容器内的相同路径
+      - /srv/sandbox_workspaces:/srv/sandbox_workspaces
     restart: unless-stopped
-    # [推荐] 确保日志实时输出
     environment:
       - PYTHONUNBUFFERED=1
-    # [推荐] 使用root用户以确保对docker.sock的访问权限
     user: "root"

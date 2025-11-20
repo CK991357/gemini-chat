@@ -81,21 +81,25 @@ function createJsonResponse(body, status = 200) {
  * @param {string|object} parameters - The parameters for the python_sandbox tool from the model.
  * @returns {Promise<Response>} - A promise that resolves to a JSON response for the model.
  */
-export async function handlePythonSandbox(parameters) {
+export async function handlePythonSandbox(parameters, env, session_id) {
     const pythonToolServerUrl = 'https://pythonsandbox.10110531.xyz/api/v1/python_sandbox';
 
     try {
         // Use the "uncrashable" parser. It will always return a usable object.
         const parsedParameters = parseWithRepair(parameters);
 
+        // 构造发往后端的请求体，包含 session_id
+        const backendRequestBody = {
+            parameters: parsedParameters,
+            session_id: session_id, // 🎯 核心修复：透传 session_id
+        };
+
         const response = await fetch(pythonToolServerUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                parameters: parsedParameters,
-            }),
+            body: JSON.stringify(backendRequestBody),
         });
 
         if (!response.ok) {

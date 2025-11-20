@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- 会话工作区配置 ---
-SESSION_WORKSPACE_ROOT = Path("./session_workspaces")
+SESSION_WORKSPACE_ROOT = Path("/srv/sandbox_workspaces")
 SESSION_WORKSPACE_ROOT.mkdir(exist_ok=True)
 SESSION_TIMEOUT_HOURS = 24  # 会话超时时间（小时）
 
