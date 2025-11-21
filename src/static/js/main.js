@@ -918,6 +918,10 @@ async function initializeEnhancedAgent() {
                 } else if (!enabled && this._initState === 'initialized') {
                     // 🎯 开关关闭且已初始化，清理资源
                     console.log('🔌 开关关闭，清理Agent资源');
+                    // 🎯 修复：在关闭模式时隐藏仪表盘
+                    if (agentThinkingDisplay) {
+                        agentThinkingDisplay.hide();
+                    }
                     this._cleanupResources();
                 }
                 
