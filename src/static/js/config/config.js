@@ -76,7 +76,6 @@ export const CONFIG = {
         ENABLED: true,
         CACHE_TTL: 5 * 60 * 1000,
         PRELOAD_MODELS: [
-            'models/gemini-2.5-flash',
             'gemini-2.5-flash-preview-09-2025',
             'GLM-4.5-Flash', 
             'Qwen/Qwen3-235B-A22B-Thinking-2507'
