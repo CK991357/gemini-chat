@@ -819,67 +819,73 @@ function renderFileList(files) {
     }
 }
 
+// =========================================================================
+// 🎯 核心修复：添加缺失的 handleRename 和 handleDelete 函数
+// =========================================================================
+
 /**
- * 处理文件重命名
+ * 处理文件重命名操作
+ * @param {string} oldFilename - 要重命名的当前文件名
  */
-async function handleRename(filename) {
-    const newFilename = prompt(`重命名文件 "${filename}" 为:`, filename);
-    
-    if (!newFilename || newFilename === filename) {
-        return; // 用户取消或文件名未改变
+async function handleRename(oldFilename) {
+    const newFilename = prompt("请输入新的文件名:", oldFilename);
+
+    // 检查用户是否取消或输入了空名称，或者名称没有改变
+    if (!newFilename || newFilename.trim() === '' || newFilename === oldFilename) {
+        return; // 用户取消或未做更改，直接返回
     }
 
     try {
-        showToast('正在重命名文件...');
-        
-        const response = await fetch(`/api/v1/files/global/rename/${encodeURIComponent(filename)}`, {
+        showToast(`正在重命名 "${oldFilename}"...`);
+        const response = await fetch(`/api/v1/files/global/rename/${encodeURIComponent(oldFilename)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ new_filename: newFilename })
+            body: JSON.stringify({ new_filename: newFilename.trim() })
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || `重命名失败 (状态: ${response.status})`);
+        if (response.ok) {
+            showToast('文件重命名成功！');
+            await updateFileList(); // 刷新文件列表
+        } else {
+            // 处理特定错误，如文件名冲突
+            if (response.status === 409) {
+                 showToast('重命名失败：新文件名已存在。');
+            } else {
+                const errorData = await response.json();
+                showToast(`重命名失败: ${errorData.detail || '未知错误'}`);
+            }
         }
-
-        showToast(`文件已重命名为: ${newFilename}`);
-        await updateFileList(); // 刷新文件列表
-        
     } catch (error) {
-        console.error('重命名文件失败:', error);
-        showToast(`重命名失败: ${error.message}`, 5000);
+        showToast(`网络错误: ${error.message}`);
     }
 }
 
 /**
- * 处理文件删除
+ * 处理文件删除操作
+ * @param {string} filename - 要删除的文件名
  */
 async function handleDelete(filename) {
-    const confirmDelete = confirm(`确定要删除文件 "${filename}" 吗？此操作不可恢复。`);
-    
-    if (!confirmDelete) {
-        return;
+    // 添加确认步骤，防止误删
+    if (!confirm(`您确定要永久删除文件 "${filename}" 吗？此操作无法撤销。`)) {
+        return; // 用户取消
     }
 
     try {
-        showToast('正在删除文件...');
-        
+        showToast(`正在删除 "${filename}"...`);
         const response = await fetch(`/api/v1/files/global/delete/${encodeURIComponent(filename)}`, {
             method: 'DELETE'
         });
 
-        if (!response.ok) {
+        // 204 No Content 是 DELETE 成功的标准响应
+        if (response.ok || response.status === 204) {
+            showToast('文件删除成功！');
+            await updateFileList(); // 刷新文件列表
+        } else {
             const errorData = await response.json();
-            throw new Error(errorData.detail || `删除失败 (状态: ${response.status})`);
+            showToast(`删除失败: ${errorData.detail || '未知错误'}`);
         }
-
-        showToast(`文件已删除: ${filename}`);
-        await updateFileList(); // 刷新文件列表
-        
     } catch (error) {
-        console.error('删除文件失败:', error);
-        showToast(`删除失败: ${error.message}`, 5000);
+        showToast(`网络错误: ${error.message}`);
     }
 }
 
