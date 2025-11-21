@@ -548,9 +548,10 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
         const pythonSandboxMasterGuide = `
 ## 🐍 Python Sandbox 终极使用指南 (v2.2)
 
-### 黄金原则 1: 图像生成
-- **只管画图，然后调用 \`plt.show()\`**。系统会自动为你处理剩下的一切。
-- **绝对禁止**任何形式的手动Base64编码或JSON打包。
+### 黄金原则 1: 图像/文件生成
+- **图像生成**: 只管画图，然后调用 \`plt.show()\`。系统会自动为你处理剩下的一切。
+- **文件生成 (Excel, PDF等)**: 严格遵循 \`report_generator_workflow.md\` 指南，\`print\` 一个包含Base64数据的JSON。
+- **观察结果**: 当你成功生成图像或文件后，你的"观察"结果将是一条简洁的确认信息，例如 "[✅ 图像生成成功]..."。**在最终报告中，你必须使用这条信息中提供的占位符（如 \`![标题](placeholder:image_1)\`）来引用该图像。**
 
 ### 黄金原则 2: 数据处理与注入
 - **利用 \`{{LAST_OBSERVATION}}\`**: 当你需要处理上一步（如 \`crawl4ai\`）的结果时，使用代码 \`input_data = "{{LAST_OBSERVATION}}"\`。系统会自动将数据注入。**禁止**手动粘贴数据。

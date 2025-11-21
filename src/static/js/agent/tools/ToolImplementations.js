@@ -528,54 +528,46 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'python_sandbox': {
-                    console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应 (v3 Simplified):`, dataFromProxy);
+                    console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应:`, dataFromProxy);
 
-                    // 🔥🔥🔥【建议的修复方案开始】🔥🔥🔥
+                    // 🔥🔥🔥【优化方案开始】🔥🔥🔥
                     let parsedData = dataFromProxy;
-                    // 检查收到的数据是否为字符串类型
                     if (typeof parsedData === 'string') {
                         try {
-                            // 如果是字符串，尝试将其解析为JSON对象
                             parsedData = JSON.parse(parsedData);
-                            console.log(`[PythonOutput] ✅ 成功解析了字符串化的JSON响应。`);
-                        } catch (e) {
-                            // 如果解析失败，发出警告，但继续使用原始字符串（以防万一）
-                            console.warn(`[PythonOutput] ⚠️ 无法解析字符串响应，将继续使用原始字符串。`, parsedData);
-                        }
+                        } catch (e) { /* 解析失败则保持为字符串 */ }
                     }
-                    // 现在，使用 'parsedData' 来访问属性，而不是 'dataFromProxy'
+
                     const finalStdout = parsedData.stdout || '';
                     const finalStderr = parsedData.stderr || '';
                     let output = '';
                     let success = false;
-                    // 🔥🔥🔥【建议的修复方案结束】🔥🔥🔥
+                    
+                    // 修正“静默失败”：有时 Python 的错误回溯会出现在 stdout 中
+                    const hasErrorInStdout = finalStdout.toLowerCase().includes('traceback (most recent call last)') || finalStdout.toLowerCase().includes('error:');
 
-                    console.log(`[PythonOutput] 🔍 最终解析结果:`, {
-                        stdoutLength: finalStdout.length,
-                        stderrLength: finalStderr.length,
-                        hasStderr: !!(finalStderr && finalStderr.trim()),
-                    });
-
-                    // 步骤 2: 使用您已经写好的、完全正确的判断逻辑
                     if (finalStderr && finalStderr.trim()) {
                         // 如果有 stderr，则明确为失败
                         success = false;
                         const errorDetails = this._analyzePythonErrorDeeply(finalStderr);
                         output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
-                        console.log(`[PythonOutput] 🔴 检测到执行错误 (stderr)。`);
+                    } else if (hasErrorInStdout) {
+                        // 如果 stdout 包含错误，也视为失败
+                        success = false;
+                        const errorDetails = this._analyzePythonErrorDeeply(finalStdout); // 分析 stdout 中的错误
+                        output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
                     } else if (finalStdout && finalStdout.trim()) {
-                        // 如果有 stdout，则明确为成功
+                        // 只有在 stderr 和 stdout 都没有错误时，才视为成功
                         success = true;
-                        output = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
-                        console.log(`[PythonOutput] ✅ 检测到有效输出 (stdout)。`);
+                        // 注意：这里我们返回原始的 stdout 字符串，让 DeepResearchAgent 的分发中心去解析
+                        output = finalStdout;
                     } else {
-                        // 如果两者都为空，也视为成功，但返回提示信息
+                        // 如果两者都为空，视为成功，但返回提示信息
                         success = true;
                         output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
-                        console.log(`[PythonOutput] ℹ️ 执行成功，但 stdout 和 stderr 均为空。`);
                     }
+                    // 🔥🔥🔥【优化方案结束】🔥🔥🔥
 
-                    // 统一构建返回对象
                     return {
                         success,
                         output,

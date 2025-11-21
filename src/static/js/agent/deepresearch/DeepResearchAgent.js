@@ -403,6 +403,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         const { topic: enrichedTopic, displayTopic: cleanTopic, availableTools, researchMode, currentDate } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         this.runId = runId; // 关键：为当前研究会话设置唯一ID
+        this.generatedImages.clear(); // 关键：每次新研究开始时清空图片缓存
         
         // 原始 topic (enrichedTopic) 用于 Agent 内部逻辑
         const internalTopic = enrichedTopic.replace(/！\s*$/, '').trim();
@@ -784,6 +785,25 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
             finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
+        }
+
+        // 🔥【最终魔法】在这里发生：将报告中的占位符替换为真实的Base64图片
+        if (this.generatedImages.size > 0) {
+            console.log(`[DeepResearchAgent] 检测到 ${this.generatedImages.size} 张图片，开始替换最终报告的占位符...`);
+
+            finalReport = finalReport.replace(
+                /!\[(.*?)\]\(placeholder:(.*?)\)/g,
+                (match, altText, imageId) => {
+                    const imageData = this.generatedImages.get(imageId.trim());
+                    if (imageData) {
+                        console.log(`[DeepResearchAgent] 成功替换占位符: ${imageId}`);
+                        // 返回一个标准的、可被 Markdown 渲染器解析的 Base64 图片标签
+                        return `![${altText}](data:image/png;base64,${imageData.image_base64})`;
+                    }
+                    // 如果找不到图片，返回一个提示
+                    return `*[图像 "${altText}" 加载失败]*`;
+                }
+            );
         }
 
         // 🔥【核心修复】在这里增加事后清理逻辑
