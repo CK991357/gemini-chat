@@ -11,13 +11,8 @@ export const CONFIG = {
                 isWebSocket: true
             },
             {
-                name: 'models/gemini-2.5-flash-lite-preview-06-17',
-                displayName: 'gemini-2.5-flash-lite-preview-06-17 (HTTP)',
-                isWebSocket: false
-            },
-            {
-                name: 'models/gemini-2.5-flash-preview-05-20',
-                displayName: 'gemini-2.5-flash-preview-05-20 (HTTP)',
+                name: 'models/gemini-2.5-flash',
+                displayName: 'gemini-2.5-flash (HTTP)',
                 isWebSocket: false,
             },
             {
@@ -29,16 +24,6 @@ export const CONFIG = {
                 name: 'models/gemini-2.0-flash',
                 displayName: 'gemini-2.0-flash (HTTP)',
                 isWebSocket: false
-            },
-            {
-                name: 'models/gemini-2.5-flash',
-                displayName: 'gemini-2.5-flash (工具调用)',
-                isWebSocket: false,
-                tools: geminiMcpTools,
-                disableSearch: true,
-                isGemini: true, // 标记为 Gemini 模型以进行工具调用格式区分
-                enableReasoning: true, // 为此模型启用思考链
-                mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
             },
             {
                 name: 'GLM-4.5-Flash',
@@ -92,6 +77,7 @@ export const CONFIG = {
         CACHE_TTL: 5 * 60 * 1000,
         PRELOAD_MODELS: [
             'models/gemini-2.5-flash',
+            'gemini-2.5-flash-preview-09-2025',
             'GLM-4.5-Flash', 
             'Qwen/Qwen3-235B-A22B-Thinking-2507'
         ]
@@ -875,10 +861,6 @@ print(json.dumps(result))
             {
                 name: 'tencent/Hunyuan-MT-7B',
                 displayName: 'Hunyuan-MT-7B'
-            },
-            {
-                name: 'gemini-2.5-flash-lite-preview-06-17',
-                displayName: 'gemini-2.5-flash-lite-preview-06-17'
             },
             {
                 name: 'THUDM/GLM-4-9B-0414',
