@@ -73,7 +73,7 @@ export class AgentOutputParser {
 
         // 🔥🔥🔥【最终版修复：基于意图优先级的线性解析】🔥🔥🔥
 
-        // 优先级1：检查是否存在明确的“最终答案”标签
+        // 优先级1：检查是否存在明确的"最终答案"标签
         const finalAnswerMatch = text.match(/最终答案\s*:\s*([\s\S]+)/i);
         if (finalAnswerMatch && finalAnswerMatch[1] && finalAnswerMatch[1].trim().length > 50) {
             console.log('[OutputParser] ✅ 检测到 "最终答案:" 标签，直接判定为最终报告。');
@@ -85,7 +85,7 @@ export class AgentOutputParser {
             };
         }
 
-        // 优先级2：检查是否存在明确的“行动”指令
+        // 优先级2：检查是否存在明确的"行动"指令
         const hasActionKeywords = /行动\s*:/i.test(text);
         if (hasActionKeywords) {
             console.log('[OutputParser] 检测到 "行动:" 关键词，强制进入工具解析流程。');
@@ -95,10 +95,10 @@ export class AgentOutputParser {
             if (toolCallResult && toolCallResult.type === 'tool_call') {
                 return toolCallResult;
             }
-            // 如果工具解析失败（例如，只有“行动:”但没有有效输入），流程会继续向下，可能会被判定为格式错误
+            // 如果工具解析失败（例如，只有"行动:"但没有有效输入），流程会继续向下，可能会被判定为格式错误
         }
         
-        // 优先级3：如果没有“最终答案”标签，也没有“行动”指令，但结构上像一份报告
+        // 优先级3：如果没有"最终答案"标签，也没有"行动"指令，但结构上像一份报告
         const isLikelyReport = this._isLikelyFinalReport(text);
         if (isLikelyReport) {
             console.log('[OutputParser] 🎯 未检测到行动指令，但结构类似报告，尝试智能提取。');
@@ -208,10 +208,17 @@ export class AgentOutputParser {
             if (toolCallResult.success) {
                 console.log("[OutputParser] ✅ 严格解析成功:", toolCallResult.tool_name);
                 this.metrics.recordAttempt(toolCallResult.tool_name, true, 'strict_parse', 0);
+                
+                // 🎯【关键修复】对于 python_sandbox，确保参数结构正确
+                let parameters = toolCallResult.parameters;
+                if (toolCallResult.tool_name === 'python_sandbox') {
+                    parameters = this._ensurePythonSandboxParams(parameters);
+                }
+                
                 return {
                     type: 'tool_call',
                     tool_name: toolCallResult.tool_name,
-                    parameters: toolCallResult.parameters,
+                    parameters: parameters,
                     thought: thought,
                     thought_length: thought.length
                 };
@@ -223,10 +230,17 @@ export class AgentOutputParser {
             if (enhancedLenientResult.success) {
                 console.log('[OutputParser] ✅ 增强宽松解析成功');
                 this.metrics.recordAttempt(enhancedLenientResult.tool_name, true, 'enhanced_lenient', 1);
+                
+                // 🎯【关键修复】对于 python_sandbox，确保参数结构正确
+                let parameters = enhancedLenientResult.parameters;
+                if (enhancedLenientResult.tool_name === 'python_sandbox') {
+                    parameters = this._ensurePythonSandboxParams(parameters);
+                }
+                
                 return {
                     type: 'tool_call',
                     tool_name: enhancedLenientResult.tool_name,
-                    parameters: enhancedLenientResult.parameters,
+                    parameters: parameters,
                     thought: thought,
                     thought_length: thought.length
                 };
@@ -270,6 +284,29 @@ export class AgentOutputParser {
         }
     }
 
+    // 🎯【关键修复】确保python_sandbox参数结构正确
+    _ensurePythonSandboxParams(parameters) {
+        // 如果参数已经是正确的结构，直接返回
+        if (parameters && typeof parameters === 'object') {
+            // 检查是否已经是新API结构
+            if (parameters.parameters && parameters.parameters.code) {
+                return parameters;
+            }
+            // 如果是旧结构 {code: ...}，转换为新结构
+            if (parameters.code) {
+                return {
+                    session_id: 'default_session', // 默认会话ID
+                    parameters: {
+                        code: parameters.code
+                    }
+                };
+            }
+        }
+        
+        // 默认返回原参数
+        return parameters;
+    }
+
     // 🎯 完全重写的稳健解析方法 - 五层防御性解析
     _parseToolCallFormat(text) {
         console.log('[OutputParser] 🔍 开始智能JSON边界检测...');
@@ -307,7 +344,6 @@ export class AgentOutputParser {
             let inString = false;
             let escapeNext = false;
             let jsonEndIndex = -1;
-            let inCodeBlock = false; // 新增：代码块状态
 
             for (let i = jsonStartIndex; i < preprocessedText.length; i++) {
                 const char = preprocessedText[i];
@@ -389,24 +425,10 @@ export class AgentOutputParser {
             parametersJson = this._fixCommonJsonErrors(parametersJson);
 
             try {
-                // 如果工具是 python_sandbox，使用更安全的解析策略
+                // 🎯【关键修复】特殊处理 python_sandbox 的参数结构
                 if (tool_name === 'python_sandbox') {
-                    // 🎯 特殊处理：保护 code 参数免受过度清理
-                    const codeRegex = /"code"\s*:\s*"((?:\\.|[^"\\])*)"/;
-                    const codeMatch = parametersJson.match(codeRegex);
-
-                    if (codeMatch && codeMatch[1]) {
-                        // 1. 提取原始代码内容 (已转义)
-                        let codeContent = codeMatch[1];
-                        
-                        // 2. 清理JSON的其余部分
-                        // 注意：用一个安全的占位符替换代码，以解析其他参数
-                        const otherParamsJson = parametersJson.replace(codeRegex, '"code": "PLACEHOLDER"');
-                        const otherParams = JSON.parse(this._fixCommonJsonErrors(otherParamsJson));
-
-                        // 3. 将未被破坏的代码重新组合回去
-                        const parameters = { ...otherParams, code: codeContent };
-                        
+                    const parameters = this._parsePythonSandboxParameters(parametersJson);
+                    if (parameters) {
                         console.log(`[OutputParser] ✅ Python Sandbox安全解析成功`);
                         return { success: true, tool_name, parameters };
                     }
@@ -436,7 +458,82 @@ export class AgentOutputParser {
         }
     }
 
-    // 🎯 新增：智能报告检测方法
+    // 🎯【关键修复】专门解析python_sandbox参数
+    _parsePythonSandboxParameters(parametersJson) {
+        try {
+            // 尝试直接解析
+            const parsed = JSON.parse(parametersJson);
+            
+            // 检查是否已经是新API结构
+            if (parsed.parameters && parsed.parameters.code) {
+                return parsed;
+            }
+            
+            // 如果是旧结构 {code: ...}，转换为新结构
+            if (parsed.code) {
+                return {
+                    session_id: 'default_session',
+                    parameters: {
+                        code: parsed.code
+                    }
+                };
+            }
+            
+            return parsed;
+        } catch (e) {
+            console.warn('[OutputParser] Python沙盒参数解析失败，尝试修复:', e.message);
+            
+            // 尝试修复JSON并重新解析
+            try {
+                const fixedJson = this._fixPythonSandboxJson(parametersJson);
+                const parsed = JSON.parse(fixedJson);
+                
+                // 转换为新结构
+                if (parsed.code) {
+                    return {
+                        session_id: 'default_session',
+                        parameters: {
+                            code: parsed.code
+                        }
+                    };
+                }
+                
+                return parsed;
+            } catch (e2) {
+                console.error('[OutputParser] Python沙盒参数修复失败:', e2.message);
+                return null;
+            }
+        }
+    }
+
+    // 🎯【关键修复】专门修复python_sandbox的JSON
+    _fixPythonSandboxJson(jsonStr) {
+        let fixed = jsonStr;
+        
+        // 修复常见的代码相关JSON问题
+        fixed = fixed.replace(/"code"\s*:\s*"([^"]*)"/g, (match, code) => {
+            // 对代码内容进行转义处理
+            const escapedCode = code
+                .replace(/\\n/g, '\\\\n')
+                .replace(/\\t/g, '\\\\t')
+                .replace(/\\r/g, '\\\\r')
+                .replace(/"/g, '\\"')
+                .replace(/'/g, "\\'");
+            return `"code": "${escapedCode}"`;
+        });
+        
+        // 确保大括号匹配
+        const openBraces = (fixed.match(/{/g) || []).length;
+        const closeBraces = (fixed.match(/}/g) || []).length;
+        
+        if (openBraces > closeBraces) {
+            fixed += '}'.repeat(openBraces - closeBraces);
+        }
+        
+        return fixed;
+    }
+
+    // 🎯 智能报告检测方法
     _isLikelyFinalReport(text) {
         if (!text || text.length < 300) return false;
         
@@ -584,6 +681,12 @@ export class AgentOutputParser {
             
             if (result.success) {
                 console.log(`[OutputParser] ✅ 策略 ${i + 1} 修复成功`);
+                
+                // 🎯【关键修复】对于 python_sandbox，确保参数结构正确
+                if (result.tool_name === 'python_sandbox' && result.parameters) {
+                    result.parameters = this._ensurePythonSandboxParams(result.parameters);
+                }
+                
                 return result;
             }
         }
@@ -624,7 +727,12 @@ export class AgentOutputParser {
                     .replace(/\\"/g, '"')
                     .replace(/\\\\/g, '\\');
                 
-                const parameters = { code: codeContent };
+                const parameters = {
+                    session_id: 'default_session',
+                    parameters: {
+                        code: codeContent
+                    }
+                };
                 return { success: true, tool_name, parameters };
             }
         } catch (e) {
