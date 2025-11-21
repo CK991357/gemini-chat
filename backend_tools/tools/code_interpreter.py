@@ -287,15 +287,18 @@ print(stderr_val, file=sys.stderr, end='')
             # 如果有 session_id，挂载会话工作区
             if session_id:
                 host_session_path = SESSION_WORKSPACE_ROOT / session_id
-                if host_session_path.exists():
-                    container_config["volumes"] = {
-                        str(host_session_path.resolve()): {
-                            'bind': '/data',
-                            'mode': 'rw'
-                        }
+                # 🎯 核心修复：按需创建会话目录，解耦对文件上传的依赖
+                host_session_path.mkdir(exist_ok=True)
+                
+                # 现在可以安全地挂载
+                container_config["volumes"] = {
+                    str(host_session_path.resolve()): {
+                        'bind': '/data',
+                        'mode': 'rw'
                     }
-                    container_config["working_dir"] = '/data'
-                    logger.info(f"Mounting session workspace: {host_session_path} -> /data")
+                }
+                container_config["working_dir"] = '/data'
+                logger.info(f"Mounting session workspace: {host_session_path} -> /data")
             
             container = self.docker_client.containers.create(**container_config)
 

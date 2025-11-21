@@ -861,8 +861,9 @@ export class ChatApiHandler {
                 body: JSON.stringify({
                     tool_name: toolName,
                     parameters: parameters || {},
-                    requestId: `tool_call_${Date.now()}`
-                    // ✨ 注意：不再需要发送任何 server_url
+                    requestId: `tool_call_${Date.now()}`,
+                    // 🎯 核心修复：为Agent的工具调用添加会话ID，使其能够读写文件
+                    session_id: this.state.currentSessionId
                 }),
             });
 
