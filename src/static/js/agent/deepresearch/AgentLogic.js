@@ -546,7 +546,29 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
         // 🎯 核心修复：添加Python代码调试专业指南
 // 🚀🚀🚀 [v2.2 核心更新] Python沙盒终极使用指南 🚀🚀🚀
         const pythonSandboxMasterGuide = `
-## 🐍 Python Sandbox 终极使用指南 (v2.3)
+## 🐍 Python Sandbox 终极使用指南 (v2.4 - 代码完整性强化版)
+
+### 🚨 代码完整性强制要求 (Mandatory Code Completeness)
+
+**绝对禁止生成不完整的代码！在提交任何Python代码前，必须进行完整性检查：**
+
+1. **字典完整性检查**：
+   - 🚫 错误：\`'Population':\` (后面没值)
+   - ✅ 正确：\`'Population':\`
+
+2. **变量赋值完整性**：
+   - 🚫 错误：\`data = {\` (缺少闭合括号)
+   - ✅ 正确：\`data = {'Year':, 'Population':}\`
+
+3. **函数调用完整性**：
+   - 🚫 错误：\`plt.plot(\` (缺少参数和闭合括号)
+   - ✅ 正确：\`plt.plot(years, population)\`
+
+### 🔍 代码生成前检查清单 (必须逐项确认)：
+1. **所有字典键都有对应的值** -> 是/否
+2. **所有括号都正确闭合** -> 是/否
+3. **所有变量都已正确定义** -> 是/否
+4. **没有悬空的冒号或逗号** -> 是/否
 
 ### 黄金原则 1: 图像/文件生成
 - **图像生成**: 只管画图，然后调用 \`plt.show()\`。系统会自动为你处理剩下的一切。

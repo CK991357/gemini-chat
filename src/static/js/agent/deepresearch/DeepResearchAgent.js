@@ -251,19 +251,38 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         try {
             console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`, parameters);
 
-            // --- 状态注入逻辑 (保持不变, 依然健壮) ---
-            if (toolName === 'python_sandbox' && parameters.code && parameters.code.includes('{{LAST_OBSERVATION}}')) {
-                console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
-                const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
+            // --- 状态注入逻辑 (修复版) ---
+            if (toolName === 'python_sandbox' && parameters.code) {
+                // 🎯 修复：更严格的状态注入检测，只匹配完整的占位符
+                const stateInjectionPattern = /"\{\{LAST_OBSERVATION\}\}"/g; // 只匹配双引号包裹的占位符
                 
-                if (lastStep && typeof lastStep.observation === 'string') {
-                    const safelyEscapedData = JSON.stringify(lastStep.observation);
-                    const pythonStringLiteral = `"""${safelyEscapedData.slice(1, -1)}"""`;
-                    parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, pythonStringLiteral);
-                    console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
-                } else {
-                    console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。');
-                    parameters.code = parameters.code.replace(/"{{LAST_OBSERVATION}}"/g, '""');
+                if (stateInjectionPattern.test(parameters.code)) {
+                    console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
+                    const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
+                    
+                    if (lastStep && typeof lastStep.observation === 'string') {
+                        const safelyEscapedData = JSON.stringify(lastStep.observation);
+                        // 移除外层的引号，因为我们要替换的是带引号的占位符
+                        const innerData = safelyEscapedData.slice(1, -1);
+                        parameters.code = parameters.code.replace(stateInjectionPattern, `"${innerData}"`);
+                        console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
+                    } else {
+                        console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。');
+                        parameters.code = parameters.code.replace(stateInjectionPattern, '""');
+                    }
+                }
+                
+                // 🎯 新增：代码完整性检查 (Preflight Structure Check)
+                const codeValidation = this._validatePythonCodeStructure(parameters.code);
+                if (!codeValidation.valid) {
+                    console.warn(`[DeepResearchAgent] ❌ Python代码结构检查失败: ${codeValidation.error}`);
+                    
+                    // 直接返回错误，不发送给后端
+                    return {
+                        rawObservation: `❌ **Python代码结构错误 (Preflight Check Failed)**\n\n**错误**: ${codeValidation.error}\n\n**修复建议**: ${codeValidation.suggestion}\n\n请根据建议修正代码结构，确保字典键值对完整，然后重新提交。`,
+                        toolSources: [],
+                        toolSuccess: false
+                    };
                 }
             }
 
@@ -2182,6 +2201,57 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             });
         }
     }
+    /**
+     * 🎯 新增：Python代码结构预检 (Preflight Structure Check)
+     * 检查代码是否包含常见的结构性错误，例如不完整的字典或JSON。
+     */
+    _validatePythonCodeStructure(code) {
+        // 1. 检查是否包含不完整的字典或JSON结构
+        // 目标：检测到类似 '{"key": "value",' 这种未闭合的结构
+        const incompleteJsonPattern = /\{[^}]*,\s*$/m;
+        if (incompleteJsonPattern.test(code)) {
+            return {
+                valid: false,
+                error: "检测到代码中可能存在未闭合的字典或JSON结构。",
+                suggestion: "请检查代码中所有字典或JSON对象是否都以 `}` 符号正确闭合，特别是多行定义时。"
+            };
+        }
+
+        // 2. 检查是否包含未闭合的字符串
+        // 目标：检测到类似 'print("hello' 这种未闭合的字符串
+        const unclosedStringPattern = /['"][^'"]*$/m;
+        if (unclosedStringPattern.test(code)) {
+            return {
+                valid: false,
+                error: "检测到代码中可能存在未闭合的字符串字面量。",
+                suggestion: "请检查代码中所有单引号 `'` 或双引号 `\"` 是否都成对出现并正确闭合。"
+            };
+        }
+
+        // 3. 检查是否包含未闭合的括号
+        // 目标：检测到类似 'def func(' 这种未闭合的括号
+        const openBrackets = (code.match(/[\(\[\{]/g) || []).length;
+        const closeBrackets = (code.match(/[\)\]\}]/g) || []).length;
+
+        if (openBrackets !== closeBrackets) {
+            return {
+                valid: false,
+                error: `检测到括号数量不匹配。有 ${openBrackets} 个开括号，${closeBrackets} 个闭括号。`,
+                suggestion: "请确保代码中所有 `(`, `[`, `{` 都有对应的 `)`, `]`, `}` 闭合。"
+            };
+        }
+
+        // 4. 检查是否包含未闭合的函数调用
+        // 目标：检测到类似 'tool_call(' 这种未闭合的函数调用
+        const unclosedFunctionCall = /\w+\s*\([^)]*$/m;
+        if (unclosedFunctionCall.test(code)) {
+            // 这是一个更宽松的检查，如果前面括号数量检查通过，这里可以忽略
+            // 但作为额外的安全检查，可以保留
+        }
+
+        return { valid: true };
+    }
+    
     /**
      * Python错误智能诊断
      */
