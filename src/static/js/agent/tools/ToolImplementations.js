@@ -384,11 +384,7 @@ class DeepResearchToolAdapter {
                     finalCode = agentParams.code;
                 }
 
-                // 🔥🔥🔥 核心修正：直接注释掉或删除下面这行“修复”逻辑 🔥🔥🔥
-                // finalCode = this._fixPythonCodeEscaping(finalCode);
-                
-                // 💡 说明：普通模式没有这一步也能成功，说明这一步是多余且有害的。
-                // JSON.stringify 会自动处理好转义，我们不要手动干预。
+                // 🔴 修正：删除导致 SyntaxError 的代码转义逻辑（_fixPythonCodeEscaping）。直接透传代码。
 
                 if (finalCode) {
                     // 注意：baseConfig 已经包含了所有其他参数，只需添加 code
@@ -645,12 +641,40 @@ class DeepResearchToolAdapter {
                     } else if (finalStdout && finalStdout.trim()) {
                         // 只有在 stderr 和 stdout 都没有错误时，才视为成功
                         success = true;
-                        // 核心修正：原样返回纯净的 stdout 字符串，不加任何包装
-                        output = finalStdout.trim();
+                        
+                        // 🟢【新增/修改的核心逻辑】智能 JSON 提取
+                        // 目的：防止后端返回的图片 JSON 被 Markdown 污染
+                        const stdoutStr = finalStdout.trim();
+                        let extractedJson = null;
+
+                        // 1. 尝试直接解析
+                        try {
+                            const json = JSON.parse(stdoutStr);
+                            // 检查是否是我们关注的特殊类型 (image, excel, pdf, ppt 等)
+                            if (json && json.type && (json.type === 'image' || ['excel', 'word', 'pdf', 'ppt'].includes(json.type))) {
+                                extractedJson = stdoutStr;
+                            }
+                        } catch (e) {
+                            // 2. 如果直接解析失败（可能有警告信息混入），尝试正则提取 JSON 块
+                            // 匹配包含 "type": "image" 或其他特殊类型的 JSON 对象
+                            const match = stdoutStr.match(/(\{[\s\S]*"type"\s*:\s*"(image|excel|word|pdf|ppt)"[\s\S]*\})/);
+                            if (match) {
+                                extractedJson = match[0]; // <--- 取数组的第一个元素
+                            }
+                        }
+
+                        if (extractedJson) {
+                            // ✅ 如果是特殊数据，原样返回纯 JSON
+                            output = extractedJson;
+                        } else {
+                            // ❌ 否则，作为普通文本，加上 Markdown 包装方便阅读
+                            output = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
+                        }
+                        
                     } else {
                         // 如果两者都为空，视为成功，但返回提示信息
                         success = true;
-                        output = `[工具信息]: Python代码执行完成，无标准输出或错误内容。`;
+                        output = `[工具信息]: Python代码执行完成，无标准输出。`;
                     }
                     // 🔥🔥🔥【优化方案结束】🔥🔥🔥
 
