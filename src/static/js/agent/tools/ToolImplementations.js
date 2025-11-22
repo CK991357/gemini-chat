@@ -392,11 +392,20 @@ class DeepResearchToolAdapter {
                     }
                 }
 
-                // 🚫 彻底删除所有转义逻辑
-                // 不再调用 _fixPythonCodeEscaping 或任何 .replace() 操作
-                
+                // 🔥🔥🔥 [核心新增]：代码无害化清洗 🔥🔥🔥
                 if (finalCode) {
-                    return { ...baseConfig, code: String(finalCode) };
+                    finalCode = String(finalCode);
+                    
+                    // 1. 移除行尾的反斜杠 (Line Continuation Backslash)
+                    // Python 解释器在 exec() 模式下，如果反斜杠后有空格，会报 SyntaxError
+                    // 我们直接将 "反斜杠+换行" 替换为普通的 "换行"，依靠括号自动换行机制
+                    finalCode = finalCode.replace(/\\\s*\n/g, '\n');
+                    
+                    // 2. 修复 f-string 中的引号转义问题 (此处仅做最安全的空白清洗)
+                }
+
+                if (finalCode) {
+                    return { ...baseConfig, code: finalCode };
                 }
                 return baseConfig;
             }
@@ -1696,3 +1705,4 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
+
