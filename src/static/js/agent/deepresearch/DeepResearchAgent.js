@@ -805,6 +805,20 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                 }
             );
         }
+        // 🔥🔥🔥 [新增] 兜底渲染逻辑开始 🔥🔥🔥
+        // 目的：防止 Agent 忘记写占位符导致图片丢失
+        this.generatedImages.forEach((imageData, imageId) => {
+            // 取 base64 的前 50 个字符作为指纹进行检查
+            // 注意：这里检查的是 finalReport，此时如果 Agent 正确引用了，finalReport 里应该已经有了完整的 base64
+            const base64Snippet = imageData.image_base64.substring(0, 50);
+            
+            if (!finalReport.includes(base64Snippet)) {
+                console.warn(`[DeepResearchAgent] ⚠️ 发现“遗失”的图片 ${imageId} (Agent未引用)，正在强制追加到报告末尾。`);
+                // 追加到报告末尾，确保用户能看到
+                finalReport += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](data:image/png;base64,${imageData.image_base64})`;
+            }
+        });
+        // 🔥🔥🔥 [新增] 兜底渲染逻辑结束 🔥🔥🔥
 
         // 🔥【核心修复】在这里增加事后清理逻辑
         const sourceKeywords = ["资料来源", "参考文献", "Sources", "References", "参考资料清单"];
@@ -1594,11 +1608,12 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         const summarizerPrompt = `你是一个专业的技术信息分析师。基于"主要研究主题"，从以下原始文本中提取最关键和相关的信息，创建一个详细的技术摘要。
 
 **严格的摘要要求**：
-1. 📊 **必须保留所有数字数据**：版本号、性能指标、分数、百分比、时间、尺寸等
-2. 🔧 **保留技术规格**：模型名称、参数数量、上下文长度、技术特性
-3. 💡 **保持核心结论**：研究发现、比较结果、优势劣势分析
-4. 🎯 **准确性优先**：专业术语、专有名词必须准确无误
-5. 📝 **长度控制**：控制在800-1200字之间，确保信息完整性
+1. 📊 **数据绝对保留**: 必须保留原文中出现的所有统计数据、年份、数值、单位（如“万人”、“亿元”）。这是最高优先级！
+2. 📉 **表格重构**: 如果原文包含表格数据，请将其转换为 Markdown 表格格式保留。
+3. 🔧 **保留技术规格**：模型名称、参数数量、上下文长度、技术特性
+4. 💡 **保持核心结论**：研究发现、比较结果、优势劣势分析
+5. 🎯 **准确性优先**：专业术语、专有名词必须准确无误
+6. 📝 **长度控制**：控制在800-1200字之间，确保信息完整性
 
 **绝对禁止**：
 - 删除或模糊化具体的数字和技术参数

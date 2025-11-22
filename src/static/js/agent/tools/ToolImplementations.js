@@ -24,8 +24,19 @@ class DeepResearchToolAdapter {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_links: true,
                         format: 'markdown',
-                        wait_for: 5000,
-                        exclude_external_links: false  // 🎯 修复：不禁用外部链接
+                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
+                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
+                        headers: { // 伪装 User-Agent
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
+                            'div[id*="modal"]',
+                            'div[class*="modal"]',
+                            'div[id*="overlay"]',
+                            'div[class*="overlay"]',
+                            'div[id*="popup"]',
+                            'div[class*="popup"]'
+                        ]
                     },
                     deep_crawl: {
                         max_pages: 20,
@@ -56,8 +67,19 @@ class DeepResearchToolAdapter {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_tables: true,
                         format: 'markdown',
-                        wait_for: 3000,
-                        exclude_external_links: false  // 🎯 修复：不禁用外部链接
+                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
+                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
+                        headers: { // 伪装 User-Agent
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
+                            'div[id*="modal"]',
+                            'div[class*="modal"]',
+                            'div[id*="overlay"]',
+                            'div[class*="overlay"]',
+                            'div[id*="popup"]',
+                            'div[class*="popup"]'
+                        ]
                     }
                 }
             },
@@ -75,9 +97,20 @@ class DeepResearchToolAdapter {
                         format: 'markdown',
                         include_math: true,
                         include_code: true,
-                        wait_for: 4000,
+                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
-                        exclude_external_links: false  // 🎯 修复：不禁用外部链接
+                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
+                        headers: { // 伪装 User-Agent
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
+                            'div[id*="modal"]',
+                            'div[class*="modal"]',
+                            'div[id*="overlay"]',
+                            'div[class*="overlay"]',
+                            'div[id*="popup"]',
+                            'div[class*="popup"]'
+                        ]
                     }
                 }
             },
@@ -94,9 +127,20 @@ class DeepResearchToolAdapter {
                         include_code: true,
                         include_links: true,
                         format: 'markdown',
-                        wait_for: 3000,
+                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
-                        exclude_external_links: false  // 🎯 修复：不禁用外部链接
+                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
+                        headers: { // 伪装 User-Agent
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
+                            'div[id*="modal"]',
+                            'div[class*="modal"]',
+                            'div[id*="overlay"]',
+                            'div[class*="overlay"]',
+                            'div[id*="popup"]',
+                            'div[class*="popup"]'
+                        ]
                     }
                 },
                 python_sandbox: {
@@ -117,8 +161,19 @@ class DeepResearchToolAdapter {
                     scrape: {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         format: 'markdown',
-                        wait_for: 3000,
-                        exclude_external_links: false  // 🎯 修复：不禁用外部链接
+                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
+                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
+                        headers: { // 伪装 User-Agent
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
+                            'div[id*="modal"]',
+                            'div[class*="modal"]',
+                            'div[id*="overlay"]',
+                            'div[class*="overlay"]',
+                            'div[id*="popup"]',
+                            'div[class*="popup"]'
+                        ]
                     }
                 }
             },
@@ -135,8 +190,19 @@ class DeepResearchToolAdapter {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_images: false,
                         format: 'markdown',
-                        wait_for: 3000,
-                        exclude_external_links: false  // 🎯 修复：不禁用外部链接
+                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
+                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
+                        headers: { // 伪装 User-Agent
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
+                            'div[id*="modal"]',
+                            'div[class*="modal"]',
+                            'div[id*="overlay"]',
+                            'div[class*="overlay"]',
+                            'div[id*="popup"]',
+                            'div[class*="popup"]'
+                        ]
                     }
                 }
             },
@@ -151,8 +217,19 @@ class DeepResearchToolAdapter {
                     scrape: {
                         only_main_content: false,     // 🎯 关键修复：完全禁用内容过滤
                         format: 'markdown',
-                        wait_for: 3000,
-                        exclude_external_links: false // 🎯 修复：不禁用外部链接
+                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
+                        exclude_external_links: false, // 🎯 修复：不禁用外部链接
+                        headers: { // 伪装 User-Agent
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
+                            'div[id*="modal"]',
+                            'div[class*="modal"]',
+                            'div[id*="overlay"]',
+                            'div[class*="overlay"]',
+                            'div[id*="popup"]',
+                            'div[class*="popup"]'
+                        ]
                     },
                     deep_crawl: {
                         max_pages: 5,
@@ -1376,7 +1453,7 @@ class ProxiedTool extends BaseTool {
     _getToolTimeout(toolName, mode = 'standard', researchMode = 'deep') {
         const baseTimeouts = {
             'python_sandbox': 60000,
-            'tavily_search': 20000,
+            'tavily_search': 45000, // ⬆️ 从 20000 增加到 45000 (45秒)
             'crawl4ai': 45000,
             'stockfish_analyzer': 30000,
             'glm4v_analyze_image': 25000,

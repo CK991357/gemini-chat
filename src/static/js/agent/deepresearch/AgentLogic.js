@@ -620,6 +620,20 @@ const crawlTimeoutProtocol = `
 - **在同一个失败的 URL 上连续重试 \`crawl4ai\`超过一次。**
 - 因为 \`crawl4ai\` 失败就卡住不动或提前终止整个研究。你必须灵活地调整策略，利用已有信息继续前进。
 `;
+
+const toolOptimizationProtocol = `
+## 🛠️ 工具使用策略优化 (Agent Optimization Protocol)
+
+### 🕷️ crawl4ai 使用禁忌与最佳实践:
+- **避开交互式页面**: 严禁抓取 URL 中包含 \`query\`, \`search\`, \`database\`, \`easyquery\` 等字样的动态查询页面（例如 \`data.stats.gov.cn/easyquery\`）。这些页面通常需要交互才能显示数据，静态抓取无效。
+- **优先选择静态页面**: 优先抓取包含“公报”、“报告”、“文章”、“新闻”字样的 URL。
+- **失败处理**: 如果对某个域名的抓取返回“内容过短”或失败，**不要**再次尝试该域名下的其他链接，直接切换到 \`tavily_search\` 寻找第三方权威汇总（如维基百科、智库报告）。
+
+### 🔍 tavily_search 策略优化:
+- **组合查询**: 尽量在一个查询中包含多个年份，例如 "中国人口 2020 2021 2022 2023 数据表"，而不是分年份搜索。
+- **寻找汇总表**: 优先寻找“统计公报汇总”或“历年数据一览”类的信息源。
+`;
+
         const errorCorrectionProtocol = `
 ## 🔴 强制错误诊断与修正协议
 
@@ -962,6 +976,7 @@ ${pythonSandboxMasterGuide} // 🎯 核心更新：统一的 Python 沙盒终极
 ${pythonImageDiscipline} // 🎯 核心更新：极简图像生成指南 (已在第1步更新)
 ${errorCorrectionProtocol}  // 🎯 修复：使用包含参数检查的错误修正协议
 ${crawlTimeoutProtocol} // 🎯 新增：crawl4ai 超时恢复协议
+${toolOptimizationProtocol} // ✅ 优化 3：教育 Agent 避开“陷阱”
 ${formatComplianceProtocol} // 🎯 新增：格式遵从与自我纠正协议
 ${config.specialInstructions}
 
