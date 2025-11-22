@@ -273,6 +273,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                 }
                 
                 // 🎯 新增：代码完整性检查 (Preflight Structure Check)
+                /*
                 const codeValidation = this._validatePythonCodeStructure(parameters.code);
                 if (!codeValidation.valid) {
                     console.warn(`[DeepResearchAgent] ❌ Python代码结构检查失败: ${codeValidation.error}`);
@@ -284,6 +285,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                         toolSuccess: false
                     };
                 }
+                */
             }
 
 

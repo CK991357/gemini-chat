@@ -546,7 +546,23 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
         // 🎯 核心修复：添加Python代码调试专业指南
 // 🚀🚀🚀 [v2.2 核心更新] Python沙盒终极使用指南 🚀🚀🚀
         const pythonSandboxMasterGuide = `
-## 🐍 Python Sandbox 终极使用指南 (v2.4 - 代码完整性强化版)
+## 🐍 Python Sandbox 终极使用指南 (v2.5 - 反幻觉强化版)
+
+### 🚨 绝对禁止的操作 (Critical Anti-Patterns)
+
+1.  **🚫 禁止空赋值 (No Empty Assignments)**:
+    *   **错误**: \`data = \` 或 \`years =\` (后面什么都没有)
+    *   **正确**: \`data =\` 或 \`years =\`
+    *   **后果**: 空赋值会导致 SyntaxError，不仅浪费 Token，还会导致任务直接失败。**你必须在代码中直接填入完整的数据字面量。**
+
+2.  **🚫 禁止占位符**: 不要使用 \`[填入数据]\` 或 \`...\` 这样的占位符。代码必须是完整、可立即执行的。
+
+3.  **🚫 禁止省略**: 不要因为数据多就省略，必须写出完整的列表或字典。
+
+### ✅ 代码完整性自查 (Self-Correction Protocol)
+在生成 JSON 之前，请在心中默念：
+“我生成的代码中，所有变量的等号后面都有具体的值吗？”
+如果答案是“否”，**立即修正**，然后再输出。
 
 ### 🚨 代码完整性强制要求 (Mandatory Code Completeness)
 
