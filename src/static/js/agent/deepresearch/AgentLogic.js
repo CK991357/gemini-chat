@@ -574,22 +574,26 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 行动输入: { "code": "import pandas as pd\\nsales_data = [105, 130, ...]" }
 `;
 
-// 🚀🚀🚀 [v2.2 核心更新] 极简可视化指南 🚀🚀🚀
+// 🚀🚀🚀 [v2.2 核心更新] 极简可视化指南 + 强制可视化协议 🚀🚀🚀
 const pythonImageDiscipline = `
-🖼️ 极简可视化指南 (图像生成 v2.2)
-核心原则: 你只需要专注于使用 Matplotlib 绘图，系统会自动捕获并输出图像。
-工作流:
-正常绘图: 使用 \`plt.figure()\`, \`plt.plot()\`, \`plt.title()\` 等标准函数。
-触发捕获: 在所有绘图代码的最后，调用 \`plt.show()\`。
-🚫 绝对禁止的操作:
-❌ 禁止使用 \`base64.b64encode()\`
-❌ 禁止创建 \`io.BytesIO()\` 对象
-❌ 禁止手动构建任何包含 "type": "image" 的 JSON 输出
-✅【极简代码模板 - 必须遵循】:
-思考: 我需要创建一个折线图来展示销售数据。我将使用pandas准备数据，然后用matplotlib绘图，最后调用plt.show()让系统自动输出图像。
+## 🖼️ 极简可视化与强制执行协议
+
+### 1. 强制可视化协议 (Mandatory Visualization)
+**如果用户的任务包含“绘图”、“图表”或“可视化”需求，你必须遵守以下规则：**
+*   **数据不全也要画**：如果你无法搜集到所有年份的数据（例如缺2023年），**绝对不要**陷入死循环去反复搜索。你**必须**使用现有数据（或者对缺失年份进行简单的线性插值）立即调用 \`python_sandbox\` 进行绘图。
+*   **优先展示**：可视化是本任务的核心产出。宁可画一张数据不完美的图，也不能因为纠结数据而导致没有图。
+*   **代码执行**：只要你有了核心数据，下一轮迭代**必须**是调用 \`python_sandbox\`。
+*   **诚实备注**：如果数据是估算的或不完整的，**必须**在图表标题或报告正文中明确注明（例如：“注：2023年数据为估算值”）。
+
+### 2. 极简代码模板 (必须遵循)
+核心原则: 专注于使用 Matplotlib 绘图，最后调用 \`plt.show()\`。
+🚫 **绝对禁止**: 使用 \`base64.b64encode\`, \`io.BytesIO\`, 或手动构建 JSON。
+
+**✅ 正确代码示例**:
+思考: 我需要创建一个折线图。虽然缺少2023年数据，但我将根据趋势进行估算并在图中注明。
 行动: python_sandbox
 行动输入: {
-"code": "import matplotlib.pyplot as plt\\nimport pandas as pd\\n\\n# 1. 准备数据\\ndata = {'Month': ['Jan', 'Feb', 'Mar', 'Apr'], 'Sales': [100, 130, 115, 140]}\\ndf = pd.DataFrame(data)\\n\\n# 2. 正常绘图\\nplt.figure(figsize=(8, 5))\\nplt.plot(df['Month'], df['Sales'], marker='o')\\nplt.title('月度销售趋势')\\nplt.xlabel('月份')\\nplt.ylabel('销售额')\\nplt.grid(True)\\nplt.tight_layout()\\n\\n# 3. 触发自动捕获\\nplt.show()"
+"code": "import matplotlib.pyplot as plt\\nimport pandas as pd\\n\\n# 1. 准备数据\\ndata = {'Year': ['2020', '2021', '2022', '2023(估)', '2024'], 'Value': [100, 110, 105, 108, 115]}\\ndf = pd.DataFrame(data)\\n\\n# 2. 绘图\\nplt.figure(figsize=(8, 5))\\nplt.plot(df['Year'], df['Value'], marker='o')\\nplt.title('数据趋势图 (注: 2023年为估算)')\\nplt.grid(True)\\n\\n# 3. 触发捕获\\nplt.show()"
 }
 `;
 

@@ -86,35 +86,6 @@ export class DeepResearchAgent {
         return `[✅ 图像生成成功] 标题: "${imageData.title}". 在最终报告中，你可以使用占位符 ![${imageData.title}](placeholder:${imageId}) 来引用这张图片。`;
     }
 
-    // 🎯 新增：代码预检函数
-    _preflightCodeCheck(code) {
-        // 1. 检查不完整的赋值语句，如 "my_var =" 后面直接跟换行符
-        if (/\w+\s*=\s*$/m.test(code)) {
-            return { valid: false, error: "检测到不完整的赋值语句。请确保赋值符号 `=` 后有值。" };
-        }
-        // 2. 检查未闭合的单引号或双引号（简单检查）
-        const singleQuotes = (code.match(/'/g) || []).length;
-        const doubleQuotes = (code.match(/"/g) || []).length;
-        if (singleQuotes % 2 !== 0) {
-            return { valid: false, error: "检测到未闭合的单引号 `'`。" };
-        }
-        if (doubleQuotes % 2 !== 0) {
-            return { valid: false, error: "检测到未闭合的双引号 `\"`。" };
-        }
-        // 3. 检查未闭合的括号（简单检查）
-        const openParens = (code.match(/\(/g) || []).length;
-        const closeParens = (code.match(/\)/g) || []).length;
-        if (openParens !== closeParens) {
-            return { valid: false, error: `检测到括号不匹配: 有 ${openParens} 个开括号和 ${closeParens} 个闭括号。` };
-        }
-        
-        // 4. 检查代码块是否为空（例如：def func():\n\n）
-        if (/(def|class|if|for|while)\s+.*:\s*(\n\s*\n|\n\s*$)/m.test(code)) {
-            return { valid: false, error: "检测到空的代码块（如函数或循环体为空）。" };
-        }
-
-        return { valid: true };
-    }
 
     // 🎯 新增：报告大纲生成方法
     /**
@@ -296,17 +267,6 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                 }
             }
 
-            // --- 代码预检 (保持不变) ---
-            if (toolName === 'python_sandbox' && parameters.code) {
-                const check = this._preflightCodeCheck(parameters.code);
-                if (!check.valid) {
-                    rawObservation = `代码预检失败: ${check.error} 请修正代码。`;
-                    toolSuccess = false;
-                    console.warn(`[DeepResearchAgent] ❌ Python代码预检失败: ${check.error}`);
-                    recordToolCall(toolName, parameters, false, rawObservation);
-                    return { rawObservation, toolSources: [], toolSuccess };
-                }
-            }
 
             // --- 调用工具 ---
             const toolResult = await tool.invoke(parameters, {
@@ -2222,41 +2182,40 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
      * Python错误智能诊断
      */
     async _diagnosePythonError(errorOutput, parameters) {
-        const diagnosis = {
-            errorType: 'unknown',
-            analysis: '',
-            suggestedFix: ''
+        // 默认诊断
+        let diagnosis = "Python 执行报错。";
+        let suggestion = "请检查代码逻辑，确保变量已定义且库已正确导入。";
+
+        // 1. 语法错误
+        if (errorOutput.includes("SyntaxError")) {
+            diagnosis = "语法错误 (SyntaxError)。";
+            suggestion = "请检查括号 `()`、引号 `'` `\"` 是否成对闭合，以及是否遗漏了冒号 `:`。**注意：在 Python 字符串内部使用引号时，必须使用转义字符 `\\` (例如 `\\\"`)。**";
+        }
+        // 2. 缩进错误
+        else if (errorOutput.includes("IndentationError")) {
+            diagnosis = "缩进错误 (IndentationError)。";
+            suggestion = "Python 对缩进非常敏感。请确保代码块的缩进一致（推荐使用 4 个空格），不要混用 Tab 和空格。";
+        }
+        // 3. 模块缺失
+        else if (errorOutput.includes("ModuleNotFoundError")) {
+            diagnosis = "模块缺失 (ModuleNotFoundError)。";
+            suggestion = "沙箱环境只支持标准库和 pandas, matplotlib, numpy, scipy, sklearn, statsmodels。请勿导入其他第三方库。";
+        }
+        // 4. 变量未定义 (非常常见)
+        else if (errorOutput.includes("NameError")) {
+            diagnosis = "变量未定义 (NameError)。";
+            suggestion = "请检查变量名是否拼写正确，或者是否在使用变量前忘记了定义它。";
+        }
+        // 5. 类型错误
+        else if (errorOutput.includes("TypeError")) {
+            diagnosis = "类型错误 (TypeError)。";
+            suggestion = "请检查操作数的数据类型是否兼容（例如，不能直接将字符串和数字相加，除非先转换）。";
+        }
+
+        return {
+            errorType: 'python_execution_error', // 保持结构一致性
+            analysis: diagnosis,
+            suggestedFix: suggestion
         };
-        
-        if (errorOutput.includes('SyntaxError') || errorOutput.includes('语法错误')) {
-            diagnosis.errorType = 'syntax_error';
-            diagnosis.analysis = '检测到语法错误，可能是括号、引号不匹配或缩进问题';
-            diagnosis.suggestedFix = '仔细检查代码中的括号、引号是否成对，确保缩进一致';
-        }
-        
-        if (errorOutput.includes('IndentationError')) {
-            diagnosis.errorType = 'indentation_error';
-            diagnosis.analysis = '缩进错误，Python对缩进要求严格';
-            diagnosis.suggestedFix = '统一使用4个空格进行缩进，不要混用空格和Tab';
-        }
-        
-        if (errorOutput.includes('NameError') || errorOutput.includes('未定义')) {
-            diagnosis.errorType = 'name_error';
-            diagnosis.analysis = '变量或函数名未定义';
-            diagnosis.suggestedFix = '检查变量名拼写，确保所有使用的变量都已正确定义';
-        }
-        
-        if (errorOutput.includes('JSON') || errorOutput.includes('json')) {
-            diagnosis.errorType = 'json_error';
-            diagnosis.analysis = 'JSON解析错误，可能是格式不正确';
-            diagnosis.suggestedFix = '使用在线JSON验证工具检查JSON格式，确保引号、括号正确';
-        }
-        
-        if (diagnosis.errorType === 'unknown') {
-            diagnosis.analysis = '无法自动诊断具体错误类型';
-            diagnosis.suggestedFix = '建议调用 `retrieve_knowledge` 获取 `python_sandbox` 的错误处理指南';
-        }
-        
-        return diagnosis;
     }
 }
