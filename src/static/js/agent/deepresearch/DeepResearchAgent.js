@@ -286,16 +286,20 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                     const outputData = JSON.parse(rawObservation);
 
                     if (outputData.type === 'image' && outputData.image_base64) {
-                        console.log('[DeepResearchAgent] 🐍 检测到Python沙盒生成的图像，正在处理...');
-                        // 调用图像处理方法，并将返回的简洁确认信息作为 Agent 的观察结果
-                        rawObservation = this._handleGeneratedImage(outputData);
+                        // 🛡️ [优化引入]：增加数据完整性检查
+                        if (outputData.image_base64.length > 100) {
+                            console.log('[DeepResearchAgent] 🐍 检测到Python沙盒生成的图像，正在处理...');
+                            // 调用图像处理方法，并将返回的简洁确认信息作为 Agent 的观察结果
+                            rawObservation = this._handleGeneratedImage(outputData);
+                        } else {
+                            console.warn('[DeepResearchAgent] ⚠️ 收到图片数据但长度不足，跳过渲染。');
+                            // 可以选择保留原始 JSON 或替换为错误提示，这里选择不做处理（即视为普通文本），避免中断流程
+                        }
 
                     } else if (['excel', 'word', 'powerpoint', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
+                        // ... (文件下载逻辑保持不变) ...
                         console.log(`[DeepResearchAgent] 🐍 检测到Python沙盒生成的文件: ${outputData.type}`);
-                        // 对于Agent模式，我们不需要触发下载，而是给Agent一个明确的确认信息
-                        // 这样Agent就知道文件已生成，可以在最终报告中提及
                         rawObservation = `[✅ 文件生成成功] 类型: "${outputData.type}", 标题: "${outputData.title}". 文件已准备就绪。`;
-                        // 这里可以触发一个事件，让UI知道文件已生成，但Agent本身不需要关心下载链接
                         this.callbackManager.invokeEvent('on_file_generated', {
                             run_id: this.runId,
                             data: outputData

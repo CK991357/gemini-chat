@@ -370,25 +370,33 @@ class DeepResearchToolAdapter {
                 
             case 'python_sandbox': {
                 const baseConfig = {
-                    timeout: modeSpecific.timeout || 90,
+                    timeout: modeSpecific.timeout || 120,
                     allow_network: modeSpecific.allow_network !== false,
                     ...agentParams
                 };
                 
                 let finalCode = '';
                 
-                // 1. 提取代码
-                if (agentParams.parameters && agentParams.parameters.code) {
-                    finalCode = agentParams.parameters.code;
-                } else if (agentParams.code) {
+                // 🎯【核心修复】简化代码提取，直接透传
+                if (agentParams.code) {
                     finalCode = agentParams.code;
+                } else if (agentParams.parameters && agentParams.parameters.code) {
+                    finalCode = agentParams.parameters.code;
+                } else if (agentParams.parameters && typeof agentParams.parameters === 'string') {
+                    // 处理字符串参数的情况
+                    try {
+                        const parsed = JSON.parse(agentParams.parameters);
+                        finalCode = parsed.code || agentParams.parameters;
+                    } catch (e) {
+                        finalCode = agentParams.parameters;
+                    }
                 }
 
-                // 🔴 修正：删除导致 SyntaxError 的代码转义逻辑（_fixPythonCodeEscaping）。直接透传代码。
-
+                // 🚫 彻底删除所有转义逻辑
+                // 不再调用 _fixPythonCodeEscaping 或任何 .replace() 操作
+                
                 if (finalCode) {
-                    // 注意：baseConfig 已经包含了所有其他参数，只需添加 code
-                    return { ...baseConfig, code: finalCode };
+                    return { ...baseConfig, code: String(finalCode) };
                 }
                 return baseConfig;
             }
@@ -610,83 +618,72 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'python_sandbox': {
-                    console.log(`[DeepResearchAdapter] 开始处理 python_sandbox 响应:`, dataFromProxy);
+                    console.log(`[DeepResearchAdapter] 处理 python_sandbox 响应:`, dataFromProxy);
 
-                    // 🔥🔥🔥【优化方案开始】🔥🔥🔥
+                    // 🎯【核心修复】直接使用后端原始数据
                     let parsedData = dataFromProxy;
                     if (typeof parsedData === 'string') {
-                        try {
-                            parsedData = JSON.parse(parsedData);
-                        } catch (e) { /* 解析失败则保持为字符串 */ }
+                        try { 
+                            parsedData = JSON.parse(parsedData); 
+                        } catch (e) { 
+                            // 如果不是JSON，保持原样
+                        }
                     }
 
                     const finalStdout = parsedData.stdout || '';
                     const finalStderr = parsedData.stderr || '';
-                    let output = '';
-                    let success = false;
                     
-                    // 修正“静默失败”：有时 Python 的错误回溯会出现在 stdout 中
-                    const hasErrorInStdout = finalStdout.toLowerCase().includes('traceback (most recent call last)') || finalStdout.toLowerCase().includes('error:');
+                    // 错误检测：基于stderr和exit_code
+                    const hasError = finalStderr.trim().length > 0 || 
+                                    (parsedData.exit_code && parsedData.exit_code !== 0);
 
-                    if (finalStderr && finalStderr.trim()) {
-                        // 如果有 stderr，则明确为失败
-                        success = false;
+                    let success = !rawResponse.error && !hasError;
+                    let output = '';
+
+                    if (hasError) {
+                        // 错误处理
                         const errorDetails = this._analyzePythonErrorDeeply(finalStderr);
                         output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
-                    } else if (hasErrorInStdout) {
-                        // 如果 stdout 包含错误，也视为失败
-                        success = false;
-                        const errorDetails = this._analyzePythonErrorDeeply(finalStdout); // 分析 stdout 中的错误
-                        output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
-                    } else if (finalStdout && finalStdout.trim()) {
-                        // 只有在 stderr 和 stdout 都没有错误时，才视为成功
-                        success = true;
-                        
-                        // 🟢【新增/修改的核心逻辑】智能 JSON 提取
-                        // 目的：防止后端返回的图片 JSON 被 Markdown 污染
-                        const stdoutStr = finalStdout.trim();
-                        let extractedJson = null;
-
-                        // 1. 尝试直接解析
-                        try {
-                            const json = JSON.parse(stdoutStr);
-                            // 检查是否是我们关注的特殊类型 (image, excel, pdf, ppt 等)
-                            if (json && json.type && (json.type === 'image' || ['excel', 'word', 'pdf', 'ppt'].includes(json.type))) {
-                                extractedJson = stdoutStr;
-                            }
-                        } catch (e) {
-                            // 2. 如果直接解析失败（可能有警告信息混入），尝试正则提取 JSON 块
-                            // 匹配包含 "type": "image" 或其他特殊类型的 JSON 对象
-                            const match = stdoutStr.match(/(\{[\s\S]*"type"\s*:\s*"(image|excel|word|pdf|ppt)"[\s\S]*\})/);
-                            if (match) {
-                                extractedJson = match[0]; // <--- 取数组的第一个元素
-                            }
-                        }
-
-                        if (extractedJson) {
-                            // ✅ 如果是特殊数据，原样返回纯 JSON
-                            output = extractedJson;
-                        } else {
-                            // ❌ 否则，作为普通文本，加上 Markdown 包装方便阅读
-                            output = this.formatCodeOutputForMode({ stdout: finalStdout }, researchMode);
-                        }
-                        
                     } else {
-                        // 如果两者都为空，视为成功，但返回提示信息
-                        success = true;
-                        output = `[工具信息]: Python代码执行完成，无标准输出。`;
+                        const stdoutStr = finalStdout.trim();
+                        
+                        // 🎯【核心修复】直接尝试JSON解析，不进行正则提取
+                        let isStructuredData = false;
+                        
+                        if (stdoutStr.startsWith('{') && stdoutStr.endsWith('}')) {
+                            try {
+                                const jsonOutput = JSON.parse(stdoutStr);
+                                // 检查是否是我们支持的特殊类型
+                                if (jsonOutput.type && ['image', 'excel', 'word', 'pdf', 'ppt'].includes(jsonOutput.type)) {
+                                    // ✅ 直接返回原始JSON字符串
+                                    output = stdoutStr;
+                                    isStructuredData = true;
+                                }
+                            } catch (e) {
+                                // 解析失败，当作普通文本处理
+                                console.log('[DeepResearchAdapter] stdout 不是有效JSON，当作普通文本处理');
+                            }
+                        }
+
+                        if (!isStructuredData) {
+                            if (stdoutStr) {
+                                output = this.formatCodeOutputForMode({ stdout: stdoutStr }, researchMode);
+                            } else {
+                                output = `[工具信息]: Python代码执行成功，无标准输出。`;
+                            }
+                        }
                     }
-                    // 🔥🔥🔥【优化方案结束】🔥🔥🔥
 
                     return {
                         success,
-                        output,
+                        output: output,
+                        stderr: finalStderr,
                         sources: [],
-                        rawResponse,
+                        rawResponse: parsedData,
                         isError: !success,
                         mode: 'deep_research',
                         researchMode: researchMode,
-                        // ... (其余字段不变)
+                        exitCode: parsedData.exit_code
                     };
                 }
                     
@@ -843,51 +840,6 @@ class DeepResearchToolAdapter {
         
         // 最后回退到原始的宽松检查
         return this.isContentMeaningful(content);
-    }
-    
-    /**
-     * 🎯 核心修复：Python代码转义问题解决方案
-     */
-    static _fixPythonCodeEscaping(codeString) {
-        if (!codeString || typeof codeString !== 'string') return codeString;
-        
-        const originalLength = codeString.length;
-        console.log(`[CodeEscapingFix] 开始修复代码转义，原始长度: ${originalLength}`);
-        
-        // 创建修复映射表
-        const escapeMap = {
-            '\\\\n': '\n',    // 修复换行符
-            '\\\\t': '\t',    // 修复制表符
-            '\\\\r': '\r',    // 修复回车符
-            '\\\\"': '"',     // 修复双引号
-            "\\\\'": "'",     // 修复单引号
-            '\\\\\\\\': '\\'  // 修复反斜杠
-        };
-        
-        let fixedCode = codeString;
-        let changesMade = false;
-        
-        // 应用所有转义修复
-        Object.entries(escapeMap).forEach(([escaped, unescaped]) => {
-            const original = fixedCode;
-            // 使用 new RegExp(escaped, 'g') 来确保全局替换
-            fixedCode = fixedCode.replace(new RegExp(escaped, 'g'), unescaped);
-            if (original !== fixedCode) {
-                changesMade = true;
-                console.log(`[CodeEscapingFix] 修复了 ${escaped} -> ${unescaped}`);
-            }
-        });
-        
-        if (changesMade) {
-            console.log(`[CodeEscapingFix] 修复完成: ${originalLength} -> ${fixedCode.length} 字符`);
-            // 记录修改前后的代码片段用于调试
-            console.log(`[CodeEscapingFix] 修改前片段: ${codeString.substring(0, 100)}...`);
-            console.log(`[CodeEscapingFix] 修改后片段: ${fixedCode.substring(0, 100)}...`);
-        } else {
-            console.log(`[CodeEscapingFix] 无需修复，代码保持原样`);
-        }
-        
-        return fixedCode;
     }
     
     /**
@@ -1744,4 +1696,3 @@ export class ToolFactory {
 }
 
 export { DeepResearchToolAdapter, ProxiedTool };
-
