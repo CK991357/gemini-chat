@@ -375,14 +375,23 @@ class DeepResearchToolAdapter {
                     ...agentParams
                 };
                 
-                // 🎯 核心修复：应用代码转义修复
                 let finalCode = '';
+                
+                // 1. 提取代码
                 if (agentParams.parameters && agentParams.parameters.code) {
-                    finalCode = this._fixPythonCodeEscaping(agentParams.parameters.code);
-                    return { ...baseConfig, ...agentParams.parameters, code: finalCode };
+                    finalCode = agentParams.parameters.code;
+                } else if (agentParams.code) {
+                    finalCode = agentParams.code;
                 }
-                if (agentParams.code) {
-                    finalCode = this._fixPythonCodeEscaping(agentParams.code);
+
+                // 🔥🔥🔥 核心修正：直接注释掉或删除下面这行“修复”逻辑 🔥🔥🔥
+                // finalCode = this._fixPythonCodeEscaping(finalCode);
+                
+                // 💡 说明：普通模式没有这一步也能成功，说明这一步是多余且有害的。
+                // JSON.stringify 会自动处理好转义，我们不要手动干预。
+
+                if (finalCode) {
+                    // 注意：baseConfig 已经包含了所有其他参数，只需添加 code
                     return { ...baseConfig, code: finalCode };
                 }
                 return baseConfig;
@@ -636,8 +645,8 @@ class DeepResearchToolAdapter {
                     } else if (finalStdout && finalStdout.trim()) {
                         // 只有在 stderr 和 stdout 都没有错误时，才视为成功
                         success = true;
-                        // 注意：这里我们返回原始的 stdout 字符串，让 DeepResearchAgent 的分发中心去解析
-                        output = finalStdout;
+                        // 核心修正：原样返回纯净的 stdout 字符串，不加任何包装
+                        output = finalStdout.trim();
                     } else {
                         // 如果两者都为空，视为成功，但返回提示信息
                         success = true;
