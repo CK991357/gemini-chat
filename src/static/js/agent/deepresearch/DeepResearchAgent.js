@@ -327,8 +327,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 if (sandboxResult.toolSuccess) {
                     // 检查是否已经触发了图片/文件处理逻辑（即 rawObservation 已被替换为成功消息）
                     if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') || sandboxResult.rawObservation.includes('[✅ 文件生成成功]')) {
-                        // 🔥 优化：加入强烈的“任务终止”暗示
-                        finalObservation = `✅ **专家任务完美执行**\n\n${sandboxResult.rawObservation}\n\n**系统提示**：\n1. 绘图任务已圆满完成，图片已生成。\n2. **请勿**再次调用 code_generator 或 python_sandbox。\n3. 请立即基于此图表进入下一阶段（如撰写报告）。`;
+                        // 🔥 优化版：区分“重复操作”和“新任务”
+                        finalObservation = `✅ **专家任务完美执行**\n\n${sandboxResult.rawObservation}\n\n**系统提示**：\n1. **当前**绘图/文件生成任务已圆满完成。\n2. 请勿**重复**执行完全相同的指令。\n3. **关键**：如果研究计划中还有**其他不同**的图表或数据需要处理，请**继续调用** code_generator；如果所有任务均已完成，请进入报告撰写阶段。`;
                     } else {
                         // 如果是成功但不是图片/文件（例如，纯文本输出或未被处理的JSON），则使用简洁的成功占位符
                         // 避免将原始JSON或大量纯文本抛给Manager
@@ -933,74 +933,70 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
         }
 
-        // 🔥🔥🔥 [新增] 兜底渲染逻辑开始 (Prioritized Fallback) 🔥🔥🔥
-        // 目的：防止 Agent 忘记写占位符导致图片丢失
-        // 策略：先检查并追加占位符，统一留给下一步处理
-        if (this.generatedImages.size > 0) {
-            console.log(`[DeepResearchAgent] 开始检查图片引用完整性，共 ${this.generatedImages.size} 张图片...`);
-            
-            this.generatedImages.forEach((imageData, imageId) => {
-                // 1. 构造占位符标准格式
-                const placeholder = `placeholder:${imageId}`;
-                
-                // 2. 检查 finalReport 是否已经包含了这个占位符
-                // (注意：我们不需要检查Base64，因为此时还没开始替换，Base64肯定不存在)
-                if (!finalReport.includes(placeholder)) {
-                    console.warn(`[DeepResearchAgent] ⚠️ 发现“遗失”的图片 ${imageId} (Agent未引用)，正在强制追加占位符。`);
-                    // 3. 强制追加到报告末尾
-                    finalReport += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](${placeholder})`;
-                }
-            });
+// ===========================================================================
+// 🚀 最终报告后处理流水线 (Post-Processing Pipeline)
+// ===========================================================================
+
+// 1. 智能来源分析 (Source Analysis - On Full Report)
+// 优先在完整报告上进行统计，确保即使模型只在末尾列出引用也能被捕获
+console.log('[DeepResearchAgent] 正在基于完整报告进行来源分析...');
+const filteredSources = this._filterUsedSources(uniqueSources, finalReport);
+console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
+
+// 2. 清理幻觉章节 (Cleaning)
+// 截断模型自行生成的“资料来源”部分，防止与系统生成的重复或格式不统一
+const sourceKeywords = ["资料来源", "参考文献", "Sources", "References", "参考资料清单"];
+let cleanedReport = finalReport;
+
+for (const keyword of sourceKeywords) {
+    const regex = new RegExp(`(##|###)\\s*${keyword}`, "i");
+    const match = cleanedReport.match(regex);
+    if (match) {
+        console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的“${keyword}”章节，正在执行自动清理...`);
+        cleanedReport = cleanedReport.substring(0, match.index);
+        break;
+    }
+}
+cleanedReport = cleanedReport.trim();
+
+// 3. 兜底图片渲染 (Fallback Image Rendering)
+// 将未被引用的图片强制追加到报告正文末尾（在清理之后，确保不被切掉）
+if (this.generatedImages.size > 0) {
+    console.log(`[DeepResearchAgent] 开始检查图片引用完整性，共 ${this.generatedImages.size} 张图片...`);
+    
+    this.generatedImages.forEach((imageData, imageId) => {
+        const placeholder = `placeholder:${imageId}`;
+        const base64Snippet = imageData.image_base64.substring(0, 50);
+        
+        // 检查是否已存在（包括占位符或Base64）
+        if (!cleanedReport.includes(placeholder) && !cleanedReport.includes(base64Snippet)) {
+            console.warn(`[DeepResearchAgent] ⚠️ 发现“遗失”的图片 ${imageId}，强制追加占位符。`);
+            cleanedReport += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](${placeholder})`;
         }
-        // 🔥🔥🔥 [新增] 兜底渲染逻辑结束 🔥🔥🔥
+    });
+}
 
-        // 🔥【最终魔法】在这里发生：将报告中的占位符（含兜底追加的）统一替换为真实的Base64图片
-        if (this.generatedImages.size > 0) {
-            console.log(`[DeepResearchAgent] 开始执行最终渲染 (Base64替换)...`);
-
-            finalReport = finalReport.replace(
-                /!\[(.*?)\]\(placeholder:(.*?)\)/g,
-                (match, altText, imageId) => {
-                    const imageData = this.generatedImages.get(imageId.trim());
-                    if (imageData) {
-                        console.log(`[DeepResearchAgent] 成功渲染图片: ${imageId}`);
-                        // 返回一个标准的、可被 Markdown 渲染器解析的 Base64 图片标签
-                        return `![${altText}](data:image/png;base64,${imageData.image_base64})`;
-                    }
-                    // 如果找不到图片，返回一个提示
-                    return `*[图像 "${altText}" 加载失败]*`;
-                }
-            );
-        }
-
-        // 🔥【核心修复】在这里增加事后清理逻辑
-        const sourceKeywords = ["资料来源", "参考文献", "Sources", "References", "参考资料清单"];
-        let cleanedReport = finalReport;
-        for (const keyword of sourceKeywords) {
-            // 寻找模型可能生成的来源章节标题
-            const regex = new RegExp(`(##|###)\\s*${keyword}`, "i");
-            const match = cleanedReport.match(regex);
-            if (match) {
-                console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的“${keyword}”章节，正在执行自动清理...`);
-                // 从匹配到的标题开始，截断报告的剩余部分
-                cleanedReport = cleanedReport.substring(0, match.index);
-                break; // 找到并清理后就跳出循环
+// 4. Base64 统一替换 (Base64 Replacement)
+// 将所有占位符（含正文中的和兜底追加的）替换为真实图片数据
+if (this.generatedImages.size > 0) {
+    console.log(`[DeepResearchAgent] 开始执行最终渲染 (Base64替换)...`);
+    cleanedReport = cleanedReport.replace(
+        /!\[(.*?)\]\(placeholder:(.*?)\)/g,
+        (match, altText, imageId) => {
+            const imageData = this.generatedImages.get(imageId.trim());
+            if (imageData) {
+                return `![${altText}](data:image/png;base64,${imageData.image_base64})`;
             }
+            return `*[图像 "${altText}" 加载失败]*`;
         }
-        // 确保报告末尾没有多余的空白
-        cleanedReport = cleanedReport.trim();
+    );
+}
 
+// 5. 附加真实来源列表 (Append Verified Sources)
+// 使用第 1 步计算出的精准列表
+cleanedReport += await this._generateSourcesSection(filteredSources, researchPlan);
 
-        // ✨ 阶段3.5：智能资料来源过滤
-        console.log('[DeepResearchAgent] 阶段3.5：执行智能资料来源过滤...');
-        // ▼▼▼ 注意：这里要对清理后的报告进行过滤 ▼▼▼
-        const filteredSources = this._filterUsedSources(uniqueSources, cleanedReport);
-        console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
-
-        // 🎯 关键修复：确保资料来源部分正确附加
-        // ▼▼▼ 注意：这里要附加到清理后的报告上 ▼▼▼
-        cleanedReport += await this._generateSourcesSection(filteredSources, researchPlan);
-        console.log(`[DeepResearchAgent] 最终报告完成，附加了 ${filteredSources.length} 个资料来源`);
+console.log(`[DeepResearchAgent] 最终报告构建完成。`);
 
         // =================================================================
         // 🔥🔥 核心修改点：在这里插入阶段4的逻辑 🔥🔥
