@@ -2372,17 +2372,24 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             });
         }
     }
+    
     /**
-     * 🚑 [新增] 代码急诊室：基于 LLM 的自动修复
-     * 利用全局上下文，在不消耗主迭代次数的情况下，快速修复低级错误
+     * 🚑 [优化版] 代码急诊室：基于 LLM 的自动修复
+     * 包含重试机制 (Max Retries: 2)
      */
     async _repairCodeWithLLM(brokenCode, errorType) {
         console.log('[DeepResearchAgent] 🚑 启动代码急诊室 (Auto-Repair)...');
         
-        // 1. 获取上下文数据 (这就是我们刚才挂载的)
         const contextData = this.currentResearchContext || "无上下文数据";
+        const maxRetries = 2; // 最大重试次数
+        
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            const isRetry = attempt > 0;
+            if (isRetry) {
+                console.warn(`[DeepResearchAgent] 🚑 修复尝试 ${attempt}/${maxRetries} 失败，正在重试...`);
+            }
 
-        const prompt = `
+            const prompt = `
 # 角色：Python 代码修复专家
 
 # 紧急任务
@@ -2398,40 +2405,48 @@ ${brokenCode}
 \`\`\`
 
 # 修复要求
-1. **数据填充 (关键)**:
+1. **数据填充 (关键)**: 
    - 仔细阅读【任务背景】，找到年份、数值等具体数据。
    - 将这些数据**完整、准确地硬编码**到代码的变量中 (例如 \`years = [2020, 2021...]\`)。
    - **绝对禁止**再次生成空赋值 (如 \`x =\`)。
 2. **语法修正**: 确保所有括号、引号闭合，import 完整。
 3. **输出格式**: 只输出修复后的 Python 代码，不要 Markdown 标记，不要解释。
+${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查数据是否完整填入！" : ""}
 `;
 
-        try {
-            // 使用低温模式调用主模型进行修复
-            const response = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: prompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
-                temperature: 0.0
-            });
+            try {
+                const response = await this.chatApiHandler.completeChat({
+                    messages: [{ role: 'user', content: prompt }],
+                    model: 'gemini-2.5-flash-preview-09-2025', // 坚持使用主模型
+                    temperature: 0.1 // 稍微提高一点点温度，避免死板，但保持低值
+                });
 
-            let fixedCode = response.choices[0].message.content;
-            // 清理 Markdown
-            fixedCode = fixedCode.replace(/```python/g, '').replace(/```/g, '').trim();
-            
-            // 二次验证：修复后的代码不应该再包含空赋值
-            if (/^\s*[a-zA-Z_]\w*\s*=\s*(?:\s*(?:#.*)?$)/m.test(fixedCode)) {
-                console.warn('[DeepResearchAgent] 🚑 急诊修复失败，代码仍有问题。');
-                return null;
+                // ✅ 语法修正：正确访问 choices 数组
+                let fixedCode = response.choices[0].message.content;
+                
+                // 清理 Markdown
+                fixedCode = fixedCode.replace(/```python/g, '').replace(/```/g, '').trim();
+                
+                // 验证：修复后的代码不应该再包含空赋值
+                // 也不应该包含 "..." 这种懒惰写法
+                if (/^\s*[a-zA-Z_]\w*\s*=\s*(?:\s*(?:#.*)?$)/m.test(fixedCode) || fixedCode.includes("...")) {
+                    console.warn('[DeepResearchAgent] 🚑 修复后的代码仍不符合要求。');
+                    continue; // 进入下一次重试
+                }
+
+                console.log(`[DeepResearchAgent] ✅ 急诊修复成功 (尝试 ${attempt + 1})，代码长度:`, fixedCode.length);
+                return fixedCode;
+
+            } catch (error) {
+                console.error(`[DeepResearchAgent] 🚑 修复尝试 ${attempt + 1} 发生异常:`, error);
+                // 继续下一次循环
             }
-
-            console.log('[DeepResearchAgent] ✅ 急诊修复成功，代码长度:', fixedCode.length);
-            return fixedCode;
-
-        } catch (error) {
-            console.error('[DeepResearchAgent] 🚑 急诊服务不可用:', error);
-            return null;
         }
+
+        console.error('[DeepResearchAgent] 🚑 急诊室宣告抢救无效 (达到最大重试次数)。');
+        return null;
     }
+
     /**
      * Python错误智能诊断
      */
