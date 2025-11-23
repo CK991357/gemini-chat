@@ -543,7 +543,6 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 `}
 `;
         
-        // 🎯 核心修复：添加Python代码调试专业指南
 // 🚀🚀🚀 [v2.6 核心修复] Python沙盒数据完整性指南 🚀🚀🚀
         const pythonSandboxMasterGuide = `
 ## 🐍 Python 沙盒数据完整性协议 (v2.6 - 防空赋值强化版)
@@ -552,10 +551,10 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 
 **你是数据录入员，不是代码架构师！**
 
-1. **🚫 绝对禁止空赋值**
-   - 严禁生成以 \`=\` 结尾的代码行
-   - 每个变量声明必须立即包含完整数据
-   - 示例：\`years =\`
+1. **✅ 必须立即赋值 (Mandatory Assignment)**
+   - 严禁生成以 \`=\` 结尾的代码行。
+   - 每一个变量声明必须在当行立即包含完整的列表、字典或数值。
+   - **正确做法**：直接写出 \`years = [2020, 2021, 2022]\`。
 
 2. **✅ 数据完整性检查清单** (必须在"思考"中逐项确认)
    - [ ] 所有变量都有完整的右侧赋值吗？

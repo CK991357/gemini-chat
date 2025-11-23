@@ -265,13 +265,14 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
                 if (emptyMatches) {
                     console.warn('[DeepResearchAgent] 🛑 拦截到空赋值 SyntaxError:', emptyMatches);
                     const errorMsg = `❌ **代码预检失败 (Preflight Check Failed)**\n\n` +
-                        `**检测到空赋值**: \`${emptyMatches.trim()}\`\n` +
+                        `**检测到空赋值**: \`${emptyMatches[0].trim()}\`\n` +
                         `**错误原因**: 变量声明后没有赋值数据\n` +
                         `**强制修正**: 请将用户提供的数据完整硬编码到代码中\n\n` +
-                        `**正确示例**:\n` +
+                        `**请修改代码后重新提交**:\n` +
+                        `**✅ 正确格式示例** (请替换为真实数据):\n` +
                         `\`\`\`python\n` +
-                        `years =\n` +
-                        `values =\n` +
+                        `years = [2020, 2021, 2022] # 必须填入数据\n` + // <--- 必须有数据
+                        `values = [100, 120, 150]\n` +
                         `\`\`\``;
                     
                     recordToolCall(toolName, parameters, false, errorMsg);
