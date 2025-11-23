@@ -1039,86 +1039,100 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         return result;
     }
 
-    // ✨ 最终报告生成 - 【上下文简化优化版】支持动态与静态模板
+    // ✨ 最终报告生成 - 【学术引用增强版】
     async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
-        // 🎯 核心优化：构建纯净的证据集合（同时用于动态和静态模板）
+        // 1. 构建纯净的证据集合
         const evidenceCollection = this._buildEvidenceCollection(intermediateSteps, plan);
         
-        console.log(`[DeepResearchAgent] 证据集合构建完成:`, {
-            总步骤数: intermediateSteps.length,
-            有效证据数: evidenceCollection.evidenceEntries.length,
-            关键发现数: evidenceCollection.keyFindings.length,
-            证据总长度: evidenceCollection.totalLength
-        });
+        // 2. 构建带编号的来源索引 (Source Index)
+        const numberedSourcesText = sources.map((s, i) => {
+            const dateStr = s.collectedAt ? ` (${s.collectedAt.split('T')[0]})` : '';
+            // 限制描述长度，避免 Token 溢出
+            const desc = s.description ? s.description.substring(0, 100).replace(/\n/g, ' ') + '...' : '无摘要';
+            return `[${i + 1}] 《${s.title}》- ${desc}${dateStr}`;
+        }).join('\n');
 
         let finalPrompt;
         const reportTemplate = getTemplateByResearchMode(researchMode);
+        
+        // 🎯 这里获取的就是包含了 "引用与论证规范" 的核心指令块
+        const promptFragment = getTemplatePromptFragment(researchMode); 
 
-        // 🔥 核心逻辑：检查是否为动态模板
+        // 🔥 动态模板构建逻辑
         if (reportTemplate.config.dynamic_structure) {
-            console.log(`[DeepResearchAgent] 检测到动态报告模板 (${researchMode}模式)，构建研究驱动的Prompt...`);
+            console.log(`[DeepResearchAgent] 检测到动态报告模板 (${researchMode}模式)，构建学术级Prompt...`);
             
-            // 🎯 动态模板：使用简化后的证据集合，但保持动态结构特性
             finalPrompt = `
 # 角色：首席研究分析师
-# 任务：基于以下研究证据集合，撰写一份高质量、结构化、体现深度思考的最终研究报告。
+# 任务：基于提供的证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术级研究报告。
 
 # 最终研究主题: "${topic}"
 
-# 1. 你的研究计划 (纲领)
-这是你最初为本次研究制定的总体规划，你的最终报告结构必须严格遵循并反映这个计划。
+# 1. 研究计划 (纲领)
 \`\`\`json
 ${JSON.stringify(plan, null, 2)}
 \`\`\`
 
-# 2. 研究证据集合 (纯净数据)
-这是你在研究过程中收集到的所有关键信息和发现，已经过清洗和整理，去除了过程性噪音。
+# 2. 📚 资料来源索引 (Source Index)
+**注意：以下编号对应你在正文中应引用的 [x] 标记。**
+${numberedSourcesText}
 
-## 关键发现总结
-${evidenceCollection.keyFindings.map((finding, index) => `${index + 1}. ${finding}`).join('\n')}
+# 3. 研究证据集合 (详细内容)
+以下内容是从上述来源中提取的详细信息。请结合上面的来源索引进行语义化引用。
+${evidenceCollection.keyFindings.map((finding, index) => `* 关键发现 ${index + 1}: ${finding}`).join('\n')}
 
-## 详细证据内容
+## 详细证据:
 ${evidenceCollection.evidenceEntries.map(entry => `
 ### ${entry.subQuestion}
-
 ${entry.evidence}
-
-${entry.keyFinding ? `**💡 本步关键发现:** ${entry.keyFinding}` : ''}
+${entry.keyFinding ? `**💡 本步关键发现:** ${entry.keyFinding}` : ''} 
 `).join('\n\n')}
 
-# 3. 你的报告撰写指令 (输出要求)
+# 4. 你的报告撰写指令 (输出要求)
 现在，请严格遵循以下元结构和要求，将上述研究证据整合成一份最终报告。
 
-${getTemplatePromptFragment(researchMode)}
+${promptFragment} 
+// 👆 这里是 "引用协议" 的最佳位置，确保模型在处理数据前最后一次看到规则。
 
 **🚫 绝对禁止:**
 - 编造研究计划和证据集合中不存在的信息。
-- 采用与你的研究计划（sub_question）无关的章节标题。
 - 在报告中提及"思考"、"行动"、"工具调用"等研究过程细节。
-- 在你的输出中包含任何形式的"资料来源"或"参考文献"章节。这一部分将由系统自动生成和附加。
+- 手动生成"资料来源"章节。
 
 **✅ 核心要求:**
 - **自主生成标题:** 基于主题和核心发现，为报告创建一个精准的标题。
 - **动态生成章节:** 将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
 - **内容填充:** 用对应研究步骤的详细证据数据来填充该章节。
-- **引用来源:** 在报告正文中，自然地引用信息来源的标题。
+- **引用来源:** 严格遵守上述【引用与论证规范】。
 
 现在，请开始撰写这份基于纯净证据的最终研究报告。
 `;
         } else {
-            // 🎯 静态模板：使用简化后的观察结果集合
-            console.log(`[DeepResearchAgent] 使用静态报告模板 (${researchMode}模式)，应用简化上下文...`);
+            // 🎯 静态模板构建逻辑
+            console.log(`[DeepResearchAgent] 使用静态报告模板 (${researchMode}模式)...`);
             
-            // 构建静态模板所需的观察结果集合
             const allObservations = evidenceCollection.evidenceEntries
                 .map(entry => entry.evidence)
                 .filter(evidence => evidence.length > 50)
                 .join('\n\n');
             
-            // 使用旧的 _buildReportPrompt 方法生成Prompt，但传入纯净证据
-            finalPrompt = this._buildReportPrompt(topic, plan, allObservations, researchMode);
+            finalPrompt = `
+你是一个专业的报告撰写专家。请基于以下收集到的信息，生成一份专业、结构完整的研究报告。
+
+# 研究主题
+${topic}
+
+# 📚 资料来源索引 (必须引用)
+${numberedSourcesText}
+
+# 已收集的关键信息摘要
+${allObservations.substring(0, 15000)}
+
+${promptFragment} 
+// 👆 同样，在静态模板中也放在数据之后，确保规则生效。
+`;
         }
 
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
@@ -1139,7 +1153,6 @@ ${getTemplatePromptFragment(researchMode)}
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
-            // 🔥 增强的降级报告逻辑
             return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
         }
     }
