@@ -366,27 +366,50 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 const code = parameters.code;
                 
                 // 1. 检查空赋值 (最关键的检查)
-                // 匹配：变量名 + 等号 + (可选空格) + (换行/注释/字符串结尾)
                 const emptyAssignmentRegex = /^\s*[a-zA-Z_]\w*\s*=\s*(?:\s*(?:#.*)?$)/m;
                 const emptyMatches = code.match(emptyAssignmentRegex);
                 
                 if (emptyMatches) {
-                    // ✅ 修复：不再回显错误的 emptyMatches[0]，避免污染上下文
-                    console.warn('[DeepResearchAgent] 🛑 拦截到空赋值 SyntaxError');
+                    console.warn('[DeepResearchAgent] 🛑 拦截到空赋值，正在呼叫急诊室...');
                     
-                    const errorMsg = `❌ **系统拒绝执行：数据未填充 (Data Missing)**\n\n` +
-                        `**诊断**: 检测到代码中存在**未赋值的变量**。你声明了变量但没有填入具体数据。\n` +
-                        `**根本原因**: 上下文惯性导致你重复了之前的错误模板。\n\n` +
-                        `**⚡ 强制行动指令 ⚡**:\n` +
-                        `1. **立即停止**复制粘贴之前的代码。\n` +
-                        `2. **回顾**用户的原始请求，找到具体的年份和数值。\n` +
-                        `3. **重写**代码，必须写成：\`variable = [真实数据, 真实数据...]\`。\n` +
-                        `4. **禁止**留空等待后续填充。`;
+                    // 🔥 尝试自动修复 (Micro-Loop)
+                    // 传入具体的错误描述
+                    const fixedCode = await this._repairCodeWithLLM(code, "变量声明未赋值 (Empty Assignment)");
+                    
+                    if (fixedCode) {
+                        console.log('[DeepResearchAgent] 🔄 使用急诊修复后的代码继续执行...');
+                        
+                        // 记录一个隐形的思考事件，方便调试但不打扰用户
+                        // this.callbackManager.invokeEvent('on_agent_think_start', {
+                        //    run_id: this.runId,
+                        //    data: { system_msg: "系统自动修复了代码中的数据缺失..." }
+                        // });
+
+                        // 递归调用自己，使用修复后的代码，无缝继续流程
+                        return await this._executeToolCall(
+                            toolName,
+                            { ...parameters, code: fixedCode },
+                            detectedMode,
+                            recordToolCall
+                        );
+                    }
+
+                    // 🚑 如果急诊修复失败，才执行原来的报错返回逻辑
+                    const errorMsg = `❌ **代码预检失败 (Preflight Check Failed)**\n\n` +
+                        `**检测到空赋值**: \`${emptyMatches.trim()}\`\n` +
+                        `**错误原因**: 变量声明后没有赋值数据\n` +
+                        `**强制修正**: 请将用户提供的数据完整硬编码到代码中\n\n` +
+                        `**请修改代码后重新提交**:\n` +
+                        `**✅ 正确格式示例** (请替换为真实数据):\n` +
+                        `\`\`\`python\n` +
+                        `years = # 必须填入数据\n` +
+                        `values =\n` +
+                        `\`\`\``;
                     
                     recordToolCall(toolName, parameters, false, errorMsg);
                     return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
                 }
-
+                
                 // 2. 检查不完整的列表/字典
                 const incompleteStructureRegex = /(?:list|dict|\[|\{)\s*$/m;
                 if (incompleteStructureRegex.test(code)) {
@@ -526,6 +549,13 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         const internalTopic = enrichedTopic.replace(/！\s*$/, '').trim();
         // displayTopic 用于 UI 显示
         const uiTopic = (cleanTopic || enrichedTopic).replace(/！\s*$/, '').trim();
+
+        // ============================================================
+        // 🔥🔥🔥 [核心新增] 全局挂载上下文数据 🔥🔥🔥
+        // 这行代码至关重要！它让后续的"急诊医生"能看到原始数据
+        // 优先使用 cleanTopic (用户原始输入)，因为它通常包含最原始的数据文本
+        // ============================================================
+        this.currentResearchContext = uiTopic;
         
         const detectedMode = researchMode || 'standard';
         
@@ -2342,7 +2372,66 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             });
         }
     }
-    
+    /**
+     * 🚑 [新增] 代码急诊室：基于 LLM 的自动修复
+     * 利用全局上下文，在不消耗主迭代次数的情况下，快速修复低级错误
+     */
+    async _repairCodeWithLLM(brokenCode, errorType) {
+        console.log('[DeepResearchAgent] 🚑 启动代码急诊室 (Auto-Repair)...');
+        
+        // 1. 获取上下文数据 (这就是我们刚才挂载的)
+        const contextData = this.currentResearchContext || "无上下文数据";
+
+        const prompt = `
+# 角色：Python 代码修复专家
+
+# 紧急任务
+检测到以下代码存在 **${errorType}**。
+请根据【任务背景】中的数据，修复代码中的空赋值或语法错误。
+
+# 任务背景 (用户原始请求 - 包含数据)
+${contextData}
+
+# 损坏的代码
+\`\`\`python
+${brokenCode}
+\`\`\`
+
+# 修复要求
+1. **数据填充 (关键)**:
+   - 仔细阅读【任务背景】，找到年份、数值等具体数据。
+   - 将这些数据**完整、准确地硬编码**到代码的变量中 (例如 \`years = [2020, 2021...]\`)。
+   - **绝对禁止**再次生成空赋值 (如 \`x =\`)。
+2. **语法修正**: 确保所有括号、引号闭合，import 完整。
+3. **输出格式**: 只输出修复后的 Python 代码，不要 Markdown 标记，不要解释。
+`;
+
+        try {
+            // 使用低温模式调用主模型进行修复
+            const response = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: prompt }],
+                model: 'gemini-2.5-flash-preview-09-2025',
+                temperature: 0.0
+            });
+
+            let fixedCode = response.choices[0].message.content;
+            // 清理 Markdown
+            fixedCode = fixedCode.replace(/```python/g, '').replace(/```/g, '').trim();
+            
+            // 二次验证：修复后的代码不应该再包含空赋值
+            if (/^\s*[a-zA-Z_]\w*\s*=\s*(?:\s*(?:#.*)?$)/m.test(fixedCode)) {
+                console.warn('[DeepResearchAgent] 🚑 急诊修复失败，代码仍有问题。');
+                return null;
+            }
+
+            console.log('[DeepResearchAgent] ✅ 急诊修复成功，代码长度:', fixedCode.length);
+            return fixedCode;
+
+        } catch (error) {
+            console.error('[DeepResearchAgent] 🚑 急诊服务不可用:', error);
+            return null;
+        }
+    }
     /**
      * Python错误智能诊断
      */
