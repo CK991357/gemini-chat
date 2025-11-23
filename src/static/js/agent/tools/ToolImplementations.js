@@ -660,17 +660,19 @@ class DeepResearchToolAdapter {
                         const errorDetails = this._analyzePythonErrorDeeply(finalStderr);
                         finalOutput = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
                     } else {
+                        // 成功处理
                         
                         // 🎯【核心修复】直接尝试JSON解析，不进行正则提取
                         let isStructuredData = false;
-                        
+                        let tempOutput = ''; // 使用临时变量存储成功时的输出
+
                         if (stdoutStr.startsWith('{') && stdoutStr.endsWith('}')) {
                             try {
                                 const jsonOutput = JSON.parse(stdoutStr);
                                 // 检查是否是我们支持的特殊类型
                                 if (jsonOutput.type && ['image', 'excel', 'word', 'pdf', 'ppt'].includes(jsonOutput.type)) {
                                     // ✅ 直接返回原始JSON字符串
-                                    output = stdoutStr;
+                                    tempOutput = stdoutStr;
                                     isStructuredData = true;
                                 }
                             } catch (e) {
@@ -681,16 +683,19 @@ class DeepResearchToolAdapter {
 
                         if (!isStructuredData) {
                             if (stdoutStr) {
-                                output = this.formatCodeOutputForMode({ stdout: stdoutStr }, researchMode);
+                                tempOutput = this.formatCodeOutputForMode({ stdout: stdoutStr }, researchMode);
                             } else {
-                                output = `[工具信息]: Python代码执行成功，无标准输出。`;
+                                tempOutput = `[工具信息]: Python代码执行成功，无标准输出。`;
                             }
                         }
+                        
+                        // 🔥 成功时将临时输出赋值给 finalOutput
+                        finalOutput = tempOutput;
                     }
 
                     return {
                         success,
-                        output: finalOutput,
+                        output: finalOutput, // <--- 修复：现在 finalOutput 包含了成功时的输出
                         stderr: finalStderr,
                         sources: [],
                         rawResponse: parsedData,

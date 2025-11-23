@@ -126,7 +126,12 @@ import sys, traceback, io, json, base64
 # --- Matplotlib Font and Style Setup (runs inside the sandbox) ---
 def setup_matplotlib_config():
     try:
+        import warnings
         import matplotlib.pyplot as plt
+        
+        # 🎯 精准屏蔽 Matplotlib 的字体警告 (UserWarning)，保留 RuntimeWarning 等
+        warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
+
         import matplotlib.font_manager as fm
         # 字体优先级列表
         font_preferences = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'DejaVu Sans', 'Arial Unicode MS', 'SimHei']

@@ -310,9 +310,22 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 );
                 
                 // 🟢 步骤 E: 包装结果反馈给经理
-                const finalObservation = sandboxResult.toolSuccess 
-                    ? `✅ **专家任务执行成功**\\n\\n${sandboxResult.rawObservation}`
-                    : `❌ **专家代码执行出错**\\n\\n${sandboxResult.rawObservation}`;
+                let finalObservation;
+                
+                if (sandboxResult.toolSuccess) {
+                    // 检查是否已经触发了图片/文件处理逻辑（即 rawObservation 已被替换为成功消息）
+                    if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') || sandboxResult.rawObservation.includes('[✅ 文件生成成功]')) {
+                        // 如果是图片或文件，保留其详细信息和指令
+                        finalObservation = `✅ **专家任务完美执行**\n\n${sandboxResult.rawObservation}\n\n**关键指令**：你**必须**在最终报告中引用上述图片/文件！`;
+                    } else {
+                        // 如果是成功但不是图片/文件（例如，纯文本输出或未被处理的JSON），则使用简洁的成功占位符
+                        // 避免将原始JSON或大量纯文本抛给Manager
+                        finalObservation = `✅ **专家任务执行成功**\n\n输出: [已成功执行代码，但未生成图片或文件。请根据代码逻辑判断是否有关键数据输出。]`;
+                    }
+                } else {
+                    // 失败情况保持不变
+                    finalObservation = `❌ **专家代码执行出错**\n\n错误信息: ${sandboxResult.rawObservation}`;
+                }
 
                 // 标记 code_generator 调用成功
                 recordToolCall(toolName, parameters, true, "专家任务已完成");
@@ -891,16 +904,37 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
         }
 
-        // 🔥【最终魔法】在这里发生：将报告中的占位符替换为真实的Base64图片
+        // 🔥🔥🔥 [新增] 兜底渲染逻辑开始 (Prioritized Fallback) 🔥🔥🔥
+        // 目的：防止 Agent 忘记写占位符导致图片丢失
+        // 策略：先检查并追加占位符，统一留给下一步处理
         if (this.generatedImages.size > 0) {
-            console.log(`[DeepResearchAgent] 检测到 ${this.generatedImages.size} 张图片，开始替换最终报告的占位符...`);
+            console.log(`[DeepResearchAgent] 开始检查图片引用完整性，共 ${this.generatedImages.size} 张图片...`);
+            
+            this.generatedImages.forEach((imageData, imageId) => {
+                // 1. 构造占位符标准格式
+                const placeholder = `placeholder:${imageId}`;
+                
+                // 2. 检查 finalReport 是否已经包含了这个占位符
+                // (注意：我们不需要检查Base64，因为此时还没开始替换，Base64肯定不存在)
+                if (!finalReport.includes(placeholder)) {
+                    console.warn(`[DeepResearchAgent] ⚠️ 发现“遗失”的图片 ${imageId} (Agent未引用)，正在强制追加占位符。`);
+                    // 3. 强制追加到报告末尾
+                    finalReport += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](${placeholder})`;
+                }
+            });
+        }
+        // 🔥🔥🔥 [新增] 兜底渲染逻辑结束 🔥🔥🔥
+
+        // 🔥【最终魔法】在这里发生：将报告中的占位符（含兜底追加的）统一替换为真实的Base64图片
+        if (this.generatedImages.size > 0) {
+            console.log(`[DeepResearchAgent] 开始执行最终渲染 (Base64替换)...`);
 
             finalReport = finalReport.replace(
                 /!\[(.*?)\]\(placeholder:(.*?)\)/g,
                 (match, altText, imageId) => {
                     const imageData = this.generatedImages.get(imageId.trim());
                     if (imageData) {
-                        console.log(`[DeepResearchAgent] 成功替换占位符: ${imageId}`);
+                        console.log(`[DeepResearchAgent] 成功渲染图片: ${imageId}`);
                         // 返回一个标准的、可被 Markdown 渲染器解析的 Base64 图片标签
                         return `![${altText}](data:image/png;base64,${imageData.image_base64})`;
                     }
@@ -909,20 +943,6 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 }
             );
         }
-        // 🔥🔥🔥 [新增] 兜底渲染逻辑开始 🔥🔥🔥
-        // 目的：防止 Agent 忘记写占位符导致图片丢失
-        this.generatedImages.forEach((imageData, imageId) => {
-            // 取 base64 的前 50 个字符作为指纹进行检查
-            // 注意：这里检查的是 finalReport，此时如果 Agent 正确引用了，finalReport 里应该已经有了完整的 base64
-            const base64Snippet = imageData.image_base64.substring(0, 50);
-            
-            if (!finalReport.includes(base64Snippet)) {
-                console.warn(`[DeepResearchAgent] ⚠️ 发现“遗失”的图片 ${imageId} (Agent未引用)，正在强制追加到报告末尾。`);
-                // 追加到报告末尾，确保用户能看到
-                finalReport += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](data:image/png;base64,${imageData.image_base64})`;
-            }
-        });
-        // 🔥🔥🔥 [新增] 兜底渲染逻辑结束 🔥🔥🔥
 
         // 🔥【核心修复】在这里增加事后清理逻辑
         const sourceKeywords = ["资料来源", "参考文献", "Sources", "References", "参考资料清单"];
