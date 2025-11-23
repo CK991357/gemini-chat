@@ -327,8 +327,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 if (sandboxResult.toolSuccess) {
                     // 检查是否已经触发了图片/文件处理逻辑（即 rawObservation 已被替换为成功消息）
                     if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') || sandboxResult.rawObservation.includes('[✅ 文件生成成功]')) {
-                        // 如果是图片或文件，保留其详细信息和指令
-                        finalObservation = `✅ **专家任务完美执行**\n\n${sandboxResult.rawObservation}\n\n**关键指令**：你**必须**在最终报告中引用上述图片/文件！`;
+                        // 🔥 优化：加入强烈的“任务终止”暗示
+                        finalObservation = `✅ **专家任务完美执行**\n\n${sandboxResult.rawObservation}\n\n**系统提示**：\n1. 绘图任务已圆满完成，图片已生成。\n2. **请勿**再次调用 code_generator 或 python_sandbox。\n3. 请立即基于此图表进入下一阶段（如撰写报告）。`;
                     } else {
                         // 如果是成功但不是图片/文件（例如，纯文本输出或未被处理的JSON），则使用简洁的成功占位符
                         // 避免将原始JSON或大量纯文本抛给Manager
