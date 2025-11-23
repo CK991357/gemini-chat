@@ -236,43 +236,36 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
      */
 // 🚀🚀🚀 [v2.2 核心升级] 具备完整智能分发中心的工具执行方法 🚀🚀🚀
     async _executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
-        const tool = this.tools[toolName];
-        let rawObservation;
-        let toolSources = [];
-        let toolSuccess = false;
 
-        if (!tool) {
-            rawObservation = `错误: 工具 "${toolName}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
-            console.error(`[DeepResearchAgent] ❌ 工具不存在: ${toolName}`);
-            recordToolCall(toolName, parameters, false, rawObservation);
-            return { rawObservation, toolSources, toolSuccess: false };
-        }
+        // ============================================================
+        // 🔥🔥🔥 虚拟专家接管系统 (优先级最高) 🔥🔥🔥
+        // 必须在检查 this.tools 之前执行，因为它是不存在于 this.tools 中的虚拟工具
+        // ============================================================
+        if (toolName === 'code_generator') {
+            console.log('[DeepResearchAgent] 👔 启动代码专家委托流程...');
+            const { objective, data_context } = parameters;
 
-// ============================================================
-// 🔥🔥🔥 虚拟专家接管系统 (含自动知识注入) 🔥🔥🔥
-// ============================================================
-if (toolName === 'code_generator') {
-    console.log('[DeepResearchAgent] 👔 启动代码专家委托流程...');
-    const { objective, data_context } = parameters;
+            // 🟢 步骤 A: 从联邦知识库获取 python_sandbox 的完整技能包
+            // 这会自动包含 SKILL.md 主内容以及 matplotlib_cookbook 等引用文件
+            let knowledgeContext = "";
+            if (this.skillManager) {
+                console.log('[DeepResearchAgent] 正在从 SkillManager 获取专家知识...');
+                // 尝试获取针对 "数据可视化" 上下文的知识
+                const knowledgePackage = await this.skillManager.retrieveFederatedKnowledge(
+                    'python_sandbox',
+                    { userQuery: objective }
+                );
+                
+                if (knowledgePackage && knowledgePackage.content) {
+                    console.log('[DeepResearchAgent] 📚 已成功加载专家知识库');
+                    knowledgeContext = knowledgePackage.content;
+                }
+            } else {
+                console.warn('[DeepResearchAgent] ⚠️ SkillManager 未注入，专家模型将仅依赖通用知识。');
+            }
 
-    // 🟢 步骤 A: 从联邦知识库获取 python_sandbox 的完整技能包
-    // 这会自动包含 SKILL.md 主内容以及 matplotlib_cookbook 等引用文件
-    let knowledgeContext = "";
-    if (this.skillManager) {
-        // 尝试获取针对 "数据可视化" 上下文的知识
-        const knowledgePackage = await this.skillManager.retrieveFederatedKnowledge(
-            'python_sandbox', 
-            { userQuery: objective } 
-        );
-        
-        if (knowledgePackage && knowledgePackage.content) {
-            console.log('[DeepResearchAgent] 📚 已成功加载专家知识库');
-            knowledgeContext = knowledgePackage.content;
-        }
-    }
-
-    // 🟢 步骤 B: 构建专家 Prompt (融合知识库)
-    const specialistPrompt = `
+            // 🟢 步骤 B: 构建专家 Prompt (融合知识库)
+            const specialistPrompt = `
 # 角色：高级 Python 数据专家
 
 # 任务目标
@@ -285,58 +278,70 @@ ${JSON.stringify(data_context)}
 ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Python 规范。"}
 
 # ⚡ 补充强制执行协议 (Override Rules)
-1. **数据硬编码**: 必须将【数据上下文】中的数据完整写入代码变量，**严禁空赋值** (如 \`x = \`)。
+1. **数据硬编码**: 必须将【数据上下文】中的数据完整写入代码变量，**严禁空赋值** (如 \`x = \`).
 2. **绘图必选**: 如果涉及绘图，必须使用 \`import matplotlib.pyplot as plt\` 并以 \`plt.show()\` 结尾。
 3. **中文支持**: 设置 \`plt.rcParams['font.family'] = ['sans-serif']\`。
 4. **输出纯净**: 只输出 Python 代码，不要 Markdown 标记。
 `;
 
-    try {
-        // 🟢 步骤 C: 呼叫专家模型 (独立上下文)
-        // 这里就是您说的“同模型但不同窗口”
-        const response = await this.chatApiHandler.completeChat({
-            messages: [{ role: 'user', content: specialistPrompt }],
-            model: 'gemini-2.5-flash-preview-09-2025', 
-            temperature: 0.1 // 低温确保代码精准
-        }, null);
+            try {
+                // 🟢 步骤 C: 呼叫专家模型 (独立上下文)
+                // 这里就是您说的“同模型但不同窗口”
+                const response = await this.chatApiHandler.completeChat({
+                    messages: [{ role: 'user', content: specialistPrompt }],
+                    model: 'gemini-2.5-flash-preview-09-2025', 
+                    temperature: 0.1 // 低温确保代码精准
+                }, null);
 
-        let generatedCode = response.choices[0].message.content;
-        generatedCode = generatedCode.replace(/```python/g, '').replace(/```/g, '').trim();
+                let generatedCode = response.choices[0].message.content;
+                generatedCode = generatedCode.replace(/```python/g, '').replace(/```/g, '').trim();
 
-        console.log('[DeepResearchAgent] 👨‍💻 专家代码生成完毕，长度:', generatedCode.length);
-        
-        // 🟢 步骤 D: 自动转发给沙盒执行 (Auto-Forwarding)
-        console.log('[DeepResearchAgent] 🔄 自动转接沙盒执行...');
-        
-        // 递归调用，真正执行 python_sandbox
-        const sandboxResult = await this._executeToolCall(
-            'python_sandbox', 
-            { code: generatedCode }, 
-            detectedMode, 
-            recordToolCall
-        );
-        
-        // 🟢 步骤 E: 包装结果反馈给经理
-        const finalObservation = sandboxResult.toolSuccess 
-            ? `✅ **专家任务执行成功**\n\n${sandboxResult.rawObservation}`
-            : `❌ **专家代码执行出错**\n\n${sandboxResult.rawObservation}`;
+                console.log('[DeepResearchAgent] 👨‍💻 专家代码生成完毕，长度:', generatedCode.length);
+                
+                // 🟢 步骤 D: 自动转发给沙盒执行 (Auto-Forwarding)
+                console.log('[DeepResearchAgent] 🔄 自动转接沙盒执行...');
+                
+                // 递归调用，真正执行 python_sandbox
+                const sandboxResult = await this._executeToolCall(
+                    'python_sandbox', 
+                    { code: generatedCode }, 
+                    detectedMode, 
+                    recordToolCall
+                );
+                
+                // 🟢 步骤 E: 包装结果反馈给经理
+                const finalObservation = sandboxResult.toolSuccess 
+                    ? `✅ **专家任务执行成功**\\n\\n${sandboxResult.rawObservation}`
+                    : `❌ **专家代码执行出错**\\n\\n${sandboxResult.rawObservation}`;
 
-        // 标记 code_generator 调用成功
-        recordToolCall(toolName, parameters, true, "专家任务已完成");
+                // 标记 code_generator 调用成功
+                recordToolCall(toolName, parameters, true, "专家任务已完成");
 
-        return {
-            rawObservation: finalObservation,
-            toolSources: sandboxResult.toolSources,
-            toolSuccess: sandboxResult.toolSuccess
-        };
+                return {
+                    rawObservation: finalObservation,
+                    toolSources: sandboxResult.toolSources,
+                    toolSuccess: sandboxResult.toolSuccess
+                };
 
-    } catch (error) {
-        // ... 错误处理
-        console.error('[DeepResearchAgent] ❌ 专家系统故障:', error);
-        recordToolCall(toolName, parameters, false, `专家系统故障: ${error.message}`);
-        return { rawObservation: `专家系统故障: ${error.message}`, toolSources: [], toolSuccess: false };
-    }
-}
+            } catch (error) {
+                // ... 错误处理
+                console.error('[DeepResearchAgent] ❌ 专家系统故障:', error);
+                recordToolCall(toolName, parameters, false, `专家系统故障: ${error.message}`);
+                return { rawObservation: `专家系统故障: ${error.message}`, toolSources: [], toolSuccess: false };
+            }
+        }
+
+        const tool = this.tools[toolName];
+        let rawObservation;
+        let toolSources = [];
+        let toolSuccess = false;
+
+        if (!tool) {
+            rawObservation = `错误: 工具 "${toolName}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
+            console.error(`[DeepResearchAgent] ❌ 工具不存在: ${toolName}`);
+            recordToolCall(toolName, parameters, false, rawObservation);
+            return { rawObservation, toolSources, toolSuccess: false };
+        }
 
         try {
             console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`, parameters);
