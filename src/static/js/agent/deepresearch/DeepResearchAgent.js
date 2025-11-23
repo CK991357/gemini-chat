@@ -278,10 +278,14 @@ ${JSON.stringify(data_context)}
 ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Python 规范。"}
 
 # ⚡ 补充强制执行协议 (Override Rules)
-1. **数据硬编码**: 必须将【数据上下文】中的数据完整写入代码变量，**严禁空赋值** (如 \`x = \`).
-2. **绘图必选**: 如果涉及绘图，必须使用 \`import matplotlib.pyplot as plt\` 并以 \`plt.show()\` 结尾。
-3. **中文支持**: 设置 \`plt.rcParams['font.family'] = ['sans-serif']\`。
-4. **输出纯净**: 只输出 Python 代码，不要 Markdown 标记。
+1. **数据硬编码**: 必须将【数据上下文】中的数据完整写入代码变量，**严禁空赋值**。
+2. **中文支持 (关键)**:
+   - 本环境**不包含** SimHei 或 Microsoft YaHei。
+   - **必须**显式设置字体为文泉驿微米黑：
+     \`plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei']\`
+   - 设置负号支持：\`plt.rcParams['axes.unicode_minus'] = False\`
+3. **输出纯净**: 只输出 Python 代码，不要 Markdown 标记。
+4. **必须调用 \`plt.show()\`**: 这是触发图像输出的唯一方式。
 `;
 
             try {
