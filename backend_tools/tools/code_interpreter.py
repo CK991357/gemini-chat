@@ -246,11 +246,16 @@ if not output_processed:
         print(json.dumps(output_data), end='')
         output_processed = True
 
-# 🚀🚀🚀 --- 核心修复：仅当 matplotlib 已导入时才尝试自动捕获 --- 🚀🚀🚀
+# 🚀🚀🚀 --- 核心修复：自动捕获时的强制纠正 --- 🚀🚀🚀
 if not output_processed and 'matplotlib.pyplot' in sys.modules:
     plt = sys.modules['matplotlib.pyplot']
     if plt.get_fignums():
         try:
+            # 🔥🔥🔥 终极修正：在保存图片前，强行把字体改回正确的！🔥🔥🔥
+            # 无论用户代码里写了什么 SimHei，这里都会被覆盖成 WenQuanYi
+            plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei']
+            plt.rcParams['axes.unicode_minus'] = False
+
             fig = plt.gcf()
             buf = io.BytesIO()
             fig.savefig(buf, format='png', bbox_inches='tight')
@@ -263,7 +268,8 @@ if not output_processed and 'matplotlib.pyplot' in sys.modules:
             print(json.dumps(output_data), end='')
             output_processed = True
         except Exception as auto_capture_error:
-            print(f"\\n[SYSTEM_ERROR] Failed to auto-capture Matplotlib figure: {{auto_capture_error}}", file=sys.stderr, end='')
+            # 这里也可以把错误静默处理，或者只打印简短信息
+            print(f"\\n[SYSTEM_ERROR] Chart capture failed: {{auto_capture_error}}", file=sys.stderr, end='')
 # 🚀🚀🚀 --- 核心修复结束 --- 🚀🚀🚀
 
 if not output_processed:
