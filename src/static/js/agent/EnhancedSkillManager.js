@@ -370,8 +370,10 @@ export class EnhancedSkillManager {
       sections.push('数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式');
     }
     
-    // 可视化相关
-    if (queryLower.includes('图表') || queryLower.includes('可视化') || queryLower.includes('画图')) {
+    // 可视化相关 (增强关键词)
+    // 增加 '折线图', '绘图', 'matplotlib', 'plt' 等
+    if (queryLower.includes('图表') || queryLower.includes('可视化') || queryLower.includes('画图') ||
+        queryLower.includes('折线图') || queryLower.includes('绘图') || queryLower.includes('matplotlib') || queryLower.includes('plt')) {
       sections.push('数据可视化', 'matplotlib_cookbook');
     }
     

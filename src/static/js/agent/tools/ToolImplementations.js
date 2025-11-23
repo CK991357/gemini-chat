@@ -642,19 +642,24 @@ class DeepResearchToolAdapter {
                     const finalStdout = parsedData.stdout || '';
                     const finalStderr = parsedData.stderr || '';
                     
-                    // 错误检测：基于stderr和exit_code
-                    const hasError = finalStderr.trim().length > 0 || 
-                                    (parsedData.exit_code && parsedData.exit_code !== 0);
+                    // 🎯 优化判定逻辑：对 Warning 的容忍度
+                    const stdoutStr = finalStdout.trim();
+                    const hasImage = stdoutStr && (stdoutStr.includes('image_base64') || (typeof stdoutStr === 'string' && stdoutStr.includes('"type": "image"')));
+                    
+                    // 如果成功生成了图片，或者是 0 退出码，就认为成功，忽略 stderr 中的 Warning
+                    const isSuccess = (!rawResponse.error && parsedData.exit_code === 0) || hasImage;
+                    
+                    // 只有在真的失败时（非0退出码 且 无图片），才把 stderr 当作错误
+                    const hasError = !isSuccess && finalStderr.trim().length > 0;
 
-                    let success = !rawResponse.error && !hasError;
-                    let output = '';
+                    let success = isSuccess;
+                    let finalOutput = '';
 
                     if (hasError) {
                         // 错误处理
                         const errorDetails = this._analyzePythonErrorDeeply(finalStderr);
-                        output = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
+                        finalOutput = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
                     } else {
-                        const stdoutStr = finalStdout.trim();
                         
                         // 🎯【核心修复】直接尝试JSON解析，不进行正则提取
                         let isStructuredData = false;
@@ -685,7 +690,7 @@ class DeepResearchToolAdapter {
 
                     return {
                         success,
-                        output: output,
+                        output: finalOutput,
                         stderr: finalStderr,
                         sources: [],
                         rawResponse: parsedData,

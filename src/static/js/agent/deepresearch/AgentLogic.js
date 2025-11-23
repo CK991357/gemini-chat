@@ -776,6 +776,18 @@ const toolOptimizationProtocol = `
         // 🎯 核心DRY优化：动态获取报告要求，避免硬编码重复
         const reportRequirements = getTemplatePromptFragment(researchMode);
 
+        // 🔥🔥🔥 新增：强制图表展示指令 🔥🔥🔥
+        const visualizationMandate = `
+## 📊 图表展示强制协议 (Mandatory Visualization Display)
+
+**如果**在任何研究步骤中，工具返回了**图像数据**（即观察结果中包含 \`"type": "image"\` 或 Base64 字符串），你**必须**在最终报告中展示它。
+
+1.  **引用规则**：使用 Markdown 图片语法 \`![图表标题](placeholder:image_id)\`。
+    *   注意：系统会自动替换占位符。你只需要确保在报告的相关章节（通常是"核心发现"或"数据分析"部分）插入这个图片标签。
+2.  **容错原则**：即使工具返回了 Warning（例如字体缺失），只要图表生成了，就视为**成功**，必须展示图表，并在正文中简要说明 Warning（例如"注：部分中文字符可能显示异常"）。
+3.  **禁止隐瞒**：绝对不要因为一点小 Warning 就宣称“绘图失败”而把图表藏起来。
+`;
+
         // 🎯 核心新增：JSON 格式纪律
         const strictJsonFormatGuideline = `
 ## 🚨【强制】JSON 输出纪律
@@ -852,6 +864,8 @@ ${crawl4aiSpecialNote}
 ${config.description}
 
 ${temporalGuidance}
+
+${visualizationMandate} // 🔥 插入：强制图表展示指令
 
 ${strictJsonFormatGuideline} // 🎯 核心新增：JSON 格式纪律
 
