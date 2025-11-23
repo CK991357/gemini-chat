@@ -294,7 +294,15 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 }, null);
 
                 let generatedCode = response.choices[0].message.content;
-                generatedCode = generatedCode.replace(/```python/g, '').replace(/```/g, '').trim();
+                
+                // 🔥 增强清理：只提取代码块（如果有的话），或者清理常见标记
+                const codeBlockMatch = generatedCode.match(/```(?:python)?\s*([\s\S]*?)\s*```/i);
+                if (codeBlockMatch) {
+                    generatedCode = codeBlockMatch[1];
+                } else {
+                    // 如果没有代码块，尝试清理可能的前缀/后缀
+                    generatedCode = generatedCode.replace(/```/g, '').trim();
+                }
 
                 console.log('[DeepResearchAgent] 👨‍💻 专家代码生成完毕，长度:', generatedCode.length);
                 
@@ -409,21 +417,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     recordToolCall(toolName, parameters, false, errorMsg);
                     return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
                 }
-                
-                // 2. 检查不完整的列表/字典
-                const incompleteStructureRegex = /(?:list|dict|\[|\{)\s*$/m;
-                if (incompleteStructureRegex.test(code)) {
-                    console.warn('[DeepResearchAgent] 🛑 拦截到不完整的数据结构');
-                    const errorMsg = `❌ **代码预检失败 (Preflight Check Failed)**\n\n` +
-                        `**错误**: 检测到不完整的列表或字典结构\n` +
-                        `**原因**: 数据结构没有正确闭合或缺少元素\n` +
-                        `**修复**: 请确保所有括号、引号正确闭合，数据完整`;
-                    
-                    recordToolCall(toolName, parameters, false, errorMsg);
-                    return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
-                }
 
-                // 3. 状态注入逻辑 (保留原有逻辑)
+                // 2. 状态注入逻辑 (保留原有逻辑)
                 const stateInjectionPattern = /"\{\{LAST_OBSERVATION\}\}"/g;
                 if (stateInjectionPattern.test(code)) {
                     console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
