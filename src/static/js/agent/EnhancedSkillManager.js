@@ -345,54 +345,117 @@ export class EnhancedSkillManager {
   /**
    * 🎯 基于上下文智能推断相关章节 - 增强版本
    */
+  /**
+   * 🎯 [增强版] 基于上下文智能推断相关章节
+   * 构建高密度的关键词映射网络，覆盖更多隐晦场景
+   */
   _inferRelevantSections(context) {
     const sections = [];
-    const { userQuery, currentStep, researchMode } = context;
+    const { userQuery } = context;
 
     if (!userQuery) return sections;
 
-    // 🎯 基于查询内容推断章节
     const queryLower = userQuery.toLowerCase();
+
+    // ============================================================
+    // 1. 数据可视化 (Matplotlib/Seaborn)
+    // ============================================================
+    const vizKeywords = [
+        // 核心动作
+        '画', '绘', '图', '展示', '可视化', 'plot', 'chart', 'graph', 'visualize',
+        // 图表类型
+        '折线', '柱状', '条形', '散点', '饼图', '热力', '直方图', '箱线图',
+        'line', 'bar', 'scatter', 'pie', 'heatmap', 'histogram', 'box',
+        // 业务场景
+        '趋势', '走势', '分布', '对比', '占比', '关系', '波动', '轨迹',
+        'trend', 'distribution', 'comparison', 'proportion', 'relation'
+    ];
     
-    // 数学证明相关
-    if (queryLower.includes('证明') || queryLower.includes('公式') || queryLower.includes('数学')) {
-      sections.push('公式证明工作流', 'sympy_cookbook');
-    }
-    
-    // 🎯 新增：科学计算与优化
-    if (queryLower.includes('科学计算') || queryLower.includes('优化') || queryLower.includes('统计') || 
-        queryLower.includes('数值') || queryLower.includes('计算')) {
-      sections.push('科学计算与优化', 'scipy_cookbook');
-    }
-    
-    // 数据分析相关
-    if (queryLower.includes('数据') && queryLower.includes('分析')) {
-      sections.push('数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式');
-    }
-    
-    // 可视化相关 (增强关键词)
-    // 增加 '折线图', '绘图', 'matplotlib', 'plt' 等
-    if (queryLower.includes('图表') || queryLower.includes('可视化') || queryLower.includes('画图') ||
-        queryLower.includes('折线图') || queryLower.includes('绘图') || queryLower.includes('matplotlib') || queryLower.includes('plt')) {
+    if (vizKeywords.some(kw => queryLower.includes(kw))) {
       sections.push('数据可视化', 'matplotlib_cookbook');
     }
-    
-    // 报告生成相关
-    if (queryLower.includes('报告') || queryLower.includes('生成') || queryLower.includes('文档')) {
-      sections.push('自动化报告生成', 'report_generator_workflow');
+
+    // ============================================================
+    // 2. 数据处理与分析 (Pandas)
+    // ============================================================
+    const dataKeywords = [
+        // 核心动作
+        '分析', '处理', '清洗', '整理', '筛选', '计算', '统计',
+        'analyze', 'process', 'clean', 'filter', 'calculate', 'statistic',
+        // 数据对象
+        '表格', 'excel', 'csv', 'dataframe', '数据', 'dataset',
+        // 操作细节
+        '排序', '分组', '聚合', '去重', '缺失值', '平均', '求和',
+        'sort', 'group', 'aggregate', 'duplicate', 'missing', 'mean', 'sum',
+        // 业务场景
+        '报表', '财务', '销量', '库存', '用户画像'
+    ];
+
+    if (dataKeywords.some(kw => queryLower.includes(kw))) {
+      sections.push('数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式');
     }
+
+    // ============================================================
+    // 3. 科学计算与数学 (SciPy/SymPy)
+    // ============================================================
+    // 分为两类：符号数学(公式证明) 和 数值计算(工程/科学)
     
-    // 机器学习相关
-    if (queryLower.includes('机器学习') || queryLower.includes('模型') || queryLower.includes('训练')) {
+    const mathSymbolicKeywords = [
+        '证明', '推导', '公式', '方程', '解方程', '微积分', '求导', '积分',
+        'prove', 'derive', 'formula', 'equation', 'solve', 'calculus', 'derivative'
+    ];
+    if (mathSymbolicKeywords.some(kw => queryLower.includes(kw))) {
+        sections.push('公式证明工作流', 'sympy_cookbook');
+    }
+
+    const mathNumericKeywords = [
+        '优化', '拟合', '线性代数', '信号', '傅里叶', '微分方程', '数值',
+        'optimize', 'fit', 'linear algebra', 'signal', 'fourier', 'ode', 'numerical'
+    ];
+    if (mathNumericKeywords.some(kw => queryLower.includes(kw))) {
+        sections.push('科学计算与优化', 'scipy_cookbook');
+    }
+
+    // ============================================================
+    // 4. 机器学习 (Scikit-learn)
+    // ============================================================
+    const mlKeywords = [
+        '预测', '分类', '聚类', '回归', '训练', '模型', '算法', 'AI',
+        'predict', 'classify', 'cluster', 'regression', 'train', 'model', 'algorithm',
+        '线性回归', '逻辑回归', '决策树', '随机森林', 'K-means'
+    ];
+
+    if (mlKeywords.some(kw => queryLower.includes(kw))) {
       sections.push('机器学习', 'ml_workflow');
     }
+
+    // ============================================================
+    // 5. 报告生成 (ReportLab/Office)
+    // ============================================================
+    const reportKeywords = [
+        '报告', '文档', '生成', '导出', '下载', '保存',
+        'report', 'document', 'generate', 'export', 'download', 'save',
+        'pdf', 'word', 'docx', 'ppt', 'pptx', 'excel', 'xlsx'
+    ];
     
-    // 网页抓取相关
-    if (queryLower.includes('网页') || queryLower.includes('抓取') || queryLower.includes('爬虫')) {
+    // 注意：这里要避免和上面的单纯数据分析混淆，通常是明确要求“生成文件”
+    if (reportKeywords.some(kw => queryLower.includes(kw))) {
+      sections.push('自动化报告生成', 'report_generator_workflow');
+    }
+
+    // ============================================================
+    // 6. 网页抓取 (Crawl4AI) - 针对 Code Interpreter 的辅助
+    // ============================================================
+    const crawlKeywords = [
+        '抓取', '爬取', '网页', '网站', 'URL', '链接', '提取内容',
+        'crawl', 'scrape', 'web', 'site', 'link', 'extract'
+    ];
+    
+    if (crawlKeywords.some(kw => queryLower.includes(kw))) {
       sections.push('网页抓取最佳实践', '智能内容提取');
     }
 
-    console.log(`[EnhancedSkillManager] 🧠 智能章节推断:`, sections);
+    console.log(`[EnhancedSkillManager] 🧠 深度智能章节推断:`, sections);
     return sections;
   }
 
