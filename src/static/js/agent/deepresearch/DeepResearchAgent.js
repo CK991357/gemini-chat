@@ -251,43 +251,66 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         try {
             console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`, parameters);
 
-            // --- 状态注入逻辑 (修复版) ---
+            // ============================================================
+            // 🔥🔥🔥 核心修复：Python 代码客户端强制预检 🔥🔥🔥
+            // ============================================================
             if (toolName === 'python_sandbox' && parameters.code) {
-                // 🎯 修复：更严格的状态注入检测，只匹配完整的占位符
-                const stateInjectionPattern = /"\{\{LAST_OBSERVATION\}\}"/g; // 只匹配双引号包裹的占位符
+                const code = parameters.code;
                 
-                if (stateInjectionPattern.test(parameters.code)) {
+                // 1. 检查空赋值 (最关键的检查)
+                // 匹配：变量名 + 等号 + 空白/换行/注释结尾
+                const emptyAssignmentRegex = /^\s*[a-zA-Z_]\w*\s*=\s*(?:\s*(?:#.*)?$)/m;
+                const emptyMatches = code.match(emptyAssignmentRegex);
+                
+                if (emptyMatches) {
+                    console.warn('[DeepResearchAgent] 🛑 拦截到空赋值 SyntaxError:', emptyMatches);
+                    const errorMsg = `❌ **代码预检失败 (Preflight Check Failed)**\n\n` +
+                        `**检测到空赋值**: \`${emptyMatches.trim()}\`\n` +
+                        `**错误原因**: 变量声明后没有赋值数据\n` +
+                        `**强制修正**: 请将用户提供的数据完整硬编码到代码中\n\n` +
+                        `**正确示例**:\n` +
+                        `\`\`\`python\n` +
+                        `years =\n` +
+                        `values =\n` +
+                        `\`\`\``;
+                    
+                    recordToolCall(toolName, parameters, false, errorMsg);
+                    return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
+                }
+
+                // 2. 检查不完整的列表/字典
+                const incompleteStructureRegex = /(?:list|dict|\[|\{)\s*$/m;
+                if (incompleteStructureRegex.test(code)) {
+                    console.warn('[DeepResearchAgent] 🛑 拦截到不完整的数据结构');
+                    const errorMsg = `❌ **代码预检失败 (Preflight Check Failed)**\n\n` +
+                        `**错误**: 检测到不完整的列表或字典结构\n` +
+                        `**原因**: 数据结构没有正确闭合或缺少元素\n` +
+                        `**修复**: 请确保所有括号、引号正确闭合，数据完整`;
+                    
+                    recordToolCall(toolName, parameters, false, errorMsg);
+                    return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
+                }
+
+                // 3. 状态注入逻辑 (保留原有逻辑)
+                const stateInjectionPattern = /"\{\{LAST_OBSERVATION\}\}"/g;
+                if (stateInjectionPattern.test(code)) {
                     console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
                     const lastStep = this.intermediateSteps[this.intermediateSteps.length - 1];
                     
                     if (lastStep && typeof lastStep.observation === 'string') {
                         const safelyEscapedData = JSON.stringify(lastStep.observation);
-                        // 移除外层的引号，因为我们要替换的是带引号的占位符
                         const innerData = safelyEscapedData.slice(1, -1);
-                        parameters.code = parameters.code.replace(stateInjectionPattern, `"${innerData}"`);
+                        parameters.code = code.replace(stateInjectionPattern, `"${innerData}"`);
                         console.log(`[DeepResearchAgent] ✅ 成功注入 ${lastStep.observation.length} 字符的数据。`);
                     } else {
                         console.warn('[DeepResearchAgent] ⚠️ 找不到上一步的观察结果来注入。');
-                        parameters.code = parameters.code.replace(stateInjectionPattern, '""');
+                        parameters.code = code.replace(stateInjectionPattern, '""');
                     }
                 }
-                
-                // 🎯 新增：代码完整性检查 (Preflight Structure Check)
-                /*
-                const codeValidation = this._validatePythonCodeStructure(parameters.code);
-                if (!codeValidation.valid) {
-                    console.warn(`[DeepResearchAgent] ❌ Python代码结构检查失败: ${codeValidation.error}`);
-                    
-                    // 直接返回错误，不发送给后端
-                    return {
-                        rawObservation: `❌ **Python代码结构错误 (Preflight Check Failed)**\n\n**错误**: ${codeValidation.error}\n\n**修复建议**: ${codeValidation.suggestion}\n\n请根据建议修正代码结构，确保字典键值对完整，然后重新提交。`,
-                        toolSources: [],
-                        toolSuccess: false
-                    };
-                }
-                */
             }
-
+            // ============================================================
+            // 🔥🔥🔥 预检结束 🔥🔥🔥
+            // ============================================================
 
             // --- 调用工具 ---
             const toolResult = await tool.invoke(parameters, {
