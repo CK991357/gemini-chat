@@ -1426,177 +1426,173 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         return report;
     }
 
-    /**
-     * 🎯 [最终版] 生成标准化参考文献列表 (IEEE 风格)
-     */
-    async _generateSourcesSection(sources, plan) {
-        if (!sources || sources.length === 0) {
-            return '\n\n## 📚 参考文献 (References)\n\n*本次研究未引用外部公开资料。*';
-        }
-
-        // 1. 头部
-        let output = '\n\n## 📚 参考文献 (References)\n\n';
-        output += '> *注：本报告基于以下权威数据源生成，引用已通过语义匹配算法验证。*\n\n';
-
-        // Helper: 尝试从 source 中提取作者/机构/年份等信息
-        const extractMeta = (source) => {
-            const title = (source.title || 'Untitled Document').trim();
-            const url = source.url || '';
-            const description = source.description || '';
-            let authors = source.authors || source.author || '';
-            if (Array.isArray(authors)) authors = authors.join(', ');
-
-            // Year: 从publish_date 或 title/description中尝试抽取年份
-            let year = '';
-            if (source.publish_date) {
-                try { year = new Date(source.publish_date).getFullYear(); } catch (e) { year = ''; }
-            }
-            if (!year) {
-                const m = (title + ' ' + description).match(/(19|20)\d{2}/);
-                year = m ? m[0] : '';
-            }
-
-            return { title, url, authors: (authors || '').trim(), year: year ? String(year) : '' };
-        };
-
-        // 2. 列表生成（IEEE: [n] Author, “Title,” Source, Year. [Online]. Available: URL.）
-        sources.forEach((source, idx) => {
-            const meta = extractMeta(source);
-            const index = idx + 1;
-            const accessDate = new Date().toISOString().split('T')[0];
-
-            // 作者/机构优先显示，否则使用网站域名
-            let authorPart = meta.authors || '';
-            if (!authorPart && meta.url) {
-                try { authorPart = new URL(meta.url).hostname.replace('www.', ''); } catch (e) { authorPart = ''; }
-            }
-
-            // Title 清理
-            const safeTitle = meta.title.replace(/\s+/g, ' ').replace(/\n/g, ' ').trim();
-
-            // 构建 IEEE 风格项
-            // 示例: [1] China National Bureau of Statistics, "2024 Population Statistics", 2024. [Online]. Available: https://... (Accessed: 2025-11-23)
-            output += `**[${index}]** ${authorPart ? (authorPart + ', ') : ''}`;
-            output += `"${safeTitle}"`;
-            if (meta.year) output += `, ${meta.year}`;
-            output += `. [Online].\n   Available: ${meta.url || '#'} (Accessed: ${accessDate})\n\n`;
-        });
-
-        return output;
+/**
+ * 🎯 [最终完美版] 自适应参考文献生成器 (Adaptive IEEE Citation Generator)
+ */
+async _generateSourcesSection(sources, plan) {
+    if (!sources || sources.length === 0) {
+        return '\n\n## 📚 参考文献 (References)\n\n*本次研究未引用外部公开资料。*';
     }
 
-    /**
-     * 🎯 [最终版] 智能混合來源过滤器 (Smart Hybrid Source Filter)
-     * 核心逻辑：显式索引提取 + 语义实体匹配 + 降级保护
-     */
-    _filterUsedSources(sources, reportContent) {
-        if (!sources || sources.length === 0) return [];
-        if (!reportContent) return sources;
-        
-        console.log(`[SourceFilter] 启动智能匹配，候选來源: ${sources.length} 个`);
-        const usedSources = new Set();
-        const reportLower = reportContent.toLowerCase();
+    let output = '\n\n## 📚 参考文献 (References)\n\n';
+    output += '> *注：本报告基于以下权威数据源生成，引用已通过语义匹配算法验证。*\n\n';
 
-        // --- 轨道 1: 显式索引提取 (High Precision) ---
-        // 既然我们允许模型用 [1]，如果有，就一定要认
-        const citationRegex = /\[\s*(\d+)\s*\]/g;
-        let match;
-        while ((match = citationRegex.exec(reportContent)) !== null) {
-            const index = parseInt(match[1], 10) - 1;
-            if (index >= 0 && index < sources.length) {
-                usedSources.add(sources[index]);
-            }
-        }
-
-        // --- 轨道 2: 语义实体匹配 (Semantic Entity Matching) ---
-        // 这是处理“语义引用”的核心
-        sources.forEach(source => {
-            if (usedSources.has(source)) return; // 已命中则跳过
-            
-            // 计算语义相关性分数
-            const score = this._calculateSemanticMatchScore(source, reportLower);
-            
-            // 阈值设定：
-            // 0.6 分以上认为是高置信度引用
-            // 例如：标题是 "2024人口统计"，正文提到 "人口统计" -> 匹配成功
-            if (score >= 0.6) {
-                usedSources.add(source);
-            }
-        });
-
-        // --- 轨道 3: 智能降级 (Smart Fallback) ---
-        const finalSources = Array.from(usedSources);
-        
-        // 排序：保持原始顺序
-        finalSources.sort((a, b) => sources.indexOf(a) - sources.indexOf(b));
-
-        if (finalSources.length === 0 && sources.length > 0) {
-            console.warn('[SourceFilter] ⚠️ 未检测到明确引用，触发全量保留策略。');
-            return sources;
-        }
-
-        console.log(`[SourceFilter] 匹配完成: ${sources.length} -> ${finalSources.length} 个有效來源`);
-        return finalSources;
-    }
-    /**
-     * 🎯 [核心算法] 计算语义匹配分数 (通用领域适配)
-     * 不依赖硬编码关键词，而是基于标题的分词重合度
-     */
-    _calculateSemanticMatchScore(source, reportLower) {
-        let score = 0;
-        const title = source.title || '';
+    // 🛠️ 智能元数据提取器
+    const extractSmartMeta = (source) => {
+        let title = (source.title || 'Untitled Document').trim();
         const url = source.url || '';
         
-        // 1. 标题分词匹配 (权重 0.8)
-        if (title) {
-            const titleLower = title.toLowerCase();
-            
-            // 智能分词：分割中英文、数字
-            // 移除通用停用词 (Stop Words) 以防误判
-            const stopWords = new Set([
-                '的', '了', '和', '是', '在', '关于', '研究', '报告', '分析', '数据',
-                'the', 'and', 'of', 'in', 'to', 'for', 'report', 'analysis', 'data'
-            ]);
-            
-            // 提取有意义的词 (Token)
-            const tokens = titleLower.split(/[^\w\u4e00-\u9fa5]+/)
-                .filter(t => t.length >= 2 && !stopWords.has(t));
-            
-            if (tokens.length > 0) {
-                let matchCount = 0;
-                // 连续性检查：如果连续匹配多个词，权重更高
-                tokens.forEach(token => {
-                    if (reportLower.includes(token)) matchCount++;
-                });
-                
-                // 基础分：匹配词比例
-                score += (matchCount / tokens.length) * 0.8;
-                
-                // Bonus: 如果标题的前几个字完整出现，直接满分
-                // e.g. "国家统计局" -> 报告中有 "国家统计局"
-                const cleanTitleStart = titleLower.substring(0, 10);
-                if (reportLower.includes(cleanTitleStart)) score = 1.0;
-            }
-        }
+        // 1. 尝试提取作者
+        let author = source.authors || source.author || '';
+        if (Array.isArray(author)) author = author.join(', ');
         
-        // 2. 域名/机构名匹配 (权重 0.2)
-        // 解决：报告中说 "Bloomberg报道"，标题是 "Market crash..." 的情况
+        // 2. 尝试提取发布者/网站名
+        let publisher = 'Unknown Source';
         if (url) {
             try {
-                const hostname = new URL(url).hostname;
-                // 提取核心域名 (e.g., nytimes, bloomberg, stats.gov.cn -> stats)
-                const domainParts = hostname.split('.');
-                const coreDomain = domainParts.find(p => p.length > 3 && !['www','com','org','gov','cn'].includes(p));
-                
-                if (coreDomain && reportLower.includes(coreDomain)) {
-                    score += 0.3; // 域名匹配给予较高加分
-                }
-            } catch (e) {}
+                const hostname = new URL(url).hostname.replace('www.', '');
+                publisher = hostname.charAt(0).toUpperCase() + hostname.slice(1);
+            } catch (_e) {
+                // 保持 Unknown Source
+            }
+        }
+
+        // 3. 尝试提取日期
+        let dateStr = '';
+        if (source.publish_date) {
+            dateStr = source.publish_date.split('T')[0]; 
+        } else {
+            const yearMatch = (title + ' ' + (source.description || '')).match(/(19|20)\d{2}/);
+            if (yearMatch) dateStr = yearMatch[0];
+        }
+
+        // 4. 智能类型判断
+        let type = 'web';
+        if ((url && url.toLowerCase().endsWith('.pdf')) || (author && author.length > 0 && dateStr.length >= 4)) {
+            type = 'academic';
+        } else if (dateStr.length > 4) {
+            type = 'news';
         }
         
-        return Math.min(score, 1.0);
+        return { title, url, author, publisher, date: dateStr, type };
+    };
+
+    // 📝 列表生成
+    sources.forEach((source, idx) => {
+        const meta = extractSmartMeta(source);
+        const index = idx + 1;
+        const accessDate = new Date().toISOString().split('T')[0];
+        let citation = '';
+
+        if (meta.type === 'academic' && meta.author) {
+            citation = `**[${index}]** ${meta.author}, "${meta.title}"`;
+            if (meta.date) citation += `, ${meta.date.substring(0, 4)}`;
+        } else if (meta.type === 'news') {
+            citation = `**[${index}]** "${meta.title}," *${meta.publisher}*`;
+            if (meta.date) citation += `, ${meta.date}`;
+        } else {
+            citation = `**[${index}]** "${meta.title}," *${meta.publisher}*`;
+            if (meta.date) citation += `, ${meta.date}`;
+        }
+
+        citation += `. [Online].\n   Available: ${meta.url} (Accessed: ${accessDate})`;
+        output += `${citation}\n\n`;
+    });
+
+    return output;
+}
+
+/**
+ * 🎯 [最终版] 智能混合来源过滤器
+ */
+_filterUsedSources(sources, reportContent) {
+    if (!sources || sources.length === 0) return [];
+    if (!reportContent) return sources;
+    
+    console.log(`[SourceFilter] 启动智能匹配，候选来源: ${sources.length} 个`);
+    const usedSources = new Set();
+    const reportLower = reportContent.toLowerCase();
+
+    // 轨道 1: 显式索引提取
+    const citationRegex = /\[\s*(\d+)\s*\]/g;
+    let match;
+    while ((match = citationRegex.exec(reportContent)) !== null) {
+        const index = parseInt(match[1], 10) - 1;
+        if (index >= 0 && index < sources.length) {
+            usedSources.add(sources[index]);
+        }
     }
 
+    // 轨道 2: 语义实体匹配
+    sources.forEach(source => {
+        if (usedSources.has(source)) return;
+        
+        const score = this._calculateSemanticMatchScore(source, reportLower);
+        if (score >= 0.6) {
+            usedSources.add(source);
+        }
+    });
+
+    // 轨道 3: 智能降级
+    const finalSources = Array.from(usedSources);
+    finalSources.sort((a, b) => sources.indexOf(a) - sources.indexOf(b));
+
+    if (finalSources.length === 0 && sources.length > 0) {
+        console.warn('[SourceFilter] ⚠️ 未检测到明确引用，触发全量保留策略。');
+        return sources;
+    }
+
+    console.log(`[SourceFilter] 匹配完成: ${sources.length} -> ${finalSources.length} 个有效来源`);
+    return finalSources;
+}
+
+/**
+ * 🎯 [核心算法] 计算语义匹配分数
+ */
+_calculateSemanticMatchScore(source, reportLower) {
+    let score = 0;
+    const title = source.title || '';
+    const url = source.url || '';
+    
+    // 1. 标题分词匹配
+    if (title) {
+        const titleLower = title.toLowerCase();
+        const stopWords = new Set([
+            '的', '了', '和', '是', '在', '关于', '研究', '报告', '分析', '数据',
+            'the', 'and', 'of', 'in', 'to', 'for', 'report', 'analysis', 'data'
+        ]);
+        
+        const tokens = titleLower.split(/[^\w\u4e00-\u9fa5]+/)
+            .filter(t => t.length >= 2 && !stopWords.has(t));
+        
+        if (tokens.length > 0) {
+            let matchCount = 0;
+            tokens.forEach(token => {
+                if (reportLower.includes(token)) matchCount++;
+            });
+            
+            score += (matchCount / tokens.length) * 0.8;
+            
+            const cleanTitleStart = titleLower.substring(0, 10);
+            if (reportLower.includes(cleanTitleStart)) score = 1.0;
+        }
+    }
+    
+    // 2. 域名匹配
+    if (url) {
+        try {
+            const hostname = new URL(url).hostname;
+            const domainParts = hostname.split('.');
+            const coreDomain = domainParts.find(p => p.length > 3 && !['www','com','org','gov','cn','net','edu'].includes(p));
+            
+            if (coreDomain && reportLower.includes(coreDomain)) {
+                score += 0.3;
+            }
+        } catch (e) {}
+    }
+    
+    return Math.min(score, 1.0);
+}
 
     // ✨ 新增：信息增益计算
     _calculateInformationGain(newObservation, history) {
