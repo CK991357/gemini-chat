@@ -1058,7 +1058,35 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         const reportTemplate = getTemplateByResearchMode(researchMode);
         
         // 🎯 这里获取的就是包含了 "引用与论证规范" 的核心指令块
-        const promptFragment = getTemplatePromptFragment(researchMode); 
+        let promptFragment = getTemplatePromptFragment(researchMode);
+        
+        // 🎯 【调试模式特别指令注入】
+        if (researchMode === 'standard') {
+            promptFragment += `
+    \n\n🕵️‍♂️ **调试/审计模式核心指令 (System Audit Directives)**：
+
+    **角色定义**：
+    你此刻不再是内容创作者，你是**首席系统架构师**。你的任务是对本次 Agent 的执行链路进行**法医级的尸检分析 (Forensic Analysis)**。
+
+    **必须审查的维度 (Mandatory Review Checklist)**：
+    1.  **意图漂移 (Intent Drift)**：
+        - Agent 在执行过程中是否跑题？初始规划是否真正覆盖了用户需求？
+    2.  **工具滥用 (Tool Misuse)**：
+        - 检查 \`tavily_search\`：关键词是否过于宽泛（如只搜了一个字）？是否进行了无意义的重复搜索？
+        - 检查 \`crawl4ai\`：是否抓取了显而易见的无效页面（如登录页、验证码页）？
+        - 检查 \`python_sandbox\`：是否在没有数据的情况下强行写代码？是否产生了 SyntaxError？
+    3.  **数据一致性 (Data Integrity)**：
+        - **幻觉检测**：Agent 在 "Thought" 中声称查到了数据，但在 "Observation" 中实际上是空的？如有，必须标记为 **[CRITICAL HALLUCINATION]**。
+        - **压缩损耗**：指出哪些步骤的原始数据极长，但摘要过短，导致了潜在的关键信息丢失。
+    4.  **Token 效益 (Token Economics)**：
+        - 标记出 **[LOW ROI]**（低投入产出比）的步骤：消耗了大量 Token 但未提供新信息的步骤。
+
+    **输出风格要求**：
+    - 保持**冷酷、客观、技术化**。
+    - 不要试图为 Agent 辩解。
+    - 对于严重的逻辑断层，请直接使用 **❌** 符号标出。
+    `;
+        }
 
         // 🔥 动态模板构建逻辑
         if (reportTemplate.config.dynamic_structure) {
