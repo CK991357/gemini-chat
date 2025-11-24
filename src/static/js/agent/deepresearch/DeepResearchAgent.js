@@ -1659,8 +1659,8 @@ _calculateSemanticMatchScore(source, reportLower) {
         // 🎯 搜索工具的结果本身就是摘要，不应再被摘要
         const noSummarizeTools = ['tavily_search']; 
         const summarizationThresholds = {
-            'crawl4ai': 5000,  // 🎯 从2000提高到5000，降低压缩率
-            'firecrawl': 5000,
+            'crawl4ai': 15000,  // 🎯 从2000提高到5000，降低压缩率
+            'firecrawl': 15000,
             'default': 10000
         };
 
@@ -1669,7 +1669,7 @@ _calculateSemanticMatchScore(source, reportLower) {
             console.log(`[DeepResearchAgent] 工具 "${toolName}" 跳过摘要，直接使用原始输出。`);
             
             // 统一的硬截断保护
-            const hardLimit = 15000; 
+            const hardLimit = 20000; 
             if (originalLength > hardLimit) {
                 console.log(`[DeepResearchAgent] 内容超过硬截断限制 ${hardLimit}，进行安全截断`);
                 return observation.substring(0, hardLimit) + "\n[...内容过长已安全截断]";
