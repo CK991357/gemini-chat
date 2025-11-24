@@ -135,13 +135,20 @@ ${cleanTopic}
             // 🔥 1. 准备初始上下文，获取当前日期
             const currentDate = new Date().toISOString().split('T')[0];
 
+            // 🔥🔥🔥 [核心修改] 提取并传递 contextMessages 🔥🔥🔥
+            // `context.messages` 由 `main.js` 的 `handleEnhancedHttpMessage` 传入
+            const previousMessages = (context && context.messages) ? context.messages : [];
+
             // ✨✨✨ 核心修复：同时传递 cleanTopic 和 enrichedTopic ✨✨✨
             const researchRequest = {
                 topic: enrichedTopic,           // 用于 Agent 思考的完整主题
                 displayTopic: cleanTopic,       // 用于 UI 显示的原始主题
                 availableTools: availableToolDefinitions,
                 researchMode: detectedMode,
-                currentDate: currentDate // 🔥 2. 将当前日期添加到请求对象中
+                currentDate: currentDate, // 🔥 2. 将当前日期添加到请求对象中
+
+                // ✨ 新增：传递历史消息数组，供 Agent 使用历史上下文
+                contextMessages: previousMessages
             };
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);

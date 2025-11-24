@@ -2720,16 +2720,13 @@ window.addEventListener('on_file_generated', (event) => {
 // =========================================================================
 // 🚀 [最终方案 V2 - 新增] Agent 专属的最终报告渲染入口
 // =========================================================================
-// 这个监听器是 Agent 模式下 UI 渲染的“最后一站”。
-// 它只关心 'research:end' 事件，并负责将最终报告渲染到主聊天窗口。
 window.addEventListener('research:end', (e) => {
     console.log("🏁 [Main.js] 接收到 research:end 事件，准备渲染最终报告...");
     const result = e.detail.data;
 
-    // 1. 健壮性检查：确保有报告内容可以渲染
+    // 1. 健壮性检查
     if (!result || !result.report) {
         console.warn("[Main.js] 'research:end' 事件未包含有效的报告内容，跳过渲染。");
-        // 可以在这里显示一个降级消息
         showSystemMessage("研究已结束，但未能生成最终报告。");
         return;
     }
@@ -2739,16 +2736,13 @@ window.addEventListener('research:end', (e) => {
         window.agentThinkingDisplay.hide();
     }
 
-    // 3. (可选但推荐) 显示一个简洁的摘要卡片
-    if (result.success) {
+    // 3. 显示摘要卡片 (如果存在 displayAgentSummary 函数)
+    if (result.success && typeof displayAgentSummary === 'function') {
         displayAgentSummary(result);
     }
     
-    // 4. 获取已经由 Orchestrator 处理过的、包含 Base64 图片的最终 Markdown
+    // 4. 获取最终 Markdown 并渲染
     const finalReportMarkdown = result.report;
-    
-    // 5. 创建并显示最终的报告消息
-    console.log("🎨 正在渲染最终报告...", finalReportMarkdown.substring(0, 200) + '...');
     const aiMessage = chatUI.createAIMessageElement();
     aiMessage.rawMarkdownBuffer = finalReportMarkdown;
     aiMessage.markdownContainer.innerHTML = marked.parse(finalReportMarkdown);
@@ -2759,12 +2753,37 @@ window.addEventListener('research:end', (e) => {
             MathJax.typeset([aiMessage.markdownContainer]);
         });
     }
-    // 确保对新添加的内容应用高亮
     aiMessage.markdownContainer.querySelectorAll('pre code').forEach((block) => {
         hljs.highlightElement(block);
     });
     
     chatUI.scrollToBottom();
+
+    // 🔥🔥🔥 [核心修改：历史记录持久化] 🔥🔥🔥
+    // 确保仅在 HTTP 模式下保存（WebSocket模式通常不保存这种长文本历史）
+    if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
+        console.log("💾 [Main.js] 正在将 Agent 报告保存到历史记录...");
+        
+        // 1. 手动将 Agent 的回复推入 chatHistory 全局数组
+        // 这是关键：让后续的对话（第5轮、第6轮）能看到这份报告
+        chatHistory.push({
+            role: 'assistant',
+            content: finalReportMarkdown,
+            metadata: {
+                is_agent_report: true,
+                agent_mode: result.research_mode,
+                sources_count: result.sources ? result.sources.length : 0
+            }
+        });
+
+        // 2. 调用 HistoryManager 进行云端保存
+        // 确保 historyManager 实例已初始化
+        if (historyManager) {
+            historyManager.saveHistory();
+            console.log("✅ [Main.js] Agent 报告已保存到云端历史。");
+        }
+    }
+    // 🔥🔥🔥 [修改结束] 🔥🔥🔥
 });
 
 /**

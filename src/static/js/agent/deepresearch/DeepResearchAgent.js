@@ -64,6 +64,52 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
     }
 
+    // 🔥🔥🔥 [新增方法] 智能上下文序列化器 🔥🔥🔥
+    /**
+     * 将 chatHistory 对象数组转换为 Planner 易于理解的纯文本脚本。
+     * 关键点：过滤 Base64 图片以节省 Token，但保留"用户发了图"的语义。
+     */
+    _serializeContextMessages(messages) {
+        if (!messages || messages.length === 0) return '';
+
+        // 取最近 6 条（排除当前触发消息）以保证上下文充足并节省 token
+        const recentMessages = messages.slice(0, -1).slice(-6);
+        if (recentMessages.length === 0) return '';
+
+        let contextBuffer = [];
+        contextBuffer.push("--- 对话历史开始 ---");
+
+        recentMessages.forEach((msg) => {
+            const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
+            let textContent = '';
+
+            if (Array.isArray(msg.content)) {
+                msg.content.forEach(part => {
+                    if (part.type === 'text') {
+                        textContent += part.text;
+                    } else if (part.type === 'image_url' || part.type === 'image_base64') {
+                        // 用占位符替代图片内容，保留语义
+                        textContent += `[🖼️ Image Uploaded by User] `;
+                    } else if (part.type === 'file_url' || part.type === 'file') {
+                        textContent += `[📁 File Uploaded: ${part.name || 'document'}] `;
+                    }
+                });
+            } else if (typeof msg.content === 'string') {
+                textContent = msg.content;
+            }
+
+            // 防止单条历史消息过长
+            if (textContent.length > 500) {
+                textContent = textContent.substring(0, 500) + "...(content truncated)";
+            }
+
+            contextBuffer.push(`${roleLabel}: ${textContent}`);
+        });
+
+        contextBuffer.push("--- 对话历史结束 ---");
+        return contextBuffer.join('\n');
+    }
+
     // 🎯 新增：图像生成结果处理
     _handleGeneratedImage(imageData) {
         this.imageCounter++;
@@ -538,8 +584,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
     async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
-        // ✨✨✨ 核心修复：解构出 displayTopic 和 enrichedTopic (即原始topic) ✨✨✨
-        const { topic: enrichedTopic, displayTopic: cleanTopic, availableTools, researchMode, currentDate } = researchRequest;
+        // ✨✨✨ 核心修复：解构出 displayTopic、enrichedTopic 及 contextMessages ✨✨✨
+        const { topic: enrichedTopic, displayTopic: cleanTopic, availableTools, researchMode, currentDate, contextMessages } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         this.runId = runId; // 关键：为当前研究会话设置唯一ID
         this.generatedImages.clear(); // 关键：每次新研究开始时清空图片缓存
@@ -562,6 +608,14 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         this.currentResearchMode = detectedMode;
 
         console.log(`[DeepResearchAgent] 开始研究: "${uiTopic}"，接收到模式: ${detectedMode}`);
+        // 🔥🔥🔥 [核心逻辑] 构建带记忆的上下文 Prompt
+        const historyContextStr = this._serializeContextMessages(contextMessages);
+        // Planner 可见的内部主题（包含历史上下文块）
+        let internalTopicWithContext = enrichedTopic;
+        if (historyContextStr) {
+            internalTopicWithContext = `\n${enrichedTopic}\n\n<ContextMemory>\n以下是你与用户的近期对话历史（Context Memory）。\n请注意：用户当前的请求可能依赖于这些上下文（例如指代词"它"可能指代上文的图片或话题）。\n如果当前请求中包含指代词或缺乏具体主语，请务必从下文中推断：\n\n${historyContextStr}\n</ContextMemory>\n`;
+            console.log(`[DeepResearchAgent] ✅ 已注入 ${historyContextStr.length} 字符的历史上下文。`);
+        }
         
         // ✨✨✨ 核心修复：在 on_research_start 事件中使用 uiTopic ✨✨✨
         await this.callbackManager.invokeEvent('on_research_start', {
@@ -601,7 +655,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         let researchPlan;
         try {
             // ✨✨✨ 核心修复：规划时使用完整的 internalTopic (enrichedTopic) ✨✨✨
-            const planResult = await this.agentLogic.createInitialPlan(internalTopic, detectedMode, currentDate);
+            const planResult = await this.agentLogic.createInitialPlan(internalTopicWithContext, detectedMode, currentDate);
             researchPlan = planResult;
             this._updateTokenUsage(planResult.usage); // 🎯 新增
             
