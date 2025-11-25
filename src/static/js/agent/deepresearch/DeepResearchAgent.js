@@ -4,9 +4,6 @@ import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
 // 🎯 核心修改：从 ReportTemplates.js 导入工具函数
 import { getTemplateByResearchMode, getTemplatePromptFragment } from './ReportTemplates.js';
-// 🎯 人类干预相关
-import { HumanInterventionManager } from '../middlewares/HumanInterventionManager.js';
-import { HumanInterventionMiddleware } from '../middlewares/HumanInterventionMiddleware.js';
 
 export class DeepResearchAgent {
     constructor(chatApiHandler, tools, callbackManager, config = {}) {
@@ -40,18 +37,6 @@ export class DeepResearchAgent {
 
         this.agentLogic = new AgentLogic(chatApiHandler);
         this.outputParser = new AgentOutputParser();
-
-        // 🎯 人类干预系统
-        this.humanInterventionManager = config.humanInterventionManager || new HumanInterventionManager(config.humanInterventionConfig || {});
-        this.interventionMiddleware = config.interventionMiddleware || new HumanInterventionMiddleware(
-            this.humanInterventionManager,
-            config.interventionConfig || {}
-        );
-
-        // 🎯 设置干预回调
-        this._setupInterventionCallbacks();
-        
-        console.log(`[DeepResearchAgent] 人类干预系统初始化完成`);
 
         // ✨ 性能追踪
         this.metrics = {
@@ -145,58 +130,6 @@ export class DeepResearchAgent {
 
         // 3. 返回一个给Agent看的简洁确认信息
         return `[✅ 图像生成成功] 标题: "${imageData.title}". 在最终报告中，你可以使用占位符 ![${imageData.title}](placeholder:${imageId}) 来引用这张图片。`;
-    }
-
-
-    // 🎯 设置干预回调
-    _setupInterventionCallbacks() {
-        if (!this.humanInterventionManager || !this.callbackManager) return;
-
-        this.humanInterventionManager.on('intervention_requested', (data) => {
-            this.callbackManager.invokeEvent('on_intervention_requested', {
-                run_id: this.runId,
-                data
-            });
-        });
-
-        this.humanInterventionManager.on('paused', (data) => {
-            this.callbackManager.invokeEvent('on_research_paused', {
-                run_id: this.runId,
-                data
-            });
-        });
-
-        this.humanInterventionManager.on('waiting_for_input', (data) => {
-            this.callbackManager.invokeEvent('on_waiting_for_input', {
-                run_id: this.runId,
-                data
-            });
-        });
-
-        // 其他事件映射（可扩展）
-        this.humanInterventionManager.on('aborted', (data) => {
-            this.callbackManager.invokeEvent('on_research_aborted', {
-                run_id: this.runId,
-                data
-            });
-        });
-    }
-
-    // 🎯 外部干预接口
-    async pauseResearch() {
-        return await this.humanInterventionManager.requestIntervention('pause');
-    }
-
-    async abortResearch() {
-        return await this.humanInterventionManager.requestIntervention('abort');
-    }
-
-    async provideAdditionalInfo(info) {
-        return await this.humanInterventionManager.provideUserInput(info);
-    }
-
-    async continueResearch() {
-        return await this.humanInterventionManager.requestIntervention('continue');
     }
 
 
@@ -761,28 +694,9 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         
         const totalSteps = researchPlan.research_plan.length; // 新增：总计划步骤数
 
-        try {
         while (iterations < this.maxIterations && consecutiveNoGain < noGainThreshold && !finalAnswerFromIteration) {
             iterations++;
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
-
-            // 🎯 在每次迭代前进行干预检查（非侵入式）
-            if (this.interventionMiddleware) {
-                const preCheck = await this.interventionMiddleware.wrapAgentIteration(
-                    {
-                        iteration: iterations,
-                        intermediateSteps: this.intermediateSteps,
-                        researchPlan,
-                        consecutiveNoGain
-                    },
-                    async (ctx) => ({ type: 'ok' })
-                );
-
-                if (preCheck && preCheck.type === 'abort') {
-                    console.log('[DeepResearchAgent] 研究任务被中止 (来自干预中间件)');
-                    break;
-                }
-            }
             
             const planCompletion = this._calculatePlanCompletion(researchPlan, this.intermediateSteps); // 计算完成度
             
@@ -1030,15 +944,6 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 // 增加连续无增益计数，避免在连续错误中死循环
                 consecutiveNoGain++;
             }
-        }
-
-        } catch (error) {
-            // 🎯 错误处理中的干预
-            if (error && error.message && (error.message.includes('干预') || error.message.includes('中止') || error.message.includes('abort'))) {
-                console.log('[DeepResearchAgent] 研究任务因干预而终止');
-                return { success: false, error: error.message, interrupted: true };
-            }
-            throw error;
         }
 
         // 在每次迭代结束时更新统计
