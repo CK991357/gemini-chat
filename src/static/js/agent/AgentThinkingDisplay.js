@@ -385,6 +385,53 @@ export class AgentThinkingDisplay {
     margin-bottom: 0;
     opacity: 0;
 }
+
+/* 🎯 干预面板样式 */
+.intervention-panel {
+    margin: 12px 16px;
+    padding: 12px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #f8fafc 0%, #ffffff 100%);
+    border: 1px solid #e6eef8;
+}
+.intervention-panel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.intervention-panel .panel-title {
+    font-weight: 600;
+    color: #2d3748;
+}
+.intervention-panel .panel-badge {
+    background: #e2e8f0;
+    color: #2d3748;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+}
+.intervention-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.intervention-buttons .btn {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(34,36,38,0.1);
+    cursor: pointer;
+}
+.intervention-buttons .btn-warning { background:#fff7ed; }
+.intervention-buttons .btn-danger { background:#fff1f2; }
+.intervention-buttons .btn-success { background:#ecfdf5; }
+.intervention-input { margin-top:8px; }
+.intervention-input textarea { width:100%; min-height:80px; resize:vertical; padding:8px; border-radius:6px; border:1px solid #e2e8f0 }
+.intervention-input .btn { margin-top:8px }
+
+@media (max-width: 768px) {
+    .intervention-buttons { flex-direction: column; }
+}
         `;
 
         const styleElement = document.createElement('style');
@@ -512,6 +559,23 @@ export class AgentThinkingDisplay {
                         <div class="section-title">🎯 研究主题</div>
                         <div class="user-query">${this.escapeHtml(userMessage)}</div>
                     </div>
+
+                    <!-- 🎯 人工干预控制面板（插入点：研究主题与研究统计之间） -->
+                    <div id="intervention-panel" class="intervention-panel" style="display: none;">
+                        <div class="panel-header">
+                            <div class="panel-title">研究任务控制</div>
+                            <div id="interventionBadge" class="panel-badge">状态: 空闲</div>
+                        </div>
+                        <div class="intervention-buttons">
+                            <button id="btnPause" class="btn btn-warning">⏸️ 暂停</button>
+                            <button id="btnAbort" class="btn btn-danger">⏹️ 中止</button>
+                            <button id="btnContinue" class="btn btn-success">▶️ 继续</button>
+                        </div>
+                        <div id="interventionInput" class="intervention-input" style="display:none;">
+                            <textarea id="interventionText" placeholder="请输入补充信息（最大5000字符）..."></textarea>
+                            <button id="btnSubmitInfo" class="btn btn-primary">提交</button>
+                        </div>
+                    </div>
                     
                     <!-- 研究统计 -->
                     <div class="research-stats-section section-content-wrapper ${this.sectionStates['stats-content'] ? 'minimized' : ''}">
@@ -589,6 +653,44 @@ export class AgentThinkingDisplay {
         this.attachContainerEvents();
         this.attachCollapsibleEvents();
         this.startTimeUpdate();
+        // 绑定干预面板按钮事件（每次渲染后确保绑定）
+        this._bindInterventionHandlers();
+    }
+
+    /**
+     * 🎯 绑定干预面板的按钮事件
+     */
+    _bindInterventionHandlers() {
+        try {
+            const panel = document.getElementById('intervention-panel');
+            const btnPause = document.getElementById('btnPause');
+            const btnAbort = document.getElementById('btnAbort');
+            const btnContinue = document.getElementById('btnContinue');
+            const btnSubmit = document.getElementById('btnSubmitInfo');
+
+            if (btnPause) {
+                btnPause.onclick = async () => {
+                    await this.onPauseClick();
+                };
+            }
+            if (btnAbort) {
+                btnAbort.onclick = async () => {
+                    await this.onAbortClick();
+                };
+            }
+            if (btnContinue) {
+                btnContinue.onclick = async () => {
+                    await this.onContinueClick();
+                };
+            }
+            if (btnSubmit) {
+                btnSubmit.onclick = async () => {
+                    await this.onSubmitInfo();
+                };
+            }
+        } catch (e) {
+            console.warn('[AgentThinkingDisplay] 绑定干预按钮失败', e);
+        }
     }
 
     /**
@@ -690,6 +792,94 @@ export class AgentThinkingDisplay {
         }
         
         this.renderSession();
+    }
+
+    /**
+     * 🎯 干预按钮 - 暂停
+     */
+    async onPauseClick() {
+        try {
+            if (!globalThis.deepResearchAgent) {
+                this.addExecutionLog('Agent 未就绪，无法暂停', 'info');
+                return;
+            }
+            const res = await globalThis.deepResearchAgent.pauseResearch();
+            this.addExecutionLog(res.message || '已请求暂停', 'info');
+            const badge = this.container.querySelector('#interventionBadge');
+            if (badge) badge.textContent = '已请求暂停';
+        } catch (e) {
+            console.error('[AgentThinkingDisplay] 暂停请求失败', e);
+            this.addExecutionLog('暂停请求失败: ' + e.message, 'tool_error');
+        }
+    }
+
+    /**
+     * 🎯 干预按钮 - 中止
+     */
+    async onAbortClick() {
+        try {
+            if (!globalThis.deepResearchAgent) {
+                this.addExecutionLog('Agent 未就绪，无法中止', 'info');
+                return;
+            }
+            if (!confirm('确认要中止当前研究任务吗？此操作不可逆。')) return;
+            const res = await globalThis.deepResearchAgent.abortResearch();
+            this.addExecutionLog(res.message || '已请求中止', 'info');
+            const badge = this.container.querySelector('#interventionBadge');
+            if (badge) badge.textContent = '已中止';
+        } catch (e) {
+            console.error('[AgentThinkingDisplay] 中止请求失败', e);
+            this.addExecutionLog('中止请求失败: ' + e.message, 'tool_error');
+        }
+    }
+
+    /**
+     * 🎯 干预按钮 - 继续
+     */
+    async onContinueClick() {
+        try {
+            if (!globalThis.deepResearchAgent) {
+                this.addExecutionLog('Agent 未就绪，无法继续', 'info');
+                return;
+            }
+            const res = await globalThis.deepResearchAgent.continueResearch();
+            this.addExecutionLog(res.message || '已请求继续', 'info');
+            const badge = this.container.querySelector('#interventionBadge');
+            if (badge) badge.textContent = '运行中';
+            const inputDiv = this.container.querySelector('#interventionInput');
+            if (inputDiv) inputDiv.style.display = 'none';
+        } catch (e) {
+            console.error('[AgentThinkingDisplay] 继续请求失败', e);
+            this.addExecutionLog('继续请求失败: ' + e.message, 'tool_error');
+        }
+    }
+
+    /**
+     * 🎯 提交用户补充信息
+     */
+    async onSubmitInfo() {
+        try {
+            const ta = this.container.querySelector('#interventionText');
+            if (!ta) return;
+            let info = ta.value || '';
+            info = String(info).trim().slice(0, 5000);
+            if (!info) {
+                this.addExecutionLog('提交失败：输入为空', 'info');
+                return;
+            }
+            if (!globalThis.deepResearchAgent) {
+                this.addExecutionLog('Agent 未就绪，无法提交补充信息', 'info');
+                return;
+            }
+            const res = await globalThis.deepResearchAgent.provideAdditionalInfo(info);
+            this.addExecutionLog(res.message || '已提交补充信息', 'info');
+            const inputDiv = this.container.querySelector('#interventionInput');
+            if (inputDiv) inputDiv.style.display = 'none';
+            ta.value = '';
+        } catch (e) {
+            console.error('[AgentThinkingDisplay] 提交补充信息失败', e);
+            this.addExecutionLog('提交补充信息失败: ' + e.message, 'tool_error');
+        }
     }
 
     /**
@@ -1076,7 +1266,55 @@ export class AgentThinkingDisplay {
 
         // 注册所有事件监听器
         Object.entries(handlers).forEach(([eventName, handler]) => {
-            window.addEventListener(eventName, handler);
+            try {
+                globalThis.addEventListener(eventName, handler);
+            } catch (e) {
+                console.warn('[AgentThinkingDisplay] 无法注册事件监听器', eventName, e);
+            }
+        });
+
+        // 注册干预相关事件
+        const interventionHandlers = {
+            'research:waiting_for_input': (_event) => {
+                this.addExecutionLog('系统等待用户输入以继续研究...', 'info');
+                const inputDiv = this.container.querySelector('#interventionInput');
+                const panel = this.container.querySelector('#intervention-panel');
+                if (panel) panel.style.display = 'block';
+                if (inputDiv) inputDiv.style.display = 'block';
+            },
+            'research:intervention_requested': (_event) => {
+                const reason = event?.detail?.data?.reason || '人工干预请求';
+                this.addExecutionLog(`收到干预请求: ${reason}`, 'info');
+                const panel = this.container.querySelector('#intervention-panel');
+                const badge = this.container.querySelector('#interventionBadge');
+                if (panel) panel.style.display = 'block';
+                if (badge) badge.textContent = `请求: ${reason}`;
+            },
+            'research:paused': (_event) => {
+                this.addExecutionLog('研究已被暂停', 'info');
+                const badge = this.container.querySelector('#interventionBadge');
+                if (badge) badge.textContent = '已暂停';
+            },
+            'research:aborted': (_event) => {
+                this.addExecutionLog('研究已被中止', 'info');
+                const badge = this.container.querySelector('#interventionBadge');
+                if (badge) badge.textContent = '已中止';
+                // 禁用按钮
+                ['btnPause','btnAbort','btnContinue','btnSubmitInfo'].forEach(id => {
+                    const el = this.container.querySelector('#' + id);
+                    if (el) el.disabled = true;
+                });
+            },
+            'research:intervention_suggested': (event) => {
+                const suggestions = event?.detail?.data?.suggestions || [];
+                if (suggestions.length) {
+                    this.addExecutionLog('系统建议: ' + suggestions.join('; '), 'info');
+                }
+            }
+        };
+
+        Object.entries(interventionHandlers).forEach(([name, h]) => {
+            try { globalThis.addEventListener(name, h); } catch (e) { console.warn('注册干预事件失败', name, e); }
         });
 
         console.log('✅ AgentThinkingDisplay 事件监听器设置完成');

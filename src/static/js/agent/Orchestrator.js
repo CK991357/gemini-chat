@@ -409,9 +409,15 @@ ${cleanTopic}
     
     setupHandlers() {
         const forwardEvent = (eventName, newEventName) => {
-            return (e) => window.dispatchEvent(new CustomEvent(newEventName, {
-                detail: { data: e.data, result: e.data, agentType: 'deep_research' }
-            }));
+            return (e) => {
+                try {
+                    globalThis.dispatchEvent(new CustomEvent(newEventName, {
+                        detail: { data: e.data, result: e.data, agentType: 'deep_research' }
+                    }));
+                } catch (err) {
+                    console.warn('[Orchestrator] forwardEvent dispatch failed', newEventName, err);
+                }
+            };
         };
 
         this.callbackManager.addHandler({
@@ -423,7 +429,13 @@ ${cleanTopic}
             'on_research_end': forwardEvent('on_research_end', 'research:end'),
             'on_research_stats_updated': forwardEvent('on_research_stats_updated', 'research:stats_updated'),
             'on_tool_called': forwardEvent('on_tool_called', 'research:tool_called'),
-            'on_agent_think_start': (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
+            // 干预相关事件转发
+            'intervention_requested': (e) => globalThis.dispatchEvent(new CustomEvent('research:intervention_requested', { detail: { data: e.data || e, agentType: 'deep_research' } })),
+            'waiting_for_input': (e) => globalThis.dispatchEvent(new CustomEvent('research:waiting_for_input', { detail: { data: e.data || e, agentType: 'deep_research' } })),
+            'paused': (e) => globalThis.dispatchEvent(new CustomEvent('research:paused', { detail: { data: e.data || e, agentType: 'deep_research' } })),
+            'aborted': (e) => globalThis.dispatchEvent(new CustomEvent('research:aborted', { detail: { data: e.data || e, agentType: 'deep_research' } })),
+            'intervention_suggested': (e) => globalThis.dispatchEvent(new CustomEvent('research:intervention_suggested', { detail: { data: e.data || e, agentType: 'deep_research' } })),
+            'on_agent_think_start': (_e) => globalThis.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
         });
         console.log('[Orchestrator] 最终版事件处理器已设置。');
     }
