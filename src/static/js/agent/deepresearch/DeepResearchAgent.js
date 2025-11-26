@@ -634,6 +634,46 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             }
         });
 
+        // === 保存触发本次深度研究的那一条用户消息（仅本地历史/研究记录） ===
+        // 说明：我们**不**要将这条消息发送到普通模式，仅将其保存到 agent 的中间步骤与研究历史中，
+        // 以便后续迭代与报告生成能看到触发时的原始用户输入，防止再次加载时丢失。
+        try {
+            if (Array.isArray(contextMessages) && contextMessages.length > 0) {
+                const triggerMsg = contextMessages[contextMessages.length - 1];
+                const triggerContent = (triggerMsg && (triggerMsg.content || triggerMsg.text || triggerMsg.message || '')) || '';
+
+                // 将触发消息记录为一个中间步骤条目
+                const triggerStep = {
+                    action: {
+                        type: 'trigger_message',
+                        role: triggerMsg.role || 'user',
+                        content: triggerContent
+                    },
+                    observation: triggerContent,
+                    sources: [],
+                    timestamp: new Date().toISOString(),
+                    success: true
+                };
+
+                // push 到 intermediateSteps（持久化在 agent 会话内），不会被发送到普通对话处理流程
+                this.intermediateSteps.push(triggerStep);
+
+                // 触发一个事件，允许 UI / Orchestrator 将该条消息保存到外部历史存储（可选）
+                await this.callbackManager.invokeEvent('on_research_message_saved', {
+                    run_id: runId,
+                    data: {
+                        type: 'trigger_message',
+                        message: triggerMsg,
+                        stored_as: 'intermediate_step',
+                        timestamp: triggerStep.timestamp
+                    }
+                });
+            }
+        } catch (e) {
+            // 不要因为保存历史失败而阻塞研究流程，只记录日志
+            console.warn('[DeepResearchAgent] 无法保存触发消息到研究历史:', e);
+        }
+
         // 🎯 修复：在研究过程中更新统计数据
         const updateResearchStats = (updates) => {
             this.callbackManager.invokeEvent('on_research_stats_updated', {

@@ -2697,6 +2697,43 @@ window.addEventListener('research:image_generated', (e) => {
     }
 });
 
+// 监听 Agent 保存触发研究的用户消息事件（来自 DeepResearchAgent）
+// 行为：将触发消息写入内存 chatHistory，并通知 historyManager 持久化（若存在）
+window.addEventListener('research:message_saved', (e) => {
+    try {
+        const payload = e.detail.data || {};
+        const messageObj = payload.message || null;
+
+        if (!messageObj) return;
+
+        // 确保消息内容以常见结构存储
+        const role = messageObj.role || 'user';
+        const content = messageObj.content || messageObj.text || messageObj.message || messageObj;
+
+        // 1) 将消息追加到内存中的 chatHistory（避免触发普通发送逻辑）
+        try {
+            if (typeof chatHistory !== 'undefined' && Array.isArray(chatHistory)) {
+                chatHistory.push({ role, content });
+            }
+        } catch (pushErr) {
+            console.warn('[Main.js] 无法将触发消息追加到 chatHistory:', pushErr);
+        }
+
+        // 2) 如果存在 historyManager（持久化），调用 addMessage 以保存到会话历史
+        try {
+            if (typeof historyManager !== 'undefined' && historyManager && typeof historyManager.addMessage === 'function') {
+                historyManager.addMessage({ role, content, timestamp: new Date().toISOString(), meta: { savedBy: 'research:message_saved' } });
+            }
+        } catch (histErr) {
+            console.warn('[Main.js] 无法通过 historyManager 保存触发消息:', histErr);
+        }
+
+        console.log('[Main.js] 已保存研究触发消息到历史（仅保存，不发送）', { role, content });
+    } catch (err) {
+        console.error('[Main.js] 处理 research:message_saved 事件时出错:', err);
+    }
+});
+
 // 🚀🚀🚀 [v2.2 核心新增] 监听 Agent 生成的文件事件 🚀🚀🚀
 // 这个事件由 DeepResearchAgent.js 中的 _executeToolCall 方法触发
 window.addEventListener('on_file_generated', (event) => {

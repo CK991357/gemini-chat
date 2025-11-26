@@ -421,6 +421,7 @@ ${cleanTopic}
             'on_tool_start': forwardEvent('on_tool_start', 'research:tool_start'),
             'on_tool_end': forwardEvent('on_tool_end', 'research:tool_end'),
             'on_research_end': forwardEvent('on_research_end', 'research:end'),
+            'on_research_message_saved': forwardEvent('on_research_message_saved', 'research:message_saved'),
             'on_research_stats_updated': forwardEvent('on_research_stats_updated', 'research:stats_updated'),
             'on_tool_called': forwardEvent('on_tool_called', 'research:tool_called'),
             'on_agent_think_start': (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
