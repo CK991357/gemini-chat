@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 修复版本
+f// src/static/js/agent/deepresearch/DeepResearchAgent.js - 修复版本
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
@@ -12,6 +12,13 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // 🎯 精简版：只在关键环节使用Pro模型f
+        this.proModelConfig = {
+            primary: 'models/gemini-2.5-pro',  // Pro模型
+            fallback: 'gemini-2.5-flash-preview-09-2025',      // 降级模型
+            maxRetries: 1                      // 只重试一次
+        };
+
         // 🎯 图像生成追踪
         this.generatedImages = new Map(); // 用于存储 base64 数据
         this.imageCounter = 0;
@@ -62,6 +69,69 @@ export class DeepResearchAgent {
         this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
         
         console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
+    }
+
+    /**
+     * 🎯 精简版：只在特定情况下降级
+     */
+    _shouldFallbackForPro(error) {
+        const fallbackErrors = [
+            'rate limit',
+            'quota',
+            'overload',
+            'busy',
+            'capacity',
+            '429'
+        ];
+        
+        const errorMsg = error.message.toLowerCase();
+        return fallbackErrors.some(keyword => errorMsg.includes(keyword));
+    }
+
+    /**
+     * 🎯 精简版：只在关键环节使用Pro模型降级
+     */
+    async _completeChatWithProFallback(messages, options = {}) {
+        const { temperature = 0.3 } = options;
+        
+        try {
+            console.log('[DeepResearchAgent] 🚀 关键环节使用Pro模型');
+            
+            const response = await this.chatApiHandler.completeChat({
+                messages,
+                model: this.proModelConfig.primary,
+                temperature,
+                ...options
+            });
+            
+            // 检查响应是否有效
+            if (response && response.choices && response.choices[0] && response.choices[0].message) {
+                console.log('[DeepResearchAgent] ✅ Pro模型调用成功');
+                return response;
+            } else {
+                throw new Error('Pro模型返回空响应');
+            }
+            
+        } catch (error) {
+            console.warn(`[DeepResearchAgent] 🟡 Pro模型调用失败:`, error.message);
+            
+            // 🎯 只对特定错误降级（速率限制等）
+            if (this._shouldFallbackForPro(error)) {
+                console.log('[DeepResearchAgent] 🔄 降级到Flash模型继续...');
+                
+                const fallbackResponse = await this.chatApiHandler.completeChat({
+                    messages,
+                    model: this.proModelConfig.fallback,
+                    temperature,
+                    ...options
+                });
+                
+                return fallbackResponse;
+            } else {
+                // 其他错误直接抛出
+                throw error;
+            }
+        }
     }
 
     // 🔥🔥🔥 [新增方法] 智能上下文序列化器 🔥🔥🔥
@@ -195,9 +265,9 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
 现在，请生成这份高质量的Markdown报告大纲：`;
 
         try {
-            const response = await this.chatApiHandler.completeChat({
+            // 🎯 只在这里使用Pro模型降级
+            const response = await this._completeChatWithProFallback({
                 messages: [{ role: 'user', content: prompt }],
-                model: 'models/gemini-2.5-pro', // 🎯 必须使用主模型
                 temperature: 0.1, // 较低的温度以确保结构化输出
             });
             const outline = response?.choices?.[0]?.message?.content || '### 错误：未能生成大纲';
@@ -1220,9 +1290,9 @@ ${promptFragment}
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
         
         try {
-            const reportResponse = await this.chatApiHandler.completeChat({
+            // 🎯 只在这里使用Pro模型降级
+            const reportResponse = await this._completeChatWithProFallback({
                 messages: [{ role: 'user', content: finalPrompt }],
-                model: 'models/gemini-2.5-pro',
                 temperature: 0.3,
             });
             this._updateTokenUsage(reportResponse.usage);
