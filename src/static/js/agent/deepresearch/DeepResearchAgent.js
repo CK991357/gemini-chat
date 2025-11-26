@@ -1049,9 +1049,16 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         // 🎯 关键修复：无论是否有最终答案，都调用报告生成以确保信息整合
         let finalReport;
         if (finalAnswerFromIteration) {
-            console.log('[DeepResearchAgent] 使用迭代中生成的答案作为报告基础，但会整合所有来源');
-            // 仍然使用Agent生成的答案，但确保来源正确附加
-            finalReport = finalAnswerFromIteration;
+            console.log('[DeepResearchAgent] 🎯 Agent生成了初步报告，启动统一后处理流程');
+            // 关键修复：即使有Agent生成的报告，也要走完整的报告生成流程
+            finalReport = await this._generateFinalReport(
+                uiTopic,
+                this.intermediateSteps,
+                researchPlan,
+                uniqueSources,
+                detectedMode,
+                finalAnswerFromIteration // 传入Agent生成的报告作为基础
+            );
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
             finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
@@ -1164,7 +1171,12 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
     }
 
     // ✨ 最终报告生成 - 【学术引用增强版】
-    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
+    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode, baseReport = null) {
+        
+        if (baseReport) {
+            console.log('[DeepResearchAgent] 🎯 检测到基础报告，将进行统一后处理');
+            console.log(`[DeepResearchAgent] 基础报告长度: ${baseReport.length} 字符`);
+        }
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
         // 1. 构建纯净的证据集合
@@ -1218,9 +1230,14 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
             
             finalPrompt = `
 # 角色：首席研究分析师
-# 任务：基于提供的证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术级研究报告。
+# 任务：基于提供的证据和资料来源${baseReport ? '以及Agent生成的初步报告' : ''}，撰写一份高质量、结构化、体现深度思考的学术级研究报告。
 
 # 最终研究主题: "${topic}"
+
+${baseReport ? `
+# 🎯 Agent生成的初步报告 (作为参考)
+${baseReport.substring(0, 3000)}${baseReport.length > 3000 ? '... (内容过长已截断)' : ''}
+` : ''}
 
 # 1. 研究计划 (纲领)
 \`\`\`json
@@ -1239,14 +1256,13 @@ ${evidenceCollection.keyFindings.map((finding, index) => `* 关键发现 ${index
 ${evidenceCollection.evidenceEntries.map(entry => `
 ### ${entry.subQuestion}
 ${entry.evidence}
-${entry.keyFinding ? `**💡 本步关键发现:** ${entry.keyFinding}` : ''} 
+${entry.keyFinding ? `**💡 本步关键发现:** ${entry.keyFinding}` : ''}
 `).join('\n\n')}
 
 # 4. 你的报告撰写指令 (输出要求)
-现在，请严格遵循以下元结构和要求，将上述研究证据整合成一份最终报告。
+现在，请严格遵循以下元结构和要求，将上述研究证据${baseReport ? '与初步报告内容' : ''}整合成一份最终报告。
 
-${promptFragment} 
-// 👆 这里是 "引用协议" 的最佳位置，确保模型在处理数据前最后一次看到规则。
+${promptFragment}
 
 **🚫 绝对禁止:**
 - 编造研究计划和证据集合中不存在的信息。
@@ -1258,6 +1274,14 @@ ${promptFragment}
 - **动态生成章节:** 将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
 - **内容填充:** 用对应研究步骤的详细证据数据来填充该章节。
 - **引用来源:** 严格遵守上述【引用与论证规范】。
+
+${baseReport ? `
+**🔄 对初步报告的优化要求:**
+- 保留初步报告中的有价值内容
+- 修复可能存在的结构问题
+- 确保所有关键发现都有证据支持
+- 严格遵守引用规范
+` : ''}
 
 现在，请开始撰写这份基于纯净证据的最终研究报告。
 `;
@@ -1271,10 +1295,15 @@ ${promptFragment}
                 .join('\n\n');
             
             finalPrompt = `
-你是一个专业的报告撰写专家。请基于以下收集到的信息，生成一份专业、结构完整的研究报告。
+你是一个专业的报告撰写专家。请基于以下收集到的信息${baseReport ? '和初步报告' : ''}，生成一份专业、结构完整的研究报告。
 
 # 研究主题
 ${topic}
+
+${baseReport ? `
+# 🎯 初步报告参考
+${baseReport.substring(0, 2000)}${baseReport.length > 2000 ? '...' : ''}
+` : ''}
 
 # 📚 资料来源索引 (必须引用)
 ${numberedSourcesText}
@@ -1282,7 +1311,7 @@ ${numberedSourcesText}
 # 已收集的关键信息摘要
 ${allObservations.substring(0, 15000)}
 
-${promptFragment} 
+${promptFragment}
 // 👆 同样，在静态模板中也放在数据之后，确保规则生效。
 `;
         }
@@ -1290,18 +1319,22 @@ ${promptFragment}
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
         
         try {
-            // 🎯 只在这里使用Pro模型降级
+            // 🎯 使用带降级的模型调用 - 确保Pro模型降级机制正常工作
             const reportResponse = await this._completeChatWithProFallback({
                 messages: [{ role: 'user', content: finalPrompt }],
                 temperature: 0.3,
+                purpose: 'generate_final_report'
             });
+            
             this._updateTokenUsage(reportResponse.usage);
             
-            let finalReport = reportResponse?.choices?.[0]?.message?.content ||
+            let generatedReport = reportResponse?.choices?.[0]?.message?.content ||
                 this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
             
             console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
-            return finalReport;
+            
+            // 🎯 关键：现在生成的报告会进入后续的统一后处理流水线
+            return generatedReport;
             
         } catch (error) {
             console.error('[DeepResearchAgent] 报告生成失败:', error);
