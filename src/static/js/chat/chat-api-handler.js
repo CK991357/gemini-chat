@@ -82,10 +82,20 @@ export class ChatApiHandler {
         const agentKeywords = ['思考:', '研究计划:', '行动:', '行动输入:', '最终答案:'];
         
         // 检查最近的几条消息
-        const recentMessages = requestBody.messages?.slice(-5) || [];
+        // 兼容性修复：requestBody.messages 可能不是数组（可能为对象或字符串），因此先进行类型判断并回退到 chatHistory
+        let recentMessagesSource = [];
+        if (Array.isArray(requestBody.messages)) {
+            recentMessagesSource = requestBody.messages;
+        } else if (Array.isArray(requestBody.chatHistory)) {
+            recentMessagesSource = requestBody.chatHistory;
+        } else if (requestBody.messages) {
+            // 如果 messages 是单条消息对象或字符串，包装成数组以便处理
+            recentMessagesSource = [requestBody.messages];
+        }
+        const recentMessages = recentMessagesSource.slice(-5);
         
         return recentMessages.some(msg => {
-            const content = msg.content;
+                const content = msg && msg.content ? msg.content : (typeof msg === 'string' ? msg : null);
             if (typeof content === 'string') {
                 return agentKeywords.some(kw => content.includes(kw));
             } else if (Array.isArray(content)) {

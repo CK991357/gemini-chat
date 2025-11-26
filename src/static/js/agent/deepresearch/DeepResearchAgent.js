@@ -140,32 +140,47 @@ export class DeepResearchAgent {
      * 关键点：过滤 Base64 图片以节省 Token，但保留"用户发了图"的语义。
      */
     _serializeContextMessages(messages) {
-        if (!messages || messages.length === 0) return '';
+        // 兼容性修复：messages 可能不是数组（可能为对象或字符串），优先回退到 this.state.chatHistory
+        let messagesSource = messages;
+        if (!Array.isArray(messagesSource)) {
+            if (this && this.state && Array.isArray(this.state.chatHistory) && this.state.chatHistory.length > 0) {
+                messagesSource = this.state.chatHistory;
+            } else if (messagesSource) {
+                // 将单条消息（object 或 string）封装成数组以便后续处理
+                messagesSource = [messagesSource];
+            } else {
+                return '';
+            }
+        }
+
+        if (!messagesSource || messagesSource.length === 0) return '';
 
         // 取最近 6 条（排除当前触发消息）以保证上下文充足并节省 token
-        const recentMessages = messages.slice(0, -1).slice(-6);
-        if (recentMessages.length === 0) return '';
+        const recentMessages = messagesSource.slice(0, -1).slice(-6);
+        if (!recentMessages || recentMessages.length === 0) return '';
 
         let contextBuffer = [];
         contextBuffer.push("--- 对话历史开始 ---");
 
         recentMessages.forEach((msg) => {
-            const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
+            const roleLabel = (msg && msg.role === 'user') ? 'User' : 'Assistant';
             let textContent = '';
 
-            if (Array.isArray(msg.content)) {
-                msg.content.forEach(part => {
-                    if (part.type === 'text') {
-                        textContent += part.text;
-                    } else if (part.type === 'image_url' || part.type === 'image_base64') {
+            const content = msg && msg.content ? msg.content : (typeof msg === 'string' ? msg : null);
+
+            if (Array.isArray(content)) {
+                content.forEach(part => {
+                    if (part && part.type === 'text') {
+                        textContent += part.text || '';
+                    } else if (part && (part.type === 'image_url' || part.type === 'image_base64')) {
                         // 用占位符替代图片内容，保留语义
                         textContent += `[🖼️ Image Uploaded by User] `;
-                    } else if (part.type === 'file_url' || part.type === 'file') {
+                    } else if (part && (part.type === 'file_url' || part.type === 'file')) {
                         textContent += `[📁 File Uploaded: ${part.name || 'document'}] `;
                     }
                 });
-            } else if (typeof msg.content === 'string') {
-                textContent = msg.content;
+            } else if (typeof content === 'string') {
+                textContent = content;
             }
 
             // 防止单条历史消息过长
