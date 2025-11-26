@@ -54,23 +54,10 @@ export class AgentOutputParser {
 
         console.log('[OutputParser] 开始解析，文本长度:', text.length);
 
-        // 🎯 新增：空响应快速处理
-        if (!text || text.trim().length < 10) {
-            console.warn('[OutputParser] ⚠️ 响应文本过短，触发空响应处理');
-            return {
-                type: 'error',
-                error: '空响应或文本过短',
-                thought: '模型返回内容不足，需要重新思考'
-            };
-        }
-
-        // 1. 基础清理：移除 Markdown 粗体干扰和规范化冒号，并兼容中文工具名写法
-        const preprocessedText = text.trim()
+        // 1. 基础清理：仅移除 Markdown 粗体干扰和规范化冒号
+        let preprocessedText = text.trim()
             .replace(/\*\*\s*(思考|行动|行动输入|最终答案)\s*\*\*/g, '$1')
-            .replace(/(思考|行动|行动输入|最终答案)\s*:/g, '$1: ')
-            // 兼容中文工具名和多种格式，例如: 行动: 调用 `tool` 或 行动: 使用 `tool`
-            .replace(/行动\s*:\s*调用\s*`([^`]+)`/gi, '行动: $1')
-            .replace(/行动\s*:\s*使用\s*`([^`]+)`/gi, '行动: $1');
+            .replace(/(思考|行动|行动输入|最终答案)\s*:/g, '$1: ');
 
         // 2. 优先级 1: 最终答案检测
         const finalAnswerMatch = preprocessedText.match(/最终答案\s*:\s*([\s\S]+)/i);
@@ -84,8 +71,8 @@ export class AgentOutputParser {
             };
         }
 
-        // 3. 优先级 2: 工具调用解析（增强兼容性）
-        if (/行动\s*[:：]/i.test(preprocessedText)) {
+        // 3. 优先级 2: 工具调用解析
+        if (/行动\s*:/i.test(preprocessedText)) {
             console.log('[OutputParser] 检测到行动指令，尝试工具解析');
             const toolCallResult = this._parseAsToolCall(preprocessedText);
             if (toolCallResult && toolCallResult.type === 'tool_call') {
@@ -93,7 +80,7 @@ export class AgentOutputParser {
             }
         }
         
-        // 4. 优先级 3: 报告结构检测（增加宽松检测策略）
+        // 4. 优先级 3: 报告结构检测
         if (this._isLikelyFinalReport(preprocessedText)) {
             console.log('[OutputParser] 🎯 检测到报告结构');
             this.metrics.recordAttempt('final_answer', true, 'structure_detection');
@@ -101,17 +88,6 @@ export class AgentOutputParser {
                 type: 'final_answer',
                 answer: preprocessedText,
                 thought: '检测到完整的报告结构'
-            };
-        }
-
-        // 🎯 宽松的最终答案检测（更容错）
-        if (this._isLikelyCompleteReport(preprocessedText)) {
-            console.log('[OutputParser] 🎯 宽松检测到完整报告结构');
-            this.metrics.recordAttempt('final_answer', true, 'lenient_structure_detection');
-            return {
-                type: 'final_answer',
-                answer: preprocessedText,
-                thought: '检测到完整的报告内容，直接作为最终答案'
             };
         }
 
@@ -131,63 +107,38 @@ export class AgentOutputParser {
 
     _parseAsToolCall(text) {
         console.log('[OutputParser] 开始工具调用解析');
+
         try {
-            // 1. 提取思考过程（增强兼容性）
+            // 1. 提取思考过程
             let thought = '';
-            const thoughtMatch = text.match(/思考\s*[:：]\s*([\s\S]*?)(?=行动\s*[:：]|行动输入\s*[:：]|最终答案\s*[:：]|$)/i);
+            const thoughtMatch = text.match(/思考\s*:\s*([\s\S]*?)(?=行动\s*:|行动输入\s*:|最终答案\s*:|$)/i);
             if (thoughtMatch && thoughtMatch[1]) {
                 thought = thoughtMatch[1].trim();
-            } else {
-                // 🎯 新增：如果没有明确的思考部分，使用文本开头部分作为思考
-                const firstParagraph = text.split(/\n\s*\n/)[0];
-                if (firstParagraph && firstParagraph.length > 50 && !firstParagraph.includes('行动')) {
-                    thought = firstParagraph.substring(0, 300);
-                }
+                console.log('[OutputParser] 提取思考内容:', thought.substring(0, 100) + (thought.length > 100 ? '...' : ''));
             }
 
-            // 2. 🎯 增强工具名提取（多模式匹配）
-            let tool_name = null;
-            const toolPatterns = [
-                /行动\s*[:：]\s*`?([a-zA-Z0-9_]+)`?/i, // 标准格式：行动: tool_name
-                /行动\s*[:：]\s*调用\s*`([^`]+)`/i,    // 中文格式：行动: 调用 `tool_name`
-                /行动\s*[:：]\s*使用\s*`([^`]+)`/i,    // 中文格式：行动: 使用 `tool_name`
-                /tool_name\s*["']?\s*:\s*["']?([^"',}\s]+)["']?/i // JSON格式
-            ];
-            
-            for (const pattern of toolPatterns) {
-                const match = text.match(pattern);
-                if (match && match[1]) {
-                    tool_name = match[1].trim();
-                    break;
-                }
-            }
-            
-            if (!tool_name) {
-                console.warn('[OutputParser] 无法提取工具名，尝试最后手段提取');
-                // 🎯 最后手段：从可能的JSON中提取tool_name
-                const jsonMatch = text.match(/"tool_name"\s*:\s*"([^"]+)"/);
-                if (jsonMatch) {
-                    tool_name = jsonMatch[1];
-                }
-            }
-
-            if (!tool_name) {
-                console.warn('[OutputParser] 所有工具名提取模式都失败');
+            // 2. 提取工具名
+            const actionMatch = text.match(/行动\s*:\s*([a-zA-Z0-9_]+)/i);
+            if (!actionMatch) {
+                console.warn('[OutputParser] 找到"行动:"但未找到工具名');
                 return null;
             }
-            
+            const tool_name = actionMatch[1].trim();
             console.log(`[OutputParser] 找到工具名: ${tool_name}`);
 
-            // 3. 🎯 增强参数提取（支持多种JSON格式）
+            // 3. 🎯 核心：使用 Raw First 策略解析参数
             const paramResult = this._extractAndParseJSON(text, tool_name);
             
             if (paramResult.success) {
                 console.log(`[OutputParser] ✅ ${tool_name} 参数解析成功 (${paramResult.method})`);
                 this.metrics.recordAttempt(tool_name, true, paramResult.method);
                 
-                // 参数归一化处理
-                const finalParameters = this._normalizeParameters(tool_name, paramResult.parameters);
-                
+                // 针对 python_sandbox 的参数结构归一化
+                let finalParameters = paramResult.parameters;
+                if (tool_name === 'python_sandbox') {
+                    finalParameters = this._normalizePythonParams(finalParameters);
+                }
+
                 return {
                     type: 'tool_call',
                     tool_name: tool_name,
@@ -197,21 +148,6 @@ export class AgentOutputParser {
                 };
             } else {
                 console.warn(`[OutputParser] ❌ 无法解析工具 ${tool_name} 的参数`);
-                
-                // 🎯 新增：对于某些工具，提供默认参数
-                const defaultParams = this._getDefaultParameters(tool_name);
-                if (defaultParams) {
-                    console.log(`[OutputParser] 🟡 使用默认参数继续: ${tool_name}`);
-                    this.metrics.recordAttempt(tool_name, true, 'default_fallback');
-                    return {
-                        type: 'tool_call',
-                        tool_name: tool_name,
-                        parameters: defaultParams,
-                        thought: thought,
-                        thought_length: thought.length
-                    };
-                }
-                
                 this.metrics.recordAttempt(tool_name, false, 'failed');
                 return null;
             }
@@ -364,62 +300,6 @@ export class AgentOutputParser {
         return (hasMultipleHeadings || hasStructuredContent) && 
                !hasToolCallFormat &&
                (hasTableStructure || hasConclusionKeywords);
-    }
-
-    /**
-     * 🎯 新增：宽松的完整报告检测
-     */
-    _isLikelyCompleteReport(text) {
-        if (!text || text.length < 200) return false;
-        
-        // 检查是否包含完整的报告结构特征
-        const reportIndicators = [
-            /^#\s+.+$/m, // 一级标题
-            /##\s+.+/m,  // 二级标题
-            /###\s+.+/m, // 三级标题
-            /总结[:：]|结论[:：]|建议[:：]/m, // 结论性段落
-            /参考文献|参考资料|数据来源/m // 引用部分
-        ];
-        
-        const hasReportStructure = reportIndicators.some(pattern => pattern.test(text));
-        const hasSubstantialContent = text.length > 500;
-        const hasMultipleParagraphs = (text.split(/\n\s*\n/).length >= 3);
-        
-        // 宽松判断：有报告结构且有实质性内容
-        return hasReportStructure && hasSubstantialContent && hasMultipleParagraphs;
-    }
-
-    /**
-     * 🎯 新增：参数归一化处理
-     */
-    _normalizeParameters(toolName, parameters) {
-        switch (toolName) {
-            case 'python_sandbox':
-                return this._normalizePythonParams(parameters);
-            case 'tavily_search':
-                if (typeof parameters === 'string') {
-                    return { query: parameters, max_results: 5 };
-                }
-                return parameters;
-            case 'crawl4ai':
-                if (typeof parameters === 'string') {
-                    return { mode: "scrape", parameters: { url: parameters } };
-                }
-                return parameters;
-            default:
-                return parameters;
-        }
-    }
-
-    /**
-     * 🎯 新增：获取工具默认参数
-     */
-    _getDefaultParameters(toolName) {
-        const defaults = {
-            'tavily_search': { query: '继续搜索相关信息', max_results: 5 },
-            'crawl4ai': { mode: "scrape", parameters: { url: '' } }
-        };
-        return defaults[toolName] || null;
     }
 
     /**
