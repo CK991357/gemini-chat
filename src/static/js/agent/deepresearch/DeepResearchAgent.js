@@ -984,7 +984,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
-            finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode);
+            finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode, uiTopic);
         }
 
 // ===========================================================================
@@ -1094,7 +1094,7 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
     }
 
     // ✨ 最终报告生成 - 【学术引用增强版】
-    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode) {
+    async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode, originalUserInstruction) {
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
         // 1. 构建纯净的证据集合
@@ -1152,6 +1152,12 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
 
 # 最终研究主题: "${topic}"
 
+# 0. 🎯 原始用户指令 (最高优先级)
+**请严格遵循此指令中包含的任何结构、提纲或格式要求。**
+\`\`\`
+${originalUserInstruction}
+\`\`\`
+
 # 1. 研究计划 (纲领)
 \`\`\`json
 ${JSON.stringify(plan, null, 2)}
@@ -1205,6 +1211,12 @@ ${promptFragment}
 
 # 研究主题
 ${topic}
+
+# 0. 🎯 原始用户指令 (最高优先级)
+**请严格遵循此指令中包含的任何结构、提纲或格式要求。**
+\`\`\`
+${originalUserInstruction}
+\`\`\`
 
 # 📚 资料来源索引 (必须引用)
 ${numberedSourcesText}
