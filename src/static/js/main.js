@@ -1267,7 +1267,7 @@ function getAvailableToolNames(currentModel) {
  * ✨ [修复] 标准聊天请求处理函数
  * @description 根据模型配置决定是否添加工具定义
  */
-async function handleStandardChatRequest(message, attachedFiles, modelName, apiKey) {
+async function handleStandardChatRequest(message, attachedFiles, modelName, apiKey, pushToHistory = true) {
     const userContent = [];
     if (message) {
         userContent.push({ type: 'text', text: message });
@@ -1283,7 +1283,9 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
         }
     });
 
-    chatHistory.push({ role: 'user', content: userContent });
+    if (pushToHistory) {
+        chatHistory.push({ role: 'user', content: userContent });
+    }
 
     // 🎯 修复：只在模型配置明确要求时才添加工具定义
     const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
@@ -1431,6 +1433,22 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
     }
 
     try {
+        // 🎯 核心修复：在 Agent 流程开始前，将用户消息推入历史记录
+        const userContent = [];
+        if (messageText) {
+            userContent.push({ type: 'text', text: messageText });
+        }
+        attachedFiles.forEach(file => {
+            if (file.type.startsWith('image/')) {
+                userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+            } else if (file.type === 'application/pdf') {
+                userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+            } else if (file.type.startsWith('audio/')) {
+                userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+            }
+        });
+        chatHistory.push({ role: 'user', content: userContent });
+        
         // 🚀 获取可用工具名称和增强工具定义
         const availableToolNames = getAvailableToolNames(modelName);
         const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
@@ -1475,7 +1493,8 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
         // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
         if (agentResult && !agentResult.enhanced) {
             console.log("💬 Orchestrator 决定不处理，回退到标准对话");
-            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+            // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
+            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
         }
         
         // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
@@ -1494,6 +1513,14 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             window.agentThinkingDisplay.hide();
         }
         showSystemMessage(`智能代理执行时发生错误: ${error.message}`);
+        
+        // 🎯 关键修复：如果 Agent 失败，将用户消息从历史记录中移除，并回退到标准模式
+        // 移除刚刚推入的 user 消息
+        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
+            chatHistory.pop();
+        }
+        // 使用标准模式重新发送，让标准模式自己处理历史记录推入
+        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, true);
     }
 }
 
