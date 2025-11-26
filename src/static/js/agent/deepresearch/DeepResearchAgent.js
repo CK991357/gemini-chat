@@ -12,13 +12,6 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
-        // 🎯 精简版：只在关键环节使用Pro模型f
-        this.proModelConfig = {
-            primary: 'models/gemini-2.5-pro',  // Pro模型
-            fallback: 'gemini-2.5-flash-preview-09-2025',      // 降级模型
-            maxRetries: 1                      // 只重试一次
-        };
-
         // 🎯 图像生成追踪
         this.generatedImages = new Map(); // 用于存储 base64 数据
         this.imageCounter = 0;
@@ -71,116 +64,38 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
     }
 
-    /**
-     * 🎯 精简版：只在特定情况下降级
-     */
-    _shouldFallbackForPro(error) {
-        const fallbackErrors = [
-            'rate limit',
-            'quota',
-            'overload',
-            'busy',
-            'capacity',
-            '429'
-        ];
-        
-        const errorMsg = error.message.toLowerCase();
-        return fallbackErrors.some(keyword => errorMsg.includes(keyword));
-    }
-
-    /**
-     * 🎯 精简版：只在关键环节使用Pro模型降级
-     */
-    async _completeChatWithProFallback(messages, options = {}) {
-        const { temperature = 0.3 } = options;
-        
-        try {
-            console.log('[DeepResearchAgent] 🚀 关键环节使用Pro模型');
-            
-            const response = await this.chatApiHandler.completeChat({
-                messages,
-                model: this.proModelConfig.primary,
-                temperature,
-                ...options
-            });
-            
-            // 检查响应是否有效
-            if (response && response.choices && response.choices[0] && response.choices[0].message) {
-                console.log('[DeepResearchAgent] ✅ Pro模型调用成功');
-                return response;
-            } else {
-                throw new Error('Pro模型返回空响应');
-            }
-            
-        } catch (error) {
-            console.warn(`[DeepResearchAgent] 🟡 Pro模型调用失败:`, error.message);
-            
-            // 🎯 只对特定错误降级（速率限制等）
-            if (this._shouldFallbackForPro(error)) {
-                console.log('[DeepResearchAgent] 🔄 降级到Flash模型继续...');
-                
-                const fallbackResponse = await this.chatApiHandler.completeChat({
-                    messages,
-                    model: this.proModelConfig.fallback,
-                    temperature,
-                    ...options
-                });
-                
-                return fallbackResponse;
-            } else {
-                // 其他错误直接抛出
-                throw error;
-            }
-        }
-    }
-
     // 🔥🔥🔥 [新增方法] 智能上下文序列化器 🔥🔥🔥
     /**
      * 将 chatHistory 对象数组转换为 Planner 易于理解的纯文本脚本。
      * 关键点：过滤 Base64 图片以节省 Token，但保留"用户发了图"的语义。
      */
     _serializeContextMessages(messages) {
-        // 兼容性修复：messages 可能不是数组（可能为对象或字符串），优先回退到 this.state.chatHistory
-        let messagesSource = messages;
-        if (!Array.isArray(messagesSource)) {
-            if (this && this.state && Array.isArray(this.state.chatHistory) && this.state.chatHistory.length > 0) {
-                messagesSource = this.state.chatHistory;
-            } else if (messagesSource) {
-                // 将单条消息（object 或 string）封装成数组以便后续处理
-                messagesSource = [messagesSource];
-            } else {
-                return '';
-            }
-        }
-
-        if (!messagesSource || messagesSource.length === 0) return '';
+        if (!messages || messages.length === 0) return '';
 
         // 取最近 6 条（排除当前触发消息）以保证上下文充足并节省 token
-        const recentMessages = messagesSource.slice(0, -1).slice(-6);
-        if (!recentMessages || recentMessages.length === 0) return '';
+        const recentMessages = messages.slice(0, -1).slice(-6);
+        if (recentMessages.length === 0) return '';
 
         let contextBuffer = [];
         contextBuffer.push("--- 对话历史开始 ---");
 
         recentMessages.forEach((msg) => {
-            const roleLabel = (msg && msg.role === 'user') ? 'User' : 'Assistant';
+            const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
             let textContent = '';
 
-            const content = msg && msg.content ? msg.content : (typeof msg === 'string' ? msg : null);
-
-            if (Array.isArray(content)) {
-                content.forEach(part => {
-                    if (part && part.type === 'text') {
-                        textContent += part.text || '';
-                    } else if (part && (part.type === 'image_url' || part.type === 'image_base64')) {
+            if (Array.isArray(msg.content)) {
+                msg.content.forEach(part => {
+                    if (part.type === 'text') {
+                        textContent += part.text;
+                    } else if (part.type === 'image_url' || part.type === 'image_base64') {
                         // 用占位符替代图片内容，保留语义
                         textContent += `[🖼️ Image Uploaded by User] `;
-                    } else if (part && (part.type === 'file_url' || part.type === 'file')) {
+                    } else if (part.type === 'file_url' || part.type === 'file') {
                         textContent += `[📁 File Uploaded: ${part.name || 'document'}] `;
                     }
                 });
-            } else if (typeof content === 'string') {
-                textContent = content;
+            } else if (typeof msg.content === 'string') {
+                textContent = msg.content;
             }
 
             // 防止单条历史消息过长
@@ -280,9 +195,9 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
 现在，请生成这份高质量的Markdown报告大纲：`;
 
         try {
-            // 🎯 只在这里使用Pro模型降级
-            const response = await this._completeChatWithProFallback({
+            const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: prompt }],
+                model: 'models/gemini-2.5-pro', // 🎯 必须使用主模型
                 temperature: 0.1, // 较低的温度以确保结构化输出
             });
             const outline = response?.choices?.[0]?.message?.content || '### 错误：未能生成大纲';
@@ -1305,9 +1220,9 @@ ${promptFragment}
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
         
         try {
-            // 🎯 只在这里使用Pro模型降级
-            const reportResponse = await this._completeChatWithProFallback({
+            const reportResponse = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: finalPrompt }],
+                model: 'models/gemini-2.5-pro',
                 temperature: 0.3,
             });
             this._updateTokenUsage(reportResponse.usage);
