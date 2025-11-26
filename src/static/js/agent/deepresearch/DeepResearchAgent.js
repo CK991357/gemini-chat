@@ -1025,6 +1025,36 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         // ✨ 阶段3：统一的报告生成
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
+        // 🎯 关键修复：如果 Agent 提前终止但未生成大纲，则强制生成
+        const hasOutline = this.intermediateSteps.some(step => step.action.tool_name === 'generate_outline');
+        if (!hasOutline && !finalAnswerFromIteration && this.intermediateSteps.length > 0) {
+            console.log('[DeepResearchAgent] 📝 强制执行：Agent提前终止但未生成大纲，自动生成大纲以结构化报告。');
+            
+            // 1. 提取所有关键发现
+            const keyFindings = this.intermediateSteps
+                .map(step => step.key_finding)
+                .filter(f => f && f !== '未能提取关键发现。' && f !== '关键发现提取异常。');
+
+            // 2. 调用大纲生成方法
+            const reportOutline = await this._generateReportOutline(
+                uiTopic,
+                keyFindings,
+                detectedMode
+            );
+
+            // 3. 将生成的大纲作为最后一个步骤，送入最终报告生成
+            this.intermediateSteps.push({
+                action: {
+                    tool_name: 'system_generated_outline',
+                    parameters: { key_findings: keyFindings },
+                    thought: '系统自动生成报告大纲以确保结构化。'
+                },
+                observation: `✅ 系统自动生成报告大纲。最终报告将基于此大纲撰写。\n\n---\n\n${reportOutline}`,
+                key_finding: `系统已生成包含${keyFindings.length}个关键发现的报告大纲`,
+                success: true
+            });
+        }
+
         // 提取所有观察结果用于关键词分析
         const allObservationsForKeywords = this.intermediateSteps.map(s => s.observation).join(' ');
         const keywords = this._extractKeywords(uiTopic, allObservationsForKeywords);
