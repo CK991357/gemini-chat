@@ -53,6 +53,287 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] 初始化完成，可用研究工具: ${Object.keys(tools).join(', ')}`);
     }
 
+// 🎯 智能模型选择系统 - 核心方法组
+
+/**
+ * 获取不同任务的模型偏好配置
+ */
+_getModelPreferenceForTask(taskType) {
+    const preferences = {
+        'final_report_generation': {
+            models: [
+                { 
+                    name: 'gemini-2.5-pro', 
+                    label: 'Pro', 
+                    priority: 1, 
+                    fallbackOnError: true,
+                    description: '高质量报告生成'
+                },
+                { 
+                    name: 'gemini-2.5-flash-preview-09-2025', 
+                    label: 'Flash', 
+                    priority: 2, 
+                    fallbackOnError: false,
+                    description: '快速报告生成'
+                }
+            ],
+            temperature: 0.3,
+            maxRetries: 2
+        },
+        'outline_generation': {
+            models: [
+                { 
+                    name: 'gemini-2.5-pro', 
+                    label: 'Pro', 
+                    priority: 1, 
+                    fallbackOnError: true,
+                    description: '深度大纲设计'
+                },
+                { 
+                    name: 'gemini-2.5-flash-preview-09-2025', 
+                    label: 'Flash', 
+                    priority: 2, 
+                    fallbackOnError: false,
+                    description: '基础大纲设计'
+                }
+            ],
+            temperature: 0.1,  // 更低的温度确保结构严谨
+            maxRetries: 1
+        },
+        'planning': {
+            models: [
+                { 
+                    name: 'gemini-2.5-flash-preview-09-2025', 
+                    label: 'Flash', 
+                    priority: 1, 
+                    fallbackOnError: false,
+                    description: '研究规划'
+                }
+            ],
+            temperature: 0.1,
+            maxRetries: 0
+        },
+        'thinking': {
+            models: [
+                { 
+                    name: 'gemini-2.5-flash-preview-09-2025', 
+                    label: 'Flash', 
+                    priority: 1, 
+                    fallbackOnError: false,
+                    description: 'Agent思考'
+                }
+            ],
+            temperature: 0.0,
+            maxRetries: 0
+        },
+        'summarization': {
+            models: [
+                { 
+                    name: 'gemini-2.0-flash-exp-summarizer', 
+                    label: 'Flash-Summarizer', 
+                    priority: 1, 
+                    fallbackOnError: false,
+                    description: '内容摘要'
+                }
+            ],
+            temperature: 0.0,
+            maxRetries: 0
+        }
+    };
+    
+    return preferences[taskType] || preferences['thinking'];
+}
+
+/**
+ * 🚀 智能模型选择器 - Pro优先，带优雅降级
+ */
+async _completeChatWithModelFallback(messages, taskType = 'thinking', customTemperature = null) {
+    const preference = this._getModelPreferenceForTask(taskType);
+    const models = preference.models;
+    const temperature = customTemperature !== null ? customTemperature : preference.temperature;
+    const maxRetries = preference.maxRetries || 0;
+
+    let lastError = null;
+    let usedModel = null;
+    let finalResponse = null;
+    let retryCount = 0;
+
+    console.log(`[DeepResearchAgent] 🚀 开始${taskType}，模型策略: ${models.map(m => m.label).join(' → ')}`);
+
+    // 按优先级排序模型
+    const sortedModels = models.sort((a, b) => a.priority - b.priority);
+
+    modelLoop: for (const model of sortedModels) {
+        usedModel = model;
+        
+        // 为当前模型尝试重试
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            const isRetry = attempt > 0;
+            
+            if (isRetry) {
+                console.log(`[DeepResearchAgent] 🔄 ${taskType} 重试尝试 ${attempt}/${maxRetries} (${model.label})`);
+                // 重试时增加等待时间
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            } else {
+                console.log(`[DeepResearchAgent] 尝试使用 ${model.label} 模型进行${taskType}`);
+            }
+
+            try {
+                const startTime = Date.now();
+                
+                finalResponse = await this.chatApiHandler.completeChat({
+                    messages: messages,
+                    model: model.name,
+                    temperature: temperature,
+                });
+
+                const executionTime = Date.now() - startTime;
+                console.log(`[DeepResearchAgent] ✅ ${model.label} 模型${taskType}成功`, {
+                    executionTime: `${executionTime}ms`,
+                    model: model.name,
+                    taskType,
+                    attempt: isRetry ? attempt : '首次'
+                });
+
+                break modelLoop; // 成功则跳出所有循环
+
+            } catch (error) {
+                lastError = error;
+                console.warn(`[DeepResearchAgent] 🟡 ${model.label} 模型${taskType}失败:`, {
+                    model: model.name,
+                    error: error.message,
+                    taskType,
+                    attempt: isRetry ? attempt : '首次'
+                });
+
+                // 🎯 智能错误分类与决策
+                const shouldFallback = this._shouldFallbackToNextModel(error, model);
+                
+                if (!shouldFallback) {
+                    console.log(`[DeepResearchAgent] 🔴 遇到不可回退错误，终止模型降级`);
+                    throw error;
+                }
+
+                // 如果是最后一次重试尝试，检查是否要切换到下一个模型
+                if (attempt >= maxRetries) {
+                    // 检查是否还有备用模型
+                    const currentIndex = sortedModels.indexOf(model);
+                    if (currentIndex < sortedModels.length - 1 && model.fallbackOnError) {
+                        console.log(`[DeepResearchAgent] 🔄 从 ${model.label} 降级到 ${sortedModels[currentIndex + 1].label}`);
+                        continue modelLoop; // 继续下一个模型
+                    } else {
+                        // 没有更多模型或不允许fallback
+                        console.log(`[DeepResearchAgent] 🔴 ${taskType} 所有模型和重试均失败`);
+                        throw error;
+                    }
+                }
+                
+                // 否则继续重试当前模型
+                console.log(`[DeepResearchAgent] 🔄 将在 ${attempt + 1} 秒后重试 ${model.label} 模型`);
+            }
+        }
+    }
+
+    if (!finalResponse) {
+        console.error('[DeepResearchAgent] 🔴 所有模型均失败，抛出最终错误');
+        throw lastError || new Error(`${taskType} 所有模型调用均失败`);
+    }
+
+    // 🎯 记录模型使用情况
+    this._recordModelUsage(usedModel, finalResponse, taskType);
+    
+    return {
+        response: finalResponse,
+        modelUsed: usedModel
+    };
+}
+
+/**
+ * 🎯 错误分类与降级决策
+ */
+_shouldFallbackToNextModel(error, currentModel) {
+    const errorMessage = error.message?.toLowerCase() || '';
+    
+    // ✅ 可降级错误类型
+    const fallbackErrors = [
+        'rate limit',
+        '429',
+        'model not found',
+        'model unavailable',
+        'quota exceeded',
+        'billing required',
+        'overloaded',
+        'temporarily unavailable',
+        'timeout',
+        'internal server error',
+        'service unavailable'
+    ];
+    
+    // ❌ 不可降级错误类型
+    const criticalErrors = [
+        'invalid argument',
+        'permission denied',
+        'authentication',
+        'invalid api key',
+        'bad request',
+        'content policy violation'
+    ];
+    
+    // 检查是否为可降级错误
+    const isFallbackError = fallbackErrors.some(keyword => 
+        errorMessage.includes(keyword)
+    );
+    
+    const isCriticalError = criticalErrors.some(keyword =>
+        errorMessage.includes(keyword)
+    );
+    
+    if (isCriticalError) {
+        console.warn(`[DeepResearchAgent] 🚫 遇到关键错误，禁止降级:`, errorMessage);
+        return false;
+    }
+    
+    return isFallbackError;
+}
+
+/**
+ * 📊 记录模型使用情况
+ */
+_recordModelUsage(modelUsed, response, context) {
+    const usage = response?.usage;
+    if (!usage) {
+        console.warn(`[DeepResearchAgent] 📊 模型 ${modelUsed.name} 调用成功但无使用量数据`);
+        return;
+    }
+    
+    console.log(`[DeepResearchAgent] 📊 记录模型使用情况:`, {
+        model: modelUsed.name,
+        model_label: modelUsed.label,
+        context: context,
+        tokens: usage.total_tokens,
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens
+    });
+    
+    // 🎯 累加 Token 到总统计
+    this._updateTokenUsage(usage);
+    
+    // 🎯 发送模型使用事件（用于监控面板）
+    if (this.callbackManager) {
+        this.callbackManager.invokeEvent('on_model_used', {
+            run_id: this.runId,
+            data: {
+                model: modelUsed.name,
+                model_label: modelUsed.label,
+                context: context,
+                tokens: usage.total_tokens,
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                description: modelUsed.description
+            }
+        });
+    }
+}
     // 🎯 新增：Token 追踪方法
     _updateTokenUsage(usage) {
         if (!usage) return;
@@ -195,11 +476,12 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
 现在，请生成这份高质量的Markdown报告大纲：`;
 
         try {
-            const response = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: prompt }],
-                model: 'gemini-2.5-flash-preview-09-2025', // 🎯 必须使用主模型
-                temperature: 0.1, // 较低的温度以确保结构化输出
-            });
+            const outlineResult = await this._completeChatWithModelFallback(
+                [{ role: 'user', content: prompt }],
+                'outline_generation',
+                0.1
+            );
+            const response = outlineResult.response;
             const outline = response?.choices?.[0]?.message?.content || '### 错误：未能生成大纲';
             console.log(`[DeepResearchAgent] ✅ 报告大纲生成成功。`);
             return outline;
@@ -1220,14 +1502,15 @@ ${promptFragment}
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
         
         try {
-            const reportResponse = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: finalPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
-                temperature: 0.3,
-            });
+            const reportResult = await this._completeChatWithModelFallback(
+                [{ role: 'user', content: finalPrompt }],
+                'final_report_generation',
+                0.3
+            );
+            const reportResponse = reportResult.response;
             this._updateTokenUsage(reportResponse.usage);
             
-            let finalReport = reportResponse?.choices?.[0]?.message?.content ||
+            const finalReport = reportResponse?.choices?.[0]?.message?.content ||
                 this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
             
             console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);

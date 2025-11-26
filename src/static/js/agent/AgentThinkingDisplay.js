@@ -1045,6 +1045,29 @@ export class AgentThinkingDisplay {
                 
                 this.addExecutionLog(resultText + details + outputPreview, type);
             },
+
+            // 新增模型使用事件监听
+            'research:model_used': (event) => {
+                console.log('🔍 research:model_used 接收:', event.detail.data);
+                const { model, model_label, context, tokens, description } = event.detail.data;
+                
+                // 在日志中显示模型使用信息
+                const logMessage = `使用 ${model_label} 模型 (${model}) 进行${context}`;
+                const detailMessage = description ? ` - ${description}` : '';
+                const tokenMessage = tokens ? `，消耗 ${tokens.toLocaleString()} tokens` : '';
+                
+                this.addExecutionLog(
+                    logMessage + detailMessage + tokenMessage,
+                    'info'
+                );
+                
+                // 更新研究统计显示
+                this.updateResearchStats({
+                    metrics: {
+                        tokenUsage: event.detail.data // 这会触发重新渲染
+                    }
+                });
+            },
             'research:stats_updated': (event) => {
                 console.log('🔍 research:stats_updated 接收:', event.detail.data);
                 this.updateResearchStats(event.detail.data);
