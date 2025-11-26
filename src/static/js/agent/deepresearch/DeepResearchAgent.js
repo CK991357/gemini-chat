@@ -585,7 +585,15 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
     async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
         // ✨✨✨ 核心修复：解构出 displayTopic、enrichedTopic 及 contextMessages ✨✨✨
-        const { topic: enrichedTopic, displayTopic: cleanTopic, availableTools, researchMode, currentDate, contextMessages } = researchRequest;
+        const {
+            topic: enrichedTopic,
+            displayTopic: cleanTopic,
+            originalUserInstruction, // 🎯 接收
+            availableTools,
+            researchMode,
+            currentDate,
+            contextMessages
+        } = researchRequest;
         const runId = this.callbackManager.generateRunId();
         this.runId = runId; // 关键：为当前研究会话设置唯一ID
         this.generatedImages.clear(); // 关键：每次新研究开始时清空图片缓存
@@ -984,7 +992,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
-            finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode, uiTopic);
+            finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode, originalUserInstruction); // 🎯 修复
         }
 
 // ===========================================================================

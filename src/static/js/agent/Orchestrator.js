@@ -143,6 +143,7 @@ ${cleanTopic}
             const researchRequest = {
                 topic: enrichedTopic,           // 用于 Agent 思考的完整主题
                 displayTopic: cleanTopic,       // 用于 UI 显示的原始主题
+                originalUserInstruction: originalTopic, // 🎯 新增：传递原始用户指令
                 availableTools: availableToolDefinitions,
                 researchMode: detectedMode,
                 currentDate: currentDate, // 🔥 2. 将当前日期添加到请求对象中
