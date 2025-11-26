@@ -63,7 +63,7 @@ _getModelPreferenceForTask(taskType) {
         'final_report_generation': {
             models: [
                 { 
-                    name: 'gemini-2.5-pro', 
+                    name: 'models/gemini-2.5-pro', 
                     label: 'Pro', 
                     priority: 1, 
                     fallbackOnError: true,
@@ -83,7 +83,7 @@ _getModelPreferenceForTask(taskType) {
         'outline_generation': {
             models: [
                 { 
-                    name: 'gemini-2.5-pro', 
+                    name: 'models/gemini-2.5-pro', 
                     label: 'Pro', 
                     priority: 1, 
                     fallbackOnError: true,
