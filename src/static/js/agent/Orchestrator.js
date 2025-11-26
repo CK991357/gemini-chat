@@ -87,7 +87,7 @@ export class Orchestrator {
 
         if (researchDetection.shouldStart) {
             console.log(`[Orchestrator] 检测到关键词"${researchDetection.matchedKeyword}"，启动${researchDetection.mode}研究模式...`);
-            return await this._handleWithDeepResearch(researchDetection.cleanTopic, context, researchDetection.mode);
+            return await this._handleWithDeepResearch(researchDetection.cleanTopic, researchDetection.originalTopic, context, researchDetection.mode);
         }
 
         console.log('[Orchestrator] 未检测到Agent触发词，回退到标准模式。');
@@ -97,7 +97,7 @@ export class Orchestrator {
     /**
      * 🎯 增强：处理深度研究请求 - 整合 Skill 系统
      */
-    async _handleWithDeepResearch(cleanTopic, context, detectedMode) {
+    async _handleWithDeepResearch(cleanTopic, originalTopic, context, detectedMode) {
         try {
             console.log('[Orchestrator] 正在为 Agent 查找相关技能...');
             
@@ -189,7 +189,9 @@ ${cleanTopic}
                 intermediateSteps: researchResult.intermediateSteps,
                 sources: researchResult.sources,
                 researchMode: researchResult.research_mode,
-                temporal_quality: researchResult.temporal_quality
+                temporal_quality: researchResult.temporal_quality,
+                // 🔥 核心新增：将完整的用户原始消息返回，供上游保存到历史记录
+                originalUserMessage: originalTopic
             };
         } catch (error) {
             console.error('[Orchestrator] DeepResearch Agent执行失败:', error);
@@ -355,7 +357,7 @@ ${cleanTopic}
             shouldStart: true,
             mode: detectedMode,
             matchedKeyword: matchedKeyword,
-            originalTopic: userMessage,
+            originalTopic: userMessage, // 确保这里返回了完整的原始消息
             cleanTopic: cleanTopic || userMessage
         };
     }

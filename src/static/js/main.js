@@ -1459,6 +1459,19 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
         // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
 
+        // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
+        // Orchestrator 返回的 originalUserMessage 包含完整的用户原始指令，用于历史记录持久化
+        if (agentResult && agentResult.enhanced && agentResult.originalUserMessage) {
+            // 找到 chatHistory 中最后一条用户消息（即当前消息）
+            const lastUserMessageIndex = chatHistory.length - 1;
+            if (lastUserMessageIndex >= 0 && chatHistory[lastUserMessageIndex].role === 'user') {
+                // 替换为 Orchestrator 返回的、包含完整上下文的原始消息
+                // 确保 content 结构是正确的数组格式
+                chatHistory[lastUserMessageIndex].content = [{ type: 'text', text: agentResult.originalUserMessage }];
+                console.log('✅ 历史记录中的用户消息已更新为 Orchestrator 返回的原始消息。');
+            }
+        }
+
         // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
         if (agentResult && !agentResult.enhanced) {
             console.log("💬 Orchestrator 决定不处理，回退到标准对话");
