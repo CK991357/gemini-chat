@@ -197,7 +197,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         try {
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: prompt }],
-                model: 'gemini-2.5-flash-preview-09-2025', // 🎯 必须使用主模型
+                model: 'models/gemini-2.5-pro', // 🎯 必须使用主模型
                 temperature: 0.1, // 较低的温度以确保结构化输出
             });
             const outline = response?.choices?.[0]?.message?.content || '### 错误：未能生成大纲';
@@ -1222,7 +1222,7 @@ ${promptFragment}
         try {
             const reportResponse = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: finalPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
+                model: 'models/gemini-2.5-pro',
                 temperature: 0.3,
             });
             this._updateTokenUsage(reportResponse.usage);
