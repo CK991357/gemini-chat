@@ -1,4 +1,4 @@
-f// src/static/js/agent/deepresearch/DeepResearchAgent.js - 修复版本
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 修复版本
 
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
