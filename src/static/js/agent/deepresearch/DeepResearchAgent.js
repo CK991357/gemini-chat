@@ -1623,7 +1623,7 @@ _filterUsedSources(sources, reportContent) {
         if (usedSources.has(source)) return;
         
         const score = this._calculateSemanticMatchScore(source, reportLower);
-        if (score >= 0.6) {
+        if (score >= 0.35) {
             usedSources.add(source);
         }
     });
