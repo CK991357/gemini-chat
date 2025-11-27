@@ -420,18 +420,6 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             // ============================================================
             // 🔥🔥🔥 核心修复：Python 代码客户端强制预检 (v2.7 - 无污染版) 🔥🔥🔥
             // ============================================================
-            
-            // 🔥 新增：crawl4ai PDF URL 预检 (Fail Fast)
-            if (toolName === 'crawl4ai' && parameters.url && parameters.url.toLowerCase().endsWith('.pdf')) {
-                const errorMsg = `❌ **crawl4ai 预检失败 (Preflight Check Failed)**\n\n` +
-                    `**检测到 PDF URL**: \`${parameters.url}\`\n` +
-                    `**错误原因**: 轻量版 crawl4ai 不支持直接抓取 PDF 文件。\n` +
-                    `**强制修正**: 请使用 tavily_search 搜索该 PDF 的摘要或替代信息。`;
-                
-                recordToolCall(toolName, parameters, false, errorMsg);
-                return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
-            }
-            
             if (toolName === 'python_sandbox' && parameters.code) {
                 const code = parameters.code;
                 

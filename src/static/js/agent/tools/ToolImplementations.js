@@ -37,7 +37,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                        // 🚨 移除轻量版不支持的参数：remove_scripts, remove_styles, remove_forms, process_iframes, remove_overlay_elements
                     },
                     deep_crawl: {
                         max_pages: 20,
@@ -81,7 +80,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                        // 🚨 移除轻量版不支持的参数：remove_scripts, remove_styles, remove_forms, process_iframes, remove_overlay_elements
                     }
                 }
             },
@@ -113,7 +111,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                        // 🚨 移除轻量版不支持的参数：remove_scripts, remove_styles, remove_forms, process_iframes, remove_overlay_elements
                     }
                 }
             },
@@ -144,7 +141,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                        // 🚨 移除轻量版不支持的参数：remove_scripts, remove_styles, remove_forms, process_iframes, remove_overlay_elements
                     }
                 },
                 python_sandbox: {
@@ -178,7 +174,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                        // 🚨 移除轻量版不支持的参数：remove_scripts, remove_styles, remove_forms, process_iframes, remove_overlay_elements
                     }
                 }
             },
@@ -208,7 +203,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                        // 🚨 移除轻量版不支持的参数：remove_scripts, remove_styles, remove_forms, process_iframes, remove_overlay_elements
                     }
                 }
             },
@@ -236,7 +230,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                        // 🚨 移除轻量版不支持的参数：remove_scripts, remove_styles, remove_forms, process_iframes, remove_overlay_elements
                     },
                     deep_crawl: {
                         max_pages: 5,
@@ -306,14 +299,7 @@ class DeepResearchToolAdapter {
                 console.log(`[DeepResearchAdapter] 开始重构 crawl4ai 参数:`, agentParams);
 
                 // 🎯 1. 确定模式和基础配置
-                let mode = agentParams.mode || 'scrape';
-                
-                // 🔥 核心修复：模式兼容性映射
-                if (mode === 'text') {
-                    console.warn(`[DeepResearchAdapter] ⚠️ 检测到不支持的模式 'text'，自动映射为 'scrape'`);
-                    mode = 'scrape';
-                }
-                
+                const mode = agentParams.mode || 'scrape';
                 const modeDefaultConfig = this.getModeSpecificParameters(researchMode, toolName)[mode] || {};
 
                 // 🎯 2. 智能参数提取 - 兼容嵌套和非嵌套格式
@@ -333,13 +319,7 @@ class DeepResearchToolAdapter {
                     'strategy': ['strategy'], 'keywords': ['keywords', 'search_terms'],
                     'stream': ['stream', 'streaming'], 'concurrent_limit': ['concurrent_limit', 'concurrency']
                 };
-                
-                // 🔥 核心修复：格式兼容性映射
-                if (paramsSource.format === 'text') {
-                    console.warn(`[DeepResearchAdapter] ⚠️ 检测到不支持的格式 'text'，自动映射为 'markdown'`);
-                    paramsSource.format = 'markdown';
-                }
-                
+
                 for (const [correctKey, aliases] of Object.entries(paramMap)) {
                     for (const alias of aliases) {
                         if (paramsSource[alias] !== undefined) {
@@ -373,13 +353,10 @@ class DeepResearchToolAdapter {
                         break;
                 }
 
-                // 🎯 6. 过滤轻量版不支持的参数
-                const filteredParameters = this._filterLightweightParams(innerParameters);
-
-                // 🎯 7. 构建并返回绝对正确的双层嵌套结构
+                // 🎯 6. 构建并返回绝对正确的双层嵌套结构
                 const finalParams = {
                     mode: mode,
-                    parameters: filteredParameters
+                    parameters: innerParameters
                 };
 
                 console.log(`[DeepResearchAdapter] ✅ crawl4ai 参数重构完成，最终发送:`, {
@@ -790,29 +767,6 @@ class DeepResearchToolAdapter {
     }
     
     /**
-     * 🎯 轻量版参数过滤器 - 移除后端不支持的参数
-     */
-    static _filterLightweightParams(parameters) {
-        const unsupportedParams = [
-            'remove_scripts', 'remove_styles', 'remove_forms',
-            'process_iframes', 'remove_overlay_elements',
-            'advanced_cleaning', 'javascript_execution',
-            'include_math', 'include_code', 'include_tables' // 移除高级内容提取
-        ];
-        
-        const filteredParams = { ...parameters };
-        
-        unsupportedParams.forEach(param => {
-            if (filteredParams[param] !== undefined) {
-                console.log(`[LightweightFilter] 移除不支持的参数: ${param}`);
-                delete filteredParams[param];
-            }
-        });
-        
-        return filteredParams;
-    }
-    
-    /**
      * 🎯 检查内容是否真正有意义 - 原始严格版本（保留作为参考/默认）
      */
     static isContentMeaningful(content) {
@@ -1036,23 +990,6 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
         const status = rawResponse.rawResult?.status;
         const mode = calledParameters.mode || 'unknown';
 
-        // 🎯 新增：配置参数不兼容错误 (解决 'unexpected keyword argument' 错误)
-        if (errorText.includes('unexpected keyword argument') || errorText.includes('got an unexpected keyword')) {
-            const paramMatch = errorText.match(/'(\w+)'/);
-            const problematicParam = paramMatch ? paramMatch : '未知参数';
-            
-            return {
-                type: '配置参数不兼容',
-                reason: `crawl4ai 轻量版不支持参数 "${problematicParam}"。轻量版与完整版的配置参数存在差异。`,
-                suggestions: [
-                    '**简化配置**: 移除轻量版不支持的参数，使用基础配置',
-                    '**参数审查**: 检查所有传递给 crawl4ai 的参数，确保都是轻量版支持的',
-                    '**功能降级**: 使用最基础的 scrape 模式，避免高级功能',
-                    '**完整版**: 如需高级功能，请使用完整版 crawl4ai'
-                ]
-            };
-        }
-
         // 诊断1: 参数结构或名称错误 (最常见)
         if ((status === 500 || errorText.includes('500')) && mode === 'extract' && !calledParameters.parameters?.schema_definition) {
             return {
@@ -1065,21 +1002,8 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
                 ]
             };
         }
-        
-        // 🔥 诊断2: PDF 文件不支持错误 (后端已添加，前端也需识别)
-        if (errorText.includes('不支持直接抓取pdf文件')) {
-            return {
-                type: '功能不支持 (PDF)',
-                reason: `轻量版 crawl4ai 不支持直接抓取 PDF 文件。Agent 尝试抓取了一个以 .pdf 结尾的 URL。`,
-                suggestions: [
-                    '**使用 tavily_search**: 搜索该 PDF 的摘要或替代信息。',
-                    '**避免 PDF URL**: 在搜索结果中，优先选择 HTML 页面而非 PDF 链接。',
-                    '**使用完整版**: 如果必须抓取 PDF，请切换到完整版 crawl4ai。'
-                ]
-            };
-        }
 
-        // 诊断3: 通用服务器错误
+        // 诊断2: 通用服务器错误
         if (status === 500 || errorText.includes('500')) {
             return {
                 type: '工具后端服务错误',
