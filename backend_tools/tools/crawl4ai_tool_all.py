@@ -275,11 +275,12 @@ class EnhancedCrawl4AITool:
                 "pdf": False,  # 轻量版禁用PDF
                 "screenshot": False,  # 轻量版禁用截图
                 "word_count_threshold": params.word_count_threshold,
-                "remove_overlay_elements": True,
-                "process_iframes": False,  # 禁用iframe处理以节省内存
-                "remove_forms": True,
-                "remove_scripts": True,
-                "remove_styles": True
+                # 🎯 关键修复：移除轻量版不支持的参数，解决 'unexpected keyword argument' 错误
+                # "remove_overlay_elements": True,
+                # "process_iframes": False,
+                # "remove_forms": True,
+                # "remove_scripts": True,
+                # "remove_styles": True
             }
             
             config = CrawlerRunConfig(**config_kwargs)

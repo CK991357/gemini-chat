@@ -38,8 +38,28 @@ compatibility: "专为4GB内存服务器优化"
 | `extract` | 🔄 降级为普通抓取 | 使用完整版进行结构化提取 |
 | `pdf_export` | ❌ 返回错误提示 | 直接访问网页或使用完整版 |
 | `screenshot` | ❌ 返回错误提示 | 使用完整版进行截图 |
-
-## 🚀 推荐用法
+ 
+## 🚨 轻量版限制说明
+ 
+### 配置参数限制
+**不支持的参数**：
+- `remove_scripts`, `remove_styles`, `remove_forms`
+- `process_iframes`, `remove_overlay_elements`
+- `advanced_cleaning`, `javascript_execution`
+- `include_math`, `include_code`, `include_tables`
+ 
+**支持的参数**：
+- `url`, `format`, `css_selector`
+- `include_links`, `word_count_threshold`
+- `exclude_external_links`, `headers`
+- `remove_selectors` (有限支持)
+ 
+### 功能限制
+- **仅文本抓取**: 不支持截图、PDF导出
+- **基础清理**: 仅支持选择器级别的元素移除
+- **内存优化**: 移除高级功能以降低内存使用
+ 
+##  推荐用法
 
 ### 基础文本抓取（完全支持）
 ```json
