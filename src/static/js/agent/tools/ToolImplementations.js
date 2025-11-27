@@ -299,7 +299,14 @@ class DeepResearchToolAdapter {
                 console.log(`[DeepResearchAdapter] 开始重构 crawl4ai 参数:`, agentParams);
 
                 // 🎯 1. 确定模式和基础配置
-                const mode = agentParams.mode || 'scrape';
+                let mode = agentParams.mode || 'scrape';
+                
+                // 🔥 核心修复：模式兼容性映射
+                if (mode === 'text') {
+                    console.warn(`[DeepResearchAdapter] ⚠️ 检测到不支持的模式 'text'，自动映射为 'scrape'`);
+                    mode = 'scrape';
+                }
+                
                 const modeDefaultConfig = this.getModeSpecificParameters(researchMode, toolName)[mode] || {};
 
                 // 🎯 2. 智能参数提取 - 兼容嵌套和非嵌套格式
@@ -319,7 +326,13 @@ class DeepResearchToolAdapter {
                     'strategy': ['strategy'], 'keywords': ['keywords', 'search_terms'],
                     'stream': ['stream', 'streaming'], 'concurrent_limit': ['concurrent_limit', 'concurrency']
                 };
-
+                
+                // 🔥 核心修复：格式兼容性映射
+                if (paramsSource.format === 'text') {
+                    console.warn(`[DeepResearchAdapter] ⚠️ 检测到不支持的格式 'text'，自动映射为 'markdown'`);
+                    paramsSource.format = 'markdown';
+                }
+                
                 for (const [correctKey, aliases] of Object.entries(paramMap)) {
                     for (const alias of aliases) {
                         if (paramsSource[alias] !== undefined) {
@@ -1002,8 +1015,21 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
                 ]
             };
         }
+        
+        // 🔥 诊断2: PDF 文件不支持错误 (后端已添加，前端也需识别)
+        if (errorText.includes('不支持直接抓取pdf文件')) {
+            return {
+                type: '功能不支持 (PDF)',
+                reason: `轻量版 crawl4ai 不支持直接抓取 PDF 文件。Agent 尝试抓取了一个以 .pdf 结尾的 URL。`,
+                suggestions: [
+                    '**使用 tavily_search**: 搜索该 PDF 的摘要或替代信息。',
+                    '**避免 PDF URL**: 在搜索结果中，优先选择 HTML 页面而非 PDF 链接。',
+                    '**使用完整版**: 如果必须抓取 PDF，请切换到完整版 crawl4ai。'
+                ]
+            };
+        }
 
-        // 诊断2: 通用服务器错误
+        // 诊断3: 通用服务器错误
         if (status === 500 || errorText.includes('500')) {
             return {
                 type: '工具后端服务错误',

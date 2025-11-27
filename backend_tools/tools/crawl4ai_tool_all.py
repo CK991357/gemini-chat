@@ -237,17 +237,31 @@ class EnhancedCrawl4AITool:
         # 内存检查
         if not await self._check_memory_health():
             return {
-                "success": False, 
+                "success": False,
                 "error": "系统内存不足，无法执行爬取任务",
                 "suggestion": "请稍后重试或使用 tavily_search 获取摘要信息",
                 "memory_info": await self._get_memory_info()
             }
 
+        # 🔥 新增：PDF URL 预检
+        if params.url.lower().endswith('.pdf'):
+            return {
+                "success": False,
+                "error": "轻量版不支持直接抓取PDF文件",
+                "suggestion": "请使用 tavily_search 搜索该PDF的摘要或使用完整版 crawl4ai",
+                "memory_info": await self._get_memory_info()
+            }
+
+        # 🔥 新增：格式兼容性处理
+        if params.format == 'text':
+            logger.warning("⚠️ 模式 'text' 不支持，自动降级为 'markdown'")
+            params.format = 'markdown' # 实际返回的是 cleaned_html 转换的 markdown
+
         try:
             await self.initialize()
             if self.crawler is None:
                 return {
-                    "success": False, 
+                    "success": False,
                     "error": "浏览器实例未正确初始化",
                     "memory_info": await self._get_memory_info()
                 }
@@ -278,13 +292,14 @@ class EnhancedCrawl4AITool:
                 timeout=30
             )
             
+            # 🔥 核心修复：使用 getattr 安全访问属性，防止 500 错误
             content = getattr(result, 'markdown', '') or getattr(result, 'cleaned_html', '')
-            if not result.success or not content.strip():
-                error_message = result.error_message or "抓取成功但未能提取到任何有效文本内容。"
+            if not getattr(result, 'success', False) or not content.strip():
+                error_message = getattr(result, 'error_message', None) or "抓取成功但未能提取到任何有效文本内容。"
                 logger.error(f"❌ 抓取失败 {params.url}: {error_message}")
                 return {
-                    "success": False, 
-                    "error": f"抓取失败: {error_message}", 
+                    "success": False,
+                    "error": f"抓取失败: {error_message}",
                     "memory_info": await self._get_memory_info()
                 }
             
