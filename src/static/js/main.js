@@ -63,9 +63,6 @@ class EnhancedModelToolManager {
 // 创建全局实例
 export const enhancedModelToolManager = new EnhancedModelToolManager();
 
-// 🚀 新增导入：智能代理系统
-import { showWorkflowUI } from './agent/WorkflowUI.js'; // 🎯 新增：导入工作流UI显示函数
-
 // 🎯 获取基础技能管理器的函数
 // 这个函数应该在技能系统初始化后调用
 window.getBaseSkillManager = function() {
