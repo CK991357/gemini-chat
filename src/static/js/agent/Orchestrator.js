@@ -6,6 +6,7 @@ import { CallbackManager } from './CallbackManager.js';
 import { DeepResearchAgent } from './deepresearch/DeepResearchAgent.js';
 import { EnhancedSkillManager } from './EnhancedSkillManager.js';
 import { ToolFactory } from './tools/ToolImplementations.js';
+import { promptModelSelection } from './WorkflowUI.js';
 
 export class Orchestrator {
     constructor(chatApiHandler, config = {}) {
@@ -99,6 +100,10 @@ export class Orchestrator {
      */
     async _handleWithDeepResearch(cleanTopic, originalTopic, context, detectedMode) {
         try {
+            // 🔥🔥🔥 [新增核心逻辑] 弹出模型选择对话框 🔥🔥🔥
+            const reportModel = await promptModelSelection();
+            console.log(`[Orchestrator] 用户已选择报告模型: ${reportModel}`);
+
             console.log('[Orchestrator] 正在为 Agent 查找相关技能...');
             
             // ✅ 修复：添加 await，正确等待技能匹配结果
@@ -149,7 +154,9 @@ ${cleanTopic}
                 currentDate: currentDate, // 🔥 2. 将当前日期添加到请求对象中
 
                 // ✨ 新增：传递历史消息数组，供 Agent 使用历史上下文
-                contextMessages: previousMessages
+                contextMessages: previousMessages,
+                // 🔥🔥🔥 [新增] 传递用户选择的报告模型 🔥🔥🔥
+                reportModel: reportModel
             };
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);

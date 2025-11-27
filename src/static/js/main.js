@@ -3223,6 +3223,8 @@ function displayAgentSummary(agentResult) {
                 <strong>Agent执行摘要</strong>
             </div>
             <div class="summary-details">
+                <span>模型: ${agentResult.reportModel ? agentResult.reportModel.replace('models/', '') : 'N/A'}</span>
+                <span>•</span>
                 <span>迭代: ${agentResult.iterations}次</span>
                 <span>•</span>
                 <span>工具: ${toolCount}个</span>
