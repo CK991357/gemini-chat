@@ -498,6 +498,15 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             rawObservation = toolResult.output || JSON.stringify(toolResult);
             toolSuccess = toolResult.success !== false;
 
+            // 🎯 降级识别：检查 crawl4ai 是否降级运行
+            if (toolName === 'crawl4ai' && toolSuccess) {
+                // 检查是否包含降级信息
+                if (rawObservation.includes('pdf_skipped') || rawObservation.includes('内存优化')) {
+                    console.log('[DeepResearchAgent] 📝 检测到 crawl4ai 工具降级运行，但核心内容已获取');
+                    // 不标记为失败，Agent可以继续
+                }
+            }
+
             // ================================================================
             // 🚀 全新的智能分发中心 (模仿 chat-api-handler.js)
             // ================================================================

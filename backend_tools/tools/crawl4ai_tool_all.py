@@ -161,11 +161,12 @@ class EnhancedCrawl4AITool:
         self.crawler = None
         self._initialized = False
         self._task_count = 0
-        self._cleanup_interval = 5  # 延长清理间隔
-        self._memory_threshold = 80  # 提高内存阈值
-        self._max_memory_mb = 1500   # 增加内存限制
+        # 内存配置 - 适配 3.7GB 环境
+        self._memory_threshold = 70  # 从 80% 降到 70%
+        self._max_memory_mb = 800    # 从 1500MB 降到 800MB
+        self._cleanup_interval = 3   # 从 5 降到 3，更频繁清理
         self._browser_start_time = None
-        self._max_browser_uptime = 1200
+        self._max_browser_uptime = 600  # 从 1200秒降到 600秒
         self._last_memory_check = 0
         self._memory_check_interval = 60
         self._browser_lock = asyncio.Lock()
@@ -439,14 +440,21 @@ class EnhancedCrawl4AITool:
                 }
                 
             # 添加PDF
+            # PDF 降级处理 - 在内存不足时自动跳过
             if params.return_pdf and hasattr(result, 'pdf') and result.pdf:
-                pdf_base64 = base64.b64encode(result.pdf).decode('utf-8')
-                output_data["pdf"] = {
-                    "data": pdf_base64,
-                    "format": "base64",
-                    "type": "application/pdf",
-                    "size_bytes": len(result.pdf)
-                }
+                memory_info = await self._get_system_memory_info()
+                if memory_info.get('system_memory_percent', 0) > 65:
+                    # 内存紧张，跳过PDF生成，只返回文本
+                    logger.warning(f"🟡 内存紧张 ({memory_info['system_memory_percent']:.1f}%)，跳过PDF生成，仅返回文本内容")
+                    output_data["pdf_skipped"] = "内存优化：PDF生成已跳过，文本内容已完整返回"
+                else:
+                    pdf_base64 = base64.b64encode(result.pdf).decode('utf-8')
+                    output_data["pdf"] = {
+                        "data": pdf_base64,
+                        "format": "base64",
+                        "type": "application/pdf",
+                        "size_bytes": len(result.pdf)
+                    }
                 
             logger.info(f"✅ 成功抓取 {params.url}, 内容长度: {len(output_data['content'])}")
             return output_data

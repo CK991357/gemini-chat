@@ -788,6 +788,25 @@ const toolOptimizationProtocol = `
 3.  **禁止隐瞒**：绝对不要因为一点小 Warning 就宣称“绘图失败”而把图表藏起来。
 `;
 
+        // 🔥🔥🔥 新增：工具降级响应处理指南 🔥🔥🔥
+        const toolDegradationHandling = `
+## 🟡 工具降级响应处理指南
+
+**当工具返回以下信息时，视为成功并继续**：
+- "PDF生成已跳过，文本内容已完整返回"
+- "内存优化：部分功能已降级"
+- "内容已截断，核心信息完整"
+- 包含"降级"、"跳过"但提供有效内容的响应
+
+**处理原则**：
+1. 核心文本内容可用 → 继续研究流程
+2. 数据/图表生成成功 → 忽略内存警告
+3. 搜索返回部分结果 → 使用可用信息
+
+**示例思考**：
+"工具因内存限制跳过了PDF生成，但返回了完整的文本内容。这些信息足够我继续下一步研究。"
+`;
+
         // 🎯 核心新增：JSON 格式纪律
         const strictJsonFormatGuideline = `
 ## 🚨【强制】JSON 输出纪律
@@ -866,6 +885,8 @@ ${config.description}
 ${temporalGuidance}
 
 ${visualizationMandate} // 🔥 插入：强制图表展示指令
+
+${toolDegradationHandling} // 🟡 插入：工具降级响应处理指南
 
 ${strictJsonFormatGuideline} // 🎯 核心新增：JSON 格式纪律
 

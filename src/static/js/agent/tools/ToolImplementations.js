@@ -1667,6 +1667,32 @@ export class ToolFactory {
     /**
      * 🎯 新增：获取工具对研究模式的支持情况
      */
+    /**
+     * 🎯 硬件感知的工具可用性检查
+     */
+    static getHardwareAwareToolSupport(availableMemoryGB = 3.7) {
+        const supportMatrix = {
+            'tavily_search': { 
+                always: true, 
+                notes: '搜索服务，不受本地内存影响' 
+            },
+            'crawl4ai': { 
+                always: true,
+                limitations: {
+                    pdf_export: availableMemoryGB < 4 ? '降级为文本' : '完整支持',
+                    deep_crawl: availableMemoryGB < 4 ? '限制页面数' : '完整支持',
+                    batch_crawl: availableMemoryGB < 4 ? '限制并发数' : '完整支持'
+                }
+            },
+            'python_sandbox': { 
+                always: true,
+                notes: '代码执行，内存需求取决于代码复杂度'
+            }
+        };
+        
+        return supportMatrix;
+    }
+
     static getToolSupportForResearchModes() {
         return {
             'tavily_search': ['deep', 'business', 'academic', 'technical', 'cutting_edge', 'shopping_guide', 'standard'],
