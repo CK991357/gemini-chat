@@ -272,8 +272,9 @@ class EnhancedCrawl4AITool:
             
             logger.info(f"🌐 轻量抓取 URL: {params.url}")
             
+            # 🔧 修复：使用 self.crawler 而不是 crawler
             result = await self._execute_with_timeout(
-                crawler.arun(url=params.url, config=config),
+                self.crawler.arun(url=params.url, config=config),  # 这里修复了变量名
                 timeout=30
             )
             
