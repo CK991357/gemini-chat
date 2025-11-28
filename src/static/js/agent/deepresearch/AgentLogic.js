@@ -101,13 +101,14 @@ export class AgentLogic {
                 risk: "中"
             },
             technical: {
-                role: "技术研究策略师",
-                instructions: `1. 将研究主题分解为4-6个技术分析步骤
-2. 每个步骤聚焦架构、实现、性能或最佳实践
-3. 为每个步骤提供2-3个技术关键词
-4. 强调技术细节、实现方案和性能指标`,
-                iterations: 5,
-                risk: "中"
+                role: "资深技术架构师",
+                instructions: `1. 将技术需求分解为4-6个逻辑连贯的技术实现步骤
+2. 必须包含：需求分析、技术选型、架构设计、核心实现、部署运维
+3. 每个步骤聚焦一个明确的技术实现维度
+4. 强调技术可行性、性能考量、代码质量和最佳实践
+5. 确保覆盖：技术方案论证、具体实现细节、部署配置、问题排查`,
+                iterations: 6,
+                risk: "中|高"
             },
             standard: {
                 role: "AI研究策略师",
@@ -302,36 +303,54 @@ export class AgentLogic {
                 research_plan: [
                     {
                         step: 1,
-                        sub_question: `理解"${topic}"的技术架构和核心组件`,
-                        initial_queries: [`${topic} 技术架构`, `${topic} 核心组件`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search", "crawl4ai"]
+                        sub_question: `深度分析"${topic}"的技术需求和约束条件`,
+                        initial_queries: [`${topic} 技术需求`, `${topic} 性能要求`, `${topic} 业务场景`],
+                        depth_required: "深度挖掘",
+                        expected_tools: ["tavily_search", "crawl4ai"],
+                        temporal_sensitivity: "高"  // 技术选型对时效性要求高
                     },
                     {
                         step: 2,
-                        sub_question: "分析技术实现方案和工具链",
-                        initial_queries: [`${topic} 实现方案`, `${topic} 技术工具`],
+                        sub_question: "评估和选择合适的技术栈和架构方案",
+                        initial_queries: [`${topic} 技术栈选择`, `${topic} 架构设计`, `类似项目技术方案`],
                         depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
+                        expected_tools: ["tavily_search", "crawl4ai"],
+                        temporal_sensitivity: "高"
                     },
                     {
                         step: 3,
-                        sub_question: "评估性能指标和优化策略",
-                        initial_queries: [`${topic} 性能指标`, `${topic} 优化方法`],
+                        sub_question: "设计核心算法和系统架构实现细节",
+                        initial_queries: [`${topic} 核心算法`, `${topic} 系统架构`, `${topic} 实现方案`],
                         depth_required: "深度挖掘",
-                        expected_tools: ["crawl4ai"]
+                        expected_tools: ["crawl4ai", "python_sandbox"],
+                        temporal_sensitivity: "中"
                     },
                     {
                         step: 4,
-                        sub_question: "总结最佳实践和部署方案",
-                        initial_queries: [`${topic} 最佳实践`, `${topic} 部署方案`],
+                        sub_question: "提供完整的代码实现和配置示例",
+                        initial_queries: [`${topic} 代码示例`, `${topic} 配置指南`, `${topic} 最佳实践`],
+                        depth_required: "深度挖掘",
+                        expected_tools: ["python_sandbox", "crawl4ai"],
+                        temporal_sensitivity: "中"
+                    },
+                    {
+                        step: 5,
+                        sub_question: "制定部署运维和性能优化方案",
+                        initial_queries: [`${topic} 部署指南`, `${topic} 性能优化`, `${topic} 监控方案`],
                         depth_required: "中层分析",
-                        expected_tools: ["tavily_search"]
+                        expected_tools: ["tavily_search"],
+                        temporal_sensitivity: "中"
                     }
                 ],
-                estimated_iterations: 5,
+                estimated_iterations: 6,
                 risk_assessment: "中",
-                research_mode: "technical"
+                research_mode: "technical",
+                temporal_awareness: {
+                    assessed: true,
+                    overall_sensitivity: "高", // 技术实现对时效性要求高
+                    current_date: currentDate,
+                    is_fallback: true
+                }
             },
             standard: {
                 research_plan: [
@@ -565,6 +584,35 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 - 内容要基于收集的证据进行深度分析和整合
 - 确保学术严谨性和论证的逻辑性
 `;
+        
+        const technicalAnalysisFramework = `
+## 🏗️ 技术实现深度分析框架
+
+### 技术方案评估维度：
+1. **需求符合度**: 方案是否精准满足用户的技术需求？
+2. **技术可行性**: 现有技术栈和团队能力是否支持实现？
+3. **性能考量**: 响应时间、吞吐量、资源消耗等指标
+4. **可维护性**: 代码结构、文档完整性、调试便利性
+5. **扩展性**: 系统是否容易扩展和适应未来需求变化？
+
+### 技术选型决策树：
+- **数据库选择**: 关系型 vs NoSQL → 基于数据结构和查询模式
+- **架构模式**: 微服务 vs 单体 → 基于团队规模和复杂度
+- **部署方式**: 容器化 vs 传统部署 → 基于运维能力和弹性需求
+- **技术栈**: 成熟技术 vs 新兴技术 → 基于风险承受能力
+
+### 代码质量标准：
+- **可读性**: 清晰的命名、适当的注释、合理的代码结构
+- **可测试性**: 模块化设计、依赖注入、测试覆盖率
+- **错误处理**: 完善的异常捕获、有意义的错误信息
+- **性能优化**: 避免常见性能陷阱，提供优化建议
+
+### 部署运维考量：
+- **环境配置**: 开发、测试、生产环境的差异化配置
+- **监控告警**: 关键指标监控、日志收集、告警机制
+- **安全防护**: 身份认证、数据加密、漏洞防护
+- **备份恢复**: 数据备份策略、灾难恢复方案
+`;
 
         const delegationProtocol = `
 ## 👔 经理人行动准则 (Manager Protocol)
@@ -781,14 +829,32 @@ const toolOptimizationProtocol = `
 - **ROI思维**：关注投资回报和商业价值`
             },
             technical: {
-                role: "技术实现专家",
-                description: "你是一个资深的技术架构师，擅长提供完整的技术实现方案和最佳实践指南。",
+                role: "资深全栈架构师",
+                description: "你是一个经验丰富的技术架构师，擅长设计可落地的技术方案，提供完整的代码实现和最佳实践指南",
                 specialInstructions: `
-### 🛠️ 技术研究特别指导：
-- **技术深度**：深入技术细节和实现机制
-- **架构思维**：关注系统架构和组件设计
-- **性能意识**：评估性能指标和优化空间
-- **实践导向**：提供可落地的技术方案`
+### 🛠️ 技术实现深度要求：
+- **代码完整性**: 所有代码示例必须包含完整的导入语句、错误处理、类型注解
+- **可运行性**: 代码应该可以直接运行或稍作调整即可使用
+- **生产就绪**: 考虑安全性、性能、可维护性等生产环境要求
+
+### 📋 技术文档标准：
+1. **架构图说明**: 如有架构图，必须在文中详细解释每个组件的作用
+2. **配置示例**: 提供完整的配置文件示例（如Dockerfile、环境变量）
+3. **部署步骤**: 详细的部署指令，包含可能遇到的问题和解决方案
+4. **测试方案**: 重要的功能应该包含单元测试或集成测试示例
+
+### 🔧 技术选型框架：
+- **需求匹配度**: 技术选型必须基于具体的需求分析
+- **生态成熟度**: 考虑社区支持、文档完整性、长期维护性
+- **团队适应性**: 评估学习曲线和团队技术背景
+- **成本效益**: 综合考虑开发成本、运维成本和扩展性
+
+### 💡 最佳实践要求：
+- 每个技术决策都要说明理由和权衡
+- 提供性能优化和调试技巧
+- 包含常见错误的排查指南
+- 强调安全性和代码质量
+`
             },
             cutting_edge: {
                 role: "前沿技术分析专家",
@@ -842,6 +908,101 @@ const toolOptimizationProtocol = `
 
 **示例思考**：
 "工具因内存限制跳过了PDF生成，但返回了完整的文本内容。这些信息足够我继续下一步研究。"
+`;
+
+        // 🎯 核心新增：代码生成和质量控制
+        const codeQualityStandards = `
+## 💻 代码生成质量标准
+
+### 代码完整性要求：
+1. **完整可运行**: 提供完整的、可复现的代码示例
+2. **错误处理**: 必须包含适当的异常捕获和错误处理逻辑
+3. **输入验证**: 对用户输入进行验证和清理
+4. **资源管理**: 正确管理文件句柄、数据库连接等资源
+
+### 代码示例结构：
+\`\`\`python
+# 1. 导入语句（完整的依赖）
+import os
+from typing import List, Dict
+
+# 2. 配置和常量定义
+CONFIG = {
+    'database_url': os.getenv('DATABASE_URL', 'sqlite:///default.db'),
+    'max_workers': 4
+}
+
+# 3. 核心函数实现（包含类型注解和文档字符串）
+def process_data(input_data: List[Dict]) -> List[Dict]:
+    """
+    处理输入数据，返回清洗后的结果
+    
+    Args:
+        input_data: 原始数据列表
+        
+    Returns:
+        处理后的数据列表
+        
+    Raises:
+        ValueError: 当输入数据格式不正确时
+    """
+    if not input_data:
+        raise ValueError("输入数据不能为空")
+    
+    try:
+        # 核心处理逻辑
+        processed = []
+        for item in input_data:
+            # 数据清洗和转换
+            cleaned_item = {k: v.strip() for k, v in item.items() if v}
+            processed.append(cleaned_item)
+        return processed
+    except Exception as e:
+        # 详细的错误处理和日志记录
+        print(f"数据处理失败: {e}")
+        raise
+
+# 4. 使用示例和测试代码
+if __name__ == "__main__":
+    sample_data = [{"name": " Alice ", "age": "30"}, {"name": "Bob", "age": ""}]
+    result = process_data(sample_data)
+    print(f"处理结果: {result}")
+\`\`\`
+
+### 配置文件和部署文件：
+- **Dockerfile**: 多阶段构建、安全最佳实践
+- **docker-compose.yml**: 服务依赖、网络配置、数据卷
+- **环境配置**: 区分开发、测试、生产环境
+- **CI/CD配置**: 自动化测试和部署流程
+`;
+
+        // 🎯 核心新增：技术实现专用协议
+        const technicalDecisionProtocol = `
+## 🎯 技术实现决策协议
+
+### 1. 需求分析阶段 (必须详细)
+- **功能需求**: [明确用户需要实现的具体功能]
+- **非功能需求**: [性能、安全、可用性等要求]
+- **约束条件**: [技术栈限制、资源限制、时间限制]
+- **成功标准**: [如何衡量方案的成功]
+
+### 2. 技术选型评估框架
+对于每个技术选择，必须回答：
+- **为什么选择这个技术？** → 基于具体的需求匹配度
+- **有哪些替代方案？** → 至少对比2-3个替代方案
+- **选择的权衡是什么？** → 性能、复杂度、维护成本的权衡
+
+### 3. 实现深度要求
+- **架构图**: 如有，必须详细解释每个组件
+- **代码示例**: 必须是完整可运行的代码片段
+- **配置说明**: 详细的配置参数和调优建议
+- **测试方案**: 重要的功能要提供测试示例
+
+### 4. 部署运维考量
+- **环境要求**: 硬件、软件、网络要求
+- **部署步骤**: 详细的、可操作的部署指令
+- **监控方案**: 关键指标和告警设置
+- **故障处理**: 常见问题排查指南
 `;
 
         // 🎯 核心新增：JSON 格式纪律
@@ -945,6 +1106,7 @@ ${formattedHistory}
 ${outlineGenerationGuide}  // 🎯 新增：大纲生成指导
 
 ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
+${researchMode === 'technical' ? technicalDecisionProtocol : ''} // 🎯 插入：技术实现专用决策协议
 
 ## 🔍 多源信息整合策略
 
@@ -958,6 +1120,7 @@ ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
 "来源1提供了GLM-4.5的架构细节，来源2补充了性能基准数据，我将结合这两个来源构建完整的模型描述[来源1][来源2]"
 
 ${researchMode === 'academic' ? academicAnalysisFramework : ''} // 🔥 插入：学术论文专用分析框架
+${researchMode === 'technical' ? technicalAnalysisFramework : ''} // 🏗️ 插入：技术实现专用分析框架
 ${managerDecisionFramework} // 🎯 核心新增：经理人委托版决策框架
 
 ## 3. 研究状态评估与工具选择 (基于信息缺口)
@@ -1034,6 +1197,8 @@ ${config.specialInstructions}
 - 连续2次迭代没有获得新信息
 
 ${reportRequirements}
+
+${researchMode === 'technical' ? codeQualityStandards : ''} // 💻 插入：技术模式下的代码质量标准
 
 # 输出格式 (知识驱动版本，严格遵守)
 
