@@ -1497,11 +1497,25 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             }
         }
 
-        // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
+        // 🎯 核心修改：如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
+        // 🚀 关键：如果 Agent 模式启用，且存在附件，则不回退到标准聊天，强制 Agent 模式处理
+        const hasAttachments = attachedFiles.length > 0;
+
         if (agentResult && !agentResult.enhanced) {
-            console.log("💬 Orchestrator 决定不处理，回退到标准对话");
-            // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
-            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
+            if (hasAttachments) {
+                console.log("💬 Orchestrator 决定不处理，但检测到多模态附件，跳过标准回退。");
+                // 此时 Orchestrator 应该已经返回了 user_guide 或其他提示信息
+                // 如果 Orchestrator 内部没有返回任何内容，则手动添加一个提示
+                if (!agentResult.content) {
+                    const aiMessage = chatUI.createAIMessageElement();
+                    aiMessage.markdownContainer.innerHTML = marked.parse("🤖 智能代理已接收到多模态附件，但未检测到明确的研究指令。请使用 '研究' 或 '分析' 等关键词来启动研究进程。");
+                    chatUI.scrollToBottom();
+                }
+            } else {
+                console.log("💬 Orchestrator 决定不处理，回退到标准对话");
+                // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
+                await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
+            }
         }
         
         // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。

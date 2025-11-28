@@ -138,6 +138,104 @@ export class DeepResearchAgent {
     }
 
 
+    // 🚀 核心新增：检查是否存在图片附件
+    _hasImageAttachment(attachedFiles) {
+        if (!attachedFiles || attachedFiles.length === 0) return false;
+        return attachedFiles.some(file => file.type.startsWith('image/'));
+    }
+    // 🚀 核心新增：在研究开始前执行原生视觉分析
+    async _performNativeVisionAnalysis(topic, attachedFiles, runId) {
+        const imageFiles = attachedFiles.filter(file => file.type.startsWith('image/'));
+        if (imageFiles.length === 0) return null;
+
+        console.log(`[DeepResearchAgent] 🖼️ 启动原生视觉分析，共 ${imageFiles.length} 张图片...`);
+        
+        // 1. 构建视觉分析 Prompt
+        const visionPrompt = `
+# 🖼️ 原生视觉分析任务
+ 
+**你的任务**：
+1.  **深度分析**用户上传的图片。
+2.  **识别**图片中的所有关键信息（文字、图表、对象、上下文）。
+3.  **总结**这些信息与用户请求（主题："${topic}"）的关联性。
+4.  **输出**一个简洁的 Markdown 格式的分析报告。
+ 
+**输出格式**：
+\`\`\`markdown
+## 🖼️ 图片分析报告
+ 
+### 1. 视觉内容描述
+[详细描述图片内容]
+ 
+### 2. 关键信息提取
+[提取图片中的核心数据、文字或图表结论]
+ 
+### 3. 与主题关联性
+[分析这些信息如何帮助回答主题]
+\`\`\`
+`;
+        
+        // 2. 构造多模态消息体
+        const visionMessages = [
+            {
+                role: 'user',
+                content: [
+                    { type: 'text', text: visionPrompt },
+                    ...imageFiles.map(file => ({
+                        type: 'image_base64',
+                        image_base64: file.base64.split(',') // 提取纯 Base64 数据
+                    }))
+                ]
+            }
+        ];
+
+        // 3. 调用模型进行分析
+        await this.callbackManager.invokeEvent('on_agent_think_start', { 
+            run_id: runId,
+            data: { system_msg: `🖼️ 正在进行图片预分析...` }
+        });
+
+        try {
+            const response = await this.chatApiHandler.completeChat({
+                messages: visionMessages,
+                model: 'gemini-2.0-flash-exp-summarizer', // 使用支持多模态的模型
+                temperature: 0.0,
+            });
+            
+            await this.callbackManager.invokeEvent('on_agent_think_end', { 
+                run_id: runId, 
+                data: { system_msg: `✅ 图片预分析完成。` } 
+            });
+
+            const analysisText = response?.choices?.[0]?.message?.content || '图片分析失败，模型返回空内容。';
+            
+            // 4. 构造模拟的 intermediateStep
+            const keyFinding = await this._generateKeyFinding(analysisText);
+            
+            return {
+                action: {
+                    type: 'native_vision_analysis',
+                    tool_name: 'native_vision',
+                    parameters: { image_count: imageFiles.length },
+                    thought: '在研究开始前，系统自动执行了原生视觉分析，以提取图片中的关键信息。'
+                },
+                observation: analysisText,
+                key_finding: keyFinding,
+                sources: [],
+                success: true
+            };
+
+        } catch (error) {
+            console.error('[DeepResearchAgent] ❌ 原生视觉分析失败:', error);
+            await this.callbackManager.invokeEvent('on_agent_think_error', {
+                run_id: runId,
+                data: { error: `原生视觉分析失败: ${error.message}` }
+            });
+            return null;
+        }
+    }
+
+
     // 🎯 新增：报告大纲生成方法
     /**
      * @description 使用主模型，基于研究过程中的关键发现，生成一份高质量的报告大纲。
@@ -718,6 +816,14 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         // ✨ 阶段2：自适应执行
         // 🎯 核心修复：将 intermediateSteps 提升为类属性以支持状态注入
         this.intermediateSteps = []; // ✅ 确保每次新研究都清空历史
+        
+        // 🚀 核心新增：前置 Native Vision 分析 (不占用迭代)
+        const visionStep = await this._performNativeVisionAnalysis(uiTopic, attachedFiles, runId);
+        if (visionStep) {
+            this.intermediateSteps.push(visionStep);
+            console.log('[DeepResearchAgent] ✅ 原生视觉分析结果已作为初始步骤注入。');
+        }
+        
         let iterations = 0;
         let consecutiveNoGain = 0;
         

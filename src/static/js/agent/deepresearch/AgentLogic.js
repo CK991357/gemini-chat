@@ -389,7 +389,7 @@ export class AgentLogic {
     }
 
     async plan(inputs, runManager) {
-        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard' } = inputs;
+        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard', forceNativeVision = false } = inputs;
         
         // 🎯 关键词检测逻辑
         const detectedMode = researchMode; // 直接使用传入的、正确的模式！
@@ -399,12 +399,13 @@ export class AgentLogic {
         
         const prompt = this._constructFinalPrompt({
             topic,
-            intermediateSteps, 
+            intermediateSteps,
             availableTools,
             researchPlan,
             currentStep,
             researchMode: detectedMode,
-            currentDate: new Date().toISOString() // 添加当前日期
+            currentDate: new Date().toISOString(), // 添加当前日期
+            forceNativeVision // 🚀 传递强制 Native Vision 标志
         });
         
         console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
@@ -493,7 +494,7 @@ export class AgentLogic {
     }
 
     // ✨ 重构：主提示词构建 - 核心知识检索集成
-    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate }) {
+    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, forceNativeVision = false }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
@@ -964,6 +965,8 @@ ${toolDegradationHandling} // 🟡 插入：工具降级响应处理指南
 
 ${strictJsonFormatGuideline} // 🎯 核心新增：JSON 格式纪律
 
+${forceNativeVision ? this._getNativeVisionMandate() : ''} // 🚀 核心新增：强制 Native Vision 指令
+
 ${currentTaskSection}  // 🎯 核心修复：聚焦当前任务，防止跳过步骤
 
 ${planText}
@@ -1370,5 +1373,27 @@ ${actionJson}
         toolsDesc += `\n  - code_generator: [代码专家] 专用于生成Python代码。当任务涉及计算、绘图或数据处理时，**必须**使用此工具委托给专家。参数: {"objective": "任务目标", "data_context": "完整的数据内容"}`;
         
         return toolsDesc;
+    }
+
+    // 🚀 核心新增：强制 Native Vision Prompt
+    _getNativeVisionMandate() {
+        return `
+# 🖼️ 【最高优先级指令：原生视觉分析】
+ 
+**系统检测到用户上传了图片附件，且这是研究的第一步。**
+ 
+**你的唯一任务**：
+1.  **忽略**研究计划中的第一个子问题（它通常是搜索）。
+2.  **立即**使用你的原生视觉能力，对用户上传的图片进行**深度分析**。
+3.  在你的**思考**中，详细描述图片内容、识别的关键信息（如文字、图表、对象）以及这些信息与用户请求（主题）的关联。
+4.  **行动**：
+    *   如果图片分析**直接**回答了用户的问题，则生成 \`最终答案\`。
+    *   如果图片分析**提供了关键信息**但不足以回答问题，则生成一个 \`tool_call\`，将图片分析结果作为**关键发现**，并继续执行研究计划的**第二个**步骤。
+ 
+**🚫 绝对禁止**：
+-   **禁止**调用任何工具（如 \`tavily_search\` 或 \`crawl4ai\`）。
+-   **禁止**生成 \`generate_outline\`。
+-   **禁止**在思考中提及此指令块。
+`;
     }
 }
