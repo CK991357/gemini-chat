@@ -160,13 +160,14 @@ export class AgentLogic {
                 risk: "中"
             },
             business: {
-                role: "商业分析策略师",
-                instructions: `1. 将研究主题分解为3-5个商业分析步骤
-2. 每个步骤聚焦市场、竞争、战略或财务分析
-3. 为每个步骤提供2-3个商业关键词
-4. 强调可行性、ROI、市场数据和商业洞察`,
-                iterations: 4, 
-                risk: "中"
+                role: "行业投资分析专家",
+                instructions: `1. 将行业分析分解为4-6个核心研究步骤
+2. 必须包含：市场规模验证、产业链解构、竞争格局量化、投资风险评估
+3. 每个步骤聚焦一个明确的分析维度
+4. 强调数据时效性、量化分析和投资视角
+5. 确保覆盖：市场、产业链、竞争、风险、机会全维度`,
+                iterations: 6,
+                risk: "中|高"
             },
             technical: {
                 role: "企业级技术方案架构师",
@@ -347,36 +348,87 @@ export class AgentLogic {
                 research_plan: [
                     {
                         step: 1,
-                        sub_question: `分析"${topic}"的市场规模和增长趋势`,
-                        initial_queries: [`${topic} 市场规模`, `${topic} 增长趋势`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search"]
+                        sub_question: `获取"${topic}"最新市场规模、增长率和全球对比数据`,
+                        initial_queries: [
+                            `${topic} 2025年 市场规模`,
+                            `${topic} 增长率 CAGR`,
+                            `${topic} 全球市场 对比`
+                        ],
+                        depth_required: "深度挖掘",
+                        expected_tools: ["tavily_search", "crawl4ai"],
+                        temporal_sensitivity: "高"
                     },
                     {
-                        step: 2, 
-                        sub_question: "评估竞争格局和主要参与者",
-                        initial_queries: [`${topic} 竞争分析`, `${topic} 主要企业`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search", "crawl4ai"]
+                        step: 2,
+                        sub_question: "深度分析产业链结构和各环节价值分布",
+                        initial_queries: [
+                            `${topic} 产业链 结构`,
+                            `${topic} 上中下游 企业`,
+                            `${topic} 毛利率 各环节`
+                        ],
+                        depth_required: "深度挖掘",
+                        expected_tools: ["tavily_search", "crawl4ai"],
+                        temporal_sensitivity: "中"
                     },
                     {
                         step: 3,
-                        sub_question: "识别商业机会和潜在风险",
-                        initial_queries: [`${topic} 商业机会`, `${topic} 风险分析`],
+                        sub_question: "量化分析竞争格局和主要参与者战略",
+                        initial_queries: [
+                            `${topic} 市场竞争格局`,
+                            `${topic} 市场份额 CR3 CR5`,
+                            `${topic} 头部企业 战略`
+                        ],
                         depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
+                        expected_tools: ["tavily_search", "crawl4ai"],
+                        temporal_sensitivity: "高"
                     },
                     {
                         step: 4,
-                        sub_question: "提出战略建议和实施方案",
-                        initial_queries: [`${topic} 战略建议`, `${topic} 实施计划`],
-                        depth_required: "中层分析", 
-                        expected_tools: ["tavily_search"]
+                        sub_question: "识别核心驱动因素和主要风险",
+                        initial_queries: [
+                            `${topic} 政策驱动 因素`,
+                            `${topic} 技术突破 影响`,
+                            `${topic} 投资风险 预警`
+                        ],
+                        depth_required: "中层分析",
+                        expected_tools: ["tavily_search"],
+                        temporal_sensitivity: "高"
+                    },
+                    {
+                        step: 5,
+                        sub_question: "评估投资价值和识别具体机会",
+                        initial_queries: [
+                            `${topic} 投资价值 评估`,
+                            `${topic} 细分机会 领域`,
+                            `${topic} 估值水平 参考`
+                        ],
+                        depth_required: "中层分析",
+                        expected_tools: ["tavily_search"],
+                        temporal_sensitivity: "中"
+                    },
+                    {
+                        step: 6,
+                        sub_question: "综合趋势预测和投资策略建议",
+                        initial_queries: [
+                            `${topic} 发展趋势 预测`,
+                            `${topic} 投资策略 建议`,
+                            `${topic} 实施路径 规划`
+                        ],
+                        depth_required: "中层分析",
+                        expected_tools: ["tavily_search"],
+                        temporal_sensitivity: "中"
                     }
                 ],
-                estimated_iterations: 4,
+                estimated_iterations: 6,
                 risk_assessment: "中",
-                research_mode: "business"
+                research_mode: "business",
+                // 🔥 添加时效性评估
+                temporal_awareness: {
+                    assessed: true,
+                    overall_sensitivity: "高", // 行业分析对时效性要求极高
+                    current_date: currentDate,
+                    is_fallback: true
+                }
             },
             technical: {
                 research_plan: [
