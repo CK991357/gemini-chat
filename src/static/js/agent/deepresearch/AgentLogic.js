@@ -82,12 +82,13 @@ export class AgentLogic {
                 risk: "中|高"
             },
             academic: {
-                role: "学术研究策略师", 
-                instructions: `1. 将研究主题分解为4-6个符合学术规范的步骤
-2. 每个步骤必须解决一个学术研究子问题
-3. 为每个步骤提供2-3个学术搜索关键词
-4. 强调文献综述、方法论、理论框架和学术引用`,
-                iterations: 5,
+                role: "学术研究策略师",
+                instructions: `1. 将论文分析分解为6-8个深度研究步骤
+2. 必须包含：论文核心理解、方法深度解析、实验验证、相关工作对比、领域脉络分析、未来方向预测
+3. 为每个步骤提供2-3个精准的学术搜索关键词
+4. 强调方法验证、理论分析、相关工作对比和趋势预测
+5. 确保覆盖：论文核心贡献、技术路线分析、实验结果验证、领域演进分析、未来研究方向`,
+                iterations: 7,
                 risk: "中"
             },
             business: {
@@ -212,36 +213,63 @@ export class AgentLogic {
                 research_plan: [
                     {
                         step: 1,
-                        sub_question: `界定"${topic}"的研究范围和理论框架`,
-                        initial_queries: [`${topic} 研究综述`, `${topic} 理论框架`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search", "crawl4ai"]
+                        sub_question: `深度解析"${topic}"的核心贡献和创新点`,
+                        initial_queries: [`${topic} 核心贡献`, `${topic} 创新点`, `${topic} 主要方法`],
+                        depth_required: "深度挖掘",
+                        expected_tools: ["crawl4ai", "tavily_search"],
+                        temporal_sensitivity: "中"
                     },
                     {
                         step: 2,
-                        sub_question: "收集相关学术文献和研究成果",
-                        initial_queries: [`${topic} 学术论文`, `${topic} 研究现状`],
+                        sub_question: "分析论文的方法论和技术路线",
+                        initial_queries: [`${topic} 方法论`, `${topic} 技术路线`, `${topic} 算法设计`],
                         depth_required: "深度挖掘",
-                        expected_tools: ["tavily_search", "crawl4ai"]
+                        expected_tools: ["crawl4ai"],
+                        temporal_sensitivity: "中"
                     },
                     {
                         step: 3,
-                        sub_question: "分析研究方法和数据支持",
-                        initial_queries: [`${topic} 研究方法`, `${topic} 实证数据`],
+                        sub_question: "验证实验结果和分析性能指标",
+                        initial_queries: [`${topic} 实验结果`, `${topic} 性能指标`, `${topic} 实验设置`],
                         depth_required: "深度挖掘",
-                        expected_tools: ["crawl4ai"]
+                        expected_tools: ["crawl4ai", "python_sandbox"],
+                        temporal_sensitivity: "中"
                     },
                     {
                         step: 4,
-                        sub_question: "总结学术贡献和研究局限",
-                        initial_queries: [`${topic} 学术价值`, `${topic} 研究局限`],
+                        sub_question: "寻找和分析相关工作文献",
+                        initial_queries: [`${topic} 相关工作`, `${topic} 文献综述`, `类似研究论文`],
+                        depth_required: "深度挖掘",
+                        expected_tools: ["tavily_search", "crawl4ai"],
+                        temporal_sensitivity: "高"  // 相关工作需要最新文献
+                    },
+                    {
+                        step: 5,
+                        sub_question: "分析研究领域的发展脉络",
+                        initial_queries: [`${topic} 研究脉络`, `${topic} 领域发展`, `技术演进历史`],
                         depth_required: "中层分析",
-                        expected_tools: ["tavily_search"]
+                        expected_tools: ["tavily_search"],
+                        temporal_sensitivity: "低"  // 历史脉络对时效性要求较低
+                    },
+                    {
+                        step: 6,
+                        sub_question: "预测未来研究方向和应用前景",
+                        initial_queries: [`${topic} 未来方向`, `${topic} 应用前景`, `研究挑战`],
+                        depth_required: "中层分析",
+                        expected_tools: ["tavily_search"],
+                        temporal_sensitivity: "高"  // 未来方向需要最新趋势
                     }
                 ],
-                estimated_iterations: 5,
-                risk_assessment: "中", 
-                research_mode: "academic"
+                estimated_iterations: 7,
+                risk_assessment: "中",
+                research_mode: "academic",
+                // 🔥 添加时效性评估
+                temporal_awareness: {
+                    assessed: true,
+                    overall_sensitivity: "中", // 学术论文整体中等敏感度
+                    current_date: currentDate,
+                    is_fallback: true
+                }
             },
             business: {
                 research_plan: [
@@ -544,6 +572,32 @@ ${knowledgeRetrievalTriggers.suggestedTools.map(tool => `- **\`${tool.name}\`**:
 `;
         
 // 🚀🚀🚀 [v3.0 核心更新] 经理人委托协议 (Manager Delegation Protocol) 🚀🚀🚀
+        const academicAnalysisFramework = `
+## 🎓 学术论文深度分析框架
+
+### 论文解析维度：
+1. **核心贡献识别**：论文解决了什么关键问题？提出了什么新方法？
+2. **方法深度剖析**：技术路线的创新点、理论基础、实现细节
+3. **实验严谨性评估**：实验设计、数据集、评估指标、结果可信度
+4. **相关工作脉络**：领域发展历程、技术路线演进、关键突破点
+5. **局限性与改进**：方法局限性、实验不足、可改进方向
+6. **未来趋势预测**：技术演进方向、应用拓展、交叉研究机会
+
+### 搜索策略：
+- 论文标题 + "核心贡献"/"创新点"
+- 论文标题 + "方法"/"算法"/"架构"
+- 论文标题 + "实验"/"结果"/"性能"
+- 论文标题 + "相关工作"/"文献综述"
+- 论文标题 + "未来方向"/"研究挑战"
+- 作者姓名 + "相关研究"/"其他论文"
+
+### 动态章节生成原则：
+- 每个研究步骤对应报告中的一个核心章节
+- 章节标题要体现该步骤的核心发现
+- 内容要基于收集的证据进行深度分析和整合
+- 确保学术严谨性和论证的逻辑性
+`;
+
         const delegationProtocol = `
 ## 👔 经理人行动准则 (Manager Protocol)
 
@@ -724,14 +778,34 @@ const toolOptimizationProtocol = `
 - **价值分析**：考虑性价比、保值率和投资价值`
             },
             academic: {
-                role: "学术论文分析专家",
-                description: "你是一个严谨的学术论文分析专家，擅长深度解析论文核心价值并进行验证扩展。",
+                role: "学术论文深度分析专家",
+                description: "你是一个严谨的学术论文分析专家，擅长深度解析论文核心价值、方法创新性，并进行研究脉络追踪和未来趋势预测。",
                 specialInstructions: `
 ### 🎓 学术研究特别指导：
 - **文献严谨**：优先引用权威学术来源和期刊论文
-- **方法论**：关注研究设计、数据收集和分析方法
-- **理论框架**：注重理论支撑和概念清晰度
-- **引用规范**：严格按照学术引用格式`
+- **方法深度**：深入分析技术路线、算法设计和理论支撑
+- **实验验证**：严格验证实验结果和性能指标的可信度
+- **脉络追踪**：分析研究领域的发展脉络和技术演进
+- **批判思维**：客观分析论文的局限性和改进空间
+- **未来视角**：基于当前研究预测未来发展方向
+
+### 📚 学术引用规范：
+1. 所有关键论点必须引用具体论文或权威来源
+2. 使用规范的学术引用格式：[作者, 年份] 或 [论文标题]
+3. 对实验数据和性能指标进行交叉验证
+4. 分析不同方法的技术路线和理论基础的差异
+
+### 🔍 相关工作分析要求：
+- 选取2-3篇最具代表性的相关工作
+- 分析技术路线的演进逻辑和突破点
+- 对比性能指标和方法优劣
+- 识别研究空白和未来机会
+
+### 🎯 动态结构生成：
+- 基于研究计划中的子问题自主生成章节标题
+- 确保每个章节都有充分的论证和证据支持
+- 章节之间要有逻辑连贯性和递进关系
+- 最终报告要体现深度分析和批判性思考`
             },
             business: {
                 role: "行业分析专家",
@@ -918,6 +992,7 @@ ${knowledgeStrategySection}  // 🎯 核心新增：知识检索策略
 **整合示例思考**：
 "来源1提供了GLM-4.5的架构细节，来源2补充了性能基准数据，我将结合这两个来源构建完整的模型描述[来源1][来源2]"
 
+${researchMode === 'academic' ? academicAnalysisFramework : ''} // 🔥 插入：学术论文专用分析框架
 ${managerDecisionFramework} // 🎯 核心新增：经理人委托版决策框架
 
 ## 3. 研究状态评估与工具选择 (基于信息缺口)

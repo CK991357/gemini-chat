@@ -1181,13 +1181,21 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         if (reportTemplate.config.dynamic_structure) {
             console.log(`[DeepResearchAgent] 检测到动态报告模板 (${researchMode}模式)，构建学术级Prompt...`);
             
+            let role = '# 角色：首席研究分析师';
+            let taskDescription = '# 任务：基于提供的证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术级研究报告。';
+
+            if (researchMode === 'academic') {
+                role = '# 角色：首席学术分析师';
+                taskDescription = '# 任务：基于提供的论文证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术论文解析报告。';
+            }
+
             finalPrompt = `
 # 🚫 绝对禁止开场白协议
 **禁止生成任何形式的"好的，遵命"、"作为一名专业的"等确认语句**
 **必须直接从报告标题开始输出纯净内容**
 
-# 角色：首席研究分析师
-# 任务：基于提供的证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术级研究报告。
+${role}
+${taskDescription}
 
 # 最终研究主题: "${topic}"
 
