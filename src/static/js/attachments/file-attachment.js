@@ -20,14 +20,16 @@ export class AttachmentManager {
      * @param {function(string, number=): void} config.showToast - Function to display a toast message.
      * @param {function(string): void} config.showSystemMessage - Function to display a system message.
      */
-    constructor({ chatPreviewsContainer, visionPreviewsContainer, showToast, showSystemMessage }) {
+    constructor({ chatPreviewsContainer, visionPreviewsContainer, agentPreviewsContainer, showToast, showSystemMessage }) {
         this.chatPreviewsContainer = chatPreviewsContainer;
         this.visionPreviewsContainer = visionPreviewsContainer;
+        this.agentPreviewsContainer = agentPreviewsContainer; // 新增：Agent模式预览容器
         this.showToast = showToast;
         this.showSystemMessage = showSystemMessage;
 
         this.chatAttachedFiles = []; // For multi-file chat mode
         this.visionAttachedFiles = []; // For multi-file vision mode
+        this.agentAttachedFiles = []; // 新增：For multi-file agent mode
         this.enableCompression = true; // 默认启用图片压缩（针对视觉模式）
 
         if (!this.chatPreviewsContainer) {
@@ -35,6 +37,9 @@ export class AttachmentManager {
         }
         if (!this.visionPreviewsContainer) {
             console.warn("AttachmentManager: visionPreviewsContainer is not provided. Vision mode attachments will be disabled.");
+        }
+        if (!this.agentPreviewsContainer) {
+            console.warn("AttachmentManager: agentPreviewsContainer is not provided. Agent mode attachments will be disabled.");
         }
     }
 
@@ -54,6 +59,15 @@ export class AttachmentManager {
      */
     getVisionAttachedFiles() {
         return this.visionAttachedFiles;
+    }
+
+    /**
+     * @method getAgentAttachedFiles
+     * @description Returns the array of attached files for agent mode.
+     * @returns {Array<object>} The array of file data objects.
+     */
+    getAgentAttachedFiles() {
+        return this.agentAttachedFiles;
     }
 
     /**
@@ -78,7 +92,8 @@ export class AttachmentManager {
             const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
 
             // --- 核心："双轨制"逻辑判断 ---
-            if (mode === 'chat' && dataFileExtensions.includes(fileExtension)) {
+            // 轨道A：数据文件 -> 上传到会话工作区 (Chat/Agent模式支持)
+            if ((mode === 'chat' || mode === 'agent') && dataFileExtensions.includes(fileExtension)) {
                 // 轨道A：数据文件 -> 上传到会话工作区
                 if (!sessionId) {
                     this.showSystemMessage("错误：无法上传数据文件，当前会话ID无效。");
@@ -198,6 +213,15 @@ async readAsBase64(file, mode) {
                 mode: 'vision',
                 index: this.visionAttachedFiles.length - 1
             });
+        } else if (mode === 'agent') { // 新增：Agent模式处理
+            this.agentAttachedFiles.push(fileData);
+            this.displayFilePreview({
+                type: file.type,
+                src: base64String,
+                name: file.name,
+                mode: 'agent',
+                index: this.agentAttachedFiles.length - 1
+            });
         } else {
             this.chatAttachedFiles.push(fileData);
             this.displayFilePreview({
@@ -225,9 +249,12 @@ async readAsBase64(file, mode) {
      * @param {string} options.name - The name of the file.
      * @param {string} options.mode - The attachment mode ('chat' or 'vision').
      * @param {number} [options.index] - The index of the file in vision mode.
+     * @param {boolean} [options.isDataFile=false] - Whether the file is a data file (Track A).
      */
-    displayFilePreview({ type, src, name, mode, index }) {
-        const container = mode === 'vision' ? this.visionPreviewsContainer : this.chatPreviewsContainer;
+    displayFilePreview({ type, src, name, mode, index, isDataFile = false }) {
+        const container = mode === 'vision'
+            ? this.visionPreviewsContainer
+            : (mode === 'agent' ? this.agentPreviewsContainer : this.chatPreviewsContainer);
         if (!container) return;
 
         // In chat mode, we append new previews instead of clearing the container
@@ -246,6 +273,9 @@ async readAsBase64(file, mode) {
         if (mode === 'vision') {
             this.visionAttachedFiles = [];
             this.visionPreviewsContainer.innerHTML = '';
+        } else if (mode === 'agent') { // 新增：Agent模式
+            this.agentAttachedFiles = [];
+            this.agentPreviewsContainer.innerHTML = '';
         } else {
             this.chatAttachedFiles = [];
             this.chatPreviewsContainer.innerHTML = '';
@@ -307,6 +337,42 @@ async readAsBase64(file, mode) {
             });
         });
     }
+    /**
+     * @method removeAgentAttachment
+     * @description Removes a specific attachment in agent mode.
+     * @param {number} indexToRemove - The index of the file to remove.
+     */
+    removeAgentAttachment(indexToRemove) {
+        this.agentAttachedFiles.splice(indexToRemove, 1);
+        
+        // Re-render all previews to correctly update indices
+        this.agentPreviewsContainer.innerHTML = '';
+        
+        this.agentAttachedFiles.forEach((file, index) => {
+            // Agent模式支持双轨制，需要检查文件类型
+            if (file.isFileHandle) {
+                // 这是一个已上传的数据文件句柄
+                this.displayFilePreview({
+                    type: file.type,
+                    name: file.name,
+                    mode: 'agent',
+                    index: index,
+                    isDataFile: true
+                });
+            } else {
+                // 这是一个标准的Base64媒体文件
+                this.displayFilePreview({
+                    type: file.type,
+                    src: file.base64,
+                    name: file.name,
+                    mode: 'agent',
+                    index: index,
+                    isDataFile: false
+                });
+            }
+        });
+    }
+
     /**
      * @method toggleCompression
      * @description 启用或禁用图片压缩功能
@@ -469,6 +535,8 @@ async readAsBase64(file, mode) {
             e.stopPropagation();
             if (mode === 'vision') {
                 this.removeVisionAttachment(index);
+            } else if (mode === 'agent') { // 新增：Agent模式
+                this.removeAgentAttachment(index);
             } else if (mode === 'chat') {
                 this.removeChatAttachment(index);
             }

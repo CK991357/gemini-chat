@@ -90,8 +90,13 @@ export class DeepResearchAgent {
                     } else if (part.type === 'image_url' || part.type === 'image_base64') {
                         // 用占位符替代图片内容，保留语义
                         textContent += `[🖼️ Image Uploaded by User] `;
+                    } else if (part.type === 'pdf_url') { // 新增：PDF 占位符
+                        textContent += `[📄 PDF Document Uploaded] `;
+                    } else if (part.type === 'audio_url') { // 新增：Audio 占位符
+                        textContent += `[🔊 Audio File Uploaded] `;
                     } else if (part.type === 'file_url' || part.type === 'file') {
-                        textContent += `[📁 File Uploaded: ${part.name || 'document'}] `;
+                        // 数据文件句柄
+                        textContent += `[📁 Data File Uploaded: ${part.name || 'document'}] `;
                     }
                 });
             } else if (typeof msg.content === 'string') {
@@ -602,7 +607,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             researchMode,
             currentDate,
             contextMessages,
-            reportModel // 🔥 新增：接收用户选择的报告模型
+            reportModel, // 🔥 新增：接收用户选择的报告模型
+            attachedFiles // 🚀 关键新增：接收附件列表
         } = researchRequest;
         
         this.reportModel = reportModel; // 🔥 存储为类属性
@@ -633,8 +639,16 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         const historyContextStr = this._serializeContextMessages(contextMessages);
         // Planner 可见的内部主题（包含历史上下文块）
         let internalTopicWithContext = enrichedTopic;
+        
+        // 🚀 关键新增：将附件信息注入到 Agent 的思考上下文
+        const attachmentContext = this._generateAttachmentContext(attachedFiles);
+        if (attachmentContext) {
+            internalTopicWithContext = `${attachmentContext}\n\n${internalTopicWithContext}`;
+            console.log(`[DeepResearchAgent] ✅ 已注入 ${attachedFiles.length} 个附件的上下文。`);
+        }
+        
         if (historyContextStr) {
-            internalTopicWithContext = `\n${enrichedTopic}\n\n<ContextMemory>\n以下是你与用户的近期对话历史（Context Memory）。\n请注意：用户当前的请求可能依赖于这些上下文（例如指代词"它"可能指代上文的图片或话题）。\n如果当前请求中包含指代词或缺乏具体主语，请务必从下文中推断：\n\n${historyContextStr}\n</ContextMemory>\n`;
+            internalTopicWithContext = `${internalTopicWithContext}\n\n<ContextMemory>\n以下是你与用户的近期对话历史（Context Memory）。\n请注意：用户当前的请求可能依赖于这些上下文（例如指代词"它"可能指代上文的图片或话题）。\n如果当前请求中包含指代词或缺乏具体主语，请务必从下文中推断：\n\n${historyContextStr}\n</ContextMemory>\n`;
             console.log(`[DeepResearchAgent] ✅ 已注入 ${historyContextStr.length} 字符的历史上下文。`);
         }
         
@@ -2577,5 +2591,49 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             analysis: diagnosis,
             suggestedFix: suggestion
         };
+    }
+    
+    /**
+     * 🚀 关键新增：生成附件上下文，用于注入到 Agent 的思考 Prompt 中
+     * @param {Array<object>} attachedFiles - 附件列表
+     * @returns {string} - 附件的 Markdown 描述
+     */
+    _generateAttachmentContext(attachedFiles) {
+        if (!attachedFiles || attachedFiles.length === 0) return '';
+        
+        let context = [];
+        context.push("## 📎 用户上传的附件 (Attachments)");
+        context.push("用户在本次请求中上传了以下文件。请在你的研究计划中考虑如何利用这些文件。");
+        
+        attachedFiles.forEach((file, index) => {
+            const fileType = file.type || 'application/octet-stream';
+            const fileName = file.name || `file-${index}`;
+            
+            let description = `[${index + 1}] 文件名: \`${fileName}\` (类型: ${fileType})`;
+            
+            if (file.isFileHandle) {
+                // 轨道A：数据文件句柄
+                description += ` - **类型**: 数据文件 (已上传到沙箱工作区)`;
+                description += ` - **路径**: \`${file.container_path}\``;
+                description += ` - **使用建议**: 你可以使用 \`python_sandbox\` 工具，通过该路径直接读取和分析数据。`;
+            } else if (fileType.startsWith('image/')) {
+                // 轨道B：Base64 图片
+                description += ` - **类型**: 图像文件 (Base64)`;
+                description += ` - **使用建议**: 图像内容已自动注入到你的多模态输入中。请在你的思考中提及你将如何分析这张图片。`;
+            } else if (fileType.startsWith('application/pdf')) {
+                // 轨道B：Base64 PDF
+                description += ` - **类型**: PDF 文档 (Base64)`;
+                description += ` - **使用建议**: PDF 内容已自动注入到你的多模态输入中。请在你的思考中提及你将如何分析这份文档。`;
+            } else {
+                // 其他 Base64 文件（如音频、视频）
+                description += ` - **类型**: 媒体文件 (Base64)`;
+                description += ` - **使用建议**: 文件内容已自动注入到你的多模态输入中。`;
+            }
+            
+            context.push(`\n* ${description}`);
+        });
+        
+        context.push("\n---");
+        return context.join('\n');
     }
 }

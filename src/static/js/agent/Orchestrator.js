@@ -88,7 +88,8 @@ export class Orchestrator {
 
         if (researchDetection.shouldStart) {
             console.log(`[Orchestrator] 检测到关键词"${researchDetection.matchedKeyword}"，启动${researchDetection.mode}研究模式...`);
-            return await this._handleWithDeepResearch(researchDetection.cleanTopic, researchDetection.originalTopic, context, researchDetection.mode);
+            // 🚀 关键修改：传递 files 参数
+            return await this._handleWithDeepResearch(researchDetection.cleanTopic, researchDetection.originalTopic, files, context, researchDetection.mode);
         }
 
         console.log('[Orchestrator] 未检测到Agent触发词，回退到标准模式。');
@@ -98,7 +99,7 @@ export class Orchestrator {
     /**
      * 🎯 增强：处理深度研究请求 - 整合 Skill 系统
      */
-    async _handleWithDeepResearch(cleanTopic, originalTopic, context, detectedMode) {
+    async _handleWithDeepResearch(cleanTopic, originalTopic, files, context, detectedMode) {
         try {
             // 🔥🔥🔥 [新增核心逻辑] 弹出模型选择对话框 🔥🔥🔥
             const reportModel = await promptModelSelection();
@@ -156,7 +157,9 @@ ${cleanTopic}
                 // ✨ 新增：传递历史消息数组，供 Agent 使用历史上下文
                 contextMessages: previousMessages,
                 // 🔥🔥🔥 [新增] 传递用户选择的报告模型 🔥🔥🔥
-                reportModel: reportModel
+                reportModel: reportModel,
+                // 🚀 关键新增：传递附件列表
+                attachedFiles: files
             };
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);

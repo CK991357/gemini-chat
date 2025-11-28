@@ -136,6 +136,8 @@ const fileInput = document.getElementById('file-input');
 
 // 附件预览 DOM 元素
 const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
+// 新增：Agent 模式附件预览 DOM 元素
+const agentAttachmentPreviews = document.getElementById('agent-attachment-previews');
 
 // 翻译模式相关 DOM 元素
 const translationVoiceInputButton = document.getElementById('translation-voice-input-button'); // 新增
@@ -374,6 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentManager = new AttachmentManager({ // T2: 初始化全局变量
        chatPreviewsContainer: fileAttachmentPreviews,
        visionPreviewsContainer: visionAttachmentPreviews,
+       agentPreviewsContainer: agentAttachmentPreviews, // 新增：Agent 模式预览容器
        showToast: showToast,
        showSystemMessage: showSystemMessage
    });
@@ -1314,7 +1317,13 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
  */
 async function handleSendMessage(attachmentManager) {
     const messageText = messageInput.value.trim();
-    const attachedFiles = attachmentManager.getChatAttachedFiles();
+    
+    // 🚀 关键修改：根据 Agent 模式是否启用，获取不同的附件列表
+    const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
+    const attachedFiles = isAgentModeEnabled
+        ? attachmentManager.getAgentAttachedFiles()
+        : attachmentManager.getChatAttachedFiles();
+        
     if (!messageText && attachedFiles.length === 0) return;
 
     // 如果是 HTTP 模式且尚无 session，先创建会话以避免后续生成新会话时清空刚刚渲染的用户消息
@@ -1325,7 +1334,14 @@ async function handleSendMessage(attachmentManager) {
     // 🚀 关键修复：立即执行所有UI更新和清理操作
     chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
-    attachmentManager.clearAttachedFile('chat');
+    
+    // 🚀 关键修改：根据模式清理不同的附件
+    if (isAgentModeEnabled) {
+        attachmentManager.clearAttachedFile('agent');
+    } else {
+        attachmentManager.clearAttachedFile('chat');
+    }
+    
     window.currentAIMessageContentDiv = null;
 
     // 🚀 严格分离WebSocket和HTTP模式
@@ -1470,7 +1486,7 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             contextResult: contextResult // 传递技能上下文结果
         };
         
-        // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
+        // 🔥 核心修改：调用 Orchestrator，传入 Agent 模式的附件
         // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
 
