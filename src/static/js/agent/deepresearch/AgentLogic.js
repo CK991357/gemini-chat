@@ -82,13 +82,13 @@ export class AgentLogic {
                 risk: "中|高"
             },
             academic: {
-                role: "学术研究策略师",
-                instructions: `1. 将论文分析分解为6-8个深度研究步骤
-2. 必须包含：论文核心理解、方法深度解析、实验验证、相关工作对比、领域脉络分析、未来方向预测
-3. 为每个步骤提供2-3个精准的学术搜索关键词
-4. 强调方法验证、理论分析、相关工作对比和趋势预测
-5. 确保覆盖：论文核心贡献、技术路线分析、实验结果验证、领域演进分析、未来研究方向`,
-                iterations: 7,
+                role: "学术论文深度分析专家",
+                instructions: `1. 将论文分析分解为4-6个逻辑连贯的深度分析步骤
+2. 必须包含：核心贡献识别、方法深度解析、实验验证、技术对比分析、学术价值评估
+3. 每个步骤聚焦一个明确的学术分析维度
+4. 强调技术深度、批判性思考和学术价值评估
+5. 确保覆盖：创新点识别、技术路线分析、实验结果验证、领域影响评估`,
+                iterations: 6,
                 risk: "中"
             },
             business: {
@@ -213,23 +213,23 @@ export class AgentLogic {
                 research_plan: [
                     {
                         step: 1,
-                        sub_question: `深度解析"${topic}"的核心贡献和创新点`,
-                        initial_queries: [`${topic} 核心贡献`, `${topic} 创新点`, `${topic} 主要方法`],
+                        sub_question: `深度解析"${topic}"的核心学术贡献和技术创新点`,
+                        initial_queries: [`${topic} 核心贡献`, `${topic} 技术创新`, `${topic} 方法创新`],
                         depth_required: "深度挖掘",
                         expected_tools: ["crawl4ai", "tavily_search"],
                         temporal_sensitivity: "中"
                     },
                     {
                         step: 2,
-                        sub_question: "分析论文的方法论和技术路线",
-                        initial_queries: [`${topic} 方法论`, `${topic} 技术路线`, `${topic} 算法设计`],
+                        sub_question: "分析论文的技术路线和实现细节",
+                        initial_queries: [`${topic} 技术路线`, `${topic} 算法细节`, `${topic} 架构设计`],
                         depth_required: "深度挖掘",
-                        expected_tools: ["crawl4ai"],
+                        expected_tools: ["crawl4ai", "tavily_search"],
                         temporal_sensitivity: "中"
                     },
                     {
                         step: 3,
-                        sub_question: "验证实验结果和分析性能指标",
+                        sub_question: "验证实验结果和性能指标的可信度",
                         initial_queries: [`${topic} 实验结果`, `${topic} 性能指标`, `${topic} 实验设置`],
                         depth_required: "深度挖掘",
                         expected_tools: ["crawl4ai", "python_sandbox"],
@@ -237,30 +237,22 @@ export class AgentLogic {
                     },
                     {
                         step: 4,
-                        sub_question: "寻找和分析相关工作文献",
-                        initial_queries: [`${topic} 相关工作`, `${topic} 文献综述`, `类似研究论文`],
+                        sub_question: "对比分析与相关工作的技术差异和创新突破",
+                        initial_queries: [`${topic} 技术对比`, `${topic} 相关工作`, `类似方法比较`],
                         depth_required: "深度挖掘",
                         expected_tools: ["tavily_search", "crawl4ai"],
-                        temporal_sensitivity: "高"  // 相关工作需要最新文献
+                        temporal_sensitivity: "高"
                     },
                     {
                         step: 5,
-                        sub_question: "分析研究领域的发展脉络",
-                        initial_queries: [`${topic} 研究脉络`, `${topic} 领域发展`, `技术演进历史`],
+                        sub_question: "评估论文的学术价值和领域影响",
+                        initial_queries: [`${topic} 学术价值`, `${topic} 领域影响`, `技术前景评估`],
                         depth_required: "中层分析",
                         expected_tools: ["tavily_search"],
-                        temporal_sensitivity: "低"  // 历史脉络对时效性要求较低
-                    },
-                    {
-                        step: 6,
-                        sub_question: "预测未来研究方向和应用前景",
-                        initial_queries: [`${topic} 未来方向`, `${topic} 应用前景`, `研究挑战`],
-                        depth_required: "中层分析",
-                        expected_tools: ["tavily_search"],
-                        temporal_sensitivity: "高"  // 未来方向需要最新趋势
+                        temporal_sensitivity: "中"
                     }
                 ],
-                estimated_iterations: 7,
+                estimated_iterations: 6,
                 risk_assessment: "中",
                 research_mode: "academic",
                 // 🔥 添加时效性评估
@@ -782,31 +774,26 @@ const toolOptimizationProtocol = `
                 role: "学术论文深度分析专家",
                 description: "你是一个严谨的学术论文分析专家，擅长深度解析论文核心价值、方法创新性，并进行研究脉络追踪和未来趋势预测。",
                 specialInstructions: `
-### 🎓 学术研究特别指导：
-- **文献严谨**：优先引用权威学术来源和期刊论文
-- **方法深度**：深入分析技术路线、算法设计和理论支撑
-- **实验验证**：严格验证实验结果和性能指标的可信度
-- **脉络追踪**：分析研究领域的发展脉络和技术演进
-- **批判思维**：客观分析论文的局限性和改进空间
-- **未来视角**：基于当前研究预测未来发展方向
+### 🎯 深度学术分析要求：
+- **技术具体化**: 避免抽象描述，提供具体的算法细节、技术参数、实现机制
+- **数据支撑**: 所有性能声明必须基于具体的实验数据和统计指标
+- **批判思维**: 客观分析技术局限性和改进空间，不回避问题
 
-### 📚 学术引用规范：
-1. 所有关键论点必须引用具体论文或权威来源
-2. 使用规范的学术引用格式：[作者, 年份] 或 [论文标题]
-3. 对实验数据和性能指标进行交叉验证
-4. 分析不同方法的技术路线和理论基础的差异
+### 🔍 辩证分析框架：
+1. **技术路线对比**: 与2-3个相关工作进行深度技术对比
+2. **优劣权衡**: 分析不同技术选择的优势和代价
+3. **创新评估**: 评估技术突破的真实价值和推广潜力
 
-### 🔍 相关工作分析要求：
-- 选取2-3篇最具代表性的相关工作
-- 分析技术路线的演进逻辑和突破点
-- 对比性能指标和方法优劣
-- 识别研究空白和未来机会
+### 📊 结构化表达：
+- 使用子标题组织复杂的技术内容
+- 关键数据和技术参数要突出显示
+- 确保技术描述→实验验证→价值评估的逻辑连贯性
 
-### 🎯 动态结构生成：
-- 基于研究计划中的子问题自主生成章节标题
-- 确保每个章节都有充分的论证和证据支持
-- 章节之间要有逻辑连贯性和递进关系
-- 最终报告要体现深度分析和批判性思考`
+### 💡 学术价值聚焦：
+- 专注于论文的核心贡献和技术创新
+- 避免泛泛而谈的背景介绍
+- 每个分析点都要有明确的学术意义
+`
             },
             business: {
                 role: "行业分析专家",
