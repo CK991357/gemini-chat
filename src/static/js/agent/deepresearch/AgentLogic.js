@@ -460,31 +460,6 @@ export class AgentLogic {
         }
     }
 
-    // 🎯 关键词检测逻辑
-    _detectResearchMode(topic) {
-        const keywords = {
-            '深度研究': 'deep',
-            '学术论文': 'academic', 
-            '商业分析': 'business',
-            '技术文档': 'technical',
-            '标准报告': 'standard'
-        };
-
-        // 清理topic，移除关键词
-        let cleanTopic = topic;
-        let detectedMode = 'standard'; // 默认模式
-
-        for (const [keyword, mode] of Object.entries(keywords)) {
-            if (topic.includes(keyword)) {
-                detectedMode = mode;
-                cleanTopic = topic.replace(keyword, '').trim();
-                break;
-            }
-        }
-
-        return detectedMode;
-    }
-
     // ✨ 重构：主提示词构建 - 核心知识检索集成
     _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, forceNativeVision = false }) {
         const formattedHistory = this._formatHistory(intermediateSteps);
