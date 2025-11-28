@@ -356,27 +356,14 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
                 console.log('[DeepResearchAgent] 👨‍💻 专家代码生成完毕，长度:', generatedCode.length);
                 
-                // 在 _executeToolCall 方法中，为 technical 模式添加特殊处理
-                if (detectedMode === 'technical' && toolName === 'code_generator') {
-                    // 直接返回生成的代码，不调用沙盒
-                    const successMessage = `✅ **专家代码生成完成**\n\n已生成完整的技术实现代码，可直接用于项目开发。\n\n**生成代码长度**: ${generatedCode.length} 字符\n**技术栈**: ${parameters.data_context || '完整技术方案'}`;
-                    
-                    recordToolCall(toolName, parameters, true, successMessage);
-                    return {
-                        rawObservation: successMessage,
-                        toolSources: [],
-                        toolSuccess: true
-                    };
-                }
-
                 // 🟢 步骤 D: 自动转发给沙盒执行 (Auto-Forwarding)
                 console.log('[DeepResearchAgent] 🔄 自动转接沙盒执行...');
                 
                 // 递归调用，真正执行 python_sandbox
                 const sandboxResult = await this._executeToolCall(
-                    'python_sandbox',
-                    { code: generatedCode },
-                    detectedMode,
+                    'python_sandbox', 
+                    { code: generatedCode }, 
+                    detectedMode, 
                     recordToolCall
                 );
                 
