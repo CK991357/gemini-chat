@@ -1638,7 +1638,7 @@ async _generateSourcesSection(sources, plan) {
             if (meta.date) citation += `, ${meta.date}`;
         }
 
-        citation += `. [Online].\n   Available: ${meta.url} (Accessed: ${accessDate})`;
+        citation += `. [Online].\n   Available: ${meta.url}`;
         output += `${citation}\n\n`;
     });
 
