@@ -99,7 +99,9 @@ export class AttachmentManager {
                     this.showSystemMessage("错误：无法上传数据文件，当前会话ID无效。");
                     continue;
                 }
-                await this.uploadDataFile(file, sessionId, this.chatAttachedFiles.length);
+                // 🚀 修复：获取正确的附件数组长度，并传入 mode
+                const attachedFiles = this._getAttachedFilesArray(mode);
+                await this.uploadDataFile(file, sessionId, attachedFiles.length, mode);
 
             } else {
                 // 轨道B：非数据文件 (图片、PDF等) -> 读取为 Base64 (保持旧逻辑)
@@ -110,9 +112,19 @@ export class AttachmentManager {
     }
 /**
  * @private
+ * @description 根据模式返回对应的附件数组
+ */
+_getAttachedFilesArray(mode) {
+    if (mode === 'vision') return this.visionAttachedFiles;
+    if (mode === 'agent') return this.agentAttachedFiles;
+    return this.chatAttachedFiles;
+}
+
+/**
+ * @private
  * 轨道A：处理数据文件的上传
  */
-async uploadDataFile(file, sessionId, index) {
+async uploadDataFile(file, sessionId, index, mode) {
     try {
         this.showToast(`正在上传数据文件: ${file.name}...`);
         
@@ -140,13 +152,15 @@ async uploadDataFile(file, sessionId, index) {
             session_id: sessionId
         };
         
-        this.chatAttachedFiles.push(fileHandle);
+        // 🚀 修复：推入正确的数组
+        this._getAttachedFilesArray(mode).push(fileHandle);
         
         // 显示文件预览（特殊样式）
         this.displayFilePreview({
             type: file.type,
             name: file.name,
-            mode: 'chat',
+            // 🚀 修复：传入正确的 mode
+            mode: mode,
             index: index,
             isDataFile: true // 标记为数据文件
         });
@@ -154,12 +168,14 @@ async uploadDataFile(file, sessionId, index) {
         this.showToast(`数据文件上传成功: ${file.name}`);
 
         // 触发全局事件，通知 main.js
-        window.dispatchEvent(new CustomEvent('file-uploaded', { 
+        window.dispatchEvent(new CustomEvent('file-uploaded', {
             detail: {
                 filename: result.filename,
                 container_path: result.container_path,
                 session_id: sessionId,
-                file_size: result.file_size
+                file_size: result.file_size,
+                // 🚀 修复：加入 mode
+                mode: mode
             }
         }));
 
@@ -275,7 +291,10 @@ async readAsBase64(file, mode) {
             this.visionPreviewsContainer.innerHTML = '';
         } else if (mode === 'agent') { // 新增：Agent模式
             this.agentAttachedFiles = [];
-            this.agentPreviewsContainer.innerHTML = '';
+            // 🚀 修复：增加容器存在性检查
+            if (this.agentPreviewsContainer) {
+                this.agentPreviewsContainer.innerHTML = '';
+            }
         } else {
             this.chatAttachedFiles = [];
             this.chatPreviewsContainer.innerHTML = '';
@@ -346,7 +365,10 @@ async readAsBase64(file, mode) {
         this.agentAttachedFiles.splice(indexToRemove, 1);
         
         // Re-render all previews to correctly update indices
-        this.agentPreviewsContainer.innerHTML = '';
+        // 🚀 修复：增加容器存在性检查
+        if (this.agentPreviewsContainer) {
+            this.agentPreviewsContainer.innerHTML = '';
+        }
         
         this.agentAttachedFiles.forEach((file, index) => {
             // Agent模式支持双轨制，需要检查文件类型

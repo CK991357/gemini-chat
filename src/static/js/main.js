@@ -1318,11 +1318,8 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
 async function handleSendMessage(attachmentManager) {
     const messageText = messageInput.value.trim();
     
-    // 🚀 关键修改：根据 Agent 模式是否启用，获取不同的附件列表
-    const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
-    const attachedFiles = isAgentModeEnabled
-        ? attachmentManager.getAgentAttachedFiles()
-        : attachmentManager.getChatAttachedFiles();
+    // 🚀 关键修改：始终从 Chat 附件流获取文件，因为 Agent 模式复用 Chat UI
+    const attachedFiles = attachmentManager.getChatAttachedFiles();
         
     if (!messageText && attachedFiles.length === 0) return;
 
@@ -1335,12 +1332,9 @@ async function handleSendMessage(attachmentManager) {
     chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
     
-    // 🚀 关键修改：根据模式清理不同的附件
-    if (isAgentModeEnabled) {
-        attachmentManager.clearAttachedFile('agent');
-    } else {
-        attachmentManager.clearAttachedFile('chat');
-    }
+    // 🚀 关键修改：无论 Agent 是否触发，都清理 Chat 模式的附件
+    // 因为 Agent 模式复用 Chat 模式的附件 UI 和数组
+    attachmentManager.clearAttachedFile('chat');
     
     window.currentAIMessageContentDiv = null;
 
