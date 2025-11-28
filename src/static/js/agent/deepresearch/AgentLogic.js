@@ -12,7 +12,8 @@ export class AgentLogic {
     }
 
     // ✨ 智能规划器 - 支持多种研究模式
-    async createInitialPlan(topic, researchMode = 'standard', currentDate) {
+    async createInitialPlan(topic, researchMode = 'standard', currentDate, retryCount = 0) {
+        const MAX_RETRIES = 2;
         const plannerPrompt = this._getPlannerPrompt(topic, researchMode, currentDate);
 
         try {
@@ -23,10 +24,69 @@ export class AgentLogic {
             });
 
             const responseText = llmResponse?.choices?.[0]?.message?.content || '{}';
-            
-            // 增强JSON解析容错
-            const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, responseText];
-            const plan = JSON.parse(jsonMatch[1]);
+
+            // 增强JSON解析容错与一次重试
+            const tryParseJson = (text) => {
+                if (!text || typeof text !== 'string') return null;
+                // 1) 直接尝试 JSON.parse
+                try {
+                    return JSON.parse(text);
+                } catch (_e) { /* ignore parse error */ }
+
+                // 2) 提取 ```json ``` 代码块内容
+                const jsonBlock = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+                if (jsonBlock && jsonBlock[1]) {
+                    try {
+                        return JSON.parse(jsonBlock[1].trim());
+                    } catch (_e) { /* ignore parse error */ }
+                }
+
+                // 3) 提取第一个最外层的花括号块
+                const braceMatch = text.match(/\{[\s\S]*\}/);
+                if (braceMatch) {
+                    try {
+                        return JSON.parse(braceMatch[0]);
+                    } catch (_e) { /* ignore parse error */ }
+                }
+
+                // 4) 尝试从第一个"{"到最后一个"}"之间的子串
+                const first = text.indexOf('{');
+                const last = text.lastIndexOf('}');
+                if (first !== -1 && last !== -1 && last > first) {
+                    const candidate = text.slice(first, last + 1);
+                    try {
+                        return JSON.parse(candidate);
+                    } catch (_e) { /* ignore parse error */ }
+                }
+
+                return null;
+            };
+
+            let plan = tryParseJson(responseText);
+
+            // 如果首次解析失败，向模型请求一次仅返回纯 JSON 的重试
+            if (!plan) {
+                try {
+                    console.warn('[AgentLogic] 初始JSON解析失败，尝试请求模型返回纯JSON重试');
+                    const repairPrompt = `请将下面的文本仅以严格的JSON格式返回（不要加任何解释、代码块标记或多余文本）。\n\n原始输出:\n\n${responseText.substring(0, 20000)}`;
+
+                    const repairResp = await this.chatApiHandler.completeChat({
+                        messages: [{ role: 'user', content: repairPrompt }],
+                        model: 'gemini-2.5-flash-preview-09-2025',
+                        temperature: 0.0,
+                    });
+
+                    const repairText = repairResp?.choices?.[0]?.message?.content || '';
+                    plan = tryParseJson(repairText);
+                } catch (e) {
+                    console.warn('[AgentLogic] 请求模型重试时发生错误:', e?.message || e);
+                }
+            }
+
+            if (!plan) {
+                console.warn('[AgentLogic] JSON解析失败，使用降级方案');
+                return this._createFallbackPlan(topic, researchMode, currentDate);
+            }
             
             // 🔥 核心：验证模型是否进行了时效性评估
             if (!plan.temporal_awareness?.assessed) {
@@ -58,8 +118,16 @@ export class AgentLogic {
             throw new Error('计划结构无效');
             
         } catch (error) {
-            console.error('[AgentLogic] 规划失败，使用降级方案:', error);
-            return this._createFallbackPlan(topic, researchMode, currentDate);
+            console.error(`[AgentLogic] 规划失败 (尝试 ${retryCount + 1}/${MAX_RETRIES + 1}):`, error);
+            
+            if (retryCount < MAX_RETRIES) {
+                // 添加重试延迟
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                return this.createInitialPlan(topic, researchMode, currentDate, retryCount + 1);
+            } else {
+                console.warn('[AgentLogic] 达到最大重试次数，使用降级方案');
+                return this._createFallbackPlan(topic, researchMode, currentDate);
+            }
         }
     }
 
@@ -127,6 +195,17 @@ export class AgentLogic {
 # 角色：${config.role}
 # 任务：为"${topic}"制定研究计划
 
+## 🚨 严格输出格式要求
+**你的响应必须是且只能是有效的JSON格式，不要包含任何其他文本。**
+
+### 禁止行为：
+- ❌ 不要在JSON外添加解释性文字
+- ❌ 不要使用Markdown代码块标记
+- ❌ 不要包含思考过程或额外说明
+
+### 正确示例：
+{"research_plan": [{"step": 1, "sub_question": "问题", "initial_queries": ["关键词"], "depth_required": "浅层概览", "expected_tools": ["tavily_search"], "temporal_sensitivity": "中"}]}
+
 # 🕒 时效性自主评估
 **知识状态**：你的训练数据截止于2024年初，当前系统日期为${currentDateReadable}
 
@@ -140,14 +219,14 @@ export class AgentLogic {
 - 每个步骤必须标注\`temporal_sensitivity\` ("高", "中", "低")
 - 整体计划必须包含\`temporal_awareness\`评估
 
-# 输出格式（严格JSON）
+# 输出格式（严格JSON，不要其他内容）
 {
   "research_plan": [
     {
       "step": 1,
       "sub_question": "关键问题",
       "initial_queries": ["关键词"],
-      "depth_required": "浅层概览|中层分析|深度挖掘", 
+      "depth_required": "浅层概览|中层分析|深度挖掘",
       "expected_tools": ["tavily_search", "crawl4ai"],
       "temporal_sensitivity": "高|中|低"
     }
@@ -162,7 +241,7 @@ export class AgentLogic {
   }
 }
 
-现在开始评估并生成计划：`;
+现在生成JSON：`;
     }
 
     // ✨ 降级方案 - 支持所有模式
