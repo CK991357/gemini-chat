@@ -90,13 +90,8 @@ export class DeepResearchAgent {
                     } else if (part.type === 'image_url' || part.type === 'image_base64') {
                         // 用占位符替代图片内容，保留语义
                         textContent += `[🖼️ Image Uploaded by User] `;
-                    } else if (part.type === 'pdf_url') { // 新增：PDF 占位符
-                        textContent += `[📄 PDF Document Uploaded] `;
-                    } else if (part.type === 'audio_url') { // 新增：Audio 占位符
-                        textContent += `[🔊 Audio File Uploaded] `;
                     } else if (part.type === 'file_url' || part.type === 'file') {
-                        // 数据文件句柄
-                        textContent += `[📁 Data File Uploaded: ${part.name || 'document'}] `;
+                        textContent += `[📁 File Uploaded: ${part.name || 'document'}] `;
                     }
                 });
             } else if (typeof msg.content === 'string') {
@@ -135,104 +130,6 @@ export class DeepResearchAgent {
 
         // 3. 返回一个给Agent看的简洁确认信息
         return `[✅ 图像生成成功] 标题: "${imageData.title}". 在最终报告中，你可以使用占位符 ![${imageData.title}](placeholder:${imageId}) 来引用这张图片。`;
-    }
-
-
-    // 🚀 核心新增：检查是否存在图片附件
-    _hasImageAttachment(attachedFiles) {
-        if (!attachedFiles || attachedFiles.length === 0) return false;
-        return attachedFiles.some(file => file.type.startsWith('image/'));
-    }
-    // 🚀 核心新增：在研究开始前执行原生视觉分析
-    async _performNativeVisionAnalysis(topic, attachedFiles, runId) {
-        const imageFiles = attachedFiles.filter(file => file.type.startsWith('image/'));
-        if (imageFiles.length === 0) return null;
-
-        console.log(`[DeepResearchAgent] 🖼️ 启动原生视觉分析，共 ${imageFiles.length} 张图片...`);
-        
-        // 1. 构建视觉分析 Prompt
-        const visionPrompt = `
-# 🖼️ 原生视觉分析任务
- 
-**你的任务**：
-1.  **深度分析**用户上传的图片。
-2.  **识别**图片中的所有关键信息（文字、图表、对象、上下文）。
-3.  **总结**这些信息与用户请求（主题："${topic}"）的关联性。
-4.  **输出**一个简洁的 Markdown 格式的分析报告。
- 
-**输出格式**：
-\`\`\`markdown
-## 🖼️ 图片分析报告
- 
-### 1. 视觉内容描述
-[详细描述图片内容]
- 
-### 2. 关键信息提取
-[提取图片中的核心数据、文字或图表结论]
- 
-### 3. 与主题关联性
-[分析这些信息如何帮助回答主题]
-\`\`\`
-`;
-        
-        // 2. 构造多模态消息体
-        const visionMessages = [
-            {
-                role: 'user',
-                content: [
-                    { type: 'text', text: visionPrompt },
-                    ...imageFiles.map(file => ({
-                        type: 'image_base64',
-                        image_base64: file.base64.split(',') // 提取纯 Base64 数据
-                    }))
-                ]
-            }
-        ];
-
-        // 3. 调用模型进行分析
-        await this.callbackManager.invokeEvent('on_agent_think_start', { 
-            run_id: runId,
-            data: { system_msg: `🖼️ 正在进行图片预分析...` }
-        });
-
-        try {
-            const response = await this.chatApiHandler.completeChat({
-                messages: visionMessages,
-                model: 'gemini-2.0-flash-exp-summarizer', // 使用支持多模态的模型
-                temperature: 0.0,
-            });
-            
-            await this.callbackManager.invokeEvent('on_agent_think_end', { 
-                run_id: runId, 
-                data: { system_msg: `✅ 图片预分析完成。` } 
-            });
-
-            const analysisText = response?.choices?.[0]?.message?.content || '图片分析失败，模型返回空内容。';
-            
-            // 4. 构造模拟的 intermediateStep
-            const keyFinding = await this._generateKeyFinding(analysisText);
-            
-            return {
-                action: {
-                    type: 'native_vision_analysis',
-                    tool_name: 'native_vision',
-                    parameters: { image_count: imageFiles.length },
-                    thought: '在研究开始前，系统自动执行了原生视觉分析，以提取图片中的关键信息。'
-                },
-                observation: analysisText,
-                key_finding: keyFinding,
-                sources: [],
-                success: true
-            };
-
-        } catch (error) {
-            console.error('[DeepResearchAgent] ❌ 原生视觉分析失败:', error);
-            await this.callbackManager.invokeEvent('on_agent_think_error', {
-                run_id: runId,
-                data: { error: `原生视觉分析失败: ${error.message}` }
-            });
-            return null;
-        }
     }
 
 
@@ -705,8 +602,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             researchMode,
             currentDate,
             contextMessages,
-            reportModel, // 🔥 新增：接收用户选择的报告模型
-            attachedFiles // 🚀 关键新增：接收附件列表
+            reportModel // 🔥 新增：接收用户选择的报告模型
         } = researchRequest;
         
         this.reportModel = reportModel; // 🔥 存储为类属性
@@ -737,16 +633,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         const historyContextStr = this._serializeContextMessages(contextMessages);
         // Planner 可见的内部主题（包含历史上下文块）
         let internalTopicWithContext = enrichedTopic;
-        
-        // 🚀 关键新增：将附件信息注入到 Agent 的思考上下文
-        const attachmentContext = this._generateAttachmentContext(attachedFiles);
-        if (attachmentContext) {
-            internalTopicWithContext = `${attachmentContext}\n\n${internalTopicWithContext}`;
-            console.log(`[DeepResearchAgent] ✅ 已注入 ${attachedFiles.length} 个附件的上下文。`);
-        }
-        
         if (historyContextStr) {
-            internalTopicWithContext = `${internalTopicWithContext}\n\n<ContextMemory>\n以下是你与用户的近期对话历史（Context Memory）。\n请注意：用户当前的请求可能依赖于这些上下文（例如指代词"它"可能指代上文的图片或话题）。\n如果当前请求中包含指代词或缺乏具体主语，请务必从下文中推断：\n\n${historyContextStr}\n</ContextMemory>\n`;
+            internalTopicWithContext = `\n${enrichedTopic}\n\n<ContextMemory>\n以下是你与用户的近期对话历史（Context Memory）。\n请注意：用户当前的请求可能依赖于这些上下文（例如指代词"它"可能指代上文的图片或话题）。\n如果当前请求中包含指代词或缺乏具体主语，请务必从下文中推断：\n\n${historyContextStr}\n</ContextMemory>\n`;
             console.log(`[DeepResearchAgent] ✅ 已注入 ${historyContextStr.length} 字符的历史上下文。`);
         }
         
@@ -816,14 +704,6 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         // ✨ 阶段2：自适应执行
         // 🎯 核心修复：将 intermediateSteps 提升为类属性以支持状态注入
         this.intermediateSteps = []; // ✅ 确保每次新研究都清空历史
-        
-        // 🚀 核心新增：前置 Native Vision 分析 (不占用迭代)
-        const visionStep = await this._performNativeVisionAnalysis(uiTopic, attachedFiles, runId);
-        if (visionStep) {
-            this.intermediateSteps.push(visionStep);
-            console.log('[DeepResearchAgent] ✅ 原生视觉分析结果已作为初始步骤注入。');
-        }
-        
         let iterations = 0;
         let consecutiveNoGain = 0;
         
@@ -1287,21 +1167,13 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         if (reportTemplate.config.dynamic_structure) {
             console.log(`[DeepResearchAgent] 检测到动态报告模板 (${researchMode}模式)，构建学术级Prompt...`);
             
-            let role = '# 角色：首席研究分析师';
-            let taskDescription = '# 任务：基于提供的证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术级研究报告。';
-
-            if (researchMode === 'academic') {
-                role = '# 角色：首席学术分析师';
-                taskDescription = '# 任务：基于提供的论文证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术论文解析报告。';
-            }
-
             finalPrompt = `
 # 🚫 绝对禁止开场白协议
 **禁止生成任何形式的"好的，遵命"、"作为一名专业的"等确认语句**
 **必须直接从报告标题开始输出纯净内容**
 
-${role}
-${taskDescription}
+# 角色：首席研究分析师
+# 任务：基于提供的证据和资料来源，撰写一份高质量、结构化、体现深度思考的学术级研究报告。
 
 # 最终研究主题: "${topic}"
 
@@ -2705,49 +2577,5 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             analysis: diagnosis,
             suggestedFix: suggestion
         };
-    }
-    
-    /**
-     * 🚀 关键新增：生成附件上下文，用于注入到 Agent 的思考 Prompt 中
-     * @param {Array<object>} attachedFiles - 附件列表
-     * @returns {string} - 附件的 Markdown 描述
-     */
-    _generateAttachmentContext(attachedFiles) {
-        if (!attachedFiles || attachedFiles.length === 0) return '';
-        
-        let context = [];
-        context.push("## 📎 用户上传的附件 (Attachments)");
-        context.push("用户在本次请求中上传了以下文件。请在你的研究计划中考虑如何利用这些文件。");
-        
-        attachedFiles.forEach((file, index) => {
-            const fileType = file.type || 'application/octet-stream';
-            const fileName = file.name || `file-${index}`;
-            
-            let description = `[${index + 1}] 文件名: \`${fileName}\` (类型: ${fileType})`;
-            
-            if (file.isFileHandle) {
-                // 轨道A：数据文件句柄
-                description += ` - **类型**: 数据文件 (已上传到沙箱工作区)`;
-                description += ` - **路径**: \`${file.container_path}\``;
-                description += ` - **使用建议**: 你可以使用 \`python_sandbox\` 工具，通过该路径直接读取和分析数据。`;
-            } else if (fileType.startsWith('image/')) {
-                // 轨道B：Base64 图片
-                description += ` - **类型**: 图像文件 (Base64)`;
-                description += ` - **使用建议**: 图像内容已自动注入到你的多模态输入中。请在你的思考中提及你将如何分析这张图片。`;
-            } else if (fileType.startsWith('application/pdf')) {
-                // 轨道B：Base64 PDF
-                description += ` - **类型**: PDF 文档 (Base64)`;
-                description += ` - **使用建议**: PDF 内容已自动注入到你的多模态输入中。请在你的思考中提及你将如何分析这份文档。`;
-            } else {
-                // 其他 Base64 文件（如音频、视频）
-                description += ` - **类型**: 媒体文件 (Base64)`;
-                description += ` - **使用建议**: 文件内容已自动注入到你的多模态输入中。`;
-            }
-            
-            context.push(`\n* ${description}`);
-        });
-        
-        context.push("\n---");
-        return context.join('\n');
     }
 }

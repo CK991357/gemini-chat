@@ -136,8 +136,6 @@ const fileInput = document.getElementById('file-input');
 
 // 附件预览 DOM 元素
 const fileAttachmentPreviews = document.getElementById('file-attachment-previews');
-// 新增：Agent 模式附件预览 DOM 元素
-const agentAttachmentPreviews = document.getElementById('agent-attachment-previews');
 
 // 翻译模式相关 DOM 元素
 const translationVoiceInputButton = document.getElementById('translation-voice-input-button'); // 新增
@@ -376,7 +374,6 @@ document.addEventListener('DOMContentLoaded', () => {
    attachmentManager = new AttachmentManager({ // T2: 初始化全局变量
        chatPreviewsContainer: fileAttachmentPreviews,
        visionPreviewsContainer: visionAttachmentPreviews,
-       agentPreviewsContainer: agentAttachmentPreviews, // 新增：Agent 模式预览容器
        showToast: showToast,
        showSystemMessage: showSystemMessage
    });
@@ -1317,10 +1314,7 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
  */
 async function handleSendMessage(attachmentManager) {
     const messageText = messageInput.value.trim();
-    
-    // 🚀 关键修改：始终从 Chat 附件流获取文件，因为 Agent 模式复用 Chat UI
     const attachedFiles = attachmentManager.getChatAttachedFiles();
-        
     if (!messageText && attachedFiles.length === 0) return;
 
     // 如果是 HTTP 模式且尚无 session，先创建会话以避免后续生成新会话时清空刚刚渲染的用户消息
@@ -1331,11 +1325,7 @@ async function handleSendMessage(attachmentManager) {
     // 🚀 关键修复：立即执行所有UI更新和清理操作
     chatUI.displayUserMessage(messageText, attachedFiles);
     messageInput.value = '';
-    
-    // 🚀 关键修改：无论 Agent 是否触发，都清理 Chat 模式的附件
-    // 因为 Agent 模式复用 Chat 模式的附件 UI 和数组
     attachmentManager.clearAttachedFile('chat');
-    
     window.currentAIMessageContentDiv = null;
 
     // 🚀 严格分离WebSocket和HTTP模式
@@ -1480,7 +1470,7 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             contextResult: contextResult // 传递技能上下文结果
         };
         
-        // 🔥 核心修改：调用 Orchestrator，传入 Agent 模式的附件
+        // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
         // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
 
@@ -1497,25 +1487,11 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             }
         }
 
-        // 🎯 核心修改：如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
-        // 🚀 关键：如果 Agent 模式启用，且存在附件，则不回退到标准聊天，强制 Agent 模式处理
-        const hasAttachments = attachedFiles.length > 0;
-
+        // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
         if (agentResult && !agentResult.enhanced) {
-            if (hasAttachments) {
-                console.log("💬 Orchestrator 决定不处理，但检测到多模态附件，跳过标准回退。");
-                // 此时 Orchestrator 应该已经返回了 user_guide 或其他提示信息
-                // 如果 Orchestrator 内部没有返回任何内容，则手动添加一个提示
-                if (!agentResult.content) {
-                    const aiMessage = chatUI.createAIMessageElement();
-                    aiMessage.markdownContainer.innerHTML = marked.parse("🤖 智能代理已接收到多模态附件，但未检测到明确的研究指令。请使用 '研究' 或 '分析' 等关键词来启动研究进程。");
-                    chatUI.scrollToBottom();
-                }
-            } else {
-                console.log("💬 Orchestrator 决定不处理，回退到标准对话");
-                // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
-                await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
-            }
+            console.log("💬 Orchestrator 决定不处理，回退到标准对话");
+            // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
+            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
         }
         
         // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
