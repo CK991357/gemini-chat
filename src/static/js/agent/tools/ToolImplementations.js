@@ -59,8 +59,10 @@ class DeepResearchToolAdapter {
                 tavily_search: {
                     max_results: 12,
                     search_depth: 'advanced',
-                    include_domains: ['bloomberg.com', 'reuters.com', 'ft.com', 'wsj.com'],
+                    include_raw_content: true,
+                    include_answer: false,
                     exclude_domains: ['wikipedia.org']
+
                 },
                 crawl4ai: {
                     scrape: {
