@@ -1267,23 +1267,38 @@ ${promptFragment}
         
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
         
-        try {
-            const reportResponse = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: finalPrompt }],
-                model: this.reportModel || 'models/gemini-2.5-pro', // 🔥 使用用户选择的模型
-                temperature: 0.3,
-            });
-            this._updateTokenUsage(reportResponse.usage);
-            
-            let finalReport = reportResponse?.choices?.[0]?.message?.content ||
-                this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
-            
-            console.log(`[DeepResearchAgent] 报告生成完成，模式: ${researchMode}`);
-            return finalReport;
-            
-        } catch (error) {
-            console.error('[DeepResearchAgent] 报告生成失败:', error);
-            return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+        // 🚀 新增：基础重试机制
+        const maxRetries = 2;
+        const retryDelay = 2000; // 2秒延迟
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const reportResponse = await this.chatApiHandler.completeChat({
+                    messages: [{ role: 'user', content: finalPrompt }],
+                    model: this.reportModel || 'models/gemini-2.5-pro', // 🔥 使用用户选择的模型
+                    temperature: 0.3,
+                });
+                this._updateTokenUsage(reportResponse.usage);
+
+                let finalReport = reportResponse?.choices?.[0]?.message?.content ||
+                    this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+
+                console.log(`[DeepResearchAgent] ✅ 报告生成成功 (尝试 ${attempt + 1}/${maxRetries + 1})，模式: ${researchMode}`);
+                return finalReport;
+
+            } catch (error) {
+                console.error(`[DeepResearchAgent] ❌ 报告生成失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error && error.message ? error.message : error);
+
+                // 如果是最后一次尝试，使用降级方案
+                if (attempt === maxRetries) {
+                    console.error('[DeepResearchAgent] 🚨 所有重试尝试均失败，使用降级报告');
+                    return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+                }
+
+                // 等待后重试
+                console.log(`[DeepResearchAgent] ⏳ 等待 ${retryDelay}ms 后重试...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
         }
     }
 
