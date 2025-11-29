@@ -1,4 +1,4 @@
-# Matplotlib 图表生成指南 (v2.2)
+# Matplotlib 图表生成指南 (v2.5 - 与后端完全匹配版)
 
 ## 🚀 核心使用方法
 
@@ -73,29 +73,6 @@ plt.tight_layout()
 plt.show()
 ```
 
-### 模板4：多子图布局
-```python
-import matplotlib.pyplot as plt
-import numpy as np
-
-x = np.linspace(0, 10, 100)
-y1 = np.sin(x)
-y2 = np.cos(x)
-
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-
-ax1.plot(x, y1, 'b-', linewidth=2)
-ax1.set_title('正弦函数')
-ax1.grid(True)
-
-ax2.plot(x, y2, 'r-', linewidth=2)
-ax2.set_title('余弦函数')
-ax2.grid(True)
-
-plt.tight_layout()
-plt.show()
-```
-
 ## 🎨 图表类型选择指南
 
 ### 数据比较：
@@ -120,7 +97,7 @@ plt.show()
 ### 必须包含：
 - `import matplotlib.pyplot as plt`
 - 有意义的`plt.title()`（标题会被自动捕获）
-- `plt.show()`（推荐但非必须）
+- `plt.show()`（触发自动捕获的关键）
 
 ### 禁止操作：
 - ❌ 不要使用`base64.b64encode()`
@@ -134,14 +111,13 @@ plt.show()
 
 ## 🔧 样式配置与中文支持 (关键)
 
-本环境已预装开源中文字体，请务必使用以下配置以避免中文乱码。
+本环境已预装开源中文字体，系统会自动应用最佳字体配置。
 
-### ✅ 推荐的中文字体配置：
+### ✅ 推荐的中文字体配置（可选）：
 ```python
 import matplotlib.pyplot as plt
 
-# 必须指定环境内真实存在的字体名
-# 优先级：WenQuanYi Micro Hei > WenQuanYi Zen Hei
+# 系统已自动配置中文字体，此配置为可选优化
 plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei']
 plt.rcParams['axes.unicode_minus'] = False # 解决负号显示问题
 
@@ -155,47 +131,40 @@ plt.plot([1, 2, 3, 4], [1, 4, 2, 3])
 plt.title('带样式配置的图表')
 plt.show()
 ```
-### ❌ 禁止使用的字体 (环境内不存在)：
-不要使用 SimHei
-不要使用 Microsoft YaHei
-不要使用 Songti
 
-**记住**：系统会自动捕获所有图表并转换为标准格式，您只需要专注于绘图逻辑！
+## 🏗️ 流程图与架构图生成指南 (与后端完全匹配版)
 
-## 🏗️ 流程图与架构图生成指南 (终极自动版)
+### Graphviz 专业流程图
 
-### Graphviz 专业流程图 (自动捕获)
-
-#### 基础流程图模板 - 自动版
+#### 基础流程图模板 - 必须赋值给变量
 ```python
 from graphviz import Digraph
 
-def create_basic_flowchart():
-    dot = Digraph('BasicFlow', comment='基础流程图')
-    dot.attr(rankdir='TB', size='8,5')
-    
-    dot.node('start', '开始', shape='ellipse', color='green')
-    dot.node('process1', '数据处理', shape='box')
-    dot.node('decision', '判断条件', shape='diamond', color='blue')
-    dot.node('process2', '后续处理', shape='box')
-    dot.node('end', '结束', shape='ellipse', color='red')
-    
-    dot.edge('start', 'process1', label='输入')
-    dot.edge('process1', 'decision', label='结果')
-    dot.edge('decision', 'process2', label='是', color='green')
-    dot.edge('decision', 'end', label='否', color='red')
-    dot.edge('process2', 'end', label='完成')
-    
-    # 🎯 现在只需要创建图表对象，系统会自动捕获！
-    # 无需手动输出Base64！
+# 🎯 关键：必须将图表对象赋值给变量
+dot = Digraph('BasicFlow', comment='基础流程图')
+dot.attr(rankdir='TB', size='8,5')
 
-create_basic_flowchart()
+dot.node('start', '开始', shape='ellipse', color='green')
+dot.node('process1', '数据处理', shape='box')
+dot.node('decision', '判断条件', shape='diamond', color='blue')
+dot.node('process2', '后续处理', shape='box')
+dot.node('end', '结束', shape='ellipse', color='red')
+
+dot.edge('start', 'process1', label='输入')
+dot.edge('process1', 'decision', label='结果')
+dot.edge('decision', 'process2', label='是', color='green')
+dot.edge('decision', 'end', label='否', color='red')
+dot.edge('process2', 'end', label='完成')
+
+# 🎯 系统会自动检测并捕获图表对象
+# 无需额外代码！
 ```
 
-#### 系统架构图模板 - 自动版
+#### 系统架构图模板
 ```python
 from graphviz import Digraph
 
+# 🎯 关键：必须创建并赋值图表对象
 def create_system_architecture():
     dot = Digraph('SystemArch', comment='系统架构图')
     dot.attr(rankdir='LR', size='12,8')
@@ -223,14 +192,15 @@ def create_system_architecture():
     dot.edge('business', 'db', label='查询')
     dot.edge('business', 'cache', label='读写')
     
-    # 🎯 自动捕获！无需额外代码！
+    return dot  # 🎯 返回图表对象即可被自动捕获
 
-create_system_architecture()
+# 调用函数创建图表
+arch_diagram = create_system_architecture()
 ```
 
-### NetworkX 网络关系图 (自动捕获)
+### NetworkX 网络关系图
 
-#### 基础网络图模板 - 自动版
+#### 基础网络图模板 - 通过Matplotlib显示
 ```python
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -257,44 +227,80 @@ def create_network_diagram():
     plt.axis('off')
     plt.tight_layout()
     
-    # 🎯 使用 plt.show() 自动捕获！
+    # 🎯 关键：使用 plt.show() 触发自动捕获！
     plt.show()
 
 create_network_diagram()
 ```
 
-## 🎯 现在完全统一了！
+## 🔄 后端实际捕获机制说明
+
+### 捕获优先级顺序：
+1. **用户显式输出**：检查是否有标准JSON格式输出
+2. **Matplotlib图表**：检测并捕获所有活动图形
+3. **Graphviz图表**：扫描全局变量中的Digraph对象
+4. **统一输出**：所有图表转换为标准JSON格式
+
+### 实际技术要求：
+
+| 图表类型 | 技术要求 | 自动捕获条件 |
+|---------|----------|--------------|
+| **Matplotlib** | 使用`plt.show()` | ✅ 完全自动 |
+| **Graphviz** | 图表对象必须赋值给变量 | ✅ 变量检测 |
+| **NetworkX** | 通过`plt.show()`显示 | ✅ Matplotlib捕获 |
+
+### 错误处理机制：
+- **分级捕获**：四种捕获方式独立运行
+- **容错设计**：一种方式失败不影响其他
+- **错误提示**：捕获失败会输出友好警告信息
+
+## 🎯 现在完全匹配后端！
 
 ### 统一的自动捕获机制：
 
-| 图表类型 | 使用方法 | 自动捕获 |
+| 图表类型 | 正确使用方法 | 后端支持 |
 |---------|----------|----------|
-| **Matplotlib** | `plt.show()` | ✅ 自动 |
-| **Graphviz** | 创建图表对象 | ✅ 自动 |
-| **NetworkX** | `plt.show()` | ✅ 自动 |
+| **Matplotlib** | `plt.show()` | ✅ 完全支持 |
+| **Graphviz** | 创建并赋值图表对象 | ✅ 变量检测 |
+| **NetworkX** | `plt.show()` | ✅ Matplotlib通道 |
 
 ### 终极最佳实践：
 
 ```python
-# 所有图表类型都这样简单！
-import matplotlib.pyplot as plt
-from graphviz import Digraph
-import networkx as nx
+# 所有图表类型都遵循简单规则！
 
 # Matplotlib - 自动捕获
+import matplotlib.pyplot as plt
 plt.plot([1,2,3], [1,4,2])
-plt.show()
+plt.title('我的图表')
+plt.show()  # 🎯 关键触发点
 
-# Graphviz - 自动捕获  
-dot = Digraph()
+# Graphviz - 自动捕获（必须赋值）  
+from graphviz import Digraph
+dot = Digraph()  # 🎯 关键：赋值给变量
 dot.node('A', 'Node A')
 dot.node('B', 'Node B') 
 dot.edge('A', 'B')
 # 无需额外代码！
 
-# NetworkX - 自动捕获
+# NetworkX - 通过Matplotlib自动捕获
+import networkx as nx
 G = nx.Graph()
 G.add_edge('A', 'B')
 nx.draw(G)
-plt.show()
+plt.show()  # 🎯 关键触发点
 ```
+
+## ⚡ 故障排除
+
+### 如果图表未显示：
+1. **检查Graphviz变量**：确保图表对象赋值给了变量
+2. **检查plt.show()**：Matplotlib和NetworkX必须调用此函数
+3. **查看错误信息**：系统会输出详细的警告信息帮助诊断
+
+### 字体显示问题：
+- 系统已内置中文字体自动修正
+- 如果仍有乱码，可手动设置字体配置
+- 优先使用WenQuanYi系列字体
+
+**记住**：系统会自动捕获所有图表并转换为标准格式，您只需要专注于绘图逻辑和遵循上述技术规范！
