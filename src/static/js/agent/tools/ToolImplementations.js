@@ -57,10 +57,12 @@ class DeepResearchToolAdapter {
             // 💼 行业分析模式
             business: {
                 tavily_search: {
-                    max_results: 10,
+                    max_results: 12,
                     search_depth: 'advanced',
                     include_raw_content: true,
-                    include_answer: false
+                    include_answer: false,
+                    include_domains: ['bloomberg.com', 'reuters.com', 'ft.com', 'wsj.com'],
+                    exclude_domains: ['wikipedia.org']
                 },
                 crawl4ai: {
                     scrape: {
