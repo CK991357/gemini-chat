@@ -13,6 +13,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    # 🔥 核心修复：必须安装 Graphviz 系统库
+    graphviz \
     # 轻量级中文字体（金融图表常用）
     fonts-wqy-microhei \
     fonts-wqy-zenhei \
@@ -33,6 +35,9 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     uvicorn \
     python-multipart \
     docker \
+    graphviz \
+    pydot \
+    networkx \
     numpy==1.26.4 \
     scipy==1.14.1 \
     pandas==2.2.2 \
