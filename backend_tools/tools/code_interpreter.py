@@ -1,4 +1,4 @@
-# code_interpreter.py - 最终优化确认版 v2.4 - 修复启动崩溃问题
+# code_interpreter.py - 最终优化确认版 v2.5 - 支持所有图表类型自动捕获
 
 import docker
 import asyncio
@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import threading
 import time
 
-# 🎯 [新增部分] 为文件管理器功能导入新的依赖
+# 🎯 为文件管理器功能导入新的依赖
 from typing import List
 from fastapi.responses import FileResponse
 import urllib.parse
@@ -30,7 +30,7 @@ SESSION_WORKSPACE_ROOT = Path("/srv/sandbox_workspaces")
 SESSION_WORKSPACE_ROOT.mkdir(exist_ok=True)
 SESSION_TIMEOUT_HOURS = 24  # 会话超时时间（小时）
 
-# 🎯 [第2步 新增] 为文件管理API定义数据蓝图
+# 为文件管理API定义数据蓝图
 class FileInfo(BaseModel):
     name: str
     session_id: str  # 核心修改：让前端知道文件属于哪个会话
@@ -119,40 +119,44 @@ class CodeInterpreterTool:
             logger.error(f"Image preparation failed: {e}")
             return {"success": False, "error": f"Image preparation failed: {e}"}
         
-        # --- 核心修复：将字体设置逻辑移动到 runner_script 内部 ---
+        # --- 核心修复：将所有图表捕获逻辑整合到 runner_script 内部 ---
         runner_script = f"""
-import sys, traceback, io, json, base64
+import sys, traceback, io, json, base64, tempfile, os
 
-# --- Matplotlib Font and Style Setup (runs inside the sandbox) ---
-def setup_matplotlib_config():
+# --- 统一的图表捕获和字体配置系统 ---
+def setup_unified_chart_system():
     try:
         import warnings
         import matplotlib.pyplot as plt
         
-        # 🎯 精准屏蔽 Matplotlib 的字体警告 (UserWarning)，保留 RuntimeWarning 等
+        # 🎯 精准屏蔽 Matplotlib 的字体警告
         warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
 
         import matplotlib.font_manager as fm
         # 字体优先级列表
-        font_preferences = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'DejaVu Sans', 'Arial Unicode MS', 'SimHei']
+        font_preferences = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'DejaVu Sans', 'Arial Unicode MS']
         available_fonts = set(f.name for f in fm.fontManager.ttflist)
-          # 设置找到的第一个偏好字体
+        
+        # 设置找到的第一个偏好字体
         for font_name in font_preferences:
             if font_name in available_fonts:
                 plt.rcParams['font.family'] = font_name
                 break
+        
         # 金融图表常用配置
         plt.rcParams['axes.unicode_minus'] = False
         plt.rcParams['font.size'] = 10
         plt.rcParams['figure.titlesize'] = 12
         plt.rcParams['axes.labelsize'] = 10
-        # --- Capture matplotlib title ---
+        
+        # --- 捕获 matplotlib title ---
         title_holder = [None]
         original_title_func = plt.title
         def new_title_func(label, *args, **kwargs):
             title_holder[0] = label
             return original_title_func(label, *args, **kwargs)
         plt.title = new_title_func
+        
         return title_holder
 
     except ImportError:
@@ -160,6 +164,7 @@ def setup_matplotlib_config():
     except Exception as e:
         print(f"Font setup failed inside sandbox: {{e}}", file=sys.stderr)
         return [None]
+
 # --- Redirect stdout/stderr ---
 old_stdout = sys.stdout
 old_stderr = sys.stderr
@@ -171,7 +176,7 @@ stderr_val = ""
 
 try:
     # 关键：在执行用户代码前，先运行字体和配置
-    title_holder = setup_matplotlib_config()
+    title_holder = setup_unified_chart_system()
 
     # 安全的内置函数列表
     safe_builtins = {{
@@ -186,6 +191,12 @@ try:
     
     exec_globals = {{'__builtins__': safe_builtins}}
     
+    # 🎯 关键：为 Graphviz 和 NetworkX 提供必要的模块
+    exec_globals['graphviz'] = __import__('graphviz')
+    exec_globals['Digraph'] = getattr(__import__('graphviz'), 'Digraph')
+    exec_globals['nx'] = __import__('networkx')
+    exec_globals['plt'] = __import__('matplotlib.pyplot')
+    
     # 执行用户代码
     exec({repr(parameters.code)}, exec_globals)
     
@@ -199,7 +210,7 @@ finally:
     sys.stdout = old_stdout
     sys.stderr = old_stderr
 
-# --- Format output ---
+# --- 智能输出处理系统 ---
 output_processed = False
 stripped_stdout = stdout_val.strip()
 
@@ -224,7 +235,13 @@ if core_content.startswith('{{') and core_content.endswith('}}'):
     try:
         parsed = json.loads(core_content)
         # 扩展支持的类型
-        if parsed.get('type') in ['image', 'excel', 'word', 'ppt', 'pdf', 'analysis_report', 'ml_report', 'statistical_analysis', 'scientific_computing', 'scipy_optimization', 'scipy_integration', 'scipy_signal_processing', 'scipy_linear_algebra', 'symbolic_math', 'equation_solutions', 'calculus_results', 'mathematical_proofs', 'linear_algebra', 'numerical_approximations', 'complex_math_solution']:
+        supported_types = ['image', 'excel', 'word', 'ppt', 'pdf', 'analysis_report', 'ml_report', 
+                          'statistical_analysis', 'scientific_computing', 'scipy_optimization', 
+                          'scipy_integration', 'scipy_signal_processing', 'scipy_linear_algebra', 
+                          'symbolic_math', 'equation_solutions', 'calculus_results', 
+                          'mathematical_proofs', 'linear_algebra', 'numerical_approximations', 
+                          'complex_math_solution']
+        if parsed.get('type') in supported_types:
             print(core_content, end='')
             output_processed = True
     except json.JSONDecodeError:
@@ -246,13 +263,14 @@ if not output_processed:
         print(json.dumps(output_data), end='')
         output_processed = True
 
-# 🚀🚀🚀 --- 核心修复：自动捕获时的强制纠正 --- 🚀🚀🚀
+# 🚀🚀🚀 --- 核心修复：统一的图表自动捕获系统 --- 🚀🚀🚀
+
+# 1. 首先尝试捕获 Matplotlib 图表
 if not output_processed and 'matplotlib.pyplot' in sys.modules:
     plt = sys.modules['matplotlib.pyplot']
     if plt.get_fignums():
         try:
-            # 🔥🔥🔥 终极修正：在保存图片前，强行把字体改回正确的！🔥🔥🔥
-            # 无论用户代码里写了什么 SimHei，这里都会被覆盖成 WenQuanYi
+            # 🔥🔥🔥 终极修正：在保存图片前，强行把字体改回正确的！
             plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei']
             plt.rcParams['axes.unicode_minus'] = False
 
@@ -267,46 +285,70 @@ if not output_processed and 'matplotlib.pyplot' in sys.modules:
             output_data = {{"type": "image", "title": captured_title, "image_base64": image_base64}}
             print(json.dumps(output_data), end='')
             output_processed = True
-        except Exception as auto_capture_error:
-            # 这里也可以把错误静默处理，或者只打印简短信息
-            print(f"\\n[SYSTEM_ERROR] Chart capture failed: {{auto_capture_error}}", file=sys.stderr, end='')
-# 🚀🚀🚀 --- 核心修复结束 --- 🚀🚀🚀
+        except Exception as matplotlib_capture_error:
+            print(f"\\n[SYSTEM_ERROR] Matplotlib chart capture failed: {{matplotlib_capture_error}}", file=sys.stderr, end='')
 
-# 🚀🚀🚀 --- 扩展的自动捕获机制 --- 🚀🚀🚀
-if not output_processed and 'graphviz' in sys.modules:
-    # 检查是否有 Graphviz 图表需要捕获
-    # 🔥 修复：使用更可靠的方式来查找Graphviz对象
+# 2. 然后尝试捕获 Graphviz 图表
+if not output_processed:
     try:
-        import graphviz
-        # 查找所有可能是Graphviz图表的变量
-        for var_name, var_value in list(locals().items()):
-            if hasattr(var_value, '_engine') and hasattr(var_value, 'pipe'):
-                # 这很可能是一个Graphviz图表对象
-                try:
-                    png_data = var_value.pipe(format='png')
-                    image_base64 = base64.b64encode(png_data).decode('utf-8')
-                    # 尝试获取图表标题
-                    chart_title = getattr(var_value, 'comment', 'Graphviz Diagram')
-                    if not chart_title or chart_title.startswith('#'):
-                        chart_title = "Graphviz Diagram"
-                    output_data = {"type": "image", "title": chart_title, "image_base64": image_base64}
-                    print(json.dumps(output_data), end='')
-                    output_processed = True
-                    break
-                except Exception as e:
-                    continue
-    except Exception as e:
-        pass
+        # 检查是否有 Graphviz Digraph 对象被创建
+        graphviz_objects = []
+        for var_name, var_value in exec_globals.items():
+            if hasattr(var_value, '__class__') and hasattr(var_value.__class__, '__name__'):
+                if var_value.__class__.__name__ == 'Digraph':
+                    graphviz_objects.append((var_name, var_value))
+        
+        if graphviz_objects:
+            # 取最后一个创建的图表
+            _, digraph_obj = graphviz_objects[-1]
+            
+            # 使用临时文件渲染 Graphviz
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                temp_filename = tmp.name
+            
+            try:
+                # 渲染为 PNG
+                digraph_obj.render(filename=temp_filename, format='png', cleanup=True)
+                
+                # 读取渲染的图片
+                rendered_file = temp_filename + '.png'
+                with open(rendered_file, 'rb') as f:
+                    image_data = f.read()
+                
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+                
+                # 获取图表标题
+                chart_title = getattr(digraph_obj, 'name', 'Graphviz Diagram')
+                if not chart_title or chart_title == 'G':
+                    chart_title = "Graphviz Flowchart"
+                
+                output_data = {{"type": "image", "title": chart_title, "image_base64": image_base64}}
+                print(json.dumps(output_data), end='')
+                output_processed = True
+                
+                # 清理临时文件
+                os.unlink(rendered_file)
+                
+            except Exception as render_error:
+                print(f"\\n[SYSTEM_ERROR] Graphviz render failed: {{render_error}}", file=sys.stderr, end='')
+            finally:
+                if os.path.exists(temp_filename):
+                    os.unlink(temp_filename)
+                    
+    except Exception as graphviz_error:
+        print(f"\\n[SYSTEM_ERROR] Graphviz capture failed: {{graphviz_error}}", file=sys.stderr, end='')
 
-if not output_processed and 'networkx' in sys.modules:
-    # 检查是否有 NetworkX 图表需要捕获
-    if 'matplotlib.pyplot' in sys.modules and sys.modules['matplotlib.pyplot'].get_fignums():
-        try:
-            plt = sys.modules['matplotlib.pyplot']
-            # 🔥 修复：应用字体设置（与Matplotlib部分一致）
+# 3. 最后捕获 NetworkX 图表（通过 Matplotlib）
+if not output_processed and 'networkx' in sys.modules and 'matplotlib.pyplot' in sys.modules:
+    try:
+        plt = sys.modules['matplotlib.pyplot']
+        # 检查是否有活动的 NetworkX 图表
+        if plt.get_fignums():
+            # 应用字体修正
             plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei']
             plt.rcParams['axes.unicode_minus'] = False
             
+            # 捕获当前图形
             fig = plt.gcf()
             buf = io.BytesIO()
             fig.savefig(buf, format='png', bbox_inches='tight')
@@ -314,22 +356,21 @@ if not output_processed and 'networkx' in sys.modules:
             buf.seek(0)
             image_base64 = base64.b64encode(buf.read()).decode('utf-8')
             
-            # 尝试获取标题
-            axes = fig.get_axes()
-            title = "Network Graph"
-            if axes and len(axes) > 0 and axes[0].get_title():
-                title = axes[0].get_title()
-                
-            output_data = {"type": "image", "title": title, "image_base64": image_base64}
+            captured_title = title_holder[0] if title_holder[0] else "NetworkX Diagram"
+            output_data = {{"type": "image", "title": captured_title, "image_base64": image_base64}}
             print(json.dumps(output_data), end='')
             output_processed = True
-        except Exception as e:
-            pass
-# 🚀🚀🚀 --- 扩展自动捕获结束 --- 🚀🚀🚀
+            
+    except Exception as networkx_error:
+        print(f"\\n[SYSTEM_ERROR] NetworkX capture failed: {{networkx_error}}", file=sys.stderr, end='')
 
+# 🚀🚀🚀 --- 统一的图表捕获系统结束 --- 🚀🚀🚀
+
+# 如果没有图表被捕获，输出原始 stdout
 if not output_processed:
     print(stdout_val, end='')
 
+# 总是输出 stderr
 print(stderr_val, file=sys.stderr, end='')
 """
         container = None
@@ -467,7 +508,7 @@ app = FastAPI(
     lifespan=lifespan,
     title="Python Sandbox API",
     description="Secure Python code execution environment with file upload support",
-    version="2.4"
+    version="2.5"
 )
 
 # --- 文件上传API ---
@@ -569,7 +610,7 @@ async def run_python_sandbox(request_data: dict):
         
         if not code_to_execute:
             raise HTTPException(status_code=422, detail="Missing 'code' field.")
-
+        
         input_data = CodeInterpreterInput(code=code_to_execute)
         
         # 将 session_id 传递给 execute 方法
@@ -592,7 +633,7 @@ async def health_check():
             return {
                 "status": "healthy", 
                 "docker": "connected",
-                "version": "2.4",
+                "version": "2.5",
                 "timestamp": datetime.now().isoformat()
             }
         else:
@@ -605,7 +646,7 @@ async def root():
     """Root endpoint with basic info"""
     return {
         "message": "Python Sandbox API with File Upload",
-        "version": "2.4",
+        "version": "2.5",
         "endpoints": {
             "execute_code": "POST /api/v1/python_sandbox",
             "upload_file": "POST /api/v1/files/upload",
@@ -619,6 +660,7 @@ async def root():
             "health_check": "GET /health"
         }
     }
+
 # --- 安全性辅助函数 (保持不变) ---
 def get_safe_path(session_id: str, filename: str = None) -> Path:
     """构造并验证特定会话的文件/目录路径。"""
@@ -657,7 +699,6 @@ async def download_session_file(session_id: str, filename: str):
     return FileResponse(path=file_path, filename=file_path.name, media_type='application/octet-stream')
 
 # ... (delete_session_file, rename_session_file 等，如果存在的话) ...
-
 
 # --- 针对前端UI的、全局的管理 API (Global Admin) ---
 
