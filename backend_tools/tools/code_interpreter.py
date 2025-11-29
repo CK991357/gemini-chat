@@ -272,6 +272,61 @@ if not output_processed and 'matplotlib.pyplot' in sys.modules:
             print(f"\\n[SYSTEM_ERROR] Chart capture failed: {{auto_capture_error}}", file=sys.stderr, end='')
 # 🚀🚀🚀 --- 核心修复结束 --- 🚀🚀🚀
 
+# 🚀🚀🚀 --- 扩展的自动捕获机制 --- 🚀🚀🚀
+if not output_processed and 'graphviz' in sys.modules:
+    # 检查是否有 Graphviz 图表需要捕获
+    # 🔥 修复：使用更可靠的方式来查找Graphviz对象
+    try:
+        import graphviz
+        # 查找所有可能是Graphviz图表的变量
+        for var_name, var_value in list(locals().items()):
+            if hasattr(var_value, '_engine') and hasattr(var_value, 'pipe'):
+                # 这很可能是一个Graphviz图表对象
+                try:
+                    png_data = var_value.pipe(format='png')
+                    image_base64 = base64.b64encode(png_data).decode('utf-8')
+                    # 尝试获取图表标题
+                    chart_title = getattr(var_value, 'comment', 'Graphviz Diagram')
+                    if not chart_title or chart_title.startswith('#'):
+                        chart_title = "Graphviz Diagram"
+                    output_data = {"type": "image", "title": chart_title, "image_base64": image_base64}
+                    print(json.dumps(output_data), end='')
+                    output_processed = True
+                    break
+                except Exception as e:
+                    continue
+    except Exception as e:
+        pass
+
+if not output_processed and 'networkx' in sys.modules:
+    # 检查是否有 NetworkX 图表需要捕获
+    if 'matplotlib.pyplot' in sys.modules and sys.modules['matplotlib.pyplot'].get_fignums():
+        try:
+            plt = sys.modules['matplotlib.pyplot']
+            # 🔥 修复：应用字体设置（与Matplotlib部分一致）
+            plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei']
+            plt.rcParams['axes.unicode_minus'] = False
+            
+            fig = plt.gcf()
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', bbox_inches='tight')
+            plt.close('all')
+            buf.seek(0)
+            image_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            
+            # 尝试获取标题
+            axes = fig.get_axes()
+            title = "Network Graph"
+            if axes and len(axes) > 0 and axes[0].get_title():
+                title = axes[0].get_title()
+                
+            output_data = {"type": "image", "title": title, "image_base64": image_base64}
+            print(json.dumps(output_data), end='')
+            output_processed = True
+        except Exception as e:
+            pass
+# 🚀🚀🚀 --- 扩展自动捕获结束 --- 🚀🚀🚀
+
 if not output_processed:
     print(stdout_val, end='')
 
