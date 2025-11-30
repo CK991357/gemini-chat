@@ -583,9 +583,17 @@ export class ChatApiHandler {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
         const callId = `call_${Date.now()}`;
+        console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
         
         try {
             this.state.isUsingTool = true;
+            console.log(`[${timestamp()}] [MCP] State isUsingTool set to true.`);
+
+            // 显示工具调用状态UI
+            console.log(`[${timestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
+            ui.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
+            ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
+            console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
             
             // 解析参数
             let parsedArguments;
