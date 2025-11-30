@@ -5,6 +5,7 @@ import gc
 import psutil
 import time
 import json
+import uuid
 from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 from crawl4ai import AsyncWebCrawler
@@ -18,9 +19,105 @@ from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai.content_filter_strategy import PruningContentFilter
 import logging
 from PIL import Image
+from datetime import datetime
+from enum import Enum
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+# 异步任务状态枚举
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+# 异步任务管理器
+class AsyncTaskManager:
+    """异步任务管理器"""
+    
+    def __init__(self):
+        self.tasks = {}
+        self.task_timeout = 3600  # 1小时超时
+        
+    def create_task(self, mode: str, parameters: Dict[str, Any]) -> str:
+        """创建新任务"""
+        task_id = str(uuid.uuid4())
+        self.tasks[task_id] = {
+            "task_id": task_id,
+            "mode": mode,
+            "parameters": parameters,
+            "status": TaskStatus.PENDING,
+            "created_at": datetime.now(),
+            "started_at": None,
+            "completed_at": None,
+            "result": None,
+            "error": None,
+            "progress": 0,
+            "message": "任务已创建，等待执行"
+        }
+        return task_id
+    
+    def start_task(self, task_id: str):
+        """开始任务"""
+        if task_id in self.tasks:
+            self.tasks[task_id].update({
+                "status": TaskStatus.RUNNING,
+                "started_at": datetime.now(),
+                "message": "任务执行中..."
+            })
+    
+    def update_progress(self, task_id: str, progress: int, message: str = None):
+        """更新任务进度"""
+        if task_id in self.tasks:
+            self.tasks[task_id]["progress"] = progress
+            if message:
+                self.tasks[task_id]["message"] = message
+    
+    def complete_task(self, task_id: str, result: Dict[str, Any]):
+        """完成任务"""
+        if task_id in self.tasks:
+            self.tasks[task_id].update({
+                "status": TaskStatus.COMPLETED,
+                "completed_at": datetime.now(),
+                "result": result,
+                "progress": 100,
+                "message": "任务完成"
+            })
+    
+    def fail_task(self, task_id: str, error: str):
+        """任务失败"""
+        if task_id in self.tasks:
+            self.tasks[task_id].update({
+                "status": TaskStatus.FAILED,
+                "completed_at": datetime.now(),
+                "error": error,
+                "message": f"任务失败: {error}"
+            })
+    
+    def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """获取任务状态"""
+        task = self.tasks.get(task_id)
+        if task:
+            # 清理超时任务
+            if (datetime.now() - task["created_at"]).seconds > self.task_timeout:
+                self.tasks.pop(task_id, None)
+                return None
+            return task
+        return None
+    
+    def cleanup_old_tasks(self):
+        """清理旧任务"""
+        current_time = datetime.now()
+        expired_tasks = []
+        
+        for task_id, task in self.tasks.items():
+            if (current_time - task["created_at"]).seconds > self.task_timeout:
+                expired_tasks.append(task_id)
+        
+        for task_id in expired_tasks:
+            self.tasks.pop(task_id, None)
 
 # 1. 扩展输入模型以支持新功能
 class ScrapeParams(BaseModel):
@@ -35,6 +132,7 @@ class ScrapeParams(BaseModel):
     screenshot_max_width: int = Field(default=1920, description="Maximum width for screenshot.")
     word_count_threshold: int = Field(default=10, description="Minimum words per content block.")
     exclude_external_links: bool = Field(default=True, description="Remove external links from content.")
+    async_mode: bool = Field(default=False, description="Whether to run as async task for long operations.")
 
 class CrawlParams(BaseModel):
     url: str = Field(description="The starting URL for the crawl.")
@@ -44,6 +142,7 @@ class CrawlParams(BaseModel):
     strategy: Literal['bfs', 'dfs', 'best_first'] = Field(default='bfs', description="Crawl strategy.")
     include_external: bool = Field(default=False, description="Include external domains.")
     stream_results: bool = Field(default=False, description="Stream results as they complete.")
+    async_mode: bool = Field(default=False, description="Whether to run as async task for long operations.")
 
 class DeepCrawlParams(BaseModel):
     url: str = Field(description="The starting URL for deep crawl.")
@@ -54,6 +153,7 @@ class DeepCrawlParams(BaseModel):
     keywords: Optional[List[str]] = Field(default=None, description="Keywords for relevance scoring.")
     url_patterns: Optional[List[str]] = Field(default=None, description="URL patterns to include.")
     stream: bool = Field(default=False, description="Stream results progressively.")
+    async_mode: bool = Field(default=True, description="Whether to run as async task for long operations.")
 
 class ExtractParams(BaseModel):
     url: str = Field(description="The URL to extract structured data from.")
@@ -61,15 +161,18 @@ class ExtractParams(BaseModel):
     css_selector: Optional[str] = Field(default=None, description="Base CSS selector for extraction.")
     extraction_type: Literal['css', 'llm'] = Field(default='css', description="Extraction strategy type.")
     prompt: Optional[str] = Field(default=None, description="Prompt for LLM extraction.")
+    async_mode: bool = Field(default=False, description="Whether to run as async task for long operations.")
 
 class BatchCrawlParams(BaseModel):
     urls: List[str] = Field(description="List of URLs to crawl.")
     stream: bool = Field(default=False, description="Stream results as they complete.")
     concurrent_limit: int = Field(default=3, description="Maximum concurrent crawls.")
+    async_mode: bool = Field(default=True, description="Whether to run as async task for long operations.")
 
 class PdfExportParams(BaseModel):
     url: str = Field(description="The URL to export as PDF.")
     return_as_base64: bool = Field(default=True, description="Return PDF as base64 string.")
+    async_mode: bool = Field(default=False, description="Whether to run as async task for long operations.")
 
 class ScreenshotParams(BaseModel):
     url: str = Field(description="The URL to capture screenshot.")
@@ -78,10 +181,14 @@ class ScreenshotParams(BaseModel):
     quality: int = Field(default=70, ge=10, le=100, description="JPEG quality for screenshot (10-100).")
     max_width: int = Field(default=1920, description="Maximum width for screenshot.")
     max_height: int = Field(default=5000, description="Maximum height for screenshot.")
+    async_mode: bool = Field(default=False, description="Whether to run as async task for long operations.")
+
+class AsyncTaskStatusParams(BaseModel):
+    task_id: str = Field(description="The task ID to check status for.")
 
 # 2. 扩展总的工具输入模型
 class Crawl4AIInput(BaseModel):
-    mode: Literal['scrape', 'crawl', 'deep_crawl', 'extract', 'batch_crawl', 'pdf_export', 'screenshot'] = Field(
+    mode: Literal['scrape', 'crawl', 'deep_crawl', 'extract', 'batch_crawl', 'pdf_export', 'screenshot', 'async_task_status'] = Field(
         description="The Crawl4AI function to execute."
     )
     parameters: Dict[str, Any] = Field(
@@ -171,6 +278,9 @@ class EnhancedCrawl4AITool:
         self._memory_check_interval = 60
         self._browser_lock = asyncio.Lock()
         self.compressor = ScreenshotCompressor()
+        # 异步任务管理
+        self.task_manager = AsyncTaskManager()
+        self._background_tasks = set()
         logger.info("EnhancedCrawl4AITool instance created")
 
     async def _check_memory_health(self) -> bool:
@@ -443,10 +553,18 @@ class EnhancedCrawl4AITool:
             # PDF 降级处理 - 在内存不足时自动跳过
             if params.return_pdf and hasattr(result, 'pdf') and result.pdf:
                 memory_info = await self._get_system_memory_info()
-                if memory_info.get('system_memory_percent', 0) > 65:
-                    # 内存紧张，跳过PDF生成，只返回文本
-                    logger.warning(f"🟡 内存紧张 ({memory_info['system_memory_percent']:.1f}%)，跳过PDF生成，仅返回文本内容")
-                    output_data["pdf_skipped"] = "内存优化：PDF生成已跳过，文本内容已完整返回"
+                # 🎯 修复：调整阈值到 75%
+                if memory_info.get('system_memory_percent', 0) > 75:
+                    logger.warning(f"🟡 内存紧张 ({memory_info['system_memory_percent']:.1f}%)，跳过PDF生成")
+                    # 🎯 修复：改为返回失败，但包含已抓取的内容
+                    return {
+                        "success": False,
+                        "error": f"内存紧张 ({memory_info['system_memory_percent']:.1f}%)，无法生成PDF",
+                        "url": params.url,
+                        "content": content, # 🎯 仍然返回已获取的内容
+                        "message": "内存优化：PDF生成已跳过，文本内容已完整返回", # 🎯 修复：添加明确的消息
+                        "memory_info": memory_info
+                    }
                 else:
                     pdf_base64 = base64.b64encode(result.pdf).decode('utf-8')
                     output_data["pdf"] = {
@@ -705,6 +823,22 @@ class EnhancedCrawl4AITool:
         logger.info(f"🔍 从页面提取结构化数据: {params.url}, 类型: {params.extraction_type}")
         
         try:
+            # 🎯 修复：验证schema结构
+            if not isinstance(params.schema_definition, dict):
+                return {
+                    "success": False,
+                    "error": "schema_definition 必须是字典类型",
+                    "memory_info": await self._get_system_memory_info()
+                }
+            
+            # 🎯 修复：验证必需字段
+            if params.extraction_type == 'css' and not params.schema_definition.get('fields'):
+                return {
+                    "success": False,
+                    "error": "CSS提取模式需要提供 fields 字段定义",
+                    "memory_info": await self._get_system_memory_info()
+                }
+                
             crawler = await self._get_crawler()
             if crawler is None:
                 return {"success": False, "error": "浏览器实例未正确初始化", "memory_info": await self._get_system_memory_info()}
@@ -719,6 +853,9 @@ class EnhancedCrawl4AITool:
                     logger.info(f"🔧 自动添加 baseSelector 到 schema: {schema['baseSelector']}")
                 
                 # ✅ 2. 确保有 fields（安全版本）
+                # ⚠️ 注意：由于前面已经检查了 fields，这里不再需要自动添加默认 fields，
+                # 而是依赖于前面的检查来强制用户提供有效的 schema。
+                # 保持原有的自动添加逻辑，以防万一，但依赖于前面的检查来快速失败。
                 if 'fields' not in schema:
                     schema['fields'] = [
                         {
@@ -775,9 +912,17 @@ class EnhancedCrawl4AITool:
             extracted_data = {}
             if result.extracted_content:
                 try:
-                    extracted_data = json.loads(result.extracted_content)
+                    extracted_content = json.loads(result.extracted_content)
+                    # 🎯 修复：确保返回统一的数据结构
+                    if isinstance(extracted_content, list):
+                        extracted_data = {"items": extracted_content, "count": len(extracted_content)}
+                    elif isinstance(extracted_content, dict):
+                        extracted_data = extracted_content
+                    else:
+                        extracted_data = {"content": extracted_content}
                 except (json.JSONDecodeError, TypeError):
-                    extracted_data = result.extracted_content
+                    # 🎯 修复：处理非JSON内容
+                    extracted_data = {"raw_content": result.extracted_content}
 
             return {
                 "success": True, "url": params.url, "extracted_data": extracted_data,
@@ -948,12 +1093,107 @@ class EnhancedCrawl4AITool:
         finally:
             await self._cleanup_after_task()
 
+    # 异步任务相关方法
+    async def _execute_async_task(self, task_id: str, mode: str, parameters: Dict[str, Any]):
+        """在后台执行异步任务"""
+        try:
+            self.task_manager.start_task(task_id)
+            
+            # 根据模式执行相应的任务
+            if mode == 'deep_crawl':
+                validated_params = DeepCrawlParams(**parameters)
+                result = await self._deep_crawl_website(validated_params)
+            elif mode == 'batch_crawl':
+                validated_params = BatchCrawlParams(**parameters)
+                result = await self._batch_crawl_urls(validated_params)
+            elif mode == 'scrape':
+                validated_params = ScrapeParams(**parameters)
+                result = await self._scrape_single_url(validated_params)
+            elif mode == 'extract':
+                validated_params = ExtractParams(**parameters)
+                result = await self._extract_structured_data(validated_params)
+            elif mode == 'pdf_export':
+                validated_params = PdfExportParams(**parameters)
+                result = await self._export_pdf(validated_params)
+            elif mode == 'screenshot':
+                validated_params = ScreenshotParams(**parameters)
+                result = await self._capture_screenshot(validated_params)
+            else:
+                raise ValueError(f"不支持的异步模式: {mode}")
+            
+            self.task_manager.complete_task(task_id, result)
+            
+        except Exception as e:
+            logger.error(f"异步任务执行失败: {str(e)}")
+            self.task_manager.fail_task(task_id, str(e))
+    
+    async def start_async_task(self, mode: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """启动异步任务"""
+        task_id = self.task_manager.create_task(mode, parameters)
+        
+        # 在后台运行任务
+        task = asyncio.create_task(self._execute_async_task(task_id, mode, parameters))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        
+        return {
+            "success": True,
+            "async": True,
+            "task_id": task_id,
+            "status": "pending",
+            "message": "异步任务已启动",
+            "polling_interval": 3  # 建议轮询间隔(秒)
+        }
+    
+    async def get_task_status(self, task_id: str) -> Dict[str, Any]:
+        """获取任务状态"""
+        task_status = self.task_manager.get_task_status(task_id)
+        if not task_status:
+            return {
+                "success": False,
+                "error": "任务不存在或已过期",
+                "task_id": task_id
+            }
+        
+        response = {
+            "task_id": task_id,
+            "status": task_status["status"],
+            "progress": task_status["progress"],
+            "message": task_status["message"],
+            "created_at": task_status["created_at"].isoformat(),
+        }
+        
+        if task_status["status"] == TaskStatus.COMPLETED:
+            response["result"] = task_status["result"]
+            response["completed_at"] = task_status["completed_at"].isoformat()
+        elif task_status["status"] == TaskStatus.FAILED:
+            response["error"] = task_status["error"]
+            response["completed_at"] = task_status["completed_at"].isoformat()
+        
+        return response
+
     async def execute(self, parameters: Crawl4AIInput) -> dict:
-        """执行工具的主要方法"""
+        """执行工具的主要方法 - 扩展支持异步模式"""
         try:
             mode = parameters.mode
             params = parameters.parameters
 
+            # 检查是否为异步任务查询
+            if mode == 'async_task_status':
+                task_id = params.get('task_id')
+                if not task_id:
+                    return {"success": False, "error": "缺少 task_id 参数"}
+                return await self.get_task_status(task_id)
+            
+            # 检查是否应该以异步模式执行
+            async_mode = params.pop('async_mode', False)
+            
+            # 🎯 修复：如果明确启用了异步模式，则创建异步任务
+            if async_mode:
+                logger.info(f"🔄 创建异步任务: {mode}")
+                return await self.start_async_task(mode, params)
+            
+            # 同步执行原有逻辑
             logger.info(f"🚀 执行 Crawl4AI 模式: {mode}")
 
             # 任务计数和定期强制清理
