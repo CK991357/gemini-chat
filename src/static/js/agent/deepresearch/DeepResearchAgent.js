@@ -761,6 +761,47 @@ async _pollCrawl4AITask(taskId, initialResponse, tool, detectedMode, recordToolC
 }
 
     /**
+     * 🎯 获取工具执行策略
+     */
+    _getToolExecutionStrategy(toolName, parameters, researchMode) {
+        const baseStrategy = {
+            retryStrategy: 'exponential', // exponential, delayed, none
+            timeoutMultiplier: 1.0,
+            fallbackTools: []
+        };
+
+        // 根据工具类型设置不同的策略
+        switch (toolName) {
+            case 'tavily_search':
+                return {
+                    ...baseStrategy,
+                    retryStrategy: 'exponential',
+                    timeoutMultiplier: 1.2,
+                    fallbackTools: ['crawl4ai']
+                };
+                
+            case 'crawl4ai':
+                return {
+                    ...baseStrategy,
+                    retryStrategy: 'delayed',
+                    timeoutMultiplier: 1.5,
+                    fallbackTools: []
+                };
+                
+            case 'python_sandbox':
+                return {
+                    ...baseStrategy,
+                    retryStrategy: 'none', // 代码执行错误通常不是网络问题，不重试
+                    timeoutMultiplier: 2.0,
+                    fallbackTools: []
+                };
+                
+            default:
+                return baseStrategy;
+        }
+    }
+
+    /**
      * 🎯 知识感知的工具执行
      */
     async _executeToolWithKnowledge(toolName, parameters, thought, intermediateSteps, detectedMode, recordToolCall) {
