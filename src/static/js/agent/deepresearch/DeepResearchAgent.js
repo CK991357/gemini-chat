@@ -498,9 +498,37 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             rawObservation = toolResult.output || JSON.stringify(toolResult);
             toolSuccess = toolResult.success !== false;
 
-            // 🎯 降级识别：检查 crawl4ai 是否降级运行
+            // 🎯 核心新增：处理 crawl4ai 异步任务响应
             if (toolName === 'crawl4ai' && toolSuccess) {
-                // 检查是否包含降级信息
+                const rawResult = typeof toolResult.rawResult === 'string'
+                    ? JSON.parse(toolResult.rawResult)
+                    : toolResult.rawResult;
+                
+                // 检查是否为异步任务响应
+                if (rawResult && rawResult.async === true && rawResult.task_id) {
+                    console.log(`[DeepResearchAgent] 🔄 检测到 crawl4ai 异步任务，开始轮询: ${rawResult.task_id}`);
+                    
+                    try {
+                        const finalResult = await this._pollCrawl4AITask(
+                            rawResult.task_id,
+                            rawResult,
+                            tool,
+                            detectedMode,
+                            recordToolCall
+                        );
+                        
+                        // 使用异步任务的最终结果
+                        rawObservation = JSON.stringify(finalResult);
+                        console.log(`[DeepResearchAgent] ✅ crawl4ai 异步任务完成`);
+                        
+                    } catch (pollError) {
+                        console.error(`[DeepResearchAgent] ❌ crawl4ai 异步任务轮询失败:`, pollError);
+                        toolSuccess = false;
+                        rawObservation = `crawl4ai 异步任务执行失败: ${pollError.message}`;
+                    }
+                }
+                
+                // 🎯 降级识别：检查 crawl4ai 是否降级运行
                 if (rawObservation.includes('pdf_skipped') || rawObservation.includes('内存优化')) {
                     console.log('[DeepResearchAgent] 📝 检测到 crawl4ai 工具降级运行，但核心内容已获取');
                     // 不标记为失败，Agent可以继续
@@ -576,6 +604,99 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         return { rawObservation, toolSources, toolSuccess };
     }
 
+/**
+ * 🎯 [增强版] crawl4ai 异步任务轮询方法
+ */
+async _pollCrawl4AITask(taskId, initialResponse, tool, detectedMode, recordToolCall) {
+    const maxPollingTime = 10 * 60 * 1000; // 10分钟最大轮询时间
+    const maxPollAttempts = 200;
+    const startTime = Date.now();
+    let pollAttempts = 0;
+    
+    console.log(`[DeepResearchAgent] 开始轮询 crawl4ai 异步任务: ${taskId}`);
+    
+    return new Promise((resolve, reject) => {
+        const pollInterval = setInterval(async () => {
+            pollAttempts++;
+            
+            try {
+                // 检查超时条件
+                if (Date.now() - startTime > maxPollingTime) {
+                    clearInterval(pollInterval);
+                    console.log(`[DeepResearchAgent] 任务轮询超时: ${taskId}`);
+                    reject(new Error('Task polling timeout (10 minutes)'));
+                    return;
+                }
+
+                if (pollAttempts > maxPollAttempts) {
+                    clearInterval(pollInterval);
+                    console.log(`[DeepResearchAgent] 超过最大轮询次数: ${taskId}`);
+                    reject(new Error('Max poll attempts exceeded'));
+                    return;
+                }
+
+                // 🎯 修复：使用正确的参数查询任务状态
+                const statusResult = await tool.invoke({
+                    mode: 'async_task_status',
+                    parameters: { task_id: taskId }
+                }, {
+                    mode: 'deep_research',
+                    researchMode: detectedMode
+                });
+
+                if (!statusResult.success) {
+                    console.log(`[DeepResearchAgent] 任务状态查询失败: ${statusResult.output}`);
+                    // 继续轮询，不立即失败
+                    return;
+                }
+
+                // 🎯 修复：正确处理响应数据
+                const taskStatus = typeof statusResult.rawResult === 'string'
+                    ? JSON.parse(statusResult.rawResult)
+                    : statusResult.rawResult;
+                
+                // 记录任务状态
+                console.log(`[DeepResearchAgent] 任务 ${taskId} 状态: ${taskStatus.status}, 进度: ${taskStatus.progress}%`);
+
+                // 更新 UI 进度
+                this.callbackManager.invokeEvent('on_async_task_progress', {
+                    run_id: this.runId,
+                    data: {
+                        task_id: taskId,
+                        status: taskStatus.status,
+                        progress: taskStatus.progress || 0,
+                        message: taskStatus.message
+                    }
+                });
+
+                // 检查任务完成状态
+                if (taskStatus.status === 'completed') {
+                    clearInterval(pollInterval);
+                    console.log(`[DeepResearchAgent] 任务完成: ${taskId}`);
+                    
+                    // 🎯 记录最终的工具调用结果
+                    recordToolCall('crawl4ai', { mode: 'async_task_status', task_id: taskId }, true, '异步任务完成');
+                    
+                    resolve(taskStatus.result || taskStatus);
+                    
+                } else if (taskStatus.status === 'failed') {
+                    clearInterval(pollInterval);
+                    console.log(`[DeepResearchAgent] 任务失败: ${taskId}, 错误: ${taskStatus.error}`);
+                    
+                    // 🎯 记录失败的工具调用
+                    recordToolCall('crawl4ai', { mode: 'async_task_status', task_id: taskId }, false, taskStatus.error);
+                    
+                    reject(new Error(taskStatus.error || 'Task failed'));
+                }
+
+            } catch (error) {
+                console.error(`[DeepResearchAgent] 轮询任务 ${taskId} 失败:`, error);
+                // 网络错误时继续轮询
+            }
+        }, initialResponse.polling_interval * 1000 || 3000); // 默认3秒
+    });
+}
+
     /**
      * 🎯 知识感知的工具执行
      */
@@ -587,8 +708,51 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             // 可以在thought中引用知识指导
         }
 
-        // 正常执行工具调用...
-        return await this._executeToolCall(toolName, parameters, detectedMode, recordToolCall);
+        try {
+            // 🎯 增强重试机制
+            const strategy = this._getToolExecutionStrategy(toolName, parameters, detectedMode);
+            const maxRetries = 2;
+            let lastError;
+            
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    return await this._executeToolCall(toolName, parameters, detectedMode, recordToolCall);
+                } catch (error) {
+                    lastError = error;
+                    console.warn(`[DeepResearchAgent] 工具调用失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error.message);
+                    
+                    if (attempt < maxRetries) {
+                        // 等待后重试
+                        let delay = 1000; // 默认延迟
+                        if (strategy.retryStrategy === 'exponential') {
+                            delay = Math.pow(2, attempt) * 1000; // 指数退避
+                        } else if (strategy.retryStrategy === 'delayed') {
+                            delay = 3000; // 固定延迟
+                        }
+                        
+                        console.log(`[DeepResearchAgent] 等待 ${delay}ms 后重试...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            }
+            
+            // 所有重试都失败
+            throw lastError;
+            
+        } catch (error) {
+            console.error(`[DeepResearchAgent] ❌ 工具执行最终失败: ${toolName}`, error);
+            
+            // 🎯 增强错误信息
+            const errorObservation = `## ❌ 工具执行失败: ${toolName}\n\n**错误**: ${error.message}\n**参数**: ${JSON.stringify(parameters, null, 2)}\n**建议**: 请检查参数是否正确或尝试其他工具`;
+            
+            recordToolCall(toolName, parameters, false, errorObservation);
+            
+            return {
+                rawObservation: errorObservation,
+                toolSources: [],
+                toolSuccess: false
+            };
+        }
     }
 
     async conductResearch(researchRequest) {
@@ -1801,10 +1965,76 @@ _calculateSemanticMatchScore(source, reportLower) {
         const originalLength = observation.length;
         console.log(`[DeepResearchAgent] 开始处理工具 "${toolName}" 的输出，长度: ${originalLength} 字符`);
 
+        // 🎯 增强：对 crawl4ai 的 JSON 响应进行智能解析
+        if (toolName === 'crawl4ai') {
+            try {
+                const parsedData = typeof observation === 'string' ? JSON.parse(observation) : observation;
+                
+                // 如果是成功的 crawl4ai 响应，提取关键信息
+                if (parsedData.success && (parsedData.content || parsedData.extracted_data)) {
+                    console.log(`[DeepResearchAgent] 解析 crawl4ai 成功响应，提取主要内容`);
+                    
+                    let summarizedContent = '';
+                    
+                    // 提取元数据
+                    if (parsedData.metadata) {
+                        summarizedContent += `## 📊 页面信息\n`;
+                        summarizedContent += `- **标题**: ${parsedData.metadata.title || '无标题'}\n`;
+                        summarizedContent += `- **描述**: ${parsedData.metadata.description || '无描述'}\n`;
+                        summarizedContent += `- **字数**: ${parsedData.metadata.word_count || '未知'}\n\n`;
+                    }
+                    
+                    // 处理提取的结构化数据
+                    if (parsedData.extracted_data) {
+                        summarizedContent += `## 🔍 提取的结构化数据\n`;
+                        summarizedContent += `\`\`\`json\n${JSON.stringify(parsedData.extracted_data, null, 2)}\n\`\`\`\n\n`;
+                    }
+                    
+                    // 处理主要内容
+                    const content = parsedData.content || '';
+                    if (content.length > 3000) {
+                        summarizedContent += `## 📝 主要内容 (截断显示)\n${content.substring(0, 3000)}...\n\n*[内容过长已截断，完整内容 ${content.length} 字符]*`;
+                    } else if (content) {
+                        summarizedContent += `## 📝 主要内容\n${content}`;
+                    }
+                    
+                    // 添加链接信息
+                    if (parsedData.links) {
+                        summarizedContent += `\n\n## 🔗 相关链接\n`;
+                        if (parsedData.links.internal && parsedData.links.internal.length > 0) {
+                            summarizedContent += `- **内部链接**: ${parsedData.links.internal.length} 个\n`;
+                        }
+                        if (parsedData.links.external && parsedData.links.external.length > 0) {
+                            summarizedContent += `- **外部链接**: ${parsedData.links.external.length} 个\n`;
+                        }
+                    }
+                    
+                    // 添加内存信息
+                    if (parsedData.memory_info) {
+                        summarizedContent += `\n\n## 💾 系统状态\n`;
+                        summarizedContent += `- **内存使用**: ${parsedData.memory_info.system_memory_percent?.toFixed(1) || '未知'}%\n`;
+                        summarizedContent += `- **进程内存**: ${parsedData.memory_info.process_memory_mb?.toFixed(1) || '未知'}MB\n`;
+                    }
+                    
+                    console.log(`[DeepResearchAgent] ✅ crawl4ai 响应智能解析完成: ${originalLength} -> ${summarizedContent.length} 字符`);
+                    return summarizedContent;
+                }
+                
+                // 如果是失败响应
+                if (!parsedData.success) {
+                    return `## ❌ crawl4ai 执行失败\n**错误**: ${parsedData.error || '未知错误'}\n**详情**: ${observation.substring(0, 500)}`;
+                }
+                
+            } catch (e) {
+                // 如果不是 JSON，继续正常流程
+                console.log(`[DeepResearchAgent] crawl4ai 响应不是 JSON 格式，继续正常摘要流程`);
+            }
+        }
+
         // 🎯 搜索工具的结果本身就是摘要，不应再被摘要
-        const noSummarizeTools = ['tavily_search']; 
+        const noSummarizeTools = ['tavily_search'];
         const summarizationThresholds = {
-            'crawl4ai': 15000,  // 🎯 从2000提高到5000，降低压缩率
+            'crawl4ai': 15000,  // 🎯 对 crawl4ai 使用更高的阈值
             'firecrawl': 15000,
             'default': 10000
         };

@@ -813,9 +813,14 @@ const toolOptimizationProtocol = `
 ## 🛠️ 工具使用策略优化 (Agent Optimization Protocol)
 
 ### 🕷️ crawl4ai 使用禁忌与最佳实践:
-- **避开交互式页面**: 严禁抓取 URL 中包含 \`query\`, \`search\`, \`database\`, \`easyquery\` 等字样的动态查询页面（例如 \`data.stats.gov.cn/easyquery\`）。这些页面通常需要交互才能显示数据，静态抓取无效。
-- **优先选择静态页面**: 优先抓取包含“公报”、“报告”、“文章”、“新闻”字样的 URL。
-- **失败处理**: 如果对某个域名的抓取返回“内容过短”或失败，**不要**再次尝试该域名下的其他链接，直接切换到 \`tavily_search\` 寻找第三方权威汇总（如维基百科、智库报告）。
+- **避开交互式页面**: 严禁抓取 URL 中包含 \`query\`, \`search\`, \`database\`, \`easyquery\` 等字样的动态查询页面
+- **优先选择静态页面**: 优先抓取包含"公报"、"报告"、"文章"、"新闻"字样的 URL
+- **模式选择策略**:
+  - 单个页面信息提取 → 使用 \`scrape\` 模式
+  - 结构化数据提取 → 使用 \`extract\` 模式 + \`schema_definition\`
+  - 网站深度探索 → 使用 \`deep_crawl\` 模式
+  - 批量URL处理 → 使用 \`batch_crawl\` 模式
+- **失败处理**: 如果对某个域名的抓取返回"内容过短"或失败，切换到其他来源
 
 ### 🔍 tavily_search 策略优化:
 - **组合查询**: 尽量在一个查询中包含多个年份，例如 "中国人口 2020 2021 2022 2023 数据表"，而不是分年份搜索。
@@ -1120,23 +1125,32 @@ const toolOptimizationProtocol = `
 3.  **禁止隐瞒**：绝对不要因为一点小 Warning 就宣称“绘图失败”而把图表藏起来。
 `;
 
-        // 🔥🔥🔥 新增：工具降级响应处理指南 🔥🔥🔥
+        // 🔥🔥🔥 新增：工具降级响应处理指南 (增强版)
         const toolDegradationHandling = `
-## 🟡 工具降级响应处理指南
+## 🟡 工具降级响应处理指南 (Crawl4AI 专用)
 
-**当工具返回以下信息时，视为成功并继续**：
+**当 crawl4ai 返回以下信息时，视为成功并继续**：
 - "PDF生成已跳过，文本内容已完整返回"
 - "内存优化：部分功能已降级"
 - "内容已截断，核心信息完整"
 - 包含"降级"、"跳过"但提供有效内容的响应
+- 截图/PDF因内存限制跳过，但文本内容完整
 
 **处理原则**：
 1. 核心文本内容可用 → 继续研究流程
 2. 数据/图表生成成功 → 忽略内存警告
 3. 搜索返回部分结果 → 使用可用信息
+4. 异步任务已启动 → 等待轮询完成
 
 **示例思考**：
 "工具因内存限制跳过了PDF生成，但返回了完整的文本内容。这些信息足够我继续下一步研究。"
+
+**异步任务处理**：
+当 crawl4ai 返回 \`"async": true\` 和 \`task_id\` 时：
+- 系统会自动轮询任务状态
+- 你不需要手动处理轮询逻辑
+- 继续执行研究计划的其他步骤
+- 最终结果会在轮询完成后自动获取
 `;
 
         // 🎯 核心新增：代码生成和质量控制
@@ -1270,31 +1284,117 @@ if __name__ == "__main__":
 行动输入: {"code": "具体实现代码..."}
 `;
 
+        // 🎯 核心新增：异步任务状态查询格式
+        const asyncTaskStatusFormat = `
+## 异步任务状态查询
+当 crawl4ai 返回 \`"async": true\` 时，系统会自动处理轮询。如需手动查询状态：
+
+思考: [说明需要查询异步任务状态]
+行动: crawl4ai
+行动输入: {"mode": "async_task_status", "parameters": {"task_id": "具体的任务ID"}}
+`;
+
         // 🎯 核心修复：最终指令强化纪律
         const finalInstruction = `
 # ⚡ 最终指令
 请严格依据**当前任务**，决策出下一步的**唯一行动**。你的响应格式**必须**严格遵循"思考、行动、行动输入"的格式。除非所有计划步骤均已完成，否则不要生成最终报告。
 `;
 
-        // 🎯 核心修复：添加 crawl4ai 参数特别说明
+        // 🎯 核心修复：更新 crawl4ai 参数特别说明
         const crawl4aiSpecialNote = `
-## 🕷️ crawl4ai 特别使用说明
+## 🕷️ crawl4ai 增强版使用说明 (v2.0)
 
-**重要**: 当使用 \`extract\` 模式时，必须提供一个名为 \`schema_definition\` 的参数来定义提取的数据结构。请勿使用 \`schema\` 作为参数名。
+**重要更新**: crawl4ai 现在支持多种模式，请根据任务需求选择：
 
-**正确示例**:
+### 🎯 核心模式选择：
+- **\`scrape\`**: 抓取单个页面内容（默认推荐）
+- **\`extract\`**: 提取结构化数据（需要 \`schema_definition\`）
+- **\`deep_crawl\`**: 深度爬取整个网站
+- **\`batch_crawl\`**: 批量爬取多个URL
+- **\`screenshot\`**: 捕获页面截图
+- **\`pdf_export\`**: 导出页面为PDF
+
+### 📋 参数规范：
+**scrape 模式示例**:
+\`\`\`json
+{
+  "mode": "scrape",
+  "parameters": {
+    "url": "https://example.com",
+    "format": "markdown",
+    "include_links": true,
+    "include_images": true,
+    "return_screenshot": false,
+    "return_pdf": false,
+    "async_mode": false
+  }
+}
+\`\`\`
+
+**extract 模式示例** (关键修复：参数名必须是 \`schema_definition\`):
 \`\`\`json
 {
   "mode": "extract",
   "parameters": {
     "url": "https://example.com",
     "schema_definition": {
-      "title": "string",
-      "content": "string"
-    }
+      "name": "产品信息",
+      "baseSelector": ".product",
+      "fields": [
+        {
+          "name": "title",
+          "selector": "h1",
+          "type": "text"
+        },
+        {
+          "name": "price",
+          "selector": ".price",
+          "type": "text"
+        }
+      ]
+    },
+    "extraction_type": "css",
+    "async_mode": false
   }
 }
 \`\`\`
+
+**deep_crawl 模式示例**:
+\`\`\`json
+{
+  "mode": "deep_crawl",
+  "parameters": {
+    "url": "https://example.com",
+    "max_depth": 2,
+    "max_pages": 50,
+    "strategy": "bfs",
+    "include_external": false,
+    "keywords": ["关键词1", "关键词2"],
+    "async_mode": true
+  }
+}
+\`\`\`
+
+**batch_crawl 模式示例**:
+\`\`\`json
+{
+  "mode": "batch_crawl",
+  "parameters": {
+    "urls": ["https://example1.com", "https://example2.com"],
+    "stream": false,
+    "concurrent_limit": 3,
+    "async_mode": true
+  }
+}
+\`\`\`
+
+### ⚡ 异步任务支持：
+对于耗时操作，可设置 \`"async_mode": true\`，系统会自动处理任务轮询。
+
+### 🎯 智能内存管理：
+- 工具会自动进行内存优化和浏览器实例管理
+- 遇到内存警告时仍会返回核心文本内容
+- 截图和PDF生成在内存紧张时会自动降级
 `;
 
         // 修改：构建可用工具部分，包括特别提示
@@ -1432,9 +1532,11 @@ ${reportRequirements}
 ${researchMode === 'technical' ? codeQualityStandards : ''} // 💻 插入：技术模式下的代码质量标准
 
 # 输出格式 (知识驱动版本，严格遵守)
-
+ 
 ${knowledgeRetrievalOutputFormat}
-
+ 
+${asyncTaskStatusFormat}
+ 
 ## 如果需要继续研究：
 思考: [基于研究计划的详细推理，包括当前步骤评估、信息缺口分析、工具选择理由]
 行动: tool_name_here
@@ -1665,7 +1767,6 @@ ${strategy.reminder}
         // --- 核心工具的检测逻辑 (通用) ---
         const coreToolsToCheck = {
             'python_sandbox': ['python', '代码', '分析', '图表', '表格', '计算', '证明'],
-            'crawl4ai': ['extract', '提取'] // 重点关注最复杂的 extract 模式
         };
 
         // 检查最近一次交互是否是针对该工具的知识检索
@@ -1686,9 +1787,7 @@ ${strategy.reminder}
                 conditions.push(`计划执行需要使用复杂工具 \`${toolName}\`，但尚未查阅其最新操作指南。`);
                 
                 let reason = '获取该工具的基础用法和最佳实践。';
-                if (toolName === 'crawl4ai') {
-                    reason = '获取 `extract` 等高级模式的精确 `schema_definition` 格式和示例。';
-                } else if (toolName === 'python_sandbox') {
+                if (toolName === 'python_sandbox') {
                     reason = '获取特定任务（如数据可视化、文档生成）的标准化工作流和代码模板。';
                 }
 
@@ -1698,6 +1797,52 @@ ${strategy.reminder}
             }
         }
         
+        // 🔥 新增：在联邦知识系统中添加 crawl4ai 最佳实践
+        // crawl4ai 工具的知识检索条件
+        const crawl4aiToolName = 'crawl4ai';
+        // 检查是否需要使用 extract 模式
+        const needsExtractMode = subQuestion.includes('提取') ||
+                               subQuestion.includes('结构化') ||
+                               subQuestion.includes('数据表') ||
+                               subQuestion.includes('表格数据');
+
+        // 检查是否需要深度爬取
+        const needsDeepCrawl = subQuestion.includes('整个网站') ||
+                              subQuestion.includes('深度爬取') ||
+                              subQuestion.includes('多页面');
+
+        // 检查是否需要批量处理
+        const needsBatchCrawl = subQuestion.includes('多个') ||
+                               subQuestion.includes('批量') ||
+                               subQuestion.includes('列表');
+
+        // 触发条件：需要结构化数据提取，且尚未查阅指南
+        if (needsExtractMode && !hasJustLearned(crawl4aiToolName)) {
+            conditions.push(`计划需要使用 ${crawl4aiToolName} 的 extract 模式提取结构化数据，但尚未查阅其 Schema 定义方法。`);
+            suggestedTools.set(crawl4aiToolName, {
+                name: crawl4aiToolName,
+                reason: '学习 extract 模式的 schema_definition 参数定义和结构化数据提取最佳实践'
+            });
+        }
+
+        // 触发条件：需要深度爬取
+        if (needsDeepCrawl && !hasJustLearned(crawl4aiToolName)) {
+            conditions.push(`计划需要使用 ${crawl4aiToolName} 的 deep_crawl 模式进行深度网站爬取，但尚未查阅其配置方法。`);
+            suggestedTools.set(crawl4aiToolName, {
+                name: crawl4aiToolName,
+                reason: '学习 deep_crawl 模式的策略选择、深度控制和内存优化配置'
+            });
+        }
+        
+        // 触发条件：需要批量处理
+        if (needsBatchCrawl && !hasJustLearned(crawl4aiToolName)) {
+            conditions.push(`计划需要使用 ${crawl4aiToolName} 的 batch_crawl 模式进行批量 URL 爬取，但尚未查阅其配置方法。`);
+            suggestedTools.set(crawl4aiToolName, {
+                name: crawl4aiToolName,
+                reason: '学习 batch_crawl 模式的 URL 列表格式和批量处理最佳实践'
+            });
+        }
+
         // --- 技术模式专用的研究触发条件 ---
         if (researchPlan.research_mode === 'technical') {
             const stepTriggers = {
@@ -1851,7 +1996,12 @@ ${actionJson}
         }
         
         let toolsDesc = availableTools
-            .map(tool => `  - ${tool.name}: ${tool.description}`)
+            .map(tool => {
+                if (tool.name === 'crawl4ai') {
+                    return `  - ${tool.name}: [增强版] 支持网页抓取、深度爬取、结构化数据提取、批量处理、截图和PDF导出。支持异步任务和智能内存管理。`;
+                }
+                return `  - ${tool.name}: ${tool.description}`;
+            })
             .join('\n');
 
         // 💥 虚拟专家工具定义
