@@ -528,15 +528,27 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     }
                 }
                 
-                // 🎯 降级识别：检查 crawl4ai 是否降级运行
+            }
+
+            // 🎯 【新增】内存优化和降级错误恢复 (适用于 crawl4ai)
+            if (toolName === 'crawl4ai') {
+                // 1. 内存优化错误的特殊处理 (用户要求)
+                if (rawObservation.includes('内存紧张') && rawObservation.includes('文本内容已完整返回')) {
+                    const contentMatch = rawObservation.match(/内容长度: (\d+) 字符/);
+                    if (contentMatch) {
+                        console.log('[DeepResearchAgent] 🟡 内存优化模式：使用可用文本内容继续');
+                        toolSuccess = true; // 标记为成功，让Agent继续
+                    }
+                }
+                
+                // 2. 降级识别：检查 crawl4ai 是否降级运行
                 if (rawObservation.includes('pdf_skipped') ||
                     rawObservation.includes('内存优化') ||
                     rawObservation.includes('降级') ||
                     rawObservation.includes('跳过')) {
                     console.log('[DeepResearchAgent] 📝 检测到 crawl4ai 工具降级运行，但核心内容已获取');
-                    // 不标记为失败，Agent可以继续
-                    // 但确保工具执行状态为成功，因为核心内容已返回
-                    if (toolSuccess === undefined) {
+                    // 确保工具执行状态为成功，因为核心内容已返回
+                    if (toolSuccess === undefined || toolSuccess === false) {
                         toolSuccess = true;
                     }
                 }
@@ -545,6 +557,29 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             // ================================================================
             // 🚀 全新的智能分发中心 (模仿 chat-api-handler.js)
             // ================================================================
+            
+            // 🎯 【新增】crawl4ai 截图处理
+            if (toolName === 'crawl4ai' && toolSuccess) {
+                try {
+                    const outputData = JSON.parse(rawObservation);
+                    
+                    // 处理截图响应
+                    if (outputData.screenshot_data) {
+                        const imageData = {
+                            type: 'image',
+                            image_base64: outputData.screenshot_data,
+                            title: `网页截图: ${outputData.url || '未知页面'}`,
+                            compression_info: outputData.compression_info
+                        };
+                        console.log('[DeepResearchAgent] 📸 检测到 crawl4ai 截图，正在处理...');
+                        rawObservation = this._handleGeneratedImage(imageData);
+                    }
+                } catch (e) {
+                    // 非JSON响应，保持原样
+                    console.log('[DeepResearchAgent] crawl4ai 响应不是截图JSON格式，继续。');
+                }
+            }
+
             if (toolName === 'python_sandbox' && toolSuccess) {
                 try {
                     // toolResult.output 是后端返回的 stdout 字符串

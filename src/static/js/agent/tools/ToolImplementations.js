@@ -735,9 +735,24 @@ class DeepResearchToolAdapter {
                     
                     console.log(`[DeepResearchAdapter] crawl4ai 已解析的响应数据:`, crawlData);
                     
+                    // 🎯 【新增】处理批量爬取结果 (results 数组)
+                    if (crawlData.results && Array.isArray(crawlData.results)) {
+                        console.log(`[DeepResearchAdapter] ✅ 检测到批量爬取结果 (${crawlData.results.length} 个)`);
+                        sources = crawlData.results.map(result => ({
+                            title: result.title || result.url,
+                            url: result.url,
+                            description: `内容长度: ${result.content?.length || 0} 字符`,
+                            source_type: 'web_page'
+                        }));
+                        // 合并所有内容作为输出
+                        output = crawlData.results.map(r => r.content).filter(c => c).join('\n\n---\n\n');
+                        success = true;
+                        break; // 🎯 成功处理，跳出 switch
+                    }
+
                     // 🎯 增强错误检测：检查多种失败标志
-                    const isError = rawResponse.error || 
-                                   crawlData.success === false || 
+                    const isError = rawResponse.error ||
+                                   crawlData.success === false ||
                                    (crawlData.data && crawlData.data.success === false) ||
                                    (crawlData.status && crawlData.status >= 400);
 
