@@ -281,7 +281,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
      * 增强的工具执行方法
      */
 // 🚀🚀🚀 [v2.2 核心升级] 具备完整智能分发中心的工具执行方法 🚀🚀🚀
-    async _executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
+    async _executeToolCall(toolName, parameters, detectedMode, recordToolCall, strategy = {}) {
 
         // ============================================================
         // 🔥🔥🔥 虚拟专家接管系统 (优先级最高) 🔥🔥🔥
@@ -489,10 +489,41 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             // 🔥🔥🔥 预检结束 🔥🔥🔥
             // ============================================================
 
+            // 🎯 优化 crawl4ai 参数，避免长时间等待
+            if (toolName === 'crawl4ai') {
+                const optimizedParams = { ...parameters };
+                
+                // 为深度研究模式设置更保守的参数
+                if (detectedMode === 'deep') {
+                    // 检查 parameters 是否存在，并确保它是一个对象
+                    if (optimizedParams.parameters && typeof optimizedParams.parameters === 'object') {
+                        // 减少等待时间
+                        optimizedParams.parameters.wait_for = Math.min(
+                            optimizedParams.parameters.wait_for || 8000,
+                            3000 // 深度模式下最大3秒
+                        );
+                        // 只抓取主要内容
+                        optimizedParams.parameters.only_main_content = true;
+                        // 启用异步模式
+                        optimizedParams.parameters.async_mode = true;
+                    } else {
+                        // 如果 parameters 不存在，则创建它并设置默认值
+                        optimizedParams.parameters = {
+                            wait_for: 3000,
+                            only_main_content: true,
+                            async_mode: true
+                        };
+                    }
+                }
+                parameters = optimizedParams;
+                console.log('[DeepResearchAgent] crawl4ai 参数优化:', parameters);
+            }
+
             // --- 调用工具 ---
             const toolResult = await tool.invoke(parameters, {
                 mode: 'deep_research',
-                researchMode: detectedMode
+                researchMode: detectedMode,
+                timeoutMultiplier: strategy.timeoutMultiplier || 1.0 // 🔥 核心修复：传递超时乘数
             });
             
             rawObservation = toolResult.output || JSON.stringify(toolResult);
@@ -820,7 +851,7 @@ async _pollCrawl4AITask(taskId, initialResponse, tool, detectedMode, recordToolC
             
             for (let attempt = 0; attempt <= maxRetries; attempt++) {
                 try {
-                    return await this._executeToolCall(toolName, parameters, detectedMode, recordToolCall);
+                    return await this._executeToolCall(toolName, parameters, detectedMode, recordToolCall, strategy);
                 } catch (error) {
                     lastError = error;
                     console.warn(`[DeepResearchAgent] 工具调用失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error.message);

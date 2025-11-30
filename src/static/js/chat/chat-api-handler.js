@@ -730,13 +730,20 @@ export class ChatApiHandler {
             };
             console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
 
-            // 调用后端代理 (从原代码复制)
-            console.log(`[${timestamp()}] [MCP] Sending fetch request to /api/mcp-proxy...`);
+            // 调用后端代理
+            const timeoutMs = 180000; // 3分钟超时
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+            console.log(`[${timestamp()}] [MCP] Sending fetch request to /api/mcp-proxy with timeout: ${timeoutMs}ms...`);
             const proxyResponse = await fetch('/api/mcp-proxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(proxyRequestBody)
+                body: JSON.stringify(proxyRequestBody),
+                signal: controller.signal // 🎯 添加中止信号
             });
+
+            clearTimeout(timeoutId); // 🎯 清除超时定时器
             console.log(`[${timestamp()}] [MCP] Fetch request to /api/mcp-proxy FINISHED. Response status: ${proxyResponse.status}`);
 
             if (!proxyResponse.ok) {
@@ -746,7 +753,7 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
-            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 🔥🔥🔥 (从原代码复制)
+            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 🔥🔥🔥
             const toolRawResult = await proxyResponse.json();
             console.log(`[${timestamp()}] [MCP] Received unified result from backend:`, toolRawResult);
 
@@ -859,8 +866,18 @@ export class ChatApiHandler {
 
         } catch (toolError) {
             console.error(`[${timestamp()}] [MCP] --- CATCH BLOCK ERROR ---`, toolError);
-            Logger.error('MCP 工具执行失败:', toolError);
-            ui.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
+            
+            // 🎯 新增：区分超时错误和其他错误
+            if (toolError.name === 'AbortError') {
+                const timeoutMs = 180000; // 3分钟超时
+                const errorMsg = `MCP 工具调用超时（${timeoutMs/1000}秒），请稍后重试或简化请求参数`;
+                Logger.error('MCP 工具执行超时:', errorMsg);
+                ui.logMessage(`MCP 工具执行超时: ${errorMsg}`, 'system');
+                toolError.message = errorMsg; // 覆盖错误消息以提供更清晰的上下文
+            } else {
+                Logger.error('MCP 工具执行失败:', toolError);
+                ui.logMessage(`MCP 工具执行失败: ${toolError.message}`, 'system');
+            }
             
             // 即使失败，也要将失败信息以正确的格式加入历史记录
             const callId = `call_${Date.now()}`; // 统一生成 ID
@@ -959,6 +976,40 @@ export class ChatApiHandler {
         console.log(`[${timestamp()}] [ChatApiHandler] Forwarding tool call to backend proxy: ${toolName}`, parameters);
         
         try {
+            // 🎯 智能超时设置：根据工具类型设置不同的超时时间
+            const getTimeoutForTool = (toolName, params) => {
+                switch (toolName) {
+                    case 'crawl4ai':
+                        // 根据 crawl4ai 的不同模式设置超时
+                        const mode = params?.mode || 'scrape';
+                        switch (mode) {
+                            case 'deep_crawl':
+                            case 'batch_crawl':
+                                return 180000; // 3分钟 - 深度爬取需要更长时间
+                            case 'scrape':
+                            case 'extract':
+                                return 120000; // 2分钟 - 普通抓取
+                            case 'screenshot':
+                            case 'pdf_export':
+                                return 90000;  // 1.5分钟 - 截图/PDF
+                            default:
+                                return 120000; // 默认2分钟
+                        }
+                    case 'python_sandbox':
+                        return 60000; // 1分钟 - 代码执行
+                    case 'tavily_search':
+                        return 30000; // 30秒 - 搜索
+                    default:
+                        return 60000; // 默认1分钟
+                }
+            };
+
+            const timeoutMs = getTimeoutForTool(toolName, parameters);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+            console.log(`[${timestamp()}] [ChatApiHandler] 设置超时: ${timeoutMs}ms for ${toolName}`);
+
             // 核心：简单地将请求发送到通用的后端代理端点
             const response = await fetch('/api/mcp-proxy', {
                 method: 'POST',
@@ -969,10 +1020,12 @@ export class ChatApiHandler {
                     tool_name: toolName,
                     parameters: parameters || {},
                     requestId: `tool_call_${Date.now()}`,
-                    // 🎯 核心修复：为Agent的工具调用添加会话ID，使其能够读写文件
                     session_id: this.state.currentSessionId
                 }),
+                signal: controller.signal // 🎯 添加中止信号
             });
+
+            clearTimeout(timeoutId); // 🎯 清除超时定时器
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -991,8 +1044,14 @@ export class ChatApiHandler {
 
         } catch (error) {
             console.error(`[${timestamp()}] [ChatApiHandler] Error during tool proxy call for ${toolName}:`, error);
+            
+            // 🎯 新增：区分超时错误和其他错误
+            if (error.name === 'AbortError') {
+                throw new Error(`工具调用超时（${timeoutMs/1000}秒），请稍后重试或使用其他工具`);
+            }
+            
             // 向上抛出错误，让 Orchestrator 能够捕获并处理
-            throw error; 
+            throw error;
         }
     }
 }
