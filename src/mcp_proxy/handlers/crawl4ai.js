@@ -9,6 +9,24 @@
  * @param {object} env - The Cloudflare Worker environment object.
  * @returns {Promise<Response>} - A promise that resolves to a streaming Response.
  */
+/**
+ * 🎯 模式专用超时设置（毫秒）
+ * @param {string} mode - Crawl4AI 模式
+ * @returns {number} - 超时时间（毫秒）
+ */
+const getTimeoutForMode = (mode) => {
+    const timeouts = {
+        'deep_crawl': 400000,    // 400秒 (后端最大超时)
+        'batch_crawl': 300000,   // 300秒
+        'extract': 120000,        // 120秒
+        'scrape': 90000,         // 90秒
+        'pdf_export': 90000,     // 90秒
+        'screenshot': 90000      // 90秒
+    };
+    // 默认使用 deep_crawl 的超时时间，以防模式未定义
+    return timeouts[mode] || timeouts['deep_crawl'];
+};
+
 export async function handleCrawl4AI(tool_params, env) {
     const toolServerUrl = 'https://tools.10110531.xyz/api/v1/execute_tool';
 
@@ -117,8 +135,8 @@ async function processCrawlRequest(writer, encoder, toolServerUrl, requestBody, 
 
         // 🔥 执行实际的工具服务器请求（带更保守的超时）
         const controller = new AbortController();
-        // 🎯 修正：设置为 420 秒 (420000 毫秒) 以覆盖后端最长的 400 秒超时
-        const BACKEND_TIMEOUT_MS = 420000;
+        // 🎯 修正：根据模式设置超时时间
+        const BACKEND_TIMEOUT_MS = getTimeoutForMode(mode);
         const timeoutId = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
         try {

@@ -385,7 +385,7 @@ class EnhancedCrawl4AITool:
             
             result = await self._execute_with_timeout(
                 crawler.arun(url=params.url, config=config),
-                timeout=120
+                timeout=90 # 缩短超时时间至 90 秒，以避免 Cloudflare 524 错误
             )
             
             # 🎯 核心修复：增加对结果和内容的双重检查
@@ -454,8 +454,8 @@ class EnhancedCrawl4AITool:
         except asyncio.TimeoutError:
             logger.error(f"⏰ 抓取操作超时: {params.url}")
             return {
-                "success": False, 
-                "error": "抓取操作超时（120秒）",
+                "success": False,
+                "error": "抓取操作超时（90秒）",
                 "memory_info": await self._get_system_memory_info()
             }
         except Exception as e:
@@ -525,54 +525,70 @@ class EnhancedCrawl4AITool:
                 filter_chain = FilterChain([url_filter])
                 deep_crawl_strategy.filter_chain = filter_chain
             
+            # 🎯 强制启用流式模式，以便在爬取过程中发送进度更新，避免 Cloudflare 524 错误
             config = CrawlerRunConfig(
                 cache_mode=CacheMode.BYPASS,
                 deep_crawl_strategy=deep_crawl_strategy,
                 scraping_strategy=LXMLWebScrapingStrategy(),
-                stream=params.stream,
-                verbose=True
+                stream=True,  # 强制流式
+                verbose=False # 减少详细日志
             )
             
             crawled_pages = []
             total_pages = 0
+            progress_report_count = 0
+            start_time = time.time()
             
-            if params.stream:
-                # 流式处理结果
-                async for result in await crawler.arun(params.url, config=config):
-                    if result.success:
-                        page_data = {
-                            "url": result.url,
-                            "title": getattr(result, 'title', ''),
-                            "content": getattr(result, 'markdown', ''),
-                            "depth": result.metadata.get('depth', 0),
-                            "score": result.metadata.get('score', 0),
-                            "metadata": {
-                                "word_count": len(getattr(result, 'markdown', '')),
-                            }
+            # 🎯 发送开始进度
+            logger.info(f"DeepCrawl Started: {params.url}")
+            
+            # 🎯 使用流式处理收集结果
+            # 使用 _execute_with_timeout 包装 arun，以确保整个流式操作在 400 秒内完成
+            async for result in await self._execute_with_timeout(
+                crawler.arun(params.url, config=config),
+                timeout=400
+            ):
+                if result.success:
+                    page_data = {
+                        "url": result.url,
+                        "title": getattr(result, 'title', ''),
+                        "content": getattr(result, 'markdown', ''),
+                        "depth": result.metadata.get('depth', 0),
+                        "score": result.metadata.get('score', 0),
+                        "metadata": {
+                            "word_count": len(getattr(result, 'markdown', '')),
                         }
-                        crawled_pages.append(page_data)
-                        total_pages += 1
-            else:
-                # 批量处理结果
-                results = await self._execute_with_timeout(
-                    crawler.arun(params.url, config=config),
-                    timeout=400 # 超时时间适度增加 (从 300 增加到 400秒)
-                )
-                
-                for result in results:
-                    if hasattr(result, 'success') and result.success:
-                        page_data = {
-                            "url": result.url,
-                            "title": getattr(result, 'title', ''),
-                            "content": getattr(result, 'markdown', ''),
-                            "depth": result.metadata.get('depth', 0),
-                            "score": result.metadata.get('score', 0),
-                            "metadata": {
-                                "word_count": len(getattr(result, 'markdown', '')),
-                            }
-                        }
-                        crawled_pages.append(page_data)
-                        total_pages += 1
+                    }
+                    crawled_pages.append(page_data)
+                    total_pages += 1
+                    progress_report_count += 1
+                    
+                    # 🎯 定期发送进度心跳（每2个页面或每30秒）
+                    current_time = time.time()
+                    if progress_report_count % 2 == 0 or (current_time - start_time) > 30:
+                        elapsed = current_time - start_time
+                        logger.info(f"DeepCrawl Progress: Crawled {total_pages} pages in {elapsed:.1f}s")
+                        start_time = current_time  # 重置计时器
+                    
+                    # 安全限制
+                    if total_pages >= params.max_pages:
+                        logger.info(f"DeepCrawl Max Pages limit reached: {params.max_pages}")
+                        break
+            
+            logger.info(f"✅ DeepCrawl Completed: {total_pages} pages")
+            
+            return {
+                "success": True,
+                "crawled_pages": crawled_pages,
+                "total_pages": total_pages,
+                "summary": {
+                    "start_url": params.url,
+                    "max_depth": params.max_depth,
+                    "strategy": params.strategy,
+                    "pages_crawled": total_pages
+                },
+                "memory_info": await self._get_system_memory_info()
+            }
             
             return {
                 "success": True,
@@ -588,9 +604,13 @@ class EnhancedCrawl4AITool:
             }
             
         except asyncio.TimeoutError:
+            logger.warning(f"⏰ DeepCrawl Timeout, returning {total_pages} pages as partial result.")
             return {
-                "success": False, 
-                "error": "深度爬取操作超时（300秒）",
+                "success": True, # 即使超时，也返回部分结果
+                "error": f"深度爬取操作超时（400秒），返回部分结果 ({total_pages} 页)",
+                "crawled_pages": crawled_pages,
+                "total_pages": total_pages,
+                "partial_result": True,
                 "memory_info": await self._get_system_memory_info()
             }
         except Exception as e:
@@ -609,67 +629,88 @@ class EnhancedCrawl4AITool:
         """批量爬取多个URL - 优化版本"""
         logger.info(f"🔗 开始批量爬取 {len(params.urls)} 个URL")
         
+        # 🎯 整体超时控制
+        start_time = time.time()
+        overall_timeout = 300  # 5分钟整体超时
+        
         try:
             crawler = await self._get_crawler()
             if crawler is None:
                 return {
-                    "success": False, 
+                    "success": False,
                     "error": "浏览器实例未正确初始化",
                     "memory_info": await self._get_system_memory_info()
                 }
             
-            # 使用更轻量的配置
+            # 🎯 强制启用流式模式，并使用 arun_many 进行真正的批量处理
             config = CrawlerRunConfig(
                 cache_mode=CacheMode.BYPASS,
                 word_count_threshold=10,
-                stream=params.stream
+                stream=True # 强制流式
             )
             
             crawled_results = []
             successful_crawls = 0
+            progress_counter = 0
             
-            # 对于批量爬取，使用更保守的方式
-            for url in params.urls:
-                if len(crawled_results) >= 20:  # 安全限制 (从 10 增加到 20)
+            # 🎯 发送开始进度
+            logger.info(f"BatchCrawl Started: {len(params.urls)} URLs")
+            
+            # 🎯 使用 arun_many 进行批量流式处理
+            # 🎯 安全限制：并发数不超过 4，以保证服务器稳定性
+            async for result in await crawler.arun_many(
+                urls=params.urls,
+                config=config,
+                concurrent_limit=min(params.concurrent_limit, 4)
+            ):
+                progress_counter += 1
+                
+                # 🎯 检查整体超时
+                current_time = time.time()
+                elapsed = current_time - start_time
+                if elapsed > overall_timeout:
+                    logger.warning(f"⏰ BatchCrawl overall timeout after {overall_timeout}s. Returning partial results.")
                     break
-                    
-                try:
-                    result = await self._execute_with_timeout(
-                        crawler.arun(url=url, config=config),
-                        timeout=120 # 超时时间适度增加 (从 60 增加到 120秒)
-                    )
-                    
-                    if result.success:
-                        page_data = {
-                            "url": result.url,
-                            "title": getattr(result, 'title', ''),
-                            "content": getattr(result, 'markdown', ''),
-                            "metadata": {
-                                "word_count": len(getattr(result, 'markdown', '')),
-                                "status_code": getattr(result, 'status_code', 200)
-                            }
+                
+                if result.success:
+                    page_data = {
+                        "url": result.url,
+                        "title": getattr(result, 'title', ''),
+                        "content": getattr(result, 'markdown', ''),
+                        "metadata": {
+                            "word_count": len(getattr(result, 'markdown', '')),
+                            "status_code": getattr(result, 'status_code', 200)
                         }
-                        crawled_results.append(page_data)
-                        successful_crawls += 1
-                    else:
-                        crawled_results.append({
-                            "url": url,
-                            "error": result.error_message,
-                            "success": False
-                        })
-                        
-                    # 每个URL之间短暂延迟
-                    await asyncio.sleep(1)
-                    
-                except Exception as e:
+                    }
+                    crawled_results.append(page_data)
+                    successful_crawls += 1
+                else:
                     crawled_results.append({
-                        "url": url,
-                        "error": str(e),
+                        "url": result.url,
+                        "error": result.error_message or "Unknown error during crawl",
                         "success": False
                     })
+                
+                # 🎯 每个URL处理后发送进度心跳
+                logger.info(f"BatchCrawl Progress: {progress_counter}/{len(params.urls)} URLs processed in {elapsed:.1f}s")
+                
+                # 安全限制
+                if progress_counter >= 20:
+                    logger.info(f"BatchCrawl Max Pages limit reached: 20")
+                    break
+            
+            logger.info(f"✅ BatchCrawl Completed: {successful_crawls}/{len(params.urls)} successful")
+            
+            # 确定最终成功状态
+            final_success = True
+            final_error = None
+            if elapsed > overall_timeout:
+                final_success = False
+                final_error = f"批量爬取操作超时（{overall_timeout}秒），返回部分结果 ({successful_crawls} 成功)"
             
             return {
-                "success": True,
+                "success": final_success,
+                "error": final_error,
                 "results": crawled_results,
                 "summary": {
                     "total_urls": len(params.urls),
@@ -685,7 +726,7 @@ class EnhancedCrawl4AITool:
             if "browser" in str(e).lower() or "context" in str(e).lower() or "NoneType" in str(e):
                 await self._handle_browser_crash(e)
             return {
-                "success": False, 
+                "success": False,
                 "error": f"批量爬取错误: {str(e)}",
                 "memory_info": await self._get_system_memory_info()
             }
@@ -752,25 +793,49 @@ class EnhancedCrawl4AITool:
                 )
                 config_kwargs["extraction_strategy"] = extraction_strategy
             
+            # 🎯 强制启用流式模式
+            config_kwargs["stream"] = True
             config = CrawlerRunConfig(**config_kwargs)
             
-            result = await self._execute_with_timeout(
+            start_time = time.time()
+            extracted_data = None
+            
+            # 🎯 发送开始进度
+            logger.info(f"Extract Started: {params.url}")
+            
+            # 🎯 使用流式处理，并使用 _execute_with_timeout 包装 arun
+            async for result in await self._execute_with_timeout(
                 crawler.arun(url=params.url, config=config),
                 timeout=120
-            )
-            
-            if not result.success or not hasattr(result, 'extracted_content') or not result.extracted_content:
-                error_message = result.error_message or "未能提取到任何结构化内容。这可能是因为页面内容是动态加载的，或者提取策略（Schema/Selector）与页面结构不匹配。"
+            ):
+                if result.success:
+                    # 🎯 处理过程中发送进度心跳
+                    elapsed = time.time() - start_time
+                    if elapsed > 30:  # 如果处理时间较长，发送心跳
+                        logger.info(f"Extract Progress: Still processing at {elapsed:.1f}s")
+                        start_time = time.time() # 重置计时器
+                        
+                    # 处理提取结果
+                    if hasattr(result, 'extracted_content') and result.extracted_content:
+                        try:
+                            extracted_data = json.loads(result.extracted_content)
+                        except (json.JSONDecodeError, TypeError):
+                            extracted_data = result.extracted_content
+                        
+                        # 提取模式通常只需要第一个结果
+                        break
+                else:
+                    # 如果流中返回失败，则立即中断
+                    error_message = result.error_message or "提取失败"
+                    logger.error(f"❌ 数据提取失败: {params.url} - {error_message}")
+                    return {"success": False, "error": f"数据提取失败: {error_message}", "memory_info": await self._get_system_memory_info()}
+
+            if extracted_data is None:
+                error_message = "未能提取到任何结构化内容。这可能是因为页面内容是动态加载的，或者提取策略（Schema/Selector）与页面结构不匹配。"
                 logger.error(f"❌ 数据提取失败: {params.url} - {error_message}")
                 return {"success": False, "error": f"数据提取失败: {error_message}", "memory_info": await self._get_system_memory_info()}
-            
-            extracted_data = {}
-            if result.extracted_content:
-                try:
-                    extracted_data = json.loads(result.extracted_content)
-                except (json.JSONDecodeError, TypeError):
-                    extracted_data = result.extracted_content
 
+            logger.info(f"✅ Extract Completed: {params.url}")
             return {
                 "success": True, "url": params.url, "extracted_data": extracted_data,
                 "metadata": {"extraction_type": params.extraction_type, "success": True},
@@ -778,6 +843,7 @@ class EnhancedCrawl4AITool:
             }
             
         except asyncio.TimeoutError:
+            logger.warning("⏰ Extract Timeout")
             return {"success": False, "error": "数据提取操作超时（120秒）", "memory_info": await self._get_system_memory_info()}
         except Exception as e:
             logger.error(f"❌ 数据提取时发生意外错误: {str(e)}")
@@ -804,7 +870,7 @@ class EnhancedCrawl4AITool:
             
             result = await self._execute_with_timeout(
                 crawler.arun(url=params.url, config=config),
-                timeout=120
+                timeout=90 # 缩短超时时间至 90 秒，以避免 Cloudflare 524 错误
             )
             
             if not result.success or not result.pdf:
