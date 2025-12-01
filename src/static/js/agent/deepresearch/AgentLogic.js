@@ -1280,6 +1280,21 @@ if __name__ == "__main__":
         const crawl4aiSpecialNote = `
 ## 🕷️ crawl4ai 特别使用说明
 
+**核心增强：批量爬取 (Batch Scrape)**
+- **模式**: \`batch_scrape\`
+- **用途**: 在 \`tavily_search\` 成功后，如果认为有多个链接值得深入研究，可以一次性抓取 **2-3 个**最权威的 URL，以加速信息收集。
+- **参数**: 必须传入一个 URL 数组 \`urls\`。
+
+**正确示例 (批量爬取)**:
+\`\`\`json
+{
+  "mode": "batch_scrape",
+  "parameters": {
+    "urls": ["https://url1.com", "https://url2.com", "https://url3.com"]
+  }
+}
+\`\`\`
+
 **重要**: 当使用 \`extract\` 模式时，必须提供一个名为 \`schema_definition\` 的参数来定义提取的数据结构。请勿使用 \`schema\` 作为参数名。
 
 ### ⚠️ \`extract\` 模式限制 (强制遵守)
@@ -1399,6 +1414,22 @@ ${managerDecisionFramework} // 🎯 核心新增：经理人委托版决策框�
     1.  **仔细分析**上一步 \`tavily_search\` 的观察结果（\`[深度来源 1]\`,\`[深度来源 2]\`...）。
     2.  从列表中**识别出 1-2 个最权威、最相关的 URL**。优先选择官方文档、深度文章、研究报告或标题与子问题高度匹配的链接。
     3.  你的下一步行动**必须是**调用 \`crawl4ai\` 来获取这些URL的**完整内容**。
+    
+    **核心增强：批量爬取 (Batch Scrape)**
+    - **模式**: \`batch_scrape\`
+    - **用途**: 如果你识别出 **3-4 个**权威 URL，请使用此模式一次性抓取，以加速信息收集。
+    - **参数**: 必须传入一个 URL 数组 \`urls\`。
+    - **备注**:目前\`crawl4ai\`最大并大数为4，请勿超过4个。
+
+    **正确示例 (批量爬取)**:
+    \`\`\`json
+    {
+      "mode": "batch_scrape",
+      "parameters": {
+        "urls": ["https://url1.com", "https://url2.com", "https://url3.com"]
+      }
+    }
+    \`\`\`
 
 ### **阶段 C：信息综合与验证 (python_sandbox / tavily_search)**
 - **触发条件**: 当你已经通过 \`crawl4ai\` 获取了1-2个高质量的全文信息后。
