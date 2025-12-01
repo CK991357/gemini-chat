@@ -1282,7 +1282,11 @@ if __name__ == "__main__":
 
 **重要**: 当使用 \`extract\` 模式时，必须提供一个名为 \`schema_definition\` 的参数来定义提取的数据结构。请勿使用 \`schema\` 作为参数名。
 
-**正确示例**:
+### ⚠️ \`extract\` 模式限制 (强制遵守)
+1.  **禁止 AI 智能提取**: 当前部署的 \`crawl4ai\` 仅支持基于 **精确 CSS 选择器** 的结构化数据提取（\`extraction_type: 'css'\`）。
+2.  **禁止 LLM 驱动提取**: **严禁**尝试进行 LLM 驱动的智能提取（\`extraction_type: 'llm'\`），该功能未配置或不稳定。
+
+**正确示例 (CSS 驱动提取)**:
 \`\`\`json
 {
   "mode": "extract",

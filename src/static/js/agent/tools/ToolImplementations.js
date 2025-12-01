@@ -24,6 +24,7 @@ class DeepResearchToolAdapter {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_links: true,
                         format: 'markdown',
+                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
                         wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         exclude_external_links: false,  // 🎯 修复：不禁用外部链接
                         headers: { // 伪装 User-Agent
@@ -39,12 +40,12 @@ class DeepResearchToolAdapter {
                         ]
                     },
                     deep_crawl: {
-                        max_pages: 20,
+                        max_pages: 80, // ⬆️ 匹配后端内存升级后的新能力
                         max_depth: 3,
                         strategy: 'bfs'
                     },
                     extract: {
-                        extraction_type: 'llm',
+                        extraction_type: 'css', // 🎯 修复：强制使用 CSS 提取，避免调用后端不稳定的 LLM 提取
                         format: 'markdown'
                     }
                 },
@@ -69,6 +70,7 @@ class DeepResearchToolAdapter {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_tables: true,
                         format: 'markdown',
+                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
                         wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         exclude_external_links: false,  // 🎯 修复：不禁用外部链接
                         headers: { // 伪装 User-Agent
@@ -99,6 +101,7 @@ class DeepResearchToolAdapter {
                         format: 'markdown',
                         include_math: true,
                         include_code: true,
+                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
                         wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         exclude_external_links: false,  // 🎯 修复：不禁用外部链接
@@ -129,6 +132,7 @@ class DeepResearchToolAdapter {
                         include_code: true,
                         include_links: true,
                         format: 'markdown',
+                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
                         wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         exclude_external_links: false,  // 🎯 修复：不禁用外部链接
@@ -163,6 +167,7 @@ class DeepResearchToolAdapter {
                     scrape: {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         format: 'markdown',
+                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
                         wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         exclude_external_links: false,  // 🎯 修复：不禁用外部链接
                         headers: { // 伪装 User-Agent
@@ -192,6 +197,7 @@ class DeepResearchToolAdapter {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_images: false,
                         format: 'markdown',
+                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
                         wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         exclude_external_links: false,  // 🎯 修复：不禁用外部链接
                         headers: { // 伪装 User-Agent
@@ -219,6 +225,7 @@ class DeepResearchToolAdapter {
                     scrape: {
                         only_main_content: false,     // 🎯 关键修复：完全禁用内容过滤
                         format: 'markdown',
+                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
                         wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
                         exclude_external_links: false, // 🎯 修复：不禁用外部链接
                         headers: { // 伪装 User-Agent
@@ -234,11 +241,11 @@ class DeepResearchToolAdapter {
                         ]
                     },
                     deep_crawl: {
-                        max_pages: 5,
-                        max_depth: 1
+                        max_pages: 20, // ⬆️ 提升默认值
+                        max_depth: 2 // ⬆️ 提升默认值
                     },
                     extract: {
-                        extraction_type: 'llm'
+                        extraction_type: 'css' // 🎯 修复：强制使用 CSS 提取
                     }
                 }
             }
@@ -1460,7 +1467,7 @@ class ProxiedTool extends BaseTool {
         const baseTimeouts = {
             'python_sandbox': 60000,
             'tavily_search': 45000, // ⬆️ 从 20000 增加到 45000 (45秒)
-            'crawl4ai': 45000,
+            'crawl4ai': 90000, // 🎯 修复：匹配后端单次请求的 90 秒超时
             'stockfish_analyzer': 30000,
             'glm4v_analyze_image': 25000,
             'mcp_tool_catalog': 10000,
