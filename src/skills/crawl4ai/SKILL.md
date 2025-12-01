@@ -220,8 +220,8 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 
 **参数说明:**
 - `url` (必需): 起始 URL
-- `max_depth`: 最大爬取深度，默认 3 (已调整)
-- `max_pages`: 最大页面数，默认 80 (已调整)
+- `max_depth`: 最大爬取深度，默认 3 (已根据服务器内存升级调整)
+- `max_pages`: 最大页面数，默认 80 (已根据服务器内存升级调整)
 - `strategy`: 爬取策略，`bfs`(默认)/`dfs`/`best_first`
 - `include_external`: 是否跟踪外部链接，默认 false
 - `keywords`: 用于相关性评分的关键词列表
@@ -243,7 +243,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
       "https://example.com/page3"
     ],
     "stream": false,
-    "concurrent_limit": 3
+    "concurrent_limit": 4
   }
 }
 ```
@@ -261,7 +261,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 **参数说明:**
 - `urls` (必需): URL 列表，必须是数组格式
 - `stream`: 是否流式返回，默认 false
-- `concurrent_limit`: 最大并发数，默认 4 (已调整)
+- `concurrent_limit`: 最大并发数，默认 4 (已根据服务器内存升级调整，并设置了硬性上限)
 
 ### 4. 结构化数据提取 (`extract`)
 
@@ -444,8 +444,8 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 ### 常见问题与解决方案
 
 #### 性能问题
-- **超时问题**: 增加 `max_pages` 或 `max_depth`，提高 `concurrent_limit` (默认值已提高，请谨慎调整)
-- **内存问题**: 启用 `stream: true`，减少批量处理的 URL 数量
+- **超时问题**: 增加 `max_pages` 或 `max_depth`，提高 `concurrent_limit` (默认值已提高，请谨慎调整)。**注意：** 长时间任务已启用流式心跳机制，但如果任务超过 5 分钟（批量）或 400 秒（深度），仍可能超时。
+- **内存问题**: 启用 `stream: true`，减少批量处理的 URL 数量。**注意：** 后端已设置内存上限，高并发可能触发浏览器重启。
 
 #### 内容质量问题  
 - **内容缺失**: 调整 `word_count_threshold`，检查 `css_selector`

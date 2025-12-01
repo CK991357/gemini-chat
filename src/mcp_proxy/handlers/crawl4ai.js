@@ -215,6 +215,7 @@ async function processCrawlRequest(writer, encoder, toolServerUrl, requestBody, 
                     type: 'error',
                     success: false,
                     error: `Request failed: ${fetchError.message}`,
+                    details: fetchError.stack || 'No stack trace available',
                     timestamp: new Date().toISOString()
                 }) + '\n'));
             }
@@ -227,6 +228,7 @@ async function processCrawlRequest(writer, encoder, toolServerUrl, requestBody, 
                 type: 'error',
                 success: false,
                 error: `Unexpected error: ${error.message}`,
+                details: error.stack || 'No stack trace available',
                 timestamp: new Date().toISOString()
             }) + '\n'));
         } catch (writeError) {

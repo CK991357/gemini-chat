@@ -734,7 +734,7 @@ class EnhancedCrawl4AITool:
             await self._cleanup_after_task()
 
     async def _extract_structured_data(self, params: ExtractParams) -> Dict[str, Any]:
-        """提取结构化数据 - 最终完整修复版"""
+        """提取结构化数据 - 最终修复版（使用正确的非流式处理）"""
         logger.info(f"🔍 从页面提取结构化数据: {params.url}, 类型: {params.extraction_type}")
         
         try:
@@ -742,32 +742,43 @@ class EnhancedCrawl4AITool:
             if crawler is None:
                 return {"success": False, "error": "浏览器实例未正确初始化", "memory_info": await self._get_system_memory_info()}
             
-            # 🎯 最终修复：确保schema包含所有必需字段
+            # 🔥 核心修复：为 extract 模式特别处理 schema
             schema = params.schema_definition.copy()
+            
+            # 自动修复常见的 schema 格式问题
             if params.extraction_type == 'css':
-                # ✅ 1. 确保有 baseSelector（安全版本）
-                css_selector = params.css_selector or 'body'
-                if 'baseSelector' not in schema:
-                    schema['baseSelector'] = css_selector
-                    logger.info(f"🔧 自动添加 baseSelector 到 schema: {schema['baseSelector']}")
+                # 如果 schema 是数组格式，转换为对象格式
+                if isinstance(schema, list):
+                    schema = {
+                        "name": "ExtractedData",
+                        "baseSelector": params.css_selector or "body",
+                        "fields": schema
+                    }
+                    logger.info(f"🔧 自动转换数组格式 schema 为对象格式")
                 
-                # ✅ 2. 确保有 fields（安全版本）
-                if 'fields' not in schema:
+                # 确保有必要的字段
+                if not isinstance(schema, dict):
+                    schema = {"fields": []} if schema is None else schema
+                
+                if 'name' not in schema:
+                    schema['name'] = "ExtractedData"
+                
+                if 'baseSelector' not in schema:
+                    schema['baseSelector'] = params.css_selector or "body"
+                    logger.info(f"🔧 自动添加 baseSelector: {schema['baseSelector']}")
+                
+                if 'fields' not in schema or not schema['fields']:
                     schema['fields'] = [
                         {
                             "name": "content",
-                            "selector": css_selector,  # ✅ 使用安全的变量，而不是 schema['baseSelector']
+                            "selector": schema['baseSelector'],
                             "type": "text",
                             "multiple": True
                         }
                     ]
-                    logger.info(f"🔧 自动添加默认 fields 到 schema")
-                
-                # ✅ 3. 确保有 name（额外保障）
-                if 'name' not in schema:
-                    schema['name'] = "ExtractedData"
-                    logger.info(f"🔧 自动添加 name 到 schema")
+                    logger.info(f"🔧 自动添加默认 fields")
             
+            # 🎯 核心配置：extract 模式使用非流式调用
             config_kwargs = {
                 "cache_mode": CacheMode.BYPASS,
                 "word_count_threshold": 0,
@@ -775,79 +786,119 @@ class EnhancedCrawl4AITool:
                 "remove_forms": False,
                 "remove_overlay_elements": False,
                 "css_selector": params.css_selector or 'body',
+                "stream": False,  # 🔥 关键：extract 使用非流式
             }
             
-            # 根据提取类型配置策略
+            # 配置提取策略
             if params.extraction_type == 'css':
-                extraction_strategy = JsonCssExtractionStrategy(
-                    schema=schema  # 使用修复后的schema
-                )
-                config_kwargs["extraction_strategy"] = extraction_strategy
-                
+                try:
+                    extraction_strategy = JsonCssExtractionStrategy(schema=schema)
+                    config_kwargs["extraction_strategy"] = extraction_strategy
+                except Exception as e:
+                    logger.error(f"❌ 创建 CSS 提取策略失败: {e}")
+                    return {
+                        "success": False,
+                        "error": f"创建提取策略失败: {str(e)}",
+                        "memory_info": await self._get_system_memory_info()
+                    }
+                    
             elif params.extraction_type == 'llm':
-                logger.warning("LLM 提取模式需要一个有效的LLM实例，当前为逻辑占位。")
-                extraction_strategy = LLMExtractionStrategy(
-                    schema=schema,
-                    instruction=params.prompt or "Extract structured data from the content",
-                    llm=None
-                )
-                config_kwargs["extraction_strategy"] = extraction_strategy
+                logger.warning("⚠️ LLM 提取模式需要有效的 LLM 实例")
+                try:
+                    extraction_strategy = LLMExtractionStrategy(
+                        schema=schema,
+                        instruction=params.prompt or "Extract structured data from the content",
+                        llm=None  # 需要实际的 LLM 实例
+                    )
+                    config_kwargs["extraction_strategy"] = extraction_strategy
+                except Exception as e:
+                    logger.error(f"❌ 创建 LLM 提取策略失败: {e}")
+                    return {
+                        "success": False,
+                        "error": f"创建 LLM 提取策略失败: {str(e)}",
+                        "memory_info": await self._get_system_memory_info()
+                    }
             
-            # 🎯 强制启用流式模式
-            config_kwargs["stream"] = True
             config = CrawlerRunConfig(**config_kwargs)
             
-            start_time = time.time()
+            logger.info(f"🚀 开始数据提取: {params.url}")
+            logger.info(f"📋 Schema 配置: {json.dumps(schema, ensure_ascii=False)[:500]}...")
+            
+            # 🎯 核心修复：使用非流式调用，获取单个结果
+            try:
+                result = await self._execute_with_timeout(
+                    crawler.arun(url=params.url, config=config),
+                    timeout=90  # extract 模式不需要太长时间
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"⏰ Extract Timeout for {params.url}")
+                return {
+                    "success": False,
+                    "error": "数据提取超时（90秒）",
+                    "memory_info": await self._get_system_memory_info()
+                }
+            
+            # 处理结果
+            if not result.success:
+                error_msg = result.error_message or "提取失败，未知原因"
+                logger.error(f"❌ 数据提取失败: {params.url} - {error_msg}")
+                return {
+                    "success": False,
+                    "error": f"数据提取失败: {error_msg}",
+                    "memory_info": await self._get_system_memory_info()
+                }
+            
+            # 检查提取的内容
             extracted_data = None
+            if hasattr(result, 'extracted_content') and result.extracted_content:
+                try:
+                    # 尝试解析为 JSON
+                    extracted_data = json.loads(result.extracted_content)
+                    logger.info(f"✅ 成功提取结构化数据，格式: JSON")
+                except (json.JSONDecodeError, TypeError):
+                    # 如果不是 JSON，保留原始格式
+                    extracted_data = result.extracted_content
+                    logger.info(f"✅ 成功提取数据，格式: {type(extracted_data).__name__}")
+            else:
+                # 如果没有 extracted_content，尝试从 markdown 或 cleaned_html 中提取
+                content = getattr(result, 'markdown', '') or getattr(result, 'cleaned_html', '')
+                if content:
+                    extracted_data = {
+                        "raw_content": content[:1000] + "..." if len(content) > 1000 else content,
+                        "note": "未使用提取策略，返回原始内容"
+                    }
+                    logger.info(f"⚠️ 未找到提取内容，返回原始内容片段")
             
-            # 🎯 发送开始进度
-            logger.info(f"Extract Started: {params.url}")
-            
-            # 🎯 使用流式处理，并使用 _execute_with_timeout 包装 arun
-            async for result in await self._execute_with_timeout(
-                crawler.arun(url=params.url, config=config),
-                timeout=120
-            ):
-                if result.success:
-                    # 🎯 处理过程中发送进度心跳
-                    elapsed = time.time() - start_time
-                    if elapsed > 30:  # 如果处理时间较长，发送心跳
-                        logger.info(f"Extract Progress: Still processing at {elapsed:.1f}s")
-                        start_time = time.time() # 重置计时器
-                        
-                    # 处理提取结果
-                    if hasattr(result, 'extracted_content') and result.extracted_content:
-                        try:
-                            extracted_data = json.loads(result.extracted_content)
-                        except (json.JSONDecodeError, TypeError):
-                            extracted_data = result.extracted_content
-                        
-                        # 提取模式通常只需要第一个结果
-                        break
-                else:
-                    # 如果流中返回失败，则立即中断
-                    error_message = result.error_message or "提取失败"
-                    logger.error(f"❌ 数据提取失败: {params.url} - {error_message}")
-                    return {"success": False, "error": f"数据提取失败: {error_message}", "memory_info": await self._get_system_memory_info()}
-
             if extracted_data is None:
-                error_message = "未能提取到任何结构化内容。这可能是因为页面内容是动态加载的，或者提取策略（Schema/Selector）与页面结构不匹配。"
-                logger.error(f"❌ 数据提取失败: {params.url} - {error_message}")
-                return {"success": False, "error": f"数据提取失败: {error_message}", "memory_info": await self._get_system_memory_info()}
-
-            logger.info(f"✅ Extract Completed: {params.url}")
+                error_msg = "未能提取到任何内容。可能的原因：1) 页面结构不匹配 schema，2) 页面需要 JavaScript 渲染，3) 提取策略配置错误"
+                logger.error(f"❌ 数据提取无结果: {params.url} - {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "memory_info": await self._get_system_memory_info()
+                }
+            
+            logger.info(f"✅ Extract 成功: {params.url}")
+            
             return {
-                "success": True, "url": params.url, "extracted_data": extracted_data,
-                "metadata": {"extraction_type": params.extraction_type, "success": True},
+                "success": True,
+                "url": params.url,
+                "extracted_data": extracted_data,
+                "metadata": {
+                    "extraction_type": params.extraction_type,
+                    "schema_used": schema,
+                    "success": True
+                },
                 "memory_info": await self._get_system_memory_info()
             }
             
-        except asyncio.TimeoutError:
-            logger.warning("⏰ Extract Timeout")
-            return {"success": False, "error": "数据提取操作超时（120秒）", "memory_info": await self._get_system_memory_info()}
         except Exception as e:
-            logger.error(f"❌ 数据提取时发生意外错误: {str(e)}")
-            return {"success": False, "error": f"数据提取时发生意外错误: {str(e)}", "memory_info": await self._get_system_memory_info()}
+            logger.error(f"❌ 数据提取时发生意外错误: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"数据提取时发生意外错误: {str(e)}",
+                "memory_info": await self._get_system_memory_info()
+            }
         finally:
             await self._cleanup_after_task()
 
@@ -1013,6 +1064,28 @@ class EnhancedCrawl4AITool:
             params = parameters.parameters
 
             logger.info(f"🚀 执行 Crawl4AI 模式: {mode}")
+
+            # 🔥 自动修复常见参数问题
+            if mode == 'extract':
+                # 修复 schema_definition 参数名
+                if 'schema' in params and 'schema_definition' not in params:
+                    params['schema_definition'] = params.pop('schema')
+                    logger.info("🔧 自动修复: 将 'schema' 重命名为 'schema_definition'")
+                
+                # 确保有 url 参数
+                if 'url' not in params:
+                    # 尝试从其他位置获取
+                    for key in ['target_url', 'page_url', 'source']:
+                        if key in params:
+                            params['url'] = params.pop(key)
+                            logger.info(f"🔧 自动修复: 将 '{key}' 重命名为 'url'")
+                            break
+            
+            elif mode == 'deep_crawl':
+                # 修复 strategy 大小写问题
+                if 'strategy' in params and isinstance(params['strategy'], str):
+                    params['strategy'] = params['strategy'].lower()
+                    logger.info(f"🔧 自动修复: strategy 转换为小写: {params['strategy']}")
 
             # 任务计数和定期强制清理
             self._task_count += 1
