@@ -345,25 +345,78 @@ export function scrollToBottom() {
  * @description 在聊天记录中显示一个工具调用状态的UI提示。
  * @param {string} toolName - 正在调用的工具名称。
  * @param {object} args - 传递给工具的参数。
- * @returns {void}
+ * @returns {HTMLElement} 返回创建的状态元素。
  */
 export function displayToolCallStatus(toolName, _args) {
-    if (!elements.messageHistory) return;
+    if (!elements.messageHistory) return null;
     const statusDiv = document.createElement('div');
     statusDiv.className = 'tool-call-status';
 
     const icon = document.createElement('i');
     icon.className = 'fas fa-cog fa-spin'; // 使用 Font Awesome 齿轮图标并添加旋转效果
 
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'tool-status-content-wrapper';
+
     const text = document.createElement('span');
-    // 为了UI简洁，只显示工具名
+    text.className = 'tool-status-text';
     text.textContent = `正在调用工具: ${toolName}...`;
 
+    const progressBarContainer = document.createElement('div');
+    progressBarContainer.className = 'tool-progress-bar-container';
+    progressBarContainer.style.display = 'none'; // 默认隐藏
+    const progressBar = document.createElement('div');
+    progressBar.className = 'tool-progress-bar';
+    progressBarContainer.appendChild(progressBar);
+
+    contentWrapper.appendChild(text);
+    contentWrapper.appendChild(progressBarContainer);
+
     statusDiv.appendChild(icon);
-    statusDiv.appendChild(text);
+    statusDiv.appendChild(contentWrapper);
 
     elements.messageHistory.appendChild(statusDiv);
     scrollToBottom();
+    
+    // 🎯 存储对进度条的引用，方便更新
+    statusDiv.progressBar = progressBar;
+    statusDiv.statusTextElement = text;
+
+    return statusDiv; // 返回元素以便在 chat-api-handler 中引用
+}
+
+/**
+ * @function updateToolCallProgress
+ * @description 实时更新工具调用状态的文本和进度条。
+ * @param {HTMLElement} element - displayToolCallStatus 返回的状态元素。
+ * @param {string} statusText - 要显示的新状态文本。
+ * @param {number|null} progress - 0到100的进度值，或null。
+ */
+export function updateToolCallProgress(element, statusText, progress) {
+    if (!element || !element.statusTextElement) return;
+
+    element.statusTextElement.textContent = statusText;
+
+    if (progress !== null && progress >= 0 && progress <= 100) {
+        const progressBarContainer = element.querySelector('.tool-progress-bar-container');
+        if (progressBarContainer) {
+            progressBarContainer.style.display = 'block';
+        }
+        if (element.progressBar) {
+            element.progressBar.style.width = `${progress}%`;
+        }
+    }
+}
+
+/**
+ * @function removeToolCallStatus
+ * @description 移除工具调用状态的UI提示。
+ * @param {HTMLElement} element - displayToolCallStatus 返回的状态元素。
+ */
+export function removeToolCallStatus(element) {
+    if (element && element.parentNode) {
+        element.parentNode.removeChild(element);
+    }
 }
 
 /**

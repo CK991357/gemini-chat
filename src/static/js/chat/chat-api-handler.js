@@ -590,7 +590,7 @@ export class ChatApiHandler {
 
             // 显示工具调用状态UI
             console.log(`[${timestamp()}] [MCP] Displaying tool call status UI for tool: ${toolCode.tool_name}`);
-            ui.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
+            const toolStatusElement = ui.displayToolCallStatus(toolCode.tool_name, toolCode.arguments); // 🎯 捕获状态元素
             ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
             console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
  
@@ -649,9 +649,76 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
-            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 🔥🔥🔥
-            const toolRawResult = await proxyResponse.json();
+            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 - 切换为流式解析 🔥🔥🔥
+            const reader = proxyResponse.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            let toolRawResult = null; // 最终结果将存储在这里
+
+            console.log(`[${timestamp()}] [MCP] Starting NDJSON stream parsing...`);
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log(`[${timestamp()}] [MCP] NDJSON stream finished.`);
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n');
+                buffer = parts.pop(); // 最后一个不完整的行保留在 buffer 中
+
+                for (const part of parts) {
+                    if (!part.trim()) continue;
+
+                    try {
+                        const message = JSON.parse(part);
+                        
+                        if (message.type === 'heartbeat') {
+                            // 忽略心跳包，但记录日志
+                            console.log(`[${timestamp()}] [MCP] Heartbeat received.`);
+                        } else if (message.type === 'status' || message.type === 'progress') {
+                            // 实时更新 UI 状态
+                            const statusText = message.message || message.status || 'Processing...';
+                            const progress = message.progress !== undefined ? message.progress : null;
+                            
+                            // 🎯 使用捕获到的 toolStatusElement 进行更新
+                            if (toolStatusElement && ui.updateToolCallProgress) {
+                                ui.updateToolCallProgress(toolStatusElement, statusText, progress); // 假设 chat-ui 有此方法
+                            }
+                            console.log(`[${timestamp()}] [MCP] Status Update: ${statusText} (Progress: ${progress})`);
+
+                        } else if (message.type === 'result') {
+                            // 最终结果
+                            toolRawResult = message.data;
+                            console.log(`[${timestamp()}] [MCP] Final result received.`);
+                            break; // 退出 for 循环
+                        } else if (message.type === 'error') {
+                            // 错误处理
+                            const errorMsg = message.message || 'Unknown streaming error.';
+                            console.error(`[${timestamp()}] [MCP] Streaming Error: ${errorMsg}`);
+                            throw new Error(`工具执行失败 (流式错误): ${errorMsg}`);
+                        }
+                    } catch (e) {
+                        console.error(`[${timestamp()}] [MCP] Error parsing stream part: ${part}`, e);
+                        // 忽略单个解析错误，继续处理下一行
+                    }
+                }
+
+                if (toolRawResult) break; // 退出 while 循环
+            }
+            
+            // 清理 UI 状态
+            if (toolStatusElement && ui.removeToolCallStatus) {
+                ui.removeToolCallStatus(toolStatusElement); // 假设 chat-ui 有此方法
+            }
+
+            if (!toolRawResult) {
+                throw new Error("工具执行失败: 未从流中接收到最终结果。");
+            }
+
             console.log(`[${timestamp()}] [MCP] Received unified result from backend:`, toolRawResult);
+            // 🔥🔥🔥 [最终方案] 逻辑结束 🔥🔥🔥
 
             let toolResultContent;
 
@@ -882,8 +949,43 @@ export class ChatApiHandler {
                 throw new Error(`工具代理请求失败: ${errorData.details || errorData.error || response.statusText}`);
             }
 
-            const result = await response.json();
-            console.log(`[${timestamp()}] [ChatApiHandler] Received result from backend proxy:`, result);
+            // 🎯 核心修复：处理流式响应，只提取最终结果
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            let finalResult = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n');
+                buffer = parts.pop();
+
+                for (const part of parts) {
+                    if (!part.trim()) continue;
+                    try {
+                        const message = JSON.parse(part);
+                        if (message.type === 'result') {
+                            finalResult = message.data;
+                            break;
+                        } else if (message.type === 'error') {
+                            throw new Error(`工具执行失败 (流式错误): ${message.message || 'Unknown streaming error.'}`);
+                        }
+                    } catch (e) {
+                        console.warn(`[${timestamp()}] [ChatApiHandler] Error parsing stream part in callTool: ${part}`, e);
+                    }
+                }
+                if (finalResult) break;
+            }
+
+            if (!finalResult) {
+                throw new Error("工具执行失败: 未从流中接收到最终结果。");
+            }
+
+            const result = finalResult;
+            console.log(`[${timestamp()}] [ChatApiHandler] Received final result from backend proxy:`, result);
             
             // 适配 Orchestrator 预期的返回格式
             return {

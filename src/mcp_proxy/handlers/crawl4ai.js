@@ -1,40 +1,40 @@
 /**
  * @file MCP Proxy Handler for Crawl4AI
- * @description Handles the 'crawl4ai' tool call by proxying it to the external Python tool server.
+ * @description Handles the 'crawl4ai' tool call with streaming response to avoid Cloudflare Worker timeout.
  */
 
 /**
- * Executes the Crawl4AI tool by calling the external tool server.
- * @param {object} tool_params - The parameters for the tool call, containing mode and nested parameters.
- * @param {object} env - The Cloudflare Worker environment object (not used in this handler but kept for consistency).
- * @returns {Promise<Response>} - A promise that resolves to a Response object containing the Crawl4AI results.
+ * Executes the Crawl4AI tool with streaming response to keep connection alive.
+ * @param {object} tool_params - The parameters for the tool call.
+ * @param {object} env - The Cloudflare Worker environment object.
+ * @returns {Promise<Response>} - A promise that resolves to a streaming Response.
  */
 export async function handleCrawl4AI(tool_params, env) {
     const toolServerUrl = 'https://tools.10110531.xyz/api/v1/execute_tool';
 
-    // Validate the basic structure of the parameters for Crawl4AI
+    // Validate parameters
     if (!tool_params || typeof tool_params !== 'object') {
         return createJsonResponse({ success: false, error: 'Missing or invalid "parameters" object for crawl4ai tool.' }, 400);
     }
 
     const { mode, parameters } = tool_params;
-
+    
     if (!mode) {
         return createJsonResponse({ success: false, error: 'Missing required parameter: "mode" for crawl4ai tool.' }, 400);
     }
     if (!parameters || typeof parameters !== 'object') {
         return createJsonResponse({ success: false, error: 'Missing or invalid nested "parameters" object for crawl4ai tool.' }, 400);
     }
-
-    // 🎯 关键修复：验证URL参数
-    if (!parameters.url) {
+    
+    // 批量模式不需要 url 参数
+    if (mode !== 'batch_crawl' && !parameters.url) {
         return createJsonResponse({ 
             success: false, 
             error: 'Missing required parameter: "url" in parameters object.' 
         }, 400);
     }
 
-    // Validate mode against allowed values - UPDATED with all 7 modes
+    // Validate mode
     const allowedModes = ['scrape', 'crawl', 'deep_crawl', 'extract', 'batch_crawl', 'pdf_export', 'screenshot'];
     if (!allowedModes.includes(mode)) {
         return createJsonResponse({ 
@@ -45,80 +45,260 @@ export async function handleCrawl4AI(tool_params, env) {
 
     const requestBody = {
         tool_name: 'crawl4ai',
-        parameters: tool_params // Pass the entire original parameters object
+        parameters: tool_params
     };
 
     try {
-        const toolResponse = await fetch(toolServerUrl, {
-            method: 'POST',
+        // 🔥 关键修改：创建流式响应
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+
+        // 🎯 启动后台处理
+        // 使用 env.ctx.waitUntil 确保 Worker 在流式响应期间不会被提前终止
+        // 尽管心跳机制是主要解决方案，但使用 waitUntil 是最佳实践
+        env.ctx.waitUntil(
+            processCrawlRequest(writer, encoder, toolServerUrl, requestBody, mode, parameters.url || 'batch_crawl').catch(error => {
+                console.error('Background processing error:', error);
+            })
+        );
+
+        return new Response(readable, {
             headers: {
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/x-ndjson', // 使用 NDJSON 流格式
+                'Access-Control-Allow-Origin': '*',
+                'X-Content-Type-Options': 'nosniff',
             },
-            body: JSON.stringify(requestBody),
-            // 🎯 关键修复：增加超时设置
-            signal: AbortSignal.timeout(30000) // 30秒超时
         });
 
-        // 🎯 关键修复：更好的错误处理
-        if (!toolResponse.ok) {
-            let errorDetails;
-            try {
-                errorDetails = await toolResponse.text();
-            } catch {
-                errorDetails = toolResponse.statusText;
-            }
-            
-            console.error('Crawl4AI Tool Server Error:', {
-                status: toolResponse.status,
-                statusText: toolResponse.statusText,
-                details: errorDetails
-            });
-            
-            return createJsonResponse({
-                success: false,
-                error: `Crawl4AI tool server request failed with status ${toolResponse.status}`,
-                details: errorDetails.substring(0, 500) // 限制错误信息长度
-            }, toolResponse.status);
-        }
-        
-        const responseData = await toolResponse.json();
-        
-        // 🎯 关键修复：验证响应数据结构
-        if (!responseData || typeof responseData !== 'object') {
-            return createJsonResponse({
-                success: false,
-                error: 'Invalid response format from tool server'
-            }, 500);
-        }
-        
-        return createJsonResponse(responseData);
-
     } catch (error) {
-        console.error('Failed to fetch from Crawl4AI tool server:', error);
-        
-        // 🎯 关键修复：区分不同类型的错误
-        let errorMessage = 'Failed to connect to the external tool server.';
-        if (error.name === 'TimeoutError') {
-            errorMessage = 'Tool server request timed out (30s).';
-        } else if (error.name === 'AbortError') {
-            errorMessage = 'Tool server request was aborted.';
-        } else if (error.message.includes('fetch')) {
-            errorMessage = 'Network error: Unable to reach the tool server.';
-        }
-        
+        console.error('Failed to create streaming response:', error);
         return createJsonResponse({
             success: false,
-            error: errorMessage,
-            details: error.message
+            error: 'Failed to initiate streaming request'
         }, 500);
     }
 }
 
 /**
- * Helper to create a consistent JSON response.
- * @param {object} body - The response body.
- * @param {number} status - The HTTP status code.
- * @returns {Response}
+ * Background processing with heartbeat to keep connection alive
+ */
+async function processCrawlRequest(writer, encoder, toolServerUrl, requestBody, mode, url) {
+    let heartbeatInterval;
+    let requestCompleted = false;
+    
+    try {
+        // 🎯 立即发送开始状态
+        await writer.write(encoder.encode(JSON.stringify({
+            type: 'status',
+            status: 'started',
+            message: `Starting ${mode} operation for ${url}`,
+            timestamp: new Date().toISOString()
+        }) + '\n'));
+
+        // 🎯 启动心跳 - 每10秒发送一次保持连接活跃
+        heartbeatInterval = setInterval(async () => {
+            if (!requestCompleted) {
+                try {
+                    await writer.write(encoder.encode(JSON.stringify({
+                        type: 'heartbeat',
+                        status: 'processing',
+                        message: `Still processing ${mode} request...`,
+                        timestamp: new Date().toISOString(),
+                        progress: 'alive'
+                    }) + '\n'));
+                } catch (heartbeatError) {
+                    // 心跳写入失败可能表示客户端断开连接
+                    console.log('Heartbeat failed, client may have disconnected');
+                    clearInterval(heartbeatInterval);
+                }
+            }
+        }, 10000); // 每10秒发送心跳
+
+        // 🎯 发送进度更新 - 根据模式发送不同的进度信息
+        await sendProgressUpdate(writer, encoder, mode, 'initializing', 'Initializing crawler...');
+
+        // 🔥 执行实际的工具服务器请求（带超时）
+        const controller = new AbortController();
+        // 🎯 修正：设置为 420 秒 (420000 毫秒) 以覆盖后端最长的 400 秒超时
+        const BACKEND_TIMEOUT_MS = 420000; 
+        const timeoutId = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS); 
+
+        try {
+            await sendProgressUpdate(writer, encoder, mode, 'fetching', 'Sending request to tool server...');
+            
+            const toolResponse = await fetch(toolServerUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!toolResponse.ok) {
+                let errorDetails;
+                try {
+                    errorDetails = await toolResponse.text();
+                } catch {
+                    errorDetails = toolResponse.statusText;
+                }
+                
+                await sendProgressUpdate(writer, encoder, mode, 'error', `Tool server error: ${toolResponse.status}`);
+                
+                await writer.write(encoder.encode(JSON.stringify({
+                    type: 'error',
+                    success: false,
+                    error: `Tool server request failed with status ${toolResponse.status}`,
+                    details: errorDetails.substring(0, 500),
+                    timestamp: new Date().toISOString()
+                }) + '\n'));
+                
+                return;
+            }
+
+            await sendProgressUpdate(writer, encoder, mode, 'processing', 'Processing response from tool server...');
+            
+            const responseData = await toolResponse.json();
+            
+            if (!responseData || typeof responseData !== 'object') {
+                await writer.write(encoder.encode(JSON.stringify({
+                    type: 'error',
+                    success: false,
+                    error: 'Invalid response format from tool server',
+                    timestamp: new Date().toISOString()
+                }) + '\n'));
+                return;
+            }
+
+            // 🎯 发送最终结果
+            await sendProgressUpdate(writer, encoder, mode, 'completed', 'Operation completed successfully');
+            
+            await writer.write(encoder.encode(JSON.stringify({
+                type: 'result',
+                success: true,
+                data: responseData,
+                timestamp: new Date().toISOString()
+            }) + '\n'));
+
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            
+            if (fetchError.name === 'AbortError') {
+                await sendProgressUpdate(writer, encoder, mode, 'error', `Request timeout (${BACKEND_TIMEOUT_MS / 1000}s) exceeded`);
+                await writer.write(encoder.encode(JSON.stringify({
+                    type: 'error',
+                    success: false,
+                    error: `Tool server request timed out after ${BACKEND_TIMEOUT_MS / 1000} seconds`,
+                    timestamp: new Date().toISOString()
+                }) + '\n'));
+            } else {
+                await sendProgressUpdate(writer, encoder, mode, 'error', `Request failed: ${fetchError.message}`);
+                await writer.write(encoder.encode(JSON.stringify({
+                    type: 'error', 
+                    success: false,
+                    error: `Request failed: ${fetchError.message}`,
+                    timestamp: new Date().toISOString()
+                }) + '\n'));
+            }
+        }
+
+    } catch (error) {
+        console.error('Unexpected error in background processing:', error);
+        try {
+            await writer.write(encoder.encode(JSON.stringify({
+                type: 'error',
+                success: false,
+                error: `Unexpected error: ${error.message}`,
+                timestamp: new Date().toISOString()
+            }) + '\n'));
+        } catch (writeError) {
+            // 忽略写入错误，连接可能已经关闭
+        }
+    } finally {
+        // 🎯 清理资源
+        requestCompleted = true;
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+        }
+        
+        try {
+            // 发送结束标记
+            await writer.write(encoder.encode(JSON.stringify({
+                type: 'end',
+                timestamp: new Date().toISOString()
+            }) + '\n'));
+            
+            await writer.close();
+        } catch (closeError) {
+            // 忽略关闭错误
+        }
+    }
+}
+
+/**
+ * Send progress updates with mode-specific messages
+ */
+async function sendProgressUpdate(writer, encoder, mode, stage, message) {
+    const progressMessages = {
+        'scrape': {
+            'initializing': 'Initializing web scraper...',
+            'fetching': 'Fetching webpage content...', 
+            'processing': 'Processing and cleaning content...',
+            'completed': 'Content extraction completed'
+        },
+        'deep_crawl': {
+            'initializing': 'Initializing deep crawl engine...',
+            'fetching': 'Discovering and crawling pages...',
+            'processing': 'Analyzing crawled content...',
+            'completed': 'Deep crawl completed'
+        },
+        'extract': {
+            'initializing': 'Initializing data extraction...',
+            'fetching': 'Extracting structured data...',
+            'processing': 'Processing extracted information...',
+            'completed': 'Data extraction completed'
+        },
+        'batch_crawl': {
+            'initializing': 'Initializing batch crawl...',
+            'fetching': 'Processing URLs in batch...',
+            'processing': 'Aggregating batch results...',
+            'completed': 'Batch crawl completed'
+        },
+        'pdf_export': {
+            'initializing': 'Initializing PDF export...',
+            'fetching': 'Rendering page for PDF...',
+            'processing': 'Generating PDF file...',
+            'completed': 'PDF export completed'
+        },
+        'screenshot': {
+            'initializing': 'Initializing screenshot capture...',
+            'fetching': 'Capturing page screenshot...',
+            'processing': 'Compressing and encoding image...',
+            'completed': 'Screenshot capture completed'
+        }
+    };
+
+    const modeMessages = progressMessages[mode] || {};
+    const finalMessage = modeMessages[stage] || message;
+
+    try {
+        await writer.write(encoder.encode(JSON.stringify({
+            type: 'progress',
+            mode: mode,
+            stage: stage,
+            message: finalMessage,
+            timestamp: new Date().toISOString()
+        }) + '\n'));
+    } catch (error) {
+        console.warn('Failed to send progress update:', error);
+    }
+}
+
+/**
+ * Helper to create a consistent JSON response (for non-streaming errors)
  */
 function createJsonResponse(body, status = 200) {
     return new Response(JSON.stringify(body, null, 2), {
