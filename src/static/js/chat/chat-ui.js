@@ -407,6 +407,37 @@ export function updateToolCallProgress(element, statusText, progress) {
         }
     }
 }
+ 
+/**
+ * @function markToolCallCompleted
+ * @description 标记工具调用状态为完成或失败，将图标替换为最终标记，并移除进度条。
+ * @param {HTMLElement} element - displayToolCallStatus 返回的状态元素。
+ * @param {boolean} success - 是否成功完成。
+ */
+export function markToolCallCompleted(element, success = true) {
+    if (!element) return;
+
+    // 1. 替换图标
+    const icon = element.querySelector('.fa-cog');
+    if (icon) {
+        icon.classList.remove('fa-cog', 'fa-spin');
+        icon.classList.add(success ? 'fa-check-circle' : 'fa-times-circle');
+        icon.style.color = success ? 'green' : 'red';
+    }
+    
+    // 2. 移除进度条
+    const progressBarContainer = element.querySelector('.tool-progress-bar-container');
+    if (progressBarContainer) {
+        progressBarContainer.parentNode.removeChild(progressBarContainer);
+    }
+    
+    // 3. 更新最终状态文本
+    if (element.statusTextElement) {
+        element.statusTextElement.textContent = success ?
+            element.statusTextElement.textContent.replace('...', ' (完成)') :
+            element.statusTextElement.textContent.replace('...', ' (失败)');
+    }
+}
 
 /**
  * @function removeToolCallStatus
@@ -414,8 +445,9 @@ export function updateToolCallProgress(element, statusText, progress) {
  * @param {HTMLElement} element - displayToolCallStatus 返回的状态元素。
  */
 export function removeToolCallStatus(element) {
+    // 保持此函数存在，但不再在 _handleMcpToolCall 中调用它
     if (element && element.parentNode) {
-        element.parentNode.removeChild(element);
+        // element.parentNode.removeChild(element); // 保持原样，但我们不会调用它
     }
 }
 

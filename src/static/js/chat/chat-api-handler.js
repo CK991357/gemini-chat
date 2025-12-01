@@ -649,72 +649,116 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
-            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 - 切换为流式解析 🔥🔥🔥
-            const reader = proxyResponse.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let buffer = '';
-            let toolRawResult = null; // 最终结果将存储在这里
+            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 - 仅crawl4ai使用流式解析 🔥🔥🔥
+            let toolRawResult = null;
 
-            console.log(`[${timestamp()}] [MCP] Starting NDJSON stream parsing...`);
+            console.log(`[${timestamp()}] [MCP] Tool call: ${toolCode.tool_name}`);
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    console.log(`[${timestamp()}] [MCP] NDJSON stream finished.`);
-                    break;
-                }
-
-                buffer += decoder.decode(value, { stream: true });
-                const parts = buffer.split('\n');
-                buffer = parts.pop(); // 最后一个不完整的行保留在 buffer 中
-
-                for (const part of parts) {
-                    if (!part.trim()) continue;
-
-                    try {
-                        const message = JSON.parse(part);
-                        
-                        if (message.type === 'heartbeat') {
-                            // 忽略心跳包，但记录日志
-                            console.log(`[${timestamp()}] [MCP] Heartbeat received.`);
-                        } else if (message.type === 'status' || message.type === 'progress') {
-                            // 实时更新 UI 状态
-                            const statusText = message.message || message.status || 'Processing...';
-                            const progress = message.progress !== undefined ? message.progress : null;
-                            
-                            // 🎯 使用捕获到的 toolStatusElement 进行更新
-                            if (toolStatusElement && ui.updateToolCallProgress) {
-                                ui.updateToolCallProgress(toolStatusElement, statusText, progress); // 假设 chat-ui 有此方法
-                            }
-                            console.log(`[${timestamp()}] [MCP] Status Update: ${statusText} (Progress: ${progress})`);
-
-                        } else if (message.type === 'result') {
-                            // 最终结果
-                            toolRawResult = message.data;
-                            console.log(`[${timestamp()}] [MCP] Final result received.`);
-                            break; // 退出 for 循环
-                        } else if (message.type === 'error') {
-                            // 错误处理
-                            const errorMsg = message.message || 'Unknown streaming error.';
-                            console.error(`[${timestamp()}] [MCP] Streaming Error: ${errorMsg}`);
-                            throw new Error(`工具执行失败 (流式错误): ${errorMsg}`);
+            // 判断是否为crawl4ai工具，仅crawl4ai使用流式解析
+            if (toolCode.tool_name === 'crawl4ai') {
+                console.log(`[${timestamp()}] [MCP] Starting NDJSON stream parsing for crawl4ai...`);
+                
+                const reader = proxyResponse.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+                
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            console.log(`[${timestamp()}] [MCP] NDJSON stream finished.`);
+                            break;
                         }
-                    } catch (e) {
-                        console.error(`[${timestamp()}] [MCP] Error parsing stream part: ${part}`, e);
-                        // 忽略单个解析错误，继续处理下一行
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const parts = buffer.split('\n');
+                        buffer = parts.pop(); // 最后一个不完整的行保留在 buffer 中
+
+                        for (const part of parts) {
+                            if (!part.trim()) continue;
+
+                            try {
+                                const message = JSON.parse(part);
+                                
+                                if (message.type === 'heartbeat') {
+                                    // 忽略心跳包，但记录日志
+                                    console.log(`[${timestamp()}] [MCP] Heartbeat received.`);
+                                } else if (message.type === 'status' || message.type === 'progress') {
+                                    // 实时更新 UI 状态
+                                    const statusText = message.message || message.status || 'Processing...';
+                                    const progress = message.progress !== undefined ? message.progress : null;
+                                    
+                                    // 🎯 使用捕获到的 toolStatusElement 进行更新
+                                    if (toolStatusElement && ui.updateToolCallProgress) {
+                                        ui.updateToolCallProgress(toolStatusElement, statusText, progress);
+                                    }
+                                    console.log(`[${timestamp()}] [MCP] Status Update: ${statusText} (Progress: ${progress})`);
+
+                                } else if (message.type === 'result') {
+                                    // 最终结果
+                                    toolRawResult = message.data;
+                                    console.log(`[${timestamp()}] [MCP] Final result received.`);
+                                    break; // 退出 for 循环
+                                } else if (message.type === 'error') {
+                                    // 错误处理
+                                    const errorMsg = message.message || 'Unknown streaming error.';
+                                    console.error(`[${timestamp()}] [MCP] Streaming Error: ${errorMsg}`);
+                                    throw new Error(`工具执行失败 (流式错误): ${errorMsg}`);
+                                }
+                            } catch (e) {
+                                console.error(`[${timestamp()}] [MCP] Error parsing stream part: ${part}`, e);
+                                // 忽略单个解析错误，继续处理下一行
+                            }
+                        }
+
+                        if (toolRawResult) break; // 退出 while 循环
+                    }
+                    
+                    // 标记 UI 状态为完成（成功）
+                    if (toolStatusElement && ui.markToolCallCompleted) {
+                        ui.markToolCallCompleted(toolStatusElement, true);
+                    }
+                    
+                } catch (streamError) {
+                    console.error(`[${timestamp()}] [MCP] Stream processing error:`, streamError);
+                    // 标记 UI 状态为完成（失败）
+                    if (toolStatusElement && ui.markToolCallCompleted) {
+                        ui.markToolCallCompleted(toolStatusElement, false);
+                    }
+                    throw streamError;
+                }
+                
+            } else {
+                // 非流式解析：其他所有工具
+                console.log(`[${timestamp()}] [MCP] Using non-streaming parsing for ${toolCode.tool_name}...`);
+                
+                try {
+                    // 读取完整的响应
+                    const responseData = await proxyResponse.json();
+                    toolRawResult = responseData;
+                    
+                    // 标记 UI 状态为完成（成功）
+                    if (toolStatusElement && ui.markToolCallCompleted) {
+                        ui.markToolCallCompleted(toolStatusElement, true);
+                    }
+                    
+                    console.log(`[${timestamp()}] [MCP] Received non-streaming result from backend:`, toolRawResult);
+                } catch (parseError) {
+                    console.error(`[${timestamp()}] [MCP] Error parsing non-streaming response:`, parseError);
+                    
+                    // 尝试读取文本响应，可能是错误信息
+                    try {
+                        const errorText = await proxyResponse.text();
+                        console.error(`[${timestamp()}] [MCP] Raw error response:`, errorText);
+                        throw new Error(`工具执行失败 (非流式): ${errorText.substring(0, 200)}`);
+                    } catch (textError) {
+                        throw new Error(`工具执行失败 (非流式解析错误): ${parseError.message}`);
                     }
                 }
-
-                if (toolRawResult) break; // 退出 while 循环
-            }
-            
-            // 标记 UI 状态为完成（成功）
-            if (toolStatusElement && ui.markToolCallCompleted) {
-                ui.markToolCallCompleted(toolStatusElement, true);
             }
 
             if (!toolRawResult) {
-                throw new Error("工具执行失败: 未从流中接收到最终结果。");
+                throw new Error("工具执行失败: 未接收到有效结果。");
             }
 
             console.log(`[${timestamp()}] [MCP] Received unified result from backend:`, toolRawResult);
