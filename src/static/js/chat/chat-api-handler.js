@@ -955,24 +955,17 @@ export class ChatApiHandler {
                 throw new Error(`工具代理请求失败: ${errorData.details || errorData.error || response.statusText}`);
             }
 
-            // 🎯 核心修复：处理流式响应，只提取最终结果
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let buffer = '';
-            let finalResult = null;
+            let result;
+            if (toolName === 'crawl4ai') {
+                // 🎯 针对 crawl4ai 长流程任务：使用健壮的 NDJSON 解析
+                console.log(`[${timestamp()}] [ChatApiHandler] Using robust NDJSON parser for ${toolName}.`);
+                const responseText = await response.text();
+                const lines = responseText.trim().split('\n').filter(line => line.trim());
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const parts = buffer.split('\n');
-                buffer = parts.pop();
-
-                for (const part of parts) {
-                    if (!part.trim()) continue;
+                let finalResult = null;
+                for (const line of lines) {
                     try {
-                        const message = JSON.parse(part);
+                        const message = JSON.parse(line);
                         if (message.type === 'result') {
                             finalResult = message.data;
                             break;
@@ -980,17 +973,20 @@ export class ChatApiHandler {
                             throw new Error(`工具执行失败 (流式错误): ${message.message || 'Unknown streaming error.'}`);
                         }
                     } catch (e) {
-                        console.warn(`[${timestamp()}] [ChatApiHandler] Error parsing stream part in callTool: ${part}`, e);
+                        console.warn(`[${timestamp()}] [ChatApiHandler] Error parsing line in ${toolName} call:`, line, e);
                     }
                 }
-                if (finalResult) break;
+
+                if (!finalResult) {
+                    throw new Error("工具执行失败: 未从流中接收到最终结果。");
+                }
+                result = finalResult;
+
+            } else {
+                // 🎯 其他所有工具：使用原始的 JSON 解析
+                result = await response.json();
             }
 
-            if (!finalResult) {
-                throw new Error("工具执行失败: 未从流中接收到最终结果。");
-            }
-
-            const result = finalResult;
             console.log(`[${timestamp()}] [ChatApiHandler] Received final result from backend proxy:`, result);
             
             // 适配 Orchestrator 预期的返回格式
@@ -1003,7 +999,7 @@ export class ChatApiHandler {
         } catch (error) {
             console.error(`[${timestamp()}] [ChatApiHandler] Error during tool proxy call for ${toolName}:`, error);
             // 向上抛出错误，让 Orchestrator 能够捕获并处理
-            throw error; 
+            throw error;
         }
     }
 }
