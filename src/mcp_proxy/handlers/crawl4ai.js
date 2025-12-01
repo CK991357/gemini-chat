@@ -28,18 +28,18 @@ export async function handleCrawl4AI(tool_params, env) {
     
     // 批量模式不需要 url 参数
     if (mode !== 'batch_crawl' && !parameters.url) {
-        return createJsonResponse({ 
-            success: false, 
-            error: 'Missing required parameter: "url" in parameters object.' 
+        return createJsonResponse({
+            success: false,
+            error: 'Missing required parameter: "url" in parameters object.'
         }, 400);
     }
 
     // Validate mode
     const allowedModes = ['scrape', 'crawl', 'deep_crawl', 'extract', 'batch_crawl', 'pdf_export', 'screenshot'];
     if (!allowedModes.includes(mode)) {
-        return createJsonResponse({ 
-            success: false, 
-            error: `Invalid mode "${mode}". Allowed modes are: ${allowedModes.join(', ')}` 
+        return createJsonResponse({
+            success: false,
+            error: `Invalid mode "${mode}". Allowed modes are: ${allowedModes.join(', ')}`
         }, 400);
     }
 
@@ -49,19 +49,16 @@ export async function handleCrawl4AI(tool_params, env) {
     };
 
     try {
-        // 🔥 关键修改：创建流式响应
+        // 🔥 修复：创建流式响应（不使用 waitUntil）
         const { readable, writable } = new TransformStream();
         const writer = writable.getWriter();
         const encoder = new TextEncoder();
 
-        // 🎯 启动后台处理
-        // 使用 env.ctx.waitUntil 确保 Worker 在流式响应期间不会被提前终止
-        // 尽管心跳机制是主要解决方案，但使用 waitUntil 是最佳实践
-        env.ctx.waitUntil(
-            processCrawlRequest(writer, encoder, toolServerUrl, requestBody, mode, parameters.url || 'batch_crawl').catch(error => {
+        // 🎯 直接启动处理，不使用 waitUntil
+        processCrawlRequest(writer, encoder, toolServerUrl, requestBody, mode, parameters.url || 'batch_crawl')
+            .catch(error => {
                 console.error('Background processing error:', error);
-            })
-        );
+            });
 
         return new Response(readable, {
             headers: {
@@ -75,7 +72,7 @@ export async function handleCrawl4AI(tool_params, env) {
         console.error('Failed to create streaming response:', error);
         return createJsonResponse({
             success: false,
-            error: 'Failed to initiate streaming request'
+            error: 'Failed to initiate streaming request: ' + error.message
         }, 500);
     }
 }
@@ -96,7 +93,7 @@ async function processCrawlRequest(writer, encoder, toolServerUrl, requestBody, 
             timestamp: new Date().toISOString()
         }) + '\n'));
 
-        // 🎯 启动心跳 - 每10秒发送一次保持连接活跃
+        // 🎯 启动心跳 - 每15秒发送一次（更保守）
         heartbeatInterval = setInterval(async () => {
             if (!requestCompleted) {
                 try {
@@ -113,16 +110,16 @@ async function processCrawlRequest(writer, encoder, toolServerUrl, requestBody, 
                     clearInterval(heartbeatInterval);
                 }
             }
-        }, 10000); // 每10秒发送心跳
+        }, 15000); // 每15秒发送心跳（更保守）
 
-        // 🎯 发送进度更新 - 根据模式发送不同的进度信息
+        // 🎯 发送进度更新
         await sendProgressUpdate(writer, encoder, mode, 'initializing', 'Initializing crawler...');
 
-        // 🔥 执行实际的工具服务器请求（带超时）
+        // 🔥 执行实际的工具服务器请求（带更保守的超时）
         const controller = new AbortController();
         // 🎯 修正：设置为 420 秒 (420000 毫秒) 以覆盖后端最长的 400 秒超时
-        const BACKEND_TIMEOUT_MS = 420000; 
-        const timeoutId = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS); 
+        const BACKEND_TIMEOUT_MS = 420000;
+        const timeoutId = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
         try {
             await sendProgressUpdate(writer, encoder, mode, 'fetching', 'Sending request to tool server...');
@@ -197,7 +194,7 @@ async function processCrawlRequest(writer, encoder, toolServerUrl, requestBody, 
             } else {
                 await sendProgressUpdate(writer, encoder, mode, 'error', `Request failed: ${fetchError.message}`);
                 await writer.write(encoder.encode(JSON.stringify({
-                    type: 'error', 
+                    type: 'error',
                     success: false,
                     error: `Request failed: ${fetchError.message}`,
                     timestamp: new Date().toISOString()
@@ -245,7 +242,7 @@ async function sendProgressUpdate(writer, encoder, mode, stage, message) {
     const progressMessages = {
         'scrape': {
             'initializing': 'Initializing web scraper...',
-            'fetching': 'Fetching webpage content...', 
+            'fetching': 'Fetching webpage content...',
             'processing': 'Processing and cleaning content...',
             'completed': 'Content extraction completed'
         },
@@ -338,10 +335,10 @@ export const crawl4AISchema = {
                     strategy: { type: "string", enum: ["bfs", "dfs", "best_first"], description: "Crawl strategy for deep_crawl" },
                     
                     // Batch parameters
-                    urls: { 
-                        type: "array", 
+                    urls: {
+                        type: "array",
                         items: { type: "string" },
-                        description: "List of URLs for batch_crawl mode" 
+                        description: "List of URLs for batch_crawl mode"
                     },
                     
                     // Extraction parameters
