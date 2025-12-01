@@ -708,9 +708,9 @@ export class ChatApiHandler {
                 if (toolRawResult) break; // 退出 while 循环
             }
             
-            // 清理 UI 状态
-            if (toolStatusElement && ui.removeToolCallStatus) {
-                ui.removeToolCallStatus(toolStatusElement); // 假设 chat-ui 有此方法
+            // 标记 UI 状态为完成（成功）
+            if (toolStatusElement && ui.markToolCallCompleted) {
+                ui.markToolCallCompleted(toolStatusElement, true);
             }
 
             if (!toolRawResult) {
@@ -862,6 +862,12 @@ export class ChatApiHandler {
                 tools: requestBody.tools
             }, apiKey, uiOverrides);
             console.log(`[${timestamp()}] [MCP] Chat completion stream after error finished.`);
+            
+            // 标记 UI 状态为完成（失败）
+            if (toolStatusElement && ui.markToolCallCompleted) {
+                ui.markToolCallCompleted(toolStatusElement, false);
+            }
+            
         } finally {
             this.state.isUsingTool = false;
             console.log(`[${timestamp()}] [MCP] State isUsingTool set to false.`);
