@@ -1,4 +1,4 @@
-// src/static/js/agent/tools/ToolImplementations.js - 参数一致性修复最终版 + Python错误反馈修复 + 异步任务支持
+// src/static/js/agent/tools/ToolImplementations.js - 参数一致性修复最终版 + Python错误反馈修复
 
 import { BaseTool } from './BaseTool.js';
 
@@ -41,12 +41,7 @@ class DeepResearchToolAdapter {
                     deep_crawl: {
                         max_pages: 20,
                         max_depth: 3,
-                        strategy: 'bfs',
-                        async_mode: true  // 🆕 默认启用异步模式
-                    },
-                    batch_crawl: {
-                        concurrent_limit: 3,
-                        async_mode: true  // 🆕 默认启用异步模式
+                        strategy: 'bfs'
                     },
                     extract: {
                         extraction_type: 'llm',
@@ -87,12 +82,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                    },
-                    deep_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
-                    },
-                    batch_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
                     }
                 }
             },
@@ -124,12 +113,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                    },
-                    deep_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
-                    },
-                    batch_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
                     }
                 }
             },
@@ -160,12 +143,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                    },
-                    deep_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
-                    },
-                    batch_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
                     }
                 },
                 python_sandbox: {
@@ -199,12 +176,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                    },
-                    deep_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
-                    },
-                    batch_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
                     }
                 }
             },
@@ -234,12 +205,6 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
-                    },
-                    deep_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
-                    },
-                    batch_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
                     }
                 }
             },
@@ -270,11 +235,7 @@ class DeepResearchToolAdapter {
                     },
                     deep_crawl: {
                         max_pages: 5,
-                        max_depth: 1,
-                        async_mode: true  // 🆕 默认启用异步模式
-                    },
-                    batch_crawl: {
-                        async_mode: true  // 🆕 默认启用异步模式
+                        max_depth: 1
                     },
                     extract: {
                         extraction_type: 'llm'
@@ -344,12 +305,13 @@ class DeepResearchToolAdapter {
                 const modeDefaultConfig = this.getModeSpecificParameters(researchMode, toolName)[mode] || {};
 
                 // 🎯 2. 智能参数提取 - 兼容嵌套和非嵌套格式
+                // 优先使用parameters对象，同时融合顶层参数作为兜底，以修复结构错误
                 const paramsSource = (agentParams.parameters && typeof agentParams.parameters === 'object')
                     ? { ...agentParams, ...agentParams.parameters }
                     : agentParams;
                 const innerParameters = {};
 
-                // 🎯 3. 参数名校正与别名映射 - 新增所有后端支持的参数
+                // 🎯 3. 参数名校正与别名映射
                 const paramMap = {
                     'url': ['url'], 'urls': ['urls'], 'format': ['format', 'output_format'],
                     'css_selector': ['css_selector', 'selector'], 'return_screenshot': ['return_screenshot', 'screenshot'],
@@ -357,18 +319,7 @@ class DeepResearchToolAdapter {
                     'extraction_type': ['extraction_type', 'extract_type'], 'prompt': ['prompt'],
                     'max_depth': ['max_depth', 'depth'], 'max_pages': ['max_pages', 'max_results', 'pages'],
                     'strategy': ['strategy'], 'keywords': ['keywords', 'search_terms'],
-                    'stream': ['stream', 'streaming'], 'concurrent_limit': ['concurrent_limit', 'concurrency'],
-                    'async_mode': ['async_mode', 'async', 'background'],
-                    'task_id': ['task_id', 'taskId'],
-                    // 🆕 新增后端专用参数
-                    'include_links': ['include_links', 'links'],
-                    'include_images': ['include_images', 'images'],
-                    'screenshot_quality': ['screenshot_quality', 'quality'],
-                    'word_count_threshold': ['word_count_threshold', 'word_threshold'],
-                    'exclude_external_links': ['exclude_external_links', 'no_external_links'],
-                    'same_domain': ['same_domain', 'same_domain_only'],
-                    'include_external': ['include_external', 'follow_external'],
-                    'url_patterns': ['url_patterns', 'patterns']
+                    'stream': ['stream', 'streaming'], 'concurrent_limit': ['concurrent_limit', 'concurrency']
                 };
 
                 for (const [correctKey, aliases] of Object.entries(paramMap)) {
@@ -381,34 +332,14 @@ class DeepResearchToolAdapter {
                     }
                 }
 
-                // 🎯 4. 特殊模式处理
-                if (mode === 'async_task_status') {
-                    // 异步任务状态查询的特殊处理
-                    if (!innerParameters.task_id) {
-                        console.warn(`[DeepResearchAdapter] async_task_status 模式需要 task_id 参数`);
-                    }
-                    // 对于状态查询，不需要其他参数
-                    const statusParams = { task_id: innerParameters.task_id };
-                    return { mode: 'async_task_status', parameters: statusParams };
-                }
-
-                // 🎯 5. 应用模式特定的默认配置
+                // 🎯 4. 应用模式特定的默认配置（作为补充）
                 for (const [key, value] of Object.entries(modeDefaultConfig)) {
                     if (innerParameters[key] === undefined) {
                         innerParameters[key] = value;
                     }
                 }
 
-                // 🎯 6. 异步任务智能配置
-                if (['deep_crawl', 'batch_crawl', 'pdf_export', 'screenshot'].includes(mode)) {
-                    // 🆕 对于长时间任务，默认启用异步模式
-                    if (innerParameters.async_mode === undefined) {
-                        innerParameters.async_mode = true;
-                        console.log(`[DeepResearchAdapter] 自动为 ${mode} 模式启用异步模式`);
-                    }
-                }
-
-                // 🎯 7. 模式特定参数的最终验证和兜底 (在应用默认值之后)
+                // 🎯 5. 模式特定参数的最终验证和兜底 (在应用默认值之后)
                 switch (mode) {
                     case 'extract':
                         if (!innerParameters.schema_definition) {
@@ -424,7 +355,7 @@ class DeepResearchToolAdapter {
                         break;
                 }
 
-                // 🎯 8. 构建并返回绝对正确的双层嵌套结构
+                // 🎯 6. 构建并返回绝对正确的双层嵌套结构
                 const finalParams = {
                     mode: mode,
                     parameters: innerParameters
@@ -556,103 +487,6 @@ class DeepResearchToolAdapter {
     }
     
     /**
-     * 🎯 深度分析Crawl4AI异步任务响应 - 增强版
-     */
-    static _analyzeCrawl4AIAsyncResponse(rawResponse, calledParameters) {
-        console.log(`[AsyncResponseAnalyzer] 分析Crawl4AI异步响应:`, rawResponse);
-        
-        const responseData = rawResponse.rawResult || rawResponse;
-        
-        // 🎯 检测异步任务响应
-        if (responseData.async === true && responseData.task_id) {
-            return {
-                isAsyncTask: true,
-                taskId: responseData.task_id,
-                status: responseData.status || 'pending',
-                message: responseData.message || '异步任务已启动',
-                pollingInterval: responseData.polling_interval || 3,
-                initialResponse: responseData
-            };
-        }
-        
-        // 🎯 检测任务状态查询响应
-        if (responseData.task_id && responseData.status) {
-            return {
-                isAsyncTask: true,
-                taskId: responseData.task_id,
-                status: responseData.status,
-                progress: responseData.progress || 0,
-                message: responseData.message || '任务执行中',
-                result: responseData.result,
-                error: responseData.error
-            };
-        }
-        
-        // 🎯 新增：检查后端原始响应结构
-        if (responseData.success && responseData.async_task_id) {
-            return {
-                isAsyncTask: true,
-                taskId: responseData.async_task_id,
-                status: 'pending',
-                message: responseData.message || '异步任务已创建',
-                pollingInterval: 3,
-                initialResponse: responseData
-            };
-        }
-        
-        return { isAsyncTask: false };
-    }
-
-    /**
-     * 🎯 构建异步任务状态报告
-     */
-    static _buildAsyncTaskReport(asyncAnalysis, researchMode) {
-        const { taskId, status, progress, message, result, error } = asyncAnalysis;
-        
-        const modePrefixes = {
-            deep: '🧠 深度研究',
-            business: '💼 行业分析', 
-            academic: '📚 学术研究',
-            technical: '💻 技术实现',
-            cutting_edge: '🚀 前沿技术',
-            shopping_guide: '🛍️ 导购分析',
-            standard: '📋 标准'
-        };
-        
-        const prefix = modePrefixes[researchMode] || modePrefixes.standard;
-        
-        if (status === 'completed' && result) {
-            return {
-                success: true,
-                output: `${prefix}异步任务已完成\n\n**任务ID**: ${taskId}\n**状态**: ✅ 完成\n**结果**:\n${JSON.stringify(result, null, 2)}`,
-                rawResponse: result,
-                isAsyncComplete: true
-            };
-        }
-        
-        if (status === 'failed' && error) {
-            return {
-                success: false,
-                output: `${prefix}异步任务失败\n\n**任务ID**: ${taskId}\n**状态**: ❌ 失败\n**错误**: ${error}`,
-                rawResponse: { error },
-                isAsyncComplete: true
-            };
-        }
-        
-        if (status === 'running' || status === 'pending') {
-            return {
-                success: true,
-                output: `${prefix}异步任务执行中\n\n**任务ID**: ${taskId}\n**状态**: 🔄 ${status === 'running' ? '执行中' : '等待中'}\n**进度**: ${progress}%\n**消息**: ${message}`,
-                rawResponse: asyncAnalysis,
-                isAsyncTask: true,
-                shouldPoll: true
-            };
-        }
-        
-        return null;
-    }
-    
-    /**
      * DeepResearch模式专用响应处理 - 完全修复空内容处理
      */
     static normalizeResponseForDeepResearch(toolName, rawResponse, researchMode = 'deep') {
@@ -707,52 +541,15 @@ class DeepResearchToolAdapter {
                 }
                     
                 case 'crawl4ai': {
-                    // 🎯 异步任务响应特殊处理
-                    const asyncAnalysis = this._analyzeCrawl4AIAsyncResponse(rawResponse, rawResponse.rawParameters);
-                    
-                    if (asyncAnalysis.isAsyncTask) {
-                        const asyncReport = this._buildAsyncTaskReport(asyncAnalysis, researchMode);
-                        if (asyncReport) {
-                            return {
-                                ...asyncReport,
-                                sources: [],
-                                mode: 'deep_research',
-                                researchMode: researchMode,
-                                researchMetadata: {
-                                    tool: toolName,
-                                    timestamp: Date.now(),
-                                    asyncTask: true,
-                                    taskId: asyncAnalysis.taskId,
-                                    status: asyncAnalysis.status
-                                }
-                            };
-                        }
-                    }
-                    
                     // 🎯 关键修复：确保我们处理的是正确的对象
                     const crawlData = rawResponse.rawResult || dataFromProxy;
                     const calledParameters = rawResponse.rawParameters || {};
                     
                     console.log(`[DeepResearchAdapter] crawl4ai 已解析的响应数据:`, crawlData);
                     
-                    // 🎯 【新增】处理批量爬取结果 (results 数组)
-                    if (crawlData.results && Array.isArray(crawlData.results)) {
-                        console.log(`[DeepResearchAdapter] ✅ 检测到批量爬取结果 (${crawlData.results.length} 个)`);
-                        sources = crawlData.results.map(result => ({
-                            title: result.title || result.url,
-                            url: result.url,
-                            description: `内容长度: ${result.content?.length || 0} 字符`,
-                            source_type: 'web_page'
-                        }));
-                        // 合并所有内容作为输出
-                        output = crawlData.results.map(r => r.content).filter(c => c).join('\n\n---\n\n');
-                        success = true;
-                        break; // 🎯 成功处理，跳出 switch
-                    }
-
                     // 🎯 增强错误检测：检查多种失败标志
-                    const isError = rawResponse.error ||
-                                   crawlData.success === false ||
+                    const isError = rawResponse.error || 
+                                   crawlData.success === false || 
                                    (crawlData.data && crawlData.data.success === false) ||
                                    (crawlData.status && crawlData.status >= 400);
 
@@ -1188,54 +985,27 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
     }
     
     /**
-     * 🎯 crawl4ai 错误诊断（完整版）- 适配所有后端模式
+     * 🎯 crawl4ai 错误诊断（最终版）
      */
     static _diagnoseCrawl4AIError(rawResponse, calledParameters) {
         const errorText = (rawResponse.error || '').toString().toLowerCase();
         const status = rawResponse.rawResult?.status;
         const mode = calledParameters.mode || 'unknown';
 
-        // 🎯 1. 异步任务错误诊断
-        if (errorText.includes('async') || errorText.includes('task')) {
+        // 诊断1: 参数结构或名称错误 (最常见)
+        if ((status === 500 || errorText.includes('500')) && mode === 'extract' && !calledParameters.parameters?.schema_definition) {
             return {
-                type: '异步任务错误',
-                reason: `异步任务执行过程中出现问题。可能原因包括任务超时、内存不足或网络中断。`,
+                type: '参数缺失/名称错误',
+                reason: `调用'extract'模式时，必需的'schema_definition'参数缺失。Agent可能错误地使用了'schema'作为参数名，或者忘记提供。`,
                 suggestions: [
-                    '**检查任务状态**: 使用 async_task_status 模式查询任务当前状态',
-                    '**重试任务**: 如果任务失败，可以尝试重新启动',
-                    '**减少任务规模**: 降低 max_pages 或 max_depth 参数值',
-                    '**检查系统资源**: 确认服务器有足够的内存和计算资源'
+                    '**修正参数名**: 确保使用 `schema_definition` 而不是 `schema`。',
+                    '**检查参数结构**: 确认所有参数都正确嵌套在 `parameters` 对象内部。',
+                    '**参考文档**: 严格按照 `SKILL.md` 中的 `extract` 模式模板重新构建调用。'
                 ]
             };
         }
 
-        // 🎯 2. 特定模式参数错误 (提取模式)
-        if (mode === 'extract' && !calledParameters.parameters?.schema_definition) {
-            return {
-                type: '提取模式参数缺失',
-                reason: `调用'extract'模式时，必需的'schema_definition'参数缺失。`,
-                suggestions: [
-                    '**提供schema**: 确保提供有效的 JSON schema 定义',
-                    '**检查参数名**: 使用 schema_definition 作为参数名',
-                    '**参考文档**: 查看 crawl4ai 工具的提取模式文档'
-                ]
-            };
-        }
-
-        // 🎯 3. PDF导出内存不足错误
-        if (mode === 'pdf_export' && errorText.includes('memory')) {
-            return {
-                type: 'PDF导出内存不足',
-                reason: `系统内存不足，无法生成PDF文件。`,
-                suggestions: [
-                    '**使用文本模式**: 改为使用 scrape 模式获取文本内容',
-                    '**减少内容**: 使用 css_selector 提取特定部分内容',
-                    '**分批处理**: 将大页面分成多个小请求处理'
-                ]
-            };
-        }
-
-        // 🎯 4. 通用服务器错误
+        // 诊断2: 通用服务器错误
         if (status === 500 || errorText.includes('500')) {
             return {
                 type: '工具后端服务错误',
@@ -1248,7 +1018,7 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
             };
         }
 
-        // 🎯 5. 超时错误
+        // 诊断3: 超时错误
         if (errorText.includes('timeout') || errorText.includes('timed out')) {
             return {
                 type: '请求超时',
@@ -1261,7 +1031,7 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
             };
         }
 
-        // 🎯 6. 网络连接错误
+        // 诊断4: 网络连接错误
         if (errorText.includes('network') || errorText.includes('fetch') || errorText.includes('connection')) {
             return {
                 type: '网络连接错误',
@@ -1274,7 +1044,7 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
             };
         }
         
-        // 🎯 7. 默认诊断
+        // 默认诊断
         return {
             type: '未知错误',
             reason: errorText || '未提供具体错误信息。',
@@ -1566,18 +1336,6 @@ static formatWebContentForMode(webData, researchMode) {
             }
                 
             case 'crawl4ai': {
-                // 🎯 新增异步任务数据提取
-                const asyncAnalysis = this._analyzeCrawl4AIAsyncResponse(rawResponse);
-                if (asyncAnalysis.isAsyncTask) {
-                    return {
-                        ...baseData,
-                        asyncTask: true,
-                        taskId: asyncAnalysis.taskId,
-                        status: asyncAnalysis.status,
-                        progress: asyncAnalysis.progress || 0
-                    };
-                }
-                
                 return {
                     ...baseData,
                     hasContent: !!(dataFromProxy.content || dataFromProxy.markdown),
@@ -1672,11 +1430,6 @@ static formatWebContentForMode(webData, researchMode) {
                 toolSpecific.push('分析内容结构和主要观点');
                 toolSpecific.push('识别作者立场和内容偏见');
                 toolSpecific.push('评估信息的时效性和相关性');
-                // 🎯 新增异步任务建议
-                if (result.includes('异步任务')) {
-                    toolSpecific.push('监控异步任务进度，适时查询状态');
-                    toolSpecific.push('如任务长时间未完成，考虑调整参数重试');
-                }
                 break;
             }
             case 'python_sandbox': {
@@ -1760,29 +1513,6 @@ class ProxiedTool extends BaseTool {
             });
             
             let rawResult = await Promise.race([toolPromise, timeoutPromise]);
-            
-            // 🎯 异步任务特殊处理
-            if (this.name === 'crawl4ai') {
-                const asyncAnalysis = DeepResearchToolAdapter._analyzeCrawl4AIAsyncResponse(
-                    { rawResult, rawParameters: normalizedInput }
-                );
-                
-                if (asyncAnalysis.isAsyncTask && asyncAnalysis.status === 'pending') {
-                    console.log(`[ProxiedTool] 检测到异步任务启动，任务ID: ${asyncAnalysis.taskId}`);
-                    
-                    // 🎯 对于新启动的异步任务，返回状态信息而不是等待
-                    return {
-                        success: true,
-                        output: `🔄 **异步任务已启动**\n\n**任务ID**: ${asyncAnalysis.taskId}\n**状态**: ${asyncAnalysis.status}\n**消息**: ${asyncAnalysis.message}\n\n请稍后使用 async_task_status 模式查询任务进度。`,
-                        rawResult: asyncAnalysis.initialResponse,
-                        isAsyncTask: true,
-                        taskId: asyncAnalysis.taskId,
-                        executionTime: Date.now() - startTime,
-                        mode: mode,
-                        researchMode: researchMode
-                    };
-                }
-            }
             
             // 🎯 关键修复：将 normalizedInput 附加到 rawResult 中，供错误处理使用
             if (rawResult && typeof rawResult === 'object') {
@@ -1878,11 +1608,6 @@ class ProxiedTool extends BaseTool {
             sanitized.image_url = sanitized.image_url.substring(0, 150) + '...';
         }
         
-        // 🎯 新增：异步任务参数清理
-        if (sanitized.task_id && sanitized.task_id.length > 50) {
-            sanitized.task_id = sanitized.task_id.substring(0, 50) + '...';
-        }
-        
         if (sanitized.parameters && typeof sanitized.parameters === 'object') {
             sanitized.parameters = this.sanitizeToolInput(sanitized.parameters);
         }
@@ -1957,9 +1682,8 @@ export class ToolFactory {
                 always: true,
                 limitations: {
                     pdf_export: availableMemoryGB < 4 ? '降级为文本' : '完整支持',
-                    deep_crawl: availableMemoryGB < 4 ? '推荐异步模式' : '完整支持',
-                    batch_crawl: availableMemoryGB < 4 ? '推荐异步模式' : '完整支持',
-                    async_tasks: '完整支持' // 🆕 异步任务在任何内存下都支持
+                    deep_crawl: availableMemoryGB < 4 ? '限制页面数' : '完整支持',
+                    batch_crawl: availableMemoryGB < 4 ? '限制并发数' : '完整支持'
                 }
             },
             'python_sandbox': { 

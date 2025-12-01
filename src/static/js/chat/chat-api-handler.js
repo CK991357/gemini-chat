@@ -28,7 +28,6 @@ export class ChatApiHandler {
         this.state = state;
         this.libs = libs;
         this.config = config; // 存储配置对象
-        this.asyncTaskManager = new AsyncTaskManager(this);
     }
 
     /**
@@ -582,9 +581,9 @@ export class ChatApiHandler {
     _handleMcpToolCall = async (toolCode, requestBody, apiKey, uiOverrides = null) => {
         const ui = uiOverrides || chatUI;
         const timestamp = () => new Date().toISOString();
-        const callId = `call_${Date.now()}`;
+        const callId = `call_${Date.now()}`; // 在函数顶部声明并初始化 callId
         console.log(`[${timestamp()}] [MCP] --- _handleMcpToolCall START ---`);
-        
+
         try {
             this.state.isUsingTool = true;
             console.log(`[${timestamp()}] [MCP] State isUsingTool set to true.`);
@@ -594,119 +593,23 @@ export class ChatApiHandler {
             ui.displayToolCallStatus(toolCode.tool_name, toolCode.arguments);
             ui.logMessage(`通过代理执行 MCP 工具: ${toolCode.tool_name} with args: ${JSON.stringify(toolCode.arguments)}`, 'system');
             console.log(`[${timestamp()}] [MCP] Tool call status UI displayed.`);
-            
-            // 解析参数
+ 
+            // ✨ 修复：不再查找 mcp_server_url，直接发送到后端代理
+            console.log(`[${timestamp()}] [MCP] Using unified backend proxy for tool: ${toolCode.tool_name}`);
+
+            // --- Revert to Standard MCP Request Format for glm4v ---
+            // We are no longer using Tavily's non-standard API.
+            // We will now send the full, unmodified arguments object to the proxy.
             let parsedArguments;
             try {
                 parsedArguments = this._robustJsonParse(toolCode.arguments);
             } catch (e) {
-                throw new Error(`无法解析工具参数: ${toolCode.arguments}`);
+                const errorMsg = `无法解析来自模型的工具参数，即使在尝试修复后也是如此: ${toolCode.arguments}`;
+                console.error(`[${timestamp()}] [MCP] ROBUST PARSE FAILED: ${errorMsg}`, e);
+                throw new Error(errorMsg);
             }
 
-            // 🎯 处理 Crawl4AI 异步任务
-            if (toolCode.tool_name === 'crawl4ai' &&
-                ['deep_crawl', 'batch_crawl'].includes(parsedArguments.mode)) {
-                
-                console.log(`[${timestamp()}] [MCP] 检测到长时间任务，启用异步模式`);
-                
-                // 确保启用异步模式
-                if (!parsedArguments.parameters) {
-                    parsedArguments.parameters = {};
-                }
-                parsedArguments.parameters.async_mode = true;
-                
-                // 调用工具
-                const toolResponse = await this.callTool('crawl4ai', parsedArguments);
-                
-                if (!toolResponse.success) {
-                    throw new Error(`工具调用失败: ${toolResponse.error}`);
-                }
-                
-                // 🎯 检查是否为异步任务响应
-                if (toolResponse.rawResult.async_mode && toolResponse.rawResult.task_id) {
-                    console.log(`[${timestamp()}] [MCP] 接收到异步任务，开始轮询: ${toolResponse.rawResult.task_id}`);
-                    
-                    // 启动轮询
-                    try {
-                        const finalResult = await this.asyncTaskManager.startPolling(
-                            toolResponse.rawResult.task_id,
-                            toolResponse.rawResult
-                        );
-                        
-                        // 🎯 轮询完成，继续正常的工具调用流程
-                        console.log(`[${timestamp()}] [MCP] 异步任务完成，继续处理结果`);
-                        
-                        // 将结果转换为工具响应格式
-                        const toolResultContent = { output: finalResult };
-                        
-                        // 继续原有的历史记录和后续处理
-                        this.state.chatHistory.push({
-                            role: 'assistant',
-                            content: null,
-                            tool_calls: [{
-                                id: callId,
-                                type: 'function',
-                                function: {
-                                    name: toolCode.tool_name,
-                                    arguments: JSON.stringify(parsedArguments)
-                                }
-                            }]
-                        });
-                        
-                        this.state.chatHistory.push({
-                            role: 'tool',
-                            content: JSON.stringify(toolResultContent),
-                            tool_call_id: callId
-                        });
-
-                        await this.streamChatCompletion({
-                            ...requestBody,
-                            messages: this.state.chatHistory,
-                            tools: requestBody.tools
-                        }, apiKey, uiOverrides);
-                        
-                        return; // 提前返回，避免执行后续代码
-                        
-                    } catch (pollError) {
-                        console.error(`[${timestamp()}] [MCP] 异步任务轮询失败:`, pollError);
-                        throw new Error(`异步任务执行失败: ${pollError.message}`);
-                    }
-                }
-                
-                // 如果不是异步响应，继续原有逻辑
-                const toolResultContent = { output: toolResponse.rawResult };
-                
-                this.state.chatHistory.push({
-                    role: 'assistant',
-                    content: null,
-                    tool_calls: [{
-                        id: callId,
-                        type: 'function',
-                        function: {
-                            name: toolCode.tool_name,
-                            arguments: JSON.stringify(parsedArguments)
-                        }
-                    }]
-                });
-                
-                this.state.chatHistory.push({
-                    role: 'tool',
-                    content: JSON.stringify(toolResultContent),
-                    tool_call_id: callId
-                });
-
-                await this.streamChatCompletion({
-                    ...requestBody,
-                    messages: this.state.chatHistory,
-                    tools: requestBody.tools
-                }, apiKey, uiOverrides);
-                
-                return;
-            }
-            
-            // ... 原有的非Crawl4AI任务处理逻辑 ...
-            
-            // 🎯 修复：Crawl4AI 普通模式参数修正逻辑 (从原代码复制)
+            // 🎯 新增：Crawl4AI 普通模式参数修正逻辑
             if (toolCode.tool_name === 'crawl4ai' && parsedArguments.mode === 'extract') {
                 console.log('[MCP] 检测到 crawl4ai extract 调用，执行参数修正...');
                 
@@ -720,7 +623,7 @@ export class ChatApiHandler {
                 }
             }
 
-            // ✨ 修复：构建简化的请求体，不再包含 server_url (从原代码复制)
+            // ✨ 修复：构建简化的请求体，不再包含 server_url
             const proxyRequestBody = {
                 tool_name: toolCode.tool_name,
                 parameters: parsedArguments, // Send the full, parsed arguments object
@@ -730,7 +633,7 @@ export class ChatApiHandler {
             };
             console.log(`[${timestamp()}] [MCP] Constructed proxy request body:`, JSON.stringify(proxyRequestBody, null, 2));
 
-            // 调用后端代理 (从原代码复制)
+            // 调用后端代理
             console.log(`[${timestamp()}] [MCP] Sending fetch request to /api/mcp-proxy...`);
             const proxyResponse = await fetch('/api/mcp-proxy', {
                 method: 'POST',
@@ -746,7 +649,7 @@ export class ChatApiHandler {
                 throw new Error(errorMsg);
             }
 
-            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 🔥🔥🔥 (从原代码复制)
+            // 🔥🔥🔥 [最终方案] 统一的文件处理逻辑 🔥🔥🔥
             const toolRawResult = await proxyResponse.json();
             console.log(`[${timestamp()}] [MCP] Received unified result from backend:`, toolRawResult);
 
@@ -769,7 +672,7 @@ export class ChatApiHandler {
                         // ================================================================
                         // 🚀 智能调度中心：根据 'type' 字段决定如何处理
                         // ================================================================
-                        
+
                         if (outputData.type === 'image' && outputData.image_base64) {
                             // --- 图片处理分支 ---
                             console.log(`[MCP] Dispatching to Image Renderer for title: "${outputData.title}"`);
@@ -994,109 +897,5 @@ export class ChatApiHandler {
             // 向上抛出错误，让 Orchestrator 能够捕获并处理
             throw error; 
         }
-    }
-}
-
-/**
- * @class AsyncTaskManager
- * @description 管理异步任务的轮询和状态跟踪 - 纯后端版本
- */
-class AsyncTaskManager {
-    constructor(apiHandler) {
-        this.apiHandler = apiHandler;
-        this.activePolls = new Map();
-        this.maxPollingTime = 10 * 60 * 1000; // 10分钟最大轮询时间
-        this.maxPollAttempts = 200; // 最大轮询次数
-    }
-
-    /**
-     * 开始轮询异步任务 - 纯后端版本
-     */
-    async startPolling(taskId, initialResponse) {
-        const startTime = Date.now();
-        let pollAttempts = 0;
-        
-        console.log(`[AsyncTaskManager] 开始轮询异步任务: ${taskId}`);
-        
-        return new Promise((resolve, reject) => {
-            const pollInterval = setInterval(async () => {
-                pollAttempts++;
-                
-                try {
-                    // 检查超时条件
-                    if (Date.now() - startTime > this.maxPollingTime) {
-                        this.cleanupPoll(taskId);
-                        console.log(`[AsyncTaskManager] 任务轮询超时: ${taskId}`);
-                        reject(new Error('Task polling timeout (10 minutes)'));
-                        return;
-                    }
-
-                    if (pollAttempts > this.maxPollAttempts) {
-                        this.cleanupPoll(taskId);
-                        console.log(`[AsyncTaskManager] 超过最大轮询次数: ${taskId}`);
-                        reject(new Error('Max poll attempts exceeded'));
-                        return;
-                    }
-
-                    // 查询任务状态
-                    const statusResponse = await this.apiHandler.callTool('crawl4ai', {
-                        mode: 'async_task_status',
-                        task_id: taskId
-                    });
-
-                    if (!statusResponse.success) {
-                        console.log(`[AsyncTaskManager] 任务状态查询失败: ${statusResponse.error}`);
-                        // 继续轮询，不立即失败
-                        return;
-                    }
-
-                    const taskStatus = statusResponse.rawResult;
-                    
-                    // 记录任务状态
-                    console.log(`[AsyncTaskManager] 任务 ${taskId} 状态: ${taskStatus.status}, 进度: ${taskStatus.progress}%`);
-
-                    // 检查任务完成状态
-                    if (taskStatus.status === 'completed') {
-                        this.cleanupPoll(taskId);
-                        console.log(`[AsyncTaskManager] 任务完成: ${taskId}`);
-                        resolve(taskStatus.result);
-                        
-                    } else if (taskStatus.status === 'failed') {
-                        this.cleanupPoll(taskId);
-                        console.log(`[AsyncTaskManager] 任务失败: ${taskId}, 错误: ${taskStatus.error}`);
-                        reject(new Error(taskStatus.error));
-                    }
-
-                } catch (error) {
-                    console.error(`[AsyncTaskManager] 轮询任务 ${taskId} 失败:`, error);
-                    // 网络错误时继续轮询
-                }
-            }, initialResponse.polling_interval * 1000 || 3000); // 默认3秒
-
-            // 存储轮询信息
-            this.activePolls.set(taskId, {
-                interval: pollInterval,
-                startTime,
-                pollAttempts: () => pollAttempts
-            });
-        });
-    }
-
-    /**
-     * 清理轮询
-     */
-    cleanupPoll(taskId) {
-        const pollInfo = this.activePolls.get(taskId);
-        if (pollInfo) {
-            clearInterval(pollInfo.interval);
-            this.activePolls.delete(taskId);
-        }
-    }
-
-    /**
-     * 检查是否有活跃的任务
-     */
-    hasActiveTasks() {
-        return this.activePolls.size > 0;
     }
 }

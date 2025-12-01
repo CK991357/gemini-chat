@@ -1,31 +1,16 @@
 ---
 name: crawl4ai
-description: 功能强大的开源网页抓取和数据处理工具，支持7种工作模式，包括截图、PDF导出和智能爬取。新增异步任务模式，支持长时间运行任务的智能轮询。
+description: 功能强大的开源网页抓取和数据处理工具，支持7种工作模式，包括截图、PDF导出和智能爬取
 tool_name: crawl4ai
 category: web-crawling
 priority: 9
-tags: ["web-scraping", "screenshot", "pdf-export", "data-extraction", "crawling", "automation", "content-extraction","crawl4ai", "async-task"]
-version: 1.2
+tags: ["web-scraping", "screenshot", "pdf-export", "data-extraction", "crawling", "automation", "content-extraction","crawl4ai"]
+version: 1.1
 ---
 
 # Crawl4AI 网页抓取工具指南
 
 Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支持 7 种不同的工作模式。所有二进制输出（截图、PDF）都以 base64 编码返回，便于模型处理。
-
-## 🆕 【新增特性】异步任务模式
-
-为了解决长时间运行任务的超时问题，Crawl4AI 新增了智能异步任务模式：
-
-### 🎯 异步模式核心优势
-- **突破30秒超时限制**：支持长时间运行的深度爬取任务
-- **智能轮询机制**：自动跟踪任务进度和状态
-- **内存优化**：专门为资源受限环境设计
-- **任务状态持久化**：支持任务中断恢复
-
-### ⚡ 异步模式适用场景与默认行为
-- **`deep_crawl`**：深度网站爬取。**默认启用异步模式**，可通过 `"async_mode": false` 显式禁用。
-- **`batch_crawl`**：批量URL处理。**默认启用异步模式**，可通过 `"async_mode": false` 显式禁用。
-- **其他模式** (`scrape`, `extract`, `pdf_export`, `screenshot`)：默认同步执行，可通过 `"async_mode": true` 显式启用异步模式。
 
 ## 🎯 【至关重要】通用调用结构
 
@@ -65,14 +50,14 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 
 ## 📋 可用模式快速选择指南
 
-| 模式 | 功能描述 | 主要用途 | 复杂度 | 推荐场景 | 异步支持 |
-|------|----------|----------|---------|----------|----------|
-| `scrape` | 抓取单个网页 | 获取页面内容、截图、PDF | ⭐⭐ | 单页面内容获取 | 可选 |
-| `deep_crawl` | 深度智能爬取 | 使用策略深度爬取网站 | ⭐⭐⭐⭐ | 网站内容探索 | ✅ 推荐 |
-| `batch_crawl` | 批量 URL 处理 | 同时处理多个 URL | ⭐⭐ | 批量数据收集 | ✅ 推荐 |
-| `extract` | 结构化数据提取 | 基于 CSS 或 LLM 提取数据 | ⭐⭐⭐ | 特定数据提取 | 可选 |
-| `pdf_export` | PDF 导出 | 将网页导出为 PDF | ⭐ | 文档保存 | 可选 |
-| `screenshot` | 截图捕获 | 捕获网页截图 | ⭐ | 视觉证据保存 | 可选 |
+| 模式 | 功能描述 | 主要用途 | 复杂度 | 推荐场景 |
+|------|----------|----------|---------|----------|
+| `scrape` | 抓取单个网页 | 获取页面内容、截图、PDF | ⭐⭐ | 单页面内容获取 |
+| `deep_crawl` | 深度智能爬取 | 使用策略深度爬取网站 | ⭐⭐⭐⭐ | 网站内容探索 |
+| `batch_crawl` | 批量 URL 处理 | 同时处理多个 URL | ⭐⭐ | 批量数据收集 |
+| `extract` | 结构化数据提取 | 基于 CSS 或 LLM 提取数据 | ⭐⭐⭐ | 特定数据提取 |
+| `pdf_export` | PDF 导出 | 将网页导出为 PDF | ⭐ | 文档保存 |
+| `screenshot` | 截图捕获 | 捕获网页截图 | ⭐ | 视觉证据保存 |
 
 ## 🎯 使用场景快速指南
 
@@ -90,7 +75,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 }
 ```
 
-### 场景2：批量收集产品信息（异步模式）
+### 场景2：批量收集产品信息
 ```json
 {
   "mode": "batch_crawl",
@@ -100,13 +85,12 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
       "https://example.com/product2", 
       "https://example.com/product3"
     ],
-    "concurrent_limit": 3,
-    "async_mode": true  // 🆕 启用异步模式
+    "concurrent_limit": 3
   }
 }
 ```
 
-### 场景3：深度研究某个网站（异步模式）
+### 场景3：深度研究某个网站
 ```json
 {
   "mode": "deep_crawl",
@@ -114,8 +98,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
     "url": "https://example.com/docs",
     "max_depth": 3,
     "keywords": ["教程", "指南", "API"],
-    "strategy": "best_first",
-    "async_mode": true  // 🆕 启用异步模式
+    "strategy": "best_first"
   }
 }
 ```
@@ -187,8 +170,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
     "screenshot_quality": 80,
     "screenshot_max_width": 1200,
     "word_count_threshold": 10,
-    "exclude_external_links": true,
-    "async_mode": false  // 🆕 可选异步模式
+    "exclude_external_links": true
   }
 }
 ```
@@ -214,13 +196,12 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - `screenshot_max_width`: 截图最大宽度，默认 1920
 - `word_count_threshold`: 内容块最小单词数，默认 10
 - `exclude_external_links`: 是否排除外部链接，默认 true
-- `async_mode`: 🆕 是否启用异步模式，默认 false
 
 ### 2. 深度网站爬取 (`deep_crawl`)
 
 使用智能策略深度爬取整个网站，支持关键词评分和 URL 过滤。
 
-**✅ 正确示例（推荐异步模式）:**
+**✅ 正确示例:**
 ```json
 {
   "mode": "deep_crawl",
@@ -232,8 +213,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
     "include_external": false,
     "keywords": ["产品", "价格", "规格"],
     "url_patterns": ["/products/", "/docs/"],
-    "stream": false,
-    "async_mode": true  // 🆕 推荐启用异步模式
+    "stream": false
   }
 }
 ```
@@ -247,13 +227,12 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - `keywords`: 用于相关性评分的关键词列表
 - `url_patterns`: URL 模式过滤列表
 - `stream`: 是否流式返回结果，默认 false
-- `async_mode`: 🆕 是否启用异步模式，**默认 true**（推荐）。可通过 `false` 显式禁用。
 
 ### 3. 批量 URL 处理 (`batch_crawl`)
 
 同时处理多个 URL，适用于批量数据收集。
 
-**✅ 正确示例（推荐异步模式）:**
+**✅ 正确示例:**
 ```json
 {
   "mode": "batch_crawl",
@@ -264,8 +243,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
       "https://example.com/page3"
     ],
     "stream": false,
-    "concurrent_limit": 3,
-    "async_mode": true  // 🆕 推荐启用异步模式
+    "concurrent_limit": 3
   }
 }
 ```
@@ -284,7 +262,6 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - `urls` (必需): URL 列表，必须是数组格式
 - `stream`: 是否流式返回，默认 false
 - `concurrent_limit`: 最大并发数，默认 3
-- `async_mode`: 🆕 是否启用异步模式，**默认 true**（推荐）。可通过 `false` 显式禁用。
 
 ### 4. 结构化数据提取 (`extract`)
 
@@ -323,8 +300,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
       ]
     },
     "css_selector": ".article-content",
-    "extraction_type": "css",
-    "async_mode": false  // 🆕 可选异步模式
+    "extraction_type": "css"
   }
 }
 ```
@@ -345,8 +321,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
       }
     },
     "extraction_type": "llm",
-    "prompt": "从文章中提取标题、作者、摘要和关键要点",
-    "async_mode": false  // 🆕 可选异步模式
+    "prompt": "从文章中提取标题、作者、摘要和关键要点"
   }
 }
 ```
@@ -369,7 +344,35 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - `css_selector`: 基础 CSS 选择器（CSS 提取时使用）
 - `extraction_type`: 提取类型，`css`(默认)/`llm`
 - `prompt`: LLM 提取的提示语
-- `async_mode`: 🆕 是否启用异步模式，默认 false
+
+## 📋 Schema Definition 结构说明
+
+### CSS 提取模式必需的 schema 结构：
+```json
+{
+  "name": "YourSchemaName",           // 必需：schema 名称
+  "baseSelector": "css-selector",     // 必需：基础 CSS 选择器
+  "fields": [                         // 必需：字段定义数组
+    {
+      "name": "field_name",           // 必需：字段名称
+      "selector": "css-selector",     // 必需：字段选择器
+      "type": "text",                 // 必需：字段类型
+      "multiple": true                // 可选：是否允许多个值
+    }
+  ]
+}
+```
+
+### LLM 提取模式 schema 结构：
+```json
+{
+  "type": "object",
+  "properties": {
+    "field1": {"type": "string"},
+    "field2": {"type": "array", "items": {"type": "string"}}
+  }
+}
+```
 
 ### 5. PDF 导出 (`pdf_export`)
 
@@ -381,8 +384,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "mode": "pdf_export",
   "parameters": {
     "url": "https://example.com/document",
-    "return_as_base64": true,
-    "async_mode": false  // 🆕 可选异步模式
+    "return_as_base64": true
   }
 }
 ```
@@ -390,7 +392,6 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 **参数说明:**
 - `url` (必需): 要导出为 PDF 的网页 URL
 - `return_as_base64`: 是否返回 base64 编码，默认 true
-- `async_mode`: 🆕 是否启用异步模式，默认 false
 
 ### 6. 截图捕获 (`screenshot`)
 
@@ -406,8 +407,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
     "return_as_base64": true,
     "quality": 80,
     "max_width": 1200,
-    "max_height": 3000,
-    "async_mode": false  // 🆕 可选异步模式
+    "max_height": 3000
   }
 }
 ```
@@ -419,82 +419,13 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - `quality`: 截图质量(10-100)，默认 70
 - `max_width`: 最大宽度，默认 1920
 - `max_height`: 最大高度，默认 5000
-- `async_mode`: 🆕 是否启用异步模式，默认 false
-
-## 🔄 异步任务模式详解
-
-### 🎯 异步任务工作流程
-
-1. **任务启动**: 设置 `async_mode: true` 启动异步任务
-2. **立即返回**: 获得任务ID和轮询信息
-3. **状态轮询**: 定期查询任务状态
-4. **结果获取**: 任务完成后获取完整结果
-
-### 📋 异步任务调用示例
-
-**启动异步深度爬取:**
-```json
-{
-  "mode": "deep_crawl",
-  "parameters": {
-    "url": "https://example.com/docs",
-    "max_depth": 3,
-    "max_pages": 50,
-    "async_mode": true
-  }
-}
-```
-
-**异步任务响应:**
-```json
-{
-  "success": true,
-  "async": true,
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "pending",
-  "message": "异步任务已启动",
-  "polling_interval": 3
-}
-```
-
-### 🔍 异步任务状态查询
-
-**查询任务状态:**
-```json
-{
-  "mode": "async_task_status",
-  "parameters": {
-    "task_id": "550e8400-e29b-41d4-a716-446655440000"
-  }
-}
-```
-
-**状态响应示例:**
-```json
-{
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "running",
-  "progress": 45,
-  "message": "任务执行中...",
-  "created_at": "2024-01-15T10:30:00"
-}
-```
-
-### 🎪 异步任务状态说明
-
-| 状态 | 描述 | 处理建议 |
-|------|------|----------|
-| `pending` | 任务已创建，等待执行 | 继续轮询 |
-| `running` | 任务执行中 | 继续轮询，关注进度 |
-| `completed` | 任务完成 | 获取结果数据 |
-| `failed` | 任务失败 | 查看错误信息 |
 
 ## 🔄 常见工作流
 
 ### 新闻文章采集工作流
 **目标**: 自动收集和分析新闻内容
-1. **发现阶段**: 使用 `deep_crawl` 发现相关文章链接（推荐异步模式）
-2. **采集阶段**: 使用 `batch_crawl` 批量获取内容（推荐异步模式）  
+1. **发现阶段**: 使用 `deep_crawl` 发现相关文章链接
+2. **采集阶段**: 使用 `batch_crawl` 批量获取内容  
 3. **提取阶段**: 使用 `extract` 结构化提取关键信息
 
 ### 竞品分析工作流
@@ -505,7 +436,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 
 ### 产品目录爬取工作流  
 **目标**: 建立完整的产品数据库
-1. **目录探索**: 使用 `deep_crawl` 发现所有产品页面（推荐异步模式）
+1. **目录探索**: 使用 `deep_crawl` 发现所有产品页面
 2. **数据提取**: 使用 `extract` 提取产品信息
 
 ## 🛠️ 故障排除
@@ -513,9 +444,8 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 ### 常见问题与解决方案
 
 #### 性能问题
-- **超时问题**: 减少 `max_pages` 或 `max_depth`，降低 `concurrent_limit`，启用异步模式
+- **超时问题**: 减少 `max_pages` 或 `max_depth`，降低 `concurrent_limit`
 - **内存问题**: 启用 `stream: true`，减少批量处理的 URL 数量
-- **长时间任务**: 使用异步模式避免超时
 
 #### 内容质量问题  
 - **内容缺失**: 调整 `word_count_threshold`，检查 `css_selector`
@@ -530,18 +460,12 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - **字段缺失**: 确保 `schema_definition` 包含完整的 `name`、`baseSelector`、`fields` 结构
 - **自动修复**: 工具会自动补全缺失字段，但手动提供完整 schema 效果更好
 
-#### 异步任务问题
-- **任务丢失**: 检查任务ID是否正确，任务是否已过期（默认1小时）
-- **进度停滞**: 检查网络连接，重新查询任务状态
-- **内存不足**: 系统会自动优化，减少并发任务数量
-
 ### 调试技巧
 
 1. **从简单开始**: 先用 `scrape` 模式测试单个页面
 2. **逐步增加复杂度**: 确认基础功能正常后再使用高级模式  
 3. **检查参数**: 确保所有参数都正确嵌套在 `parameters` 对象内
 4. **验证输出**: 先测试小规模数据，确认输出格式符合预期
-5. **异步任务**: 先用小规模测试异步流程，再处理大数据量
 
 ## ⚠️ 重要提示
 
@@ -551,7 +475,6 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 - **模式选择**: 根据需求选择合适的模式
 - **内存管理**: 大量数据时使用流式处理 (`stream: true`)
 - **Schema 完整性**: 为 CSS 提取提供完整的 `name`、`baseSelector`、`fields` 结构
-- **异步模式**: 长时间任务启用 `async_mode: true`
 
 ### ❌ 常见错误
 
@@ -662,7 +585,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 }
 ```
 
-### 2. 智能深度爬取（异步模式）
+### 2. 智能深度爬取
 ```json
 {
   "mode": "deep_crawl",
@@ -671,13 +594,12 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
     "strategy": "best_first",
     "keywords": ["API", "教程", "示例"],
     "max_depth": 3,
-    "max_pages": 30,
-    "async_mode": true  // 🆕 启用异步模式避免超时
+    "max_pages": 30
   }
 }
 ```
 
-### 3. 批量处理重要页面（异步模式）
+### 3. 批量处理重要页面
 ```json
 {
   "mode": "batch_crawl",
@@ -688,8 +610,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
       "https://example.com/contact",
       "https://example.com/products"
     ],
-    "concurrent_limit": 2,
-    "async_mode": true  // 🆕 启用异步模式确保完成
+    "concurrent_limit": 2
   }
 }
 ```
@@ -750,6 +671,4 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 9. **内容控制**: 使用 `include_links` 和 `include_images` 控制输出内容
 10. **质量优化**: 使用 `word_count_threshold` 过滤低质量内容块
 11. **Schema 完整性**: 为 CSS 提取提供完整的 schema 结构以获得最佳结果
-12. **异步策略**: 长时间任务（deep_crawl、batch_crawl）启用异步模式避免超时
-13. **任务监控**: 异步任务使用状态查询跟踪进度
-14. **超时预防**: 大数据量处理优先选择异步模式
+```

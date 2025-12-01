@@ -12,7 +12,7 @@
 export async function handleCrawl4AI(tool_params, env) {
     const toolServerUrl = 'https://tools.10110531.xyz/api/v1/execute_tool';
 
-    // 验证参数
+    // Validate the basic structure of the parameters for Crawl4AI
     if (!tool_params || typeof tool_params !== 'object') {
         return createJsonResponse({ success: false, error: 'Missing or invalid "parameters" object for crawl4ai tool.' }, 400);
     }
@@ -22,111 +22,44 @@ export async function handleCrawl4AI(tool_params, env) {
     if (!mode) {
         return createJsonResponse({ success: false, error: 'Missing required parameter: "mode" for crawl4ai tool.' }, 400);
     }
-
-    // 🎯 异步任务状态查询的特殊处理
-    if (mode === 'async_task_status') {
-        // 快速返回，不需要长时间等待
-        const requestBody = {
-            tool_name: 'crawl4ai',
-            parameters: tool_params
-        };
-
-        try {
-            const toolResponse = await fetch(toolServerUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody),
-                signal: AbortSignal.timeout(10000) // 10秒超时
-            });
-
-            if (!toolResponse.ok) {
-                throw new Error(`Tool server returned ${toolResponse.status}`);
-            }
-
-            return createJsonResponse(await toolResponse.json());
-        } catch (error) {
-            console.error('Async task status check failed:', error);
-            return createJsonResponse({
-                success: false,
-                error: 'Failed to check task status',
-                details: error.message
-            }, 500);
-        }
+    if (!parameters || typeof parameters !== 'object') {
+        return createJsonResponse({ success: false, error: 'Missing or invalid nested "parameters" object for crawl4ai tool.' }, 400);
     }
 
-    // 🎯 长时间任务：启动异步模式
-    const isLongRunningTask = ['deep_crawl', 'batch_crawl'].includes(mode);
-    // 🎯 修复：添加对 parameters 存在的检查
-    const shouldUseAsync = parameters && parameters.async_mode !== false; // 默认启用异步模式
-    
-    if (isLongRunningTask && shouldUseAsync) {
-        // 对于长时间任务，强制使用异步模式
-        const asyncParams = {
-            ...tool_params,
-            parameters: {
-                ...parameters,
-                async_mode: true
-            }
-        };
-
-        const requestBody = {
-            tool_name: 'crawl4ai',
-            parameters: asyncParams
-        };
-
-        try {
-            // 🎯 关键：启动任务但不等待完成
-            const toolResponse = await fetch(toolServerUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody),
-                signal: AbortSignal.timeout(30000) // 30秒启动超时
-            });
-
-            if (!toolResponse.ok) {
-                throw new Error(`Tool server returned ${toolResponse.status}`);
-            }
-
-            const result = await toolResponse.json();
-            
-            // 🎯 如果是异步任务响应，直接返回给前端进行轮询
-            if (result.task_id) {
-                return createJsonResponse({
-                    success: true,
-                    async: true,
-                    task_id: result.task_id,
-                    status: result.status,
-                    message: result.message,
-                    polling_interval: result.polling_interval || 3
-                });
-            }
-
-            return createJsonResponse(result);
-
-        } catch (error) {
-            console.error('Failed to start async task:', error);
-            return createJsonResponse({
-                success: false,
-                error: 'Failed to start async task',
-                details: error.message
-            }, 500);
-        }
+    // 🎯 关键修复：验证URL参数
+    if (!parameters.url) {
+        return createJsonResponse({ 
+            success: false, 
+            error: 'Missing required parameter: "url" in parameters object.' 
+        }, 400);
     }
 
-    // 🎯 短时间任务：保持原有同步逻辑
+    // Validate mode against allowed values - UPDATED with all 7 modes
+    const allowedModes = ['scrape', 'crawl', 'deep_crawl', 'extract', 'batch_crawl', 'pdf_export', 'screenshot'];
+    if (!allowedModes.includes(mode)) {
+        return createJsonResponse({ 
+            success: false, 
+            error: `Invalid mode "${mode}". Allowed modes are: ${allowedModes.join(', ')}` 
+        }, 400);
+    }
+
     const requestBody = {
         tool_name: 'crawl4ai',
-        parameters: tool_params
+        parameters: tool_params // Pass the entire original parameters object
     };
 
     try {
         const toolResponse = await fetch(toolServerUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(90000)
+            // 🎯 关键修复：增加超时设置
+            signal: AbortSignal.timeout(30000) // 30秒超时
         });
 
+        // 🎯 关键修复：更好的错误处理
         if (!toolResponse.ok) {
             let errorDetails;
             try {
@@ -135,22 +68,42 @@ export async function handleCrawl4AI(tool_params, env) {
                 errorDetails = toolResponse.statusText;
             }
             
+            console.error('Crawl4AI Tool Server Error:', {
+                status: toolResponse.status,
+                statusText: toolResponse.statusText,
+                details: errorDetails
+            });
+            
             return createJsonResponse({
                 success: false,
                 error: `Crawl4AI tool server request failed with status ${toolResponse.status}`,
-                details: errorDetails.substring(0, 500)
+                details: errorDetails.substring(0, 500) // 限制错误信息长度
             }, toolResponse.status);
         }
         
         const responseData = await toolResponse.json();
+        
+        // 🎯 关键修复：验证响应数据结构
+        if (!responseData || typeof responseData !== 'object') {
+            return createJsonResponse({
+                success: false,
+                error: 'Invalid response format from tool server'
+            }, 500);
+        }
+        
         return createJsonResponse(responseData);
 
     } catch (error) {
         console.error('Failed to fetch from Crawl4AI tool server:', error);
         
+        // 🎯 关键修复：区分不同类型的错误
         let errorMessage = 'Failed to connect to the external tool server.';
         if (error.name === 'TimeoutError') {
-            errorMessage = 'Tool server request timed out.';
+            errorMessage = 'Tool server request timed out (30s).';
+        } else if (error.name === 'AbortError') {
+            errorMessage = 'Tool server request was aborted.';
+        } else if (error.message.includes('fetch')) {
+            errorMessage = 'Network error: Unable to reach the tool server.';
         }
         
         return createJsonResponse({
@@ -188,7 +141,7 @@ export const crawl4AISchema = {
         properties: {
             mode: {
                 type: "string",
-                enum: ["scrape", "crawl", "deep_crawl", "extract", "batch_crawl", "pdf_export", "screenshot", "async_task_status"],
+                enum: ["scrape", "crawl", "deep_crawl", "extract", "batch_crawl", "pdf_export", "screenshot"],
                 description: "The function to execute."
             },
             parameters: {
@@ -223,24 +176,6 @@ export const crawl4AISchema = {
                     
                     // Content filtering
                     word_count_threshold: { type: "number", description: "Minimum words per content block" },
-                    
-                    // 🟢 添加缺失的参数
-                    async_mode: { type: "boolean", description: "Whether to run as async task" },
-                    keywords: {
-                        type: "array",
-                        items: { type: "string" },
-                        description: "Keywords for relevance scoring in deep_crawl"
-                    },
-                    url_patterns: {
-                        type: "array",
-                        items: { type: "string" },
-                        description: "URL patterns to include in deep_crawl"
-                    },
-                    prompt: { type: "string", description: "Prompt for LLM extraction" },
-                    include_external_links: { type: "boolean", description: "Whether to include external links" },
-                    include_images: { type: "boolean", description: "Whether to include images" },
-                    full_page: { type: "boolean", description: "Whether to capture full page screenshot" },
-                    
                     exclude_external_links: { type: "boolean", description: "Remove external links from content" },
                     include_external: { type: "boolean", description: "Include external domains in crawl" }
                 }
