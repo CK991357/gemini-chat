@@ -47,8 +47,8 @@ class CrawlParams(BaseModel):
 
 class DeepCrawlParams(BaseModel):
     url: str = Field(description="The starting URL for deep crawl.")
-    max_depth: int = Field(default=2, description="Maximum crawl depth.")
-    max_pages: int = Field(default=50, description="Maximum pages to crawl.")
+    max_depth: int = Field(default=3, description="Maximum crawl depth. (从 2 增加到 3)")
+    max_pages: int = Field(default=80, description="Maximum pages to crawl. (从 50 增加到 80)")
     strategy: Literal['bfs', 'dfs', 'best_first'] = Field(default='bfs', description="Crawl strategy.")
     include_external: bool = Field(default=False, description="Follow external links.")
     keywords: Optional[List[str]] = Field(default=None, description="Keywords for relevance scoring.")
@@ -65,7 +65,7 @@ class ExtractParams(BaseModel):
 class BatchCrawlParams(BaseModel):
     urls: List[str] = Field(description="List of URLs to crawl.")
     stream: bool = Field(default=False, description="Stream results as they complete.")
-    concurrent_limit: int = Field(default=3, description="Maximum concurrent crawls.")
+    concurrent_limit: int = Field(default=4, description="Maximum concurrent crawls.")
 
 class PdfExportParams(BaseModel):
     url: str = Field(description="The URL to export as PDF.")
@@ -161,13 +161,13 @@ class EnhancedCrawl4AITool:
         self.crawler = None
         self._initialized = False
         self._task_count = 0
-        self._cleanup_interval = 5  # 延长清理间隔
+        self._cleanup_interval = 10  # 延长清理间隔 (从 5 增加到 10)
         self._memory_threshold = 80  # 提高内存阈值
-        self._max_memory_mb = 1500   # 增加内存限制
+        self._max_memory_mb = 6000   # 增加内存限制 (从 1500 提升至 6000MB)
         self._browser_start_time = None
-        self._max_browser_uptime = 1200
+        self._max_browser_uptime = 1800 # 延长浏览器最大运行时间 (从 1200 增加到 1800)
         self._last_memory_check = 0
-        self._memory_check_interval = 60
+        self._memory_check_interval = 90 # 延长内存检查间隔 (从 60 增加到 90秒)
         self._browser_lock = asyncio.Lock()
         self.compressor = ScreenshotCompressor()
         logger.info("EnhancedCrawl4AITool instance created")
@@ -556,7 +556,7 @@ class EnhancedCrawl4AITool:
                 # 批量处理结果
                 results = await self._execute_with_timeout(
                     crawler.arun(params.url, config=config),
-                    timeout=300
+                    timeout=400 # 超时时间适度增加 (从 300 增加到 400秒)
                 )
                 
                 for result in results:
@@ -630,13 +630,13 @@ class EnhancedCrawl4AITool:
             
             # 对于批量爬取，使用更保守的方式
             for url in params.urls:
-                if len(crawled_results) >= 10:  # 安全限制
+                if len(crawled_results) >= 20:  # 安全限制 (从 10 增加到 20)
                     break
                     
                 try:
                     result = await self._execute_with_timeout(
                         crawler.arun(url=url, config=config),
-                        timeout=60
+                        timeout=120 # 超时时间适度增加 (从 60 增加到 120秒)
                     )
                     
                     if result.success:
