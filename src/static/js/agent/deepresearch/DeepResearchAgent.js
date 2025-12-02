@@ -270,6 +270,54 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
     }
 
     /**
+     * 🛠️ 自动修复crawl4ai参数格式
+     */
+    _autoFixCrawl4aiParams(originalParams, errorMsg) {
+        console.log('[DeepResearchAgent] 🛠️ 执行crawl4ai参数自动修复');
+        
+        try {
+            // 深度克隆参数，避免副作用
+            const params = JSON.parse(JSON.stringify(originalParams));
+            let fixed = false;
+            
+            // 修复1：模式名映射
+            if (params.mode === 'batch_scrape') {
+                params.mode = 'batch_crawl';
+                console.log('[DeepResearchAgent] 🔄 修复模式名: batch_scrape -> batch_crawl');
+                fixed = true;
+            }
+            
+            // 修复2：扁平化嵌套参数
+            if (params.parameters && params.parameters.urls) {
+                console.log('[DeepResearchAgent] 📦 扁平化嵌套参数');
+                const urls = params.parameters.urls;
+                delete params.parameters;
+                params.urls = urls;
+                fixed = true;
+            }
+            
+            // 修复3：确保参数结构正确
+            if (params.mode === 'batch_crawl' && !params.parameters) {
+                // 转换为后端期望的双层嵌套
+                const urls = params.urls || [];
+                delete params.urls;
+                params.parameters = { urls };
+                fixed = true;
+            }
+            
+            if (fixed) {
+                console.log('[DeepResearchAgent] ✅ 参数修复完成:', params);
+                return params;
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('[DeepResearchAgent] ❌ 参数修复失败:', error);
+            return null;
+        }
+    }
+
+    /**
      * 🎯 实际执行工具调用并处理结果
      * @param {string} toolName
      * @param {object} parameters
@@ -570,6 +618,29 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             rawObservation = `错误: 工具 "${toolName}" 执行失败: ${error.message}`;
             console.error(`[DeepResearchAgent] ❌ 工具执行失败: ${toolName}`, error);
             toolSuccess = false;
+            
+            // 🔥 新增：crawl4ai参数错误自动修复
+            if (toolName === 'crawl4ai' && error.message.includes('Missing required parameter')) {
+                console.log('[DeepResearchAgent] 🛠️ 检测到crawl4ai参数格式错误，尝试自动修复...');
+                
+                try {
+                    // 尝试自动修复参数
+                    const fixedParams = this._autoFixCrawl4aiParams(parameters, error.message);
+                    if (fixedParams) {
+                        console.log('[DeepResearchAgent] 🔄 使用修复后的参数重试');
+                        
+                        // 递归调用，使用修复后的参数
+                        return await this._executeToolCall(
+                            toolName,
+                            fixedParams,
+                            detectedMode,
+                            recordToolCall
+                        );
+                    }
+                } catch (fixError) {
+                    console.warn('[DeepResearchAgent] ⚠️ 自动修复失败:', fixError);
+                }
+            }
         }
 
         recordToolCall(toolName, parameters, toolSuccess, rawObservation);

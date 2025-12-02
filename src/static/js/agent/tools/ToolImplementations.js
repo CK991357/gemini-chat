@@ -39,6 +39,10 @@ class DeepResearchToolAdapter {
                             'div[class*="popup"]'
                         ]
                     },
+                    batch_crawl: {  // 🆕 添加batch_crawl配置
+                        concurrent_limit: 3, // 并发限制
+                        timeout_per_url: 15000 // 每个URL超时时间
+                    },
                     deep_crawl: {
                         max_pages: 80, // ⬆️ 匹配后端内存升级后的新能力
                         max_depth: 3,
@@ -84,6 +88,10 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
+                    },
+                    batch_crawl: {  // 🆕 添加batch_crawl配置
+                        concurrent_limit: 3, // 并发限制
+                        timeout_per_url: 15000 // 每个URL超时时间
                     }
                 }
             },
@@ -116,6 +124,10 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
+                    },
+                    batch_crawl: {  // 🆕 添加batch_crawl配置
+                        concurrent_limit: 3, // 并发限制
+                        timeout_per_url: 15000 // 每个URL超时时间
                     }
                 }
             },
@@ -147,6 +159,10 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
+                    },
+                    batch_crawl: {  // 🆕 添加batch_crawl配置
+                        concurrent_limit: 3, // 并发限制
+                        timeout_per_url: 15000 // 每个URL超时时间
                     }
                 },
                 python_sandbox: {
@@ -181,6 +197,10 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
+                    },
+                    batch_crawl: {  // 🆕 添加batch_crawl配置
+                        concurrent_limit: 3, // 并发限制
+                        timeout_per_url: 15000 // 每个URL超时时间
                     }
                 }
             },
@@ -211,6 +231,10 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
+                    },
+                    batch_crawl: {  // 🆕 添加batch_crawl配置
+                        concurrent_limit: 3, // 并发限制
+                        timeout_per_url: 15000 // 每个URL超时时间
                     }
                 }
             },
@@ -239,6 +263,10 @@ class DeepResearchToolAdapter {
                             'div[id*="popup"]',
                             'div[class*="popup"]'
                         ]
+                    },
+                    batch_crawl: {  // 🆕 添加batch_crawl配置
+                        concurrent_limit: 3, // 并发限制
+                        timeout_per_url: 15000 // 每个URL超时时间
                     },
                     deep_crawl: {
                         max_pages: 20, // ⬆️ 提升默认值
@@ -305,20 +333,39 @@ class DeepResearchToolAdapter {
             }
                 
             case 'crawl4ai': {
-                console.log(`[DeepResearchAdapter] 开始重构 crawl4ai 参数:`, agentParams);
-
+                console.log('[DeepResearchAdapter] 开始重构 crawl4ai 参数:', agentParams);
+                
                 // 🎯 1. 确定模式和基础配置
-                const mode = agentParams.mode || 'scrape';
+                let mode = agentParams.mode || 'scrape';
+                
+                // 🔥 关键修复：模式名映射
+                if (mode === 'batch_scrape') {
+                    mode = 'batch_crawl';
+                    console.log('[DeepResearchAdapter] 🔄 映射模式: batch_scrape -> batch_crawl');
+                }
+                
                 const modeDefaultConfig = this.getModeSpecificParameters(researchMode, toolName)[mode] || {};
-
-                // 🎯 2. 智能参数提取 - 兼容嵌套和非嵌套格式
-                // 优先使用parameters对象，同时融合顶层参数作为兜底，以修复结构错误
-                const paramsSource = (agentParams.parameters && typeof agentParams.parameters === 'object')
-                    ? { ...agentParams, ...agentParams.parameters }
-                    : agentParams;
+                
+                // 🎯 2. 智能参数提取 - 兼容多种格式
+                // Agent可能生成三种格式：
+                // 格式1: {mode: "batch_crawl", urls: [...]} ✅ (新标准)
+                // 格式2: {mode: "batch_crawl", parameters: {urls: [...]}} ❌ (旧格式)
+                // 格式3: {parameters: {mode: "batch_crawl", urls: [...]}} ❌ (错误嵌套)
+                
+                let rawParameters = { ...agentParams };
+                
+                // 🔥 关键修复：提取真正的参数
+                // 如果存在嵌套的parameters，提取它
+                if (rawParameters.parameters && typeof rawParameters.parameters === 'object') {
+                    console.log('[DeepResearchAdapter] 📦 检测到嵌套参数，提取内部参数');
+                    const innerParams = rawParameters.parameters;
+                    // 合并顶层参数和内部参数
+                    rawParameters = { ...rawParameters, ...innerParams };
+                    delete rawParameters.parameters; // 删除多余的parameters键
+                }
+                
+                // 🎯 3. 参数名校正
                 const innerParameters = {};
-
-                // 🎯 3. 参数名校正与别名映射
                 const paramMap = {
                     'url': ['url'], 'urls': ['urls'], 'format': ['format', 'output_format'],
                     'css_selector': ['css_selector', 'selector'], 'return_screenshot': ['return_screenshot', 'screenshot'],
@@ -328,47 +375,60 @@ class DeepResearchToolAdapter {
                     'strategy': ['strategy'], 'keywords': ['keywords', 'search_terms'],
                     'stream': ['stream', 'streaming'], 'concurrent_limit': ['concurrent_limit', 'concurrency']
                 };
-
+                
                 for (const [correctKey, aliases] of Object.entries(paramMap)) {
                     for (const alias of aliases) {
-                        if (paramsSource[alias] !== undefined) {
-                            innerParameters[correctKey] = paramsSource[alias];
-                            console.log(`[DeepResearchAdapter] 参数校正/映射成功: '${alias}' -> '${correctKey}'`);
+                        if (rawParameters[alias] !== undefined) {
+                            innerParameters[correctKey] = rawParameters[alias];
+                            console.log(`[DeepResearchAdapter] 参数校正: '${alias}' -> '${correctKey}'`);
                             break;
                         }
                     }
                 }
-
-                // 🎯 4. 应用模式特定的默认配置（作为补充）
+                
+                // 🎯 4. 应用模式特定的默认配置
                 for (const [key, value] of Object.entries(modeDefaultConfig)) {
                     if (innerParameters[key] === undefined) {
                         innerParameters[key] = value;
                     }
                 }
-
-                // 🎯 5. 模式特定参数的最终验证和兜底 (在应用默认值之后)
+                
+                // 🎯 5. 模式特定参数验证
                 switch (mode) {
-                    case 'extract':
-                        if (!innerParameters.schema_definition) {
-                            console.warn(`[DeepResearchAdapter] 兜底：为 extract 模式补充默认的 schema_definition`);
-                            innerParameters.schema_definition = { "title": "string", "content": "string", "metadata": "object" };
+                    case 'batch_crawl':
+                        if (innerParameters.urls) {
+                            // 确保urls是数组
+                            if (!Array.isArray(innerParameters.urls)) {
+                                innerParameters.urls = [String(innerParameters.urls)];
+                            }
+                            // 限制并发数（根据后端能力调整）
+                            if (innerParameters.urls.length > 4) {
+                                console.warn('[DeepResearchAdapter] ⚠️ 批量爬取URL数量过多，限制为前4个');
+                                innerParameters.urls = innerParameters.urls.slice(0, 4);
+                            }
+                        } else {
+                            console.error('[DeepResearchAdapter] ❌ batch_crawl模式缺少urls参数');
                         }
                         break;
-                    case 'batch_crawl':
-                        if (innerParameters.urls && !Array.isArray(innerParameters.urls)) {
-                            console.warn(`[DeepResearchAdapter] 兜底：batch_crawl的urls参数不是数组，强制转换为数组`);
-                            innerParameters.urls = [String(innerParameters.urls)];
+                    case 'extract':
+                        if (!innerParameters.schema_definition) {
+                            console.warn('[DeepResearchAdapter] 为extract模式补充默认schema_definition');
+                            innerParameters.schema_definition = {
+                                "title": "string",
+                                "content": "string",
+                                "metadata": "object"
+                            };
                         }
                         break;
                 }
-
-                // 🎯 6. 构建并返回绝对正确的双层嵌套结构
+                
+                // 🎯 6. 🔥 关键修复：构建后端期望的双层嵌套结构
                 const finalParams = {
                     mode: mode,
-                    parameters: innerParameters
+                    parameters: innerParameters  // 内层参数对象
                 };
-
-                console.log(`[DeepResearchAdapter] ✅ crawl4ai 参数重构完成，最终发送:`, {
+                
+                console.log('[DeepResearchAdapter] ✅ crawl4ai 参数重构完成:', {
                     mode: finalParams.mode,
                     parametersKeys: Object.keys(finalParams.parameters),
                     parametersPreview: JSON.stringify(finalParams.parameters).substring(0, 200) + '...'
