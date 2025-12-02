@@ -1639,14 +1639,21 @@ class TavilySearchRetryManager {
      * 计算重试延迟（指数退避 + 抖动）
      */
     static calculateRetryDelay(attempt, baseDelay = 1000, maxDelay = 10000) {
-        // 指数退避：2^attempt * baseDelay
-        const exponentialDelay = baseDelay * Math.pow(2, attempt);
+        // 尝试 1 (快速恢复) 使用固定延迟，尝试 2/3 使用指数退避
+        if (attempt === 1) {
+            const fixedDelay = 2000; // 2秒固定延迟
+            console.log(`[TavilyRetry] 重试 ${attempt}: 延迟 ${fixedDelay}ms (固定延迟)`);
+            return fixedDelay;
+        }
+        
+        // 指数退避：2^(attempt-1) * baseDelay
+        const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
         
         // 添加随机抖动（±20%）
         const jitter = 1 + (Math.random() * 0.4 - 0.2); // 0.8 到 1.2
         const delay = Math.min(exponentialDelay * jitter, maxDelay);
         
-        console.log(`[TavilyRetry] 重试 ${attempt}: 延迟 ${Math.round(delay)}ms`);
+        console.log(`[TavilyRetry] 重试 ${attempt}: 延迟 ${Math.round(delay)}ms (指数退避)`);
         return delay;
     }
     
@@ -1658,7 +1665,12 @@ class TavilySearchRetryManager {
         
         // 🎯 根据重试次数调整参数
         switch (attempt) {
-            case 1: // 第一次重试
+            case 1: // 第一次重试 (快速恢复)
+                // 保持原始参数，只进行延迟
+                console.log(`[TavilyRetry] 尝试 1: 使用原始参数`);
+                return originalParams;
+                
+            case 2: // 第二次重试 (智能降级)
                 // 简化查询，移除可能的问题关键词
                 if (enhanced.query) {
                     enhanced.query = enhanced.query
@@ -1668,24 +1680,14 @@ class TavilySearchRetryManager {
                 }
                 // 减少结果数量，降低负载
                 enhanced.max_results = Math.min(enhanced.max_results || 10, 6);
-                break;
-                
-            case 2: // 第二次重试
-                // 进一步简化，只保留核心关键词
-                if (enhanced.query) {
-                    const words = enhanced.query.split(' ');
-                    enhanced.query = words.slice(0, 3).join(' '); // 取前3个关键词
-                }
-                enhanced.max_results = 3; // 最少结果
-                enhanced.search_depth = 'basic'; // 降低搜索深度
-                break;
+                enhanced.search_depth = enhanced.search_depth === 'advanced' ? 'basic' : enhanced.search_depth; // 降级搜索深度
+                console.log(`[TavilyRetry] 尝试 2: 智能降级 (max_results: ${enhanced.max_results}, search_depth: ${enhanced.search_depth})`);
+                return enhanced;
                 
             default:
                 // 保持原参数
-                break;
+                return originalParams;
         }
-        
-        return enhanced;
     }
     
     /**
@@ -1713,6 +1715,8 @@ class TavilySearchRetryManager {
                     console.log(`[TavilyRetry] ✅ 重试 ${attempt} 成功`);
                     return {
                         ...result,
+                        retryRecovered: true,
+                        originalError: "已通过自动重试机制修复",
                         retryInfo: {
                             retried: true,
                             attemptCount: attempt,
@@ -1732,7 +1736,11 @@ class TavilySearchRetryManager {
         
         // 所有重试都失败
         console.error(`[TavilyRetry] ❌ 所有重试失败 (${maxRetries}次)`);
-        throw lastError || new Error(`Tavily Search 重试失败，共尝试 ${maxRetries} 次`);
+        const lastErrorMessage = lastError?.message || '无具体错误信息';
+        throw new Error(`Tavily Search 重试失败 (${maxRetries}次尝试):
+- 原始错误: ${lastErrorMessage}
+- 尝试了: 原参数重试 + 简化参数重试
+- 建议: 检查查询关键词或考虑其他搜索策略`);
     }
     
     /**
@@ -1836,7 +1844,7 @@ class ProxiedTool extends BaseTool {
                 console.warn(`[ProxiedTool] 🔄 Tavily Search 失败，启动智能重试...`);
                 
                 try {
-                    const maxRetries = 2;
+                    const maxRetries = 2; // ⬇️ 减少到 2 次重试
                     result = await TavilySearchRetryManager.retryWithStrategy(
                         this.name,
                         normalizedInput,
@@ -1844,11 +1852,9 @@ class ProxiedTool extends BaseTool {
                         maxRetries
                     );
                     
-                    // 🎯 标记为自动重试成功
-                    if (result.success) {
+                    // 🎯 检查是否通过自动重试成功 (标记已在 retryWithStrategy 中完成)
+                    if (result.success && result.retryRecovered) {
                         console.log(`[ProxiedTool] ✅ Tavily Search 通过自动重试恢复成功`);
-                        result.retryRecovered = true;
-                        result.originalError = "已通过自动重试机制修复";
                     }
                 } catch (retryError) {
                     console.error(`[ProxiedTool] ❌ Tavily Search 自动重试失败:`, retryError);
