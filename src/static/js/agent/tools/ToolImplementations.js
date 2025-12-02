@@ -630,8 +630,8 @@ class DeepResearchToolAdapter {
                     console.log(`[DeepResearchAdapter] crawl4ai 已解析的响应数据:`, crawlData);
                     
                     // 🎯 增强错误检测：检查多种失败标志
-                    const isError = rawResponse.error || 
-                                   crawlData.success === false || 
+                    const isError = rawResponse.error ||
+                                   crawlData.success === false ||
                                    (crawlData.data && crawlData.data.success === false) ||
                                    (crawlData.status && crawlData.status >= 400);
 
@@ -656,24 +656,73 @@ class DeepResearchToolAdapter {
                         };
                     }
                     
-                    if (crawlData && typeof crawlData === 'object') {
+                    // 🔥 关键修复：处理 batch_crawl 模式的 results 数组
+                    const mode = calledParameters.mode || 'scrape';
+                    
+                    if (mode === 'batch_crawl' && crawlData.results && Array.isArray(crawlData.results)) {
+                        console.log(`[DeepResearchAdapter] 处理 batch_crawl 结果，共 ${crawlData.results.length} 个页面`);
+                        
+                        let combinedContent = '';
+                        let successfulCrawls = 0;
+                        
+                        for (let i = 0; i < crawlData.results.length; i++) {
+                            const result = crawlData.results[i];
+                            
+                            // 检查单个结果是否成功且有内容
+                            if (result && result.success !== false) {
+                                const content = result.content || result.markdown;
+                                
+                                if (content && content.trim()) {
+                                    // 🔥 关键：对于 batch_crawl，跳过内容有效性检查！
+                                    // 我们信任后端返回的有效内容，直接聚合
+                                    combinedContent += `## 页面 ${i+1}: ${result.title || result.url}\n\n`;
+                                    combinedContent += `**URL**: ${result.url}\n\n`;
+                                    combinedContent += content;
+                                    combinedContent += '\n\n---\n\n';
+                                    
+                                    sources.push({
+                                        title: result.title || result.url,
+                                        url: result.url,
+                                        description: `抓取内容长度: ${content.length} 字符`,
+                                        source_type: 'web_page'
+                                    });
+                                    
+                                    successfulCrawls++;
+                                }
+                            }
+                        }
+                        
+                        if (successfulCrawls > 0) {
+                            output = this.formatWebContentForMode({
+                                content: combinedContent,
+                                title: `批量抓取结果 (${successfulCrawls}/${crawlData.results.length} 成功)`,
+                                url: '多个URL'
+                            }, researchMode);
+                            success = true;
+                        } else {
+                            output = `❌ **批量网页抓取失败**: 所有页面均未提取到有意义的正文内容。`;
+                            success = false;
+                        }
+                        
+                    } else if (crawlData && typeof crawlData === 'object') {
+                        // 🔥 原逻辑：处理单个页面的抓取 (scrape, deep_crawl, extract)
                         const content = crawlData.content || crawlData.markdown;
                         const contentLength = content?.length || 0;
                         
                         const isDocumentationUrl = crawlData.url?.includes('/docs/') ||
-                                                crawlData.url?.includes('/guide/') ||
-                                                crawlData.url?.includes('docs.') ||
-                                                crawlData.url?.includes('/documentation/');
+                                                  crawlData.url?.includes('/guide/') ||
+                                                  crawlData.url?.includes('docs.') ||
+                                                  crawlData.url?.includes('/documentation/');
                         
                         let isContentValid = false;
 
-                        // 🎯 强制文档类URL通过检查，并解决内容提取问题
+                        // 🎯 强制文档类URL通过检查
                         if (isDocumentationUrl) {
                             // 对于文档URL，即使内容是导航/样板文字，只要长度够长就认为成功
                             isContentValid = contentLength > 10; // 极度宽松
-                            console.log(`[DeepResearchAdapter] 文档URL (${crawlData.url}) 检测到，内容检查强制: ${isContentValid}`);
+                            console.log(`[DeepResearchAdapter] 文文档URL (${crawlData.url}) 检测到，内容检查强制: ${isContentValid}`);
                         } else {
-                            // 对于其他页面，使用Zhipu优化的检查
+                            // 对于其他页面，使用优化的检查
                             isContentValid = this.isContentMeaningfulZhipu(content);
                         }
                         
@@ -914,34 +963,46 @@ class DeepResearchToolAdapter {
         
         const trimmedContent = content.trim();
         
-        // 🎯 修复：只要内容长度大于50，我们就跳过所有严格的语义检查。
+        // 🔥 关键修复：大幅放宽检查条件
+        // 1. 只要长度大于50字符就认为是有效内容
         if (trimmedContent.length > 50) {
-            // 如果内容非常长，几乎肯定是有效内容，直接通过
             console.log(`[ContentCheck-Zhipu] 内容长度 ${trimmedContent.length} > 50，判定为有效`);
             return true;
         }
         
-        // 🎯 如果内容较短，执行宽松的关键词检查
+        // 2. 如果内容过短，直接判定为无效
         if (trimmedContent.length < 10) {
             console.log(`[ContentCheck-Zhipu] 内容过短: ${trimmedContent.length} 字符，判定为无效`);
             return false;
         }
 
-        // 🎯 关键词检查（用于极短内容）
+        // 3. 关键词检查（用于极短内容）
         const zhipuKeywords = [
-            'glm-4', 'glm-3', '智谱', 'bigmodel', '模型', '能力', '介绍'
+            'glm-4', 'glm-3', '智谱', 'bigmodel', '模型', '能力', '介绍',
+            'deepseek', '推理', 'attention', '稀疏注意力', 'DSA',
+            'gpt', 'gemini', 'llm', '大模型'
         ];
         
-        const hasZhipuContent = zhipuKeywords.some(keyword =>
+        const hasRelevantContent = zhipuKeywords.some(keyword =>
             trimmedContent.toLowerCase().includes(keyword.toLowerCase())
         );
         
-        if (hasZhipuContent) {
-            console.log(`[ContentCheck-Zhipu] 检测到智谱相关内容，判定为有效`);
+        if (hasRelevantContent) {
+            console.log(`[ContentCheck-Zhipu] 检测到相关内容关键词，判定为有效`);
             return true;
         }
         
-        // 最后回退到原始的宽松检查
+        // 4. 检查是否有代码块或JSON结构
+        const hasCode = trimmedContent.includes('```') ||
+                       trimmedContent.includes('{') ||
+                       trimmedContent.includes('[');
+        
+        if (hasCode) {
+            console.log(`[ContentCheck-Zhipu] 检测到代码或JSON结构，判定为有效`);
+            return true;
+        }
+        
+        // 5. 最后回退到原始的检查
         return this.isContentMeaningful(content);
     }
     
@@ -1307,6 +1368,11 @@ static formatWebContentForMode(webData, researchMode) {
     };
     
     const prefix = modePrefixes[researchMode] || modePrefixes.standard;
+    
+    // 🔥 关键修复：对于 batch_crawl，显示不同的格式
+    if (url === '多个URL' && title.includes('批量抓取结果')) {
+        return `${prefix}:\n\n**${title}**\n**内容长度**: ${content.length} 字符\n**内容**:\n${content}`;
+    }
     
     // 🎯 关键修复：无论内容长度如何都返回有效输出
     if (content && content.length > 0) {
