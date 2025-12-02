@@ -976,7 +976,28 @@ export class ChatApiHandler {
      */
     async callTool(toolName, parameters) {
         const timestamp = () => new Date().toISOString();
-        console.log(`[${timestamp()}] [ChatApiHandler] Forwarding tool call to backend proxy: ${toolName}`, parameters);
+        
+        // 🔥 防御性修复：处理 Agent 模型可能产生的多层嵌套参数
+        let finalParameters = parameters || {};
+        
+        // 检查是否为三层嵌套：{ mode: "...", parameters: { parameters: { ... } } }
+        if (finalParameters.parameters && typeof finalParameters.parameters === 'object') {
+            const innerParams = finalParameters.parameters;
+            if (innerParams.parameters && typeof innerParams.parameters === 'object') {
+                console.warn(`[${timestamp()}] [ChatApiHandler] ⚠️ 发现并修复 ${toolName} 的三层嵌套参数结构。`);
+                // 合并中间层参数和最内层参数
+                finalParameters = { ...finalParameters, ...innerParams.parameters };
+                // 合并中间层其他参数（如 mode, url 等）
+                for (const [key, value] of Object.entries(innerParams)) {
+                    if (key !== 'parameters' && !(key in finalParameters)) {
+                        finalParameters[key] = value;
+                    }
+                }
+                delete finalParameters.parameters; // 删除顶层多余的 parameters 键
+            }
+        }
+        
+        console.log(`[${timestamp()}] [ChatApiHandler] Forwarding tool call to backend proxy: ${toolName}`, finalParameters);
         
         try {
             // 核心：简单地将请求发送到通用的后端代理端点
@@ -987,7 +1008,7 @@ export class ChatApiHandler {
                 },
                 body: JSON.stringify({
                     tool_name: toolName,
-                    parameters: parameters || {},
+                    parameters: finalParameters,
                     requestId: `tool_call_${Date.now()}`,
                     // 🎯 核心修复：为Agent的工具调用添加会话ID，使其能够读写文件
                     session_id: this.state.currentSessionId

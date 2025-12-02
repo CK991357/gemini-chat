@@ -354,14 +354,29 @@ class DeepResearchToolAdapter {
                 
                 let rawParameters = { ...agentParams };
                 
-                // 🔥 关键修复：提取真正的参数
-                // 如果存在嵌套的parameters，提取它
+                // 🔥 关键修复：智能参数解包，处理双层和三层嵌套
+                // 检查是否有嵌套的 parameters
                 if (rawParameters.parameters && typeof rawParameters.parameters === 'object') {
-                    console.log('[DeepResearchAdapter] 📦 检测到嵌套参数，提取内部参数');
-                    const innerParams = rawParameters.parameters;
-                    // 合并顶层参数和内部参数
-                    rawParameters = { ...rawParameters, ...innerParams };
-                    delete rawParameters.parameters; // 删除多余的parameters键
+                    let innerParams = rawParameters.parameters;
+                    
+                    // 检查是否为三层嵌套：{ mode: "...", parameters: { parameters: { ... } } }
+                    if (innerParams.parameters && typeof innerParams.parameters === 'object') {
+                        console.warn('[DeepResearchAdapter] ⚠️ 检测到三层嵌套参数，提取最内层');
+                        // 合并中间层参数和最内层参数
+                        rawParameters = { ...rawParameters, ...innerParams.parameters };
+                        // 合并中间层其他参数（如 strategy, url 等）
+                        for (const [key, value] of Object.entries(innerParams)) {
+                            if (key !== 'parameters' && !(key in rawParameters)) {
+                                rawParameters[key] = value;
+                            }
+                        }
+                    } else {
+                        // 双层嵌套：{ mode: "...", parameters: { ... } }
+                        console.log('[DeepResearchAdapter] 📦 检测到双层嵌套参数，提取内部参数');
+                        // 合并顶层参数和内部参数
+                        rawParameters = { ...rawParameters, ...innerParams };
+                    }
+                    delete rawParameters.parameters; // 删除顶层多余的 parameters 键
                 }
                 
                 // 🎯 3. 参数名校正
