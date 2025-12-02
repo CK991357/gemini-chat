@@ -1579,6 +1579,169 @@ static formatWebContentForMode(webData, researchMode) {
         return [...baseSuggestions, ...toolSpecific];
     }
 }
+ 
+/**
+ * 🎯 Tavily Search 智能重试器
+ * 处理500错误、网络超时等可恢复故障
+ */
+class TavilySearchRetryManager {
+    /**
+     * 判断错误是否可重试
+     */
+    static isRetryableError(error) {
+        if (!error || !error.message) return false;
+        
+        const errorText = error.message.toLowerCase();
+        const errorDetails = error.rawResponse?.status || error.statusCode;
+        
+        // ✅ 可重试的错误类型
+        const retryablePatterns = [
+            '500', '502', '503', '504', '429', // 服务器错误和限流
+            'timeout', 'timed out', '超时',
+            'network', 'fetch failed', 'connection',
+            'gateway', 'service unavailable',
+            'too many requests', 'rate limit'
+        ];
+        
+        // ✅ 不可重试的错误类型（参数错误、认证失败等）
+        const nonRetryablePatterns = [
+            '400', '401', '403', '404', // 客户端错误
+            'invalid', 'missing', 'unauthorized',
+            'bad request', 'not found',
+            'schema', '参数'
+        ];
+        
+        // 检查是否是不可重试的错误
+        for (const pattern of nonRetryablePatterns) {
+            if (errorText.includes(pattern) || String(errorDetails).includes(pattern)) {
+                console.log(`[TavilyRetry] 不可重试错误: ${pattern}`);
+                return false;
+            }
+        }
+        
+        // 检查是否是可重试的错误
+        for (const pattern of retryablePatterns) {
+            if (errorText.includes(pattern) || String(errorDetails).includes(pattern)) {
+                console.log(`[TavilyRetry] 可重试错误: ${pattern}`);
+                return true;
+            }
+        }
+        
+        // 默认情况下，服务器错误(5xx)可重试，客户端错误(4xx)不可重试
+        if (errorDetails >= 500 && errorDetails < 600) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 计算重试延迟（指数退避 + 抖动）
+     */
+    static calculateRetryDelay(attempt, baseDelay = 1000, maxDelay = 10000) {
+        // 指数退避：2^attempt * baseDelay
+        const exponentialDelay = baseDelay * Math.pow(2, attempt);
+        
+        // 添加随机抖动（±20%）
+        const jitter = 1 + (Math.random() * 0.4 - 0.2); // 0.8 到 1.2
+        const delay = Math.min(exponentialDelay * jitter, maxDelay);
+        
+        console.log(`[TavilyRetry] 重试 ${attempt}: 延迟 ${Math.round(delay)}ms`);
+        return delay;
+    }
+    
+    /**
+     * 构建重试后的改进参数
+     */
+    static enhanceParametersForRetry(originalParams, attempt) {
+        const enhanced = { ...originalParams };
+        
+        // 🎯 根据重试次数调整参数
+        switch (attempt) {
+            case 1: // 第一次重试
+                // 简化查询，移除可能的问题关键词
+                if (enhanced.query) {
+                    enhanced.query = enhanced.query
+                        .replace(/[\[\]{}()]/g, ' ') // 移除括号
+                        .replace(/\s+/g, ' ') // 合并空格
+                        .trim();
+                }
+                // 减少结果数量，降低负载
+                enhanced.max_results = Math.min(enhanced.max_results || 10, 6);
+                break;
+                
+            case 2: // 第二次重试
+                // 进一步简化，只保留核心关键词
+                if (enhanced.query) {
+                    const words = enhanced.query.split(' ');
+                    enhanced.query = words.slice(0, 3).join(' '); // 取前3个关键词
+                }
+                enhanced.max_results = 3; // 最少结果
+                enhanced.search_depth = 'basic'; // 降低搜索深度
+                break;
+                
+            default:
+                // 保持原参数
+                break;
+        }
+        
+        return enhanced;
+    }
+    
+    /**
+     * 执行智能重试
+     */
+    static async retryWithStrategy(toolName, originalParams, invokeFunction, maxRetries = 2) {
+        console.log(`[TavilyRetry] 开始重试策略: ${toolName}, 最大重试次数: ${maxRetries}`);
+        
+        let lastError = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // 计算延迟
+                const delay = this.calculateRetryDelay(attempt);
+                await this.sleep(delay);
+                
+                // 根据重试次数改进参数
+                const enhancedParams = this.enhanceParametersForRetry(originalParams, attempt);
+                console.log(`[TavilyRetry] 重试 ${attempt}/${maxRetries}, 参数:`, enhancedParams);
+                
+                // 执行重试
+                const result = await invokeFunction(enhancedParams);
+                
+                if (result.success) {
+                    console.log(`[TavilyRetry] ✅ 重试 ${attempt} 成功`);
+                    return {
+                        ...result,
+                        retryInfo: {
+                            retried: true,
+                            attemptCount: attempt,
+                            originalFailed: true
+                        }
+                    };
+                }
+                
+                // 如果重试仍然失败，记录错误
+                lastError = result.error || new Error(`重试 ${attempt} 失败`);
+                
+            } catch (error) {
+                lastError = error;
+                console.warn(`[TavilyRetry] 重试 ${attempt} 异常:`, error.message);
+            }
+        }
+        
+        // 所有重试都失败
+        console.error(`[TavilyRetry] ❌ 所有重试失败 (${maxRetries}次)`);
+        throw lastError || new Error(`Tavily Search 重试失败，共尝试 ${maxRetries} 次`);
+    }
+    
+    /**
+     * 睡眠函数
+     */
+    static sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
 
 /**
  * @class ProxiedTool
@@ -1639,34 +1802,66 @@ class ProxiedTool extends BaseTool {
             console.log(`[ProxiedTool] 适配后参数:`, this.sanitizeToolInput(normalizedInput));
             
             // 🎯 统一的工具调用
-            const toolPromise = this.chatApiHandler.callTool(this.name, normalizedInput);
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error(`工具"${this.name}"调用超时 (${timeoutMs}ms)`)), timeoutMs);
-            });
+            const invokeFunction = async (params) => {
+                const toolPromise = this.chatApiHandler.callTool(this.name, params);
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error(`工具"${this.name}"调用超时 (${timeoutMs}ms)`)), timeoutMs);
+                });
+                
+                let rawResult = await Promise.race([toolPromise, timeoutPromise]);
+
+                // 🎯 关键修复：将 normalizedInput 附加到 rawResult 中，供错误处理使用
+                if (rawResult && typeof rawResult === 'object') {
+                    rawResult.rawParameters = params || normalizedInput;
+                } else {
+                    // 如果 rawResult 不是对象，创建一个包装对象
+                    rawResult = {
+                        output: rawResult,
+                        rawParameters: params || normalizedInput
+                    };
+                }
+
+                // 🎯 统一响应处理
+                return DeepResearchToolAdapter.normalizeResponse(
+                    this.name, rawResult, mode, researchMode
+                );
+            };
+
+            let result = await invokeFunction(normalizedInput);
             
-            let rawResult = await Promise.race([toolPromise, timeoutPromise]);
-
-            // 🎯 关键修复：将 normalizedInput 附加到 rawResult 中，供错误处理使用
-            if (rawResult && typeof rawResult === 'object') {
-                rawResult.rawParameters = normalizedInput;
-            } else {
-                // 如果 rawResult 不是对象，创建一个包装对象
-                rawResult = {
-                    output: rawResult,
-                    rawParameters: normalizedInput
-                };
+            // 🔥🔥🔥 ====================================================
+            // 🎯 Tavily Search 智能重试机制
+            // ====================================================
+            if (this.name === 'tavily_search' && !result.success && TavilySearchRetryManager.isRetryableError(result)) {
+                console.warn(`[ProxiedTool] 🔄 Tavily Search 失败，启动智能重试...`);
+                
+                try {
+                    const maxRetries = 2;
+                    result = await TavilySearchRetryManager.retryWithStrategy(
+                        this.name,
+                        normalizedInput,
+                        invokeFunction,
+                        maxRetries
+                    );
+                    
+                    // 🎯 标记为自动重试成功
+                    if (result.success) {
+                        console.log(`[ProxiedTool] ✅ Tavily Search 通过自动重试恢复成功`);
+                        result.retryRecovered = true;
+                        result.originalError = "已通过自动重试机制修复";
+                    }
+                } catch (retryError) {
+                    console.error(`[ProxiedTool] ❌ Tavily Search 自动重试失败:`, retryError);
+                    // 保持原始错误结果
+                }
             }
-
-            // 🎯 统一响应处理
-            let normalizedResult = DeepResearchToolAdapter.normalizeResponse(
-                this.name, rawResult, mode, researchMode
-            );
-
+            // 🔥🔥🔥 ====================================================
+            
             // ============================================================
-            // 🔥🔥🔥 零迭代修复：Python 导入错误自动重试 (Zero-Iteration Fix) 🔥🔥🔥
+            // 🔥🔥🔥 零迭代修复：Python 导入错误自动重试 (Zero-Iteration Fix)
             // ============================================================
-            if (this.name === 'python_sandbox' && !normalizedResult.success) {
-                const errorOutput = normalizedResult.output || '';
+            if (this.name === 'python_sandbox' && !result.success) {
+                const errorOutput = result.output || '';
                 const code = normalizedInput.code || '';
                 const missingImport = this._checkMissingImport(errorOutput);
 
@@ -1680,30 +1875,31 @@ class ProxiedTool extends BaseTool {
                     if (retryResult.success) {
                         console.log(`[ProxiedTool] ✅ 零迭代修复成功，返回重试结果。`);
                         // 🎯 关键：将重试结果作为最终结果返回
-                        normalizedResult = retryResult;
+                        result = retryResult;
                     } else {
                         console.warn(`[ProxiedTool] ❌ 零迭代修复失败，返回原始错误。`);
                         // 修复失败，将错误信息包装得更清晰
-                        normalizedResult.output = `❌ **Python 导入自动修复失败**\n\n**尝试修复**: 自动添加 \`import ${missingImport}\`\n**原始错误**: ${errorOutput}`;
+                        result.output = `❌ **Python 导入自动修复失败**\n\n**尝试修复**: 自动添加 \`import ${missingImport}\`\n**原始错误**: ${errorOutput}`;
                     }
                 }
             }
             // ============================================================
-            // 🔥🔥🔥 零迭代修复结束 🔥🔥🔥
+            // 🔥🔥🔥 零迭代修复结束
             // ============================================================
 
             const executionTime = Date.now() - startTime;
 
             console.log(`[ProxiedTool] ${mode.toUpperCase()}模式工具调用完成: ${this.name}`, {
-                success: normalizedResult.success,
+                success: result.success,
                 researchMode: researchMode,
-                outputLength: normalizedResult.output?.length || 0,
-                sourceCount: normalizedResult.sources?.length || 0,
-                executionTime
+                outputLength: result.output?.length || 0,
+                sourceCount: result.sources?.length || 0,
+                executionTime,
+                retryRecovered: result.retryRecovered || false
             });
 
             return {
-                ...normalizedResult,
+                ...result,
                 executionTime,
                 researchContext: {
                     mode: mode,
