@@ -723,7 +723,7 @@ class DeepResearchToolAdapter {
                             console.log(`[DeepResearchAdapter] 文文档URL (${crawlData.url}) 检测到，内容检查强制: ${isContentValid}`);
                         } else {
                             // 对于其他页面，使用优化的检查
-                            isContentValid = this.isContentMeaningfulZhipu(content);
+                            isContentValid = this.isContentMeaningfulRelaxed(content);
                         }
                         
                         if (isContentValid) {
@@ -955,10 +955,10 @@ class DeepResearchToolAdapter {
     }
     
     /**
-     * 🎯 新增：针对智谱文档的宽松内容有效性检查
+     * 🎯 新增：宽松内容有效性检查
      *    - 解决 Agent 模式下抓取文档页面内容被误判为"无意义"而导致的重试循环。
      */
-    static isContentMeaningfulZhipu(content) {
+    static isContentMeaningfulRelaxed(content) {
         if (!content || typeof content !== 'string') return false;
         
         const trimmedContent = content.trim();
@@ -966,43 +966,27 @@ class DeepResearchToolAdapter {
         // 🔥 关键修复：大幅放宽检查条件
         // 1. 只要长度大于50字符就认为是有效内容
         if (trimmedContent.length > 50) {
-            console.log(`[ContentCheck-Zhipu] 内容长度 ${trimmedContent.length} > 50，判定为有效`);
+            console.log(`[ContentCheck-Relaxed] 内容长度 ${trimmedContent.length} > 50，判定为有效`);
             return true;
         }
         
         // 2. 如果内容过短，直接判定为无效
         if (trimmedContent.length < 10) {
-            console.log(`[ContentCheck-Zhipu] 内容过短: ${trimmedContent.length} 字符，判定为无效`);
+            console.log(`[ContentCheck-Relaxed] 内容过短: ${trimmedContent.length} 字符，判定为无效`);
             return false;
         }
-
-        // 3. 关键词检查（用于极短内容）
-        const zhipuKeywords = [
-            'glm-4', 'glm-3', '智谱', 'bigmodel', '模型', '能力', '介绍',
-            'deepseek', '推理', 'attention', '稀疏注意力', 'DSA',
-            'gpt', 'gemini', 'llm', '大模型'
-        ];
         
-        const hasRelevantContent = zhipuKeywords.some(keyword =>
-            trimmedContent.toLowerCase().includes(keyword.toLowerCase())
-        );
-        
-        if (hasRelevantContent) {
-            console.log(`[ContentCheck-Zhipu] 检测到相关内容关键词，判定为有效`);
-            return true;
-        }
-        
-        // 4. 检查是否有代码块或JSON结构
+        // 3. 检查是否有代码块或JSON结构
         const hasCode = trimmedContent.includes('```') ||
                        trimmedContent.includes('{') ||
                        trimmedContent.includes('[');
         
         if (hasCode) {
-            console.log(`[ContentCheck-Zhipu] 检测到代码或JSON结构，判定为有效`);
+            console.log(`[ContentCheck-Relaxed] 检测到代码或JSON结构，判定为有效`);
             return true;
         }
         
-        // 5. 最后回退到原始的检查
+        // 4. 最后回退到原始的检查
         return this.isContentMeaningful(content);
     }
     
