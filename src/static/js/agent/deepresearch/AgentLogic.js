@@ -910,7 +910,7 @@ ${this._getModeQualityChecklist(researchMode)}
     }
 
     async plan(inputs, runManager) {
-        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard', forceNativeVision = false } = inputs;
+        const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard', forceNativeVision = false, dataBus } = inputs; // 🎯 核心修改：接收 dataBus
         
         // 🎯 关键词检测逻辑
         const detectedMode = researchMode; // 直接使用传入的、正确的模式！
@@ -918,6 +918,10 @@ ${this._getModeQualityChecklist(researchMode)}
         // 动态计算当前步骤
         const currentStep = this._determineCurrentStep(researchPlan, intermediateSteps);
         
+        // 🎯 核心新增：生成数据总线摘要和相似性检测
+        const dataBusSummary = this._generateDataBusSummary(dataBus, currentStep);
+        const similarityDetection = this._buildSimilarityDetectionSystem(researchPlan, intermediateSteps, currentStep);
+
         const prompt = this._constructFinalPrompt({
             topic,
             intermediateSteps,
@@ -926,7 +930,9 @@ ${this._getModeQualityChecklist(researchMode)}
             currentStep,
             researchMode: detectedMode,
             currentDate: new Date().toISOString(), // 添加当前日期
-            forceNativeVision // 🚀 传递强制 Native Vision 标志
+            forceNativeVision, // 🚀 传递强制 Native Vision 标志
+            dataBusSummary, // 🎯 核心新增：传递数据总线摘要
+            similarityDetection // 🎯 核心新增：传递相似性检测结果
         });
         
         console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
@@ -993,7 +999,7 @@ ${this._getModeQualityChecklist(researchMode)}
     }
 
     // ✨ 重构：主提示词构建 - 核心知识检索集成
-    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, forceNativeVision = false }) {
+    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, forceNativeVision = false, dataBusSummary = '', similarityDetection = { hasSimilarData: false, recommendations: [] } }) { // 🎯 核心修改：接收新的参数
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
@@ -1042,6 +1048,179 @@ ${this._getModeQualityChecklist(researchMode)}
 `;
         
         // --- START FIX: [最终修复版] 注入上一步的观察结果，并强化知识应用指令 ---
+    // --- 1.1 增强Agent思考中的数据总线提醒 ---
+    const dataBusIntelligenceProtocol = (dataBusSummary) => `
+## 🧠 数据总线智能激活协议 (Data Bus Intelligence Protocol)
+
+### 📊 你有一个隐藏的"记忆库"：数据总线 (Data Bus)
+**重要发现**：系统已经为你存储了先前步骤的关键数据！这些数据可以：
+- ✅ 避免重复搜索相同信息
+- ✅ 快速回顾历史发现
+- ✅ 建立信息之间的关联
+- ✅ 提升研究效率30%以上
+
+### 🔍 数据总线内容预览
+${dataBusSummary || "数据总线正在加载中..."}
+
+### 🎯 智能数据复用策略
+
+#### 策略A：关键词匹配复用
+**当你计划搜索时，先检查数据总线：**
+1. **提取搜索关键词**：从查询中提取核心名词
+2. **扫描数据总线**：查找包含相同关键词的历史数据
+3. **复用决策**：
+   - 如果历史数据相关度>80%，直接复用并补充新角度
+   - 如果相关度50-80%，快速浏览后决定是否需要新搜索
+   - 如果相关度<50%，执行新搜索
+
+**思考示例**：
+"我计划搜索'DeepSeek 3.2 性能对比'。让我先检查数据总线..."
+→ 发现步骤3已有相关性能数据
+→ 决定："已有基础性能数据，我将聚焦'最新评测对比'补充新视角"
+
+#### 策略B：主题关联挖掘
+**当你深入一个主题时，挖掘相关数据：**
+1. **主题扩展**：当前主题 → 相关子主题
+2. **关联查找**：在数据总线中查找子主题相关信息
+3. **知识整合**：将分散的信息整合成完整图景
+
+**思考示例**：
+"我正在研究DSA稀疏注意力。数据总线显示步骤2提到了'注意力机制优化'，步骤4有'计算效率提升'。我将整合这些信息构建完整的技术分析。"
+
+#### 策略C：数据验证与补充
+**当你需要验证信息时：**
+1. **交叉验证**：用数据总线中的其他来源验证当前信息
+2. **缺口识别**：对比历史数据，识别信息缺口
+3. **精准补充**：针对缺口进行精准搜索
+
+### 📈 数据总线使用决策框架
+
+\`\`\`
+开始新任务 → 提取关键词 → 扫描数据总线 →
+发现相关数据? → 是 → 评估数据质量 →
+      ↓否                    ↓高质量
+执行新搜索              复用并补充新角度
+                             ↓中质量
+                        快速验证后决定
+                             ↓低质量
+                        执行新搜索并记录
+\`\`\`
+
+### 🚀 具体行动指南
+
+#### 1. 在思考开头添加数据总线检查
+**必须格式**：
+\`\`\`
+思考: [当前任务描述]
+**数据总线检查**: 扫描关键词"[关键词1]", "[关键词2]"...
+发现相关数据: [是/否，简要描述]
+复用决策: [复用全部/部分/不复用] + 理由
+\`\`\`
+
+#### 2. 智能工具选择
+- **如果数据总线有高质量相关数据**：优先使用\`code_generator\`分析或\`crawl4ai\`深度抓取
+- **如果数据总线数据不足**：使用\`tavily_search\`探索新方向
+- **如果需要验证**：结合数据总线和新搜索进行交叉验证
+
+#### 3. 信息整合报告
+- 在最终报告中，明确标注哪些信息来自数据总线复用
+- 展示信息演进的脉络：从初始发现到深入验证
+
+### 📋 数据总线检索命令（思维模拟）
+虽然你不能直接查询，但可以在思考中模拟：
+
+\`\`\`
+**思维模拟查询**:
+查询: "DeepSeek 3.2 性能数据"
+预期返回: 步骤3的结构化表格、步骤5的评测摘要
+使用策略: 整合已有数据，补充时效性验证
+\`\`\`
+
+### 🎭 不同研究模式的数据策略
+
+#### Deep/Academic 模式（深度复用）：
+- **必须**检查数据总线的所有相关记录
+- **必须**建立信息演化时间线
+- **鼓励**深入挖掘数据总线的隐含关联
+
+#### Technical/Business 模式（效率复用）：
+- **快速**扫描数据总线的关键数据点
+- **优先**复用结构化数据（表格、图表）
+- **聚焦**数据验证和决策支持
+
+#### Standard 模式（基础复用）：
+- **选择性**检查最近2-3步的数据
+- **简单**复用明显相关的内容
+- **保持**研究流程的简洁性
+
+### 💡 高级技巧：数据总线思维模型
+
+#### 1. 时间维度分析
+"数据总线显示：第1步有基础信息 → 第3步有深度分析 → 第5步有最新动态。我看到了信息演进的完整脉络。"
+
+#### 2. 来源交叉验证
+"来源A（步骤2）和来源B（步骤4）都提到了30-40%内存降低，这个数据点已经得到交叉验证。"
+
+#### 3. 信息缺口识别
+"数据总线有大量V3.2-Exp信息，但V3.2正式版数据不足。这是我的研究重点。"
+
+### 🚫 常见误区避免
+
+1. **不要忽略**：每次都从头开始，不检查已有数据
+2. **不要过度**：为了复用而复用，忽略新信息需求
+3. **不要混淆**：明确区分"历史数据"和"新发现"
+4. **不要遗漏**：在最终报告中引用数据总线的贡献
+
+### ✅ 数据总线使用成功标准
+
+- [ ] 每次思考都检查了数据总线
+- [ ] 有效复用了至少1个历史数据点
+- [ ] 避免了明显的重复搜索
+- [ ] 建立了信息的连贯性和深度
+- [ ] 在报告中体现了信息演进过程
+`;
+
+    // --- 1.4 在思考流程中集成数据总线 ---
+    const dataBusIntegration = (dataBusSummary, similarityDetection) => `
+## 🔗 数据总线集成与相似性检测
+
+### 📊 数据总线状态
+${dataBusSummary}
+
+### 🔍 相似性检测结果
+${similarityDetection.hasSimilarData ?
+    `检测到 ${similarityDetection.recommendations.length} 个相似历史步骤：\n` +
+    similarityDetection.recommendations.map(rec =>
+        `- **步骤 ${rec.step}** (相似度 ${rec.similarity}%): ${rec.thought}\n  建议: ${rec.suggestion}`
+    ).join('\n')
+    : '未检测到高度相似的历史步骤。'
+}
+
+### 🎯 当前步骤的数据策略
+基于以上分析，你的数据复用策略应该是：
+1. **优先检查**：高相似度（>80%）的历史数据
+2. **选择性复用**：中度相似度（60-80%）的相关信息
+3. **避免重复**：相同关键词的重复搜索
+4. **建立连接**：将新信息与历史数据关联
+
+### 💡 思考模板（集成数据总线）
+\`\`\`
+思考: [当前任务描述]
+
+**数据总线分析**:
+- 相关历史数据: [列出发现的相似数据]
+- 信息缺口: [当前步骤需要但历史缺乏的信息]
+- 复用策略: [具体如何复用历史数据]
+
+**相似性检测**:
+- 历史相似步骤: [步骤X (相似度Y%)]
+- 可借鉴经验: [从历史步骤中学到什么]
+- 避免错误: [历史步骤中的教训]
+
+**下一步行动**:
+基于以上分析，我将[具体行动方案]...
+\`\`\`
+`;
 // --- START OF FINAL FIX: 统一的、分层级的上下文注入逻辑 (健壮版 v3 - 修复 lastStep 作用域) ---
         // 🎯 核心修复：确保 lastStep 变量始终定义（作用域安全）
         let lastStep = null;
@@ -2033,8 +2212,12 @@ ${config.description}
 
 ${strictFormatProtocol} // 🎯 核心新增：插入严格格式协议
 
-${modeAwareCrawlStrategy} // 🎯 核心替换：插入模式感知的抓取策略
+${dataBusIntegration(dataBusSummary, similarityDetection)} // 🎯 核心新增：数据总线集成与相似性检测
 
+${dataBusIntelligenceProtocol(dataBusSummary)} // 🎯 核心新增：数据总线智能激活协议
+ 
+${modeAwareCrawlStrategy} // 🎯 核心替换：插入模式感知的抓取策略
+ 
 ${businessModeConstraints} // 💼 插入：行业分析模式专用约束
 
 ${temporalGuidance}
@@ -2704,5 +2887,281 @@ ${actionJson}
     }
     
     return text;
+    }
+    
+    // --- 1.2 数据总线摘要生成系统辅助方法 ---
+    
+    _extractKeyPointsFromData(data) {
+        const keyPoints = [];
+        
+        // 从元数据中提取
+        if (data.metadata?.keyFinding) {
+            keyPoints.push(data.metadata.keyFinding);
+        }
+        
+        // 从内容中提取关键词
+        if (typeof data.processedData === 'string') {
+            // 简单关键词提取
+            const text = data.processedData.toLowerCase();
+            const keywords = [
+                'deepseek', '性能', '提升', '对比', '架构',
+                '训练', '推理', '成本', '效率', '评测', '数据', '分析', '结果'
+            ];
+            
+            const foundKeywords = keywords.filter(keyword =>
+                text.includes(keyword)
+            );
+            
+            if (foundKeywords.length > 0) {
+                keyPoints.push(`包含关键词: ${foundKeywords.slice(0, 3).join(', ')}`);
+            }
+        }
+        
+        return keyPoints.length > 0 ? keyPoints : ['通用信息'];
+    }
+
+    _analyzeInformationEvolution(summaries) {
+        if (summaries.length < 3) return "数据不足进行趋势分析。\n";
+        
+        let analysis = "通过数据总线可以看到信息演进的清晰脉络：\n";
+        
+        // 按步骤分组
+        const stepGroups = {};
+        summaries.forEach(s => {
+            if (!stepGroups[s.step]) stepGroups[s.step] = [];
+            stepGroups[s.step].push(s);
+        });
+        
+        // 分析每个阶段的信息特点
+        Object.keys(stepGroups).sort((a, b) => parseInt(a) - parseInt(b)).forEach(step => {
+            const group = stepGroups[step];
+            const dataTypes = [...new Set(group.map(d => d.dataType))];
+            
+            analysis += `- **步骤${step}**: 主要收集了${dataTypes.join('、')}\n`;
+        });
+        
+        // 识别信息覆盖度
+        const allKeywords = summaries.flatMap(s => s.keyPoints);
+        const uniqueKeywords = [...new Set(allKeywords.filter(kp => kp.startsWith('包含关键词')))];
+        
+        analysis += `\n**信息覆盖度**: 已覆盖 ${uniqueKeywords.length} 个关键维度\n`;
+        
+        return analysis;
+    }
+
+    _generateReuseRecommendations(summaries, currentStep) {
+        const recommendations = [];
+        
+        // 根据当前步骤推荐
+        switch(currentStep) {
+            case 1:
+                recommendations.push("🔍 复用基础定义和背景信息");
+                recommendations.push("📊 查找已有的结构化性能数据");
+                break;
+            case 2:
+                recommendations.push("🔬 复用技术架构的初步分析");
+                recommendations.push("⚡ 查找已有的效率对比数据");
+                break;
+            case 3:
+                recommendations.push("🎯 复用已有的评测和对比分析");
+                recommendations.push("💰 查找成本效益数据");
+                break;
+            default:
+                recommendations.push("📚 回顾所有历史数据寻找关联");
+                recommendations.push("🎨 整合分散信息形成完整图景");
+        }
+        
+        // 根据数据类型推荐
+        const hasStructuredData = summaries.some(s => s.dataType.includes('结构化'));
+        if (hasStructuredData) {
+            recommendations.push("📈 重点复用结构化数据进行深度分析");
+        }
+        
+        const hasWebContent = summaries.some(s => s.dataType.includes('网页'));
+        if (hasWebContent) {
+            recommendations.push("🌐 复用网页内容中的关键段落");
+        }
+        
+        return recommendations.map(r => `- ${r}`).join('\n');
+    }
+
+    // --- 1.3 相似数据检测与复用机制辅助方法 ---
+
+    _extractKeywords(text) {
+        if (!text) return [];
+        
+        // 中文分词简化版（实际应使用更复杂的分词）
+        const words = text.toLowerCase()
+            .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ' ') // 保留中文、英文、数字
+            .split(/\s+/)
+            .filter(word => word.length > 1); // 过滤单字
+        
+        // 过滤停用词
+        const stopWords = ['的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '将', '进行', '使用', '来', '以', '并', '或', '为', '对', '从', '中', '等', '个', '种', '些', '那', '这'];
+        return words.filter(word => !stopWords.includes(word));
+    }
+
+    _calculateSimilarity(keywords1, keywords2) {
+        if (keywords1.length === 0 || keywords2.length === 0) return 0;
+        
+        // Jaccard相似度
+        const set1 = new Set(keywords1);
+        const set2 = new Set(keywords2);
+        
+        const intersection = [...set1].filter(x => set2.has(x)).length;
+        const union = new Set([...keywords1, ...keywords2]).size;
+        
+        return union > 0 ? intersection / union : 0;
+    }
+
+    _generateSimilaritySuggestion(similarity, toolName) {
+        if (similarity > 0.8) {
+            return `高度相似（${Math.round(similarity * 100)}%），建议直接复用并补充新角度`;
+        } else if (similarity > 0.6) {
+            return `中度相似（${Math.round(similarity * 100)}%），可参考历史方法但需要新信息`;
+        } else {
+            return `低度相似，建议执行全新搜索`;
+        }
+    }
+
+    // --- 1.2 数据总线摘要生成系统核心方法 ---
+
+    _generateDataBusSummary(dataBus, currentStep) {
+        if (!dataBus || dataBus.size === 0) {
+            return "📭 数据总线当前为空，这是研究的第一步。";
+        }
+        
+        const summaries = [];
+        let totalDataPoints = 0;
+        let structuredDataCount = 0;
+        
+        // 按步骤组织数据
+        const stepEntries = Array.from(dataBus.entries())
+            .map(([key, data]) => {
+                const stepMatch = key.match(/step_(\d+)/);
+                return {
+                    step: stepMatch ? parseInt(stepMatch) : 0,
+                    key,
+                    data
+                };
+            })
+            .sort((a, b) => a.step - b.step);
+        
+        // 生成按步骤的摘要
+        stepEntries.forEach(entry => {
+            const { step, data } = entry;
+            
+            // 计算相关性评分（基于当前步骤）
+            let relevance = '🟡 中等';
+            const stepDiff = Math.abs(currentStep - (step + 1)); // step是从0开始的，所以要+1
+            if (stepDiff <= 1) relevance = '🟢 高';
+            if (stepDiff >= 3) relevance = '🔴 低';
+            
+            // 提取关键信息
+            let contentPreview = '';
+            if (typeof data.processedData === 'string') {
+                contentPreview = data.processedData.substring(0, 150);
+                if (data.processedData.length > 150) contentPreview += '...';
+            }
+            
+            // 检测数据类型
+            let dataType = '文本';
+            if (data.metadata?.contentType === 'structured_data') {
+                dataType = '📊 结构化数据';
+                structuredDataCount++;
+            }
+            if (data.metadata?.toolName === 'crawl4ai') {
+                dataType = '🌐 网页内容';
+            }
+            
+            summaries.push({
+                step: step + 1,
+                relevance,
+                dataType,
+                length: data.processedData?.length || 0,
+                preview: contentPreview,
+                tool: data.metadata?.toolName || 'unknown',
+                keyPoints: this._extractKeyPointsFromData(data)
+            });
+            
+            totalDataPoints++;
+        });
+        
+        // 生成摘要文本
+        let summaryText = `## 📚 数据总线状态报告\n\n`;
+        summaryText += `**总数据点**: ${totalDataPoints} 个 | **结构化数据**: ${structuredDataCount} 个\n\n`;
+        
+        summaryText += `### 🔍 与你当前任务（步骤${currentStep}）最相关的数据：\n\n`;
+        
+        // 显示高相关性数据
+        const highRelevance = summaries.filter(s => s.relevance.includes('高'));
+        if (highRelevance.length > 0) {
+            highRelevance.forEach(data => {
+                summaryText += `#### 步骤 ${data.step} (${data.relevance})\n`;
+                summaryText += `- **类型**: ${data.dataType} | **工具**: ${data.tool}\n`;
+                summaryText += `- **关键信息**: ${data.keyPoints.join('; ')}\n`;
+                summaryText += `- **预览**: ${data.preview}\n\n`;
+            });
+        } else {
+            summaryText += `暂无高相关性数据，所有历史数据都可能有用。\n\n`;
+        }
+        
+        summaryText += `### 📈 数据趋势分析\n`;
+        
+        // 分析信息演进
+        const infoEvolution = this._analyzeInformationEvolution(summaries);
+        summaryText += infoEvolution;
+        
+        // 建议复用策略
+        summaryText += `\n### 💡 智能复用建议\n`;
+        summaryText += this._generateReuseRecommendations(summaries, currentStep);
+        
+        return summaryText;
+    }
+
+    // --- 1.3 相似数据检测与复用机制核心方法 ---
+
+    _buildSimilarityDetectionSystem(researchPlan, intermediateSteps, currentStep) {
+        if (!intermediateSteps || intermediateSteps.length === 0) {
+            return { hasSimilarData: false, recommendations: [] };
+        }
+        
+        const currentStepPlan = researchPlan.research_plan.find(
+            step => step.step === currentStep
+        );
+        
+        if (!currentStepPlan) {
+            return { hasSimilarData: false, recommendations: [] };
+        }
+        
+        const currentKeywords = this._extractKeywords(currentStepPlan.sub_question);
+        const recommendations = [];
+        
+        // 分析历史步骤的相似性
+        intermediateSteps.forEach((step, index) => {
+            // 只检查历史步骤的思考（thought）部分，因为这是Agent的意图
+            if (step.action?.thought) {
+                const stepKeywords = this._extractKeywords(step.action.thought);
+                const similarity = this._calculateSimilarity(currentKeywords, stepKeywords);
+                
+                if (similarity > 0.6) {
+                    const toolName = step.action?.tool_name || '未知工具';
+                    const stepNum = index + 1;
+                    
+                    recommendations.push({
+                        step: stepNum,
+                        similarity: Math.round(similarity * 100),
+                        tool: toolName,
+                        thought: step.action.thought.substring(0, 100) + '...',
+                        suggestion: this._generateSimilaritySuggestion(similarity, toolName)
+                    });
+                }
+            }
+        });
+        
+        return {
+            hasSimilarData: recommendations.length > 0,
+            recommendations: recommendations.slice(0, 3) // 最多显示3条
+        };
     }
 }

@@ -981,7 +981,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     availableTools,
                     researchPlan,
                     researchMode: detectedMode,
-                    currentDate: new Date().toISOString() // 🎯 新增：传递当前日期
+                    currentDate: new Date().toISOString(), // 🎯 新增：传递当前日期
+                    dataBus: this.dataBus // 🎯 核心新增：传递数据总线
                 };
 
                 const agentDecision = await this.agentLogic.plan(logicInput, {
