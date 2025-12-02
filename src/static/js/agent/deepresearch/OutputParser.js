@@ -53,9 +53,15 @@ export class AgentOutputParser {
         }
 
         console.log('[OutputParser] 开始解析，文本长度:', text.length);
-
+        
+        // 0. 格式清理：处理模型输出中常见的重复标记和格式错误
+        const cleanedText = this._cleanFormatting(text);
+        if (cleanedText !== text) {
+            console.log('[OutputParser] 已执行格式清理');
+        }
+        
         // 1. 基础清理：仅移除 Markdown 粗体干扰和规范化冒号
-        let preprocessedText = text.trim()
+        let preprocessedText = cleanedText.trim()
             .replace(/\*\*\s*(思考|行动|行动输入|最终答案)\s*\*\*/g, '$1')
             .replace(/(思考|行动|行动输入|最终答案)\s*:/g, '$1: ');
 
@@ -103,6 +109,38 @@ export class AgentOutputParser {
         console.warn('[OutputParser] ❌ 解析彻底失败:', errorMsg);
         this.metrics.recordAttempt('unknown', false, 'all_failed');
         throw new Error(errorMsg);
+    }
+
+    /**
+     * 🎯 核心方法：格式清理 (容错增强)
+     * 在解析前增加文本清理步骤，处理重复标记等非致命格式错误。
+     */
+    _cleanFormatting(text) {
+        let cleaned = text;
+        
+        // 1. 移除重复的"行动:"标记
+        const duplicateActionPattern = /行动:\s*\n\s*行动:/g;
+        if (duplicateActionPattern.test(cleaned)) {
+            console.warn('[OutputParser] 🛠️ 检测到重复的"行动:"标记，正在清理...');
+            cleaned = cleaned.replace(duplicateActionPattern, '行动:');
+        }
+        
+        // 2. 移除重复的"行动输入:"标记
+        const duplicateInputPattern = /行动输入:\s*\n\s*行动输入:/g;
+        if (duplicateInputPattern.test(cleaned)) {
+            console.warn('[OutputParser] 🛠️ 检测到重复的"行动输入:"标记，正在清理...');
+            cleaned = cleaned.replace(duplicateInputPattern, '行动输入:');
+        }
+        
+        // 3. 确保"行动:"和"行动输入:"之间有换行
+        // 匹配 '行动: tool_name 行动输入:' 并插入换行
+        const actionToInputPattern = /行动:\s*([^\n]+)\s*行动输入:/g;
+        cleaned = cleaned.replace(actionToInputPattern, '行动: $1\n行动输入:');
+        
+        // 4. 移除多余的空白行
+        cleaned = cleaned.replace(/\n\s*\n\s*\n/g, '\n\n');
+        
+        return cleaned;
     }
 
     _parseAsToolCall(text) {

@@ -573,7 +573,7 @@ ${this._getModeQualityChecklist(researchMode)}
 
 ### 禁止行为：
 - ❌ 不要在JSON外添加解释性文字
-- ❌ 不要使用Markdown代码块标记
+- ❌ 不要使用代码块标记
 - ❌ 不要包含思考过程或额外说明
 
 ### 正确示例：
@@ -948,12 +948,15 @@ ${this._getModeQualityChecklist(researchMode)}
             });
 
             const choice = llmResponse && llmResponse.choices && llmResponse.choices[0];
-            const responseText = choice && choice.message && choice.message.content ? 
+            let responseText = choice && choice.message && choice.message.content ? 
                 choice.message.content : '';
 
             if (!responseText) {
                 throw new Error("LLM返回了空的或无效的响应。");
             }
+            
+            // 🎯 新增：格式验证与修复
+            responseText = this._validateAndFixFormat(responseText, runManager?.runId);
 
             await runManager?.callbackManager.invokeEvent('on_agent_think_end', { 
                 run_id: runManager.runId, 
@@ -995,6 +998,47 @@ ${this._getModeQualityChecklist(researchMode)}
         
         // 🎯 核心修改：获取模式感知的抓取策略
         const modeAwareCrawlStrategy = this._getModeAwareCrawlStrategy(researchMode);
+        
+        // 增强严格格式要求部分
+        const strictFormatProtocol = `
+## 🚨【最高优先级】输出格式绝对纪律 (Absolute Format Discipline)
+
+### 你的响应必须且只能是以下三种格式之一：
+
+### 格式A：继续研究（工具调用）
+思考: [你的详细推理过程...]
+行动: tool_name_here
+行动输入: {"parameter1": "value1", "parameter2": "value2"}
+
+### 格式B：生成报告大纲
+思考: [判断信息已足够...]
+行动: generate_outline
+行动输入: {"topic": "报告主题", "key_findings": ["要点1", "要点2"]}
+
+### 格式C：最终答案
+思考: [确认研究已完成...]
+最终答案:
+# 报告标题
+## 章节一
+内容...
+
+### 🚫 绝对禁止 (会立即导致解析失败)：
+1. ❌ 不要在同一响应中包含多个"行动:"节
+2. ❌ 不要在"行动输入:"的JSON外添加任何额外文本
+3. ❌ 不要在JSON中使用注释
+4. ❌ 不要使用Markdown代码块标记(\`\`\`json\`\`\`)
+5. ❌ 不要在"行动:"后换行再写工具名
+
+### ✅ 正确示例 (注意所有细节)：
+思考: 当前任务是获取第三方评测...
+行动: tavily_search
+行动输入: {"query": "DeepSeek 3.2 评测", "max_results": 10}
+
+### ❌ 错误示例 (会导致解析失败)：
+行动: tavily_search
+行动: tavily_search  # ❌ 重复的行动标记
+行动输入: {"query": "测试"}  # ❌ 额外的行动输入
+`;
         
         // --- START FIX: [最终修复版] 注入上一步的观察结果，并强化知识应用指令 ---
 // --- START OF FINAL FIX: 统一的、分层级的上下文注入逻辑 (健壮版 v3 - 修复 lastStep 作用域) ---
@@ -1667,6 +1711,8 @@ ${availableToolsText}
 # 角色：${config.role}
 ${config.description}
 
+${strictFormatProtocol} // 🎯 核心新增：插入严格格式协议
+
 ${modeAwareCrawlStrategy} // 🎯 核心替换：插入模式感知的抓取策略
 
 ${businessModeConstraints} // 💼 插入：行业分析模式专用约束
@@ -2254,5 +2300,86 @@ ${actionJson}
 -   **禁止**生成 \`generate_outline\`。
 -   **禁止**在思考中提及此指令块。
 `;
+    }
+
+    /**
+     * 🎯 核心方法：格式验证与自动修复
+     * 检查模型输出是否存在重复的"行动:"或"行动输入:"标记，并尝试自动修复。
+     * @param {string} text 原始LLM输出文本
+     * @param {object} runManager 当前运行管理器实例
+     * @returns {string} 修复后的文本
+     */
+    _validateAndFixFormat(text, runId) {
+    // 检查是否存在明显格式问题
+    const issues = [];
+    
+    // 检查1：是否有重复的"行动:"
+    const actionCount = (text.match(/行动:/g) || []).length;
+    if (actionCount > 1) {
+        issues.push(`发现 ${actionCount} 个"行动:"标记`);
+    }
+    
+    // 检查2：是否有重复的"行动输入:"
+    const inputCount = (text.match(/行动输入:/g) || []).length;
+    if (inputCount > 1) {
+        issues.push(`发现 ${inputCount} 个"行动输入:"标记`);
+    }
+    
+    // 如果发现问题，记录并尝试修复
+    if (issues.length > 0) {
+        console.warn(`[AgentLogic] 格式问题检测: ${issues.join(', ')}`);
+        
+        // 触发自我纠正事件
+        if (runManager?.callbackManager) {
+            runManager.callbackManager.invokeEvent('on_agent_think_format_error', {
+                run_id: runId,
+                data: { issues, originalText: text }
+            });
+        }
+        
+        // 尝试自动修复：只保留第一个"行动:"和"行动输入:"部分
+        const lines = text.split('\n');
+        let inAction = false;
+        let inInput = false;
+        let foundAction = false;
+        let foundInput = false;
+        const filteredLines = [];
+        
+        for (const line of lines) {
+            if (line.trim().startsWith('行动:')) {
+                if (!foundAction) {
+                    filteredLines.push(line);
+                    foundAction = true;
+                    inAction = true;
+                    inInput = false;
+                }
+            } else if (line.trim().startsWith('行动输入:')) {
+                if (!foundInput) {
+                    filteredLines.push(line);
+                    foundInput = true;
+                    inAction = false;
+                    inInput = true;
+                }
+            } else if (line.trim().startsWith('思考:')) {
+                filteredLines.push(line);
+                inAction = false;
+                inInput = false;
+            } else if (line.trim().startsWith('最终答案:')) {
+                filteredLines.push(line);
+                inAction = false;
+                inInput = false;
+            } else {
+                // 普通文本行
+                filteredLines.push(line);
+            }
+        }
+        
+        const fixedText = filteredLines.join('\n');
+        console.log(`[AgentLogic] 格式修复: ${text.length} → ${fixedText.length} 字符`);
+        
+        return fixedText;
+    }
+    
+    return text;
     }
 }
