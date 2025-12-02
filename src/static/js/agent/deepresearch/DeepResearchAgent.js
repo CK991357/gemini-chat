@@ -1336,7 +1336,8 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
             metrics: this.metrics,
             plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
             research_mode: detectedMode,
-            temporal_quality: temporalQualityReport // 包含完整时效性质量报告
+            temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
+            model: this.reportModel // 🎯 修复：添加实际使用的模型名称
         };
         
         // 🎯 4.3. 调用性能记录方法
