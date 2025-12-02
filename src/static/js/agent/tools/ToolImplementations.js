@@ -1645,7 +1645,7 @@ class ProxiedTool extends BaseTool {
             });
             
             let rawResult = await Promise.race([toolPromise, timeoutPromise]);
-            
+
             // 🎯 关键修复：将 normalizedInput 附加到 rawResult 中，供错误处理使用
             if (rawResult && typeof rawResult === 'object') {
                 rawResult.rawParameters = normalizedInput;
@@ -1656,14 +1656,44 @@ class ProxiedTool extends BaseTool {
                     rawParameters: normalizedInput
                 };
             }
-            
+
             // 🎯 统一响应处理
-            const normalizedResult = DeepResearchToolAdapter.normalizeResponse(
+            let normalizedResult = DeepResearchToolAdapter.normalizeResponse(
                 this.name, rawResult, mode, researchMode
             );
-            
+
+            // ============================================================
+            // 🔥🔥🔥 零迭代修复：Python 导入错误自动重试 (Zero-Iteration Fix) 🔥🔥🔥
+            // ============================================================
+            if (this.name === 'python_sandbox' && !normalizedResult.success) {
+                const errorOutput = normalizedResult.output || '';
+                const code = normalizedInput.code || '';
+                const missingImport = this._checkMissingImport(errorOutput);
+
+                if (missingImport && code) {
+                    console.warn(`[ProxiedTool] 🐍 检测到缺失导入: ${missingImport}，启动零迭代修复...`);
+                    const fixedCode = `import ${missingImport}\n${code}`;
+                    
+                    // 递归调用自己，进行工具内部重试
+                    const retryResult = await this.invoke({ ...normalizedInput, code: fixedCode }, context);
+                    
+                    if (retryResult.success) {
+                        console.log(`[ProxiedTool] ✅ 零迭代修复成功，返回重试结果。`);
+                        // 🎯 关键：将重试结果作为最终结果返回
+                        normalizedResult = retryResult;
+                    } else {
+                        console.warn(`[ProxiedTool] ❌ 零迭代修复失败，返回原始错误。`);
+                        // 修复失败，将错误信息包装得更清晰
+                        normalizedResult.output = `❌ **Python 导入自动修复失败**\n\n**尝试修复**: 自动添加 \`import ${missingImport}\`\n**原始错误**: ${errorOutput}`;
+                    }
+                }
+            }
+            // ============================================================
+            // 🔥🔥🔥 零迭代修复结束 🔥🔥🔥
+            // ============================================================
+
             const executionTime = Date.now() - startTime;
-            
+
             console.log(`[ProxiedTool] ${mode.toUpperCase()}模式工具调用完成: ${this.name}`, {
                 success: normalizedResult.success,
                 researchMode: researchMode,
@@ -1671,7 +1701,7 @@ class ProxiedTool extends BaseTool {
                 sourceCount: normalizedResult.sources?.length || 0,
                 executionTime
             });
-            
+
             return {
                 ...normalizedResult,
                 executionTime,
@@ -1681,11 +1711,11 @@ class ProxiedTool extends BaseTool {
                     tool: this.name
                 }
             };
-            
+
         } catch (error) {
             const executionTime = Date.now() - startTime;
             console.error(`[ProxiedTool] ${mode.toUpperCase()}模式工具调用失败: ${this.name} (${executionTime}ms)`, error);
-            
+
             let errorMessage = error.message;
             if (error.message.includes('timeout') || error.message.includes('超时')) {
                 errorMessage = `工具"${this.name}"执行超时 (${timeoutMs}ms)`;
@@ -1694,7 +1724,7 @@ class ProxiedTool extends BaseTool {
             } else if (error.message.includes('404') || error.message.includes('not found')) {
                 errorMessage = `工具"${this.name}"服务不可用`;
             }
-            
+
             return {
                 success: false,
                 output: `工具"${this.name}"执行失败: ${errorMessage}`,
@@ -1711,6 +1741,68 @@ class ProxiedTool extends BaseTool {
                 }
             };
         }
+    }
+
+    /**
+     * 🎯 检查 Python 错误输出中是否缺失了核心导入
+     */
+    _checkMissingImport(errorOutput) {
+        if (!errorOutput || typeof errorOutput !== 'string') return null;
+
+        const lowerError = errorOutput.toLowerCase();
+        
+        // 1. 检查 NameError: name 'json' is not defined
+        if (lowerError.includes("nameerror") && lowerError.includes("'json' is not defined")) {
+            return 'json';
+        }
+        // 2. 检查 NameError: name 'pd' is not defined (pandas)
+        if (lowerError.includes("nameerror") && lowerError.includes("'pd' is not defined")) {
+            return 'pandas as pd';
+        }
+        // 3. 检查 NameError: name 'plt' is not defined (matplotlib)
+        if (lowerError.includes("nameerror") && lowerError.includes("'plt' is not defined")) {
+            return 'matplotlib.pyplot as plt';
+        }
+        // 4. 检查 NameError: name 'np' is not defined (numpy)
+        if (lowerError.includes("nameerror") && lowerError.includes("'np' is not defined")) {
+            return 'numpy as np';
+        }
+        
+        return null;
+    }
+
+    /**
+     * 🎯 清理工具输入，避免日志过大
+     */
+    sanitizeToolInput(input) {
+        if (!input || typeof input !== 'object') {
+            return input;
+        }
+        
+        const sanitized = { ...input };
+        
+        if (sanitized.code && sanitized.code.length > 200) {
+            sanitized.code = sanitized.code.substring(0, 200) + '...';
+        }
+        if (sanitized.prompt && sanitized.prompt.length > 100) {
+            sanitized.prompt = sanitized.prompt.substring(0, 100) + '...';
+        }
+        if (sanitized.query && sanitized.query.length > 100) {
+            sanitized.query = sanitized.query.substring(0, 100) + '...';
+        }
+        
+        if (sanitized.url && sanitized.url.length > 150) {
+            sanitized.url = sanitized.url.substring(0, 150) + '...';
+        }
+        if (sanitized.image_url && sanitized.image_url.length > 150) {
+            sanitized.image_url = sanitized.image_url.substring(0, 150) + '...';
+        }
+        
+        if (sanitized.parameters && typeof sanitized.parameters === 'object') {
+            sanitized.parameters = this.sanitizeToolInput(sanitized.parameters);
+        }
+        
+        return sanitized;
     }
 
     /**

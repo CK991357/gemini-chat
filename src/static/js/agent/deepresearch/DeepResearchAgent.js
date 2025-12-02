@@ -132,6 +132,44 @@ export class DeepResearchAgent {
         return `[✅ 图像生成成功] 标题: "${imageData.title}". 在最终报告中，你可以使用占位符 ![${imageData.title}](placeholder:${imageId}) 来引用这张图片。`;
     }
 
+    // 🔥🔥🔥 [新增方法] 智能数据总线检索 🔥🔥🔥
+    /**
+     * @description 从数据总线中检索数据，并生成一个对 Agent 友好的摘要。
+     * @returns {string} - 包含数据总线内容的 Markdown 摘要
+     */
+    _retrieveDataFromBus() {
+        if (this.dataBus.size === 0) {
+            return '';
+        }
+
+        let summary = `\n\n## 🚌 智能数据总线 (Data Bus) 缓存\n\n`;
+        summary += `**系统提示**: 你在历史步骤中收集到的完整、未截断的原始数据（如长网页内容、大JSON）已缓存于此。请在需要时引用。\n\n`;
+
+        // 按照时间戳降序排序，确保 Agent 看到最新的数据
+        const sortedData = Array.from(this.dataBus.entries())
+            .map(([key, data]) => ({ key, data }))
+            .sort((a, b) => new Date(b.data.metadata.timestamp).getTime() - new Date(a.data.metadata.timestamp).getTime());
+
+        for (const { key, data } of sortedData) {
+            const { rawData, metadata } = data;
+            const stepIndex = key.split('_');
+            const contentType = metadata.contentType || '未知';
+            const toolName = metadata.toolName || '未知工具';
+            const dataType = metadata.dataType || '文本';
+            
+            // 提取前 200 字符作为预览
+            const preview = rawData.substring(0, 200).replace(/\n/g, ' ').trim();
+
+            summary += `### 📦 ${key} (步骤 ${stepIndex} - ${toolName})\n`;
+            summary += `- **类型**: ${dataType} (${contentType})\n`;
+            summary += `- **大小**: ${metadata.size} 字符\n`;
+            summary += `- **预览**: \`${preview}...\`\n`;
+            summary += `- **引用方式**: 在你的思考中，你可以引用 \`DataBus:${key}\` 来表明你正在使用这份完整数据进行分析。\n\n`;
+        }
+
+        summary += `--- Data Bus 结束 ---\n\n`;
+        return summary;
+    }
 
     // 🎯 新增：报告大纲生成方法
     /**
@@ -372,14 +410,15 @@ ${JSON.stringify(data_context)}
 ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Python 规范。"}
 
 # ⚡ 补充强制执行协议 (Override Rules)
-1. **数据硬编码**: 必须将【数据上下文】中的数据完整写入代码变量，**严禁空赋值**。
-2. **中文支持 (关键)**:
+1. **核心导入**: 必须在代码开头**强制导入**以下库：\`import json\`, \`import pandas as pd\`, \`import matplotlib.pyplot as plt\`, \`import numpy as np\`。
+2. **数据硬编码**: 必须将【数据上下文】中的数据完整写入代码变量，**严禁空赋值**。
+3. **中文支持 (关键)**:
    - 本环境**不包含** SimHei 或 Microsoft YaHei。
    - **必须**显式设置字体为文泉驿微米黑：
      \`plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei']\`
    - 设置负号支持：\`plt.rcParams['axes.unicode_minus'] = False\`
-3. **输出纯净**: 只输出 Python 代码，不要 Markdown 标记。
-4. **必须调用 \`plt.show()\`**: 这是触发图像输出的唯一方式。
+4. **输出纯净**: 只输出 Python 代码，不要 Markdown 标记。
+5. **必须调用 \`plt.show()\`**: 这是触发图像输出的唯一方式。
 `;
 
             try {
@@ -416,18 +455,109 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 );
                 
                 // 🟢 步骤 E: 包装结果反馈给经理
+
                 let finalObservation;
-                
+
                 if (sandboxResult.toolSuccess) {
-                    // 检查是否已经触发了图片/文件处理逻辑（即 rawObservation 已被替换为成功消息）
-                    if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') || sandboxResult.rawObservation.includes('[✅ 文件生成成功]')) {
-                        // 🔥 优化版：区分“重复操作”和“新任务”
-                        finalObservation = `✅ **专家任务完美执行**\n\n${sandboxResult.rawObservation}\n\n**系统提示**：\n1. **当前**绘图/文件生成任务已圆满完成。\n2. 请勿**重复**执行完全相同的指令。\n3. **关键**：如果研究计划中还有**其他不同**的图表或数据需要处理，请**继续调用** code_generator；如果所有任务均已完成，请进入报告撰写阶段。`;
-                    } else {
-                        // 如果是成功但不是图片/文件（例如，纯文本输出或未被处理的JSON），则使用简洁的成功占位符
-                        // 避免将原始JSON或大量纯文本抛给Manager
-                        finalObservation = `✅ **专家任务执行成功**\n\n输出: [已成功执行代码，但未生成图片或文件。请根据代码逻辑判断是否有关键数据输出。]`;
+                    // 检查输出类型并相应处理
+                    try {
+                        // 尝试解析输出，看是否是JSON
+                        const outputData = JSON.parse(sandboxResult.rawObservation);
+
+                        if (outputData.type === 'image' && outputData.image_base64) {
+                            // 图像处理逻辑不变
+                            finalObservation = this._handleGeneratedImage(outputData);
+
+                        } else if (['excel', 'word', 'powerpoint', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
+                            // 文件处理逻辑不变
+                            finalObservation = `[✅ 文件生成成功] 类型: "${outputData.type}", 标题: "${outputData.title}". 文件已准备就绪。`;
+                            this.callbackManager.invokeEvent('on_file_generated', {
+                                run_id: this.runId,
+                                data: outputData
+                            });
+
+                        } else if (outputData.type === 'ml_report' || outputData.type === 'data_extraction') {
+                            // 🔥 新增：处理机器学习报告或数据提取结果
+                            console.log(`[DeepResearchAgent] 📊 检测到${outputData.type}类型输出，保留完整数据`);
+
+                            // 格式化输出以便Agent理解
+                            let formattedData = '';
+                            if (outputData.title) formattedData += `## ${outputData.title}\n\n`;
+                            if (outputData.summary) formattedData += `### 摘要\n${outputData.summary}\n\n`;
+                            if (outputData.tables && Array.isArray(outputData.tables)) {
+                                formattedData += `### 提取的表格数据\n`;
+                                outputData.tables.forEach((table, idx) => {
+                                    formattedData += `#### 表格 ${idx + 1}: ${table.title || '未命名'}\n`;
+                                    formattedData += `${table.content}\n\n`;
+                                });
+                            }
+                            if (outputData.metrics) {
+                                formattedData += `### 性能指标\n`;
+                                Object.entries(outputData.metrics).forEach(([key, value]) => {
+                                    formattedData += `- ${key}: ${value}\n`;
+                                });
+                            }
+
+                            finalObservation = `✅ **数据提取成功**\n\n${formattedData}\n\n**原始JSON键**: ${Object.keys(outputData).join(', ')}`;
+
+                        } else {
+                            // 🔥 核心修复：对于其他成功的JSON输出，保留结构化数据
+                            console.log(`[DeepResearchAgent] 📦 保留成功执行的JSON输出，类型: ${outputData.type || 'unknown'}`);
+
+                            // 根据数据大小决定如何展示
+                            const jsonStr = JSON.stringify(outputData, null, 2);
+                            if (jsonStr.length > 2000) {
+                                // 如果太大，提取关键信息
+                                const keyCount = Object.keys(outputData).length;
+                                const sampleData = Object.entries(outputData)
+                                    .slice(0, 3)
+                                    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v.substring(0, 100) : typeof v}`)
+                                    .join('\n');
+
+                                finalObservation = `✅ **专家任务执行成功**\n\n**输出类型**: ${outputData.type || '数据提取'}\n**数据字段**: ${keyCount} 个\n**示例**:\n${sampleData}\n\n⚠️ 完整数据过长，已保存到数据总线。`;
+
+                                // 保存到数据总线以便后续使用
+                                this._storeRawData(this.intermediateSteps.length + 1, jsonStr, {
+                                    toolName: 'code_generator',
+                                    contentType: 'structured_data',
+                                    dataType: outputData.type || 'extraction'
+                                });
+
+                            } else {
+                                // 如果数据量适中，直接显示
+                                finalObservation = `✅ **专家任务执行成功**\n\n**提取的数据**:\n\`\`\`json\n${jsonStr}\n\`\`\``;
+                            }
+                        }
+
+                    } catch (e) {
+                        // 如果输出不是JSON，或者解析失败
+                        console.log('[DeepResearchAgent] Python输出不是JSON格式，作为纯文本处理');
+
+                        // 检查是否已经是成功消息（避免重复包装）
+                        if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') ||
+                            sandboxResult.rawObservation.includes('[✅ 文件生成成功]')) {
+                            finalObservation = sandboxResult.rawObservation;
+                        } else {
+                            // 对于纯文本输出，如果包含结构化信息，尝试格式化
+                            const textOutput = sandboxResult.rawObservation;
+
+                            // 检测是否包含表格或结构化数据
+                            const hasTable = textOutput.includes('|') && textOutput.includes('---');
+                            const hasJsonStructure = textOutput.includes('{') && textOutput.includes('}');
+
+                            if (hasTable || hasJsonStructure) {
+                                // 包含结构化数据，保留完整内容但添加标记
+                                finalObservation = `✅ **专家任务执行成功 (包含结构化数据)**\n\n${textOutput}`;
+                            } else if (textOutput.length > 500) {
+                                // 长文本截断
+                                finalObservation = `✅ **专家任务执行成功**\n\n输出 (已截断):\n${textOutput.substring(0, 500)}...\n\n*完整输出: ${textOutput.length} 字符*`;
+                            } else {
+                                // 短文本直接显示
+                                finalObservation = `✅ **专家任务执行成功**\n\n输出:\n${textOutput}`;
+                            }
+                        }
                     }
+
                 } else {
                     // 失败情况保持不变
                     finalObservation = `❌ **专家代码执行出错**\n\n错误信息: ${sandboxResult.rawObservation}`;
@@ -516,7 +646,20 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
                 }
 
-                // 2. 状态注入逻辑 (保留原有逻辑)
+                // 2. 客户端导入预检 (Client-side Import Pre-check)
+                const missingImports = this._validatePythonImports(code);
+                
+                if (missingImports.length > 0) {
+                    console.warn(`[DeepResearchAgent] 🛠️ 预检检测到缺失导入: ${missingImports.join(', ')}，自动修复...`);
+                    
+                    // 自动添加缺失的导入
+                    const importStatements = missingImports.map(mod => `import ${mod}`).join('\n');
+                    parameters.code = `${importStatements}\n\n${code}`;
+                    
+                    console.log('[DeepResearchAgent] ✅ 客户端预检修复完成。');
+                }
+
+                // 3. 状态注入逻辑 (保留原有逻辑)
                 const stateInjectionPattern = /"\{\{LAST_OBSERVATION\}\}"/g;
                 if (stateInjectionPattern.test(code)) {
                     console.log('[DeepResearchAgent] 🐍 检测到 Python 状态注入占位符。');
@@ -658,8 +801,30 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             // 可以在thought中引用知识指导
         }
 
+        // 🎯 新增：检查是否有相关数据可复用
+        // 检查条件：数据总线有数据 且 thought 包含 '提取' 或 '数据'
+        if (this.dataBus.size > 0 && (thought.includes('提取') || thought.includes('数据'))) {
+            console.log('[DeepResearchAgent] 🔍 检查数据总线中的相关数据...');
+            
+            // 查找最近的数据
+            const recentData = Array.from(this.dataBus.entries())
+                .filter(([key, data]) => data.metadata.contentType === 'structured_data')
+                .sort((a, b) => new Date(b.metadata.timestamp).getTime() - new Date(a.metadata.timestamp).getTime());
+            
+            if (recentData.length > 0) {
+                const [key, data] = recentData;
+                console.log(`[DeepResearchAgent] ✅ 找到可用数据: ${key}, 类型: ${data.metadata.dataType}`);
+                
+                // 在thought中提示有可用数据
+                thought = `注意：系统已缓存了相关结构化数据（${data.metadata.dataType}），请考虑利用这些数据。\n\n${thought}`;
+            }
+        }
+
         // 正常执行工具调用...
-        return await this._executeToolCall(toolName, parameters, detectedMode, recordToolCall);
+        const result = await this._executeToolCall(toolName, parameters, detectedMode, recordToolCall);
+        
+        // 🎯 核心修改：返回更新后的 thought
+        return { ...result, updatedThought: thought };
     }
 
     async conductResearch(researchRequest) {
@@ -900,7 +1065,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     });
 
                     // 🎯 知识感知的工具执行
-                    const { rawObservation, toolSources, toolSuccess } = await this._executeToolWithKnowledge(
+                    const { rawObservation, toolSources, toolSuccess, updatedThought } = await this._executeToolWithKnowledge(
                         tool_name,
                         parameters,
                         thought,
@@ -940,7 +1105,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                             type: 'tool_call',
                             tool_name: tool_name,
                             parameters: parameters,
-                            thought: thought || `执行工具 ${tool_name} 来获取更多信息。`
+                            // 🎯 核心修复：使用从 _executeToolWithKnowledge 返回的 updatedThought
+                            thought: updatedThought || thought || `执行工具 ${tool_name} 来获取更多信息。`
                         },
                         observation: summarizedObservation,
                         key_finding: keyFinding, // 🎯 新增：存储关键发现
@@ -2475,12 +2641,47 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         const dataKey = `step_${stepIndex}`;
         
         let processedData = rawData;
-        if (rawData.length > 10000) {
-            processedData = this._extractStructuredData(rawData, metadata);
+        
+        // 特别处理结构化数据
+        if (metadata.contentType === 'structured_data') {
+            try {
+                // 如果是JSON字符串，尝试解析并提取关键信息
+                const parsedData = JSON.parse(rawData);
+                const summary = {
+                    dataType: metadata.dataType || 'unknown',
+                    fieldCount: Object.keys(parsedData).length,
+                    sample: {},
+                    size: rawData.length
+                };
+                
+                // 提取前3个字段作为示例
+                Object.entries(parsedData)
+                    .slice(0, 3)
+                    .forEach(([key, value]) => {
+                        summary.sample[key] = typeof value === 'string'
+                            ? value.substring(0, 100)
+                            : typeof value;
+                    });
+                
+                processedData = JSON.stringify(summary, null, 2);
+                console.log(`[DataBus] 📊 存储结构化数据摘要: ${summary.dataType}, ${summary.fieldCount} 字段`);
+                
+            } catch (e) {
+                // 如果不是JSON，使用原有逻辑
+                if (rawData.length > 10000) {
+                    processedData = this._extractStructuredData(rawData, metadata);
+                }
+            }
+        } else {
+            // 原有逻辑
+            if (rawData.length > 10000) {
+                processedData = this._extractStructuredData(rawData, metadata);
+            }
         }
         
         this.dataBus.set(dataKey, {
             rawData: processedData,
+            originalData: rawData, // 🔥 新增：保存原始数据
             metadata: {
                 ...metadata,
                 originalLength: rawData.length,
@@ -2490,7 +2691,6 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         });
         
         this._cleanupDataBus();
-        
         console.log(`[DataBus] 存储数据 ${dataKey}: ${rawData.length} -> ${processedData.length} 字符`);
     }
 
@@ -2550,6 +2750,49 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         }
     }
     
+    /**
+-------
+    /**
+     * 🎯 客户端 Python 导入预检
+     */
+    _validatePythonImports(code) {
+        const requiredImports = {
+            'json.loads': 'json',
+            'json.dumps': 'json',
+            'json.': 'json',
+            're.': 're',
+            'os.': 'os',
+            'sys.': 'sys',
+            'pandas': 'pandas as pd',
+            'numpy': 'numpy as np',
+            'matplotlib': 'matplotlib.pyplot as plt'
+        };
+        
+        let missingImports = [];
+        const codeLower = code.toLowerCase();
+        
+        for (const [pattern, module] of Object.entries(requiredImports)) {
+            // 检查代码中是否使用了该库的特征模式，但没有对应的 import 语句
+            // 注意：这里只检查最常见的别名，如 pd, np, plt
+            const moduleName = module.split(' '); // 提取模块名，如 'pandas'
+            
+            if (codeLower.includes(pattern) && !codeLower.includes(`import ${moduleName}`)) {
+                // 进一步检查别名，例如如果代码中使用了 pd.read_csv，但只 import pandas，则不认为是缺失
+                if (module.includes(' as ')) {
+                    const alias = module.split(' as ');
+                    if (codeLower.includes(`${alias}.`) && !codeLower.includes(`import ${module}`)) {
+                        missingImports.push(module);
+                    }
+                } else {
+                    missingImports.push(module);
+                }
+            }
+        }
+        
+        // 使用 Set 去重并返回
+        return [...new Set(missingImports)];
+    }
+
     /**
      * 🚑 [优化版] 代码急诊室：基于 LLM 的自动修复
      * 包含重试机制 (Max Retries: 2)
