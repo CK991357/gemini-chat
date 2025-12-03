@@ -1827,6 +1827,22 @@ const enhancedToolSelectionStrategy = `
 3. **PDF → 多源**：结合使用两种工具获取完整信息
 `;
 
+const crawl4aiExtractProtocol = `
+## 🚨 【强制约束】crawl4ai Extract 模式使用禁令
+ 
+### 核心限制：
+- **Extract 模式** 仅适用于**静态、结构简单**的网页，且必须依赖**精确的 CSS 选择器**。
+- **Extract 模式** 无法处理复杂的 JavaScript 动态加载内容（如产品详情页）。
+ 
+### 🚫 绝对禁止：
+- **严禁**对**奢侈品官网、电商平台、复杂新闻网站**的产品详情页使用 \`extract\` 模式。
+- **严禁**在 \`scrape\` 模式失败后，立即尝试 \`extract\` 模式。
+ 
+### ✅ 替代方案：
+- **优先使用** \`scrape\` 模式获取全文，然后让 LLM 在**思考**中从全文摘要里提取结构化信息。
+- **如果需要结构化数据**：使用 \`tavily_search\` 寻找第三方评测或数据汇总文章，然后对这些文章使用 \`scrape\` 模式。
+`;
+
 const toolOptimizationProtocol = `
 
 ## 🛠️ 工具使用策略优化 (Agent Optimization Protocol)
@@ -2465,7 +2481,9 @@ ${temporalGuidance}
 ${visualizationMandate} // 🔥 插入：强制图表展示指令
 
 ${toolDegradationHandling} // 🟡 插入：工具降级响应处理指南
-
+ 
+${crawl4aiExtractProtocol} // 🚨 核心新增：crawl4ai Extract 模式使用禁令
+ 
 ${strictJsonFormatGuideline} // 🎯 核心新增：JSON 格式纪律
 
 ${forceNativeVision ? this._getNativeVisionMandate() : ''} // 🚀 核心新增：强制 Native Vision 指令
