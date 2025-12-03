@@ -1472,23 +1472,34 @@ const managerDecisionFramework = `
 
 
 const crawlTimeoutProtocol = `
-## 🕷️ crawl4ai 超时恢复协议 (Timeout Recovery Protocol)
+## 🕷️ crawl4ai 成功判断与恢复协议 (Optimized Protocol)
 
-**情景**: 当你上一步调用 \`crawl4ai\` 后，观察结果中包含“超时”、“timeout”或“500”服务器错误。
+### 🟢 成功判断标准（最高优先级）：
+1.  **内容完整性**：观察结果中包含 **"内容总长度"** 且字符数 **> 1000**。
+2.  **成功计数**：包含 **"批量抓取结果 (X/Y 成功)"** 且 X > 0。
+3.  **关键数据**：包含明确的产品参数、价格、材质等信息。
 
-**你必须严格遵循以下多层次恢复策略，而不是立即重试相同的 URL：**
+**💡 关键认知：**
+- **长执行时间 ≠ 失败**！crawl4ai 需要时间加载页面，10-15秒是正常的。
+- **超时警告 ≠ 失败**！工具可能会警告耗时，但只要满足上述成功标准，就**必须视为成功**并分析数据。
 
-### **第一步：诊断与切换 (Switch Source)**
+### 🔴 失败判断标准（才需要恢复策略）：
+1.  明确的错误信息："工具调用失败"、"crawl4ai 执行失败"、"500 服务器错误"、"无法访问"。
+2.  内容完全空白或极少（< 100 字符）。
+
+### 🔄 恢复策略（仅在明确失败时执行）：
+
+#### **第一步：诊断与切换 (Switch Source)**
 1.  **诊断**: 在“思考”中明确承认：“上一步 \`crawl4ai\` 调用失败，原因是超时或服务器错误，这很可能是因为目标网站存在反爬虫机制或服务器不稳定。”
 2.  **切换源**: **立即回顾**你历史记录中**上一次成功**的 \`tavily_search\` 调用的结果列表。
 3.  **行动**: 从该列表中选择一个**不同的、看起来同样权威的 URL** (例如，选择另一个官方网站、知名技术博客或权威百科)，然后使用 \`crawl4ai\` 对这个**新 URL** 进行抓取。
 
-### **第二步：重新探索 (Re-Search)**
+#### **第二步：重新探索 (Re-Search)**
 - **触发条件**: 如果上一次 \`tavily_search\` 的结果中没有其他可用的高质量 URL，或者对新 URL 的 \`crawl4ai\` 调用**再次失败**。
 - **诊断**: 在“思考”中说明：“尝试抓取备用 URL 失败，我需要寻找全新的数据源。”
 - **行动**: 执行一次**全新的 \`tavily_search\` 调用**。在查询中加入新的关键词，如“官方数据”、“研究报告”、“替代来源”，以发现不同类型的网站。
 
-### **第三步：最终判定 (Final Judgment)**
+#### **第三步：最终判定 (Final Judgment)**
 - **触发条件**: 如果在**全新的数据源**上尝试 \`crawl4ai\` **仍然失败**。
 - **诊断**: 在“思考”中做出最终判断：“经过多次对不同来源的尝试，\`crawl4ai\` 工具目前可能暂时无法访问这些类型的网站或自身存在不稳定性。”
 - **行动**: **放弃**使用 \`crawl4ai\` 完成当前子问题。在思考中总结你**已经**从 \`tavily_search\` 的摘要中获取了哪些信息，然后**继续推进到研究计划的下一个步骤**。
@@ -2970,16 +2981,52 @@ ${plan.research_plan.map(item =>
             // 🎯 核心修复：简化旧历史记录以降低干扰
             let observationText;
             const isRecent = (totalSteps - 1 - index) < 2; // 是否是最近的两个步骤之一?
+            const isCrawl4ai = step.action?.tool_name === 'crawl4ai';
 
             if (!isRecent) {
                 // 对于旧步骤，只显示关键发现
                 observationText = `[发现摘要]: ${step.key_finding || '未总结关键发现。'}`;
-            } else if (step.action?.tool_name === 'python_sandbox' && step.success === false) {
-                // 对于最近的、失败的 Python 步骤，显示完整错误
-                observationText = typeof step.observation === 'string' ? step.observation : 'Python 执行失败。';
             } else {
-                // 对于其他最近的步骤，显示截断的观察结果
-                observationText = `${(step.observation || '').substring(0, 300)}... (内容已折叠)`;
+                // 🎯【特殊修复】对于最近的、失败的 Python 步骤，显示完整错误（用户要求放宽）
+                if (step.action?.tool_name === 'python_sandbox' && step.success === false) {
+                    observationText = typeof step.observation === 'string' ? step.observation : 'Python 执行失败。';
+                } else {
+                    // 对于其他最近的步骤，检查是否是工具执行，区分警告与错误
+                    const rawObs = step.observation || '';
+                    
+                    // 🎯【通用修复】判断是否是工具执行，是否包含实质性数据
+                    const isToolCall = step.action && step.action.tool_name;
+                    const isSubstantialData = rawObs.length > 100; // 有实质性内容
+                    
+                    if (isToolCall && isSubstantialData) {
+                        // 🎯 关键：工具调用且有实质数据 -> 视为成功，展示更多内容
+                        
+                        // 检查是否只是警告而非错误
+                        const hasWarnings = this._hasOnlyWarnings(rawObs);
+                        const hasErrors = this._hasRealErrors(rawObs);
+                        
+                        if (hasWarnings && !hasErrors) {
+                            // 🟡 只有警告：展示足够内容，让Agent能看到警告但也能看到数据
+                            // 优先提取结构化数据
+                            const extractedData = this._extractStructuredData(rawObs, step.action?.tool_name);
+                            
+                            if (extractedData) {
+                                observationText = `🟡 工具执行（含警告）\n关键数据：${extractedData}\n... (完整内容 ${rawObs.length}字符)`;
+                            } else {
+                                observationText = `${rawObs.substring(0, 1000)}... (含执行警告，完整内容 ${rawObs.length}字符)`;
+                            }
+                        } else if (hasErrors) {
+                            // 🔴 有真实错误：正常截断
+                            observationText = `${rawObs.substring(0, 500)}... (执行错误)`;
+                        } else {
+                            // 🟢 无警告无错误：正常显示
+                            observationText = `${rawObs.substring(0, 800)}... (完整内容 ${rawObs.length}字符)`;
+                        }
+                    } else {
+                        // 非工具调用或数据太少：正常截断
+                        observationText = `${rawObs.substring(0, 300)}... (内容已折叠)`;
+                    }
+                }
             }
 
             return `## 步骤 ${index + 1}
@@ -3393,12 +3440,108 @@ ${actionJson}
             recommendations: recommendations.slice(0, 3) // 最多显示3条
         };
     }
+    // 🎯 新增：判断 crawl4ai 是否成功的方法
+    _isCrawl4aiSuccessful(observation) {
+        if (!observation) return false;
+        
+        // 成功标志：包含成功计数或长内容标记
+        const successPatterns = [
+            /批量抓取结果.*成功/,
+            /成功抓取.*页面/,
+            /✅.*成功/,
+            /内容总长度.*\d{4,}/, // 长度大于1000字符
+        ];
+        
+        // 失败标志：明确的错误信息
+        const failurePatterns = [
+            /工具调用失败/,
+            /crawl4ai 执行失败/,
+            /500 服务器错误/,
+            /无法访问/,
+            /内容过短/,
+        ];
+        
+        const hasSuccess = successPatterns.some(pattern => pattern.test(observation));
+        const hasFailure = failurePatterns.some(pattern => pattern.test(observation));
+        
+        // 只有在有成功标志且没有明确失败标志时才视为成功
+        return hasSuccess && !hasFailure;
+    }
+
+    // 🎯 新增：判断观察结果是否只包含警告
+    _hasOnlyWarnings(observation) {
+        if (!observation || typeof observation !== 'string') return false;
+        const lowerObs = observation.toLowerCase();
+        
+        // 警告模式：包含 warning, warn, 警告, 降级, 跳过, 内存, timeout, 超时
+        const warningPatterns = [
+            /warning/, /warn/, /警告/, /降级/, /跳过/, /内存/, /timeout/, /超时/,
+            /content is too short/, /内容过短/, /partial success/, /部分成功/
+        ];
+        
+        // 排除错误模式
+        const hasError = this._hasRealErrors(observation);
+        
+        const hasWarning = warningPatterns.some(pattern => pattern.test(lowerObs));
+        
+        return hasWarning && !hasError;
+    }
+
+    // 🎯 新增：判断观察结果是否包含真实错误
+    _hasRealErrors(observation) {
+        if (!observation || typeof observation !== 'string') return false;
+        const lowerObs = observation.toLowerCase();
+        
+        // 错误模式：包含 error, fail, 失败, 500, 404, exception, 无法访问, 拒绝
+        const errorPatterns = [
+            /error/, /fail/, /失败/, /500/, /404/, /exception/, /无法访问/, /拒绝/,
+            /tool call failed/, /执行失败/, /syntaxerror/, /nameerror/, /typeerror/
+        ];
+        
+        return errorPatterns.some(pattern => pattern.test(lowerObs));
+    }
+
+    // 🎯 新增：从观察结果中提取结构化数据（例如 JSON 或表格）
+    _extractStructuredData(observation, toolName) {
+        if (!observation || typeof observation !== 'string') return null;
+        
+        // 1. 尝试提取 JSON 代码块
+        const jsonBlockMatch = observation.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        if (jsonBlockMatch && jsonBlockMatch) {
+            const jsonContent = jsonBlockMatch.trim();
+            // 尝试解析 JSON，如果成功则返回预览
+            try {
+                const parsed = JSON.parse(jsonContent);
+                // 限制预览长度
+                return JSON.stringify(parsed, null, 2).substring(0, 500) + '...';
+            } catch (e) {
+                // 忽略解析错误
+            }
+        }
+        
+        // 2. 尝试提取 Markdown 表格
+        const tableMatch = observation.match(/\|.*\|.*\|[\s\S]*?\|.*\|/);
+        if (tableMatch) {
+            return `[Markdown 表格预览] ${tableMatch[0].substring(0, 500)}...`;
+        }
+        
+        // 3. 针对 crawl4ai 成功抓取结果，提取关键发现
+        if (toolName === 'crawl4ai') {
+            const keyFindingMatch = observation.match(/关键发现[:：]\s*([\s\S]*?)(?=\n\n|\n---|\n##|$)/i);
+            if (keyFindingMatch && keyFindingMatch) {
+                return `[关键发现] ${keyFindingMatch[1].trim().substring(0, 500)}...`;
+            }
+        }
+        
+        return null;
+    }
+
     // 🎯 新增：奢侈品品牌关键词列表
     _getLuxuryBrandKeywords() {
         return {
             // 👜 包包品牌
             bags: [
-                'chanel', 'dior', 'hermes', 'louisvuitton', 'gucci', 
+                'chanel', 'dior', 'hermes', 'louisvuitton', 'gucci',
                 'prada', 'burberry', 'fendi', 'celine', 'givenchy',
                 'ysl', 'valentino', 'bottegaveneta', 'loewe', 'marni',
                 '香奈儿', '迪奥', '爱马仕', '路易威登', '古驰',
@@ -3447,7 +3590,7 @@ ${actionJson}
         ];
         
         // 统计提及的品牌数量
-        const mentionedBrands = allBrands.filter(brand => 
+        const mentionedBrands = allBrands.filter(brand =>
             lowerTopic.includes(brand.toLowerCase())
         ).length;
         

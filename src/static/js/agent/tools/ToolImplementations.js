@@ -185,7 +185,7 @@ class DeepResearchToolAdapter {
                         only_main_content: false,  // 🎯 修复：禁用内容过滤
                         include_images: false,
                         format: 'markdown',
-                        word_count_threshold: 30, // 提高阈值，过滤过短内容
+                        word_count_threshold: 50, // 提高阈值，过滤过短内容
                         wait_for: 10000, // ⬆️ 增加到 10秒，应对奢侈品网站复杂加载
                         exclude_external_links: false,  // 🎯 修复：不禁用外部链接
                         headers: { // 伪装 User-Agent
@@ -201,8 +201,10 @@ class DeepResearchToolAdapter {
                         ]
                     },
                     batch_crawl: {  // 🆕 添加batch_crawl配置
-                        concurrent_limit: 3, // 并发限制
-                        timeout_per_url: 15000 // 每个URL超时时间
+                        concurrent_limit: 2, // 并发限制
+                        timeout_per_url: 20000 // 每个URL超时时间
+                        // 🎯 新增：明确标记成功状态
+                        add_success_markers: true
                     }
                 }
             },
@@ -1708,6 +1710,75 @@ class TavilySearchRetryManager {
 }
 
 /**
+/**
+ * 🎯 通用工具结果格式化函数
+ * @param {object} result - 包含 success, data, error, warnings 的结果对象
+ * @param {string} toolName - 工具名称
+ * @param {string} researchMode - 研究模式
+ * @returns {string} 格式化后的 Markdown 字符串
+ */
+const formatToolResult = (result, toolName, researchMode) => {
+    const { success, data, error, warnings = [] } = result;
+    
+    let formatted = '';
+    
+    // 🎯 通用状态头
+    if (success) {
+        formatted += `🟢 **工具执行成功** (${toolName})\n\n`;
+    } else {
+        formatted += `🔴 **工具执行失败** (${toolName})\n\n`;
+    }
+    
+    // 🎯 警告信息（如果有）
+    if (warnings.length > 0) {
+        formatted += `⚠️ **警告**：\n`;
+        warnings.forEach(warning => {
+            formatted += `- ${warning}\n`;
+        });
+        formatted += `\n`;
+    }
+    
+    // 🎯 错误信息（如果有）
+    if (error) {
+        formatted += `❌ **错误**：${error}\n\n`;
+    }
+    
+    // 🎯 数据内容
+    if (data) {
+        // 添加数据摘要
+        const dataLength = typeof data === 'string' ? data.length : JSON.stringify(data).length;
+        const dataType = typeof data === 'string' ? '文本' : '结构化数据';
+        
+        formatted += `📊 **数据摘要**：${dataType} (${dataLength}字符)\n`;
+        
+        // 根据工具类型添加数据预览
+        if (toolName === 'tavily_search') {
+            formatted += `🔍 搜索结果数量：${data.count || '未知'}\n`;
+        } else if (toolName === 'crawl4ai') {
+            formatted += `🕸️ 抓取页面：${data.pages || '未知'}个\n`;
+        } else if (toolName === 'python_sandbox') {
+            formatted += `💻 代码执行：${data.executed ? '完成' : '未完成'}\n`;
+        }
+        
+        formatted += `\n---\n\n`;
+        
+        // 实际数据（适当截断）
+        const dataPreview = typeof data === 'string' 
+            ? data.substring(0, 1000)
+            : JSON.stringify(data, null, 2).substring(0, 1000);
+            
+        formatted += `${dataPreview}`;
+        
+        if ((typeof data === 'string' && data.length > 1000) || 
+            (typeof data !== 'string' && JSON.stringify(data).length > 1000)) {
+            formatted += `\n\n... (内容已截断，完整长度 ${dataLength} 字符)`;
+        }
+    }
+    
+    return formatted;
+};
+
+/**
  * @class ProxiedTool
  * @description 通用代理工具实现，支持7种研究模式完全适配
  */
@@ -1859,8 +1930,17 @@ class ProxiedTool extends BaseTool {
                 retryRecovered: result.retryRecovered || false
             });
 
+            // 🎯 最终格式化：使用通用格式化函数包装输出
+            const finalOutput = formatToolResult({
+                success: result.success,
+                data: result.output, // 使用已格式化的 output 作为数据内容
+                error: result.error,
+                warnings: result.warnings || []
+            }, this.name, researchMode);
+
             return {
                 ...result,
+                output: finalOutput, // 替换为最终格式化的输出
                 executionTime,
                 researchContext: {
                     mode: mode,
@@ -1882,7 +1962,7 @@ class ProxiedTool extends BaseTool {
                 errorMessage = `工具"${this.name}"服务不可用`;
             }
 
-            return {
+            const errorResult = {
                 success: false,
                 output: `工具"${this.name}"执行失败: ${errorMessage}`,
                 error: errorMessage,
@@ -1897,6 +1977,16 @@ class ProxiedTool extends BaseTool {
                     error: true
                 }
             };
+            
+            // 🎯 最终格式化：使用通用格式化函数包装错误输出
+            errorResult.output = formatToolResult({
+                success: errorResult.success,
+                data: errorResult.output, // 错误信息作为数据内容
+                error: errorResult.error,
+                warnings: errorResult.warnings || []
+            }, this.name, researchMode);
+
+            return errorResult;
         }
     }
 
