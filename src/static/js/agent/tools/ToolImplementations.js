@@ -171,44 +171,6 @@ class DeepResearchToolAdapter {
                 }
             },
             
-            // 🛍️ 奢侈品导购模式
-            shopping_guide: {
-                tavily_search: {
-                    max_results: 10,
-                     search_depth: 'advanced', // 启用高级搜索
-                    exclude_domains: [
-                        'wikipedia.org', 'baike.baidu.com', // 避免过于通用的百科内容
-                    ],
-                },
-                crawl4ai: {
-                    scrape: {
-                        only_main_content: false,  // 🎯 修复：禁用内容过滤
-                        include_images: false,
-                        format: 'markdown',
-                        word_count_threshold: 50, // 提高阈值，过滤过短内容
-                        wait_for: 10000, // ⬆️ 增加到 10秒，应对奢侈品网站复杂加载
-                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
-                        headers: { // 伪装 User-Agent
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                        },
-                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
-                            'div[id*="modal"]',
-                            'div[class*="modal"]',
-                            'div[id*="overlay"]',
-                            'div[class*="overlay"]',
-                            'div[id*="popup"]',
-                            'div[class*="popup"]'
-                        ]
-                    },
-                    batch_crawl: {  // 🆕 添加batch_crawl配置
-                        concurrent_limit: 2, // 并发限制
-                        timeout_per_url: 20000, // 每个URL超时时间
-                        // 🎯 新增：明确标记成功状态
-                        add_success_markers: true
-                    }
-                }
-            },
-            
             // 📋 标准模式 - 🎯 关键修复：与独立工具调用保持完全一致
             standard: {
                 tavily_search: {
@@ -1276,13 +1238,6 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
                     `📋 ${res.content ? res.content.substring(0, 200) + '...' : '无内容摘要'}`
                 ).join('\n\n-----------------\n\n'),
                 
-            shopping_guide: (results) => `🛍️ **奢侈品导购信息** (${results.length}个购物来源)\n\n` +
-                results.map((res, index) =>
-                    `[导购来源 ${index + 1}] ${res.title || '无标题'}\n` +
-                    `🛒 ${res.url || '无链接'}\n` +
-                    `📦 ${res.content ? res.content.substring(0, 200) + '...' : '无内容摘要'}`
-                ).join('\n\n-----------------\n\n'),
-                
             standard: (results) => `🔍 **标准搜索结果** (${results.length}个来源)\n\n` +
                 results.map((res, index) =>
                     `[来源 ${index + 1}] ${res.title || '无标题'}\n` +
@@ -1304,7 +1259,6 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
             business: '行业分析',
             academic: '学术论文',
             technical: '技术实现',
-            shopping_guide: '奢侈品导购',
             standard: '标准'
         };
         return modeNames[researchMode] || '标准';
@@ -1323,7 +1277,6 @@ static formatWebContentForMode(webData, researchMode) {
         business: '🏢 行业分析网页内容',
         academic: '🎓 学术文献网页内容',
         technical: '⚙️ 技术文档网页内容',
-        shopping_guide: '🛍️ 商品信息网页内容',
         standard: '📄 标准网页内容'
     };
     
@@ -1356,7 +1309,6 @@ static formatWebContentForMode(webData, researchMode) {
             business: '商业数据分析',
             academic: '学术研究计算',
             technical: '技术实现验证',
-            shopping_guide: '价格数据分析',
             standard: '代码执行结果'
         };
         
@@ -1503,16 +1455,6 @@ static formatWebContentForMode(webData, researchMode) {
                 '分析性能和扩展性',
                 '考虑安全性和稳定性',
                 '提供最佳实践建议'
-            ],
-            shopping_guide: [
-                '分析产品与用户需求的匹配度（肤质、使用场景、预算）',
-                '评估产品的性价比和核心价值主张',
-                '基于技术参数对比材质/成分的优劣',
-                '考虑长期使用体验和维护成本',
-                '提供分场景的个性化购买建议',
-                '识别潜在的质量风险和适配问题',
-                '分析市场趋势和保值率因素',
-                '给出明确的购买优先级和替代方案'
             ],
             standard: [
                 '总结关键信息',
@@ -1822,7 +1764,6 @@ class ProxiedTool extends BaseTool {
                 business: 1.5,
                 academic: 1.6,
                 technical: 2.0,
-                shopping_guide: 1.6,
                 standard: 1.3
             };
             
@@ -2183,8 +2124,8 @@ export class ToolFactory {
 
     static getToolSupportForResearchModes() {
         return {
-            'tavily_search': ['deep', 'business', 'academic', 'technical', 'shopping_guide', 'standard'],
-            'crawl4ai': ['deep', 'business', 'academic', 'technical', 'shopping_guide', 'standard'],
+            'tavily_search': ['deep', 'business', 'academic', 'technical', 'standard'],
+            'crawl4ai': ['deep', 'business', 'academic', 'technical', 'standard'],
             'python_sandbox': ['deep', 'technical', 'academic', 'standard'],
             'glm4v_analyze_image': ['deep', 'technical', 'standard'],
             'stockfish_analyzer': ['deep', 'technical', 'standard'],
@@ -2216,7 +2157,6 @@ export class ToolFactory {
             business: ['tavily_search', 'crawl4ai', 'python_sandbox'],
             academic: ['tavily_search', 'crawl4ai', 'python_sandbox'],
             technical: ['tavily_search', 'crawl4ai', 'python_sandbox'],
-            shopping_guide: ['tavily_search', 'crawl4ai'],
             standard: ['tavily_search', 'crawl4ai', 'python_sandbox']
         };
 
