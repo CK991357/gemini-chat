@@ -769,31 +769,46 @@ class DeepResearchToolAdapter {
                         let isStructuredData = false;
                         let tempOutput = ''; // 使用临时变量存储成功时的输出
 
-                        if (stdoutStr.startsWith('{') && stdoutStr.endsWith('}')) {
-                            try {
-                                const jsonOutput = JSON.parse(stdoutStr);
-                                // 检查是否是我们支持的特殊类型
-                                if (jsonOutput.type && ['image', 'excel', 'word', 'pdf', 'ppt'].includes(jsonOutput.type)) {
-                                    // ✅ 直接返回原始JSON字符串
-                                    tempOutput = stdoutStr;
-                                    isStructuredData = true;
+                        // 🔥🔥🔥 新增：检查代码执行成功但无输出的情况 🔥🔥🔥
+                        if (!stdoutStr) {
+                            // 🎯 构造结构化错误报告，提示 Agent 修复代码
+                            const errorDetails = {
+                                type: 'ZeroOutputWarning',
+                                location: '代码执行结束',
+                                errorMessage: '代码执行成功 (Exit Code 0)，但标准输出 (stdout) 为空。',
+                                suggestions: [
+                                    '请检查您的代码逻辑，确保您使用了 `print()` 函数来输出结果。',
+                                    '如果代码是用于生成文件（如图片、CSV），请确保您输出了包含文件路径或Base64数据的结构化JSON。',
+                                    '请修正代码，并再次尝试。'
+                                ]
+                            };
+                            finalOutput = this._buildPythonErrorReport(errorDetails, rawResponse.rawParameters?.code || '');
+                            success = false; // 强制标记为失败，触发 Agent 修复
+                            console.warn('[DeepResearchAdapter] ⚠️ Python代码执行成功但无输出，强制失败并提示修复。');
+                        } else {
+                            // 有输出时的正常处理流程
+                            if (stdoutStr.startsWith('{') && stdoutStr.endsWith('}')) {
+                                try {
+                                    const jsonOutput = JSON.parse(stdoutStr);
+                                    // 检查是否是我们支持的特殊类型
+                                    if (jsonOutput.type && ['image', 'excel', 'word', 'pdf', 'ppt'].includes(jsonOutput.type)) {
+                                        // ✅ 直接返回原始JSON字符串
+                                        tempOutput = stdoutStr;
+                                        isStructuredData = true;
+                                    }
+                                } catch (e) {
+                                    // 解析失败，当作普通文本处理
+                                    console.log('[DeepResearchAdapter] stdout 不是有效JSON，当作普通文本处理');
                                 }
-                            } catch (e) {
-                                // 解析失败，当作普通文本处理
-                                console.log('[DeepResearchAdapter] stdout 不是有效JSON，当作普通文本处理');
                             }
-                        }
 
-                        if (!isStructuredData) {
-                            if (stdoutStr) {
+                            if (!isStructuredData) {
                                 tempOutput = this.formatCodeOutputForMode({ stdout: stdoutStr }, researchMode);
-                            } else {
-                                tempOutput = `[工具信息]: Python代码执行成功，无标准输出。`;
                             }
+                            
+                            // 🔥 成功时将临时输出赋值给 finalOutput
+                            finalOutput = tempOutput;
                         }
-                        
-                        // 🔥 成功时将临时输出赋值给 finalOutput
-                        finalOutput = tempOutput;
                     }
 
                     return {

@@ -455,6 +455,34 @@ export class EnhancedSkillManager {
       sections.push('网页抓取最佳实践', '智能内容提取');
     }
 
+    // ============================================================
+    // 7. 文本分析意图 (处理已有文本) - 针对 Code Interpreter 的辅助
+    // ============================================================
+    // 根据用户反馈的实际修改，使用更简洁的关键词匹配
+    if (queryLower.includes('分析') || queryLower.includes('提取') || queryLower.includes('结构化')) {
+        sections.push('文本分析与结构化提取', 'text_analysis_cookbook');
+    }
+
+    // 7. 文本分析意图 (处理已有文本)
+    const textAnalysisKeywords = [
+        '分析', '结构化', '清洗', '整理', '提取信息', '提取','extract','正则表达式', 'json', '文本处理',
+        'analyze', 'structure', 'clean', 'regex', 'text analysis', 'extract info', 'pandas'
+    ];
+    
+    if (textAnalysisKeywords.some(kw => queryLower.includes(kw))) {
+      sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
+      isTextAnalysisIntent = true;
+    }
+    
+    // 8. 兜底/组合逻辑：如果同时匹配，或者匹配到通用词，两个都注入
+    if (isCrawlIntent && isTextAnalysisIntent) {
+        // 如果同时匹配，确保两个教程都在，并使用一个更通用的标题
+        sections.push('网页抓取与文本分析指南');
+    } else if (!isCrawlIntent && !isTextAnalysisIntent && (queryLower.includes('python') || queryLower.includes('代码解释器'))) {
+        // 如果是通用代码解释器查询，但没有匹配到特定教程，则注入文本分析作为默认辅助
+        sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
+    }
+
     console.log(`[EnhancedSkillManager] 🧠 深度智能章节推断:`, sections);
     return sections;
   }
