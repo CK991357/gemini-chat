@@ -174,33 +174,108 @@ class DeepResearchToolAdapter {
             // 🛍️ 奢侈品导购模式
             shopping_guide: {
                 tavily_search: {
-                    max_results: 8,
-                    include_domains: ['vogue.com', 'harrods.com', 'farfetch.com', 'luxury.com'],
-                    exclude_domains: ['wikipedia.org']
+                    max_results: 10, // 增加搜索结果数量，提供更多选择
+                    include_domains: [
+                        // 官方与权威媒体
+                        'chanel.com', 'dior.com', 'hermes.com', 'louisvuitton.com',
+                        'gucci.com', 'prada.com', 'burberry.com',
+                        'sephora.com', 'douglas.com', 'harrods.com',
+                        'farfetch.com', 'net-a-porter.com', 'mytheresa.com',
+                        'vogue.com', 'elle.com', 'harpersbazaar.com',
+                        'cosmopolitan.com', 'allure.com', 'womenshealthmag.com',
+                        // 专业评测与消费者组织
+                        'consumer.org.hk', 'which.co.uk', 'goodhousekeeping.com',
+                        // 高质量用户社区
+                        'zhihu.com', 'xiaohongshu.com', 'dealmoon.com'
+                    ],
+                    exclude_domains: [
+                        'wikipedia.org', 'baike.baidu.com', // 避免过于通用的百科内容
+                        'taobao.com', 'jd.com', 'tmall.com'  // 避免电商平台描述性内容
+                    ],
+                    search_depth: 'advanced', // 使用高级搜索深度
+                    time_range: '6m' // 搜索最近6个月的内容
                 },
                 crawl4ai: {
                     scrape: {
-                        only_main_content: false,  // 🎯 修复：禁用内容过滤
-                        include_images: false,
+                        only_main_content: false,  // 保持禁用内容过滤，获取完整页面
+                        include_images: true, // 🎯 新增：包含图片，用于产品图、成分表等
                         format: 'markdown',
-                        word_count_threshold: 10, // 🎯 新增：匹配后端默认值
-                        wait_for: 8000, // ⬆️ 增加到 8秒，应对慢速政府网站
-                        exclude_external_links: false,  // 🎯 修复：不禁用外部链接
-                        headers: { // 伪装 User-Agent
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        word_count_threshold: 50, // 提高阈值，过滤过短内容
+                        wait_for: 10000, // ⬆️ 增加到10秒，应对奢侈品网站复杂加载
+                        exclude_external_links: false,
+                        headers: {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                            "Referer": "https://www.google.com/"
                         },
-                        remove_selectors: [ // 移除覆盖层和弹窗，增强正文提取
-                            'div[id*="modal"]',
-                            'div[class*="modal"]',
-                            'div[id*="overlay"]',
-                            'div[class*="overlay"]',
-                            'div[id*="popup"]',
-                            'div[class*="popup"]'
-                        ]
+                        remove_selectors: [
+                            // 通用广告和弹窗
+                            'div[id*="modal"]', 'div[class*="modal"]',
+                            'div[id*="popup"]', 'div[class*="popup"]',
+                            'div[id*="ad"]', 'div[class*="ad"]',
+                            'div[id*="banner"]', 'div[class*="banner"]',
+                            // 社交媒体分享按钮
+                            'div[class*="share"]', 'div[id*="share"]',
+                            // 评论区（通常质量不高）
+                            'div[id*="comment"]', 'div[class*="comment"]',
+                            'section[id*="comment"]',
+                            // 推荐和侧边栏内容
+                            'aside', 'div[class*="sidebar"]', 'div[id*="sidebar"]',
+                            // 页脚和导航冗余信息
+                            'footer', 'nav', 'div[class*="navigation"]'
+                        ],
+                        // 🎯 新增：专门针对奢侈品网站的优化
+                        custom_selectors: {
+                            // 优先提取产品详情区域
+                            product_details: [
+                                'div[class*="product-detail"]',
+                                'div[class*="product-description"]',
+                                'section[class*="product-info"]',
+                                'div[class*="technical-spec"]'
+                            ],
+                            // 提取价格和购买信息
+                            pricing: [
+                                'div[class*="price"]',
+                                'span[class*="price"]',
+                                'div[class*="pricing"]'
+                            ],
+                            // 提取技术参数和成分表
+                            specifications: [
+                                'table[class*="spec"]',
+                                'div[class*="specification"]',
+                                'ul[class*="feature"]',
+                                'div[class*="ingredient"]'
+                            ]
+                        }
                     },
-                    batch_crawl: {  // 🆕 添加batch_crawl配置
-                        concurrent_limit: 3, // 并发限制
-                        timeout_per_url: 15000 // 每个URL超时时间
+                    batch_crawl: {
+                        concurrent_limit: 3, // 保持3个并发，避免被网站限制
+                        timeout_per_url: 20000, // ⬆️ 增加到20秒，适应奢侈品网站加载
+                        retry_attempts: 2, // 🎯 新增：重试机制
+                        delay_between_requests: 2000 // 🎯 新增：2秒间隔，避免触发反爬
+                    },
+                    // 🎯 新增：extract模式配置（用于结构化数据提取）
+                    extract: {
+                        max_retries: 2,
+                        timeout: 15000,
+                        fallback_to_scrape: true // 提取失败时回退到普通抓取
+                    }
+                },
+                // 🎯 新增：专门针对小红书等平台的优化
+                social_media_optimization: {
+                    xiaohongshu: {
+                        wait_for: 12000, // 小红书加载较慢
+                        remove_selectors: [
+                            'div[class*="comment-area"]', // 评论区
+                            'div[class*="recommend"]', // 推荐内容
+                            'div[class*="ads"]' // 广告
+                        ],
+                        focus_selectors: [
+                            'div[class*="note-container"]', // 笔记正文
+                            'article', // 文章内容
+                            'div[class*="content"]' // 内容区域
+                        ]
                     }
                 }
             },
@@ -1486,10 +1561,14 @@ static formatWebContentForMode(webData, researchMode) {
                 '提供最佳实践建议'
             ],
             shopping_guide: [
-                '分析产品与用户需求的匹配度',
-                '评估性价比和价值',
-                '考虑使用场景和体验',
-                '提供个性化购买建议'
+                '分析产品与用户需求的匹配度（肤质、使用场景、预算）',
+                '评估产品的性价比和核心价值主张',
+                '基于技术参数对比材质/成分的优劣',
+                '考虑长期使用体验和维护成本',
+                '提供分场景的个性化购买建议',
+                '识别潜在的质量风险和适配问题',
+                '分析市场趋势和保值率因素',
+                '给出明确的购买优先级和替代方案'
             ],
             standard: [
                 '总结关键信息',
@@ -1730,7 +1809,7 @@ class ProxiedTool extends BaseTool {
                 business: 1.5,
                 academic: 1.6,
                 technical: 2.0,
-                shopping_guide: 1.4,
+                shopping_guide: 1.6,
                 standard: 1.3
             };
             
@@ -2102,11 +2181,11 @@ export class ToolFactory {
     static recommendToolsForResearchMode(researchMode, availableTools = []) {
         const recommendations = {
             deep: ['tavily_search', 'crawl4ai', 'python_sandbox'],
-            business: ['tavily_search', 'crawl4ai'],
+            business: ['tavily_search', 'crawl4ai', 'python_sandbox'],
             academic: ['tavily_search', 'crawl4ai', 'python_sandbox'],
             technical: ['tavily_search', 'crawl4ai', 'python_sandbox'],
             shopping_guide: ['tavily_search', 'crawl4ai'],
-            standard: ['tavily_search', 'crawl4ai']
+            standard: ['tavily_search', 'crawl4ai', 'python_sandbox']
         };
 
         const recommended = recommendations[researchMode] || recommendations.standard;
