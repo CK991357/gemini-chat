@@ -302,31 +302,6 @@ export class EnhancedSkillManager {
   async retrieveFederatedKnowledge(toolName, context = {}) {
     console.log(`[EnhancedSkillManager] 🔍 联邦知识检索: ${toolName}`, context);
     
-    // 特殊处理：当工具是python_sandbox且用户查询涉及提取/分析时
-    if (toolName === 'python_sandbox') {
-        const { userQuery } = context;
-        if (userQuery && (userQuery.includes('提取') || userQuery.includes('结构化'))) {
-            console.log(`[EnhancedSkillManager] 🎯 强制加载文本分析教程`);
-            // 检查知识库中是否有相关文档
-            const requestedSections = ['text_analysis_cookbook.md'];
-            const knowledgePackageContent = this.knowledgeFederation.getFederatedKnowledge(
-              toolName,
-              requestedSections
-            );
-            
-            if (knowledgePackageContent) {
-                return {
-                    tool: toolName,
-                    content: knowledgePackageContent,
-                    metadata: { source: 'text_analysis_cookbook.md', priority: 'high' },
-                    suggestedSections: requestedSections,
-                    retrievalContext: context,
-                    timestamp: Date.now()
-                };
-            }
-        }
-    }
-    
     // 🔴 移除外层的 try...catch，因为我们希望即使部分失败也能返回内容
     try {
       const requestedSections = this._inferRelevantSections(context);
@@ -368,17 +343,12 @@ export class EnhancedSkillManager {
 }
 
   /**
-   * 🎯 基于上下文智能推断相关章节 - 增强版本
-   */
-  /**
    * 🎯 [增强版] 基于上下文智能推断相关章节
    * 构建高密度的关键词映射网络，覆盖更多隐晦场景
    */
   _inferRelevantSections(context) {
     const sections = [];
     const { userQuery } = context;
-    let isCrawlIntent = false;  // 🆕 在这里声明并初始化
-    let isTextAnalysisIntent = false; // 🆕 在这里声明并初始化
 
     if (!userQuery) return sections;
 
@@ -471,45 +441,21 @@ export class EnhancedSkillManager {
     }
 
     // ============================================================
-    // 6. 网页抓取 (Crawl4AI) - 针对 Code Interpreter 的辅助
-    // ============================================================
-    const crawlKeywords = [
-        '抓取', '爬取', '网页', '网站', 'URL', '链接', '提取内容',
-        'crawl', 'scrape', 'web', 'site', 'link', 'extract'
-    ];
-    
-    if (crawlKeywords.some(kw => queryLower.includes(kw))) {
-      sections.push('网页抓取最佳实践', '智能内容提取');
-      isCrawlIntent = true; // 🆕 设置标志
-    }
-
-    // ============================================================
-    // 7. 文本分析意图 (处理已有文本) - 针对 Code Interpreter 的辅助
+    // 6. 文本分析意图 (处理已有文本) 
     // ============================================================
     // 根据用户反馈的实际修改，使用更简洁的关键词匹配
     if (queryLower.includes('分析') || queryLower.includes('提取') || queryLower.includes('结构化')) {
-        sections.push('文本分析与结构化提取', 'text_analysis_cookbook');
-        isTextAnalysisIntent = true; // 🆕 设置标志
+        sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
     }
 
     // 更全面的文本分析关键词匹配
     const textAnalysisKeywords = [
         '分析', '结构化', '清洗', '整理', '提取信息', '提取','extract','正则表达式', 'json', '文本处理',
-        'analyze', 'structure', 'clean', 'regex', 'text analysis', 'extract info', 'pandas'
+        'analyze', 'structure', 'clean', 'regex', 'text analysis', 'extract info', 'text processing'
     ];
     
     if (textAnalysisKeywords.some(kw => queryLower.includes(kw))) {
       sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
-      isTextAnalysisIntent = true; // 🆕 设置标志
-    }
-    
-    // 8. 兜底/组合逻辑：如果同时匹配，或者匹配到通用词，两个都注入
-    if (isCrawlIntent && isTextAnalysisIntent) {
-        // 如果同时匹配，确保两个教程都在，并使用一个更通用的标题
-        sections.push('网页抓取与文本分析指南');
-    } else if (!isCrawlIntent && !isTextAnalysisIntent && (queryLower.includes('python') || queryLower.includes('代码解释器'))) {
-        // 如果是通用代码解释器查询，但没有匹配到特定教程，则注入文本分析作为默认辅助
-        sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
     }
 
     console.log(`[EnhancedSkillManager] 🧠 深度智能章节推断:`, sections);
