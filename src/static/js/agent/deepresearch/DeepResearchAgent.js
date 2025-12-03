@@ -653,7 +653,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     console.warn(`[DeepResearchAgent] 🛠️ 预检检测到缺失导入: ${missingImports.join(', ')}，自动修复...`);
                     
                     // 自动添加缺失的导入
-                    const importStatements = missingImports.map(mod => `import ${mod}`).join('\n');
+                    const importStatements = missingImports.join('\n'); // 直接拼接完整的导入语句
                     parameters.code = `${importStatements}\n\n${code}`;
                     
                     console.log('[DeepResearchAgent] ✅ 客户端预检修复完成。');
@@ -2757,40 +2757,27 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
      * 🎯 客户端 Python 导入预检
      */
     _validatePythonImports(code) {
-        const requiredImports = {
-            'json.loads': 'json',
-            'json.dumps': 'json',
-            'json.': 'json',
-            're.': 're',
-            'os.': 'os',
-            'sys.': 'sys',
-            'pandas': 'pandas as pd',
-            'numpy': 'numpy as np',
-            'matplotlib': 'matplotlib.pyplot as plt'
-        };
+        // 🎯 强制检查的四个核心导入（完整的导入语句）
+        const mandatoryImports = [
+            'import json',
+            'import pandas as pd',
+            'import matplotlib.pyplot as plt',
+            'import numpy as np'
+        ];
         
         let missingImports = [];
         const codeLower = code.toLowerCase();
         
-        for (const [pattern, module] of Object.entries(requiredImports)) {
-            // 检查代码中是否使用了该库的特征模式，但没有对应的 import 语句
-            // 注意：这里只检查最常见的别名，如 pd, np, plt
-            const moduleName = module.split(' '); // 提取模块名，如 'pandas'
-            
-            if (codeLower.includes(pattern) && !codeLower.includes(`import ${moduleName}`)) {
-                // 进一步检查别名，例如如果代码中使用了 pd.read_csv，但只 import pandas，则不认为是缺失
-                if (module.includes(' as ')) {
-                    const alias = module.split(' as ');
-                    if (codeLower.includes(`${alias}.`) && !codeLower.includes(`import ${module}`)) {
-                        missingImports.push(module);
-                    }
-                } else {
-                    missingImports.push(module);
-                }
+        mandatoryImports.forEach(fullImportStatement => {
+            // 检查代码中是否包含完整的导入语句
+            if (!codeLower.includes(fullImportStatement.toLowerCase())) {
+                // 🎯 简化逻辑：只要代码中没有完整的强制导入语句，就认为缺失
+                // 这样可以确保即使 LLM 忘记了，系统也会自动补全
+                missingImports.push(fullImportStatement);
             }
-        }
+        });
         
-        // 使用 Set 去重并返回
+        // 使用 Set 去重并返回完整的导入语句
         return [...new Set(missingImports)];
     }
 
