@@ -154,6 +154,7 @@ const getModeSpecificCrawlStrategy = (researchMode) => {
 - 关注**长期使用**的用户反馈
 `,
 
+
         // 🛠️ 标准调试模式
         standard: `
 ## 🔍 调试/审计模式专用策略
@@ -305,6 +306,7 @@ const getModeSpecificRecoveryProtocol = (researchMode) => {
 - **提供验证路径**：指导用户如何自行验证关键信息
 `,
 
+
         standard: `
 ## 🔍 标准研究恢复协议
 
@@ -321,728 +323,13 @@ const getModeSpecificRecoveryProtocol = (researchMode) => {
 
     return protocols[researchMode] || protocols.deep;
 };
-
-// --- 提示词模板管理器 ---
-class PromptTemplateManager {
-    constructor() {
-        this.templates = {
-            searchOptimization: {
-                withAdvice: `## 🔄 搜索优化建议（基于搜索疲劳分析）
-
-### 📊 检测到的问题：
-{{problems}}
-
-### 🎯 建议的行动：
-{{suggestions}}
-
-### 💡 推荐的搜索策略：
-{{strategies}}
-
-### ⚠️ 注意事项：
-{{warnings}}`,
-                withoutAdvice: `## 🔍 当前搜索状态
-无优化建议，继续当前策略。`
-            }
-        };
-    }
-    
-    render(templateName, data) {
-        const templatePath = templateName.split('.');
-        let template = this.templates;
-        
-        for (const key of templatePath) {
-            if (!template || !template[key]) return '';
-            template = template[key];
-        }
-
-        if (typeof template !== 'string') return '';
-        
-        return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-            return data[key] || '';
-        });
-    }
-}
-
-// --- 通用搜索优化模块 ---
-class SearchHistoryTracker {
-    constructor() {
-        this.history = []; // 存储最近N次搜索
-        this.maxHistorySize = 10;
-        // 解耦依赖关系
-        this.dimensionClassifier = null;
-        this.gainAnalyzer = null;
-    }
-    
-    /**
-     * 提供依赖注入方法
-     */
-    setDependencies({ dimensionClassifier, gainAnalyzer }) {
-        this.dimensionClassifier = dimensionClassifier;
-        this.gainAnalyzer = gainAnalyzer;
-        return this;
-    }
- 
-    /**
-     * 记录一次搜索
-     * @param {Object} entry - 搜索记录
-     * @param {string} entry.query - 搜索词
-     * @param {string} entry.tool - 工具名
-     * @param {Object} entry.results - 搜索结果
-     * @param {string} entry.researchMode - 研究模式
-     * @param {number} entry.iteration - 当前迭代
-     */
-    recordSearch(entry) {
-        if (!this.dimensionClassifier || !this.gainAnalyzer) {
-            throw new Error('Dependencies not set. Call setDependencies() first.');
-        }
-        
-        const enhancedEntry = {
-            ...entry,
-            id: `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: Date.now(),
-            dimension: this.dimensionClassifier.classify(entry.query, entry.researchMode),
-            informationGain: this.gainAnalyzer.calculateGain(
-                entry.results,
-                this.getRecentResults()
-            )
-        };
- 
-        this.history.push(enhancedEntry);
-        
-        // 保持历史记录长度
-        if (this.history.length > this.maxHistorySize) {
-            this.history.shift();
-        }
-
-        return enhancedEntry;
-    }
-
-    /**
-     * 获取最近N次搜索
-     */
-    getRecentSearches(count = 3) {
-        return this.history.slice(-count);
-    }
-
-    /**
-     * 获取最近搜索结果
-     */
-    getRecentResults() {
-        return this.history.map(h => h.results).filter(Boolean);
-    }
-
-    /**
-     * 分析搜索疲劳
-     */
-    analyzeSearchFatigue() {
-        const recentSearches = this.getRecentSearches(3);
-        if (recentSearches.length < 2) return null;
-
-        const analysis = {
-            fatigueLevel: 0, // 0-10
-            reasons: [],
-            suggestions: [],
-            shouldSwitch: false
-        };
-
-        // 1. 查询相似度分析
-        const querySimilarity = this._calculateQuerySimilarity(recentSearches);
-        if (querySimilarity > 0.7) {
-            analysis.fatigueLevel += 3;
-            analysis.reasons.push(`高查询相似度：${(querySimilarity * 100).toFixed(0)}%`);
-        }
-
-        // 2. 维度一致性分析
-        const dimensions = recentSearches.map(s => s.dimension);
-        if (new Set(dimensions).size === 1) {
-            analysis.fatigueLevel += 2;
-            analysis.reasons.push(`单一搜索维度：${dimensions[0]}`);
-        }
-
-        // 3. 信息增益分析
-        const lowGainSearches = recentSearches.filter(s => s.informationGain?.score < 30);
-        if (lowGainSearches.length >= 2) {
-            analysis.fatigueLevel += 5;
-            analysis.reasons.push(`连续${lowGainSearches.length}次低信息增益搜索`);
-        }
-
-        // 4. 工具依赖分析
-        const tools = recentSearches.map(s => s.tool);
-        const toolSet = new Set(tools);
-        if (toolSet.size === 1) {
-            analysis.fatigueLevel += 1;
-            analysis.reasons.push(`工具依赖单一：${tools[0]}`);
-        }
-
-        // 判断是否需要切换
-        analysis.shouldSwitch = analysis.fatigueLevel >= 5;
-        
-        if (analysis.shouldSwitch) {
-            analysis.suggestions = this._generateSwitchSuggestions(
-                recentSearches, 
-                analysis
-            );
-        }
-
-        return analysis;
-    }
-
-    /**
-     * 计算查询相似度
-     */
-    _calculateQuerySimilarity(searches) {
-        if (searches.length < 2) return 0;
-
-        const queries = searches.map(s => s.query);
-        let totalSimilarity = 0;
-        let pairs = 0;
-
-        for (let i = 0; i < queries.length - 1; i++) {
-            for (let j = i + 1; j < queries.length; j++) {
-                const similarity = this._computeTextSimilarity(queries[i], queries[j]);
-                totalSimilarity += similarity;
-                pairs++;
-            }
-        }
-
-        return pairs > 0 ? totalSimilarity / pairs : 0;
-    }
-
-    /**
-     * 计算文本相似度（简化版）
-     */
-    _computeTextSimilarity(text1, text2) {
-        const tokens1 = text1.toLowerCase().split(/[\s,\-]+/);
-        const tokens2 = text2.toLowerCase().split(/[\s,\-]+/);
-        
-        const set1 = new Set(tokens1);
-        const set2 = new Set(tokens2);
-        
-        const intersection = new Set([...set1].filter(x => set2.has(x)));
-        const union = new Set([...set1, ...set2]);
-        
-        return intersection.size / union.size;
-    }
-
-    /**
-     * 生成切换建议
-     */
-    _generateSwitchSuggestions(recentSearches, analysis) {
-        const suggestions = [];
-        const currentDimension = recentSearches[recentSearches.length - 1].dimension;
-        const researchMode = recentSearches[0].researchMode;
-
-        // 通用切换矩阵
-        const switchMatrix = {
-            '产品细节': ['品牌价值', '竞品对比', '用户反馈'],
-            '技术参数': ['应用场景', '行业标准', '发展趋势'],
-            '学术概念': ['实际应用', '历史演变', '争议观点'],
-            '市场分析': ['技术基础', '用户需求', '政策影响'],
-            '用户反馈': ['产品设计', '质量评估', '服务体验'],
-            '品牌价值': ['成本结构', '供应链', '营销策略']
-        };
-
-        // 模式特定建议
-        const modeSpecificSuggestions = {
-            'shopping_guide': [
-                '切换到品牌工艺分析',
-                '尝试竞品对比搜索', 
-                '探索用户长期体验'
-            ],
-            'deep': [
-                '切换到理论基础',
-                '尝试应用场景搜索',
-                '探索争议观点'
-            ],
-            'academic': [
-                '切换到实证研究',
-                '尝试方法论分析',
-                '探索学术争议'
-            ],
-            'technical': [
-                '切换到实现细节',
-                '尝试性能对比',
-                '探索最佳实践'
-            ],
-            'business': [
-                '切换到竞争格局',
-                '尝试市场趋势',
-                '探索商业模式'
-            ]
-        };
-
-        // 添加通用建议
-        if (switchMatrix[currentDimension]) {
-            suggestions.push(...switchMatrix[currentDimension]);
-        }
-
-        // 添加模式特定建议
-        if (modeSpecificSuggestions[researchMode]) {
-            suggestions.push(...modeSpecificSuggestions[researchMode]);
-        }
-
-        // 去重并格式化
-        return [...new Set(suggestions)].map(s => `• ${s}`);
-    }
-}
-
-class SearchDimensionClassifier {
-    constructor() {
-        // 通用维度定义
-        this.dimensionPatterns = {
-            '产品细节': [
-                /(规格|参数|材质|尺寸|配置|技术|性能|功能)/i,
-                /\d+[x×*]\d+/ // 数字×数字格式
-            ],
-            '技术参数': [
-                /(api|接口|协议|算法|架构|框架|库|sdk)/i,
-                /(代码|编程|开发|实现|部署)/i
-            ],
-            '学术概念': [
-                /(定义|概念|理论|原理|假说|模型|方法论)/i,
-                /(研究|综述|文献|论文|期刊|引用)/i
-            ],
-            '市场分析': [
-                /(市场|规模|份额|增长|趋势|预测|分析|报告)/i,
-                /(竞争|竞品|对手|对比|swot|pest)/i
-            ],
-            '用户反馈': [
-                /(体验|评价|评论|反馈|口碑|评分|星级)/i,
-                /(使用|感受|意见|建议|优缺点|好坏)/i
-            ],
-            '品牌价值': [
-                /(品牌|价值|定位|形象|声誉|知名度|忠诚度)/i,
-                /(溢价|高端|奢侈|优质|信誉|信任)/i
-            ],
-            '价格信息': [
-                /(价格|多少钱|成本|预算|价位|费用|收费)/i,
-                /\$|¥|€|£|\d+元|\d+美元/i
-            ],
-            '时效信息': [
-                /(最新|最近|202[0-9]|今年|本月|季度|年度)/i,
-                /(新|更新|升级|发布|推出|上市)/i
-            ]
-        };
-
-        // 模式特定维度权重
-        this.modeDimensionWeights = {
-            'shopping_guide': {
-                '产品细节': 1.5,
-                '品牌价值': 1.5,
-                '用户反馈': 1.2,
-                '价格信息': 1.3
-            },
-            'deep': {
-                '学术概念': 1.5,
-                '技术参数': 1.3,
-                '市场分析': 1.0
-            },
-            'academic': {
-                '学术概念': 1.5,
-                '文献引用': 1.2,
-                '方法论': 1.1
-            },
-            'technical': {
-                '技术参数': 1.5,
-                '实现细节': 1.3,
-                '最佳实践': 1.2
-            },
-            'business': {
-                '市场分析': 1.5,
-                '竞争格局': 1.3,
-                '商业模式': 1.2
-            }
-        };
-    }
-
-    /**
-     * 分类搜索维度
-     */
-    classify(query, researchMode = 'deep') {
-        const scores = {};
-        
-        // 计算每个维度的匹配分数
-        for (const [dimension, patterns] of Object.entries(this.dimensionPatterns)) {
-            let dimensionScore = 0;
-            
-            for (const pattern of patterns) {
-                if (pattern.test(query)) {
-                    dimensionScore += 1;
-                }
-            }
-            
-            // 应用模式特定权重
-            const modeWeight = this.modeDimensionWeights[researchMode]?.[dimension] || 1.0;
-            scores[dimension] = dimensionScore * modeWeight;
-        }
-
-        // 找到最高分维度
-        let topDimension = '通用搜索';
-        let topScore = 0;
-
-        for (const [dimension, score] of Object.entries(scores)) {
-            if (score > topScore) {
-                topScore = score;
-                topDimension = dimension;
-            }
-        }
-
-        return topDimension;
-    }
-}
-
-class InformationGainAnalyzer {
-    constructor() {
-        this.minGainThreshold = 0.2; // 20%
-        this.maxGainThreshold = 0.7; // 70%
-    }
-
-    /**
-     * 计算信息增益
-     */
-    calculateGain(newData, historicalData) {
-        if (!newData || !historicalData || historicalData.length === 0) {
-            return {
-                score: 1.0, // 首次搜索，视为高增益
-                breakdown: { sourceNovelty: 1.0, contentUniqueness: 1.0 },
-                recommendation: '首次搜索，继续当前策略'
-            };
-        }
-
-        // 多维度分析
-        const metrics = {
-            // 1. 来源新颖性（25%）
-            sourceNovelty: this._calculateSourceNovelty(newData, historicalData),
-            
-            // 2. 内容独特性（40%）
-            contentUniqueness: this._calculateContentUniqueness(newData, historicalData),
-            
-            // 3. 信息密度（20%）
-            informationDensity: this._calculateInformationDensity(newData),
-            
-            // 4. 结构质量（15%）
-            structuralQuality: this._calculateStructuralQuality(newData)
-        };
-
-        // 综合得分
-        const totalScore = 
-            metrics.sourceNovelty * 0.25 +
-            metrics.contentUniqueness * 0.40 +
-            metrics.informationDensity * 0.20 +
-            metrics.structuralQuality * 0.15;
-
-        return {
-            score: totalScore,
-            breakdown: metrics,
-            recommendation: this._generateRecommendation(totalScore)
-        };
-    }
-
-    /**
-     * 计算来源新颖性
-     */
-    _calculateSourceNovelty(newData, historicalData) {
-        // 简化的实现：检查域名新颖性
-        const newDomains = this._extractDomains(newData);
-        const historicalDomains = new Set();
-        
-        historicalData.forEach(data => {
-            this._extractDomains(data).forEach(domain => historicalDomains.add(domain));
-        });
-
-        const novelDomains = newDomains.filter(domain => !historicalDomains.has(domain));
-        return novelDomains.length / Math.max(newDomains.length, 1);
-    }
-
-    /**
-     * 计算内容独特性
-     */
-    _calculateContentUniqueness(newData, historicalData) {
-        // 简化的关键词重叠分析
-        const newKeywords = this._extractKeywords(newData);
-        const historicalKeywords = new Set();
-        
-        historicalData.forEach(data => {
-            this._extractKeywords(data).forEach(keyword => historicalKeywords.add(keyword));
-        });
-
-        const uniqueKeywords = newKeywords.filter(keyword => !historicalKeywords.has(keyword));
-        return uniqueKeywords.length / Math.max(newKeywords.length, 1);
-    }
-
-    /**
-     * 计算信息密度
-     */
-    _calculateInformationDensity(data) {
-        if (!data || typeof data !== 'string') return 0;
-
-        const content = data.substring(0, 5000); // 只分析前5000字符
-        
-        // 检测结构化内容
-        const structureIndicators = [
-            /(\d+\.\s)/g,                    // 数字列表
-            /[•·\-*]\s/g,                    // 项目符号
-            /\|.*\|/g,                       // 表格
-            /[A-Z][a-z]+:\s/g,              // 键值对
-            /<table|<tr|<td|<th/gi          // HTML表格
-        ];
-
-        let structureScore = 0;
-        structureIndicators.forEach(pattern => {
-            const matches = content.match(pattern);
-            if (matches) structureScore += matches.length * 0.1;
-        });
-
-        // 检测数据点
-        const dataPointPatterns = [
-            /\d+%/,                          // 百分比
-            /\$\d+/,                         // 美元价格
-            /\d+\.\d+/,                      // 小数
-            /\d+[x×*]\d+/                   // 维度
-        ];
-
-        let dataPointScore = 0;
-        dataPointPatterns.forEach(pattern => {
-            const matches = content.match(pattern);
-            if (matches) dataPointScore += matches.length * 0.05;
-        });
-
-        return Math.min(structureScore + dataPointScore, 1.0);
-    }
-
-    /**
-     * 计算结构质量
-     */
-    _calculateStructuralQuality(data) {
-        if (!data || typeof data !== 'string') return 0;
-
-        const content = data.substring(0, 3000);
-        const lines = content.split('\n');
-        
-        // 检查是否有标题、段落、列表等结构
-        let structureCount = 0;
-        
-        lines.forEach(line => {
-            const trimmed = line.trim();
-            if (trimmed.length > 50) structureCount += 0.1; // 长段落
-            if (trimmed.match(/^#{1,3}\s/)) structureCount += 0.3; // 标题
-            if (trimmed.match(/^[•·\-*]\s/)) structureCount += 0.2; // 列表
-            if (trimmed.match(/^\d+\.\s/)) structureCount += 0.2; // 编号列表
-        });
-
-        return Math.min(structureCount / lines.length * 5, 1.0);
-    }
-
-    /**
-     * 生成推荐
-     */
-    _generateRecommendation(score) {
-        if (score >= this.maxGainThreshold) {
-            return '✅ 高信息增益，继续当前策略';
-        } else if (score >= this.minGainThreshold) {
-            return '⚠️ 中等信息增益，考虑优化搜索词';
-        } else {
-            return '❌ 低信息增益，建议切换搜索维度';
-        }
-    }
-
-    /**
-     * 提取域名
-     */
-    _extractDomains(data) {
-        // 简化实现：从数据中提取可能的域名
-        if (typeof data === 'string') {
-            const domainMatches = data.match(/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/g);
-            return domainMatches ? [...new Set(domainMatches)] : [];
-        }
-        return [];
-    }
-
-    /**
-     * 提取关键词
-     */
-    _extractKeywords(data) {
-        if (typeof data !== 'string') return [];
-        
-        // 简单分词，提取有意义的词汇
-        const words = data.toLowerCase()
-            .replace(/[^\w\s]/g, ' ')
-            .split(/\s+/)
-            .filter(word => word.length > 2);
-        
-        // 过滤停用词（简化版）
-        const stopWords = new Set([
-            'the', 'and', 'for', 'are', 'with', 'this', 'that', 'from',
-            '的', '了', '在', '是', '我', '有', '和', '就', '不', '人'
-        ]);
-        
-        return words.filter(word => !stopWords.has(word));
-    }
-}
-
-class GenericSearchOptimizer {
-    getOptimizationAdvice(fatigueAnalysis, researchMode) {
-        const advice = {
-            problems: fatigueAnalysis.reasons,
-            suggestions: [],
-            searchStrategies: [],
-            warnings: []
-        };
-
-        // 基于疲劳等级给出建议
-        if (fatigueAnalysis.fatigueLevel >= 8) {
-            advice.suggestions.push('立即停止当前搜索维度');
-            advice.suggestions.push('切换到完全不同的研究方向');
-            advice.suggestions.push('考虑使用不同的工具（如crawl4ai代替tavily_search）');
-            
-            advice.searchStrategies.push('尝试反向思维：搜索对立观点');
-            advice.searchStrategies.push('扩展边界：搜索相关但非直接相关的主题');
-            advice.searchStrategies.push('时间维度：搜索历史演变或未来预测');
-            
-            advice.warnings.push('继续当前路径将导致信息重复和效率低下');
-            advice.warnings.push('建议先暂停，重新评估研究目标');
-        } else if (fatigueAnalysis.fatigueLevel >= 5) {
-            advice.suggestions.push('调整搜索关键词，避免重复');
-            advice.suggestions.push('尝试不同的搜索角度');
-            advice.suggestions.push('结合多种信息源');
-            
-            advice.searchStrategies.push('分层搜索：先广度后深度');
-            advice.searchStrategies.push('交叉验证：使用不同工具验证同一信息');
-            advice.searchStrategies.push('时间线分析：按时间顺序获取信息');
-            
-            advice.warnings.push('信息增益正在下降，需要调整策略');
-        }
-
-        // 根据研究模式添加特定建议
-        const modeSpecificAdvice = this._getModeSpecificAdvice(researchMode);
-        advice.suggestions.push(...modeSpecificAdvice.suggestions);
-        advice.searchStrategies.push(...modeSpecificAdvice.searchStrategies);
-
-        return advice;
-    }
-
-    _getModeSpecificAdvice(researchMode) {
-        const strategies = {
-            'shopping_guide': {
-                suggestions: [
-                    '从产品细节切换到品牌价值分析',
-                    '关注用户长期使用体验而非短期评测',
-                    '比较不同品牌的工艺差异'
-                ],
-                searchStrategies: [
-                    '四阶段法：产品→品牌→竞品→用户',
-                    '价值链分析：从原材料到用户的全链路'
-                ]
-            },
-            'deep': {
-                suggestions: [
-                    '从概念定义切换到实际应用',
-                    '探索不同学派的观点差异',
-                    '分析理论的发展演变'
-                ],
-                searchStrategies: [
-                    '多维透视：技术、商业、社会、伦理维度',
-                    '时间线分析：历史、现状、未来'
-                ]
-            },
-            'academic': {
-                suggestions: [
-                    '从理论研究切换到实证研究',
-                    '关注方法论而非结论',
-                    '探索学术争议点'
-                ],
-                searchStrategies: [
-                    '文献网络分析：核心文献→引用文献',
-                    '方法论对比：不同研究方法的优劣'
-                ]
-            },
-            'technical': {
-                suggestions: [
-                    '从技术参数切换到实际应用',
-                    '比较不同实现方案的优劣',
-                    '关注性能与成本的平衡'
-                ],
-                searchStrategies: [
-                    '技术栈分析：底层→应用层',
-                    '对比分析：技术A vs 技术B'
-                ]
-            },
-            'business': {
-                suggestions: [
-                    '从市场数据切换到竞争策略',
-                    '关注商业模式而非财务数据',
-                    '分析行业生态而非单个企业'
-                ],
-                searchStrategies: [
-                    '价值链分析：上游→中游→下游',
-                    '竞争格局：领导者→挑战者→跟随者'
-                ]
-            }
-        };
-
-        return strategies[researchMode] || strategies.deep;
-    }
-}
-
 export class AgentLogic {
     constructor(chatApiHandler) {
         if (!chatApiHandler) {
             throw new Error("AgentLogic requires a valid chatApiHandler instance.");
         }
         this.chatApiHandler = chatApiHandler;
-        
-        // 新增：通用搜索优化器
-        this.searchOptimizer = new GenericSearchOptimizer();
-        // 新增：提示词模板管理器
-        this.promptManager = new PromptTemplateManager();
-        
-        // 解耦依赖关系：先创建依赖，再注入
-        this.dimensionClassifier = new SearchDimensionClassifier();
-        this.gainAnalyzer = new InformationGainAnalyzer();
-        
-        this.searchTracker = new SearchHistoryTracker().setDependencies({
-            dimensionClassifier: this.dimensionClassifier,
-            gainAnalyzer: this.gainAnalyzer
-        });
     }
-    
-    // 🎯 新增：生成搜索状态报告
-    _generateSearchStatusReport() {
-        const recentSearches = this.searchTracker.getRecentSearches(3);
-        if (recentSearches.length === 0) {
-            return "暂无搜索历史，这是研究的开始。";
-        }
-        
-        let report = "最近搜索分析：\n";
-        recentSearches.forEach((search, index) => {
-            report += `${index + 1}. **${search.query}** (${search.dimension}) - 增益: ${Math.round(search.informationGain?.score * 100) || 0}%\n`;
-        });
-        
-        return report;
-    }
-    
-    // 🎯 新增：生成搜索疲劳警告
-    _generateFatigueWarning() {
-        const fatigueAnalysis = this.searchTracker.analyzeSearchFatigue();
-        if (!fatigueAnalysis) {
-            return "搜索状态正常，无疲劳迹象。";
-        }
-        
-        let warning = "";
-        if (fatigueAnalysis.fatigueLevel >= 5) {
-            warning += `⚠️ **搜索疲劳检测** (等级: ${fatigueAnalysis.fatigueLevel}/10)\n`;
-            warning += `**原因**: ${fatigueAnalysis.reasons.join('; ')}\n`;
-            
-            if (fatigueAnalysis.suggestions.length > 0) {
-                warning += `**建议**:\n${fatigueAnalysis.suggestions.join('\n')}\n`;
-            }
-        } else {
-            warning = "✅ 搜索状态正常，无疲劳迹象。";
-        }
-        
-        return warning;
-    }
-    
     // 🎯 新增：模式专用的质量检查清单
     _getModeQualityChecklist(researchMode) {
         const checklists = {
@@ -1092,6 +379,7 @@ export class AgentLogic {
 - [ ] 是否包含了必要的风险预警？
 - [ ] 是否标注了数据来源和时效性？
 `,
+
 
             standard: `
 ### 标准研究质量检查：
@@ -1723,13 +1011,6 @@ ${this._getModeQualityChecklist(researchMode)}
         // 🎯 核心新增：生成数据总线摘要和相似性检测
         const dataBusSummary = this._generateDataBusSummary(dataBus, currentStep);
         const similarityDetection = this._buildSimilarityDetectionSystem(researchPlan, intermediateSteps, currentStep);
-        
-        // 🎯 核心新增：搜索疲劳分析
-        const fatigueAnalysis = this.searchTracker.analyzeSearchFatigue();
-        let optimizationAdvice = null;
-        if (fatigueAnalysis?.shouldSwitch) {
-            optimizationAdvice = this.searchOptimizer.getOptimizationAdvice(fatigueAnalysis, researchMode);
-        }
 
         const prompt = this._constructFinalPrompt({
             topic,
@@ -1741,8 +1022,7 @@ ${this._getModeQualityChecklist(researchMode)}
             currentDate: new Date().toISOString(), // 添加当前日期
             forceNativeVision, // 🚀 传递强制 Native Vision 标志
             dataBusSummary, // 🎯 核心新增：传递数据总线摘要
-            similarityDetection, // 🎯 核心新增：传递相似性检测结果
-            optimizationAdvice // 🎯 核心新增：传递搜索优化建议
+            similarityDetection // 🎯 核心新增：传递相似性检测结果
         });
         
         console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
@@ -1809,7 +1089,7 @@ ${this._getModeQualityChecklist(researchMode)}
     }
 
     // ✨ 重构：主提示词构建 - 核心知识检索集成
-    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, forceNativeVision = false, dataBusSummary = '', similarityDetection = { hasSimilarData: false, recommendations: [] }, optimizationAdvice = null }) {
+    _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, forceNativeVision = false, dataBusSummary = '', similarityDetection = { hasSimilarData: false, recommendations: [] } }) { // 🎯 核心修改：接收新的参数
         const formattedHistory = this._formatHistory(intermediateSteps);
         const availableToolsText = this._formatTools(availableTools);
         
@@ -2210,18 +1490,18 @@ const crawlTimeoutProtocol = `
 ### 🔄 恢复策略（仅在明确失败时执行）：
 
 #### **第一步：诊断与切换 (Switch Source)**
-1.  **诊断**: 在"思考"中明确承认："上一步 \`crawl4ai\` 调用失败，原因是超时或服务器错误，这很可能是因为目标网站存在反爬虫机制或服务器不稳定。"
+1.  **诊断**: 在“思考”中明确承认：“上一步 \`crawl4ai\` 调用失败，原因是超时或服务器错误，这很可能是因为目标网站存在反爬虫机制或服务器不稳定。”
 2.  **切换源**: **立即回顾**你历史记录中**上一次成功**的 \`tavily_search\` 调用的结果列表。
 3.  **行动**: 从该列表中选择一个**不同的、看起来同样权威的 URL** (例如，选择另一个官方网站、知名技术博客或权威百科)，然后使用 \`crawl4ai\` 对这个**新 URL** 进行抓取。
 
 #### **第二步：重新探索 (Re-Search)**
 - **触发条件**: 如果上一次 \`tavily_search\` 的结果中没有其他可用的高质量 URL，或者对新 URL 的 \`crawl4ai\` 调用**再次失败**。
-- **诊断**: 在"思考"中说明："尝试抓取备用 URL 失败，我需要寻找全新的数据源。"
-- **行动**: 执行一次**全新的 \`tavily_search\` 调用**。在查询中加入新的关键词，如"官方数据"、"研究报告"、"替代来源"，以发现不同类型的网站。
+- **诊断**: 在“思考”中说明：“尝试抓取备用 URL 失败，我需要寻找全新的数据源。”
+- **行动**: 执行一次**全新的 \`tavily_search\` 调用**。在查询中加入新的关键词，如“官方数据”、“研究报告”、“替代来源”，以发现不同类型的网站。
 
 #### **第三步：最终判定 (Final Judgment)**
 - **触发条件**: 如果在**全新的数据源**上尝试 \`crawl4ai\` **仍然失败**。
-- **诊断**: 在"思考"中做出最终判断："经过多次对不同来源的尝试，\`crawl4ai\` 工具目前可能暂时无法访问这些类型的网站或自身存在不稳定性。"
+- **诊断**: 在“思考”中做出最终判断：“经过多次对不同来源的尝试，\`crawl4ai\` 工具目前可能暂时无法访问这些类型的网站或自身存在不稳定性。”
 - **行动**: **放弃**使用 \`crawl4ai\` 完成当前子问题。在思考中总结你**已经**从 \`tavily_search\` 的摘要中获取了哪些信息，然后**继续推进到研究计划的下一个步骤**。
 
 **🚫 绝对禁止**:
@@ -2569,12 +1849,12 @@ const toolOptimizationProtocol = `
 
 ### 🕷️ crawl4ai 使用禁忌与最佳实践:
 - **避开交互式页面**: 严禁抓取 URL 中包含 \`query\`, \`search\`, \`database\`, \`easyquery\` 等字样的动态查询页面（例如 \`data.stats.gov.cn/easyquery\`）。这些页面通常需要交互才能显示数据，静态抓取无效。
-- **优先选择静态页面**: 优先抓取包含"公报"、"报告"、"文章"、"新闻"字样的 URL。
-- **失败处理**: 如果对某个域名的抓取返回"内容过短"或失败，**不要**再次尝试该域名下的其他链接，直接切换到 \`tavily_search\` 寻找第三方权威汇总（如维基百科、智库报告）。
+- **优先选择静态页面**: 优先抓取包含“公报”、“报告”、“文章”、“新闻”字样的 URL。
+- **失败处理**: 如果对某个域名的抓取返回“内容过短”或失败，**不要**再次尝试该域名下的其他链接，直接切换到 \`tavily_search\` 寻找第三方权威汇总（如维基百科、智库报告）。
 
 ### 🔍 tavily_search 策略优化:
 - **组合查询**: 尽量在一个查询中包含多个年份，例如 "中国人口 2020 2021 2022 2023 数据表"，而不是分年份搜索。
-- **寻找汇总表**: 优先寻找"统计公报汇总"或"历年数据一览"类的信息源。
+- **寻找汇总表**: 优先寻找“统计公报汇总”或“历年数据一览”类的信息源。
 `;
 
         const errorCorrectionProtocol = `
@@ -2602,11 +1882,11 @@ const toolOptimizationProtocol = `
         const formatComplianceProtocol = `
 ## 格式遵从与自我纠正协议
 
-**系统警告**: 你的输出**必须**严格遵循"思考、行动、行动输入"的格式。任何多余的字符、Markdown标记或不规范的JSON都将导致**解析失败 (Parsing Failure)**。
+**系统警告**: 你的输出**必须**严格遵循“思考、行动、行动输入”的格式。任何多余的字符、Markdown标记或不规范的JSON都将导致**解析失败 (Parsing Failure)**。
 
-**当上一步的观察结果是"格式错误"或"解析失败"时，你必须执行以下操作：**
+**当上一步的观察结果是“格式错误”或“解析失败”时，你必须执行以下操作：**
 
-1.  **诊断**: 在"思考"中明确承认："我上一步的输出格式不正确，导致了解析失败。"
+1.  **诊断**: 在“思考”中明确承认：“我上一步的输出格式不正确，导致了解析失败。”
 2.  **复现**: 回顾你上一步**想要执行的** \`行动\` 和 \`行动输入\`。
 3.  **修正**: 重新生成完全相同的 \`行动\` 和 \`行动输入\`，但这一次**确保格式绝对纯净**。
     *   \`思考:\` 部分只能包含文本。
@@ -3011,7 +2291,7 @@ const toolOptimizationProtocol = `
 1.  **引用规则**：使用 Markdown 图片语法 \`![图表标题](placeholder:image_id)\`。
     *   注意：系统会自动替换占位符。你只需要确保在报告的相关章节（通常是"核心发现"或"数据分析"部分）插入这个图片标签。
 2.  **容错原则**：即使工具返回了 Warning（例如字体缺失），只要图表生成了，就视为**成功**，必须展示图表，并在正文中简要说明 Warning（例如"注：部分中文字符可能显示异常"）。
-3.  **禁止隐瞒**：绝对不要因为一点小 Warning 就宣称"绘图失败"而把图表藏起来。
+3.  **禁止隐瞒**：绝对不要因为一点小 Warning 就宣称“绘图失败”而把图表藏起来。
 `;
 
         // 🔥🔥🔥 新增：工具降级响应处理指南 🔥🔥🔥
@@ -3182,50 +2462,6 @@ ${availableToolsText}
 - **限制**: 仅支持基于 **精确 CSS 选择器** 的结构化数据提取（\`extraction_type: 'css'\`）。**严禁**尝试进行 LLM 驱动的智能提取（\`extraction_type: 'llm'\`）。
 `;
 
-        // 🎯 核心新增：通用搜索策略框架
-        const enhancedSearchStrategyTemplate = `
-## 🔍 通用搜索策略框架（所有模式适用）
-
-### 📊 智能搜索四原则：
-
-1. **维度多样性原则**：
-   - 避免在同一维度连续搜索超过2次
-   - 主动切换：产品→技术→市场→用户
-   - 每个维度最多贡献1-2次搜索
-
-2. **信息增益监控**：
-   - 每次搜索后评估信息增益（系统自动计算）
-   - 增益<30%：必须调整策略
-   - 增益>70%：继续深入当前方向
-
-3. **工具组合策略**：
-   - tavily_search：快速获取概况
-   - crawl4ai：深度获取结构化数据  
-   - python_sandbox：分析和处理已有数据
-   - 避免单一工具依赖
-
-4. **交叉验证要求**：
-   - 重要信息至少来自2个独立来源
-   - 官方来源 + 第三方验证
-   - 数据 + 分析 + 用户反馈
-
-### 🎯 当前搜索状态（系统分析）：
-${this._generateSearchStatusReport()}
-
-### ⚠️ 搜索疲劳预警：
-${this._generateFatigueWarning()}
-`;
-
-        // 🎯 核心新增：搜索优化建议（如果有的话）
-        const searchOptimizationSection = optimizationAdvice ?
-            this.promptManager.render('searchOptimization.withAdvice', {
-                problems: optimizationAdvice.problems.map(p => `• ${p}`).join('\n'),
-                suggestions: optimizationAdvice.suggestions.map(s => `• ${s}`).join('\n'),
-                strategies: optimizationAdvice.searchStrategies.map(s => `• ${s}`).join('\n'),
-                warnings: optimizationAdvice.warnings.map(w => `• ${w}`).join('\n')
-            }) + '\n\n**请在后续思考中充分考虑这些建议。**'
-            : this.promptManager.render('searchOptimization.withoutAdvice', {});
-
         const prompt = `
 # 角色：${config.role}
 ${config.description}
@@ -3320,7 +2556,7 @@ ${managerDecisionFramework} // 🎯 核心新增：经理人委托版决策框�
 - **必须参数**：{url: "具体的URL链接"}
 - **【重要修复】**：使用 \`extract\` 模式时，参数名必须是 \`schema_definition\`，不是 \`schema\`！
 
-### **阶段 B：深度钻取 (crawl4ai) - 你的核心任务**
+### **阶段 B：深度钻取 (crawl4ai)** - 你的核心任务
 - **触发条件**: 当你的**上一步行动是 \`tavily_search\` 并且成功返回了结果**时。
 - **强制任务**:
     1.  **仔细分析**上一步 \`tavily_search\` 的观察结果（\`[深度来源 1]\`,\`[深度来源 2]\`...）。
@@ -3357,7 +2593,7 @@ ${enhancedToolSelectionStrategy} // 🛠️ 核心新增：PDF 感知增强版�
 ${pdfAwarenessInThinking} // 🔍 核心新增：PDF 感知版思考流程指导
 ${errorCorrectionProtocol}  // 🎯 修复：使用包含参数检查的错误修正协议
 ${crawlTimeoutProtocol} // 🎯 新增：crawl4ai 超时恢复协议
-${toolOptimizationProtocol} // ✅ 优化 3：教育 Agent 避开"陷阱"
+${toolOptimizationProtocol} // ✅ 优化 3：教育 Agent 避开“陷阱”
 ${formatComplianceProtocol} // 🎯 新增：格式遵从与自我纠正协议
 ${config.specialInstructions}
 
@@ -3378,10 +2614,6 @@ ${config.specialInstructions}
 ${reportRequirements}
 
 ${researchMode === 'technical' ? codeQualityStandards : ''} // 💻 插入：技术模式下的代码质量标准
-
-${enhancedSearchStrategyTemplate} // 🎯 核心新增：通用搜索策略框架
-
-${searchOptimizationSection} // 🎯 核心新增：搜索优化建议
 
 # 输出格式 (知识驱动版本，严格遵守)
 
@@ -3445,10 +2677,10 @@ ${finalInstruction}  // 🎯 核心修复：最终指令强化纪律
         if (researchMode === 'deep') {
             modeSpecificGuidance = `
 ### ⚡ 深度研究模式特别指令 (Deep Research Mode Directive)
-作为深度专家，你对信息的"新鲜度"和"准确度"负有最高责任。
-- **前沿追踪 (Edge-Tracking)**: 对于技术、市场、科学等领域，你必须主动搜索 ${new Date().getFullYear()} 及 ${new Date().getFullYear()-1} 年的最新进展、论文和报告。
-- **事实核查 (Fact-Checking)**: 即使是你认为"已知"的事实（如某公司的CEO、某产品的最新版本），如果它可能随时间变化，也必须进行快速核查。
-- **避免"常识性"错误:** 你的报告将被视为权威来源，任何因知识过时导致的错误都是不可接受的。`;
+作为深度专家，你对信息的“新鲜度”和“准确度”负有最高责任。
+- **前沿追踪 (Edge-Tracking):** 对于技术、市场、科学等领域，你必须主动搜索 ${new Date().getFullYear()} 及 ${new Date().getFullYear()-1} 年的最新进展、论文和报告。
+- **事实核查 (Fact-Checking):** 即使是你认为“已知”的事实（如某公司的CEO、某产品的最新版本），如果它可能随时间变化，也必须进行快速核查。
+- **避免“常识性”错误:** 你的报告将被视为权威来源，任何因知识过时导致的错误都是不可接受的。`;
         } else if (researchMode === 'business') {
             modeSpecificGuidance = `
 ## 💼 行业分析模式：框架指导下的自主探索
@@ -3731,7 +2963,7 @@ ${plan.research_plan.map(item =>
         // 将历史记录中的关键文本字段连接成一个大的、可搜索的字符串
         const historyText = history.map(h => `${h.action?.thought || ''} ${h.observation || ''}`).join(' ').toLowerCase();
         
-        // 检查历史文本中是否包含表示"完成"的关键词
+        // 检查历史文本中是否包含表示“完成”的关键词
         const hasCompletionKeywords = historyText.includes('最终答案') || historyText.includes('足够信息');
 
         if (!hasCompletionKeywords) {
