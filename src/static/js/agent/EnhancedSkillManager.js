@@ -302,6 +302,31 @@ export class EnhancedSkillManager {
   async retrieveFederatedKnowledge(toolName, context = {}) {
     console.log(`[EnhancedSkillManager] 🔍 联邦知识检索: ${toolName}`, context);
     
+    // 特殊处理：当工具是python_sandbox且用户查询涉及提取/分析时
+    if (toolName === 'python_sandbox') {
+        const { userQuery } = context;
+        if (userQuery && (userQuery.includes('提取') || userQuery.includes('结构化'))) {
+            console.log(`[EnhancedSkillManager] 🎯 强制加载文本分析教程`);
+            // 检查知识库中是否有相关文档
+            const requestedSections = ['text_analysis_cookbook.md'];
+            const knowledgePackageContent = this.knowledgeFederation.getFederatedKnowledge(
+              toolName,
+              requestedSections
+            );
+            
+            if (knowledgePackageContent) {
+                return {
+                    tool: toolName,
+                    content: knowledgePackageContent,
+                    metadata: { source: 'text_analysis_cookbook.md', priority: 'high' },
+                    suggestedSections: requestedSections,
+                    retrievalContext: context,
+                    timestamp: Date.now()
+                };
+            }
+        }
+    }
+    
     // 🔴 移除外层的 try...catch，因为我们希望即使部分失败也能返回内容
     try {
       const requestedSections = this._inferRelevantSections(context);
@@ -467,7 +492,7 @@ export class EnhancedSkillManager {
         isTextAnalysisIntent = true; // 🆕 设置标志
     }
 
-    // 7. 文本分析意图 (处理已有文本)
+    // 更全面的文本分析关键词匹配
     const textAnalysisKeywords = [
         '分析', '结构化', '清洗', '整理', '提取信息', '提取','extract','正则表达式', 'json', '文本处理',
         'analyze', 'structure', 'clean', 'regex', 'text analysis', 'extract info', 'pandas'
