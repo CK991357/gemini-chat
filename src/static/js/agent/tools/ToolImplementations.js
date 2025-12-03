@@ -202,7 +202,7 @@ class DeepResearchToolAdapter {
                     },
                     batch_crawl: {  // 🆕 添加batch_crawl配置
                         concurrent_limit: 2, // 并发限制
-                        timeout_per_url: 20000 // 每个URL超时时间
+                        timeout_per_url: 20000, // 每个URL超时时间
                         // 🎯 新增：明确标记成功状态
                         add_success_markers: true
                     }
