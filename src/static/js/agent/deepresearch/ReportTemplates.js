@@ -313,35 +313,6 @@ Agent基于数据可获得性自主决定：
         researchMode: "technical"
     },
 
-    // 🔬 前沿技术分析 - 优化结构
-    cutting_edge: {
-        name: "前沿技术分析",
-        description: "对新兴技术的深度分析、发展脉络与应用前景评估",
-        config: {
-            structure: [
-                "# 技术发展全景分析", 
-                "## 一、技术本质与核心特性",
-                "### 基本概念与创新点",
-                "### 与传统技术对比优势",
-                "## 二、发展历程与现状",
-                "### 关键技术突破历程", 
-                "### 当前发展阶段判断",
-                "## 三、核心技术解析",
-                "### 底层原理与工作机制",
-                "### 性能指标与局限性",
-                "## 四、应用前景与挑战", 
-                "### 潜在应用领域分析",
-                "### 商业化前景评估",
-                "## 五、发展趋势判断",
-                "### 技术演进方向预测",
-                "### 投资与研究建议"
-            ],
-            wordCount: "1800-2500字", 
-            style: "前瞻性、深度分析、实用导向",
-            requirements: "基于最新研究和发展动态，提供有洞察力的趋势判断和实用建议"
-        },
-        researchMode: "cutting_edge"
-    },
 
     // 🛍️ 优化后的：奢侈品导购对比模式
     shopping_guide: {
@@ -464,7 +435,6 @@ export function getTemplateByResearchMode(researchMode) {
         'academic': 'academic',
         'business': 'business',
         'technical': 'technical',
-        'cutting_edge': 'cutting_edge',
         'shopping_guide': 'shopping_guide',
         'standard': 'standard'
     };

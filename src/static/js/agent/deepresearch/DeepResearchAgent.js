@@ -2373,7 +2373,6 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             'academic': '中', 
             'business': '高',
             'technical': '高',
-            'cutting_edge': '高',
             'standard': '中'
         };
         
