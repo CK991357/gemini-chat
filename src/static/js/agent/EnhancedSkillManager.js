@@ -472,7 +472,7 @@ export class EnhancedSkillManager {
       { tool: 'python_sandbox', context: { userQuery: '证明数学公式' } },
       { tool: 'python_sandbox', context: { userQuery: '科学计算与优化' } },
       { tool: 'python_sandbox', context: { userQuery: '数据分析和可视化' } },
-      { tool: 'crawl4ai', context: { userQuery: '网页抓取最佳实践' } }
+      { tool: 'python_sandbox', context: { userQuery: '文本结构化提取' } }
     ];
     
     for (const testCase of testCases) {
