@@ -352,6 +352,8 @@ export class EnhancedSkillManager {
   _inferRelevantSections(context) {
     const sections = [];
     const { userQuery } = context;
+    let isCrawlIntent = false;  // 🆕 在这里声明并初始化
+    let isTextAnalysisIntent = false; // 🆕 在这里声明并初始化
 
     if (!userQuery) return sections;
 
@@ -453,6 +455,7 @@ export class EnhancedSkillManager {
     
     if (crawlKeywords.some(kw => queryLower.includes(kw))) {
       sections.push('网页抓取最佳实践', '智能内容提取');
+      isCrawlIntent = true; // 🆕 设置标志
     }
 
     // ============================================================
@@ -461,6 +464,7 @@ export class EnhancedSkillManager {
     // 根据用户反馈的实际修改，使用更简洁的关键词匹配
     if (queryLower.includes('分析') || queryLower.includes('提取') || queryLower.includes('结构化')) {
         sections.push('文本分析与结构化提取', 'text_analysis_cookbook');
+        isTextAnalysisIntent = true; // 🆕 设置标志
     }
 
     // 7. 文本分析意图 (处理已有文本)
@@ -471,7 +475,7 @@ export class EnhancedSkillManager {
     
     if (textAnalysisKeywords.some(kw => queryLower.includes(kw))) {
       sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
-      isTextAnalysisIntent = true;
+      isTextAnalysisIntent = true; // 🆕 设置标志
     }
     
     // 8. 兜底/组合逻辑：如果同时匹配，或者匹配到通用词，两个都注入
