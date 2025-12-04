@@ -23,8 +23,8 @@ export class DeepResearchAgent {
         // 🎯 新增：智能数据总线
         this.dataBus = new Map(); // step_index -> {rawData, metadata, contentType}
         this.dataRetentionPolicy = {
-            maxRawDataSize: 50000, // 最大原始数据大小
-            retentionSteps: 3      // 保留最近3步的数据
+            maxRawDataSize: 250000, // 最大原始数据大小
+            retentionSteps: 100    // 保留最近100步的数据，确保在报告生成前不会被清理
         };
 
         // 🎯 联邦知识系统
