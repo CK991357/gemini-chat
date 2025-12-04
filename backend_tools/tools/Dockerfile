@@ -68,6 +68,4 @@ COPY code_interpreter.py .
 EXPOSE 8828
 
 # 定义容器启动时执行的命令
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24",
-     "uvicorn", "code_interpreter:app", 
-     "--host", "0.0.0.0", "--port", "8828", "--log-level", "info"]
+CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24","uvicorn", "code_interpreter:app", "--host", "0.0.0.0", "--port", "8828", "--log-level", "info"]
