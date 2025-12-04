@@ -90,35 +90,173 @@ class KnowledgeFederationLoader {
   }
 
   /**
-   * 🎯 [最终修复版] 提取引用章节
+   * 🎯 [增强版] 多层级章节检索策略
    */
   _extractReferenceSection(skill, sectionKeyword) {
-    const keywordLower = sectionKeyword.toLowerCase().trim().replace(/ /g, '_'); // 标准化关键词
-
-    // 策略1: 智能匹配合并后的内容中的章节标题
-    // build-skills.js 会生成 `### 📖 filename_without_ext` 格式的标题
-    // 这个正则表达式可以匹配不同级别的标题 (##, ###) 和可选的 emoji
-    const regex = new RegExp(`^#{2,4}\\s+(?:📖\\s+)?(${keywordLower.replace(/_/g, '[_\\s-]*')})`, 'im');
+    if (!skill || !sectionKeyword) {
+      console.warn(`[KnowledgeFederation] 无效的输入: skill=${!!skill}, keyword=${sectionKeyword}`);
+      return null;
+    }
     
-    const sections = skill.content.split(/(?=^#{2,4}\s)/m); // 按标题分割
-    for (const section of sections) {
-        const match = section.match(regex);
-        if (match) {
-            console.log(`[KnowledgeFederation] 智能匹配成功: "${sectionKeyword}" -> 章节标题 "${match[0]}"`);
+    const strategies = [
+      // 策略1: 精确标题匹配 (### 章节标题)
+      () => {
+        const exactRegex = new RegExp(`^#{2,4}\\s+${this.escapeRegex(sectionKeyword)}\\b`, 'im');
+        const sections = skill.content.split(/(?=^#{2,4}\s)/m);
+        for (const section of sections) {
+          if (exactRegex.test(section)) {
+            console.log(`[KnowledgeFederation] 🔍 策略1精确匹配成功: "${sectionKeyword}"`);
             return section;
+          }
         }
+        return null;
+      },
+      
+      // 策略2: 模糊标题匹配 (包含关键词)
+      () => {
+        const fuzzyKeyword = sectionKeyword.toLowerCase().replace(/[_\-]/g, '[\\s_-]*');
+        const fuzzyRegex = new RegExp(`^#{2,4}\\s+(?:📖\\s+)?.*?${fuzzyKeyword}.*?\\b`, 'im');
+        const sections = skill.content.split(/(?=^#{2,4}\s)/m);
+        for (const section of sections) {
+          if (fuzzyRegex.test(section)) {
+            console.log(`[KnowledgeFederation] 🔍 策略2模糊匹配成功: "${sectionKeyword}"`);
+            return section;
+          }
+        }
+        return null;
+      },
+      
+      // 策略3: 语义匹配 (基于同义词)
+      () => {
+        const synonyms = this.getSectionSynonyms(sectionKeyword);
+        const sections = skill.content.split(/(?=^#{2,4}\s)/m);
+        
+        for (const section of sections) {
+          const titleMatch = section.match(/^#{2,4}\s+(?:📖\s+)?([^\n]+)/i);
+          if (titleMatch) {
+            const title = titleMatch.toLowerCase();
+            if (synonyms.some(syn => title.includes(syn.toLowerCase()))) {
+              console.log(`[KnowledgeFederation] 🔍 策略3语义匹配成功: "${sectionKeyword}" -> "${titleMatch[1]}"`);
+              return section;
+            }
+          }
+        }
+        return null;
+      },
+      
+      // 策略4: 参考文件匹配 (降级)
+      () => {
+        const keywordLower = sectionKeyword.toLowerCase().replace(/\.md$/, '');
+        for (const [refFile, content] of skill.references.entries()) {
+          const fileName = refFile.toLowerCase().replace(/\.md$/, '');
+          if (fileName.includes(keywordLower) || keywordLower.includes(fileName)) {
+            console.log(`[KnowledgeFederation] 🔍 策略4文件匹配成功: "${sectionKeyword}" -> "${refFile}"`);
+            return content;
+          }
+        }
+        return null;
+      },
+      
+      // 策略5: 内容关键词匹配 (最后手段)
+      () => {
+        const keywords = this.extractSearchKeywords(sectionKeyword);
+        let bestSection = '';
+        let bestScore = 0;
+        
+        const sections = skill.content.split(/(?=^#{2,4}\s)/m);
+        sections.forEach(section => {
+          let score = 0;
+          const sectionLower = section.toLowerCase();
+          
+          keywords.forEach(keyword => {
+            if (sectionLower.includes(keyword)) {
+              score += 1;
+              // 标题中出现的关键词权重更高
+              const titleMatch = section.match(/^#{2,4}\s+(?:📖\s+)?([^\n]+)/i);
+              if (titleMatch && titleMatch.toLowerCase().includes(keyword)) {
+                score += 3;
+              }
+            }
+          });
+          
+          if (score > bestScore) {
+            bestScore = score;
+            bestSection = section;
+          }
+        });
+        
+        if (bestScore > 0) {
+          console.log(`[KnowledgeFederation] 🔍 策略5内容匹配成功: "${sectionKeyword}" (得分: ${bestScore})`);
+          return bestSection;
+        }
+        return null;
+      }
+    ];
+    
+    // 按顺序尝试所有策略
+    for (let i = 0; i < strategies.length; i++) {
+      const result = strategies[i]();
+      if (result) {
+        return result;
+      }
     }
     
-    // 策略2: 降级到模糊文件名匹配 (从原始 references Map 中查找)
-    for (const [refFile, content] of skill.references.entries()) {
-        if (refFile.toLowerCase().includes(keywordLower)) {
-            console.log(`[KnowledgeFederation] 降级文件名匹配成功: "${sectionKeyword}" -> 文件 "${refFile}"`);
-            return content;
-        }
-    }
-
-    // 如果两种策略都失败，则返回 null
+    console.warn(`[KnowledgeFederation] ❌ 所有检索策略均失败: "${sectionKeyword}"`);
     return null;
+  }
+
+  /**
+   * 🎯 辅助方法：转义正则表达式特殊字符
+   */
+  escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * 🎯 获取章节同义词
+   */
+  getSectionSynonyms(keyword) {
+    const synonymMap = {
+      // 数据相关
+      'pandas_cheatsheet': ['pandas', '数据分析', '数据清洗', '数据处理', 'dataframe'],
+      '数据清洗与分析': ['数据清洗', '数据分析', '数据处理', 'pandas', 'data cleaning'],
+      'ETL管道模式': ['ETL', '数据管道', '数据处理流程', '数据转换'],
+      
+      // 文本相关
+      'text_analysis_cookbook.md': ['文本分析', '文本处理', '文本挖掘', 'NLP', '自然语言处理'],
+      '文本分析与结构化提取': ['文本提取', '结构化提取', '信息抽取', '文本分析'],
+      
+      // 可视化相关
+      'matplotlib_cookbook': ['matplotlib', '可视化', '绘图', '图表', 'plot'],
+      '数据可视化': ['可视化', '图表绘制', '绘图', '图形', 'visualization'],
+      
+      // 数学相关
+      '公式证明工作流': ['公式', '证明', '符号计算', '数学证明', 'sympy'],
+      'sympy_cookbook': ['sympy', '符号计算', '数学计算', '代数'],
+      '科学计算与优化': ['科学计算', '数值计算', '优化', 'scipy', '数值分析'],
+      
+      // 机器学习
+      '机器学习': ['ml', 'machine learning', '模型训练', '预测', '分类'],
+      'ml_workflow': ['机器学习流程', '模型训练流程', 'ml pipeline'],
+      
+      // 报告生成
+      '自动化报告生成': ['报告生成', '文档生成', '报告', '文档', '导出']
+    };
+    
+    return synonymMap[keyword] || [keyword];
+  }
+
+  /**
+   * 🎯 提取搜索关键词
+   */
+  extractSearchKeywords(text) {
+    const words = text.toLowerCase()
+      .split(/[^\u4e00-\u9fa5a-zA-Z0-9]+/)
+      .filter(w => w.length > 1);
+    
+    // 移除常见停用词
+    const stopWords = ['的', '和', '与', '或', '在', '从', '到', '关于', '对于'];
+    return words.filter(w => !stopWords.includes(w));
   }
 }
 

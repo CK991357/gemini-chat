@@ -346,120 +346,153 @@ export class EnhancedSkillManager {
    * 🎯 [增强版] 基于上下文智能推断相关章节
    * 构建高密度的关键词映射网络，覆盖更多隐晦场景
    */
+  /**
+   * 🎯 [增强版] 基于上下文智能推断相关章节
+   * 构建高密度的关键词映射网络，覆盖更多隐晦场景
+   */
   _inferRelevantSections(context) {
-    const sections = [];
-    const { userQuery } = context;
-
-    if (!userQuery) return sections;
-
+    const sections = new Set(); // 使用Set避免重复
+    const { userQuery, toolCallHistory = [] } = context; // 提取 toolCallHistory
+    
+    if (!userQuery) return Array.from(sections);
+    
     const queryLower = userQuery.toLowerCase();
-
+    
     // ============================================================
-    // 1. 数据可视化 (Matplotlib/Seaborn)
+    // 1. 精确关键词匹配 + 优先级评分
     // ============================================================
-    const vizKeywords = [
-        // 核心动作
-        '画', '绘', '图', '展示', '可视化', 'plot', 'chart', 'graph', 'visualize',
-        // 图表类型
-        '折线', '柱状', '条形', '散点', '饼图', '热力', '直方图', '箱线图',
-        'line', 'bar', 'scatter', 'pie', 'heatmap', 'histogram', 'box',
-        // 业务场景
-        '趋势', '走势', '分布', '对比', '占比', '关系', '波动', '轨迹',
-        'trend', 'distribution', 'comparison', 'proportion', 'relation'
+    const keywordPatterns = [
+      // 高优先级匹配（精确词组）
+      {
+        patterns: ['数据清洗', '清洗数据', '清理数据', 'data clean', 'data cleaning'],
+        sections: ['数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式'],
+        score: 1.0
+      },
+      {
+        patterns: ['数据分析', '分析数据', 'data analysis', 'analyze data'],
+        sections: ['数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式', '数据可视化'],
+        score: 0.9
+      },
+      {
+        patterns: ['数据可视化', '可视化', '画图', '绘图', 'plot', 'chart', 'graph'],
+        sections: ['数据可视化', 'matplotlib_cookbook'],
+        score: 1.0
+      },
+      {
+        patterns: ['文本分析', '文本处理', '结构化提取', 'extract text', 'text analysis', '正则表达式'],
+        sections: ['文本分析与结构化提取', 'text_analysis_cookbook.md'],
+        score: 1.0
+      },
+      {
+        patterns: ['公式', '证明', '推导', '计算', 'formula', 'proof', 'derivative', '微积分'],
+        sections: ['公式证明工作流', 'sympy_cookbook'],
+        score: 0.8
+      },
+      {
+        patterns: ['机器学习', '模型训练', '预测', '分类', 'ml', 'machine learning', '回归', '聚类'],
+        sections: ['机器学习', 'ml_workflow'],
+        score: 0.9
+      },
+      {
+        patterns: ['报告生成', '文档导出', '生成pdf', '生成word', 'report generate'],
+        sections: ['自动化报告生成', 'report_generator_workflow'],
+        score: 0.8
+      }
     ];
     
-    if (vizKeywords.some(kw => queryLower.includes(kw))) {
-      sections.push('数据可视化', 'matplotlib_cookbook');
-    }
-
-    // ============================================================
-    // 2. 数据处理与分析 (Pandas)
-    // ============================================================
-    const dataKeywords = [
-        // 核心动作
-        '分析', '处理', '清洗', '整理', '筛选', '计算', '统计',
-        'analyze', 'process', 'clean', 'filter', 'calculate', 'statistic',
-        // 数据对象
-        '表格', 'excel', 'csv', 'dataframe', '数据', 'dataset',
-        // 操作细节
-        '排序', '分组', '聚合', '去重', '缺失值', '平均', '求和',
-        'sort', 'group', 'aggregate', 'duplicate', 'missing', 'mean', 'sum',
-        // 业务场景
-        '报表', '财务', '销量', '库存', '用户画像'
-    ];
-
-    if (dataKeywords.some(kw => queryLower.includes(kw))) {
-      sections.push('数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式');
-    }
-
-    // ============================================================
-    // 3. 科学计算与数学 (SciPy/SymPy)
-    // ============================================================
-    // 分为两类：符号数学(公式证明) 和 数值计算(工程/科学)
+    // 执行精确匹配
+    keywordPatterns.forEach(pattern => {
+      const hasMatch = pattern.patterns.some(p =>
+        queryLower.includes(p.toLowerCase())
+      );
+      
+      if (hasMatch) {
+        pattern.sections.forEach(section => sections.add(section));
+      }
+    });
     
-    const mathSymbolicKeywords = [
-        '证明', '推导', '公式', '方程', '解方程', '微积分', '求导', '积分',
-        'prove', 'derive', 'formula', 'equation', 'solve', 'calculus', 'derivative'
-    ];
-    if (mathSymbolicKeywords.some(kw => queryLower.includes(kw))) {
-        sections.push('公式证明工作流', 'sympy_cookbook');
-    }
-
-    const mathNumericKeywords = [
-        '优化', '拟合', '线性代数', '信号', '傅里叶', '微分方程', '数值',
-        'optimize', 'fit', 'linear algebra', 'signal', 'fourier', 'ode', 'numerical'
-    ];
-    if (mathNumericKeywords.some(kw => queryLower.includes(kw))) {
-        sections.push('科学计算与优化', 'scipy_cookbook');
-    }
-
     // ============================================================
-    // 4. 机器学习 (Scikit-learn)
+    // 2. 模糊匹配（分词+语义相似度）
     // ============================================================
-    const mlKeywords = [
-        '预测', '分类', '聚类', '回归', '训练', '模型', '算法', 'AI',
-        'predict', 'classify', 'cluster', 'regression', 'train', 'model', 'algorithm',
-        '线性回归', '逻辑回归', '决策树', '随机森林', 'K-means'
-    ];
-
-    if (mlKeywords.some(kw => queryLower.includes(kw))) {
-      sections.push('机器学习', 'ml_workflow');
-    }
-
-    // ============================================================
-    // 5. 报告生成 (ReportLab/Office)
-    // ============================================================
-    const reportKeywords = [
-        '报告', '文档', '生成', '导出', '下载', '保存',
-        'report', 'document', 'generate', 'export', 'download', 'save',
-        'pdf', 'word', 'docx', 'ppt', 'pptx', 'excel', 'xlsx'
-    ];
+    const queryWords = queryLower.split(/[\s,\，、;；]+/);
     
-    // 注意：这里要避免和上面的单纯数据分析混淆，通常是明确要求“生成文件”
-    if (reportKeywords.some(kw => queryLower.includes(kw))) {
-      sections.push('自动化报告生成', 'report_generator_workflow');
-    }
-
-    // ============================================================
-    // 6. 文本分析意图 (处理已有文本) 
-    // ============================================================
-    // 根据用户反馈的实际修改，使用更简洁的关键词匹配
-    if (queryLower.includes('分析') || queryLower.includes('提取') || queryLower.includes('结构化')) {
-        sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
-    }
-
-    // 更全面的文本分析关键词匹配
-    const textAnalysisKeywords = [
-        '分析', '结构化', '清洗', '整理', '提取信息', '提取','extract','正则表达式', 'json', '文本处理',
-        'analyze', 'structure', 'clean', 'regex', 'text analysis', 'extract info', 'text processing'
-    ];
+    // 构建语义相似度词典
+    const semanticGroups = {
+      'data': ['数据', 'dataset', 'dataframe', '表格', 'excel', 'csv'],
+      'analysis': ['分析', 'analyze', 'process', '处理', '统计'],
+      'visualization': ['可视化', 'visualize', '图表', 'plot', 'graph', 'chart'],
+      'cleaning': ['清洗', '清理', 'clean', 'cleaning', 'preprocess'],
+      'text': ['文本', '文字', 'text', 'string', '文档'],
+      'extract': ['提取', '抽取', 'extract', 'parse', '解析'],
+      'math': ['数学', '计算', '公式', '方程', 'math', 'calculate'],
+      'ml': ['机器学习', 'ai', '人工智能', '模型', '训练']
+    };
     
-    if (textAnalysisKeywords.some(kw => queryLower.includes(kw))) {
-      sections.push('文本分析与结构化提取', 'text_analysis_cookbook.md');
+    queryWords.forEach(word => {
+      // 查找语义相关组
+      Object.entries(semanticGroups).forEach(([group, synonyms]) => {
+        if (synonyms.includes(word)) {
+          // 根据组别添加相关章节
+          switch(group) {
+            case 'data':
+            case 'analysis':
+            case 'cleaning':
+              sections.add('pandas_cheatsheet');
+              sections.add('ETL管道模式');
+              sections.add('数据清洗与分析');
+              break;
+            case 'visualization':
+              sections.add('matplotlib_cookbook');
+              sections.add('数据可视化');
+              break;
+            case 'text':
+            case 'extract':
+              sections.add('text_analysis_cookbook.md');
+              sections.add('文本分析与结构化提取');
+              break;
+            case 'math':
+              sections.add('公式证明工作流');
+              sections.add('sympy_cookbook');
+              sections.add('科学计算与优化');
+              break;
+            case 'ml':
+              sections.add('机器学习');
+              sections.add('ml_workflow');
+              break;
+          }
+        }
+      });
+    });
+    
+    // ============================================================
+    // 3. 上下文增强（考虑之前的工具调用历史）
+    // ============================================================
+    const recentTools = toolCallHistory.slice(-3).map(h => h.toolName); // 最近3个工具
+    
+    if (recentTools.includes('python_sandbox')) {
+      // 如果最近使用了python_sandbox，增加相关章节的权重
+      sections.add('pandas_cheatsheet');
+      sections.add('matplotlib_cookbook');
+      sections.add('scipy_cookbook');
     }
-
-    console.log(`[EnhancedSkillManager] 🧠 深度智能章节推断:`, sections);
-    return sections;
+    
+    if (recentTools.includes('crawl4ai') || recentTools.includes('firecrawl')) {
+      // 如果最近抓取了数据，添加数据处理章节
+      sections.add('ETL管道模式');
+      sections.add('文本分析与结构化提取');
+    }
+    
+    // ============================================================
+    // 4. 章节存在性验证（预检查） - 仅日志输出
+    // ============================================================
+    
+    console.log(`[EnhancedSkillManager] 🧠 智能章节推断完成:`, {
+      原始查询: userQuery,
+      推断章节: Array.from(sections),
+      匹配模式: '混合策略（精确+模糊+语义+上下文）'
+    });
+    
+    return Array.from(sections);
   }
 
   /**
