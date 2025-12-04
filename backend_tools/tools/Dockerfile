@@ -22,13 +22,16 @@ RUN apt-get update && \
     fonts-dejavu-core \
     fonts-liberation \
     fontconfig && \
-    fc-cache -fv && \
+    # 🎯 添加 xvfb（必须在同一列表中）
+    xvfb \
+    && fc-cache -fv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # 设置matplotlib使用Agg后端（无GUI，适合服务器）
 ENV MPLBACKEND=Agg
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # 安装 Python 依赖（使用国内镜像加速并锁定版本）
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
@@ -65,4 +68,6 @@ COPY code_interpreter.py .
 EXPOSE 8828
 
 # 定义容器启动时执行的命令
-CMD ["uvicorn", "code_interpreter:app", "--host", "0.0.0.0", "--port", "8828", "--log-level", "info"]
+CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24",
+     "uvicorn", "code_interpreter:app", 
+     "--host", "0.0.0.0", "--port", "8828", "--log-level", "info"]
