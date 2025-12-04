@@ -1720,14 +1720,23 @@ const formatToolResult = (result, toolName, researchMode) => {
         formatted += `\n---\n\n`;
         
         // 实际数据（适当截断）
-        const dataPreview = typeof data === 'string' 
-            ? data.substring(0, 1000)
-            : JSON.stringify(data, null, 2).substring(0, 1000);
+        const isDataTool = toolName === 'crawl4ai' || toolName === 'tavily_search';
+        let dataPreview;
+
+        if (isDataTool) {
+            // 🎯 修复：对于核心数据获取工具，不进行截断，确保完整内容进入数据总线
+            dataPreview = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        } else {
+            // 对于其他工具（如 python_sandbox），进行截断以节省 Agent 上下文
+            dataPreview = typeof data === 'string'
+                ? data.substring(0, 1000)
+                : JSON.stringify(data, null, 2).substring(0, 1000);
+        }
             
         formatted += `${dataPreview}`;
         
-        if ((typeof data === 'string' && data.length > 1000) || 
-            (typeof data !== 'string' && JSON.stringify(data).length > 1000)) {
+        if (!isDataTool && ((typeof data === 'string' && data.length > 1000) ||
+            (typeof data !== 'string' && JSON.stringify(data).length > 1000))) {
             formatted += `\n\n... (内容已截断，完整长度 ${dataLength} 字符)`;
         }
     }
