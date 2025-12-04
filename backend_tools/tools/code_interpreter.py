@@ -123,41 +123,6 @@ class CodeInterpreterTool:
         runner_script = f"""
 import sys, traceback, io, json, base64, tempfile, os
 
-# 🔥 新增：Plotly 配置
-def setup_plotly():
-    try:
-        import plotly.io as pio
-        # 设置默认渲染器为kaleido
-        pio.renderers.default = "kaleido"
-        # 配置kaleido
-        pio.kaleido.scope.default_format = "png"
-        pio.kaleido.scope.default_width = 1200
-        pio.kaleido.scope.default_height = 800
-        
-        # 设置中文字体（如果可用）
-        try:
-            # 检查是否有中文字体
-            import matplotlib.font_manager as fm
-            available_fonts = set(f.name for f in fm.fontManager.ttflist)
-            chinese_fonts = ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'SimHei', 'Microsoft YaHei']
-            for font in chinese_fonts:
-                if font in available_fonts:
-                    # Plotly字体配置
-                    import plotly.graph_objects as go
-                    go.layout.Template.layout.font.family = font
-                    break
-        except:
-            pass
-        
-        print("[PLOTLY_CONFIG] Plotly配置完成", file=sys.stderr)
-        return True
-    except Exception as e:
-        print(f"[PLOTLY_CONFIG] 配置失败: {{e}}", file=sys.stderr)
-        return False
-
-# 执行Plotly配置
-setup_plotly()
-
 # --- 统一的图表捕获和字体配置系统 ---
 def setup_unified_chart_system():
     try:
@@ -398,37 +363,6 @@ if not output_processed and 'networkx' in sys.modules and 'matplotlib.pyplot' in
             
     except Exception as networkx_error:
         print(f"\\n[SYSTEM_ERROR] NetworkX capture failed: {{networkx_error}}", file=sys.stderr, end='')
-
-# 4. 捕获 Plotly 图表
-if not output_processed:
-    try:
-        # 检查是否有 Plotly 图形对象
-        plotly_objects = []
-        for var_name, var_value in exec_globals.items():
-            # 检查对象是否为 Plotly Figure 且具有 to_image 方法
-            if hasattr(var_value, '__class__') and var_value.__class__.__name__ == 'Figure' and hasattr(var_value, 'to_image'):
-                plotly_objects.append((var_name, var_value))
-        
-        if plotly_objects:
-            # 捕获最后一个创建的 Plotly 图形对象
-            _, plotly_fig = plotly_objects[-1]
-            
-            # 转换为静态图片 (依赖 kaleido)
-            img_bytes = plotly_fig.to_image(format="png", width=1200, height=800)
-            image_base64 = base64.b64encode(img_bytes).decode('utf-8')
-            
-            # 获取标题
-            chart_title = "Plotly Chart"
-            if hasattr(plotly_fig, 'layout') and plotly_fig.layout.title and plotly_fig.layout.title.text:
-                chart_title = str(plotly_fig.layout.title.text)
-            
-            output_data = {"type": "image", "title": chart_title, "image_base64": image_base64}
-            print(json.dumps(output_data), end='')
-            output_processed = True
-            
-    except Exception as plotly_error:
-        # 仅在 stderr 中打印错误，不影响 stdout 的最终输出
-        print(f"\\n[SYSTEM_ERROR] Plotly capture failed: {{plotly_error}}", file=sys.stderr, end='')
 
 # 🚀🚀🚀 --- 统一的图表捕获系统结束 --- 🚀🚀🚀
 
