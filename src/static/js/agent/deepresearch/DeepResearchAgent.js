@@ -1077,7 +1077,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     
                     // 🎯 新增：将原始数据存储到数据总线
                     if (toolSuccess) {
-                        this._storeRawData(this.intermediateSteps.length, rawObservation, {
+                        // 统一 DataBus 存储索引为 1-based (与 code_generator 一致)
+                        this._storeRawData(this.intermediateSteps.length + 1, rawObservation, {
                             toolName: tool_name,
                             contentType: tool_name === 'crawl4ai' ? 'webpage' : 'text'
                         });
@@ -1603,24 +1604,42 @@ ${tableRequirement} // 🆕 新增：条件化表格指令
             // 🎯 【新增】尝试从数据总线获取结构化数据
             let structuredData = null;
             try {
-                const dataBusKey = `step_${index + 1}`; // 步骤索引从 1 开始
+                const dataBusKey = `step_${index + 1}`; // 步骤索引从 1 开始，与 DataBus 存储键名一致
                 const dataBusEntry = this.dataBus.get(dataBusKey);
                 
+                console.log(`[EvidenceCollection] 步骤${index}: 检查DataBus键 "${dataBusKey}"`);
+                if (dataBusEntry) {
+                    console.log(`[EvidenceCollection] DataBus条目:`, {
+                        hasOriginalData: !!dataBusEntry.originalData,
+                        contentType: dataBusEntry.metadata?.contentType,
+                        dataLength: dataBusEntry.originalData?.length
+                    });
+                }
+
                 // 检查是否是JSON格式的结构化数据
                 if (dataBusEntry && dataBusEntry.originalData && dataBusEntry.metadata.contentType === 'structured_data') {
                     const dataBusContent = dataBusEntry.originalData;
                     
-                    // 检查是否是JSON格式的结构化数据
-                    if (dataBusContent && dataBusContent.trim().startsWith('[')) {
-                        const parsedData = JSON.parse(dataBusContent);
-                        if (Array.isArray(parsedData) && parsedData.length > 0) {
-                            // 将JSON转换为Markdown表格
-                            structuredData = this._jsonToMarkdownTable(parsedData);
+                    // 使用更健壮的检测
+                    const isStructured = this._isStructuredData(dataBusContent);
+                    if (isStructured) {
+                        // 解析并转换
+                        try {
+                            const parsedData = JSON.parse(dataBusContent);
+                            if (Array.isArray(parsedData) && parsedData.length > 0) {
+                                // 将JSON数组转换为Markdown表格
+                                structuredData = this._jsonToMarkdownTable(parsedData);
+                            } else if (typeof parsedData === 'object' && parsedData !== null) {
+                                // 处理JSON对象类型
+                                structuredData = this._objectToMarkdownTable(parsedData);
+                            }
+                        } catch (e) {
+                            console.warn(`[DeepResearchAgent] JSON解析失败:`, e);
                         }
                     }
                 }
             } catch (e) {
-                console.warn(`[DeepResearchAgent] 结构化数据解析失败 (步骤 ${index + 1}):`, e);
+                console.warn(`[DeepResearchAgent] 结构化数据处理失败 (步骤 ${index}):`, e);
                 // 忽略解析错误
             }
 
@@ -1743,6 +1762,50 @@ ${tableRequirement} // 🆕 新增：条件化表格指令
                        typeof value === 'string' ? value.replace(/\|/g, '\\|') : JSON.stringify(value);
             });
             table += `| ${values.join(' | ')} |\n`;
+        });
+        
+        return `\n## 📊 结构化数据表格\n\n${table}\n\n`;
+    }
+
+
+    // 🆕 新增：健壮的结构化数据检测
+    _isStructuredData(content) {
+        if (!content) return false;
+        const trimmed = content.trim();
+        
+        // 检查JSON格式
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+            (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+            try {
+                JSON.parse(trimmed);
+                return true;
+            } catch {
+                return false;
+            }
+        }
+        
+        // 检查Markdown表格
+        if (trimmed.includes('|') && trimmed.includes('---')) {
+            const lines = trimmed.split('\n');
+            const tableLines = lines.filter(line => line.includes('|'));
+            // 至少需要 3 行：表头、分隔线、数据行
+            return tableLines.length >= 3;
+        }
+        
+        return false;
+    }
+
+    // 🆕 新增：JSON对象转Markdown表格
+    _objectToMarkdownTable(obj) {
+        const keys = Object.keys(obj);
+        if (keys.length === 0) return null;
+        
+        let table = `| 字段 | 值 |\n|---|---|\n`;
+        keys.forEach(key => {
+            const value = obj[key];
+            const displayValue = value === undefined || value === null ? 'N/A' :
+                                typeof value === 'string' ? value.replace(/\|/g, '\\|') : JSON.stringify(value);
+            table += `| ${key} | ${displayValue} |\n`;
         });
         
         return `\n## 📊 结构化数据表格\n\n${table}\n\n`;
@@ -1986,92 +2049,107 @@ async _generateSourcesSection(sources, plan) {
  * 🎯 [最终版] 智能混合来源过滤器
  */
 _filterUsedSources(sources, reportContent) {
-    if (!sources || sources.length === 0) return [];
-    if (!reportContent) return sources;
-    
-    console.log(`[SourceFilter] 启动智能匹配，候选来源: ${sources.length} 个`);
-    const usedSources = new Set();
-    const reportLower = reportContent.toLowerCase();
-
-    // 轨道 1: 显式索引提取
-    const citationRegex = /\[\s*(\d+)\s*\]/g;
+  if (!sources || sources.length === 0) return [];
+  if (!reportContent) return sources.slice(0, 8); // 🎯 默认返回前8个
+  
+  console.log(`[SourceFilter] 启动智能匹配，候选来源: ${sources.length} 个`);
+  
+  // 🎯 轨道 0: 基础保留策略 (最少保留6个)
+  const baseKeepCount = 6;
+  const usedSources = new Set();
+  
+  // 轨道 1: 显式引用提取 (放宽匹配规则)
+  const citationPatterns = [
+    /【来源\s*(\d+)】/g,
+    /\[(\d+)\]/g,
+    /来源\s*(\d+)/g,
+    /ref\s*(\d+)/gi
+  ];
+  
+  citationPatterns.forEach(pattern => {
     let match;
-    while ((match = citationRegex.exec(reportContent)) !== null) {
-        const index = parseInt(match[1], 10) - 1;
-        if (index >= 0 && index < sources.length) {
-            usedSources.add(sources[index]);
-        }
+    while ((match = pattern.exec(reportContent)) !== null) {
+      const index = parseInt(match[1], 10) - 1;
+      if (index >= 0 && index < sources.length) {
+        usedSources.add(sources[index]);
+      }
     }
+  });
 
-    // 轨道 2: 语义实体匹配
-    sources.forEach(source => {
-        if (usedSources.has(source)) return;
-        
-        const score = this._calculateSemanticMatchScore(source, reportLower);
-        if (score >= 0.35) {
-            usedSources.add(source);
-        }
-    });
-
-    // 轨道 3: 智能降级
-    const finalSources = Array.from(usedSources);
-    finalSources.sort((a, b) => sources.indexOf(a) - sources.indexOf(b));
-
-    if (finalSources.length === 0 && sources.length > 0) {
-        console.warn('[SourceFilter] ⚠️ 未检测到明确引用，触发全量保留策略。');
-        return sources;
-    }
-
-    console.log(`[SourceFilter] 匹配完成: ${sources.length} -> ${finalSources.length} 个有效来源`);
-    return finalSources;
-}
-
-/**
- * 🎯 [核心算法] 计算语义匹配分数
- */
-_calculateSemanticMatchScore(source, reportLower) {
-    let score = 0;
-    const title = source.title || '';
+  // 轨道 2: 关键词匹配 (降低阈值)
+  const reportLower = reportContent.toLowerCase();
+  sources.forEach(source => {
+    if (usedSources.has(source)) return;
+    
+    const title = (source.title || '').toLowerCase();
     const url = source.url || '';
     
-    // 1. 标题分词匹配
+    // 🎯 放宽匹配条件
+    let score = 0;
+    
+    // 检查标题关键词是否在报告中
     if (title) {
-        const titleLower = title.toLowerCase();
-        const stopWords = new Set([
-            '的', '了', '和', '是', '在', '关于', '研究', '报告', '分析', '数据',
-            'the', 'and', 'of', 'in', 'to', 'for', 'report', 'analysis', 'data'
-        ]);
+      const keywords = title.split(/[^\w\u4e00-\u9fa5]+/)
+        .filter(word => word.length >= 3);
+      
+      keywords.forEach(keyword => {
+        if (reportLower.includes(keyword)) score += 0.2;
+      });
+      
+      // 检查完整标题（部分匹配）
+      if (title.length > 10) {
+        const titleFragments = [
+          title.substring(0, 15),
+          title.substring(Math.max(0, title.length - 15))
+        ];
         
-        const tokens = titleLower.split(/[^\w\u4e00-\u9fa5]+/)
-            .filter(t => t.length >= 2 && !stopWords.has(t));
-        
-        if (tokens.length > 0) {
-            let matchCount = 0;
-            tokens.forEach(token => {
-                if (reportLower.includes(token)) matchCount++;
-            });
-            
-            score += (matchCount / tokens.length) * 0.8;
-            
-            const cleanTitleStart = titleLower.substring(0, 10);
-            if (reportLower.includes(cleanTitleStart)) score = 1.0;
-        }
+        titleFragments.forEach(fragment => {
+          if (reportLower.includes(fragment)) score += 0.5;
+        });
+      }
     }
     
-    // 2. 域名匹配
-    if (url) {
-        try {
-            const hostname = new URL(url).hostname;
-            const domainParts = hostname.split('.');
-            const coreDomain = domainParts.find(p => p.length > 3 && !['www','com','org','gov','cn','net','edu'].includes(p));
-            
-            if (coreDomain && reportLower.includes(coreDomain)) {
-                score += 0.3;
-            }
-        } catch (e) {}
+    // 🎯 降低阈值从0.35到0.25
+    if (score >= 0.25) {
+      usedSources.add(source);
     }
+  });
+
+  // 轨道 3: 确保最小数量
+  let finalSources = Array.from(usedSources);
+  
+  if (finalSources.length < baseKeepCount) {
+    console.log(`[SourceFilter] 匹配来源不足(${finalSources.length})，补充至${baseKeepCount}个`);
     
-    return Math.min(score, 1.0);
+    // 按相关性补充来源
+    const remainingSources = sources.filter(s => !usedSources.has(s));
+    const additionalCount = Math.min(
+      baseKeepCount - finalSources.length,
+      remainingSources.length
+    );
+    
+    // 优先补充来源质量高的（如权威域名）
+    const highQualitySources = remainingSources.filter(s => {
+      const url = s.url || '';
+      return url.includes('.gov') || 
+             url.includes('.edu') || 
+             url.includes('reuters') || 
+             url.includes('bloomberg');
+    });
+    
+    const sourcesToAdd = [
+      ...highQualitySources.slice(0, additionalCount),
+      ...remainingSources.slice(0, additionalCount - highQualitySources.length)
+    ];
+    
+    finalSources.push(...sourcesToAdd);
+  }
+
+  // 限制最大数量（避免过多）
+  finalSources = finalSources.slice(0, 15);
+  
+  console.log(`[SourceFilter] 匹配完成: ${sources.length} -> ${finalSources.length} 个有效来源`);
+  return finalSources;
 }
 
     // ✨ 新增：信息增益计算
