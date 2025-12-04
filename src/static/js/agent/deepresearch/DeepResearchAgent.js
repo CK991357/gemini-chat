@@ -1375,30 +1375,6 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         // 🎯 这里获取的就是包含了 "引用与论证规范" 的核心指令块
         let promptFragment = getTemplatePromptFragment(researchMode);
         
-        // 🎯 【新增】条件化的表格指令
-        const tableRequirement = evidenceCollection.hasStructuredData ? `
-
-## 🎯 【新增】结构化数据呈现要求（条件触发）
-
-**检测到本次研究包含结构化数据（JSON/表格格式），你必须遵守以下规则：**
-
-### 1. 表格使用规则
-- 如果证据条目中包含"结构化数据表格"，**必须完整插入报告**
-- 表格应放在"数据呈现"或"分析结果"章节
-- **绝对禁止**将表格数据转换为纯文本描述
-
-### 2. 表格格式要求
-- 使用标准Markdown表格格式
-- 表格上方应有简短说明（如："表1: 主要科技公司AI基础设施投资预测"）
-- 表格下方注明数据来源
-- 确保可读性，避免过于复杂的嵌套表格
-
-### 3. 条件执行
-- **只有**在证据中包含结构化数据时才需要生成表格
-- 如果所有证据都是纯文本，则无需创建表格
-- 系统已自动标记哪些步骤包含结构化数据
-` : '';
-        
         // 🎯 【调试模式特别指令注入】
         if (researchMode === 'standard') {
             promptFragment += `
@@ -1473,7 +1449,6 @@ ${entry.keyFinding ? `\n**💡 本步关键发现:** ${entry.keyFinding}` : ''}
 现在，请严格遵循以下元结构和要求，将上述研究证据整合成一份最终报告。
 ${promptFragment}
 
-${tableRequirement}  // 🆕 新增：条件化表格指令
 
 **🚫 绝对禁止:**
 - 编造研究计划和证据集合中不存在的信息。
@@ -1521,7 +1496,6 @@ ${allObservations.substring(0, 15000)}
 
 ${promptFragment}
 
-${tableRequirement} // 🆕 新增：条件化表格指令
 
 # 🎯 最终输出要求 (用户强制协议)
 1. **直接开始**：从报告标题开始输出纯净内容
