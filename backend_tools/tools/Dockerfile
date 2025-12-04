@@ -28,6 +28,7 @@ RUN apt-get update && \
 
 # 设置matplotlib使用Agg后端（无GUI，适合服务器）
 ENV MPLBACKEND=Agg
+ENV PYTHONUNBUFFERED=1
 
 # 安装 Python 依赖（使用国内镜像加速并锁定版本）
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
@@ -48,8 +49,14 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     statsmodels==0.14.1 \ 
     pyarrow==14.0.2 \  
     python-docx==1.1.2 \
+    python-pptx==0.6.23 \
     reportlab==4.0.7 \
-    python-pptx==0.6.23
+    tabulate==0.9.0  \
+    lxml==5.2.2 \
+    beautifulsoup4==4.12.3 \
+    plotly==5.22.0 \
+    kaleido==0.2.1 
+
 
 # 复制您的 code_interpreter.py 文件到容器的 /app 目录
 COPY code_interpreter.py .

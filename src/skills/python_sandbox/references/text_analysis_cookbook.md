@@ -232,6 +232,61 @@ class KeywordAnalyzer:
         return categories if categories else ["未分类"]
 ```
 
+### 4. HTML结构化提取器
+```python
+from bs4 import BeautifulSoup
+from lxml import etree
+
+class HTMLContentExtractor:
+    """
+    基于BeautifulSoup和lxml的HTML结构化提取工具。
+    适用于爬虫获取的原始HTML文本。
+    """
+    
+    def extract_title_and_links(self, html_content: str) -> dict:
+        """提取页面标题和前5个链接"""
+        try:
+            # 使用lxml解析器以获得更好的性能和容错性
+            soup = BeautifulSoup(html_content, 'lxml')
+            
+            title = soup.title.string if soup.title else "无标题"
+            
+            links = []
+            for a_tag in soup.find_all('a', href=True)[:5]:
+                links.append({
+                    "text": a_tag.get_text(strip=True),
+                    "href": a_tag['href']
+                })
+                
+            return {
+                "title": title,
+                "links": links
+            }
+        except Exception as e:
+            return {
+                "title": f"HTML解析失败: {e}",
+                "links": []
+            }
+            
+    def extract_table_data(self, html_content: str) -> list:
+        """提取HTML中的第一个表格数据"""
+        try:
+            soup = BeautifulSoup(html_content, 'lxml')
+            table = soup.find('table')
+            if not table:
+                return []
+                
+            data = []
+            for row in table.find_all('tr'):
+                cols = [ele.text.strip() for ele in row.find_all(['td', 'th'])]
+                if cols:
+                    data.append(cols)
+            return data
+        except Exception:
+            return []
+
+```
+
 ---
 
 ## 🎯 AI使用指南
@@ -348,7 +403,21 @@ def complete_analysis_workflow(data_context: str) -> str:
         }
     }
     
-    # 4. 标准化输出
+    # 4. 标准化输出 (使用tabulate格式化表格数据作为辅助信息)
+    # 假设我们有一个表格数据需要美化输出
+    sample_table_data = [
+        ["货币", "价格", "置信度"],
+        ["USD", prices.get("USD", "N/A"), "高"],
+        ["CNY", prices.get("CNY", "N/A"), "中"]
+    ]
+    
+    try:
+        from tabulate import tabulate
+        table_output = tabulate(sample_table_data, headers="firstrow", tablefmt="pipe")
+        report["metadata"]["格式化表格示例"] = table_output
+    except ImportError:
+        report["metadata"]["格式化表格示例"] = "tabulate库未导入或不可用"
+        
     return json.dumps(report, ensure_ascii=False, indent=2)
 
 # 辅助函数

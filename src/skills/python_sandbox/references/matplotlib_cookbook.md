@@ -233,6 +233,83 @@ def create_network_diagram():
 create_network_diagram()
 ```
 
+## ⚡ Plotly 交互式图表 (新增)
+
+Plotly 提供了交互式图表能力，支持：
+- 鼠标悬停显示数值
+- 缩放和平移
+- 数据点选择
+- 动态更新
+
+**核心使用方法**：
+- 必须创建并赋值一个 `plotly.graph_objects.Figure` 或 `plotly.express` 返回的 Figure 对象。
+- **无需**调用任何 `show()` 或手动编码，系统会自动检测并捕获最后一个 Figure 对象。
+
+### 模板1：基本 Plotly 图表
+```python
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
+
+# 示例1：基本图表
+fig = go.Figure(data=go.Scatter(x=[1,2,3], y=[4,1,2]))
+fig.update_layout(title='交互式图表', xaxis_title='X轴', yaxis_title='Y轴')
+
+# 系统会自动捕获并显示图表
+```
+
+### 模板2：Plotly Express 柱状图
+```python
+import plotly.express as px
+import pandas as pd
+
+df = pd.DataFrame({
+    '类别': ['A', 'B', 'C', 'D'],
+    '数值': [10, 20, 15, 30]
+})
+fig = px.bar(df, x='类别', y='数值', title='Plotly Express 柱状图')
+
+# 自动显示图表
+```
+
+### 模板3：Plotly 金融 K 线图
+```python
+import plotly.graph_objects as go
+import pandas as pd
+import numpy as np
+
+# 创建K线图数据
+dates = pd.date_range('2024-01-01', periods=20)
+df = pd.DataFrame({
+    'Date': dates,
+    'Open': np.random.randn(20).cumsum() + 100,
+    'High': np.random.randn(20).cumsum() + 105,
+    'Low': np.random.randn(20).cumsum() + 95,
+    'Close': np.random.randn(20).cumsum() + 102
+})
+
+fig = go.Figure(data=[go.Candlestick(
+    x=df['Date'],
+    open=df['Open'],
+    high=df['High'],
+    low=df['Low'],
+    close=df['Close']
+)])
+
+fig.update_layout(
+    title='股票价格K线图',
+    yaxis_title='价格',
+    xaxis_title='日期'
+)
+
+# 自动显示图表
+```
+
+### ⚠️ Plotly 注意事项
+1.  Plotly 图表会被自动转换为静态 PNG 图片显示。
+2.  图表大小建议控制在 1200×800 像素以内。
+3.  复杂图表可能需要额外内存，但通常不超过 100MB。
+
 ## 🔄 后端实际捕获机制说明
 
 ### 捕获优先级顺序：

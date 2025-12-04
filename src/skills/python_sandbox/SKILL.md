@@ -6,7 +6,7 @@ category: code
 priority: 10
 tags: ["python", "code", "visualization", "data-analysis", "chart", "document", "automation", "machine-learning", "reporting", "excel", "word", "pdf", "ppt"]
 version: 2.3
-references: ["matplotlib_cookbook.md", "pandas_cheatsheet.md", "report_generator_workflow.md", "ml_workflow.md", "sympy_cookbook.md","scipy_cookbook.md"]
+references: ["matplotlib_cookbook.md", "pandas_cheatsheet.md", "report_generator_workflow.md", "ml_workflow.md", "sympy_cookbook.md","scipy_cookbook.md", "text_analysis_cookbook.md"]
 ---
 
 # Python沙盒工具使用指南 (v2.3 最终完整版)
@@ -130,7 +130,11 @@ print(df.head())
 - **任务**: 进行数值优化、积分、信号处理、线性代数等高级科学计算
 - **指令**: **当需要进行复杂的数值计算时，请查阅 `references/scipy_cookbook.md`** 以获取正确的函数用法和示例
 
-### 7. 流程图与架构图生成
+### 7. 文本分析与结构化提取 (新增)
+- **任务**: 从爬虫获取的网页内容或文档中提取价格、规格、分类等结构化信息。
+- **指令**: **必须查阅 `references/text_analysis_cookbook.md`**，并使用 `beautifulsoup4` 和 `lxml` 进行高效的HTML解析。
+
+### 8. 流程图与架构图生成
 - **任务**: 创建系统架构图、流程图、网络拓扑图
 - **指令**: **请参考 `references/matplotlib_cookbook.md` 中的流程图章节**
 - **适用场景**: 技术架构说明、系统设计、流程可视化
@@ -166,10 +170,15 @@ print(df.head())
 - `numpy==1.26.4` - 数值计算
 - `scipy==1.14.1` - 科学计算
 
+### 网页内容处理
+- `beautifulsoup4==4.12.3` - HTML/XML解析与数据提取
+- `lxml==5.2.2` - 高性能HTML/XML解析器
+- `tabulate==0.9.0` - 格式化表格输出
+
 ### 可视化
 - `matplotlib==3.8.4` - 基础绘图库
 - `seaborn==0.13.2` - 统计可视化
-- `plotly==5.18.0` - 交互式图表
+- `plotly==5.22.0` - 交互式图表
 
 ### 文档生成
 - `python-docx==1.1.2` - Word文档
@@ -191,7 +200,7 @@ print(df.head())
 
 ## 🚨 重要提醒
 
-1.  **图表优先使用 `plt.show()`**，让系统自动捕获。
+1.  **图表优先使用 `plt.show()` (Matplotlib/Seaborn/NetworkX) 或创建 Plotly Figure 对象**，让系统自动捕获。
 2.  **生成可下载文件必须 `print()` 指定的JSON格式**。
 3.  **分清两种文件输入**: 上传的数据文件在 `/data` 中，附加的媒体文件在上下文中。
 4.  **利用会话文件系统**: 你可以向 `/data` 目录写入和读取文件，这在多步骤的复杂分析中非常有用。
