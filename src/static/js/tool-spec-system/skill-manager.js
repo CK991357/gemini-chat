@@ -1,11 +1,37 @@
 // src/tool-spec-system/skill-manager.js
 import { getSkillsRegistry } from './generated-skills.js';
+import { knowledgeFederation } from './skill-loader.js';
 
 class EnhancedSkillManager {
   constructor(synonyms) {
     this.skills = getSkillsRegistry();
     this.synonymMap = synonyms;
+    
+    // 🎯 新增：联邦知识库集成
+    this.knowledgeFederation = knowledgeFederation;
+    this.isFederationReady = false;
+    
+    // 🎯 自动初始化联邦知识库
+    this.initializeFederation().then(() => {
+      this.isFederationReady = true;
+      console.log(`🎯 [联邦知识] 系统已就绪，可用技能: ${this.skills.size} 个`);
+    }).catch(err => {
+      console.warn(`🎯 [联邦知识] 初始化失败，将使用基础模式:`, err);
+    });
+    
     console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
+  }
+
+  /**
+   * 🎯 新增：初始化联邦知识库
+   */
+  async initializeFederation() {
+    if (this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
+      await this.knowledgeFederation.initializeFromRegistry();
+      console.log(`🎯 [联邦知识] 初始化完成，知识库大小: ${this.knowledgeFederation.knowledgeBase?.size || 0}`);
+    } else {
+      console.warn(`🎯 [联邦知识] 知识库模块不可用`);
+    }
   }
 
   /**
@@ -184,10 +210,144 @@ class EnhancedSkillManager {
   }
 
   /**
-   * [最终修复版] 智能生成单个技能的注入内容
-   * 能够提取并注入完整的、与用户查询最相关的文档章节
+   * 🎯 [升级版] 智能生成单个技能的注入内容
+   * 集成联邦知识检索系统，为复杂工具提供更丰富的上下文
    */
   generateSkillInjection(skill, userQuery = '') {
+    const { metadata, content } = skill;
+    const toolName = metadata.tool_name;
+    
+    console.log(`🎯 [知识注入] 开始为 ${toolName} 生成注入内容`);
+    
+    // 🎯 特殊处理：对 python_sandbox 使用联邦知识库
+    if (toolName === 'python_sandbox' && this.isFederationReady) {
+      try {
+        const federatedContent = this.generateFederatedInjection(toolName, userQuery, metadata);
+        if (federatedContent) {
+          console.log(`🎯 [知识注入] 成功使用联邦知识库为 ${toolName} 生成注入内容`);
+          return federatedContent;
+        }
+      } catch (error) {
+        console.warn(`🎯 [知识注入] 联邦知识库调用失败，回退到基础模式:`, error);
+      }
+    }
+    
+    // 🎯 回退：原始逻辑（保持向后兼容）
+    console.log(`🎯 [知识注入] 为 ${toolName} 使用基础注入模式`);
+    return this.generateBasicInjection(skill, userQuery);
+  }
+
+  /**
+   * 🎯 新增：使用联邦知识库生成注入内容
+   */
+  generateFederatedInjection(toolName, userQuery, metadata) {
+    if (!this.knowledgeFederation || !this.isFederationReady) {
+      console.warn(`🎯 [联邦注入] 知识库未就绪，无法为 ${toolName} 生成增强内容`);
+      return null;
+    }
+    
+    // 🎯 构建上下文，用于智能推断相关章节
+    const context = {
+      userQuery: userQuery,
+      toolCallHistory: [], // 可以留空，或从全局状态获取
+      mode: 'standard' // 普通模式
+    };
+    
+    // 🎯 推断相关章节
+    const relevantSections = this.inferRelevantSections(userQuery);
+    
+    // 🎯 从联邦知识库获取内容
+    const knowledgePackage = this.knowledgeFederation.getFederatedKnowledge(
+      toolName, 
+      relevantSections
+    );
+    
+    if (!knowledgePackage) {
+      console.warn(`🎯 [联邦注入] 知识库中未找到 ${toolName} 的内容`);
+      return null;
+    }
+    
+    // 🎯 构建增强的注入内容
+    let injectionContent = `## 🛠️ 增强工具指南: ${metadata.name} (${toolName})\n\n`;
+    injectionContent += `**核心功能**: ${metadata.description}\n\n`;
+    
+    // 添加联邦知识库提供的内容
+    injectionContent += `### 📚 智能提取的相关指导\n`;
+    injectionContent += knowledgePackage;
+    
+    // 添加通用的调用结构和错误示例
+    injectionContent += `\n\n### 🚨 【强制遵守】通用调用结构\n`;
+    
+    // 从原始内容中提取通用结构
+    const generalStructureRegex = /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i;
+    const generalStructureMatch = metadata.content?.match(generalStructureRegex);
+    if (generalStructureMatch) {
+      injectionContent += generalStructureMatch[0] + '\n\n';
+    } else {
+      injectionContent += `请参考工具的通用调用结构，确保参数格式正确。\n\n`;
+    }
+    
+    injectionContent += `请严格遵循上述指南和示例来使用 **${toolName}** 工具。`;
+    
+    console.log(`🎯 [联邦注入] 成功为 ${toolName} 生成增强内容 (${knowledgePackage.length} 字符)`);
+    return injectionContent;
+  }
+
+  /**
+   * 🎯 新增：智能推断相关章节（简化版）
+   * 基于用户查询推断应该加载哪些参考文档
+   */
+  inferRelevantSections(userQuery) {
+    const sections = new Set();
+    const queryLower = userQuery.toLowerCase();
+    
+    // 🎯 数据相关查询
+    if (this.containsKeywords(queryLower, ['数据', 'data', 'pandas', '清洗', '分析', '处理'])) {
+      sections.add('pandas_cheatsheet');
+      sections.add('数据清洗与分析');
+      sections.add('ETL管道模式');
+    }
+    
+    // 🎯 可视化相关查询
+    if (this.containsKeywords(queryLower, ['可视化', 'visual', 'plot', 'chart', '图表', '绘图', 'matplotlib'])) {
+      sections.add('matplotlib_cookbook');
+      sections.add('数据可视化');
+    }
+    
+    // 🎯 文本处理相关查询
+    if (this.containsKeywords(queryLower, ['文本', 'text', '字符串', '处理', '提取', '解析'])) {
+      sections.add('文本分析与结构化提取');
+      sections.add('text_analysis_cookbook.md');
+    }
+    
+    // 🎯 数学/计算相关查询
+    if (this.containsKeywords(queryLower, ['数学', '公式', '计算', '证明', 'sympy', '科学'])) {
+      sections.add('公式证明工作流');
+      sections.add('sympy_cookbook');
+      sections.add('科学计算与优化');
+    }
+    
+    // 🎯 机器学习相关查询
+    if (this.containsKeywords(queryLower, ['机器学习', 'ml', '模型', '训练', '预测', '分类'])) {
+      sections.add('机器学习');
+      sections.add('ml_workflow');
+    }
+    
+    console.log(`🎯 [章节推断] 查询: "${userQuery}" -> 推断章节: ${Array.from(sections).join(', ')}`);
+    return Array.from(sections);
+  }
+
+  /**
+   * 🎯 辅助方法：检查是否包含关键词
+   */
+  containsKeywords(text, keywords) {
+    return keywords.some(keyword => text.includes(keyword.toLowerCase()));
+  }
+
+  /**
+   * 🎯 基础注入内容生成（保持原有逻辑）
+   */
+  generateBasicInjection(skill, userQuery = '') {
     const { metadata, content } = skill;
     
     let injectionContent = `## 🛠️ 工具指南: ${metadata.name} (${metadata.tool_name})\n\n`;
@@ -295,16 +455,30 @@ class EnhancedSkillManager {
   }
 
   /**
-   * [最终修复版] 多技能注入内容生成
+   * [升级版] 多技能注入内容生成
    * 对 crawl4ai 等复杂工具进行特殊处理，注入更详细的指南
    */
   generateMultiSkillInjection(skills, userQuery) {
     if (skills.length === 0) return '';
     
-    // 如果只有一个技能，或者最重要的技能是 crawl4ai，则使用单技能的详细注入
+    // 🎯 特殊处理：对 python_sandbox 使用联邦知识库
     const primarySkill = skills[0];
-    if (skills.length === 1 || primarySkill.toolName === 'crawl4ai') {
-      return this.generateSkillInjection(primarySkill.skill, userQuery);
+    const toolName = primarySkill.toolName;
+    
+    if (toolName === 'python_sandbox' && this.isFederationReady) {
+      try {
+        const federatedContent = this.generateFederatedInjection(toolName, userQuery, primarySkill.skill.metadata);
+        if (federatedContent) {
+          return federatedContent;
+        }
+      } catch (error) {
+        console.warn(`🎯 [多技能注入] 联邦知识库调用失败，回退到基础模式:`, error);
+      }
+    }
+    
+    // 如果只有一个技能，或者最重要的技能是 crawl4ai，则使用单技能的详细注入
+    if (skills.length === 1 || toolName === 'crawl4ai') {
+      return this.generateBasicInjection(primarySkill.skill, userQuery);
     }
     
     // 对于多个非关键技能，保持摘要模式
@@ -393,6 +567,8 @@ class EnhancedSkillManager {
       initialized: this.isInitialized,
       skillCount: this.skills.size,
       tools: this.getAllSkills().map(t => t.tool_name),
+      federationReady: this.isFederationReady,
+      federationSize: this.knowledgeFederation?.knowledgeBase?.size || 0,
       timestamp: new Date().toISOString()
     };
   }
