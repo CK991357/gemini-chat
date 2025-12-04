@@ -847,61 +847,6 @@ class DeepResearchToolAdapter {
     }
     
     /**
-     * 🎯 检查内容是否真正有意义 - 原始严格版本（保留作为参考/默认）
-     */
-    static isContentMeaningful(content) {
-        if (!content || typeof content !== 'string') return false;
-        
-        const trimmedContent = content.trim();
-        // 适度放宽
-        if (trimmedContent.length < 100) {
-            console.log(`[ContentCheck-Original] 内容过短: ${trimmedContent.length} 字符`);
-            return false;
-        }
-        
-        // 检查是否只包含导航/页脚内容
-        const meaninglessPatterns = [
-            'skip to main content',
-            'skip to content',
-            'generated using AI',
-            'may contain mistakes',
-            'copyright',
-            'all rights reserved',
-            'privacy policy',
-            'terms of service',
-            'login',
-            'sign up',
-            'navigation',
-            'menu'
-        ];
-        
-        const lowerContent = trimmedContent.toLowerCase();
-        const meaninglessCount = meaninglessPatterns.filter(pattern =>
-            lowerContent.includes(pattern)
-        ).length;
-        
-        // 如果包含太多无意义内容模式，则认为内容无效
-        if (meaninglessCount > 3) {
-            console.log(`[ContentCheck-Original] 检测到过多无意义内容模式: ${meaninglessCount}`);
-            return false;
-        }
-        
-        // 检查实际文本密度（排除HTML标签、链接等）
-        const textOnly = trimmedContent.replace(/\[.*?\]\(.*?\)/g, '') // 移除markdown链接
-                                     .replace(/<[^>]*>/g, '') // 移除HTML标签
-                                     .replace(/\s+/g, ' ') // 合并空格
-                                     .trim();
-        
-        if (textOnly.length < 50) { // 进一步放宽纯文本长度检查
-            console.log(`[ContentCheck-Original] 纯文本内容过少: ${textOnly.length} 字符`);
-            return false;
-        }
-        
-        console.log(`[ContentCheck-Original] 内容有效: 总长度 ${trimmedContent.length}, 纯文本长度 ${textOnly.length}`);
-        return true;
-    }
-    
-    /**
      * 🎯 新增：宽松内容有效性检查
      *    - 解决 Agent 模式下抓取文档页面内容被误判为"无意义"而导致的重试循环。
      */
@@ -933,8 +878,390 @@ class DeepResearchToolAdapter {
             return true;
         }
         
-        // 4. 最后回退到原始的检查
-        return this.isContentMeaningful(content);
+        // 4. 对于激进保留策略，我们不再需要严格的 isContentMeaningful 检查，因为我们只移除垃圾
+        // 只要通过了长度和代码检查，就认为是有效内容。
+        return true;
+    }
+
+    /**
+     * 🔥 激进内容净化器 - 只移除真正无用的部分
+     */
+    static AggressiveContentPreserver = class {
+        /**
+         * 激进内容净化：只移除导航、页脚、广告等无用内容
+         */
+        static aggressivelyPreserve(content) {
+            if (!content || content.length < 20000) return content;
+            
+            const lines = content.split('\n');
+            const preservedLines = [];
+            
+            // 定义真正需要移除的模式（高确定性无用）
+            const uselessPatterns = [
+                // 导航和页脚
+                /^skip to (main )?content$/i,
+                /^(navigation|menu|footer|header)$/i,
+                /^back to top$/i,
+                /^scroll (down|up)$/i,
+                
+                // 法律和版权
+                /^copyright ©/i,
+                /^all rights reserved$/i,
+                /^privacy policy$/i,
+                /^terms (of service|and conditions)$/i,
+                /^cookie policy$/i,
+                
+                // 广告和弹窗
+                /^advertisement$/i,
+                /^sponsored content$/i,
+                /^click here$/i,
+                /^subscribe now$/i,
+                /^sign up (for|to)/i,
+                /^log in$/i,
+                
+                // 元信息和重复
+                /^generated (by|using) AI$/i,
+                /^this article may contain/,
+                /^read more:/i,
+                /^continue reading$/i,
+                
+                // 无意义的短行
+                /^\s*$/, // 空行
+                /^\s*\.\s*$/, // 只有一个点
+                /^\s*\d+\s*$/, // 只有数字
+            ];
+            
+            // 定义需要保留的模式（即使看起来像导航，但可能是重要内容）
+            const preservePatterns = [
+                /^table of contents$/i, // 目录可能有用
+                /^\d+\.\s/, // 编号列表
+                /^[IVX]+\.\s/, // 罗马数字列表
+                /^appendix/i, // 附录
+                /^references?/i, // 参考文献
+                /^footnotes?/i, // 脚注
+                /^data source/i, // 数据来源
+            ];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // 跳过空行（但保留换行结构）
+                if (line === '') {
+                    // 最多保留连续2个空行，避免过多空白
+                    const prevLine = preservedLines[preservedLines.length - 1];
+                    const prevPrevLine = preservedLines[preservedLines.length - 2];
+                    if (prevLine !== '' || prevPrevLine !== '') {
+                        preservedLines.push('');
+                    }
+                    continue;
+                }
+                
+                // 检查是否应该保留（即使匹配无用模式）
+                let shouldPreserve = false;
+                for (const pattern of preservePatterns) {
+                    if (pattern.test(line)) {
+                        shouldPreserve = true;
+                        break;
+                    }
+                }
+                
+                if (shouldPreserve) {
+                    preservedLines.push(lines[i]);
+                    continue;
+                }
+                
+                // 检查是否真正无用
+                let isUseless = false;
+                for (const pattern of uselessPatterns) {
+                    if (pattern.test(line)) {
+                        isUseless = true;
+                        break;
+                    }
+                }
+                
+                if (!isUseless) {
+                    preservedLines.push(lines[i]);
+                }
+            }
+            
+            // 移除开头和结尾的无用内容块
+            let purified = preservedLines.join('\n');
+            purified = this.trimUselessBlocks(purified);
+            
+            console.log(`[AggressivePreserve] 原始: ${content.length}字符 → 净化: ${purified.length}字符 (保留率: ${(purified.length/content.length*100).toFixed(1)}%)`);
+            
+            return purified;
+        }
+        
+        /**
+         * 移除开头和结尾的无用内容块
+         */
+        static trimUselessBlocks(content) {
+            const paragraphs = content.split('\n\n');
+            const meaningfulStartIndex = this.findMeaningfulStart(paragraphs);
+            const meaningfulEndIndex = this.findMeaningfulEnd(paragraphs);
+            
+            if (meaningfulStartIndex > 0 || meaningfulEndIndex < paragraphs.length - 1) {
+                const trimmed = paragraphs.slice(meaningfulStartIndex, meaningfulEndIndex + 1).join('\n\n');
+                console.log(`[TrimBlocks] 移除 ${meaningfulStartIndex}个开头段落和 ${paragraphs.length - meaningfulEndIndex - 1}个结尾段落`);
+                return trimmed;
+            }
+            
+            return content;
+        }
+        
+        /**
+         * 找到内容真正开始的位置
+         */
+        static findMeaningfulStart(paragraphs) {
+            for (let i = 0; i < Math.min(10, paragraphs.length); i++) {
+                const para = paragraphs[i];
+                const hasRealContent = this.hasRealContent(para);
+                const isUselessIntro = /^(welcome to|about this site|home|site map)/i.test(para);
+                
+                if (hasRealContent && !isUselessIntro) {
+                    return i;
+                }
+            }
+            return 0;
+        }
+        
+        /**
+         * 找到内容真正结束的位置
+         */
+        static findMeaningfulEnd(paragraphs) {
+            for (let i = paragraphs.length - 1; i >= Math.max(0, paragraphs.length - 10); i--) {
+                const para = paragraphs[i];
+                const hasRealContent = this.hasRealContent(para);
+                const isUselessEnding = /^(copyright|privacy policy|terms of use|contact us)/i.test(para);
+                
+                if (hasRealContent && !isUselessEnding) {
+                    return i;
+                }
+            }
+            return paragraphs.length - 1;
+        }
+        
+        /**
+         * 判断段落是否有真实内容
+         */
+        static hasRealContent(paragraph) {
+            if (!paragraph || paragraph.trim().length < 50) return false;
+            
+            // 包含以下任意一项即认为有真实内容
+            const checks = [
+                () => paragraph.match(/[.!?]\s*$/), // 有完整句子
+                () => paragraph.split(/\s+/).length > 20, // 足够多的单词
+                () => paragraph.match(/\d/), // 包含数字
+                () => paragraph.match(/[A-Z][a-z]+/), // 包含大写开头的单词
+                () => paragraph.match(/\b(?:the|and|for|with|that|this)\b/i), // 包含常见单词
+                () => paragraph.includes(':') || paragraph.includes(' - '), // 包含说明性标点
+            ];
+            
+            return checks.some(check => check());
+        }
+    }
+
+    /**
+     * 🎯 激进信息保留策略 - 保留率70-85%，只去掉真正垃圾
+     */
+    static preserveAggressively(content, researchMode = 'deep') {
+        if (!content || content.length <= 20000) return content;
+        
+        // 1. 激进净化（只移除真正的垃圾）
+        const purified = this.AggressiveContentPreserver.aggressivelyPreserve(content);
+        
+        // 2. 根据研究模式设置保留率
+        const preservationRates = {
+            deep: 0.85,       // 深度研究：保留85%
+            academic: 0.80,   // 学术研究：保留80%
+            technical: 0.75,  // 技术文档：保留75%
+            business: 0.70,   // 商业分析：保留70%
+            standard: 0.60    // 标准模式：保留60%
+        };
+        
+        const targetRate = preservationRates[researchMode] || 0.75;
+        const targetLength = Math.min(
+            Math.floor(content.length * targetRate),
+            40000 // 绝对上限40k
+        );
+        
+        // 3. 如果净化后仍然超过目标长度，进行智能修剪
+        if (purified.length > targetLength) {
+            // 智能修剪：移除最不重要的部分，但保留所有数据
+            const trimmed = this.intelligentlyTrim(purified, targetLength, researchMode);
+            return trimmed;
+        }
+        
+        return purified;
+    }
+
+    /**
+     * 🧠 智能修剪：保留所有数据，修剪描述性内容
+     */
+    static intelligentlyTrim(content, targetLength, researchMode) {
+        // 分离数据内容（数字、表格、代码）和描述性内容
+        const { dataParts, descriptiveParts } = this.separateDataAndDescriptive(content);
+        
+        let result = '';
+        let currentLength = 0;
+        
+        // 1. 优先保留所有数据部分（100%保留）
+        for (const dataPart of dataParts) {
+            result += dataPart + '\n\n';
+            currentLength += dataPart.length + 2;
+        }
+        
+        // 2. 如果还有空间，添加描述性内容
+        const remainingForDescriptive = targetLength - currentLength;
+        if (remainingForDescriptive > 1000) {
+            // 从描述性内容中选择最重要的
+            const selectedDescriptive = this.selectDescriptiveContent(
+                descriptiveParts,
+                remainingForDescriptive,
+                researchMode
+            );
+            result = selectedDescriptive + '\n\n' + result; // 描述在前，数据在后
+        }
+        
+        // 3. 如果仍然超长，压缩描述性内容（但数据部分不动）
+        if (result.length > targetLength) {
+            // 压缩描述性段落，但不压缩数据部分
+            // 🎯 简化：由于我们已经做了智能选择，这里只做硬性截断并添加提示
+            const descriptiveLength = result.length - currentLength;
+            const trimAmount = result.length - targetLength;
+            
+            if (descriptiveLength > trimAmount) {
+                // 尝试从描述性内容中移除多余部分
+                const descriptiveContent = result.substring(0, descriptiveLength);
+                const dataContent = result.substring(descriptiveLength);
+                
+                const trimmedDescriptive = descriptiveContent.substring(0, descriptiveLength - trimAmount - 200) +
+                                           '\n\n... [描述性内容已压缩] ...\n\n';
+                
+                result = trimmedDescriptive + dataContent;
+            } else {
+                // 如果数据部分也超长，只能硬性截断
+                result = result.substring(0, targetLength - 200) +
+                         '\n\n... [内容已硬性截断以适应上下文限制] ...';
+            }
+        }
+        
+        console.log(`[IntelligentTrim] 数据部分: ${dataParts.length}段, 描述性部分: ${descriptiveParts.length}段`);
+        console.log(`[IntelligentTrim] 最终长度: ${result.length}/${targetLength}字符`);
+        
+        return result;
+    }
+
+    /**
+     * 📊 分离数据内容和描述性内容
+     */
+    static separateDataAndDescriptive(content) {
+        const paragraphs = content.split('\n\n');
+        const dataParts = [];
+        const descriptiveParts = [];
+        
+        for (const para of paragraphs) {
+            const isDataPart = this.isDataRichParagraph(para);
+            
+            if (isDataPart) {
+                dataParts.push(para);
+            } else {
+                descriptiveParts.push(para);
+            }
+        }
+        
+        return { dataParts, descriptiveParts };
+    }
+
+    /**
+     * 🔢 判断段落是否富含数据
+     */
+    static isDataRichParagraph(paragraph) {
+        // 检查是否包含高价值数据
+        const checks = [
+            // 结构化数据
+            () => paragraph.includes('```') || paragraph.startsWith('|'),
+            // 数字密度高
+            () => {
+                const numbers = (paragraph.match(/\d+/g) || []).length;
+                const words = paragraph.split(/\s+/).length;
+                return words > 0 && (numbers / words) > 0.1; // 10%以上是数字
+            },
+            // 包含财务/科学数据
+            () => paragraph.match(/\$[\d,.]+|\d+\.\d+%|\d+\s*(?:million|billion|thousand)/i),
+            // 包含表格或列表数据
+            () => paragraph.match(/^\s*(?:\d+\.|\*|\-)\s+/m),
+            // 包含代码或公式
+            () => paragraph.match(/function|class|def|import|\\\(|\\\[|\\begin\{/),
+            // 包含引用或参考文献
+            () => paragraph.match(/\[\d+\]|\([A-Za-z]+,?\s*\d{4}\)/),
+        ];
+        
+        return checks.some(check => check());
+    }
+
+    /**
+     * 📝 选择最重要的描述性内容
+     */
+    static selectDescriptiveContent(descriptiveParts, maxLength, researchMode) {
+        // 给描述性段落评分
+        const scored = descriptiveParts.map((para, index) => {
+            let score = 0;
+            
+            // 位置分数（开头结尾更重要）
+            const position = index / descriptiveParts.length;
+            if (position < 0.2 || position > 0.8) score += 3;
+            
+            // 长度分数（中等长度最好）
+            const len = para.length;
+            if (len > 200 && len < 800) score += 2;
+            
+            // 结构分数（标题、列表等）
+            if (para.match(/^#+\s/)) score += 4;
+            if (para.match(/^\s*(?:•|\*|\-)\s+/m)) score += 2;
+            
+            // 连接词分数（表明逻辑关系）
+            if (para.match(/\b(?:however|therefore|consequently|in conclusion|summary)\b/i)) score += 3;
+            
+            return { para, score };
+        });
+        
+        // 按分数排序
+        scored.sort((a, b) => b.score - a.score);
+        
+        // 选择直到达到长度限制
+        let result = '';
+        let currentLength = 0;
+        
+        for (const { para } of scored) {
+            if (currentLength + para.length <= maxLength) {
+                result += para + '\n\n';
+                currentLength += para.length + 2;
+            } else {
+                // 尝试截取段落的一部分
+                const remaining = maxLength - currentLength - 100;
+                if (remaining > 200) {
+                    // 找到句子的边界
+                    const sentences = para.split(/[.!?]+/);
+                    let extracted = '';
+                    for (const sentence of sentences) {
+                        if (extracted.length + sentence.length < remaining) {
+                            extracted += sentence + '. ';
+                        } else {
+                            break;
+                        }
+                    }
+                    if (extracted) {
+                        result += extracted.trim() + '\n\n';
+                        currentLength += extracted.length + 2;
+                    }
+                }
+                break;
+            }
+        }
+        
+        return result;
     }
     
     /**
@@ -1268,7 +1595,7 @@ ${suggestions.map(suggestion => `- ${suggestion}`).join('\n')}
      * 根据研究模式格式化网页内容
      */
 static formatWebContentForMode(webData, researchMode) {
-    const content = webData.content || webData.markdown || '';
+    const rawContent = webData.content || webData.markdown || '';
     const title = webData.title || '无标题';
     const url = webData.url || '未知';
     
@@ -1282,14 +1609,33 @@ static formatWebContentForMode(webData, researchMode) {
     
     const prefix = modePrefixes[researchMode] || modePrefixes.standard;
     
+    // 🎯 激进保留策略：保留70-85%的内容，只去掉真正无用的
+    const preservedContent = this.preserveAggressively(
+        rawContent,
+        researchMode
+    );
+    
     // 🔥 关键修复：对于 batch_crawl，显示不同的格式
     if (url === '多个URL' && title.includes('批量抓取结果')) {
-        return `${prefix}:\n\n**${title}**\n**内容长度**: ${content.length} 字符\n**内容**:\n${content}`;
+        return `${prefix}:\n\n**${title}**\n${preservedContent}`;
     }
     
+    // 简洁元信息 + 主要内容
+    const metaInfo = `${prefix}:\n\n**标题**: ${title}\n**URL**: ${url}\n\n`;
+    
     // 🎯 关键修复：无论内容长度如何都返回有效输出
-    if (content && content.length > 0) {
-        return `${prefix}:\n\n**标题**: ${title}\n**URL**: ${url}\n**内容长度**: ${content.length} 字符\n**内容**:\n${content}`;
+    if (rawContent && rawContent.length > 0) {
+        // 如果内容仍然太长（超过30k），添加说明
+        if (preservedContent.length > 30000) {
+            const rawLength = rawContent.length.toLocaleString();
+            const preservedLength = preservedContent.length.toLocaleString();
+            const preservationRate = (preservedContent.length/rawContent.length*100).toFixed(1);
+            
+            return metaInfo + preservedContent +
+                   `\n\n📊 **内容说明**: 已激进保留${preservedLength}字符（原始${rawLength}字符），保留率${preservationRate}%。\n💡 **提示**: 后续如有需要，系统会自动进行LLM智能摘要。`;
+        }
+        
+        return metaInfo + preservedContent;
     } else {
         // 🎯 即使没有content，也返回其他有用信息
         const availableFields = Object.keys(webData).filter(key =>
