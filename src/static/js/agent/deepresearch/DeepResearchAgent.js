@@ -1616,8 +1616,13 @@ ${promptFragment}
                 console.warn(`[DeepResearchAgent] 结构化数据处理失败 (步骤 ${index}):`, e);
                 // 忽略解析错误
             }
+            
+            // 1. 分析内容的时效性
+            const temporalScore = this._analyzeTemporalContent(step.observation);
+            const year = this._extractYear(step.observation);
+            const isCurrentYear = this._isCurrentYearData(step.observation);
 
-            // 🎯 【修改】构建证据条目，包含结构化数据
+            // 🎯 【修改】构建证据条目，包含结构化数据和时效性数据
             const evidenceEntry = {
                 stepIndex: index + 1,
                 subQuestion: subQuestion,
@@ -1627,7 +1632,11 @@ ${promptFragment}
                 keyFinding: step.key_finding,
                 tool: step.action?.tool_name,
                 originalLength: step.observation.length,
-                cleanedLength: cleanEvidence.length
+                cleanedLength: cleanEvidence.length,
+                // 🆕 新增：时效性数据
+                temporalPriority: temporalScore,
+                year: year,
+                isCurrentYear: isCurrentYear
             };
 
             evidenceEntries.push(evidenceEntry);
@@ -1639,6 +1648,16 @@ ${promptFragment}
                 step.key_finding !== '关键发现提取异常。') {
                 keyFindings.push(step.key_finding);
             }
+        });
+        
+        // 3. 按时效性排序：当前年 > 去年 > 更早年份
+        evidenceEntries.sort((a, b) => {
+            // 优先当前年数据
+            if (a.isCurrentYear && !b.isCurrentYear) return -1;
+            if (!a.isCurrentYear && b.isCurrentYear) return 1;
+            
+            // 其次按年份倒序
+            return (b.year || 0) - (a.year || 0);
         });
 
         return {
@@ -1784,6 +1803,33 @@ ${promptFragment}
         
         return `\n## 📊 结构化数据表格\n\n${table}\n\n`;
     }
+    // 🆕 新增：时效性分析工具
+    _extractYear(observation) {
+        // 匹配 20XX 年份
+        const yearMatches = observation.match(/(20\d{2})/g);
+        if (!yearMatches) return null;
+
+        // 返回最大的年份（即最新的年份）
+        return Math.max(...yearMatches.map(y => parseInt(y, 10)));
+    }
+
+    _isCurrentYearData(observation) {
+        const currentYear = new Date().getFullYear();
+        const year = this._extractYear(observation);
+        return year === currentYear;
+    }
+
+    _analyzeTemporalContent(observation) {
+        const currentYear = new Date().getFullYear();
+        const year = this._extractYear(observation);
+
+        if (year === currentYear) return 1.0; // 当前年，最高优先级
+        if (year === currentYear - 1) return 0.8; // 去年，高优先级
+        if (year >= 2020) return 0.5; // 近五年，中优先级
+        return 0.1; // 默认低优先级
+    }
+
+
 
 
     // ✨ 新增：强化资料来源提取
