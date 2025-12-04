@@ -476,59 +476,72 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                                 data: outputData
                             });
 
-                        } else if (outputData.type === 'ml_report' || outputData.type === 'data_extraction') {
-                            // 🔥 新增：处理机器学习报告或数据提取结果
-                            console.log(`[DeepResearchAgent] 📊 检测到${outputData.type}类型输出，保留完整数据`);
+            } else if (outputData.type === 'ml_report' || outputData.type === 'data_extraction') {
+                // 🎯 保留原有特殊类型的处理逻辑，但增强数据总线存储
+                console.log(`[DeepResearchAgent] 📊 检测到${outputData.type}类型输出，保留完整数据`);
 
-                            // 格式化输出以便Agent理解
-                            let formattedData = '';
-                            if (outputData.title) formattedData += `## ${outputData.title}\n\n`;
-                            if (outputData.summary) formattedData += `### 摘要\n${outputData.summary}\n\n`;
-                            if (outputData.tables && Array.isArray(outputData.tables)) {
-                                formattedData += `### 提取的表格数据\n`;
-                                outputData.tables.forEach((table, idx) => {
-                                    formattedData += `#### 表格 ${idx + 1}: ${table.title || '未命名'}\n`;
-                                    formattedData += `${table.content}\n\n`;
-                                });
-                            }
-                            if (outputData.metrics) {
-                                formattedData += `### 性能指标\n`;
-                                Object.entries(outputData.metrics).forEach(([key, value]) => {
-                                    formattedData += `- ${key}: ${value}\n`;
-                                });
-                            }
+                // 格式化输出以便Agent理解（保留原有逻辑）
+                let formattedData = '';
+                if (outputData.title) formattedData += `## ${outputData.title}\n\n`;
+                if (outputData.summary) formattedData += `### 摘要\n${outputData.summary}\n\n`;
+                if (outputData.tables && Array.isArray(outputData.tables)) {
+                    formattedData += `### 提取的表格数据\n`;
+                    outputData.tables.forEach((table, idx) => {
+                        formattedData += `#### 表格 ${idx + 1}: ${table.title || '未命名'}\n`;
+                        formattedData += `${table.content}\n\n`;
+                    });
+                }
+                if (outputData.metrics) {
+                    formattedData += `### 性能指标\n`;
+                    Object.entries(outputData.metrics).forEach(([key, value]) => {
+                        formattedData += `- ${key}: ${value}\n`;
+                    });
+                }
 
-                            finalObservation = `✅ **数据提取成功**\n\n${formattedData}\n\n**原始JSON键**: ${Object.keys(outputData).join(', ')}`;
+                // 🎯 新增：同时保存原始数据到数据总线
+                const jsonStr = sandboxResult.rawObservation; // 原始JSON字符串
+                this._storeRawData(this.intermediateSteps.length + 1, jsonStr, {
+                    toolName: 'code_generator',
+                    contentType: 'structured_data',
+                    dataType: outputData.type,
+                    hasSpecialFormatting: true
+                });
 
-                        } else {
-                            // 🔥 核心修复：对于其他成功的JSON输出，保留结构化数据
-                            console.log(`[DeepResearchAgent] 📦 保留成功执行的JSON输出，类型: ${outputData.type || 'unknown'}`);
+                // 使用格式化后的内容作为观察结果
+                finalObservation = `✅ **数据提取成功**\n\n${formattedData}\n\n**提示**：完整结构化数据已保存到数据总线 (DataBus:step_${this.intermediateSteps.length + 1})`;
 
-                            // 根据数据大小决定如何展示
-                            const jsonStr = JSON.stringify(outputData, null, 2);
-                            if (jsonStr.length > 2000) {
-                                // 如果太大，提取关键信息
-                                const keyCount = Object.keys(outputData).length;
-                                const sampleData = Object.entries(outputData)
-                                    .slice(0, 3)
-                                    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v.substring(0, 100) : typeof v}`)
-                                    .join('\n');
+            } else {
+                // 🔥 核心修复：对于所有其他成功的JSON输出，统一视为结构化数据
+                console.log(`[DeepResearchAgent] 📦 检测到结构化数据输出，类型: ${outputData.type || 'generic_data'}`);
 
-                                finalObservation = `✅ **专家任务执行成功**\n\n**输出类型**: ${outputData.type || '数据提取'}\n**数据字段**: ${keyCount} 个\n**示例**:\n${sampleData}\n\n⚠️ 完整数据过长，已保存到数据总线。`;
+                const jsonStr = sandboxResult.rawObservation; // 使用原始的 JSON 字符串
+                const outputType = outputData.type || 'generic_data';
+                const keyCount = Object.keys(outputData).length;
+                
+                // 1. 强制保存到数据总线，并标记为结构化数据
+                this._storeRawData(this.intermediateSteps.length + 1, jsonStr, {
+                    toolName: 'code_generator',
+                    contentType: 'structured_data',
+                    dataType: outputType
+                });
 
-                                // 保存到数据总线以便后续使用
-                                this._storeRawData(this.intermediateSteps.length + 1, jsonStr, {
-                                    toolName: 'code_generator',
-                                    contentType: 'structured_data',
-                                    dataType: outputData.type || 'extraction'
-                                });
+                // 2. 生成 Agent 友好的观察结果
+                let finalObservationContent;
+                if (jsonStr.length > 3000) {
+                    // 如果太大，只显示摘要和引用方式
+                    const sampleData = Object.entries(outputData)
+                        .slice(0, 3)
+                        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v.substring(0, 100) : typeof v}`)
+                        .join('\n');
 
-                            } else {
-                                // 如果数据量适中，直接显示
-                                finalObservation = `✅ **专家任务执行成功**\n\n**提取的数据**:\n\`\`\`json\n${jsonStr}\n\`\`\``;
-                            }
-                        }
-
+                    finalObservationContent = `✅ **专家任务执行成功 (结构化数据)**\n\n**数据类型**: ${outputType}\n**数据字段**: ${keyCount} 个\n**示例**:\n${sampleData}\n\n⚠️ 完整数据已保存到数据总线 (DataBus:step_${this.intermediateSteps.length + 1})，请在报告生成时引用。`;
+                } else {
+                    // 如果数据量适中，直接显示 JSON
+                    finalObservationContent = `✅ **专家任务执行成功 (结构化数据)**\n\n**数据类型**: ${outputType}\n\n**提取的数据**:\n\`\`\`json\n${jsonStr}\n\`\`\``;
+                }
+                
+                finalObservation = finalObservationContent;
+            }
                     } catch (e) {
                         // 如果输出不是JSON，或者解析失败
                         console.log('[DeepResearchAgent] Python输出不是JSON格式，作为纯文本处理');
