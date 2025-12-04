@@ -1374,6 +1374,30 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         // 🎯 这里获取的就是包含了 "引用与论证规范" 的核心指令块
         let promptFragment = getTemplatePromptFragment(researchMode);
         
+        // 🎯 【新增】条件化的表格指令
+        const tableRequirement = evidenceCollection.hasStructuredData ? `
+
+## 🎯 【新增】结构化数据呈现要求（条件触发）
+
+**检测到本次研究包含结构化数据（JSON/表格格式），你必须遵守以下规则：**
+
+### 1. 表格使用规则
+- 如果证据条目中包含"结构化数据表格"，**必须完整插入报告**
+- 表格应放在"数据呈现"或"分析结果"章节
+- **绝对禁止**将表格数据转换为纯文本描述
+
+### 2. 表格格式要求
+- 使用标准Markdown表格格式
+- 表格上方应有简短说明（如："表1: 主要科技公司AI基础设施投资预测"）
+- 表格下方注明数据来源
+- 确保可读性，避免过于复杂的嵌套表格
+
+### 3. 条件执行
+- **只有**在证据中包含结构化数据时才需要生成表格
+- 如果所有证据都是纯文本，则无需创建表格
+- 系统已自动标记哪些步骤包含结构化数据
+` : '';
+        
         // 🎯 【调试模式特别指令注入】
         if (researchMode === 'standard') {
             promptFragment += `
@@ -1433,19 +1457,22 @@ ${numberedSourcesText}
 
 # 3. 研究证据集合 (详细内容)
 以下内容是从上述来源中提取的详细信息。请结合上面的来源索引进行语义化引用。
+
 ${evidenceCollection.keyFindings.map((finding, index) => `* 关键发现 ${index + 1}: ${finding}`).join('\n')}
 
 ## 详细证据:
 ${evidenceCollection.evidenceEntries.map(entry => `
 ### ${entry.subQuestion}
 ${entry.evidence}
-${entry.keyFinding ? `**💡 本步关键发现:** ${entry.keyFinding}` : ''}
+${entry.hasStructuredData ? `\n\n**🗃️ 本步骤包含结构化数据，必须用表格呈现**\n${entry.structuredData}` : ''}
+${entry.keyFinding ? `\n**💡 本步关键发现:** ${entry.keyFinding}` : ''}
 `).join('\n\n')}
 
 # 4. 你的报告撰写指令 (输出要求)
 现在，请严格遵循以下元结构和要求，将上述研究证据整合成一份最终报告。
-${promptFragment} 
-// 👆 这里是 "引用协议" 的最佳位置，确保模型在处理数据前最后一次看到规则。
+${promptFragment}
+
+${tableRequirement}  // 🆕 新增：条件化表格指令
 
 **🚫 绝对禁止:**
 - 编造研究计划和证据集合中不存在的信息。
@@ -1459,10 +1486,10 @@ ${promptFragment}
   - **否则**（用户未指定提纲），则将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
 - **内容填充:** 用对应研究步骤的详细证据数据来填充该章节。
 - **引用来源:** 严格遵守上述【引用与论证规范】。
+- **结构化数据优先:** 如果证据包含结构化数据，优先以表格形式呈现。
 - **纯净内容**：从报告标题开始输出纯净内容，不包含任何确认语句。
 
 现在，请开始撰写这份基于纯净证据的最终研究报告。
-
 `;
         } else {
             // 🎯 静态模板构建逻辑
@@ -1492,13 +1519,15 @@ ${numberedSourcesText}
 ${allObservations.substring(0, 15000)}
 
 ${promptFragment}
-// 👆 同样，在静态模板中也放在数据之后，确保规则生效。
+
+${tableRequirement} // 🆕 新增：条件化表格指令
 
 # 🎯 最终输出要求 (用户强制协议)
 1. **直接开始**：从报告标题开始输出纯净内容
 2. **严格结构**：如果用户在提示词中已给定提纲，则完全遵循用户指令中的章节结构
 3. **纯净内容**：只包含报告正文，不包含任何确认语句
 4. **学术引用**：严格按照引用规范标注来源
+5. **结构化数据优先:** 如果证据包含结构化数据，优先以表格形式呈现。
 
 # 现在立即开始报告正文：
 `;
@@ -1555,7 +1584,7 @@ ${promptFragment}
 
         intermediateSteps.forEach((step, index) => {
             // 🎯 过滤无效步骤
-            if (!step.observation || 
+            if (!step.observation ||
                 step.observation === '系统执行错误，继续研究' ||
                 step.observation.includes('OutputParser解析失败') ||
                 step.observation.includes('代码预检失败') ||
@@ -1568,14 +1597,40 @@ ${promptFragment}
             if (!cleanEvidence || cleanEvidence.length < 20) return;
 
             // 🎯 获取对应的子问题
-            const subQuestion = plan.research_plan?.[index]?.sub_question || 
-                               `研究步骤 ${index + 1}`;
+            const subQuestion = plan.research_plan?.[index]?.sub_question ||
+                                `研究步骤 ${index + 1}`;
 
-            // 🎯 构建证据条目
+            // 🎯 【新增】尝试从数据总线获取结构化数据
+            let structuredData = null;
+            try {
+                const dataBusKey = `step_${index + 1}`; // 步骤索引从 1 开始
+                const dataBusEntry = this.dataBus.get(dataBusKey);
+                
+                // 检查是否是JSON格式的结构化数据
+                if (dataBusEntry && dataBusEntry.originalData && dataBusEntry.metadata.contentType === 'structured_data') {
+                    const dataBusContent = dataBusEntry.originalData;
+                    
+                    // 检查是否是JSON格式的结构化数据
+                    if (dataBusContent && dataBusContent.trim().startsWith('[')) {
+                        const parsedData = JSON.parse(dataBusContent);
+                        if (Array.isArray(parsedData) && parsedData.length > 0) {
+                            // 将JSON转换为Markdown表格
+                            structuredData = this._jsonToMarkdownTable(parsedData);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn(`[DeepResearchAgent] 结构化数据解析失败 (步骤 ${index + 1}):`, e);
+                // 忽略解析错误
+            }
+
+            // 🎯 【修改】构建证据条目，包含结构化数据
             const evidenceEntry = {
                 stepIndex: index + 1,
                 subQuestion: subQuestion,
                 evidence: cleanEvidence,
+                structuredData: structuredData, // 🆕 新增字段
+                hasStructuredData: !!structuredData,
                 keyFinding: step.key_finding,
                 tool: step.action?.tool_name,
                 originalLength: step.observation.length,
@@ -1586,8 +1641,8 @@ ${promptFragment}
             totalLength += cleanEvidence.length;
 
             // 🎯 收集关键发现
-            if (step.key_finding && 
-                step.key_finding !== '未能提取关键发现。' && 
+            if (step.key_finding &&
+                step.key_finding !== '未能提取关键发现。' &&
                 step.key_finding !== '关键发现提取异常。') {
                 keyFindings.push(step.key_finding);
             }
@@ -1598,7 +1653,8 @@ ${promptFragment}
             keyFindings: [...new Set(keyFindings)], // 去重
             totalLength,
             totalSteps: intermediateSteps.length,
-            validEvidenceSteps: evidenceEntries.length
+            validEvidenceSteps: evidenceEntries.length,
+            hasStructuredData: evidenceEntries.some(e => e.hasStructuredData) // 🆕 新增
         };
     }
 
@@ -1665,6 +1721,33 @@ ${promptFragment}
 
         return cleaned;
     }
+    // 🆕 新增：JSON转Markdown表格
+    _jsonToMarkdownTable(jsonData) {
+        if (!Array.isArray(jsonData) || jsonData.length === 0) {
+            return null;
+        }
+
+        // 确保处理的是数组中的对象
+        const firstRow = jsonData.find(row => typeof row === 'object' && row !== null);
+        if (!firstRow) return null;
+
+        const headers = Object.keys(firstRow);
+        let table = `| ${headers.join(' | ')} |\n`;
+        table += `| ${headers.map(() => '---').join(' | ')} |\n`;
+        
+        jsonData.forEach(row => {
+            const values = headers.map(header => {
+                const value = row[header];
+                // 确保值是字符串，并处理 undefined/null
+                return value === undefined || value === null ? 'N/A' : 
+                       typeof value === 'string' ? value.replace(/\|/g, '\\|') : JSON.stringify(value);
+            });
+            table += `| ${values.join(' | ')} |\n`;
+        });
+        
+        return `\n## 📊 结构化数据表格\n\n${table}\n\n`;
+    }
+
 
     // ✨ 新增：强化资料来源提取
     _extractSourcesFromIntermediateSteps(intermediateSteps) {
