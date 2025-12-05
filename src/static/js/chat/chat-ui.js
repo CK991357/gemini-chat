@@ -867,6 +867,7 @@ export function setupAgentEventListeners() {
         messageDiv.setAttribute('data-agent-session', sessionId);
         
         const durationSeconds = (duration / 1000).toFixed(1);
+        const modelName = result.model || 'N/A'; // 🎯 新增：提取模型名称
         
         messageDiv.innerHTML = `
             <div class="avatar">🏁</div>
@@ -875,6 +876,7 @@ export function setupAgentEventListeners() {
                     <span class="complete-badge">Agent执行完成</span>
                 </div>
                 <div class="agent-complete-info">
+                    <p><strong>模型:</strong> ${modelName}</p> // 🎯 新增：显示模型名称
                     <p><strong>总用时:</strong> ${durationSeconds}秒</p>
                     <p><strong>迭代次数:</strong> ${result.iterations}</p>
                     <p><strong>任务复杂度:</strong> ${result.taskComplexity}</p>
