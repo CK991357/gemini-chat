@@ -1226,7 +1226,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
             } catch (error) {
                 // 🎯 捕获解析错误 (OutputParser.parse 抛出的错误)
-                if (error.message.includes('无法解析出有效的行动或最终答案')) {
+                if (this._isParserError(error)) {
                     this.lastParserError = error; // 🆕 保存错误对象
                     
                     if (this.parserRetryAttempt < 1) { // 允许一次重试
@@ -3102,6 +3102,27 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
 
         console.error('[DeepResearchAgent] 🚑 急诊室宣告抢救无效 (达到最大重试次数)。');
         return null;
+    }
+
+    /**
+     * 🎯 辅助方法：判断是否为致命解析错误
+     */
+    _isParserError(error) {
+        if (!error || !error.message) return false;
+        
+        // 🎯 关键字列表：涵盖 OutputParser 抛出的自定义错误和 JSON.parse 抛出的标准错误
+        const parserKeywords = [
+            '无法解析出有效的行动或最终答案',
+            'Expected \',\' or \'}\' after property value',
+            'Unexpected token',
+            'JSON格式错误',
+            '解析失败',
+            'Invalid JSON',
+            'SyntaxError'
+        ];
+        
+        const message = error.message || '';
+        return parserKeywords.some(keyword => message.includes(keyword));
     }
 
     /**
