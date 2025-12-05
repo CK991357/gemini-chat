@@ -80,6 +80,19 @@ export class DeepResearchAgent {
      */
     _generateCorrectionPrompt(originalText, errorMessage) {
         const errorSnippet = originalText.substring(0, 500);
+        
+        // 🆕 新增：特定错误指导
+        let specificGuidance = '';
+        if (errorMessage.includes('Expected \',\' or \'}\'')) {
+            specificGuidance = `
+**常见错误示例**：
+❌ 错误: \`"query": "search term" AND "another"\`
+✅ 正确: \`"query": "search term AND another"\`
+
+**解决方法**：确保整个查询字符串在一对引号内
+            `;
+        }
+
         return `
 ## 🚨 紧急格式修正指令 (URGENT FORMAT CORRECTION)
 **系统检测到你上次的输出存在致命的格式错误，导致解析失败。**
@@ -90,6 +103,8 @@ export class DeepResearchAgent {
 \`\`\`
 ${errorSnippet}
 \`\`\`
+
+${specificGuidance}
 
 **强制修正要求**:
 1.  **必须**严格遵循正确的 JSON 语法。
