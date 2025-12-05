@@ -294,47 +294,146 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 🎯 新增：智能推断相关章节（简化版）
-   * 基于用户查询推断应该加载哪些参考文档
+   * 🎯 [增强版] 智能推断相关章节
+   * 针对深度研究模式优化，优先匹配参考文件
    */
   inferRelevantSections(userQuery) {
     const sections = new Set();
     const queryLower = userQuery.toLowerCase();
     
-    // 🎯 数据相关查询
-    if (this.containsKeywords(queryLower, ['数据', 'data', 'pandas', '清洗', '分析', '处理'])) {
-      sections.add('pandas_cheatsheet');
-      sections.add('数据清洗与分析');
-      sections.add('ETL管道模式');
+    console.log(`🎯 [章节推断优化] 开始分析查询: "${userQuery.substring(0, 50)}..."`);
+    
+    // ============================================================
+    // 1. 深度研究模式专用匹配（最高优先级）
+    // ============================================================
+    
+    // 🎯 数据分析与清洗（深度研究核心）
+    if (this.containsKeywords(queryLower,
+        ['分析', '数据处理', '清洗', '清洗数据', '清理数据', 'data analysis', 'data clean', '数据清洗'])) {
+        
+        // 深度研究优先使用参考文件
+        sections.add('text_analysis_cookbook.md');  // 🆕 新增：深度研究首选
+        sections.add('pandas_cheatsheet');         // 数据分析必备
+        sections.add('数据清洗与分析');            // 保留基础章节
+        
+        console.log(`🎯 [章节推断] 深度研究数据分析需求，添加 text_analysis_cookbook.md`);
+    }
+    
+    // 🎯 表格与结构化数据处理
+    if (this.containsKeywords(queryLower,
+        ['表格', '表', '结构化', '表格数据', 'table', 'excel', 'csv', '趋势表', '汇总表'])) {
+        
+        sections.add('pandas_cheatsheet');
+        sections.add('ETL管道模式');
+        sections.add('数据清洗与分析');
+        
+        console.log(`🎯 [章节推断] 表格数据处理需求，添加 pandas_cheatsheet 和 ETL管道模式`);
+    }
+    
+    // 🎯 趋势分析与预测
+    if (this.containsKeywords(queryLower,
+        ['趋势', '预测', '增长', '增速', '变化趋势', '趋势分析', '增长预测'])) {
+        
+        sections.add('text_analysis_cookbook.md');
+        sections.add('pandas_cheatsheet');
+        sections.add('数据可视化');
+        
+        console.log(`🎯 [章节推断] 趋势分析需求，优先添加 text_analysis_cookbook.md`);
+    }
+    
+    // 🎯 投资与金融分析
+    if (this.containsKeywords(queryLower,
+        ['资本支出', '资本', '支出', '投资', 'cpex', 'capex', '投入', '资金', '财务'])) {
+        
+        sections.add('pandas_cheatsheet');
+        sections.add('数据分析与可视化');
+        sections.add('自动化报告生成');  // 报告生成也相关
+        
+        console.log(`🎯 [章节推断] 投资分析需求，添加数据分析和报告生成章节`);
+    }
+    
+    // ============================================================
+    // 2. 保留原有逻辑（向后兼容）
+    // ============================================================
+    
+    // 🎯 数据相关查询（原有逻辑）
+    if (this.containsKeywords(queryLower, ['数据', 'data', 'pandas'])) {
+        if (!sections.has('pandas_cheatsheet')) {
+            sections.add('pandas_cheatsheet');
+        }
+        if (!sections.has('数据清洗与分析')) {
+            sections.add('数据清洗与分析');
+        }
     }
     
     // 🎯 可视化相关查询
     if (this.containsKeywords(queryLower, ['可视化', 'visual', 'plot', 'chart', '图表', '绘图', 'matplotlib'])) {
-      sections.add('matplotlib_cookbook');
-      sections.add('数据可视化');
+        sections.add('matplotlib_cookbook');
+        sections.add('数据可视化');
     }
     
     // 🎯 文本处理相关查询
-    if (this.containsKeywords(queryLower, ['文本', 'text', '字符串', '处理', '提取', '解析'])) {
-      sections.add('文本分析与结构化提取');
-      sections.add('text_analysis_cookbook.md');
+    if (this.containsKeywords(queryLower, ['文本', 'text', '字符串', '提取', '解析'])) {
+        sections.add('text_analysis_cookbook.md');  // 🆕 确保添加
+        sections.add('文本分析与结构化提取');
     }
     
     // 🎯 数学/计算相关查询
     if (this.containsKeywords(queryLower, ['数学', '公式', '计算', '证明', 'sympy', '科学'])) {
-      sections.add('公式证明工作流');
-      sections.add('sympy_cookbook');
-      sections.add('科学计算与优化');
+        sections.add('公式证明工作流');
+        sections.add('sympy_cookbook');
+        sections.add('科学计算与优化');
     }
     
     // 🎯 机器学习相关查询
     if (this.containsKeywords(queryLower, ['机器学习', 'ml', '模型', '训练', '预测', '分类'])) {
-      sections.add('机器学习');
-      sections.add('ml_workflow');
+        sections.add('机器学习');
+        sections.add('ml_workflow');
     }
     
-    console.log(`🎯 [章节推断] 查询: "${userQuery}" -> 推断章节: ${Array.from(sections).join(', ')}`);
-    return Array.from(sections);
+    // ============================================================
+    // 3. 深度研究模式特殊处理
+    // ============================================================
+    
+    // 如果查询包含深度研究关键词，强制添加关键参考文件
+    const depthKeywords = ['深度研究', '深度分析', '深度报告', '深入研究', '深度调研'];
+    if (depthKeywords.some(kw => queryLower.includes(kw.toLowerCase()))) {
+        console.log(`🎯 [章节推断] 检测到深度研究模式，添加核心参考文件`);
+        
+        sections.add('text_analysis_cookbook.md');  // 深度研究必备
+        sections.add('pandas_cheatsheet');          // 数据处理必备
+        sections.add('数据清洗与分析');             // 基础必备
+        
+        // 如果查询与投资相关，添加报告生成
+        if (this.containsKeywords(queryLower, ['投资', '分析', '报告', '研究'])) {
+            sections.add('自动化报告生成');
+        }
+    }
+    
+    // ============================================================
+    // 4. 结果优化与去重
+    // ============================================================
+    
+    const result = Array.from(sections);
+    
+    // 优化排序：参考文件优先，SKILL.md章节靠后
+    result.sort((a, b) => {
+        const isRefA = a.includes('.md');
+        const isRefB = b.includes('.md');
+        
+        if (isRefA && !isRefB) return -1;
+        if (!isRefA && isRefB) return 1;
+        return 0;
+    });
+    
+    console.log(`🎯 [章节推断优化] 完成，推断 ${result.length} 个章节:`, {
+        原始查询: userQuery.substring(0, 100) + '...',
+        推断章节: result,
+        参考文件: result.filter(r => r.includes('.md')),
+        SKILL章节: result.filter(r => !r.includes('.md'))
+    });
+    
+    return result;
   }
 
   /**
