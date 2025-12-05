@@ -40,28 +40,28 @@ export class Orchestrator {
     async _realInitialize() {
         this._initState = 'initializing';
         console.log('[Orchestrator] 按需初始化...');
-        this._initializationPromise = (async () => {
-            try {
-                this.skillManager = new EnhancedSkillManager();
-                await this.skillManager.waitUntilReady();
-                
-                this.tools = await this._initializeTools();
-                this.researchToolsSet = this._initializeResearchTools();
-                this.deepResearchAgent = this._initializeDeepResearchAgent();
-                this.setupHandlers();
-                
-                this._initState = 'initialized';
-                this._isInitialized = true;
-                console.log(`[Orchestrator] 初始化完成。可用研究工具:`, Object.keys(this.researchToolsSet));
-                return true;
-            } catch (error) {
-                console.error('[Orchestrator] 初始化失败:', error);
-                this._initState = 'failed';
-                this.isEnabled = false;
-                return false;
-            }
-        })();
-        return this._initializationPromise;
+        
+        try {
+            this.skillManager = new EnhancedSkillManager();
+            await this.skillManager.waitUntilReady();
+            
+            this.tools = await this._initializeTools();
+            this.researchToolsSet = this._initializeResearchTools();
+            this.deepResearchAgent = this._initializeDeepResearchAgent();
+            this.setupHandlers();
+            
+            this._initState = 'initialized';
+            this._isInitialized = true;
+            console.log(`[Orchestrator] 初始化完成。可用研究工具:`, Object.keys(this.researchToolsSet));
+            this._initializationPromise = Promise.resolve(true);
+            return true;
+        } catch (error) {
+            console.error('[Orchestrator] 初始化失败:', error);
+            this._initState = 'failed';
+            this.isEnabled = false;
+            this._initializationPromise = Promise.resolve(false);
+            return false;
+        }
     }
 
     /**
@@ -106,23 +106,17 @@ export class Orchestrator {
 
             console.log('[Orchestrator] 正在为 Agent 查找相关技能...');
             
-            // ✅ 修复：添加 await，正确等待技能匹配结果
-            const relevantSkills = await this.skillManager.findRelevantSkills(cleanTopic, {
-                availableTools: this.researchTools
-            });
+            // 🎯 核心优化：使用新的优化注入方法
+            const { injectionContent, relevantSkills } = await this.generateOptimizedInjection(cleanTopic, detectedMode);
 
-            let skillInjectionContent = '';
             let enrichedTopic = cleanTopic;
 
-            if (relevantSkills && relevantSkills.length > 0) {
-                console.log(`[Orchestrator] 找到 ${relevantSkills.length} 个相关技能，生成技能注入内容`);
-                
-                // ✅ 核心修复：调用路径需要指向包装器内部的 baseSkillManager 实例
-                skillInjectionContent = this.skillManager.baseSkillManager.generateMultiSkillInjection(relevantSkills, cleanTopic);
+            if (injectionContent) {
+                console.log(`[Orchestrator] ✅ 已生成优化技能注入内容 (${injectionContent.length} chars)`);
                 
                 enrichedTopic = `
 ## 📖 相关工具参考指南
-${skillInjectionContent}
+${injectionContent}
 
 ---
 
@@ -423,6 +417,40 @@ ${cleanTopic}
             'on_agent_think_start': (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
         });
         console.log('[Orchestrator] 最终版事件处理器已设置。');
+    }
+
+    /**
+     * 🎯 优化版技能注入生成
+     */
+    async generateOptimizedInjection(userQuery, detectedMode) {
+        // 1. 查找相关技能
+        const relevantSkills = await this.skillManager.findRelevantSkills(userQuery, {
+            availableTools: this.researchTools
+        });
+
+        if (!relevantSkills || relevantSkills.length === 0) {
+            return { injectionContent: '', relevantSkills: [] };
+        }
+
+        // 2. 确定主要技能
+        const primarySkill = relevantSkills[0];
+        
+        // 3. 关键优化：只注入主要技能，且使用压缩
+        const knowledge = await this.skillManager.retrieveFederatedKnowledge(
+            primarySkill.toolName,
+            { userQuery, mode: detectedMode, step: 0 },
+            { compression: 'smart', maxChars: 15000, iteration: 0 }
+        );
+        
+        let injectionContent = '';
+        if (knowledge && knowledge.content) {
+            injectionContent = knowledge.content;
+        } else {
+            // 降级到原有逻辑（如果新方法失败）
+            injectionContent = this.skillManager.baseSkillManager.generateMultiSkillInjection(relevantSkills, userQuery);
+        }
+
+        return { injectionContent, relevantSkills };
     }
 
     setEnabled(enabled) {

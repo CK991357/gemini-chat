@@ -8,6 +8,12 @@ export class EnhancedSkillManager {
     this.isInitialized = false;
     this.executionHistory = this.loadExecutionHistory();
     this.knowledgeFederation = knowledgeFederation;
+    
+    // 🎯 新增：知识库缓存系统
+    this.knowledgeCache = new Map(); // tool -> {full, summary, compressed, timestamp}
+    this.injectionHistory = new Map(); // sessionId -> [toolNames]
+    this.compressionEnabled = true;
+    this.maxKnowledgeChars = 15000; // 最大知识库字符数
     this.initializationPromise = this.initialize();
     this.initializationResolve = null;
     this.initializationReject = null;
@@ -297,50 +303,67 @@ export class EnhancedSkillManager {
   }
 
   /**
-   * 🎯 联邦知识检索API - 修复版本
+   * 🎯 【核心优化】智能知识检索与压缩
    */
-  async retrieveFederatedKnowledge(toolName, context = {}) {
-    console.log(`[EnhancedSkillManager] 🔍 联邦知识检索: ${toolName}`, context);
-    
-    // 🔴 移除外层的 try...catch，因为我们希望即使部分失败也能返回内容
-    try {
-      const requestedSections = this._inferRelevantSections(context);
-      
-      // ✅ 关键修复：getFederatedKnowledge 应该返回一个包含内容的字符串，而不是 null
-      const knowledgePackageContent = this.knowledgeFederation.getFederatedKnowledge(
-        toolName,
-        requestedSections
-      );
+  async retrieveFederatedKnowledge(toolName, context = {}, options = {}) {
+    const {
+      compression = 'smart', // smart, minimal, reference
+      maxChars = this.maxKnowledgeChars,
+      iteration = 0, // 当前迭代次数
+      sessionId = context.sessionId || 'default'
+    } = options;
 
-      if (!knowledgePackageContent) {
-        // 如果 knowledgeFederation 明确返回 null (意味着工具本身不存在)
-        console.warn(`[EnhancedSkillManager] 知识库中不存在工具: ${toolName}`);
-        return null;
-      }
+    console.log(`[EnhancedSkillManager] 🎯 智能检索: ${toolName}, 迭代: ${iteration}, 压缩: ${compression}`);
 
-      // 只要拿到了内容字符串，就认为检索是成功的
-      const result = {
-        tool: toolName,
-        metadata: this.knowledgeFederation.knowledgeBase.get(toolName)?.metadata || {},
-        content: knowledgePackageContent, // <-- 使用获取到的内容
-        suggestedSections: requestedSections,
-        retrievalContext: context,
-        timestamp: Date.now()
-      };
-
-      console.log(`[EnhancedSkillManager] ✅ 联邦知识检索成功完成: ${toolName}`, {
-        contentLength: knowledgePackageContent.length,
-        sectionsFound: requestedSections // 即使内容为空，也记录请求过的章节
-      });
-
-      return result;
-      
-    } catch (error) {
-        // 这个 catch 现在只用于捕获真正意外的、破坏性的错误
-        console.error(`[EnhancedSkillManager] ❌ 联邦知识检索过程中发生严重错误: ${toolName}`, error);
-        return null;
+    // 🎯 1. 检查是否已经注入过（同一个会话中）
+    if (this.hasBeenInjected(sessionId, toolName) && iteration > 0) {
+      console.log(`[EnhancedSkillManager] 🔄 工具 ${toolName} 已在当前会话中注入过，使用引用模式`);
+      return this.getKnowledgeReference(toolName, context);
     }
-}
+
+    // 🎯 2. 检查缓存
+    const cacheKey = `${toolName}_${compression}`;
+    if (this.knowledgeCache.has(cacheKey)) {
+      const cached = this.knowledgeCache.get(cacheKey);
+      // 缓存有效（5分钟内）
+      if (Date.now() - cached.timestamp < 5 * 60 * 1000) {
+        console.log(`[EnhancedSkillManager] 🔄 使用缓存: ${toolName} (${cached.content.length} chars)`);
+        this.recordInjection(sessionId, toolName);
+        return this.formatKnowledgeForIteration(cached, context, iteration);
+      }
+    }
+
+    // 🎯 3. 获取原始知识
+    const rawKnowledge = await this._getRawFederatedKnowledge(toolName, context);
+    if (!rawKnowledge) return null;
+
+    // 🎯 4. 智能压缩内容（核心优化）
+    const compressedContent = await this.compressKnowledge(
+      rawKnowledge.content,
+      compression,
+      maxChars,
+      context.userQuery
+    );
+
+    // 🎯 5. 缓存并记录
+    const processed = {
+      ...rawKnowledge,
+      content: compressedContent,
+      originalLength: rawKnowledge.content.length,
+      compressedLength: compressedContent.length,
+      compressionRate: (1 - compressedContent.length / rawKnowledge.content.length).toFixed(2),
+      compression,
+      timestamp: Date.now()
+    };
+
+    this.knowledgeCache.set(cacheKey, processed);
+    this.recordInjection(sessionId, toolName);
+
+    console.log(`[EnhancedSkillManager] ✅ 知识压缩: ${processed.originalLength} → ${processed.compressedLength} 字符 (压缩率: ${processed.compressionRate})`);
+
+    // 🎯 6. 根据迭代次数格式化输出
+    return this.formatKnowledgeForIteration(processed, context, iteration);
+  }
 
   /**
    * 🎯 [增强版] 基于上下文智能推断相关章节
@@ -515,6 +538,269 @@ export class EnhancedSkillManager {
         结果: result ? '成功' : '失败',
         章节: result?.suggestedSections
       });
+    }
+  }
+
+  /**
+   * 🎯 【核心】智能知识压缩算法
+   */
+  async compressKnowledge(content, level, maxChars, userQuery = '') {
+    // 如果内容已经很小，直接返回
+    if (content.length <= maxChars) return content;
+
+    let compressed = content;
+
+    switch (level) {
+      case 'minimal':
+        // 最小化：只保留最关键的部分
+        compressed = this.extractMinimalGuide(content);
+        break;
+
+      case 'reference':
+        // 引用模式：不注入内容，只给提示
+        compressed = this.createKnowledgeReference(content);
+        break;
+
+      case 'smart':
+      default:
+        // 智能压缩：根据查询提取相关部分
+        compressed = await this.smartCompress(content, maxChars, userQuery);
+        break;
+    }
+
+    // 确保不超过最大长度
+    if (compressed.length > maxChars) {
+      compressed = compressed.substring(0, maxChars) + '...';
+    }
+
+    return compressed;
+  }
+
+  /**
+   * 🎯 提取最小化指南（保留最核心内容）
+   */
+  extractMinimalGuide(content) {
+    let minimal = '';
+
+    // 1. 提取通用调用结构（最重要！）
+    const structureMatch = content.match(/## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i);
+    if (structureMatch) {
+      minimal += structureMatch + '\n\n';
+    }
+
+    // 2. 提取常见错误（第二重要）
+    const errorsMatch = content.match(/### ❌ 常见致命错误[\s\S]*?(?=\n##\s|$)/i);
+    if (errorsMatch) {
+      minimal += errorsMatch + '\n\n';
+    }
+
+    // 3. 提取关键指令
+    const instructionsMatch = content.match(/##\s+关键指令[\s\S]*?(?=##|$)/i);
+    if (instructionsMatch) {
+      minimal += '## 关键指令摘要\n' +
+                instructionsMatch.split('\n')
+                  .filter(line => line.trim() && !line.trim().startsWith('#') && line.trim().length > 10)
+                  .slice(0, 10) // 只取前10行
+                  .join('\n') + '\n\n';
+    }
+
+    // 4. 如果没有找到关键部分，返回前3000字符
+    if (minimal.length < 500) {
+      minimal = content.substring(0, Math.min(3000, content.length)) + '...';
+    }
+
+    return minimal;
+  }
+
+  /**
+   * 🎯 智能压缩（基于查询相关性）
+   */
+  async smartCompress(content, maxChars, userQuery) {
+    if (!userQuery) return this.extractMinimalGuide(content);
+
+    const sections = content.split(/(?=^#{2,4}\s)/m);
+    let compressed = '';
+    let remaining = maxChars;
+
+    // 根据查询关键词给章节评分
+    const queryWords = userQuery.toLowerCase().split(/[\s,，、]+/).filter(w => w.length > 1);
+    
+    const scoredSections = sections.map(section => {
+      let score = 0;
+      const sectionLower = section.toLowerCase();
+      
+      queryWords.forEach(word => {
+        if (sectionLower.includes(word)) {
+          score += 1;
+          // 标题中包含关键词权重更高
+          const titleMatch = section.match(/^#{2,4}\s+([^\n]+)/i);
+          if (titleMatch && titleMatch.toLowerCase().includes(word)) {
+            score += 3;
+          }
+        }
+      });
+      
+      return { section, score };
+    }).filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    // 添加高评分章节
+    for (const { section, score } of scoredSections) {
+      if (section.length <= remaining * 0.6) {
+        compressed += section + '\n\n';
+        remaining -= section.length;
+      } else {
+        // 章节过长，截取开头
+        compressed += section.substring(0, Math.min(section.length, remaining * 0.3)) + '...\n\n';
+        remaining -= Math.min(section.length, remaining * 0.3);
+      }
+      
+      if (remaining < 1000) break;
+    }
+
+    // 如果压缩后内容太少，添加最小化指南
+    if (compressed.length < 1000) {
+      compressed = this.extractMinimalGuide(content).substring(0, maxChars);
+    }
+
+    return compressed;
+  }
+
+  /**
+   * 🎯 创建知识引用（不注入内容）
+   */
+  createKnowledgeReference(content) {
+    // 提取关键信息点
+    const keyPoints = [];
+    
+    // 提取标题
+    const titles = content.match(/^#{2,4}\s+([^\n]+)/gm) || [];
+    keyPoints.push(...titles.slice(0, 3).map(t => t.replace(/^#{2,4}\s+/, '')));
+    
+    return `## 工具参考指南（已在前序步骤中提供）\n\n` +
+           `**关键要点**:\n${keyPoints.map(p => `- ${p}`).join('\n')}\n\n` +
+           `*如需查看完整操作指南，请参考之前步骤中的详细说明。*`;
+  }
+
+  /**
+   * 🎯 根据迭代次数格式化知识
+   */
+  formatKnowledgeForIteration(knowledge, context, iteration) {
+    const { metadata, content, originalLength, compressedLength } = knowledge;
+    
+    // 第一次迭代：详细指南
+    if (iteration === 0) {
+      return {
+        tool: knowledge.tool,
+        metadata,
+        content: `## 🛠️ 详细工具指南: ${metadata.name}\n\n` +
+                `**核心功能**: ${metadata.description}\n\n` +
+                `📖 **操作指南** (已智能压缩: ${originalLength} → ${compressedLength} 字符):\n\n` +
+                content,
+        isCompressed: true
+      };
+    }
+    
+    // 后续迭代：只给关键提示
+    return {
+      tool: knowledge.tool,
+      metadata,
+      content: `## 🛠️ 工具提示: ${metadata.name}\n\n` +
+              `**关键提醒**: ${this.extractKeyBulletPoints(content, 2)}\n\n` +
+              `*完整指南已在步骤0提供。*`,
+      isReference: true
+    };
+  }
+
+  /**
+   * 🎯 辅助方法
+   */
+  hasBeenInjected(sessionId, toolName) {
+    return this.injectionHistory.has(sessionId) &&
+           this.injectionHistory.get(sessionId).includes(toolName);
+  }
+
+  recordInjection(sessionId, toolName) {
+    if (!this.injectionHistory.has(sessionId)) {
+      this.injectionHistory.set(sessionId, []);
+    }
+    const injected = this.injectionHistory.get(sessionId);
+    if (!injected.includes(toolName)) {
+      injected.push(toolName);
+    }
+  }
+
+  getKnowledgeReference(toolName, context) {
+    const cacheKey = `${toolName}_smart`;
+    if (this.knowledgeCache.has(cacheKey)) {
+      const cached = this.knowledgeCache.get(cacheKey);
+      return {
+        tool: toolName,
+        metadata: cached.metadata,
+        content: this.createKnowledgeReference(cached.content),
+        isReference: true
+      };
+    }
+    return null;
+  }
+
+  extractKeyBulletPoints(content, maxPoints = 3) {
+    const points = [];
+    
+    // 提取关键指令
+    const lines = content.split('\n');
+    lines.forEach(line => {
+      if (line.includes('必须') || line.includes('确保') || line.includes('不要') ||
+          line.includes('关键') || line.includes('重要')) {
+        const clean = line.replace(/^[-\*•]\s*/, '').trim();
+        if (clean && !clean.startsWith('#') && points.length < maxPoints) {
+          points.push(clean);
+        }
+      }
+    });
+    
+    return points.length > 0 ? points.join('；') : '请参考完整指南中的说明。';
+  }
+
+  /**
+   * 内部方法：获取原始知识
+   */
+  async _getRawFederatedKnowledge(toolName, context) {
+    try {
+      const requestedSections = this._inferRelevantSections(context);
+      
+      // 使用现有的知识联邦方法
+      const knowledgePackageContent = this.knowledgeFederation.getFederatedKnowledge(
+        toolName,
+        requestedSections
+      );
+
+      if (!knowledgePackageContent) {
+        console.warn(`[EnhancedSkillManager] 知识库中不存在工具: ${toolName}`);
+        return null;
+      }
+
+      const skill = this.knowledgeFederation.knowledgeBase.get(toolName);
+      if (!skill) return null;
+
+      const result = {
+        tool: toolName,
+        metadata: skill.metadata || {},
+        content: knowledgePackageContent,
+        suggestedSections: requestedSections,
+        retrievalContext: context,
+        timestamp: Date.now()
+      };
+
+      console.log(`[EnhancedSkillManager] ✅ 原始知识检索成功完成: ${toolName}`, {
+        contentLength: knowledgePackageContent.length,
+        sectionsFound: requestedSections
+      });
+
+      return result;
+    } catch (error) {
+      console.error(`[EnhancedSkillManager] ❌ 获取原始知识失败: ${toolName}`, error);
+      return null;
     }
   }
 

@@ -20,6 +20,11 @@ export class DeepResearchAgent {
         // ✅ 接收来自 Orchestrator 的 skillManager 实例
         this.skillManager = config.skillManager;
         
+        // 🎯 新增：注入状态跟踪
+        this.injectedTools = new Set(); // 本次研究已注入的工具
+        this.knowledgeStrategy = 'smart'; // smart, minimal, reference
+        this.currentSessionId = `session_${Date.now()}`; // 🎯 新增：会话ID
+        
         // 🎯 新增：智能数据总线
         this.dataBus = new Map(); // step_index -> {rawData, metadata, contentType}
         this.dataRetentionPolicy = {
@@ -859,6 +864,9 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         const runId = this.callbackManager.generateRunId();
         this.runId = runId; // 关键：为当前研究会话设置唯一ID
         this.generatedImages.clear(); // 关键：每次新研究开始时清空图片缓存
+        
+        // 🎯 核心新增：重置知识注入状态
+        this.resetInjectionState();
         
         // 原始 topic (enrichedTopic) 用于 Agent 内部逻辑
         const internalTopic = enrichedTopic.replace(/！\s*$/, '').trim();
@@ -3088,5 +3096,107 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             analysis: diagnosis,
             suggestedFix: suggestion
         };
+    }
+
+    /**
+     * 🎯 【核心优化】按需知识注入
+     */
+    async injectKnowledgeAsNeeded(toolName, context, step) {
+        const { mode = 'deep' } = context;
+        
+        console.log(`[DeepResearchAgent] 🔍 检查知识注入: ${toolName}, 步骤: ${step}, 模式: ${mode}`);
+        
+        // 🎯 1. 检查是否已经注入过
+        if (this.injectedTools.has(toolName)) {
+            console.log(`[DeepResearchAgent] 🔄 工具 ${toolName} 已注入过，使用引用模式`);
+            return this.getKnowledgeReference(toolName, context);
+        }
+        
+        // 🎯 2. 根据步骤和模式决定压缩级别
+        let compression = 'smart';
+        let maxChars = 15000;
+        
+        if (step === 0) {
+            // 第一步：完整（压缩后）指南
+            compression = 'smart';
+            maxChars = 20000;
+        } else if (step <= 2) {
+            // 前几步：摘要版
+            compression = 'smart';
+            maxChars = 8000;
+        } else {
+            // 后续步骤：最小化或引用
+            if (mode === 'deep') {
+                compression = 'minimal';
+                maxChars = 5000;
+            } else {
+                compression = 'reference';
+                maxChars = 2000;
+            }
+        }
+        
+        // 🎯 3. 从EnhancedSkillManager获取知识（带压缩）
+        const knowledge = await this.skillManager.retrieveFederatedKnowledge(
+            toolName,
+            context,
+            {
+                compression,
+                maxChars,
+                iteration: step,
+                sessionId: this.currentSessionId
+            }
+        );
+        
+        // 🎯 4. 记录已注入的工具
+        if (knowledge && knowledge.content) {
+            this.injectedTools.add(toolName);
+            console.log(`[DeepResearchAgent] ✅ 注入知识: ${toolName} (${knowledge.content.length} chars)`);
+        }
+        
+        return knowledge ? knowledge.content : '';
+    }
+
+    /**
+     * 🎯 获取知识引用（已注入过的情况）
+     */
+    getKnowledgeReference(toolName, context) {
+        // 🎯 关键：调用 EnhancedSkillManager 的 getKnowledgeReference 方法
+        const knowledgePackage = this.skillManager.getKnowledgeReference(toolName, context);
+        
+        if (knowledgePackage && knowledgePackage.content) {
+            return knowledgePackage.content;
+        }
+        
+        // 降级到本地生成引用
+        return `## 工具提示: ${toolName}\n\n` +
+               `**注意**: 该工具的详细操作指南已在之前步骤中提供。\n` +
+               `**当前步骤关键点**: 请根据任务需求合理使用 ${toolName} 工具。\n\n` +
+               `*如需查看完整指南，请参考之前步骤的详细说明。*`;
+    }
+
+    /**
+     * 🎯 判断是否需要注入知识
+     */
+    shouldInjectKnowledge(toolName, step) {
+        // 简单策略：每个工具只在第一次使用时注入详细知识
+        if (!this.injectedTools.has(toolName)) {
+            return true;
+        }
+        
+        // 如果是复杂工具（如python_sandbox）且在关键步骤，可以再次提示
+        if (toolName === 'python_sandbox' && (step === 3 || step === 5)) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * 🎯 重置注入状态（每次新研究开始时）
+     */
+    resetInjectionState() {
+        this.injectedTools.clear();
+        this.currentSessionId = `session_${Date.now()}`;
+        console.log(`[DeepResearchAgent] 🔄 知识注入状态已重置，新会话ID: ${this.currentSessionId}`);
     }
 }
