@@ -134,7 +134,7 @@ class KnowledgeFederationLoader {
         for (const section of sections) {
           const titleMatch = section.match(/^#{2,4}\s+(?:📖\s+)?([^\n]+)/i);
           if (titleMatch) {
-            const title = titleMatch.toLowerCase();
+            const title = titleMatch[1].toLowerCase();
             if (synonyms.some(syn => title.includes(syn.toLowerCase()))) {
               console.log(`[KnowledgeFederation] 🔍 策略3语义匹配成功: "${sectionKeyword}" -> "${titleMatch[1]}"`);
               return section;
@@ -173,7 +173,7 @@ class KnowledgeFederationLoader {
               score += 1;
               // 标题中出现的关键词权重更高
               const titleMatch = section.match(/^#{2,4}\s+(?:📖\s+)?([^\n]+)/i);
-              if (titleMatch && titleMatch.toLowerCase().includes(keyword)) {
+              if (titleMatch && titleMatch[1].toLowerCase().includes(keyword)) {
                 score += 3;
               }
             }
