@@ -634,8 +634,11 @@ export class EnhancedSkillManager {
           score += 1;
           // 标题中包含关键词权重更高
           const titleMatch = section.match(/^#{2,4}\s+([^\n]+)/i);
-          if (titleMatch && titleMatch.toLowerCase().includes(word)) {
-            score += 3;
+          if (titleMatch && titleMatch[1]) {
+            const title = String(titleMatch[1] || '').toLowerCase(); // 🛡️ 强制转为字符串
+            if (title.includes(word)) {
+              score += 3;
+            }
           }
         }
       });
