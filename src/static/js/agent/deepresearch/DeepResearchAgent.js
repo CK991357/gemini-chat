@@ -2179,7 +2179,7 @@ _filterUsedSources(sources, reportContent) {
   }
 
   // 限制最大数量（避免过多）
-  finalSources = finalSources.slice(0, 15);
+  finalSources = finalSources.slice(0, 20);
   
   console.log(`[SourceFilter] 匹配完成: ${sources.length} -> ${finalSources.length} 个有效来源`);
   return finalSources;
