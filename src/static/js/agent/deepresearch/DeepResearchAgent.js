@@ -12,6 +12,11 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // 🆕 新增：解析错误重试追踪
+        this.parserRetryAttempt = 0; // 追踪解析重试次数（最大为 1）
+        this.lastParserError = null; // 存储上次解析失败的错误对象
+        this.lastDecisionText = null; // 存储上次模型输出的原始文本
+        
         // 🎯 图像生成追踪
         this.generatedImages = new Map(); // 用于存储 base64 数据
         this.imageCounter = 0;
@@ -67,6 +72,30 @@ export class DeepResearchAgent {
         this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
         
         console.log(`[DeepResearchAgent] Token 使用更新:`, this.metrics.tokenUsage);
+    }
+
+    // 🎯 生成格式修正提示词
+    /**
+     * 🎯 生成格式修正提示词
+     */
+    _generateCorrectionPrompt(originalText, errorMessage) {
+        const errorSnippet = originalText.substring(0, 500);
+        return `
+## 🚨 紧急格式修正指令 (URGENT FORMAT CORRECTION)
+**系统检测到你上次的输出存在致命的格式错误，导致解析失败。**
+
+**错误类型**: JSON 语法错误 (Parser Error)
+**错误信息**: ${errorMessage}
+**上次输出片段**:
+\`\`\`
+${errorSnippet}
+\`\`\`
+
+**强制修正要求**:
+1.  **必须**严格遵循正确的 JSON 语法。
+2.  **特别注意**: 在 JSON 字符串中，请勿使用未被引号包裹的关键字（如 \`AND\`）。
+3.  **请重新生成**完整的“思考”和“行动”/“最终答案”块，并确保 JSON 参数是有效的。
+`;
     }
 
     // 🔥🔥🔥 [新增方法] 智能上下文序列化器 🔥🔥🔥
@@ -964,6 +993,12 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         let iterations = 0;
         let consecutiveNoGain = 0;
         
+        // 🆕 新增：解析错误控制变量
+        let parserErrorOccurred = false;
+        this.parserRetryAttempt = 0;
+        this.lastParserError = null;
+        this.lastDecisionText = null;
+        
         // 🔥 核心修改：在deep模式下，提高终止的难度
         const noGainThreshold = (detectedMode === 'deep') ? 3 : 2;
         
@@ -973,7 +1008,12 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         const totalSteps = researchPlan.research_plan.length; // 新增：总计划步骤数
 
         while (iterations < this.maxIterations && consecutiveNoGain < noGainThreshold && !finalAnswerFromIteration) {
-            iterations++;
+            
+            if (!parserErrorOccurred) { // 只有在没有解析错误时才增加迭代计数
+                iterations++;
+            }
+            parserErrorOccurred = false; // 重置标志
+            
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
             const planCompletion = this._calculatePlanCompletion(researchPlan, this.intermediateSteps); // 计算完成度
@@ -1005,12 +1045,24 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     currentDate: new Date().toISOString(), // 🎯 新增：传递当前日期
                     dataBus: this.dataBus // 🎯 核心新增：传递数据总线
                 };
+                
+                // 🆕 核心修改：如果上次是解析错误，注入修正提示
+                if (this.parserRetryAttempt > 0 && this.lastParserError && this.lastDecisionText) {
+                    const correctionPrompt = this._generateCorrectionPrompt(
+                        this.lastDecisionText,
+                        this.lastParserError.message
+                    );
+                    // 注入到 topic 中，确保 LLM 看到
+                    logicInput.topic = `${correctionPrompt}\n\n${logicInput.topic}`;
+                    console.log('[DeepResearchAgent] 🔄 注入格式修正提示，进行重试...');
+                }
 
                 const agentDecision = await this.agentLogic.plan(logicInput, {
                     run_id: runId,
                     callbackManager: this.callbackManager
                 });
                 const agentDecisionText = agentDecision.responseText;
+                this.lastDecisionText = agentDecisionText; // 🆕 保存原始输出
                 this._updateTokenUsage(agentDecision.usage); // 🎯 新增
 
                 console.log('[DeepResearchAgent] AgentLogic返回的原始决策文本:');
@@ -1019,6 +1071,9 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 console.log('--- 结束 ---');
 
                 const parsedAction = this.outputParser.parse(agentDecisionText);
+                this.parserRetryAttempt = 0; // ✅ 成功解析，重置计数
+                this.lastParserError = null; // ✅ 成功解析，重置错误
+                
                 console.log('[DeepResearchAgent] OutputParser解析结果:', {
                     type: parsedAction.type,
                     tool_name: parsedAction.tool_name,
@@ -1167,35 +1222,25 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                         break;
                     }
                 
-                } else {
-                    // 🎯 处理解析错误
-                    console.warn('[DeepResearchAgent] ⚠️ 输出解析失败，触发自我纠正');
-                    const observation = `格式错误: ${parsedAction.error || '无法解析响应'}。请严格遵循指令格式：思考: ... 行动: {...} 或 最终答案: ...`;
-                    
-                    this.intermediateSteps.push({ 
-                        action: { 
-                            tool_name: 'self_correction', 
-                            parameters: {},
-                            thought: parsedAction.thought || agentDecisionText.substring(0, 500),
-                            type: 'error'
-                        }, 
-                        observation,
-                        key_finding: '输出解析失败，需要重新规划' // 🎯 新增关键发现
-                    });
-                    
-                    await this.callbackManager.invokeEvent('on_research_progress', {
-                        run_id: runId,
-                        data: { 
-                            iteration: iterations, 
-                            total: this.maxIterations,
-                            warning: '输出解析失败，已触发自我纠正',
-                            error: parsedAction.error
-                        }
-                    });
                 }
 
             } catch (error) {
-                // 🎯 简化错误处理：完全信任ChatApiHandler的重试机制
+                // 🎯 捕获解析错误 (OutputParser.parse 抛出的错误)
+                if (error.message.includes('无法解析出有效的行动或最终答案')) {
+                    this.lastParserError = error; // 🆕 保存错误对象
+                    
+                    if (this.parserRetryAttempt < 1) { // 允许一次重试
+                        parserErrorOccurred = true; // 设置标志，防止下次循环增加 iterations
+                        this.parserRetryAttempt++;
+                        console.warn(`[DeepResearchAgent] ⚠️ 致命解析错误，触发 L1 智能重试 (${this.parserRetryAttempt}/1)`);
+                        continue; // 跳过当前迭代的其余逻辑，进入下一次循环（不增加 iterations）
+                    }
+                    
+                    // 达到最大重试次数，降级为内部错误处理
+                    console.error('[DeepResearchAgent] ❌ 致命解析错误，重试失败，降级为内部错误');
+                }
+                
+                // 🎯 原始的全局错误处理逻辑 (包括速率限制和降级处理)
                 console.error(`[DeepResearchAgent] 迭代 ${iterations} 失败:`, error);
                 
                 // 增强错误处理
@@ -1223,7 +1268,9 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 });
                 
                 // 增加连续无增益计数，避免在连续错误中死循环
-                consecutiveNoGain++;
+                if (!parserErrorOccurred) {
+                    consecutiveNoGain++;
+                }
             }
         }
 
