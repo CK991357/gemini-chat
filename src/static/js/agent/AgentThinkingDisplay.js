@@ -975,7 +975,7 @@ export class AgentThinkingDisplay {
 
 • 研究主题: ${this.currentSession.userMessage}
 • 研究模式: ${researchMode}
-• 报告模型: ${modelName}  // 🎯 核心修复：显示模型名称
+• 报告模型: ${modelName} 
 • 搜索次数: ${queryCount}次
 • 收集来源: ${sourcesCount}个
 • 工具调用: ${toolCallsCount}次 (成功: ${successfulTools}次)
