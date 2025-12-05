@@ -193,7 +193,8 @@ ${cleanTopic}
                 researchMode: researchResult.research_mode,
                 temporal_quality: researchResult.temporal_quality,
                 // 🔥 核心新增：将完整的用户原始消息返回，供上游保存到历史记录
-                originalUserMessage: originalTopic
+                originalUserMessage: originalTopic,
+                model: researchResult.model || reportModel  // 🎯 核心修复：添加模型信息
             };
         } catch (error) {
             console.error('[Orchestrator] DeepResearch Agent执行失败:', error);

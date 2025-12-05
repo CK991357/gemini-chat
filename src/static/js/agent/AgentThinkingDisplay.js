@@ -968,12 +968,14 @@ export class AgentThinkingDisplay {
 
         const iterations = finalResult.iterations || 0;
         const researchMode = finalResult.research_mode || 'standard';
+        const modelName = finalResult.model || 'N/A'; // 🎯 核心修复：提取模型名称
 
         const summary = `
 🔍 DeepResearch 执行完成！
 
 • 研究主题: ${this.currentSession.userMessage}
 • 研究模式: ${researchMode}
+• 报告模型: ${modelName}  // 🎯 核心修复：显示模型名称
 • 搜索次数: ${queryCount}次
 • 收集来源: ${sourcesCount}个
 • 工具调用: ${toolCallsCount}次 (成功: ${successfulTools}次)
