@@ -12,6 +12,11 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // 🎯 新增：智能URL去重系统
+        this.visitedURLs = new Map(); // url -> {count: 访问次数, lastVisited: 最后访问时间, stepIndex: 访问步骤}
+        this.urlSimilarityThreshold = 0.85; // URL相似度阈值
+        this.maxRevisitCount = 2; // 同一URL最大重访次数
+        
         // 🆕 新增：解析错误重试追踪
         this.parserRetryAttempt = 0; // 追踪解析重试次数（最大为 1）
         this.lastParserError = null; // 存储上次解析失败的错误对象
@@ -658,6 +663,38 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             console.log(`[DeepResearchAgent] 调用工具: ${toolName}...`, parameters);
 
             // ============================================================
+            // 🎯 新增：URL去重检查（针对crawl4ai）
+            // ============================================================
+            if (toolName === 'crawl4ai' && parameters.url) {
+                const url = parameters.url;
+                
+                // 检查是否访问过相似URL，并获取已访问的相似URL
+                const visitedUrl = this._checkURLDuplicate(url);
+                
+                if (visitedUrl) {
+                    console.log(`[DeepResearchAgent] 🛑 拦截到重复/相似URL: ${url} (相似于: ${visitedUrl})`);
+                    
+                    // 🎯 抛出自定义错误，利用 Agent 的解析错误重试机制实现“零迭代浪费”
+                    const cachedStep = this._findCachedObservationForURL(visitedUrl);
+                    const cachedObservation = cachedStep ? cachedStep.observation : '无缓存数据';
+                    
+                    // 记录工具调用为失败，但附带修正信息
+                    recordToolCall(toolName, parameters, false, `重复URL拦截: ${url}`);
+                    
+                    // 抛出错误，让主循环捕获并注入修正提示
+                    throw new Error(`[DUPLICATE_URL_ERROR] URL "${url}" 与已访问的 "${visitedUrl}" 高度相似。请立即更换 URL 或转向下一个子问题。缓存内容摘要: ${cachedObservation.substring(0, 200)}...`);
+                }
+                
+                // 记录本次访问（如果不是重复，且是第一次访问）
+                if (!this.visitedURLs.has(url)) {
+                    this.visitedURLs.set(url, {
+                        count: 1,
+                        lastVisited: Date.now(),
+                        stepIndex: this.intermediateSteps.length
+                    });
+                }
+            }
+            // ============================================================
             // 🔥🔥🔥 核心修复：Python 代码客户端强制预检 (v2.7 - 无污染版) 🔥🔥🔥
             // ============================================================
             if (toolName === 'python_sandbox' && parameters.code) {
@@ -1244,6 +1281,27 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 if (this._isParserError(error)) {
                     this.lastParserError = error; // 🆕 保存错误对象
                     
+                    // 🎯 新增：重复URL错误修正提示
+                    if (error.message.includes('[DUPLICATE_URL_ERROR]')) {
+                        const correctionPrompt = `
+## 🚨 紧急修正指令 (URGENT CORRECTION)
+**系统检测到你上次的行动尝试抓取一个重复或高度相似的 URL。**
+**错误信息**: ${error.message}
+
+**强制修正要求**:
+1.  **必须**立即更换为**新的、未访问过的** URL。
+2.  **或者**，如果所有相关 URL 都已访问，请立即采取 \`final_answer\` 或 \`generate_outline\` 行动，或转向研究计划中的**下一个子问题**。
+3.  **请重新生成**完整的“思考”和“行动”/“最终答案”块，并确保行动是有效的。
+`;
+                        // 注入修正提示，并强制重试
+                        this.lastDecisionText = correctionPrompt; // 伪造上次输出，用于生成修正提示
+                        parserErrorOccurred = true; // 设置标志，防止下次循环增加 iterations
+                        this.parserRetryAttempt = 1; // 强制进入修正流程
+                        console.warn(`[DeepResearchAgent] ⚠️ 拦截到重复URL，触发 L1 智能重定向`);
+                        continue; // 跳过当前迭代的其余逻辑，进入下一次循环（不增加 iterations）
+                    }
+                    
+                    // 原始的解析错误重试逻辑
                     if (this.parserRetryAttempt < 1) { // 允许一次重试
                         parserErrorOccurred = true; // 设置标志，防止下次循环增加 iterations
                         this.parserRetryAttempt++;
@@ -3133,7 +3191,8 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             'JSON格式错误',
             '解析失败',
             'Invalid JSON',
-            'SyntaxError'
+            'SyntaxError',
+            '[DUPLICATE_URL_ERROR]' // 🎯 新增：识别重复URL错误
         ];
         
         const message = error.message || '';
@@ -3277,6 +3336,100 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
     /**
      * 🎯 重置注入状态（每次新研究开始时）
      */
+// 🎯 新增：Levenshtein距离计算
+_levenshteinDistance(str1, str2) {
+    const matrix = [];
+    for (let i = 0; i <= str2.length; i++) {
+        matrix[i] = [i];
+    }
+    for (let j = 0; j <= str1.length; j++) {
+        matrix[j] = j;
+    }
+    for (let i = 1; i <= str2.length; i++) {
+        for (let j = 1; j <= str1.length; j++) {
+            if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
+                );
+            }
+        }
+    }
+    return matrix[str2.length][str1.length];
+}
+
+// 🎯 新增：字符串相似度算法（基于Levenshtein距离）
+_calculateStringSimilarity(str1, str2) {
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    const editDistance = this._levenshteinDistance(longer, shorter);
+    return (longer.length - editDistance) / parseFloat(longer.length);
+}
+
+// 🎯 新增：URL相似度计算
+_calculateURLSimilarity(url1, url2) {
+    try {
+        const u1 = new URL(url1);
+        const u2 = new URL(url2);
+        
+        // 1. 相同域名和路径 = 相同URL
+        if (u1.hostname === u2.hostname && u1.pathname === u2.pathname) {
+            return 1.0;
+        }
+        
+        // 2. 计算路径相似度
+        const path1 = u1.pathname.toLowerCase();
+        const path2 = u2.pathname.toLowerCase();
+        const similarity = this._calculateStringSimilarity(path1, path2);
+        
+        return similarity;
+    } catch (e) {
+        // URL解析失败，退回到字符串相似度
+        return this._calculateStringSimilarity(url1, url2);
+    }
+}
+
+// 🎯 新增：查找缓存的观察结果
+_findCachedObservationForURL(url) {
+    // 查找最近的包含该URL的步骤
+    for (let i = this.intermediateSteps.length - 1; i >= 0; i--) {
+        const step = this.intermediateSteps[i];
+        // 关键：检查 action.parameters.url 是否与目标 URL 严格相等
+        if (step.action.tool_name === 'crawl4ai' && 
+            step.action.parameters.url === url) {
+            return step;
+        }
+    }
+    return null;
+}
+
+// 🎯 新增：检查URL重复 (返回相似的已访问URL或 null)
+_checkURLDuplicate(url) {
+    for (const [visitedUrl, data] of this.visitedURLs.entries()) {
+        const similarity = this._calculateURLSimilarity(url, visitedUrl);
+        
+        // 相似度超过阈值
+        if (similarity >= this.urlSimilarityThreshold) {
+            // 检查是否超过最大重访次数
+            if (data.count >= this.maxRevisitCount) {
+                // 达到最大重访次数，返回已访问的 URL，用于检索缓存
+                return visitedUrl; 
+            }
+            
+            // 相似但未达到最大重访次数，更新计数并允许本次访问
+            data.count++;
+            data.lastVisited = Date.now();
+            return null; // 允许访问，不视为重复
+        }
+    }
+    return null; // 没有相似或重复的 URL
+}
     resetInjectionState() {
         this.injectedTools.clear();
         this.currentSessionId = `session_${Date.now()}`;
