@@ -1,5 +1,8 @@
 // src/static/js/agent/deepresearch/TranslationProcessor.js
-// 🎯 网站翻译专用处理器 - 最终优化版（支持分块翻译）
+// 🎯 网站翻译专用处理器 - 最终修复版（支持分块翻译，复用OutputParser）
+
+// 导入OutputParser
+import { AgentOutputParser } from './OutputParser.js';
 
 export class TranslationProcessor {
     constructor({
@@ -13,6 +16,9 @@ export class TranslationProcessor {
         this.tools = tools;
         this.callbackManager = callbackManager;
         this.skillManager = skillManager;
+        
+        // 🎯 初始化OutputParser用于健壮的JSON解析
+        this.outputParser = new AgentOutputParser();
         
         // 🎯 模型配置
         this.model = config.model || 'gemini-2.5-flash-preview-09-2025';
@@ -284,8 +290,8 @@ export class TranslationProcessor {
         const contentStr = response?.choices?.[0]?.message?.content;
         if (!contentStr) throw new Error('翻译返回为空');
         
-        // 🎯 解析翻译结果
-        let translationResult = this._parseTranslationResponse(contentStr);
+        // 🎯 使用健壮的JSON解析
+        const translationResult = this._robustParseTranslationResponse(contentStr);
         
         // 🎯 构建完整结果
         return this._buildTranslationResult(translationResult, {
@@ -344,7 +350,8 @@ export class TranslationProcessor {
                     throw new Error(`分块 ${i + 1} 翻译返回为空`);
                 }
                 
-                const chunkResult = this._parseTranslationResponse(contentStr);
+                // 🎯 使用健壮的JSON解析
+                const chunkResult = this._robustParseTranslationResponse(contentStr);
                 
                 // 🎯 如果是第一块，获取标题翻译
                 if (isFirstChunk && chunkResult.translated_title) {
@@ -352,28 +359,33 @@ export class TranslationProcessor {
                 }
                 
                 // 🎯 合并翻译的段落，并调整索引为原始索引
-                const translatedWithIndices = chunkResult.paragraphs.map(p => ({
-                    ...p,
-                    index: chunk.startIndex + p.index // 将块内索引转换为全局索引
-                }));
-                
-                allTranslatedParagraphs.push(...translatedWithIndices);
-                
-                console.log(`[TranslationProcessor] ✅ 分块 ${i + 1}/${chunks.length} 完成`);
+                if (chunkResult.paragraphs && Array.isArray(chunkResult.paragraphs)) {
+                    const translatedWithIndices = chunkResult.paragraphs.map(p => ({
+                        ...p,
+                        index: chunk.startIndex + (p.index || 0) // 将块内索引转换为全局索引
+                    }));
+                    
+                    allTranslatedParagraphs.push(...translatedWithIndices);
+                    console.log(`[TranslationProcessor] ✅ 分块 ${i + 1}/${chunks.length} 完成，翻译了 ${translatedWithIndices.length} 段`);
+                } else {
+                    console.warn(`[TranslationProcessor] ⚠️ 分块 ${i + 1} 解析结果无paragraphs字段`);
+                }
                 
             } catch (error) {
-                console.error(`[TranslationProcessor] ❌ 分块 ${i + 1} 翻译失败:`, error);
+                console.error(`[TranslationProcessor] ❌ 分块 ${i + 1} 翻译失败:`, error.message);
                 
-                // 🎯 降级方案：保留原文
-                const fallbackParagraphs = chunk.paragraphs.map(p => ({
+                // 🎯 增强的降级方案：保留原文，但记录错误
+                const fallbackParagraphs = chunk.paragraphs.map((p, idx) => ({
                     original: p.content,
                     translated: p.content,
                     index: p.index,
                     is_fallback: true,
-                    fallback_reason: error.message
+                    fallback_reason: `翻译失败: ${error.message.substring(0, 100)}`,
+                    chunk_index: i
                 }));
                 
                 allTranslatedParagraphs.push(...fallbackParagraphs);
+                console.log(`[TranslationProcessor] ⚠️ 分块 ${i + 1} 使用降级方案，保留 ${fallbackParagraphs.length} 段原文`);
             }
             
             // 🎯 添加延迟避免速率限制
@@ -384,6 +396,8 @@ export class TranslationProcessor {
         
         // 🎯 按原始索引排序并去重
         const sortedParagraphs = this._deduplicateAndSortParagraphs(allTranslatedParagraphs);
+        
+        console.log(`[TranslationProcessor] 分块翻译完成，总段落数: ${sortedParagraphs.length}`);
         
         // 🎯 构建完整结果
         return this._buildTranslationResult({
@@ -398,6 +412,119 @@ export class TranslationProcessor {
             targetLanguage,
             chunksUsed: chunks.length
         });
+    }
+    
+    /**
+     * 🎯 健壮的翻译响应解析（复用OutputParser逻辑）
+     */
+    _robustParseTranslationResponse(contentStr) {
+        try {
+            console.log('[TranslationProcessor] 开始健壮JSON解析...');
+            
+            // 🎯 第一步：清理Markdown代码块标记
+            let cleaned = contentStr.trim();
+            
+            // 移除 ```json 和 ``` 标记
+            cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
+            
+            // 移除多余的空白行
+            cleaned = cleaned.replace(/\n\s*\n/g, '\n');
+            
+            console.log(`[TranslationProcessor] 清理后内容长度: ${cleaned.length} 字符`);
+            
+            // 🎯 第二步：使用OutputParser中的健壮解析逻辑
+            // 这里复用OutputParser的核心解析思想
+            const parseResult = this._safeJsonParse(cleaned);
+            
+            if (!parseResult.success) {
+                // 🎯 第三步：尝试从文本中提取JSON对象
+                console.warn('[TranslationProcessor] 直接解析失败，尝试提取JSON对象...');
+                
+                // 查找第一个 { 和最后一个 }
+                const firstBrace = cleaned.indexOf('{');
+                const lastBrace = cleaned.lastIndexOf('}');
+                
+                if (firstBrace !== -1 && lastBrace > firstBrace) {
+                    const jsonStr = cleaned.substring(firstBrace, lastBrace + 1);
+                    console.log(`[TranslationProcessor] 提取JSON片段: ${jsonStr.length} 字符`);
+                    
+                    const extractedResult = this._safeJsonParse(jsonStr);
+                    if (extractedResult.success) {
+                        return extractedResult.data;
+                    }
+                }
+                
+                // 🎯 第四步：尝试修复常见JSON错误
+                console.warn('[TranslationProcessor] 提取失败，尝试修复JSON...');
+                const fixedJson = this._repairCommonJsonErrors(cleaned);
+                const fixedResult = this._safeJsonParse(fixedJson);
+                
+                if (fixedResult.success) {
+                    console.log('[TranslationProcessor] ✅ JSON修复成功');
+                    return fixedResult.data;
+                }
+                
+                throw new Error('无法解析翻译结果，JSON格式无效');
+            }
+            
+            console.log('[TranslationProcessor] ✅ JSON解析成功');
+            return parseResult.data;
+            
+        } catch (error) {
+            console.error('[TranslationProcessor] ❌ JSON解析失败:', error);
+            
+            // 🎯 最后尝试：如果所有方法都失败，返回结构化错误
+            return {
+                error: '解析失败',
+                message: error.message,
+                translated_title: '',
+                paragraphs: []
+            };
+        }
+    }
+    
+    /**
+     * 🎯 安全的JSON解析
+     */
+    _safeJsonParse(jsonStr) {
+        try {
+            const data = JSON.parse(jsonStr);
+            return { success: true, data };
+        } catch (error) {
+            return { success: false, error };
+        }
+    }
+    
+    /**
+     * 🎯 修复常见的JSON错误
+     */
+    _repairCommonJsonErrors(jsonStr) {
+        let repaired = jsonStr;
+        
+        // 1. 修复尾随逗号
+        repaired = repaired.replace(/,\s*([\]}])/g, '$1');
+        
+        // 2. 修复Python布尔值和None
+        repaired = repaired.replace(/:\s*True\b/g, ': true')
+                          .replace(/:\s*False\b/g, ': false')
+                          .replace(/:\s*None\b/g, ': null');
+        
+        // 3. 修复单引号字符串
+        repaired = repaired.replace(/'([^']*)'(?=\s*[:,\]}])/g, '"$1"');
+        
+        // 4. 修复未加引号的键名
+        repaired = repaired.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
+        
+        // 5. 修复字符串内的换行符
+        repaired = repaired.replace(/"(.*?[^\\])"\n/g, (match, content) => {
+            return '"' + content.replace(/\n/g, '\\n') + '"';
+        });
+        
+        // 6. 修复注释（移除单行和多行注释）
+        repaired = repaired.replace(/\/\/.*?\n/g, '')
+                          .replace(/\/\*[\s\S]*?\*\//g, '');
+        
+        return repaired;
     }
     
     /**
@@ -548,46 +675,6 @@ ${paragraphs.map(p => p.content).join('\n\n')}
     }
     
     /**
-     * 🎯 解析翻译响应
-     */
-    _parseTranslationResponse(contentStr) {
-        try {
-            // 🎯 首先尝试直接解析
-            return JSON.parse(contentStr);
-        } catch (e) {
-            console.warn('[TranslationProcessor] 直接JSON解析失败，尝试提取JSON');
-            
-            // 🎯 尝试从文本中提取JSON
-            const jsonMatch = contentStr.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                try {
-                    return JSON.parse(jsonMatch[0]);
-                } catch (e2) {
-                    console.error('[TranslationProcessor] JSON提取解析失败:', e2);
-                    console.error('[TranslationProcessor] 原始内容:', contentStr.substring(0, 500));
-                }
-            }
-            
-            // 🎯 尝试修复常见的JSON格式错误
-            try {
-                const cleaned = contentStr
-                    .replace(/,\s*([\]}])/g, '$1') // 移除尾部逗号
-                    .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":') // 确保键被引号包围
-                    .replace(/:\s*'([^']*)'/g, ': "$1"') // 单引号转双引号
-                    .replace(/:\s*`([^`]*)`/g, ': "$1"') // 反引号转双引号
-                    .replace(/\\'/g, "'") // 转义单引号
-                    .replace(/\\"/g, '"') // 转义双引号
-                    .replace(/\n/g, '\\n'); // 转义换行符
-                
-                return JSON.parse(cleaned);
-            } catch (e3) {
-                console.error('[TranslationProcessor] JSON修复失败:', e3);
-                throw new Error('翻译结果格式错误，无法解析为JSON');
-            }
-        }
-    }
-    
-    /**
      * 🎯 构建完整翻译结果
      */
     _buildTranslationResult(chunkResult, context) {
@@ -684,7 +771,7 @@ ${paragraphs.map(p => p.content).join('\n\n')}
             return finalResult;
             
         } catch (error) {
-            console.warn('[TranslationProcessor] ⚠️ 校对失败，使用原始翻译:', error);
+            console.warn('[TranslationProcessor] ⚠️ 校对失败，使用原始翻译:', error.message);
             return translationResult;
         }
     }
@@ -710,7 +797,8 @@ ${paragraphs.map(p => p.content).join('\n\n')}
             throw new Error('校对返回为空');
         }
         
-        return this._parseTranslationResponse(contentStr);
+        // 🎯 使用健壮的JSON解析
+        return this._robustParseTranslationResponse(contentStr);
     }
     
     /**
@@ -748,16 +836,20 @@ ${paragraphs.map(p => p.content).join('\n\n')}
                 });
                 
                 const contentStr = response?.choices?.[0]?.message?.content;
-                if (!contentStr) continue;
+                if (!contentStr) {
+                    console.warn(`[TranslationProcessor] 校对分块 ${i + 1} 返回为空`);
+                    continue;
+                }
                 
-                const chunkResult = this._parseTranslationResponse(contentStr);
+                // 🎯 使用健壮的JSON解析
+                const chunkResult = this._robustParseTranslationResponse(contentStr);
                 
                 // 🎯 合并校对结果
-                if (chunkResult.corrections) {
+                if (chunkResult.corrections && Array.isArray(chunkResult.corrections)) {
                     // 调整索引为全局索引
                     const adjustedCorrections = chunkResult.corrections.map(c => ({
                         ...c,
-                        index: chunk.startIndex + c.index
+                        index: chunk.startIndex + (c.index || 0)
                     }));
                     allCorrections.push(...adjustedCorrections);
                 }
@@ -770,7 +862,7 @@ ${paragraphs.map(p => p.content).join('\n\n')}
                 console.log(`[TranslationProcessor] ✅ 校对分块 ${i + 1}/${chunks.length} 完成`);
                 
             } catch (error) {
-                console.warn(`[TranslationProcessor] ⚠️ 校对分块 ${i + 1} 失败:`, error);
+                console.warn(`[TranslationProcessor] ⚠️ 校对分块 ${i + 1} 失败:`, error.message);
             }
             
             // 添加延迟
@@ -986,7 +1078,8 @@ ${paragraphs.map((p, i) => `
         report += `| **目标语言** | 中文 |\n`;
         report += `| **翻译模型** | ${this.model} |\n`;
         report += `| **校对状态** | ${finalTranslation.metadata?.proofread ? '✅ 已校对' : '⚠️ 未校对'} |\n`;
-        report += `| **分块数量** | ${finalTranslation.metadata?.chunks_used || 1} |\n\n`;
+        report += `| **分块数量** | ${finalTranslation.metadata?.chunks_used || 1} |\n`;
+        report += `| **处理状态** | ${validation.passed ? '✅ 通过' : '⚠️ 有问题'} |\n\n`;
         
         // 🎯 2. 内容概览
         report += `## 📊 内容概览\n`;
@@ -1006,6 +1099,14 @@ ${paragraphs.map((p, i) => `
             report += `| **准确性** | ${validation.scores.accuracy.toFixed(1)} | ${this._getScoreDescription(validation.scores.accuracy)} |\n`;
             report += `| **覆盖率** | ${validation.scores.coverage.toFixed(1)} | ${this._getScoreDescription(validation.scores.coverage)} |\n`;
         }
+        
+        if (validation.issues && validation.issues.length > 0) {
+            report += `\n## ⚠️ 发现的问题\n`;
+            validation.issues.forEach(issue => {
+                report += `- **${issue.type}** (${issue.severity}): ${issue.count || '需要检查'}\n`;
+            });
+        }
+        
         report += `\n`;
         
         // 🎯 4. 标题翻译
@@ -1021,9 +1122,11 @@ ${paragraphs.map((p, i) => `
         report += `## 📝 主要内容\n\n`;
         
         const paragraphs = finalTranslation.paragraphs || [];
-        for (let i = 0; i < paragraphs.length; i += 5) {
-            const group = paragraphs.slice(i, i + 5);
-            report += `### 第 ${i + 1}-${Math.min(i + 5, paragraphs.length)} 段\n\n`;
+        const displayedParagraphs = paragraphs.slice(0, 50); // 只显示前50段，避免报告过长
+        
+        for (let i = 0; i < displayedParagraphs.length; i += 5) {
+            const group = displayedParagraphs.slice(i, i + 5);
+            report += `### 第 ${i + 1}-${Math.min(i + 5, displayedParagraphs.length)} 段\n\n`;
             
             group.forEach((para, idx) => {
                 const absoluteIdx = i + idx + 1;
@@ -1055,6 +1158,10 @@ ${paragraphs.map((p, i) => `
                 
                 report += `---\n\n`;
             });
+        }
+        
+        if (paragraphs.length > 50) {
+            report += `*... 还有 ${paragraphs.length - 50} 个段落未显示*\n\n`;
         }
         
         // 🎯 6. 表格数据
@@ -1122,7 +1229,7 @@ ${paragraphs.map((p, i) => `
     }
     
     // ============================================
-    // 🎯 辅助方法
+    // 🎯 辅助方法（保持不变）
     // ============================================
     
     /**
