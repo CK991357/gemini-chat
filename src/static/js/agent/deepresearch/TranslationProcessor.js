@@ -240,7 +240,7 @@ export class TranslationProcessor {
         
         return {
             title: this._extractTitle(html),
-            content: this._extractMainContent(html, codeBlocks), // 🎯 传入代码块进行占位符替换
+            paragraphs: this._extractMainContent(html, codeBlocks), // 🎯 传入代码块进行占位符替换，返回段落数组
             tables: this._extractTables(html),
             images: this._extractImages(html),
             codeBlocks: codeBlocks // 🎯 新增：返回代码块列表
@@ -251,9 +251,12 @@ export class TranslationProcessor {
      * 🎯 构建翻译提示词（第一次调用）
      */
     _buildTranslationPrompt(data) {
-        const { title, content, tables, images, codeBlocks, targetLanguage } = data;
+        const { title, paragraphs, tables, images, codeBlocks, targetLanguage } = data;
         
-        return `# 🎯 网站内容翻译任务
+        // 🎯 仅在第一块翻译时包含标题、表格和图片信息
+        const isFirstChunk = tables.length > 0 || images.length > 0;
+
+        return `# 🎯 网站内容翻译任务 (分块翻译)
  
 ## 📋 核心要求
 你是一位专业的翻译专家。请将以下网站内容**准确、完整、忠实地**翻译成${targetLanguage}。
@@ -267,52 +270,37 @@ export class TranslationProcessor {
  
 ## 🌐 原文内容
  
-### 1. 标题
+${isFirstChunk ? `### 1. 标题
 ${title}
  
-### 2. 主要内容
-${content.substring(0, 8000)}${content.length > 8000 ? '...（内容过长已截断）' : ''}
- 
-### 3. 表格数据（共 ${tables.length} 个）
+### 2. 表格数据（共 ${tables.length} 个）
 ${tables.slice(0, 3).map((table, i) => `
 表格 ${i+1}: ${table.title || '未命名'}
 ${table.rows.slice(0, 5).map(row => row.join(' | ')).join('\n')}
 `).join('\n')}
  
-### 4. 图片描述（共 ${images.length} 张）
+### 3. 图片描述（共 ${images.length} 张）
 ${images.slice(0, 5).map((img, i) => `图片 ${i+1}: ${img.alt || '无描述'}`).join('\n')}
  
-### 5. 代码块列表（共 ${codeBlocks.length} 个）
+### 4. 代码块列表（共 ${codeBlocks.length} 个）
 ${codeBlocks.map(block => `- ${block.id} (${block.language})`).join('\n')}
+ 
+---
+` : ''}
+
+### 🎯 当前翻译内容块 (共 ${paragraphs.length} 段)
+${paragraphs.map(p => p.content).join('\n\n')}
  
 ## 📤 输出格式
 请以JSON格式返回，必须包含以下字段：
  
 {
-  "title": {
-    "original": "原文标题",
-    "translated": "翻译标题"
-  },
+  ${isFirstChunk ? `"translated_title": "翻译标题",` : ''}
   "paragraphs": [
     {
       "original": "原文段落",
       "translated": "翻译段落",
-      "index": 0
-    }
-  ],
-  "tables": [
-    {
-      "title": "表格标题",
-      "original": "原始表格内容（Markdown格式）",
-      "translated": "翻译后表格内容（Markdown格式）",
-      "index": 0
-    }
-  ],
-  "images": [
-    {
-      "src": "图片URL",
-      "original_alt": "原文描述",
-      "translated_alt": "翻译描述"
+      "index": 0 // 🎯 必须保留原始段落的索引
     }
   ],
   "metadata": {
@@ -385,56 +373,63 @@ ${codeBlocks.map(block => `- ${block.id} (${block.language})`).join('\n')}
     /**
      * 🎯 构建校对提示词（第二次调用）
      */
-    _buildProofreadPrompt(translationResult, targetLanguage) {
-        return `# 🎯 翻译校对与精修任务
+    _buildProofreadPrompt(data) {
+        const { title, paragraphs, tables, targetLanguage } = data;
+        
+        const isFirstChunk = title !== null;
 
+        return `# 🎯 翻译校对与精修任务 (分块校对)
+ 
 ## 📋 角色设定
 你是一位经验丰富的翻译校对专家，专门检查翻译质量。
-
+ 
 ## 🎯 校对重点
 请检查以下翻译内容，重点关注：
 1. **准确性**：翻译是否准确传达了原文意思
 2. **流畅性**：中文表达是否自然流畅
 3. **一致性**：术语是否前后一致
 4. **专业性**：专业内容翻译是否准确
-
+ 
 ## 🌐 目标语言: ${targetLanguage}
-
+ 
 ## 📝 待校对内容
-
-### 1. 标题翻译
-原文: "${translationResult.title.original}"
-翻译: "${translationResult.title.translated}"
-
-### 2. 示例段落（前3段）
-${translationResult.paragraphs.slice(0, 3).map((p, i) => `
-**段落 ${i+1}**
-原文: ${p.original.substring(0, 150)}...
-翻译: ${p.translated.substring(0, 150)}...
-`).join('\n')}
-
-### 3. 示例表格
-${translationResult.tables.slice(0, 2).map((t, i) => `
+ 
+${isFirstChunk ? `### 1. 标题翻译
+原文: "${title.original}"
+翻译: "${title.translated}"
+ 
+### 2. 示例表格
+${tables.slice(0, 2).map((t, i) => `
 **表格 ${i+1}**: ${t.title}
 原文: ${t.original.substring(0, 100)}...
 翻译: ${t.translated.substring(0, 100)}...
 `).join('\n')}
+ 
+---
+` : ''}
 
+### 🎯 当前翻译内容块 (共 ${paragraphs.length} 段)
+${paragraphs.map((p, i) => `
+**段落索引**: ${p.index}
+**原文**: ${p.original}
+**翻译**: ${p.translated}
+`).join('\n---\n')}
+ 
 ## 📊 校对标准
 - ✅ **优秀**：准确、流畅、专业
 - ⚠️ **良好**：基本准确，个别地方可优化
 - ❌ **需改进**：有明显错误或不流畅
-
+ 
 ## 📤 输出格式
 请以JSON格式返回校对结果：
-
+ 
 {
+  ${isFirstChunk ? `"suggested_title_correction": "如果标题需要修改，请提供新标题",` : ''}
   "overall_quality": "优秀/良好/需改进",
   "corrections": [
     {
-      "type": "title/paragraph/table",
-      "index": 0,
-      "section": "具体部分",
+      "type": "paragraph/table",
+      "index": 0, // 🎯 必须使用段落的原始索引
       "original_translation": "原翻译",
       "suggested_correction": "建议修改",
       "reason": "修改理由"
@@ -444,13 +439,13 @@ ${translationResult.tables.slice(0, 2).map((t, i) => `
   "terminology_check": true/false,
   "fluency_score": 0-10
 }
-
+ 
 ## 💡 校对原则
 1. 只修改确实有问题的部分
 2. 保持原翻译的风格和结构
 3. 优先保证准确性，其次流畅性
 4. 标记专业术语是否一致
-
+ 
 现在，请开始校对：`;
     }
     
@@ -718,7 +713,8 @@ ${translationResult.tables.slice(0, 2).map((t, i) => `
                 !line.includes('Copyright')
             );
         
-        return lines.join('\n\n');
+        // 4. 返回段落数组，每个元素包含内容和原始索引
+        return lines.map((content, index) => ({ content, index }));
     }
     
     /**
@@ -902,7 +898,29 @@ ${translationResult.tables.slice(0, 2).map((t, i) => `
     /**
      * 🎯 应用校对修改
      */
-    _applyProofreadCorrections(original, proofread) {
+    _applyProofreadCorrectionsToChunk(chunk, proofread) {
+        const correctedChunk = JSON.parse(JSON.stringify(chunk));
+        
+        // 应用段落修改
+        if (proofread.corrections && Array.isArray(proofread.corrections)) {
+            proofread.corrections.forEach(correction => {
+                if (correction.type === 'paragraph' && correction.index !== undefined) {
+                    // 🎯 查找当前块中匹配索引的段落
+                    const idx = correctedChunk.findIndex(p => p.index === correction.index);
+                    if (idx !== -1) {
+                        correctedChunk[idx].translated = correction.suggested_correction;
+                        correctedChunk[idx].proofread = true;
+                        correctedChunk[idx].correction_reason = correction.reason;
+                    }
+                }
+            });
+        }
+        
+        // 🎯 未被校对的段落也需要标记为已处理
+        return correctedChunk.map(p => ({ ...p, proofread: p.proofread || false }));
+    }
+
+    _applyProofreadCorrectionsToMetadata(original, proofread) {
         const corrected = JSON.parse(JSON.stringify(original));
         
         // 应用标题修改
@@ -911,18 +929,9 @@ ${translationResult.tables.slice(0, 2).map((t, i) => `
             corrected.title.proofread = true;
         }
         
-        // 应用段落修改
+        // 应用表格修改
         if (proofread.corrections && Array.isArray(proofread.corrections)) {
             proofread.corrections.forEach(correction => {
-                if (correction.type === 'paragraph' && correction.index !== undefined) {
-                    const idx = corrected.paragraphs.findIndex(p => p.index === correction.index);
-                    if (idx !== -1) {
-                        corrected.paragraphs[idx].translated = correction.suggested_correction;
-                        corrected.paragraphs[idx].proofread = true;
-                        corrected.paragraphs[idx].correction_reason = correction.reason;
-                    }
-                }
-                
                 if (correction.type === 'table' && correction.index !== undefined) {
                     if (corrected.tables[correction.index]) {
                         corrected.tables[correction.index].translated = correction.suggested_correction;
@@ -932,17 +941,40 @@ ${translationResult.tables.slice(0, 2).map((t, i) => `
             });
         }
         
-        // 添加校对元数据
-        corrected.metadata.proofread = {
-            at: new Date().toISOString(),
-            quality: proofread.overall_quality || 'unknown',
-            corrections: proofread.corrections?.length || 0,
-            temperature: this.temperature.proofreading
-        };
-        
+        // 🎯 仅返回包含标题和表格校正的元数据
         return corrected;
     }
     
+    /**
+     * 🎯 分块段落
+     */
+    _chunkParagraphs(paragraphs, maxCharsPerChunk) {
+        const chunks = [];
+        let currentChunk = [];
+        let currentChunkCharCount = 0;
+
+        for (const paragraph of paragraphs) {
+            const paragraphCharCount = paragraph.content.length;
+            
+            // 检查当前块是否已满，或者单个段落是否过大
+            if (currentChunkCharCount + paragraphCharCount > maxCharsPerChunk && currentChunk.length > 0) {
+                chunks.push(currentChunk);
+                currentChunk = [];
+                currentChunkCharCount = 0;
+            }
+
+            // 即使单个段落超过限制，也必须单独成块发送
+            currentChunk.push(paragraph);
+            currentChunkCharCount += paragraphCharCount;
+        }
+
+        if (currentChunk.length > 0) {
+            chunks.push(currentChunk);
+        }
+
+        return chunks;
+    }
+
     /**
      * 🎯 计算完整性分数
      */
@@ -954,7 +986,7 @@ ${translationResult.tables.slice(0, 2).map((t, i) => `
         if (!translation.paragraphs || translation.paragraphs.length === 0) score -= 4;
         
         // 检查是否有空翻译
-        const emptyTranslations = translation.paragraphs?.filter(p => 
+        const emptyTranslations = translation.paragraphs?.filter(p =>
             !p.translated || p.translated.trim().length === 0
         ).length || 0;
         

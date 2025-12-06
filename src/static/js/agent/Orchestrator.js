@@ -500,7 +500,8 @@ ${cleanTopic}
     _extractUrlFromTopic(topic) {
         const urlRegex = /https?:\/\/[^\s]+/;
         const match = topic.match(urlRegex);
-        return match ? match : null;
+        // 🎯 修复：确保只返回匹配到的 URL 字符串（数组的第一个元素）
+        return match ? match[0] : null;
     }
 
     /**
