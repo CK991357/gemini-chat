@@ -835,11 +835,11 @@ ${paragraphs.map((p, i) => `
         
         while ((match = codeRegex.exec(html)) !== null) {
             count++;
-            const codeHtml = match;
+            const codeHtml = match; // 🎯 修复：确保 codeHtml 是匹配到的完整字符串
             
             // 尝试提取语言类型
-            const langMatch = codeHtml.match(/class=["'][^"']*lang(?:uage)?-([^"'\s]+)/i);
-            const language = langMatch ? langMatch : 'plaintext';
+            const langMatch = codeHtml[0].match(/class=["'][^"']*lang(?:uage)?-([^"'\s]+)/i);
+            const language = langMatch ? langMatch[1] : 'plaintext'; // 🎯 修复：提取捕获组
             
             // 提取代码内容（去除 pre/code 标签）
             let codeContent = codeHtml.replace(/<\/?pre[^>]*>/gi, '');
