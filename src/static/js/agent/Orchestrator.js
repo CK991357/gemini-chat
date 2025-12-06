@@ -447,6 +447,7 @@ ${cleanTopic}
         };
 
         this.callbackManager.addHandler({
+            // 🎯 深度研究事件
             'on_research_start': forwardEvent('on_research_start', 'research:start'),
             'on_research_plan_generated': forwardEvent('on_research_plan_generated', 'research:plan_generated'),
             'on_research_progress': forwardEvent('on_research_progress', 'research:progress_update'),
@@ -456,6 +457,12 @@ ${cleanTopic}
             'on_research_stats_updated': forwardEvent('on_research_stats_updated', 'research:stats_updated'),
             'on_tool_called': forwardEvent('on_tool_called', 'research:tool_called'),
             'on_agent_think_start': (e) => window.dispatchEvent(new CustomEvent('agent:thinking', { detail: { content: '正在规划下一步...', type: 'thinking', agentType: 'deep_research' } })),
+            
+            // 🎯 翻译事件
+            'on_translation_start': forwardEvent('on_translation_start', 'translation:start'),
+            'on_translation_progress': forwardEvent('on_translation_progress', 'translation:progress_update'),
+            'on_translation_complete': forwardEvent('on_translation_complete', 'translation:complete'),
+            'on_translation_error': forwardEvent('on_translation_error', 'translation:error'),
         });
         console.log('[Orchestrator] 最终版事件处理器已设置。');
     }
