@@ -518,16 +518,28 @@ ${cleanTopic}
             });
             
             if (result.success) {
+                console.log('[Orchestrator] ✅ 翻译完成，报告长度:', result.report?.length);
+                
+                // 🎯 创建一个带有markdown格式的消息内容
+                const displayContent = `🎯 **网页翻译完成**\n\n📋 **目标URL**: ${url}\n\n${result.report}`;
+                
                 return {
                     enhanced: true,
                     type: 'translation_result',
-                    content: result.report, // 返回完整的报告内容
+                    content: displayContent, // 使用增强的显示内容
+                    originalContent: result.report, // 保留原始报告内容
                     success: true,
                     // 🎯 确保返回上游需要的字段
                     originalUserMessage: userInput,
                     researchMode: 'translation',
-                    sources: [{ url: url, title: result.metadata?.title?.translated || '翻译报告' }],
-                    model: result.metadata?.model || 'gemini-2.5-flash-preview-09-2025'
+                    sources: [{ url: url, title: '翻译报告' }],
+                    model: result.metadata?.model || 'gemini-2.5-flash-preview-09-2025',
+                    reportMetadata: {
+                        url: url,
+                        stats: result.stats,
+                        processingTime: result.stats?.processingTime || '未知',
+                        success: true
+                    }
                 };
             } else {
                 return {

@@ -1474,8 +1474,8 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
         // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
 
-        // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
-        // Orchestrator 返回的 originalUserMessage 包含完整的用户原始指令，用于历史记录持久化
+        // 🎯 核心修复：更新历史记录中的用户消息为 Orchestrator 返回的原始消息
+        // 这是为了解决历史记录错乱的问题
         if (agentResult && agentResult.enhanced && agentResult.originalUserMessage) {
             // 找到 chatHistory 中最后一条用户消息（即当前消息）
             const lastUserMessageIndex = chatHistory.length - 1;
@@ -1492,17 +1492,83 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             console.log("💬 Orchestrator 决定不处理，回退到标准对话");
             // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
             await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
+            return false; // 明确返回 false，表示未被增强处理
         }
         
-        // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
-        // 我们相信 'research:end' 事件会最终触发渲染。
-        // 对于 user_guide 等简单情况，Orchestrator 内部会直接触发事件或返回可直接显示的内容，
-        // 我们可以在这里做一个简单的处理。
-        if (agentResult && agentResult.type === 'user_guide') {
-             const aiMessage = chatUI.createAIMessageElement();
-             aiMessage.markdownContainer.innerHTML = marked.parse(agentResult.content);
-             chatUI.scrollToBottom();
+        // 🎯 新增：处理 Agent 模式的同步返回结果 (如 user_guide, translation_result)
+        if (agentResult && agentResult.enhanced) {
+            console.log(`[Main.js] 🎯 Agent模式同步处理完成，类型: ${agentResult.type}`);
+            
+            switch (agentResult.type) {
+                case 'research_result':
+                    // 深度研究结果，通常由 'research:end' 事件处理，这里只处理同步返回的特殊情况
+                    console.log('[Main.js] 📝 深度研究结果已由事件处理，跳过同步渲染。');
+                    break;
+                    
+                case 'translation_result':
+                    console.log('[Main.js] 🌐 显示翻译结果...');
+                    console.log(`[Main.js] 翻译报告长度: ${agentResult.content?.length || 0} 字符`);
+                    
+                    // 🎯 关键：使用 addMessage 显示翻译报告
+                    chatUI.addMessage({
+                        role: 'assistant',
+                        content: agentResult.content
+                    });
+                    
+                    // 记录翻译完成日志
+                    if (agentResult.reportMetadata) {
+                        const stats = agentResult.reportMetadata.stats;
+                        chatUI.logMessage(
+                            `🌐 网页翻译完成: ${agentResult.reportMetadata.url}\n` +
+                            `📊 统计: ${stats.paragraphs || 0} 段落，${stats.tables || 0} 表格，用时 ${stats.processingTime || '未知'}`,
+                            'system'
+                        );
+                    }
+                    break;
+                    
+                case 'translation_error':
+                    console.log('[Main.js] ❌ 显示翻译错误...');
+                    // 显示翻译错误
+                    chatUI.addMessage({
+                        role: 'assistant',
+                        content: agentResult.content
+                    });
+                    break;
+                    
+                case 'user_guide':
+                    console.log('[Main.js] 📖 显示用户指南...');
+                    // 显示用户指南
+                    chatUI.addMessage({
+                        role: 'assistant',
+                        content: agentResult.content
+                    });
+                    break;
+                    
+                case 'research_error':
+                    console.log('[Main.js] ❌ 显示研究错误...');
+                    // 显示研究错误
+                    chatUI.addMessage({
+                        role: 'assistant',
+                        content: agentResult.content
+                    });
+                    break;
+                    
+                default:
+                    console.warn('[Main.js] ⚠️ 未知的Agent结果类型:', agentResult.type);
+                    // 对于未知类型，不渲染，等待事件处理
+                    return true; // 仍然返回 true，表示 Agent 已接管
+            }
+            
+            // 🎯 确保保存历史记录 (仅对同步渲染的 Agent 结果)
+            if (historyManager) {
+                historyManager.saveHistory();
+            }
+            
+            return true; // 明确返回 true，表示已由 Agent 处理
         }
+        
+        // 如果 Agent 启动了异步流程 (如深度研究)，也返回 true
+        return true;
 
     } catch (error) {
         console.error("🤖 Agent 模式执行失败:", error);
@@ -1518,6 +1584,7 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
         }
         // 使用标准模式重新发送，让标准模式自己处理历史记录推入
         await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, true);
+        return false; // 明确返回 false，表示最终回退到标准模式
     }
 }
 
