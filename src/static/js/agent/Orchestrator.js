@@ -4,6 +4,7 @@ import { getSkillsRegistry } from '../tool-spec-system/generated-skills.js';
 import { mcpToolsMap } from '../tools_mcp/tool-definitions.js';
 import { CallbackManager } from './CallbackManager.js';
 import { DeepResearchAgent } from './deepresearch/DeepResearchAgent.js';
+import { TranslationProcessor } from './deepresearch/TranslationProcessor.js';
 import { EnhancedSkillManager } from './EnhancedSkillManager.js';
 import { ToolFactory } from './tools/ToolImplementations.js';
 import { promptModelSelection } from './WorkflowUI.js';
@@ -19,6 +20,7 @@ export class Orchestrator {
 
         this.agentMode = 'deep_research';
         this.deepResearchAgent = null;
+        this.translationProcessor = null; // 🎯 新增：翻译处理器
         this.researchToolsSet = {};
         this.researchTools = ['tavily_search', 'crawl4ai', 'python_sandbox'];
 
@@ -48,6 +50,7 @@ export class Orchestrator {
             this.tools = await this._initializeTools();
             this.researchToolsSet = this._initializeResearchTools();
             this.deepResearchAgent = this._initializeDeepResearchAgent();
+            this.translationProcessor = this._initializeTranslationProcessor(); // 🎯 初始化翻译处理器
             this.setupHandlers();
             
             this._initState = 'initialized';
@@ -87,6 +90,21 @@ export class Orchestrator {
         const researchDetection = this._detectAndExtractTopic(userMessage);
 
         if (researchDetection.shouldStart) {
+            // 🎯 新增：网页翻译模式路由
+            if (researchDetection.mode === 'translation') {
+                console.log('[Orchestrator] 🎯 触发网页翻译模式...');
+                const url = this._extractUrlFromTopic(researchDetection.cleanTopic);
+                if (!url) {
+                    return {
+                        enhanced: true,
+                        type: 'translation_error',
+                        content: '❌ 网页翻译模式启动失败：未在输入中找到有效的网址。请使用格式："网页翻译模式 https://example.com"'
+                    };
+                }
+                return await this._handleTranslationRequest(url, userMessage);
+            }
+
+            // 深度研究模式路由
             console.log(`[Orchestrator] 检测到关键词"${researchDetection.matchedKeyword}"，启动${researchDetection.mode}研究模式...`);
             return await this._handleWithDeepResearch(researchDetection.cleanTopic, researchDetection.originalTopic, context, researchDetection.mode);
         }
@@ -255,6 +273,7 @@ ${cleanTopic}
 | **学术论文模式** | \`academic\` | 对已有学术论文的深度整理、验证与扩展分析。 | 严谨客观、验证导向的论文解析报告（约1800-2500字）。 |
 | **行业分析模式** | \`business\` | 全面的行业现状扫描、竞争格局分析与发展趋势预测。 | 全景扫描、深度洞察的行业分析报告（约2200-3000字）。 |
 | **技术实现模式** | \`technical\` | 技术需求的全套实现方案、代码示例与最佳实践。 | 技术准确、实践导向的实现文档（约2000-2800字）。 |
+| **网页翻译模式** | \`translation\` | 对指定网址的网页内容进行抓取、翻译和校对，生成结构化报告。 | 忠实、准确、结构完整的翻译报告，包含表格和图片信息。 |
 
 ## 💡 使用示例
 
@@ -306,6 +325,7 @@ ${cleanTopic}
      */
     _detectAndExtractTopic(userMessage) {
         const keywords = {
+            '网页翻译模式': 'translation', // 🎯 新增翻译模式
             '学术论文模式': 'academic',
             '行业分析模式': 'business',
             '技术实现模式': 'technical',
@@ -326,7 +346,7 @@ ${cleanTopic}
         }
 
         if (!matchedKeyword) {
-            return { 
+            return {
                 shouldStart: false,
                 mode: 'standard',
                 matchedKeyword: '',
@@ -380,6 +400,26 @@ ${cleanTopic}
             skillManager: this.skillManager
           }
         );
+    }
+
+    /**
+     * 🎯 新增：初始化 TranslationProcessor
+     */
+    _initializeTranslationProcessor() {
+        console.log('[Orchestrator] 正在初始化 TranslationProcessor...');
+        return new TranslationProcessor({
+            chatApiHandler: this.chatApiHandler,
+            tools: this.tools,
+            callbackManager: this.callbackManager,
+            skillManager: this.skillManager,
+            config: {
+                model: 'gemini-2.5-flash-preview-09-2025',
+                temperature: {
+                    translation: 0.1,
+                    proofreading: 0.2
+                }
+            }
+        });
     }
 
     async _initializeTools() {
@@ -452,6 +492,60 @@ ${cleanTopic}
         }
 
         return { injectionContent, relevantSkills };
+    }
+
+    /**
+     * 🎯 新增：从话题中提取URL
+     */
+    _extractUrlFromTopic(topic) {
+        const urlRegex = /https?:\/\/[^\s]+/;
+        const match = topic.match(urlRegex);
+        return match ? match : null;
+    }
+
+    /**
+     * 🎯 新增：处理翻译请求
+     */
+    async _handleTranslationRequest(url, userInput) {
+        try {
+            // 🎯 调用翻译处理器
+            const result = await this.translationProcessor.processWebsite({
+                url: url,
+                targetLanguage: 'zh-CN',
+                enableProofreading: true,
+                userInstruction: userInput
+            });
+            
+            if (result.success) {
+                return {
+                    enhanced: true,
+                    type: 'translation_result',
+                    content: result.report, // 返回完整的报告内容
+                    success: true,
+                    // 🎯 确保返回上游需要的字段
+                    originalUserMessage: userInput,
+                    researchMode: 'translation',
+                    sources: [{ url: url, title: result.metadata?.title?.translated || '翻译报告' }],
+                    model: result.metadata?.model || 'gemini-2.5-flash-preview-09-2025'
+                };
+            } else {
+                return {
+                    enhanced: true,
+                    type: 'translation_error',
+                    content: result.report || `❌ 翻译失败：${result.error}`,
+                    success: false
+                };
+            }
+            
+        } catch (error) {
+            console.error('[Orchestrator] ❌ 翻译处理失败:', error);
+            return {
+                enhanced: true,
+                type: 'translation_error',
+                content: `❌ 翻译处理失败: ${error.message}`,
+                success: false
+            };
+        }
     }
 
     setEnabled(enabled) {
