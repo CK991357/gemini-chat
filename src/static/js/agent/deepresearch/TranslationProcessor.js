@@ -182,16 +182,28 @@ export class TranslationProcessor {
         
         try {
             // 🎯 从抓取数据中提取关键信息
-            const { title, content, tables, images } = this._extractKeyContent(scrapedData);
+            console.log('[TranslationProcessor] 开始提取关键内容...');
+            const { title, paragraphs, tables, images, codeBlocks } = this._extractKeyContent(scrapedData);
+            
+            console.log(`[TranslationProcessor] 提取结果:`, {
+                titleLength: title.length,
+                paragraphsCount: paragraphs.length,
+                tablesCount: tables.length,
+                imagesCount: images.length,
+                codeBlocksCount: codeBlocks.length
+            });
             
             // 🎯 构建翻译提示词
             const translationPrompt = this._buildTranslationPrompt({
                 title,
-                content,
+                paragraphs,
                 tables,
                 images,
+                codeBlocks,
                 targetLanguage
             });
+            
+            console.log(`[TranslationProcessor] 提示词长度: ${translationPrompt.length} 字符`);
             
             // 🎯 第一次调用：翻译
             const response = await this.chatApiHandler.completeChat({
@@ -210,6 +222,7 @@ export class TranslationProcessor {
                 translationResult = JSON.parse(contentStr);
             } catch (e) {
                 console.error('[TranslationProcessor] 翻译JSON解析失败:', e);
+                console.error('[TranslationProcessor] 原始内容:', contentStr.substring(0, 500));
                 throw new Error('翻译结果格式错误');
             }
             
@@ -226,6 +239,7 @@ export class TranslationProcessor {
             
         } catch (error) {
             console.error('[TranslationProcessor] ❌ 翻译失败:', error);
+            console.error('[TranslationProcessor] 错误堆栈:', error.stack);
             throw new Error(`翻译失败: ${error.message}`);
         }
     }
@@ -237,13 +251,14 @@ export class TranslationProcessor {
         const html = scrapedData.cleaned_html || scrapedData.content || '';
         
         const codeBlocks = this._extractCodeBlocks(html);
+        const paragraphs = this._extractMainContent(html, codeBlocks);
         
         return {
             title: this._extractTitle(html),
-            paragraphs: this._extractMainContent(html, codeBlocks), // 🎯 传入代码块进行占位符替换，返回段落数组
+            paragraphs: paragraphs,
             tables: this._extractTables(html),
             images: this._extractImages(html),
-            codeBlocks: codeBlocks // 🎯 新增：返回代码块列表
+            codeBlocks: codeBlocks
         };
     }
     
@@ -253,8 +268,8 @@ export class TranslationProcessor {
     _buildTranslationPrompt(data) {
         const { title, paragraphs, tables, images, codeBlocks, targetLanguage } = data;
         
-        // 🎯 仅在第一块翻译时包含标题、表格和图片信息
-        const isFirstChunk = tables.length > 0 || images.length > 0;
+        // 🎯 判断是否包含标题、表格和图片信息
+        const hasSpecialContent = tables.length > 0 || images.length > 0 || codeBlocks.length > 0;
 
         return `# 🎯 网站内容翻译任务 (分块翻译)
  
@@ -270,7 +285,7 @@ export class TranslationProcessor {
  
 ## 🌐 原文内容
  
-${isFirstChunk ? `### 1. 标题
+${hasSpecialContent ? `### 1. 标题
 ${title}
  
 ### 2. 表格数据（共 ${tables.length} 个）
@@ -295,7 +310,7 @@ ${paragraphs.map(p => p.content).join('\n\n')}
 请以JSON格式返回，必须包含以下字段：
  
 {
-  ${isFirstChunk ? `"translated_title": "翻译标题",` : ''}
+  ${hasSpecialContent ? `"translated_title": "翻译标题",` : ''}
   "paragraphs": [
     {
       "original": "原文段落",
@@ -522,7 +537,7 @@ ${paragraphs.map((p, i) => `
         report += `- **翻译段落**: ${finalTranslation.paragraphs.length} 段\n`;
         report += `- **表格数量**: ${finalTranslation.tables.length} 个\n`;
         report += `- **图片数量**: ${finalTranslation.images.length} 张\n`;
-        report += `- **代码块数量**: ${scrapedData.codeBlocks.length} 个\n`; // 🎯 新增代码块数量
+        report += `- **代码块数量**: ${scrapedData.codeBlocks.length} 个\n`;
         report += `- **总字符数**: ${metadata.totalCharacters || '未统计'} 字符\n\n`;
         
         // 🎯 3. 质量评估
@@ -693,9 +708,16 @@ ${paragraphs.map((p, i) => `
         
         // 1. 用占位符替换代码块，防止代码被清理
         codeBlocks.forEach(block => {
-            // 🎯 替换原始的 <pre> 标签内容
-            const regex = new RegExp(`<pre[^>]*>[\\s\\S]*?${block.content.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}[\\s\\S]*?</pre>`, 'i');
-            tempHtml = tempHtml.replace(regex, `\n\n[${block.id}]\n\n`);
+            // 使用字符串替换，避免正则表达式问题
+            // 查找包含该代码内容的 <pre> 标签
+            const escapedContent = block.content.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            const regex = new RegExp(`<pre[^>]*>[\\s\\S]*?${escapedContent}[\\s\\S]*?</pre>`, 'i');
+            
+            // 尝试匹配并替换
+            const match = tempHtml.match(regex);
+            if (match) {
+                tempHtml = tempHtml.replace(regex, `\n\n[${block.id}]\n\n`);
+            }
         });
         
         // 2. 清理HTML标签，保留文本
@@ -706,11 +728,13 @@ ${paragraphs.map((p, i) => `
         const lines = text.split('\n')
             .map(line => line.trim())
             .filter(line =>
-                line.length > 30 &&
+                line.length > 20 &&  // 🎯 降低长度要求以包含更多内容
                 !line.startsWith('http') &&
                 !line.match(/^[0-9\s]*$/) &&
                 !line.includes('@') &&
-                !line.includes('Copyright')
+                !line.includes('Copyright') &&
+                !line.startsWith('Skip to') &&  // 🎯 过滤导航文本
+                !line.startsWith('Jump to')     // 🎯 过滤导航文本
             );
         
         // 4. 返回段落数组，每个元素包含内容和原始索引
@@ -835,11 +859,11 @@ ${paragraphs.map((p, i) => `
         
         while ((match = codeRegex.exec(html)) !== null) {
             count++;
-            const codeHtml = match; // 🎯 修复：确保 codeHtml 是匹配到的完整字符串
+            const codeHtml = match[0]; // 🎯 修复：获取匹配到的完整字符串
             
             // 尝试提取语言类型
-            const langMatch = codeHtml[0].match(/class=["'][^"']*lang(?:uage)?-([^"'\s]+)/i);
-            const language = langMatch ? langMatch[1] : 'plaintext'; // 🎯 修复：提取捕获组
+            const langMatch = codeHtml.match(/class=["'][^"']*lang(?:uage)?-([^"'\s]+)/i);
+            const language = langMatch ? langMatch[1] : 'plaintext';
             
             // 提取代码内容（去除 pre/code 标签）
             let codeContent = codeHtml.replace(/<\/?pre[^>]*>/gi, '');
