@@ -519,9 +519,20 @@ ${cleanTopic}
             
             if (result.success) {
                 console.log('[Orchestrator] ✅ 翻译完成，报告长度:', result.report?.length);
+                console.log('[Orchestrator] 翻译统计:', result.stats);
                 
                 // 🎯 创建一个带有markdown格式的消息内容
-                const displayContent = `🎯 **网页翻译完成**\n\n📋 **目标URL**: ${url}\n\n${result.report}`;
+                const displayContent = `🎯 **网页翻译完成**\n\n` +
+                                     `📋 **目标URL**: ${url}\n\n` +
+                                     `📊 **翻译统计**:\n` +
+                                     `- 原文长度: ${result.stats?.originalLength || 0} 字符\n` +
+                                     `- 译文长度: ${result.stats?.translatedLength || 0} 字符\n` +
+                                     `- 段落数量: ${result.stats?.paragraphs || 0} 段\n` +
+                                     `- 表格数量: ${result.stats?.tables || 0} 个\n` +
+                                     `- 图片数量: ${result.stats?.images || 0} 张\n` +
+                                     `- 处理时间: ${result.stats?.processingTime || '未知'}\n\n` +
+                                     `---\n\n` +
+                                     result.report;
                 
                 return {
                     enhanced: true,
@@ -532,13 +543,19 @@ ${cleanTopic}
                     // 🎯 确保返回上游需要的字段
                     originalUserMessage: userInput,
                     researchMode: 'translation',
-                    sources: [{ url: url, title: '翻译报告' }],
+                    sources: [{
+                        url: url,
+                        title: result.metadata?.title || '翻译报告',
+                        description: `网页翻译报告 - ${result.stats?.processingTime || ''}`
+                    }],
                     model: result.metadata?.model || 'gemini-2.5-flash-preview-09-2025',
                     reportMetadata: {
                         url: url,
                         stats: result.stats,
+                        metadata: result.metadata,
                         processingTime: result.stats?.processingTime || '未知',
-                        success: true
+                        success: true,
+                        fullReport: true // 标记为完整报告
                     }
                 };
             } else {
@@ -555,7 +572,11 @@ ${cleanTopic}
             return {
                 enhanced: true,
                 type: 'translation_error',
-                content: `❌ 翻译处理失败: ${error.message}`,
+                content: `❌ 翻译处理失败: ${error.message}\n\n` +
+                        `**建议**:\n` +
+                        `1. 检查URL是否可访问\n` +
+                        `2. 确保网站没有反爬虫机制\n` +
+                        `3. 尝试使用其他网站进行翻译`,
                 success: false
             };
         }

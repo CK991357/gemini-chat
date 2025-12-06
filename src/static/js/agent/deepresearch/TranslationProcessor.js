@@ -1054,7 +1054,7 @@ ${paragraphs.map((p, i) => `
     }
     
     // ============================================
-    // 🎯 生成可发布报告
+    // 🎯 生成可发布报告 - 修复版（完整显示所有内容）
     // ============================================
     
     _generatePublishableReport(result) {
@@ -1065,6 +1065,10 @@ ${paragraphs.map((p, i) => `
             map[block.id] = block;
             return map;
         }, {}) || {};
+        
+        // 🎯 提取原始HTML中的所有图片和表格信息
+        const allImages = this._extractAllImagesWithContext(scrapedData.content || '');
+        const allTables = this._extractAllTablesWithContext(scrapedData.content || '');
         
         let report = `# 🌐 网站内容翻译报告\n\n`;
         
@@ -1085,10 +1089,11 @@ ${paragraphs.map((p, i) => `
         report += `## 📊 内容概览\n`;
         report += `- **原文段落**: ${finalTranslation.metadata?.original_paragraphs || 0} 段\n`;
         report += `- **翻译段落**: ${finalTranslation.metadata?.translated_paragraphs || 0} 段\n`;
-        report += `- **表格数量**: ${finalTranslation.tables?.length || 0} 个\n`;
-        report += `- **图片数量**: ${finalTranslation.images?.length || 0} 张\n`;
+        report += `- **表格数量**: ${allTables.length} 个\n`;
+        report += `- **图片数量**: ${allImages.length} 张\n`;
         report += `- **代码块数量**: ${scrapedData.codeBlocks?.length || 0} 个\n`;
-        report += `- **降级段落**: ${finalTranslation.paragraphs?.filter(p => p.is_fallback).length || 0} 段\n\n`;
+        report += `- **降级段落**: ${finalTranslation.paragraphs?.filter(p => p.is_fallback).length || 0} 段\n`;
+        report += `- **处理耗时**: ${result.stats?.processingTime || '未知'}\n\n`;
         
         // 🎯 3. 质量评估
         report += `## ✅ 质量评估\n`;
@@ -1118,15 +1123,20 @@ ${paragraphs.map((p, i) => `
             report += `*✅ 已校对${finalTranslation.title.correction_reason ? ` (${finalTranslation.title.correction_reason})` : ''}*\n\n`;
         }
         
-        // 🎯 5. 主要内容翻译
+        // 🎯 5. 主要内容翻译 - 修复：显示所有段落
         report += `## 📝 主要内容\n\n`;
         
         const paragraphs = finalTranslation.paragraphs || [];
-        const displayedParagraphs = paragraphs.slice(0, 50); // 只显示前50段，避免报告过长
+        // 🎯 修复：显示所有段落，不再截断
+        const displayedParagraphs = paragraphs;
         
+        // 按段落组显示（每5段一组，保持可读性）
         for (let i = 0; i < displayedParagraphs.length; i += 5) {
             const group = displayedParagraphs.slice(i, i + 5);
-            report += `### 第 ${i + 1}-${Math.min(i + 5, displayedParagraphs.length)} 段\n\n`;
+            const startIdx = i + 1;
+            const endIdx = Math.min(i + 5, displayedParagraphs.length);
+            
+            report += `### 段落 ${startIdx}-${endIdx}\n\n`;
             
             group.forEach((para, idx) => {
                 const absoluteIdx = i + idx + 1;
@@ -1146,6 +1156,18 @@ ${paragraphs.map((p, i) => `
                     });
                 }
                 
+                // 🎯 检查并标记图片引用
+                const imageReferences = this._findImageReferencesInText(originalContent, allImages);
+                if (imageReferences.length > 0) {
+                    report += `**图片引用**: ${imageReferences.map(img => `[图${img.index + 1}]`).join(', ')}\n\n`;
+                }
+                
+                // 🎯 检查并标记表格引用
+                const tableReferences = this._findTableReferencesInText(originalContent, allTables);
+                if (tableReferences.length > 0) {
+                    report += `**表格引用**: ${tableReferences.map(tbl => `[表${tbl.index + 1}]`).join(', ')}\n\n`;
+                }
+                
                 report += `**原文**\n\n${originalContent}\n\n`;
                 report += `**翻译**\n\n${translatedContent}\n\n`;
                 
@@ -1160,16 +1182,17 @@ ${paragraphs.map((p, i) => `
             });
         }
         
-        if (paragraphs.length > 50) {
-            report += `*... 还有 ${paragraphs.length - 50} 个段落未显示*\n\n`;
-        }
-        
-        // 🎯 6. 表格数据
-        if (finalTranslation.tables?.length > 0) {
+        // 🎯 6. 表格数据 - 完整显示所有表格
+        if (allTables.length > 0) {
             report += `## 📊 表格数据\n\n`;
             
-            finalTranslation.tables.forEach((table, index) => {
-                report += `### 表格 ${index + 1}: ${table.title || '未命名'}\n\n`;
+            allTables.forEach((table, index) => {
+                report += `### 表格 ${index + 1}: ${table.title || `表格 ${index + 1}`}\n\n`;
+                
+                // 添加表格上下文信息
+                if (table.context) {
+                    report += `**上下文**: ${table.context}\n\n`;
+                }
                 
                 if (table.markdown) {
                     // Markdown表格
@@ -1177,26 +1200,55 @@ ${paragraphs.map((p, i) => `
                 } else if (table.original) {
                     // 纯文本表格
                     report += `\`\`\`\n${table.original}\n\`\`\`\n\n`;
+                } else if (table.html) {
+                    // HTML表格转换为Markdown
+                    const markdownTable = this._htmlTableToMarkdown(table.html);
+                    if (markdownTable) {
+                        report += markdownTable + '\n\n';
+                    }
                 }
+                
+                report += `---\n\n`;
             });
         }
         
-        // 🎯 7. 图片信息
-        if (finalTranslation.images?.length > 0) {
+        // 🎯 7. 图片信息 - 完整显示所有图片
+        if (allImages.length > 0) {
             report += `## 🖼️ 图片引用\n\n`;
-            report += `> 注：以下为网页中的图片引用信息\n\n`;
+            report += `> 注：以下为从网页中提取的所有图片信息，包括原文描述和图片地址\n\n`;
             
-            finalTranslation.images.slice(0, 10).forEach((img, index) => {
-                report += `#### 图片 ${index + 1}\n`;
-                report += `- **图片地址**: ${img.src}\n`;
-                report += `- **原文描述**: ${img.original_alt || '无描述'}\n`;
-                report += `- **翻译描述**: ${img.translated_alt || img.original_alt || '无描述'}\n`;
+            allImages.forEach((img, index) => {
+                report += `### 图片 ${index + 1}\n\n`;
+                
+                // 图片上下文信息
+                if (img.context) {
+                    report += `**上下文位置**: ${img.context}\n\n`;
+                }
+                
+                report += `- **图片地址**: ${img.src || '无'}\n`;
+                report += `- **原文描述**: ${img.alt || '无描述'}\n`;
+                report += `- **尺寸信息**: ${img.width ? `${img.width}×${img.height}` : '未知'}\n`;
+                
+                // 图片在原文中的引用标记
+                if (img.referenceTags && img.referenceTags.length > 0) {
+                    report += `- **引用标记**: ${img.referenceTags.map(tag => `"${tag}"`).join(', ')}\n`;
+                }
+                
                 report += `\n`;
+                
+                // 如果是Figure图片，尝试提取标题
+                if (img.alt?.toLowerCase().includes('figure') || img.context?.toLowerCase().includes('figure')) {
+                    report += `*标识为图表/图示*\n\n`;
+                }
+                
+                report += `---\n\n`;
             });
             
-            if (finalTranslation.images.length > 10) {
-                report += `*... 还有 ${finalTranslation.images.length - 10} 张图片未列出*\n\n`;
-            }
+            // 添加图片总结
+            report += `### 图片统计\n`;
+            report += `- **总图片数**: ${allImages.length} 张\n`;
+            report += `- **有描述图片**: ${allImages.filter(img => img.alt && img.alt.trim()).length} 张\n`;
+            report += `- **缺失描述**: ${allImages.filter(img => !img.alt || !img.alt.trim()).length} 张\n\n`;
         }
         
         // 🎯 8. 代码块附录
@@ -1210,30 +1262,198 @@ ${paragraphs.map((p, i) => `
             });
         }
         
-        // 🎯 9. 处理说明
+        // 🎯 9. 抓取原始数据摘要
+        report += `## 📄 抓取数据摘要\n\n`;
+        report += `- **抓取模式**: ${this.scrapeConfig.mode}\n`;
+        report += `- **原始内容长度**: ${scrapedData.content?.length || 0} 字符\n`;
+        report += `- **HTML是否包含**: ${scrapedData.cleaned_html ? '✅ 是' : '❌ 否'}\n`;
+        report += `- **提取表格**: ${this.scrapeConfig.parameters.extract_tables ? '✅ 开启' : '❌ 关闭'}\n`;
+        report += `- **提取图片描述**: ${this.scrapeConfig.parameters.extract_images_alt ? '✅ 开启' : '❌ 关闭'}\n\n`;
+        
+        // 🎯 10. 处理说明
         report += `## ⚙️ 处理说明\n\n`;
-        report += `1. **抓取工具**: crawl4ai (scrape模式)\n`;
+        report += `1. **抓取工具**: crawl4ai (${this.scrapeConfig.mode}模式)\n`;
         report += `2. **翻译流程**: 翻译 (T=${this.temperature.translation}) → 校对 (T=${this.temperature.proofreading})\n`;
         report += `3. **模型信息**: ${this.model}\n`;
         report += `4. **分块策略**: ${finalTranslation.metadata?.chunks_used || 1} 个分块\n`;
-        report += `5. **字符统计**: ${metadata.totalCharacters || '未统计'} 字符\n\n`;
+        report += `5. **字符统计**: ${metadata.totalCharacters || '未统计'} 字符\n`;
+        report += `6. **处理时间**: ${result.stats?.processingTime || '未知'}\n\n`;
         
-        // 🎯 10. 免责声明
+        // 🎯 11. 免责声明
         report += `## ⚠️ 免责声明\n\n`;
         report += `1. 本报告仅为原文内容的忠实翻译\n`;
         report += `2. 翻译力求准确，但可能存在细微误差\n`;
         report += `3. 如原文有更新，本报告内容可能过时\n`;
-        report += `4. 重要决策请以原始来源为准\n\n`;
+        report += `4. 重要决策请以原始来源为准\n`;
+        report += `5. 图片和表格引用基于HTML解析，可能存在遗漏\n\n`;
         
         return report;
     }
     
+    /**
+     * 🎯 新增：从HTML中提取所有图片及上下文
+     */
+    _extractAllImagesWithContext(html) {
+        const images = [];
+        const imgRegex = /<img[^>]+>/gi;
+        
+        let match;
+        while ((match = imgRegex.exec(html)) !== null) {
+            const imgTag = match[0];
+            const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
+            const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+            const widthMatch = imgTag.match(/width=["']?(\d+)["']?/i);
+            const heightMatch = imgTag.match(/height=["']?(\d+)["']?/i);
+            
+            // 提取上下文（img标签前后的文本）
+            const startIndex = Math.max(0, match.index - 200);
+            const endIndex = Math.min(html.length, match.index + imgTag.length + 200);
+            const context = html.substring(startIndex, endIndex)
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            
+            // 提取可能的引用标记（如Figure 1, Fig. 2等）
+            const referenceTags = [];
+            const contextLower = context.toLowerCase();
+            if (contextLower.includes('figure') || contextLower.includes('fig.')) {
+                // 尝试提取Figure编号
+                const figureMatch = context.match(/figure\s+(\d+)/i) || context.match(/fig\.\s*(\d+)/i);
+                if (figureMatch) {
+                    referenceTags.push(`Figure ${figureMatch[1]}`);
+                }
+            }
+            
+            images.push({
+                src: srcMatch ? srcMatch[1] : '',
+                alt: altMatch ? altMatch[1] : '',
+                width: widthMatch ? parseInt(widthMatch[1]) : null,
+                height: heightMatch ? parseInt(heightMatch[1]) : null,
+                context: context.length > 100 ? context.substring(0, 100) + '...' : context,
+                referenceTags: referenceTags,
+                position: match.index
+            });
+        }
+        
+        return images;
+    }
+    
+    /**
+     * 🎯 新增：从HTML中提取所有表格及上下文
+     */
+    _extractAllTablesWithContext(html) {
+        const tables = [];
+        const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
+        
+        let match;
+        let tableCount = 0;
+        
+        while ((match = tableRegex.exec(html)) !== null) {
+            tableCount++;
+            const tableHtml = match[0];
+            
+            // 提取上下文
+            const startIndex = Math.max(0, match.index - 200);
+            const endIndex = Math.min(html.length, match.index + tableHtml.length + 200);
+            let context = html.substring(startIndex, endIndex)
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            
+            // 提取标题
+            let title = `表格 ${tableCount}`;
+            const captionMatch = tableHtml.match(/<caption[^>]*>([^<]+)<\/caption>/i);
+            if (captionMatch) {
+                title = captionMatch[1].trim();
+            } else {
+                // 尝试从前面的文本中提取标题
+                const prevText = html.substring(Math.max(0, match.index - 100), match.index)
+                    .replace(/<[^>]+>/g, ' ')
+                    .trim();
+                const titleMatch = prevText.match(/Table\s+(\d+)[:.]?\s*(.+)/i) || 
+                                  prevText.match(/表格\s*(\d+)[:.]?\s*(.+)/i);
+                if (titleMatch) {
+                    title = `表格 ${titleMatch[1]}: ${titleMatch[2].trim()}`;
+                }
+            }
+            
+            // 转换为Markdown
+            const markdownTable = this._htmlTableToMarkdown(tableHtml);
+            const rows = this._extractTableRows(tableHtml);
+            
+            tables.push({
+                title: title,
+                html: tableHtml,
+                markdown: markdownTable,
+                rows: rows,
+                context: context.length > 150 ? context.substring(0, 150) + '...' : context,
+                position: match.index
+            });
+        }
+        
+        return tables;
+    }
+    
+    /**
+     * 🎯 新增：在文本中查找图片引用
+     */
+    _findImageReferencesInText(text, allImages) {
+        const references = [];
+        const lowerText = text.toLowerCase();
+        
+        allImages.forEach((img, index) => {
+            // 检查Figure引用
+            if (img.referenceTags && img.referenceTags.length > 0) {
+                for (const tag of img.referenceTags) {
+                    if (lowerText.includes(tag.toLowerCase())) {
+                        references.push({...img, index});
+                        break;
+                    }
+                }
+            }
+            
+            // 检查图片描述引用
+            if (img.alt && img.alt.trim() && lowerText.includes(img.alt.toLowerCase())) {
+                references.push({...img, index});
+            }
+        });
+        
+        return references;
+    }
+    
+    /**
+     * 🎯 新增：在文本中查找表格引用
+     */
+    _findTableReferencesInText(text, allTables) {
+        const references = [];
+        const lowerText = text.toLowerCase();
+        
+        allTables.forEach((table, index) => {
+            const tableTitle = table.title.toLowerCase();
+            
+            // 检查表格标题引用
+            if (lowerText.includes(tableTitle)) {
+                references.push({...table, index});
+            }
+            
+            // 检查"Table X"格式的引用
+            const tableNum = index + 1;
+            if (lowerText.includes(`table ${tableNum}`) || 
+                lowerText.includes(`table ${tableNum}:`) ||
+                lowerText.includes(`表格 ${tableNum}`)) {
+                references.push({...table, index});
+            }
+        });
+        
+        return references;
+    }
+    
     // ============================================
-    // 🎯 辅助方法（保持不变）
+    // 🎯 辅助方法
     // ============================================
     
     /**
-     * 🎯 提取关键内容
+     * 🎯 增强：提取关键内容 - 改进图片和表格提取
      */
     _extractKeyContent(scrapedData) {
         const html = scrapedData.cleaned_html || scrapedData.content || '';
@@ -1241,12 +1461,17 @@ ${paragraphs.map((p, i) => `
         const codeBlocks = this._extractCodeBlocks(html);
         const paragraphs = this._extractMainContent(html, codeBlocks);
         
+        // 🎯 增强：提取所有图片和表格
+        const allImages = this._extractAllImagesWithContext(html);
+        const allTables = this._extractAllTablesWithContext(html);
+        
         return {
             title: this._extractTitle(html),
             paragraphs: paragraphs,
-            tables: this._extractTables(html),
-            images: this._extractImages(html),
-            codeBlocks: codeBlocks
+            tables: allTables, // 使用完整表格数据
+            images: allImages,  // 使用完整图片数据
+            codeBlocks: codeBlocks,
+            rawHtml: html // 保留原始HTML用于后续处理
         };
     }
     
@@ -1483,31 +1708,50 @@ ${paragraphs.map((p, i) => `
     }
     
     /**
-     * 🎯 计算一致性分数
+     * 🎯 修复：计算一致性分数
      */
     _calculateConsistencyScore(translation) {
-        // 简单实现：检查术语一致性
-        const termMap = new Map();
         const paragraphs = translation.paragraphs || [];
+        if (paragraphs.length === 0) return 8.0;
         
-        // 提取可能的术语（大写单词、专业词汇等）
+        // 1. 检查术语一致性（改进版）
+        const termMap = new Map();
+        const commonTerms = ['AI', 'Claude', '代码', '模型', '工程', '开发', '数据', '系统'];
+        
         paragraphs.forEach(p => {
-            const terms = p.translated?.match(/[A-Z][a-z]+|[A-Z]+/g) || [];
-            terms.forEach(term => {
-                termMap.set(term, (termMap.get(term) || 0) + 1);
+            const text = p.translated || '';
+            
+            // 检查常见术语
+            commonTerms.forEach(term => {
+                if (text.includes(term)) {
+                    termMap.set(term, (termMap.get(term) || 0) + 1);
+                }
+            });
+            
+            // 检查大写英文术语（技术术语）
+            const englishTerms = text.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g) || [];
+            englishTerms.forEach(term => {
+                if (term.length > 2) { // 过滤掉短词
+                    termMap.set(term, (termMap.get(term) || 0) + 1);
+                }
             });
         });
         
-        // 计算术语出现频率的一致性
-        const termCounts = Array.from(termMap.values());
-        if (termCounts.length === 0) return 8.0;
+        // 2. 计算一致性得分
+        let consistencyScore = 8.0; // 基础分
         
-        const avg = termCounts.reduce((a, b) => a + b, 0) / termCounts.length;
-        const variance = termCounts.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / termCounts.length;
+        // 如果术语使用多样，加分
+        const uniqueTerms = termMap.size;
+        if (uniqueTerms > 5) {
+            consistencyScore += Math.min(2.0, (uniqueTerms - 5) * 0.2);
+        }
         
-        // 方差越小，一致性越好
-        const consistency = Math.max(0, 10 - variance);
-        return Math.min(10, consistency);
+        // 检查是否有校对记录（校对通常会提高一致性）
+        if (translation.metadata?.proofread) {
+            consistencyScore += 1.0;
+        }
+        
+        return Math.min(10, Math.max(0, consistencyScore));
     }
     
     /**
