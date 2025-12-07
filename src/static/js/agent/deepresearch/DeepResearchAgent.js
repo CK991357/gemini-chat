@@ -3689,7 +3689,7 @@ def markdown_to_word(doc, markdown_content):
                 code_text = '\\n'.join(code_lines)
                 para = doc.add_paragraph()
                 run = para.add_run(code_text)
-                run.font.name = 'Courier New'
+                run.font.name = 'DejaVu Sans Mono'  # ✅ 修改：使用Docker中的等宽字体
                 run.font.size = Pt(9)
                 para.paragraph_format.left_indent = Cm(0.5)
                 continue
@@ -3755,7 +3755,7 @@ def markdown_to_word(doc, markdown_content):
                         if is_italic:
                             run.italic = True
                         if is_code:
-                            run.font.name = 'Courier New'
+                            run.font.name = 'DejaVu Sans Mono'  # ✅ 修改：使用Docker中的等宽字体
                             run.font.size = Pt(9)
         
         i += 1
@@ -3767,17 +3767,16 @@ def create_word_document(markdown_content, title="${topic}"):
     # 创建文档
     doc = Document()
     
-    # 🎯 新增：设置全局中文字体为宋体 (SimSun)
-    # 遍历所有默认样式，设置中文字体
+    # ✅ 修改：设置全局中英文字体，使用Docker中已安装的字体
     styles = doc.styles
     for style in styles:
         if style.type == WD_STYLE_TYPE.PARAGRAPH or style.type == WD_STYLE_TYPE.CHARACTER:
             font = style.font
-            font.name = 'Times New Roman' # 默认英文字体
+            font.name = 'DejaVu Sans'  # ✅ 修改：使用Docker中已安装的字体
             r = font.element.get_or_add_rPr()
             rPr = r.get_or_add_rPr()
             rFonts = rPr.get_or_add_rFonts()
-            rFonts.set(qn('w:eastAsia'), '文泉驿微米黑') # 设置中文字体为 Dockerfile 中已安装的字体
+            rFonts.set(qn('w:eastAsia'), 'WenQuanYi Micro Hei')  # ✅ 修改：使用字体英文名
             
     # 设置默认正文样式
     doc.styles['Normal'].font.size = Pt(10.5)
