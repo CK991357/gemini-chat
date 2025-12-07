@@ -3695,6 +3695,21 @@ def create_word_document(markdown_content, title="${topic}"):
     # 创建文档
     doc = Document()
     
+    # 🎯 新增：设置全局中文字体为宋体 (SimSun)
+    # 遍历所有默认样式，设置中文字体
+    styles = doc.styles
+    for style in styles:
+        if style.type == WD_STYLE_TYPE.PARAGRAPH or style.type == WD_STYLE_TYPE.CHARACTER:
+            font = style.font
+            font.name = 'Times New Roman' # 默认英文字体
+            r = font.element.get_or_add_rPr()
+            rPr = r.get_or_add_rPr()
+            rFonts = rPr.get_or_add_rFonts()
+            rFonts.set(qn('w:eastAsia'), '文泉驿微米黑') # 设置中文字体为 Dockerfile 中已安装的字体
+            
+    # 设置默认正文样式
+    doc.styles['Normal'].font.size = Pt(10.5)
+    
     # 设置文档属性
     doc.core_properties.title = title
     doc.core_properties.author = "DeepResearch Agent"
