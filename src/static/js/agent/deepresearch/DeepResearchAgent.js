@@ -1486,44 +1486,116 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         this._recordTemporalPerformance(temporalQualityReport);
         
         // =================================================================
-        // 🔥🔥🔥 阶段4.5: 同步生成Word格式报告（新增）🔥🔥🔥
+        // 🔥🔥🔥 阶段4.5: 异步生成Word格式报告（完整异步方案）🔥🔥🔥
         // =================================================================
-        console.log('[DeepResearchAgent] 阶段4.5: 同步生成Word格式报告...');
-        const wordStartTime = Date.now();
+        console.log('[DeepResearchAgent] 阶段4.5: 异步生成Word格式报告...');
 
-        try {
-            const wordResult = await this._generateWordDocument(cleanedReport, uiTopic);
-            
-            if (wordResult.success) {
-                // 将Word文档信息添加到结果中
-                result.word_document = wordResult;
+        // 构建Word生成任务
+        const wordGenerationTask = async () => {
+            try {
+                console.log(`[DeepResearchAgent] 开始异步Word生成，报告长度: ${cleanedReport.length}字符`);
                 
-                console.log(`[DeepResearchAgent] ✅ Word文档同步生成成功，耗时: ${Date.now() - wordStartTime}ms`);
+                // 1. 检查报告长度，避免生成过大文件
+                if (cleanedReport.length > 200000) { // 20万字符限制
+                    console.warn('[DeepResearchAgent] ⚠️ 报告过长，跳过Word生成');
+                    return {
+                        success: false,
+                        error: '报告过长，跳过Word生成',
+                        skip_reason: 'content_too_long',
+                        report_length: cleanedReport.length
+                    };
+                }
                 
-                // 🎯 可选：触发文件生成事件（如果前端需要实时通知）
-                this.callbackManager.invokeEvent('on_file_generated', {
-                    run_id: runId,
-                    data: {
-                        type: 'word',
-                        title: wordResult.fileName,
-                        data_base64: wordResult.data_base64,
-                        size: wordResult.size,
-                        generated_at: wordResult.generatedAt,
-                        note: `研究报告Word版本，${wordResult.wordCount}字`
-                    }
-                });
-            } else {
-                console.warn('[DeepResearchAgent] ⚠️ Word文档生成失败:', wordResult.error);
-                // 仍然添加到结果，但标记为失败
-                result.word_document = {
+                // 2. 调用现有方法生成Word文档
+                const startTime = Date.now();
+                const wordResult = await this._generateWordDocument(cleanedReport, uiTopic);
+                const endTime = Date.now();
+                
+                console.log(`[DeepResearchAgent] Word生成耗时: ${endTime - startTime}ms`);
+                
+                return wordResult;
+                
+            } catch (error) {
+                console.error('[DeepResearchAgent] ❌ Word文档生成异常:', error);
+                return {
                     success: false,
-                    error: wordResult.error
+                    error: error.message,
+                    skip_reason: 'exception',
+                    stack_trace: error.stack
                 };
             }
-        } catch (wordError) {
-            console.warn('[DeepResearchAgent] ⚠️ Word文档生成异常（不影响主流程）:', wordError);
-            // 静默失败，不添加到结果
-        }
+        };
+
+        // 3. 立即启动异步任务（不阻塞主线程）
+        const wordPromise = wordGenerationTask();
+
+        // 4. 添加超时处理（30秒超时）
+        const wordTimeoutPromise = new Promise(resolve => {
+            setTimeout(() => {
+                resolve({
+                    success: false,
+                    error: 'Word生成超时（30秒）',
+                    skip_reason: 'timeout'
+                });
+            }, 30000);
+        });
+
+        // 5. 并行执行，处理结果
+        Promise.race([wordPromise, wordTimeoutPromise])
+            .then(wordResult => {
+                if (wordResult.success) {
+                    console.log(`[DeepResearchAgent] ✅ Word文档异步生成成功: ${wordResult.fileName}`);
+                    
+                    // 触发文件生成事件
+                    this.callbackManager.invokeEvent('on_file_generated', {
+                        run_id: runId,
+                        data: {
+                            type: 'word',
+                            title: wordResult.fileName,
+                            data_base64: wordResult.data_base64,
+                            size: wordResult.size,
+                            generated_at: wordResult.generatedAt,
+                            word_count: wordResult.wordCount || 0,
+                            note: `研究报告Word版本，${wordResult.wordCount || 0}字`
+                        }
+                    });
+                    
+                    // 可选：更新Word生成状态
+                    this.callbackManager.invokeEvent('on_word_document_status', {
+                        run_id: runId,
+                        data: {
+                            status: 'success',
+                            file_name: wordResult.fileName,
+                            size: wordResult.size
+                        }
+                    });
+                    
+                } else {
+                    console.warn(`[DeepResearchAgent] ⚠️ Word文档生成失败: ${wordResult.error}`);
+                    
+                    // 发送失败通知（可选）
+                    this.callbackManager.invokeEvent('on_word_document_status', {
+                        run_id: runId,
+                        data: {
+                            status: 'failed',
+                            error: wordResult.error,
+                            skip_reason: wordResult.skip_reason
+                        }
+                    });
+                }
+            })
+            .catch(finalError => {
+                console.error('[DeepResearchAgent] ❌ Word文档生成最终错误:', finalError);
+                // 静默失败
+            });
+
+        // 6. 构建返回结果（不等待Word生成）
+        result.word_document = {
+            status: 'processing',
+            message: 'Word文档正在后台生成中...',
+            estimated_time: 30000, // 预估30秒
+            generated_at: null
+        };
         
         // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
         await this.callbackManager.invokeEvent('on_research_end', {
