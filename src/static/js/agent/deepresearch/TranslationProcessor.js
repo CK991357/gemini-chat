@@ -1,5 +1,5 @@
 // src/static/js/agent/deepresearch/TranslationProcessor.js
-// 🎯 网站翻译专用处理器 - 两次调用优化版
+// 🎯 网站翻译专用处理器 - 最终修复版（支持分块翻译，复用OutputParser）
 
 // 导入OutputParser
 import { AgentOutputParser } from './OutputParser.js';
@@ -24,10 +24,11 @@ export class TranslationProcessor {
         this.model = config.model || 'gemini-2.5-flash-preview-09-2025';
         this.temperature = {
             translation: 0.1,      // 低温翻译，保证准确性
-            formatting: 0.2        // 稍高温格式化和审查
+            proofreading: 0.2,     // 稍高精修，允许必要润色
+            structure: 0.1         // 结构化提取要准确
         };
         
-        // 🎯 抓取配置
+        // 🎯 抓取配置（scrape模式优化）
         this.scrapeConfig = {
             mode: 'scrape',
             parameters: {
@@ -41,17 +42,17 @@ export class TranslationProcessor {
                 max_retries: 2,
                 wait_for: 1000,
                 js_render: false,
-                bypass_cache: true,
-                word_count_threshold: 5
+                bypass_cache: true
             }
         };
         
         // 🎯 翻译分块配置
         this.chunkConfig = {
-            maxCharsPerChunk: 15000,
-            maxTokensEstimate: 7000,
-            minParagraphsPerChunk: 1,
-            maxParagraphsPerChunk: 30
+            maxCharsPerChunk: 15000,       // 每个分块最大字符数
+            maxTokensEstimate: 7000,       // 估计的token限制
+            minParagraphsPerChunk: 1,      // 每个分块最少段落数
+            maxParagraphsPerChunk: 30,     // 每个分块最多段落数
+            overlapParagraphs: 1           // 分块重叠段落数（保持上下文连贯）
         };
         
         // 🎯 处理状态
@@ -69,6 +70,7 @@ export class TranslationProcessor {
         const {
             url,
             targetLanguage = 'zh-CN',
+            enableProofreading = true,
             userInstruction = ''
         } = request;
         
@@ -81,21 +83,25 @@ export class TranslationProcessor {
             // 🎯 触发开始事件
             await this._fireStartEvent(url);
             
-            // 🎯 执行两次调用流程
-            const result = await this._executeTwoPassPipeline({
+            // 🎯 执行固定流程
+            const result = await this._executeFixedPipeline({
                 url,
                 targetLanguage,
+                enableProofreading,
                 userInstruction
             });
             
+            // 🎯 生成最终报告
+            const finalReport = this._generatePublishableReport(result);
+            
             // 🎯 触发完成事件
-            await this._fireCompleteEvent(result);
+            await this._fireCompleteEvent(result, finalReport);
             
             return {
                 success: true,
                 runId: this.runId,
                 url,
-                content: result.finalContent,
+                report: finalReport,
                 metadata: result.metadata,
                 stats: result.stats
             };
@@ -107,51 +113,58 @@ export class TranslationProcessor {
     }
     
     /**
-     * 🎯 两次调用流程
+     * 🎯 固定流程：4步法
      */
-    async _executeTwoPassPipeline(params) {
-        const { url, targetLanguage, userInstruction } = params;
+    async _executeFixedPipeline(params) {
+        const { url, targetLanguage, enableProofreading, userInstruction } = params;
         
-        console.log('[TranslationProcessor] 🎯 第1次调用：抓取和结构分析');
+        // 🎯 步骤1：高级抓取
+        const scrapedData = await this._step1_advancedScrape(url);
         
-        // 🎯 步骤1：抓取并分析网页结构
-        const structureAnalysis = await this._step1_analyzeStructure(url);
+        // 🎯 步骤2：智能翻译（支持分块）
+        const translationResult = await this._step2_smartTranslation(scrapedData, targetLanguage, userInstruction);
         
-        console.log('[TranslationProcessor] 🎯 第2次调用：翻译和格式化');
+        // 🎯 步骤3：校对精修
+        let finalTranslation = translationResult;
+        if (enableProofreading) {
+            finalTranslation = await this._step3_proofreading(translationResult, targetLanguage);
+        }
         
-        // 🎯 步骤2：结构化翻译和格式化
-        const finalContent = await this._step2_translateAndFormat(structureAnalysis, targetLanguage, userInstruction);
+        // 🎯 步骤4：质量验证
+        const validation = await this._step4_qualityValidation(finalTranslation);
         
         return {
             url,
-            structureAnalysis,
-            finalContent,
-            metadata: this._buildMetadata(structureAnalysis),
-            stats: this._calculateStats(structureAnalysis, finalContent)
+            scrapedData,
+            translationResult,
+            finalTranslation,
+            validation,
+            metadata: this._buildMetadata(scrapedData, finalTranslation),
+            stats: this._calculateStats(scrapedData, finalTranslation)
         };
     }
     
     // ============================================
-    // 🎯 步骤1：分析网页结构
+    // 🎯 步骤1：高级抓取（scrape模式）
     // ============================================
     
-    async _step1_analyzeStructure(url) {
-        await this._recordStep('analysis_start', { url });
+    async _step1_advancedScrape(url) {
+        await this._recordStep('scrape_start', { url });
         
         const tool = this.tools['crawl4ai'];
         if (!tool) throw new Error('crawl4ai工具不可用');
         
-        // 🎯 使用 crawl4ai 抓取网页
+        // 🎯 配置抓取参数
         this.scrapeConfig.parameters.url = url;
         
         try {
             const result = await tool.invoke(this.scrapeConfig, {
                 mode: 'website_translation',
-                researchMode: 'structure_analysis'
+                researchMode: 'scrape_only'
             });
             
             if (!result.success) {
-                throw new Error(`抓取失败: ${result.error || result.output || '未知错误'}`);
+                throw new Error(`抓取失败: ${result.output || '未知错误'}`);
             }
             
             // 🎯 解析返回数据
@@ -162,328 +175,174 @@ export class TranslationProcessor {
                 scrapedData = { content: result.output };
             }
             
-            // 🎯 获取完整HTML内容
-            const htmlContent = scrapedData.cleaned_html || scrapedData.content || '';
-            
-            // 🎯 提取结构化信息
-            const structure = this._extractPageStructure(htmlContent);
-            
-            await this._recordStep('analysis_complete', {
-                titleLength: structure.title.length,
-                paragraphs: structure.paragraphs.length,
-                images: structure.images.length,
-                tables: structure.tables.length,
-                codeBlocks: structure.codeBlocks.length
+            await this._recordStep('scrape_complete', {
+                length: scrapedData.content?.length || 0,
+                hasHtml: !!scrapedData.cleaned_html,
+                hasTables: scrapedData.content?.includes('<table') || false
             });
             
-            return {
-                url,
-                html: htmlContent,
-                ...structure,
-                rawData: scrapedData
-            };
+            return scrapedData;
             
         } catch (error) {
-            throw new Error(`网页结构分析失败: ${error.message}`);
+            throw new Error(`网站抓取失败: ${error.message}`);
         }
-    }
-    
-    /**
-     * 🎯 提取网页结构
-     */
-    _extractPageStructure(html) {
-        if (!html) {
-            return {
-                title: '',
-                paragraphs: [],
-                images: [],
-                tables: [],
-                codeBlocks: [],
-                structure: []
-            };
-        }
-        
-        // 1. 提取标题
-        const title = this._extractTitle(html);
-        
-        // 2. 提取图片
-        const images = this._extractImagesWithContext(html);
-        
-        // 3. 提取表格
-        const tables = this._extractTablesWithContext(html);
-        
-        // 4. 提取代码块
-        const codeBlocks = this._extractCodeBlocks(html);
-        
-        // 5. 提取段落并插入占位符
-        const { paragraphs, structure } = this._extractParagraphsWithPlaceholders(
-            html, 
-            images, 
-            tables, 
-            codeBlocks
-        );
-        
-        return {
-            title,
-            paragraphs,
-            images,
-            tables,
-            codeBlocks,
-            structure
-        };
-    }
-    
-    /**
-     * 🎯 提取带占位符的段落
-     */
-    _extractParagraphsWithPlaceholders(html, images, tables, codeBlocks) {
-        // 创建占位符映射
-        let processedHtml = html;
-        const structure = [];
-        const paragraphs = [];
-        let paragraphIndex = 0;
-        
-        // 1. 用占位符替换代码块
-        codeBlocks.forEach((block, index) => {
-            const placeholder = `[CODE_BLOCK_${index + 1}]`;
-            const escapedContent = block.content.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-            const regex = new RegExp(`<pre[^>]*>[\\s\\S]*?${escapedContent}[\\s\\S]*?</pre>`, 'i');
-            processedHtml = processedHtml.replace(regex, placeholder);
-            
-            structure.push({
-                type: 'code',
-                index: index,
-                placeholder: placeholder,
-                data: block
-            });
-        });
-        
-        // 2. 用占位符替换图片
-        images.forEach((img, index) => {
-            const placeholder = `[IMAGE_${index + 1}]`;
-            const imgTag = `<img[^>]+src=["']${this._escapeRegExp(img.src)}["'][^>]*>`;
-            const regex = new RegExp(imgTag, 'i');
-            processedHtml = processedHtml.replace(regex, placeholder);
-            
-            structure.push({
-                type: 'image',
-                index: index,
-                placeholder: placeholder,
-                data: img
-            });
-        });
-        
-        // 3. 用占位符替换表格
-        tables.forEach((table, index) => {
-            const placeholder = `[TABLE_${index + 1}]`;
-            const tableHtml = table.html.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-            const regex = new RegExp(tableHtml, 'i');
-            processedHtml = processedHtml.replace(regex, placeholder);
-            
-            structure.push({
-                type: 'table',
-                index: index,
-                placeholder: placeholder,
-                data: table
-            });
-        });
-        
-        // 4. 清理HTML标签，提取段落
-        let text = processedHtml.replace(/<[^>]+>/g, '\n');
-        text = text.replace(/\n+/g, '\n').trim();
-        
-        // 5. 按行分割，过滤无用内容
-        const lines = text.split('\n')
-            .map(line => line.trim())
-            .filter(line => {
-                const lineLength = line.length;
-                return lineLength > 15 &&
-                    !line.startsWith('http') &&
-                    !line.match(/^[0-9\s]*$/) &&
-                    !line.includes('@') &&
-                    !line.toLowerCase().includes('skip to') &&
-                    !line.toLowerCase().includes('jump to') &&
-                    !line.toLowerCase().includes('menu') &&
-                    !line.toLowerCase().includes('navigation');
-            });
-        
-        // 6. 合并相邻短行
-        const mergedLines = [];
-        let currentLine = '';
-        
-        for (const line of lines) {
-            // 检查是否是占位符
-            if (line.match(/\[(CODE_BLOCK|IMAGE|TABLE)_\d+\]/)) {
-                if (currentLine) {
-                    mergedLines.push(currentLine);
-                    currentLine = '';
-                }
-                mergedLines.push(line);
-            } else if (line.length < 80 && currentLine.length < 200) {
-                currentLine = currentLine ? `${currentLine} ${line}` : line;
-            } else {
-                if (currentLine) {
-                    mergedLines.push(currentLine);
-                }
-                currentLine = line;
-            }
-        }
-        
-        if (currentLine) {
-            mergedLines.push(currentLine);
-        }
-        
-        // 7. 构建段落数组
-        mergedLines.forEach((content, index) => {
-            paragraphs.push({
-                content,
-                index: paragraphIndex++,
-                hasPlaceholder: content.match(/\[(CODE_BLOCK|IMAGE|TABLE)_\d+\]/) !== null
-            });
-        });
-        
-        return { paragraphs, structure };
-    }
-    
-    /**
-     * 🎯 转义正则表达式特殊字符
-     */
-    _escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
     
     // ============================================
-    // 🎯 步骤2：翻译和格式化
+    // 🎯 步骤2：智能翻译（支持分块）
     // ============================================
     
-    async _step2_translateAndFormat(structureAnalysis, targetLanguage, userInstruction) {
+    async _step2_smartTranslation(scrapedData, targetLanguage, userInstruction = '') {
         await this._recordStep('translation_start', { targetLanguage });
         
         try {
-            const { title, paragraphs, structure } = structureAnalysis;
+            // 🎯 从抓取数据中提取关键信息
+            console.log('[TranslationProcessor] 开始提取关键内容...');
+            const { title, paragraphs, tables, images, codeBlocks } = this._extractKeyContent(scrapedData);
             
-            console.log('[TranslationProcessor] 开始翻译和格式化...');
+            console.log(`[TranslationProcessor] 提取结果:`, {
+                titleLength: title.length,
+                paragraphsCount: paragraphs.length,
+                tablesCount: tables.length,
+                imagesCount: images.length,
+                codeBlocksCount: codeBlocks.length
+            });
             
-            // 🎯 检查是否需要分块
+            // 🎯 智能分块：检查内容长度，决定是否分块
             const totalChars = paragraphs.reduce((sum, p) => sum + p.content.length, 0);
-            const totalTokensEstimate = Math.ceil(totalChars / 2);
+            const totalTokensEstimate = Math.ceil(totalChars / 2); // 粗略估计：1个汉字≈2个token
             
             console.log(`[TranslationProcessor] 内容统计: ${totalChars}字符, 约${totalTokensEstimate}token`);
             
-            let translatedContent;
+            let translationResult;
             
             if (totalTokensEstimate > this.chunkConfig.maxTokensEstimate && paragraphs.length > 5) {
-                // 🎯 分块翻译
-                translatedContent = await this._chunkedTranslationWithFormatting({
+                // 🎯 内容过长，启用分块翻译
+                console.log(`[TranslationProcessor] 内容过长，启用分块翻译机制`);
+                translationResult = await this._chunkedTranslation({
                     title,
                     paragraphs,
-                    structure,
+                    tables,
+                    images,
+                    codeBlocks,
                     targetLanguage,
                     userInstruction
                 });
             } else {
-                // 🎯 单次完整翻译
-                translatedContent = await this._singleTranslationWithFormatting({
+                // 🎯 单次翻译
+                console.log(`[TranslationProcessor] 内容适中，单次翻译`);
+                translationResult = await this._singleTranslation({
                     title,
                     paragraphs,
-                    structure,
+                    tables,
+                    images,
+                    codeBlocks,
                     targetLanguage,
                     userInstruction
                 });
             }
             
             await this._recordStep('translation_complete', {
-                contentLength: translatedContent.length
+                titleTranslated: !!translationResult.title?.translated,
+                paragraphs: translationResult.paragraphs?.length || 0,
+                tables: translationResult.tables?.length || 0,
+                chunksUsed: translationResult.metadata?.chunks_used || 1
             });
             
-            return translatedContent;
+            return translationResult;
             
         } catch (error) {
-            console.error('[TranslationProcessor] ❌ 翻译格式化失败:', error);
-            throw new Error(`翻译格式化失败: ${error.message}`);
+            console.error('[TranslationProcessor] ❌ 翻译失败:', error);
+            console.error('[TranslationProcessor] 错误堆栈:', error.stack);
+            throw new Error(`翻译失败: ${error.message}`);
         }
     }
     
     /**
-     * 🎯 单次完整翻译（带格式化）
+     * 🎯 单次翻译（短内容）
      */
-    async _singleTranslationWithFormatting(data) {
-        const { title, paragraphs, structure, targetLanguage, userInstruction } = data;
+    async _singleTranslation(data) {
+        const { title, paragraphs, tables, images, codeBlocks, targetLanguage, userInstruction } = data;
         
-        // 🎯 构建完整的结构化内容
-        const fullContent = this._buildStructuredContent(title, paragraphs, structure);
-        
-        const prompt = this._buildFormattingPrompt({
+        // 🎯 构建翻译提示词
+        const translationPrompt = this._buildTranslationPrompt({
             title,
-            fullContent,
-            structure,
+            paragraphs,
+            tables,
+            images,
+            codeBlocks,
             targetLanguage,
-            userInstruction
+            userInstruction,
+            isFirstChunk: true,
+            chunkIndex: 0,
+            totalChunks: 1
         });
         
-        console.log(`[TranslationProcessor] 格式化提示词长度: ${prompt.length} 字符`);
+        console.log(`[TranslationProcessor] 提示词长度: ${translationPrompt.length} 字符`);
         
         // 🎯 调用翻译API
         const response = await this.chatApiHandler.completeChat({
-            messages: [{ role: 'user', content: prompt }],
+            messages: [{ role: 'user', content: translationPrompt }],
             model: this.model,
-            temperature: this.temperature.formatting
+            temperature: this.temperature.translation
         });
         
         const contentStr = response?.choices?.[0]?.message?.content;
         if (!contentStr) throw new Error('翻译返回为空');
         
-        // 🎯 清理和验证结果
-        const cleanedContent = this._cleanTranslationResult(contentStr);
+        // 🎯 使用健壮的JSON解析
+        const translationResult = this._robustParseTranslationResponse(contentStr);
         
-        console.log(`[TranslationProcessor] ✅ 翻译格式化完成，长度: ${cleanedContent.length} 字符`);
-        
-        return cleanedContent;
+        // 🎯 构建完整结果
+        return this._buildTranslationResult(translationResult, {
+            title,
+            paragraphs,
+            tables,
+            images,
+            codeBlocks,
+            targetLanguage,
+            chunksUsed: 1
+        });
     }
     
     /**
-     * 🎯 分块翻译（带格式化）
+     * 🎯 分块翻译（长内容）
      */
-    async _chunkedTranslationWithFormatting(data) {
-        const { title, paragraphs, structure, targetLanguage, userInstruction } = data;
+    async _chunkedTranslation(data) {
+        const { title, paragraphs, tables, images, codeBlocks, targetLanguage, userInstruction } = data;
         
-        // 🎯 智能分块（保持占位符完整）
-        const chunks = this._createStructureAwareChunks(paragraphs);
+        // 🎯 智能分块
+        const chunks = this._createIntelligentChunks(paragraphs);
         console.log(`[TranslationProcessor] 分割为 ${chunks.length} 个分块进行翻译`);
         
-        let translatedTitle = title;
         const allTranslatedParagraphs = [];
+        let translatedTitle = title;
         
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
             const isFirstChunk = i === 0;
             
-            console.log(`[TranslationProcessor] 处理分块 ${i + 1}/${chunks.length}`);
+            console.log(`[TranslationProcessor] 处理分块 ${i + 1}/${chunks.length} (${chunk.paragraphs.length} 段，${chunk.charCount} 字符)`);
             
             try {
-                // 🎯 构建当前分块的结构化内容
-                const chunkStructure = this._filterStructureForChunk(structure, chunk);
-                const chunkContent = this._buildStructuredContent(
-                    isFirstChunk ? title : null,
-                    chunk.paragraphs,
-                    chunkStructure
-                );
-                
-                const prompt = this._buildFormattingPrompt({
+                // 🎯 构建当前分块的提示词
+                const chunkPrompt = this._buildTranslationPrompt({
                     title: isFirstChunk ? title : null,
-                    fullContent: chunkContent,
-                    structure: chunkStructure,
+                    paragraphs: chunk.paragraphs,
+                    tables: isFirstChunk ? tables : [],
+                    images: isFirstChunk ? images : [],
+                    codeBlocks: isFirstChunk ? codeBlocks : [],
                     targetLanguage,
                     userInstruction,
-                    isChunked: true,
+                    isFirstChunk,
                     chunkIndex: i,
                     totalChunks: chunks.length
                 });
                 
                 const response = await this.chatApiHandler.completeChat({
-                    messages: [{ role: 'user', content: prompt }],
+                    messages: [{ role: 'user', content: chunkPrompt }],
                     model: this.model,
-                    temperature: this.temperature.formatting
+                    temperature: this.temperature.translation
                 });
                 
                 const contentStr = response?.choices?.[0]?.message?.content;
@@ -491,187 +350,187 @@ export class TranslationProcessor {
                     throw new Error(`分块 ${i + 1} 翻译返回为空`);
                 }
                 
-                // 🎯 解析返回内容
-                const chunkResult = this._parseChunkResult(contentStr);
+                // 🎯 使用健壮的JSON解析
+                const chunkResult = this._robustParseTranslationResponse(contentStr);
                 
-                // 🎯 保存标题（如果是第一块）
-                if (isFirstChunk && chunkResult.title) {
-                    translatedTitle = chunkResult.title;
+                // 🎯 如果是第一块，获取标题翻译
+                if (isFirstChunk && chunkResult.translated_title) {
+                    translatedTitle = chunkResult.translated_title;
                 }
                 
-                // 🎯 合并翻译的段落
+                // 🎯 合并翻译的段落，并调整索引为原始索引
                 if (chunkResult.paragraphs && Array.isArray(chunkResult.paragraphs)) {
                     const translatedWithIndices = chunkResult.paragraphs.map(p => ({
                         ...p,
-                        index: chunk.startIndex + p.index
+                        index: chunk.startIndex + (p.index || 0) // 将块内索引转换为全局索引
                     }));
+                    
                     allTranslatedParagraphs.push(...translatedWithIndices);
+                    console.log(`[TranslationProcessor] ✅ 分块 ${i + 1}/${chunks.length} 完成，翻译了 ${translatedWithIndices.length} 段`);
+                } else {
+                    console.warn(`[TranslationProcessor] ⚠️ 分块 ${i + 1} 解析结果无paragraphs字段`);
                 }
-                
-                console.log(`[TranslationProcessor] ✅ 分块 ${i + 1}/${chunks.length} 完成`);
                 
             } catch (error) {
                 console.error(`[TranslationProcessor] ❌ 分块 ${i + 1} 翻译失败:`, error.message);
                 
-                // 🎯 降级方案：保留原文
-                const fallbackParagraphs = chunk.paragraphs.map(p => ({
+                // 🎯 增强的降级方案：保留原文，但记录错误
+                const fallbackParagraphs = chunk.paragraphs.map((p, idx) => ({
                     original: p.content,
                     translated: p.content,
                     index: p.index,
-                    is_fallback: true
+                    is_fallback: true,
+                    fallback_reason: `翻译失败: ${error.message.substring(0, 100)}`,
+                    chunk_index: i
                 }));
+                
                 allTranslatedParagraphs.push(...fallbackParagraphs);
+                console.log(`[TranslationProcessor] ⚠️ 分块 ${i + 1} 使用降级方案，保留 ${fallbackParagraphs.length} 段原文`);
             }
             
-            // 🎯 添加延迟
+            // 🎯 添加延迟避免速率限制
             if (i < chunks.length - 1) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
         
-        // 🎯 排序和合并
-        const sortedParagraphs = allTranslatedParagraphs.sort((a, b) => a.index - b.index);
+        // 🎯 按原始索引排序并去重
+        const sortedParagraphs = this._deduplicateAndSortParagraphs(allTranslatedParagraphs);
         
-        // 🎯 重建完整内容
-        const finalContent = this._reconstructFinalContent(
-            translatedTitle,
-            sortedParagraphs,
-            structure
-        );
+        console.log(`[TranslationProcessor] 分块翻译完成，总段落数: ${sortedParagraphs.length}`);
         
-        console.log(`[TranslationProcessor] 分块翻译完成，总长度: ${finalContent.length} 字符`);
-        
-        return finalContent;
+        // 🎯 构建完整结果
+        return this._buildTranslationResult({
+            translated_title: translatedTitle,
+            paragraphs: sortedParagraphs
+        }, {
+            title,
+            paragraphs,
+            tables,
+            images,
+            codeBlocks,
+            targetLanguage,
+            chunksUsed: chunks.length
+        });
     }
     
     /**
-     * 🎯 构建结构化内容
+     * 🎯 健壮的翻译响应解析（复用OutputParser逻辑）
      */
-    _buildStructuredContent(title, paragraphs, structure) {
-        let content = '';
-        
-        if (title) {
-            content += `# 标题\n${title}\n\n`;
+    _robustParseTranslationResponse(contentStr) {
+        try {
+            console.log('[TranslationProcessor] 开始健壮JSON解析...');
+            
+            // 🎯 第一步：清理Markdown代码块标记
+            let cleaned = contentStr.trim();
+            
+            // 移除 ```json 和 ``` 标记
+            cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
+            
+            // 移除多余的空白行
+            cleaned = cleaned.replace(/\n\s*\n/g, '\n');
+            
+            console.log(`[TranslationProcessor] 清理后内容长度: ${cleaned.length} 字符`);
+            
+            // 🎯 第二步：使用OutputParser中的健壮解析逻辑
+            // 这里复用OutputParser的核心解析思想
+            const parseResult = this._safeJsonParse(cleaned);
+            
+            if (!parseResult.success) {
+                // 🎯 第三步：尝试从文本中提取JSON对象
+                console.warn('[TranslationProcessor] 直接解析失败，尝试提取JSON对象...');
+                
+                // 查找第一个 { 和最后一个 }
+                const firstBrace = cleaned.indexOf('{');
+                const lastBrace = cleaned.lastIndexOf('}');
+                
+                if (firstBrace !== -1 && lastBrace > firstBrace) {
+                    const jsonStr = cleaned.substring(firstBrace, lastBrace + 1);
+                    console.log(`[TranslationProcessor] 提取JSON片段: ${jsonStr.length} 字符`);
+                    
+                    const extractedResult = this._safeJsonParse(jsonStr);
+                    if (extractedResult.success) {
+                        return extractedResult.data;
+                    }
+                }
+                
+                // 🎯 第四步：尝试修复常见JSON错误
+                console.warn('[TranslationProcessor] 提取失败，尝试修复JSON...');
+                const fixedJson = this._repairCommonJsonErrors(cleaned);
+                const fixedResult = this._safeJsonParse(fixedJson);
+                
+                if (fixedResult.success) {
+                    console.log('[TranslationProcessor] ✅ JSON修复成功');
+                    return fixedResult.data;
+                }
+                
+                throw new Error('无法解析翻译结果，JSON格式无效');
+            }
+            
+            console.log('[TranslationProcessor] ✅ JSON解析成功');
+            return parseResult.data;
+            
+        } catch (error) {
+            console.error('[TranslationProcessor] ❌ JSON解析失败:', error);
+            
+            // 🎯 最后尝试：如果所有方法都失败，返回结构化错误
+            return {
+                error: '解析失败',
+                message: error.message,
+                translated_title: '',
+                paragraphs: []
+            };
         }
+    }
+    
+    /**
+     * 🎯 安全的JSON解析
+     */
+    _safeJsonParse(jsonStr) {
+        try {
+            const data = JSON.parse(jsonStr);
+            return { success: true, data };
+        } catch (error) {
+            return { success: false, error };
+        }
+    }
+    
+    /**
+     * 🎯 修复常见的JSON错误
+     */
+    _repairCommonJsonErrors(jsonStr) {
+        let repaired = jsonStr;
         
-        content += `## 正文内容\n\n`;
+        // 1. 修复尾随逗号
+        repaired = repaired.replace(/,\s*([\]}])/g, '$1');
         
-        // 按段落添加，如果有占位符则标记
-        paragraphs.forEach((para, index) => {
-            content += `段落 ${index}:\n${para.content}\n\n`;
+        // 2. 修复Python布尔值和None
+        repaired = repaired.replace(/:\s*True\b/g, ': true')
+                          .replace(/:\s*False\b/g, ': false')
+                          .replace(/:\s*None\b/g, ': null');
+        
+        // 3. 修复单引号字符串
+        repaired = repaired.replace(/'([^']*)'(?=\s*[:,\]}])/g, '"$1"');
+        
+        // 4. 修复未加引号的键名
+        repaired = repaired.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
+        
+        // 5. 修复字符串内的换行符
+        repaired = repaired.replace(/"(.*?[^\\])"\n/g, (match, content) => {
+            return '"' + content.replace(/\n/g, '\\n') + '"';
         });
         
-        if (structure && structure.length > 0) {
-            content += `## 页面结构元素\n\n`;
-            
-            structure.forEach(item => {
-                if (item.type === 'image') {
-                    content += `图片 ${item.index + 1}: [${item.data.alt || '图片'}](${item.data.src})\n`;
-                } else if (item.type === 'table') {
-                    content += `表格 ${item.index + 1}: ${item.data.title || '未命名表格'}\n`;
-                } else if (item.type === 'code') {
-                    content += `代码块 ${item.index + 1} (${item.data.language}):\n\`\`\`${item.data.language}\n${item.data.content.substring(0, 200)}...\n\`\`\`\n`;
-                }
-            });
-        }
+        // 6. 修复注释（移除单行和多行注释）
+        repaired = repaired.replace(/\/\/.*?\n/g, '')
+                          .replace(/\/\*[\s\S]*?\*\//g, '');
         
-        return content;
+        return repaired;
     }
     
     /**
-     * 🎯 构建格式化提示词
+     * 🎯 智能分块算法
      */
-    _buildFormattingPrompt(data) {
-        const { 
-            title, 
-            fullContent, 
-            structure, 
-            targetLanguage, 
-            userInstruction,
-            isChunked = false,
-            chunkIndex = 0,
-            totalChunks = 1
-        } = data;
-        
-        const chunkInfo = isChunked ? `（第 ${chunkIndex + 1} 部分，共 ${totalChunks} 部分）` : '';
-        
-        return `# 🎯 网页翻译与格式化任务${chunkInfo}
-
-## 📋 任务说明
-你是一位专业的网站翻译专家。请将以下结构化网页内容翻译成${targetLanguage}，并输出格式良好的完整文档。
-
-## 🌐 目标语言: ${targetLanguage}
-
-## 📝 原文结构
-${fullContent}
-
-${userInstruction ? `## 📝 用户特别要求
-${userInstruction}
-
-` : ''}
-
-## 🚫 绝对禁止
-1. 不要添加任何个人观点、评论或分析
-2. 不要修改原文的事实信息
-3. 不要遗漏任何内容
-4. 保持原文的结构和格式
-
-## 📤 输出要求
-请输出完整的翻译文档，包含以下部分：
-
-1. **标题翻译**（如果提供）
-2. **正文内容**：将段落翻译成中文，保持原有的段落结构
-3. **图片处理**：将图片占位符 [IMAGE_N] 转换为 Markdown 格式：![图片描述](图片URL)
-4. **表格处理**：将表格占位符 [TABLE_N] 转换为格式良好的 Markdown 表格
-5. **代码块**：保持代码块原样，仅翻译注释（如果有）
-6. **格式**：使用恰当的 Markdown 格式（标题、列表、加粗等）
-
-## 💡 重要规则
-- 图片描述：尽量保持原描述，若无描述可写"相关图片"
-- 表格：如果原文有表格标题，请保留
-- 代码块：绝对不要翻译代码内容，只翻译注释
-- 链接：保持原链接不变
-
-## 📋 可用元素信息
-${structure && structure.length > 0 ? structure.map(item => {
-    if (item.type === 'image') {
-        return `- 图片 ${item.index + 1}: URL=${item.data.src}, 描述="${item.data.alt || '无描述'}"`;
-    } else if (item.type === 'table') {
-        return `- 表格 ${item.index + 1}: 标题="${item.data.title || '未命名'}"`;
-    } else if (item.type === 'code') {
-        return `- 代码块 ${item.index + 1}: 语言=${item.data.language}, 长度=${item.data.content.length}字符`;
-    }
-    return '';
-}).filter(Boolean).join('\n') : '无特殊元素'}
-
-现在，请开始翻译并格式化：`;
-    }
-    
-    // ============================================
-    // 🎯 辅助方法
-    // ============================================
-    
-    /**
-     * 🎯 清理翻译结果
-     */
-    _cleanTranslationResult(content) {
-        // 移除可能的多余标记
-        let cleaned = content.trim();
-        
-        // 移除JSON标记（如果有）
-        cleaned = cleaned.replace(/^```(json|markdown)?\s*/i, '');
-        cleaned = cleaned.replace(/\s*```$/i, '');
-        
-        // 移除多余的空行
-        cleaned = cleaned.replace(/\n\s*\n\s*\n/g, '\n\n');
-        
-        return cleaned;
-    }
-    
-    /**
-     * 🎯 智能分块（保持结构）
-     */
-    _createStructureAwareChunks(paragraphs) {
+    _createIntelligentChunks(paragraphs) {
         const chunks = [];
         let currentChunk = [];
         let currentCharCount = 0;
@@ -681,21 +540,27 @@ ${structure && structure.length > 0 ? structure.map(item => {
             const paragraph = paragraphs[i];
             const paragraphChars = paragraph.content.length;
             
-            // 检查是否需要创建新分块
+            // 🎯 检查是否需要创建新分块
             const shouldCreateNewChunk = 
+                // 超过字符限制且当前分块已有内容
                 (currentCharCount + paragraphChars > this.chunkConfig.maxCharsPerChunk && currentChunk.length > 0) ||
+                // 超过段落数限制
                 (currentChunk.length >= this.chunkConfig.maxParagraphsPerChunk);
             
             if (shouldCreateNewChunk) {
                 chunks.push({
                     paragraphs: currentChunk,
+                    content: currentChunk.map(p => p.content).join('\n\n'),
                     startIndex: startIndex,
-                    charCount: currentCharCount
+                    charCount: currentCharCount,
+                    paragraphCount: currentChunk.length
                 });
                 
-                currentChunk = [];
-                currentCharCount = 0;
-                startIndex = i;
+                // 🎯 重叠段落：将最后几个段落保留到下一个分块
+                const overlap = Math.min(this.chunkConfig.overlapParagraphs, currentChunk.length - 1);
+                currentChunk = overlap > 0 ? currentChunk.slice(-overlap) : [];
+                currentCharCount = currentChunk.reduce((sum, p) => sum + p.content.length, 0);
+                startIndex = i - (currentChunk.length);
             }
             
             currentChunk.push(paragraph);
@@ -706,8 +571,10 @@ ${structure && structure.length > 0 ? structure.map(item => {
         if (currentChunk.length > 0) {
             chunks.push({
                 paragraphs: currentChunk,
+                content: currentChunk.map(p => p.content).join('\n\n'),
                 startIndex: startIndex,
-                charCount: currentCharCount
+                charCount: currentCharCount,
+                paragraphCount: currentChunk.length
             });
         }
         
@@ -715,141 +582,897 @@ ${structure && structure.length > 0 ? structure.map(item => {
     }
     
     /**
-     * 🎯 为分块过滤结构元素
+     * 🎯 构建翻译提示词（支持分块）
      */
-    _filterStructureForChunk(structure, chunk) {
-        if (!structure || !chunk) return [];
+    _buildTranslationPrompt(data) {
+        const { 
+            title, 
+            paragraphs, 
+            tables, 
+            images, 
+            codeBlocks, 
+            targetLanguage, 
+            userInstruction,
+            isFirstChunk,
+            chunkIndex,
+            totalChunks 
+        } = data;
         
-        // 收集分块中的所有占位符
-        const chunkPlaceholders = new Set();
-        chunk.paragraphs.forEach(p => {
-            const matches = p.content.match(/\[(IMAGE|TABLE|CODE_BLOCK)_\d+\]/g);
-            if (matches) {
-                matches.forEach(match => chunkPlaceholders.add(match));
-            }
-        });
+        const chunkInfo = totalChunks > 1 ? 
+            `（分块 ${chunkIndex + 1}/${totalChunks}）` : '';
         
-        // 过滤相关的结构元素
-        return structure.filter(item => 
-            chunkPlaceholders.has(item.placeholder)
-        );
+        return `# 🎯 网站内容翻译任务${chunkInfo}
+ 
+## 📋 核心要求
+你是一位专业的翻译专家。请将以下网站内容**准确、完整、忠实地**翻译成${targetLanguage}。
+ 
+## 🚫 绝对禁止
+1. 不要添加任何个人观点、评论或分析
+2. 不要修改原文的事实信息
+3. 不要遗漏任何段落或数据
+4. 不要美化或简化原文
+5. **绝对不要翻译或修改 [CODE_BLOCK_N] 占位符**
+ 
+${userInstruction ? `## 📝 用户特别要求
+${userInstruction}
+
+` : ''}
+
+## 🌐 原文内容
+ 
+${isFirstChunk ? `### 1. 标题
+${title}
+ 
+### 2. 表格数据（共 ${tables.length} 个）
+${tables.slice(0, 3).map((table, i) => `
+表格 ${i+1}: ${table.title || '未命名'}
+${table.markdown ? table.markdown.substring(0, 500) + '...' : '无内容'}
+`).join('\n')}
+ 
+### 3. 图片描述（共 ${images.length} 张）
+${images.slice(0, 5).map((img, i) => `图片 ${i+1}: ${img.alt || '无描述'}`).join('\n')}
+ 
+### 4. 代码块列表（共 ${codeBlocks.length} 个）
+${codeBlocks.slice(0, 3).map(block => `- ${block.id} (${block.language}): ${block.content.substring(0, 100)}...`).join('\n')}
+ 
+---
+` : ''}
+
+### 🎯 当前翻译内容块 (共 ${paragraphs.length} 段)
+${paragraphs.map(p => p.content).join('\n\n')}
+ 
+## 📤 输出格式
+你必须以 **有效的 JSON 格式** 返回，并且只能包含 JSON 对象！不要包含任何其他文本或解释。
+
+格式必须严格遵循以下 JSON 结构：
+{
+  ${isFirstChunk ? `"translated_title": "翻译后的标题",` : ''}
+  "paragraphs": [
+    {
+      "original": "原文段落",
+      "translated": "翻译段落",
+      "index": 0 // 🎯 必须保留段落在当前分块中的相对索引（从0开始）
+    }
+  ],
+  "metadata": {
+    "translated_at": "${new Date().toISOString()}",
+    "target_language": "${targetLanguage}",
+    "translation_model": "${this.model}",
+    "temperature": ${this.temperature.translation}${totalChunks > 1 ? `,
+    "chunk": ${chunkIndex + 1},
+    "total_chunks": ${totalChunks}` : ''}
+  }
+}
+ 
+## 💡 翻译要点
+1. **准确性优先**：技术术语、数字、日期必须准确
+2. **保持结构**：段落和表格结构保持不变
+3. **自然流畅**：中文表达要符合阅读习惯
+4. **术语一致**：同一术语全文保持一致
+5. **专有名词**：人名、地名、品牌名等保持原文或使用通用译名
+ 
+现在，请开始翻译，并以有效的 JSON 格式返回：`;
     }
     
     /**
-     * 🎯 解析分块结果
+     * 🎯 构建完整翻译结果
      */
-    _parseChunkResult(contentStr) {
+    _buildTranslationResult(chunkResult, context) {
+        const { title, paragraphs, tables, images, codeBlocks, targetLanguage, chunksUsed } = context;
+        
+        // 🎯 处理表格翻译
+        const translatedTables = tables.map((table, index) => ({
+            title: table.title || `表格 ${index + 1}`,
+            original: table.markdown || '',
+            translated: table.markdown || '', // 表格暂时保留原文，后续可优化
+            markdown: table.markdown,
+            rows: table.rows || []
+        }));
+        
+        // 🎯 处理图片翻译
+        const translatedImages = images.map((img, index) => ({
+            src: img.src,
+            alt: img.alt,
+            original_alt: img.alt,
+            translated_alt: img.alt, // 图片描述暂时保留原文
+            index: index
+        }));
+        
+        return {
+            title: {
+                original: title,
+                translated: chunkResult.translated_title || title
+            },
+            paragraphs: chunkResult.paragraphs || [],
+            tables: translatedTables,
+            images: translatedImages,
+            codeBlocks: codeBlocks,
+            metadata: {
+                translated_at: new Date().toISOString(),
+                target_language: targetLanguage,
+                translation_model: this.model,
+                temperature: this.temperature.translation,
+                chunks_used: chunksUsed || 1,
+                original_paragraphs: paragraphs.length,
+                translated_paragraphs: chunkResult.paragraphs?.length || 0
+            }
+        };
+    }
+    
+    /**
+     * 🎯 去重并排序段落
+     */
+    _deduplicateAndSortParagraphs(paragraphs) {
+        // 按索引排序
+        const sorted = paragraphs.sort((a, b) => a.index - b.index);
+        
+        // 去重（基于索引）
+        const uniqueMap = new Map();
+        sorted.forEach(p => {
+            if (!uniqueMap.has(p.index) || !p.is_fallback) {
+                uniqueMap.set(p.index, p);
+            }
+        });
+        
+        return Array.from(uniqueMap.values());
+    }
+    
+    // ============================================
+    // 🎯 步骤3：校对精修
+    // ============================================
+    
+    async _step3_proofreading(translationResult, targetLanguage) {
+        await this._recordStep('proofreading_start', {});
+        
         try {
-            const cleaned = contentStr.trim();
+            // 🎯 检查内容长度，决定是否分块校对
+            const totalChars = translationResult.paragraphs.reduce((sum, p) => 
+                sum + (p.translated || '').length, 0);
             
-            // 尝试解析为JSON
+            let proofreadResult;
+            
+            if (totalChars > this.chunkConfig.maxCharsPerChunk / 2) {
+                // 🎯 内容较长，分块校对
+                console.log(`[TranslationProcessor] 内容较长(${totalChars}字符)，启用分块校对`);
+                proofreadResult = await this._chunkedProofreading(translationResult, targetLanguage);
+            } else {
+                // 🎯 单次校对
+                proofreadResult = await this._singleProofreading(translationResult, targetLanguage);
+            }
+            
+            // 🎯 应用校对修改
+            const finalResult = this._applyProofreadCorrections(translationResult, proofreadResult);
+            
+            await this._recordStep('proofreading_complete', {
+                corrections: proofreadResult.corrections?.length || 0,
+                overall_quality: proofreadResult.overall_quality || 'unknown'
+            });
+            
+            return finalResult;
+            
+        } catch (error) {
+            console.warn('[TranslationProcessor] ⚠️ 校对失败，使用原始翻译:', error.message);
+            return translationResult;
+        }
+    }
+    
+    /**
+     * 🎯 单次校对
+     */
+    async _singleProofreading(translationResult, targetLanguage) {
+        const proofreadPrompt = this._buildProofreadPrompt(translationResult, targetLanguage, {
+            isFirstChunk: true,
+            chunkIndex: 0,
+            totalChunks: 1
+        });
+        
+        const response = await this.chatApiHandler.completeChat({
+            messages: [{ role: 'user', content: proofreadPrompt }],
+            model: this.model,
+            temperature: this.temperature.proofreading
+        });
+        
+        const contentStr = response?.choices?.[0]?.message?.content;
+        if (!contentStr) {
+            throw new Error('校对返回为空');
+        }
+        
+        // 🎯 使用健壮的JSON解析
+        return this._robustParseTranslationResponse(contentStr);
+    }
+    
+    /**
+     * 🎯 分块校对
+     */
+    async _chunkedProofreading(translationResult, targetLanguage) {
+        const paragraphs = translationResult.paragraphs;
+        const chunks = this._createIntelligentChunks(paragraphs.map((p, i) => ({
+            content: `原文: ${p.original}\n翻译: ${p.translated}`,
+            index: i
+        })));
+        
+        const allCorrections = [];
+        let overallQuality = '良好';
+        let summary = '';
+        
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const chunkParagraphs = chunk.paragraphs.map(p => translationResult.paragraphs[p.index]);
+            
             try {
-                const data = JSON.parse(cleaned);
-                return data;
-            } catch (e) {
-                // 如果不是JSON，尝试提取结构
-                const lines = cleaned.split('\n');
-                let title = null;
-                const paragraphs = [];
-                let currentParagraph = null;
-                
-                lines.forEach(line => {
-                    line = line.trim();
-                    if (!line) return;
-                    
-                    // 提取标题
-                    if (line.startsWith('# ')) {
-                        title = line.substring(2).trim();
-                    }
-                    // 提取段落
-                    else if (line.match(/^段落\s+\d+:/)) {
-                        if (currentParagraph) {
-                            paragraphs.push(currentParagraph);
-                        }
-                        const match = line.match(/^段落\s+(\d+):/);
-                        currentParagraph = {
-                            index: parseInt(match[1]),
-                            original: '',
-                            translated: line.substring(match[0].length).trim()
-                        };
-                    }
-                    // 继续段落
-                    else if (currentParagraph) {
-                        currentParagraph.translated += '\n' + line;
-                    }
+                const chunkPrompt = this._buildProofreadPrompt({
+                    ...translationResult,
+                    paragraphs: chunkParagraphs
+                }, targetLanguage, {
+                    isFirstChunk: i === 0,
+                    chunkIndex: i,
+                    totalChunks: chunks.length
                 });
                 
-                if (currentParagraph) {
-                    paragraphs.push(currentParagraph);
+                const response = await this.chatApiHandler.completeChat({
+                    messages: [{ role: 'user', content: chunkPrompt }],
+                    model: this.model,
+                    temperature: this.temperature.proofreading
+                });
+                
+                const contentStr = response?.choices?.[0]?.message?.content;
+                if (!contentStr) {
+                    console.warn(`[TranslationProcessor] 校对分块 ${i + 1} 返回为空`);
+                    continue;
                 }
                 
-                return { title, paragraphs };
+                // 🎯 使用健壮的JSON解析
+                const chunkResult = this._robustParseTranslationResponse(contentStr);
+                
+                // 🎯 合并校对结果
+                if (chunkResult.corrections && Array.isArray(chunkResult.corrections)) {
+                    // 调整索引为全局索引
+                    const adjustedCorrections = chunkResult.corrections.map(c => ({
+                        ...c,
+                        index: chunk.startIndex + (c.index || 0)
+                    }));
+                    allCorrections.push(...adjustedCorrections);
+                }
+                
+                if (i === 0) {
+                    overallQuality = chunkResult.overall_quality || overallQuality;
+                    summary = chunkResult.summary || summary;
+                }
+                
+                console.log(`[TranslationProcessor] ✅ 校对分块 ${i + 1}/${chunks.length} 完成`);
+                
+            } catch (error) {
+                console.warn(`[TranslationProcessor] ⚠️ 校对分块 ${i + 1} 失败:`, error.message);
             }
-        } catch (error) {
-            console.warn('[TranslationProcessor] 分块结果解析失败:', error);
-            return { title: null, paragraphs: [] };
+            
+            // 添加延迟
+            if (i < chunks.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
         }
+        
+        return {
+            overall_quality: overallQuality,
+            corrections: allCorrections,
+            summary: summary || `共发现 ${allCorrections.length} 处需要修改`
+        };
     }
     
     /**
-     * 🎯 重建最终内容
+     * 🎯 构建校对提示词
      */
-    _reconstructFinalContent(title, translatedParagraphs, structure) {
-        let finalContent = '';
+    _buildProofreadPrompt(translationResult, targetLanguage, chunkInfo = {}) {
+        const { title, paragraphs, tables } = translationResult;
+        const { isFirstChunk = true, chunkIndex = 0, totalChunks = 1 } = chunkInfo;
         
-        // 添加标题
-        if (title) {
-            finalContent += `# ${title}\n\n`;
+        const chunkInfoText = totalChunks > 1 ? 
+            `（校对分块 ${chunkIndex + 1}/${totalChunks}）` : '';
+        
+        return `# 🎯 翻译校对与精修任务${chunkInfoText}
+ 
+## 📋 角色设定
+你是一位经验丰富的翻译校对专家，专门检查翻译质量。
+ 
+## 🎯 校对重点
+请检查以下翻译内容，重点关注：
+1. **准确性**：翻译是否准确传达了原文意思
+2. **流畅性**：中文表达是否自然流畅
+3. **一致性**：术语是否前后一致
+4. **专业性**：专业内容翻译是否准确
+ 
+## 🌐 目标语言: ${targetLanguage}
+ 
+## 📝 待校对内容
+ 
+${isFirstChunk && title ? `### 1. 标题翻译
+原文: "${title.original}"
+翻译: "${title.translated}"
+ 
+---
+` : ''}
+
+### 🎯 当前校对内容块 (共 ${paragraphs.length} 段)
+${paragraphs.map((p, i) => `
+**段落索引**: ${p.index}
+**原文**: ${p.original}
+**翻译**: ${p.translated}
+`).join('\n---\n')}
+ 
+## 📤 输出格式
+你必须以 **有效的 JSON 格式** 返回，并且只能包含 JSON 对象！
+
+格式必须严格遵循以下 JSON 结构：
+{
+  ${isFirstChunk && title ? `"suggested_title_correction": "如果标题需要修改，请提供新标题",` : ''}
+  "overall_quality": "优秀/良好/需改进",
+  "corrections": [
+    {
+      "type": "paragraph",
+      "index": 0, // 🎯 必须使用段落的原始索引
+      "original_translation": "原翻译",
+      "suggested_correction": "建议修改",
+      "reason": "修改理由"
+    }
+  ],
+  "summary": "总体评价",
+  "terminology_check": true/false,
+  "fluency_score": 0-10
+}
+ 
+## 💡 校对原则
+1. 只修改确实有问题的部分
+2. 保持原翻译的风格和结构
+3. 优先保证准确性，其次流畅性
+4. 标记专业术语是否一致
+ 
+现在，请开始校对，并以有效的 JSON 格式返回：`;
+    }
+    
+    /**
+     * 🎯 应用校对修改
+     */
+    _applyProofreadCorrections(original, proofread) {
+        const corrected = JSON.parse(JSON.stringify(original));
+        
+        // 🎯 应用标题修改
+        if (proofread.suggested_title_correction) {
+            corrected.title.translated = proofread.suggested_title_correction;
+            corrected.title.proofread = true;
+            corrected.title.correction_reason = '校对修改';
         }
         
-        // 按段落顺序添加
-        translatedParagraphs.forEach(para => {
-            let content = para.translated || para.original;
-            
-            // 替换占位符
-            if (structure) {
-                structure.forEach(item => {
-                    if (content.includes(item.placeholder)) {
-                        if (item.type === 'image') {
-                            const replacement = `![${item.data.alt || '图片'}](${item.data.src})`;
-                            content = content.replace(item.placeholder, replacement);
-                        } else if (item.type === 'table') {
-                            const replacement = this._formatTableForOutput(item.data);
-                            content = content.replace(item.placeholder, replacement);
-                        } else if (item.type === 'code') {
-                            const replacement = `\`\`\`${item.data.language}\n${item.data.content}\n\`\`\``;
-                            content = content.replace(item.placeholder, replacement);
-                        }
+        // 🎯 应用段落修改
+        if (proofread.corrections && Array.isArray(proofread.corrections)) {
+            proofread.corrections.forEach(correction => {
+                if (correction.type === 'paragraph' && correction.index !== undefined) {
+                    const idx = corrected.paragraphs.findIndex(p => p.index === correction.index);
+                    if (idx !== -1) {
+                        corrected.paragraphs[idx].translated = correction.suggested_correction;
+                        corrected.paragraphs[idx].proofread = true;
+                        corrected.paragraphs[idx].correction_reason = correction.reason;
+                        corrected.paragraphs[idx].original_correction = correction.original_translation;
                     }
-                });
-            }
-            
-            finalContent += `${content}\n\n`;
+                }
+            });
+        }
+        
+        // 🎯 标记元数据
+        corrected.metadata = corrected.metadata || {};
+        corrected.metadata.proofread = {
+            at: new Date().toISOString(),
+            overall_quality: proofread.overall_quality || '未知',
+            corrections_count: proofread.corrections?.length || 0,
+            summary: proofread.summary || ''
+        };
+        
+        return corrected;
+    }
+    
+    // ============================================
+    // 🎯 步骤4：质量验证
+    // ============================================
+    
+    async _step4_qualityValidation(translationResult) {
+        await this._recordStep('validation_start', {});
+        
+        const validation = {
+            passed: true,
+            issues: [],
+            scores: {},
+            checked_at: new Date().toISOString()
+        };
+        
+        // 🎯 基础检查
+        if (!translationResult.title?.translated) {
+            validation.issues.push({ type: 'missing_title', severity: 'high' });
+            validation.passed = false;
+        }
+        
+        if (!translationResult.paragraphs || translationResult.paragraphs.length === 0) {
+            validation.issues.push({ type: 'no_content', severity: 'critical' });
+            validation.passed = false;
+        }
+        
+        // 🎯 检查空翻译
+        const emptyTranslations = translationResult.paragraphs?.filter(p =>
+            !p.translated || p.translated.trim().length === 0
+        ).length || 0;
+        
+        if (emptyTranslations > 0) {
+            validation.issues.push({ 
+                type: 'empty_translations', 
+                severity: 'medium',
+                count: emptyTranslations 
+            });
+        }
+        
+        // 🎯 检查降级段落
+        const fallbackParagraphs = translationResult.paragraphs?.filter(p => p.is_fallback).length || 0;
+        if (fallbackParagraphs > 0) {
+            validation.issues.push({
+                type: 'fallback_paragraphs',
+                severity: 'low',
+                count: fallbackParagraphs
+            });
+        }
+        
+        // 🎯 质量评分
+        validation.scores = {
+            completeness: this._calculateCompletenessScore(translationResult),
+            consistency: this._calculateConsistencyScore(translationResult),
+            accuracy: this._estimateAccuracyScore(translationResult),
+            coverage: this._calculateCoverageScore(translationResult)
+        };
+        
+        await this._recordStep('validation_complete', {
+            passed: validation.passed,
+            issues: validation.issues.length,
+            scores: validation.scores
         });
         
-        return finalContent;
+        return validation;
+    }
+    
+    // ============================================
+    // 🎯 生成可发布报告 - 修复版（完整显示所有内容）
+    // ============================================
+    
+    _generatePublishableReport(result) {
+        const { scrapedData, finalTranslation, validation, metadata } = result;
+        
+        // 🎯 代码块映射表
+        const codeBlockMap = scrapedData.codeBlocks?.reduce((map, block) => {
+            map[block.id] = block;
+            return map;
+        }, {}) || {};
+        
+        // 🎯 提取原始HTML中的所有图片和表格信息
+        const allImages = this._extractAllImagesWithContext(scrapedData.content || '');
+        const allTables = this._extractAllTablesWithContext(scrapedData.content || '');
+        
+        let report = `# 🌐 网站内容翻译报告\n\n`;
+        
+        // 🎯 1. 报告头
+        report += `## 📋 报告信息\n`;
+        report += `| 项目 | 内容 |\n|------|------|\n`;
+        report += `| **来源网址** | ${this.currentUrl} |\n`;
+        report += `| **原文标题** | ${finalTranslation.title.original} |\n`;
+        report += `| **翻译标题** | ${finalTranslation.title.translated} |\n`;
+        report += `| **翻译时间** | ${new Date().toISOString()} |\n`;
+        report += `| **目标语言** | 中文 |\n`;
+        report += `| **翻译模型** | ${this.model} |\n`;
+        report += `| **校对状态** | ${finalTranslation.metadata?.proofread ? '✅ 已校对' : '⚠️ 未校对'} |\n`;
+        report += `| **分块数量** | ${finalTranslation.metadata?.chunks_used || 1} |\n`;
+        report += `| **处理状态** | ${validation.passed ? '✅ 通过' : '⚠️ 有问题'} |\n\n`;
+        
+        // 🎯 2. 内容概览
+        report += `## 📊 内容概览\n`;
+        report += `- **原文段落**: ${finalTranslation.metadata?.original_paragraphs || 0} 段\n`;
+        report += `- **翻译段落**: ${finalTranslation.metadata?.translated_paragraphs || 0} 段\n`;
+        report += `- **表格数量**: ${allTables.length} 个\n`;
+        report += `- **图片数量**: ${allImages.length} 张\n`;
+        report += `- **代码块数量**: ${scrapedData.codeBlocks?.length || 0} 个\n`;
+        report += `- **降级段落**: ${finalTranslation.paragraphs?.filter(p => p.is_fallback).length || 0} 段\n`;
+        report += `- **处理耗时**: ${result.stats?.processingTime || '未知'}\n\n`;
+        
+        // 🎯 3. 质量评估
+        report += `## ✅ 质量评估\n`;
+        if (validation.scores) {
+            report += `| 评估维度 | 得分 (0-10) | 评价 |\n|----------|-------------|------|\n`;
+            report += `| **完整性** | ${validation.scores.completeness.toFixed(1)} | ${this._getScoreDescription(validation.scores.completeness)} |\n`;
+            report += `| **一致性** | ${validation.scores.consistency.toFixed(1)} | ${this._getScoreDescription(validation.scores.consistency)} |\n`;
+            report += `| **准确性** | ${validation.scores.accuracy.toFixed(1)} | ${this._getScoreDescription(validation.scores.accuracy)} |\n`;
+            report += `| **覆盖率** | ${validation.scores.coverage.toFixed(1)} | ${this._getScoreDescription(validation.scores.coverage)} |\n`;
+        }
+        
+        if (validation.issues && validation.issues.length > 0) {
+            report += `\n## ⚠️ 发现的问题\n`;
+            validation.issues.forEach(issue => {
+                report += `- **${issue.type}** (${issue.severity}): ${issue.count || '需要检查'}\n`;
+            });
+        }
+        
+        report += `\n`;
+        
+        // 🎯 4. 标题翻译
+        report += `## 🏷️ 标题翻译\n`;
+        report += `### 原文\n> ${finalTranslation.title.original}\n\n`;
+        report += `### 翻译\n> ${finalTranslation.title.translated}\n\n`;
+        
+        if (finalTranslation.title.proofread) {
+            report += `*✅ 已校对${finalTranslation.title.correction_reason ? ` (${finalTranslation.title.correction_reason})` : ''}*\n\n`;
+        }
+        
+        // 🎯 5. 主要内容翻译 - 修复：显示所有段落
+        report += `## 📝 主要内容\n\n`;
+        
+        const paragraphs = finalTranslation.paragraphs || [];
+        // 🎯 修复：显示所有段落，不再截断
+        const displayedParagraphs = paragraphs;
+        
+        // 按段落组显示（每5段一组，保持可读性）
+        for (let i = 0; i < displayedParagraphs.length; i += 5) {
+            const group = displayedParagraphs.slice(i, i + 5);
+            const startIdx = i + 1;
+            const endIdx = Math.min(i + 5, displayedParagraphs.length);
+            
+            report += `### 段落 ${startIdx}-${endIdx}\n\n`;
+            
+            group.forEach((para, idx) => {
+                const absoluteIdx = i + idx + 1;
+                report += `#### 段落 ${absoluteIdx}\n`;
+                
+                // 🎯 替换代码块占位符
+                let translatedContent = para.translated || '';
+                let originalContent = para.original || '';
+                
+                if (codeBlockMap) {
+                    Object.values(codeBlockMap).forEach(block => {
+                        const placeholder = `[${block.id}]`;
+                        const codeBlockMarkdown = `\n\`\`\`${block.language}\n${block.content}\n\`\`\`\n`;
+                        
+                        translatedContent = translatedContent.replace(placeholder, codeBlockMarkdown);
+                        originalContent = originalContent.replace(placeholder, codeBlockMarkdown);
+                    });
+                }
+                
+                // 🎯 检查并标记图片引用
+                const imageReferences = this._findImageReferencesInText(originalContent, allImages);
+                if (imageReferences.length > 0) {
+                    report += `**图片引用**: ${imageReferences.map(img => `[图${img.index + 1}]`).join(', ')}\n\n`;
+                }
+                
+                // 🎯 检查并标记表格引用
+                const tableReferences = this._findTableReferencesInText(originalContent, allTables);
+                if (tableReferences.length > 0) {
+                    report += `**表格引用**: ${tableReferences.map(tbl => `[表${tbl.index + 1}]`).join(', ')}\n\n`;
+                }
+                
+                report += `**原文**\n\n${originalContent}\n\n`;
+                report += `**翻译**\n\n${translatedContent}\n\n`;
+                
+                // 标记信息
+                if (para.is_fallback) {
+                    report += `*⚠️ 降级处理（使用原文）${para.fallback_reason ? `: ${para.fallback_reason}` : ''}*\n\n`;
+                } else if (para.proofread) {
+                    report += `*✅ 已校对${para.correction_reason ? ` (${para.correction_reason})` : ''}*\n\n`;
+                }
+                
+                report += `---\n\n`;
+            });
+        }
+        
+        // 🎯 6. 表格数据 - 完整显示所有表格
+        if (allTables.length > 0) {
+            report += `## 📊 表格数据\n\n`;
+            
+            allTables.forEach((table, index) => {
+                report += `### 表格 ${index + 1}: ${table.title || `表格 ${index + 1}`}\n\n`;
+                
+                // 添加表格上下文信息
+                if (table.context) {
+                    report += `**上下文**: ${table.context}\n\n`;
+                }
+                
+                if (table.markdown) {
+                    // Markdown表格
+                    report += table.markdown + '\n\n';
+                } else if (table.original) {
+                    // 纯文本表格
+                    report += `\`\`\`\n${table.original}\n\`\`\`\n\n`;
+                } else if (table.html) {
+                    // HTML表格转换为Markdown
+                    const markdownTable = this._htmlTableToMarkdown(table.html);
+                    if (markdownTable) {
+                        report += markdownTable + '\n\n';
+                    }
+                }
+                
+                report += `---\n\n`;
+            });
+        }
+        
+        // 🎯 7. 图片信息 - 完整显示所有图片
+        if (allImages.length > 0) {
+            report += `## 🖼️ 图片引用\n\n`;
+            report += `> 注：以下为从网页中提取的所有图片信息，包括原文描述和图片地址\n\n`;
+            
+            allImages.forEach((img, index) => {
+                report += `### 图片 ${index + 1}\n\n`;
+                
+                // 图片上下文信息
+                if (img.context) {
+                    report += `**上下文位置**: ${img.context}\n\n`;
+                }
+                
+                report += `- **图片地址**: ${img.src || '无'}\n`;
+                report += `- **原文描述**: ${img.alt || '无描述'}\n`;
+                report += `- **尺寸信息**: ${img.width ? `${img.width}×${img.height}` : '未知'}\n`;
+                
+                // 图片在原文中的引用标记
+                if (img.referenceTags && img.referenceTags.length > 0) {
+                    report += `- **引用标记**: ${img.referenceTags.map(tag => `"${tag}"`).join(', ')}\n`;
+                }
+                
+                report += `\n`;
+                
+                // 如果是Figure图片，尝试提取标题
+                if (img.alt?.toLowerCase().includes('figure') || img.context?.toLowerCase().includes('figure')) {
+                    report += `*标识为图表/图示*\n\n`;
+                }
+                
+                report += `---\n\n`;
+            });
+            
+            // 添加图片总结
+            report += `### 图片统计\n`;
+            report += `- **总图片数**: ${allImages.length} 张\n`;
+            report += `- **有描述图片**: ${allImages.filter(img => img.alt && img.alt.trim()).length} 张\n`;
+            report += `- **缺失描述**: ${allImages.filter(img => !img.alt || !img.alt.trim()).length} 张\n\n`;
+        }
+        
+        // 🎯 8. 代码块附录
+        if (scrapedData.codeBlocks?.length > 0) {
+            report += `## 💻 代码块附录 (Code Blocks Appendix)\n\n`;
+            report += `> 注：以下代码块已在主要内容中以占位符形式保留，此处为原始代码清单。\n\n`;
+            
+            scrapedData.codeBlocks.forEach((block, index) => {
+                report += `### ${block.id} (${block.language})\n\n`;
+                report += `\`\`\`${block.language}\n${block.content}\n\`\`\`\n\n`;
+            });
+        }
+        
+        // 🎯 9. 抓取原始数据摘要
+        report += `## 📄 抓取数据摘要\n\n`;
+        report += `- **抓取模式**: ${this.scrapeConfig.mode}\n`;
+        report += `- **原始内容长度**: ${scrapedData.content?.length || 0} 字符\n`;
+        report += `- **HTML是否包含**: ${scrapedData.cleaned_html ? '✅ 是' : '❌ 否'}\n`;
+        report += `- **提取表格**: ${this.scrapeConfig.parameters.extract_tables ? '✅ 开启' : '❌ 关闭'}\n`;
+        report += `- **提取图片描述**: ${this.scrapeConfig.parameters.extract_images_alt ? '✅ 开启' : '❌ 关闭'}\n\n`;
+        
+        // 🎯 10. 处理说明
+        report += `## ⚙️ 处理说明\n\n`;
+        report += `1. **抓取工具**: crawl4ai (${this.scrapeConfig.mode}模式)\n`;
+        report += `2. **翻译流程**: 翻译 (T=${this.temperature.translation}) → 校对 (T=${this.temperature.proofreading})\n`;
+        report += `3. **模型信息**: ${this.model}\n`;
+        report += `4. **分块策略**: ${finalTranslation.metadata?.chunks_used || 1} 个分块\n`;
+        report += `5. **字符统计**: ${metadata.totalCharacters || '未统计'} 字符\n`;
+        report += `6. **处理时间**: ${result.stats?.processingTime || '未知'}\n\n`;
+        
+        // 🎯 11. 免责声明
+        report += `## ⚠️ 免责声明\n\n`;
+        report += `1. 本报告仅为原文内容的忠实翻译\n`;
+        report += `2. 翻译力求准确，但可能存在细微误差\n`;
+        report += `3. 如原文有更新，本报告内容可能过时\n`;
+        report += `4. 重要决策请以原始来源为准\n`;
+        report += `5. 图片和表格引用基于HTML解析，可能存在遗漏\n\n`;
+        
+        return report;
     }
     
     /**
-     * 🎯 格式化表格输出
+     * 🎯 新增：从HTML中提取所有图片及上下文
      */
-    _formatTableForOutput(table) {
-        let output = `### ${table.title || '表格'}\n\n`;
+    _extractAllImagesWithContext(html) {
+        const images = [];
+        const imgRegex = /<img[^>]+>/gi;
         
-        if (table.markdown) {
-            output += table.markdown;
-        } else if (table.rows && table.rows.length > 0) {
-            output += '| ' + table.rows[0].join(' | ') + ' |\n';
-            output += '| ' + table.rows[0].map(() => '---').join(' | ') + ' |\n';
+        let match;
+        while ((match = imgRegex.exec(html)) !== null) {
+            const imgTag = match[0];
+            const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
+            const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+            const widthMatch = imgTag.match(/width=["']?(\d+)["']?/i);
+            const heightMatch = imgTag.match(/height=["']?(\d+)["']?/i);
             
-            for (let i = 1; i < table.rows.length; i++) {
-                output += '| ' + table.rows[i].join(' | ') + ' |\n';
+            // 提取上下文（img标签前后的文本）
+            const startIndex = Math.max(0, match.index - 200);
+            const endIndex = Math.min(html.length, match.index + imgTag.length + 200);
+            const context = html.substring(startIndex, endIndex)
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            
+            // 提取可能的引用标记（如Figure 1, Fig. 2等）
+            const referenceTags = [];
+            const contextLower = context.toLowerCase();
+            if (contextLower.includes('figure') || contextLower.includes('fig.')) {
+                // 尝试提取Figure编号
+                const figureMatch = context.match(/figure\s+(\d+)/i) || context.match(/fig\.\s*(\d+)/i);
+                if (figureMatch) {
+                    referenceTags.push(`Figure ${figureMatch[1]}`);
+                }
             }
-        } else {
-            output += '*(表格内容)*\n';
+            
+            images.push({
+                src: srcMatch ? srcMatch[1] : '',
+                alt: altMatch ? altMatch[1] : '',
+                width: widthMatch ? parseInt(widthMatch[1]) : null,
+                height: heightMatch ? parseInt(heightMatch[1]) : null,
+                context: context.length > 100 ? context.substring(0, 100) + '...' : context,
+                referenceTags: referenceTags,
+                position: match.index
+            });
         }
         
-        return output;
+        return images;
+    }
+    
+    /**
+     * 🎯 新增：从HTML中提取所有表格及上下文
+     */
+    _extractAllTablesWithContext(html) {
+        const tables = [];
+        const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
+        
+        let match;
+        let tableCount = 0;
+        
+        while ((match = tableRegex.exec(html)) !== null) {
+            tableCount++;
+            const tableHtml = match[0];
+            
+            // 提取上下文
+            const startIndex = Math.max(0, match.index - 200);
+            const endIndex = Math.min(html.length, match.index + tableHtml.length + 200);
+            let context = html.substring(startIndex, endIndex)
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            
+            // 提取标题
+            let title = `表格 ${tableCount}`;
+            const captionMatch = tableHtml.match(/<caption[^>]*>([^<]+)<\/caption>/i);
+            if (captionMatch) {
+                title = captionMatch[1].trim();
+            } else {
+                // 尝试从前面的文本中提取标题
+                const prevText = html.substring(Math.max(0, match.index - 100), match.index)
+                    .replace(/<[^>]+>/g, ' ')
+                    .trim();
+                const titleMatch = prevText.match(/Table\s+(\d+)[:.]?\s*(.+)/i) || 
+                                  prevText.match(/表格\s*(\d+)[:.]?\s*(.+)/i);
+                if (titleMatch) {
+                    title = `表格 ${titleMatch[1]}: ${titleMatch[2].trim()}`;
+                }
+            }
+            
+            // 转换为Markdown
+            const markdownTable = this._htmlTableToMarkdown(tableHtml);
+            const rows = this._extractTableRows(tableHtml);
+            
+            tables.push({
+                title: title,
+                html: tableHtml,
+                markdown: markdownTable,
+                rows: rows,
+                context: context.length > 150 ? context.substring(0, 150) + '...' : context,
+                position: match.index
+            });
+        }
+        
+        return tables;
+    }
+    
+    /**
+     * 🎯 新增：在文本中查找图片引用
+     */
+    _findImageReferencesInText(text, allImages) {
+        const references = [];
+        const lowerText = text.toLowerCase();
+        
+        allImages.forEach((img, index) => {
+            // 检查Figure引用
+            if (img.referenceTags && img.referenceTags.length > 0) {
+                for (const tag of img.referenceTags) {
+                    if (lowerText.includes(tag.toLowerCase())) {
+                        references.push({...img, index});
+                        break;
+                    }
+                }
+            }
+            
+            // 检查图片描述引用
+            if (img.alt && img.alt.trim() && lowerText.includes(img.alt.toLowerCase())) {
+                references.push({...img, index});
+            }
+        });
+        
+        return references;
+    }
+    
+    /**
+     * 🎯 新增：在文本中查找表格引用
+     */
+    _findTableReferencesInText(text, allTables) {
+        const references = [];
+        const lowerText = text.toLowerCase();
+        
+        allTables.forEach((table, index) => {
+            const tableTitle = table.title.toLowerCase();
+            
+            // 检查表格标题引用
+            if (lowerText.includes(tableTitle)) {
+                references.push({...table, index});
+            }
+            
+            // 检查"Table X"格式的引用
+            const tableNum = index + 1;
+            if (lowerText.includes(`table ${tableNum}`) || 
+                lowerText.includes(`table ${tableNum}:`) ||
+                lowerText.includes(`表格 ${tableNum}`)) {
+                references.push({...table, index});
+            }
+        });
+        
+        return references;
+    }
+    
+    // ============================================
+    // 🎯 辅助方法
+    // ============================================
+    
+    /**
+     * 🎯 增强：提取关键内容 - 改进图片和表格提取
+     */
+    _extractKeyContent(scrapedData) {
+        const html = scrapedData.cleaned_html || scrapedData.content || '';
+        
+        const codeBlocks = this._extractCodeBlocks(html);
+        const paragraphs = this._extractMainContent(html, codeBlocks);
+        
+        // 🎯 增强：提取所有图片和表格
+        const allImages = this._extractAllImagesWithContext(html);
+        const allTables = this._extractAllTablesWithContext(html);
+        
+        return {
+            title: this._extractTitle(html),
+            paragraphs: paragraphs,
+            tables: allTables, // 使用完整表格数据
+            images: allImages,  // 使用完整图片数据
+            codeBlocks: codeBlocks,
+            rawHtml: html // 保留原始HTML用于后续处理
+        };
     }
     
     /**
@@ -865,98 +1488,95 @@ ${structure && structure.length > 0 ? structure.map(item => {
         const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
         if (ogTitleMatch) return ogTitleMatch[1].trim();
         
-        return '';
+        return '未找到标题';
     }
     
     /**
-     * 🎯 提取带上下文的图片
+     * 🎯 提取主要内容
      */
-    _extractImagesWithContext(html) {
-        const images = [];
-        const imgRegex = /<img[^>]+>/gi;
+    _extractMainContent(html, codeBlocks) {
+        let tempHtml = html;
         
-        let match;
-        while ((match = imgRegex.exec(html)) !== null) {
-            const imgTag = match[0];
-            const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
-            const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
-            const titleMatch = imgTag.match(/title=["']([^"']*)["']/i);
-            
-            images.push({
-                src: srcMatch ? srcMatch[1] : '',
-                alt: altMatch ? altMatch[1] : (titleMatch ? titleMatch[1] : ''),
-                title: titleMatch ? titleMatch[1] : '',
-                position: match.index
+        // 1. 用占位符替换代码块
+        codeBlocks.forEach(block => {
+            const escapedContent = block.content.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            const regex = new RegExp(`<pre[^>]*>[\\s\\S]*?${escapedContent}[\\s\\S]*?</pre>`, 'i');
+            tempHtml = tempHtml.replace(regex, `\n\n[${block.id}]\n\n`);
+        });
+        
+        // 2. 清理HTML标签
+        let text = tempHtml.replace(/<[^>]+>/g, '\n');
+        text = text.replace(/\n+/g, '\n').trim();
+        
+        // 3. 过滤短行和无关内容
+        const lines = text.split('\n')
+            .map(line => line.trim())
+            .filter(line => {
+                const lineLength = line.length;
+                return lineLength > 15 && // 降低长度要求
+                    !line.startsWith('http') &&
+                    !line.match(/^[0-9\s]*$/) &&
+                    !line.includes('@') &&
+                    !line.includes('Copyright') &&
+                    !line.toLowerCase().includes('skip to') &&
+                    !line.toLowerCase().includes('jump to') &&
+                    !line.toLowerCase().includes('menu') &&
+                    !line.toLowerCase().includes('navigation');
             });
+        
+        // 4. 合并相邻短行
+        const mergedLines = [];
+        let currentLine = '';
+        
+        for (const line of lines) {
+            if (line.length < 60 && currentLine.length < 150) {
+                currentLine = currentLine ? `${currentLine} ${line}` : line;
+            } else {
+                if (currentLine) {
+                    mergedLines.push(currentLine);
+                }
+                currentLine = line;
+            }
         }
         
-        return images;
+        if (currentLine) {
+            mergedLines.push(currentLine);
+        }
+        
+        // 5. 返回段落数组
+        return mergedLines.map((content, index) => ({ content, index }));
     }
     
     /**
-     * 🎯 提取带上下文的表格
+     * 🎯 提取表格
      */
-    _extractTablesWithContext(html) {
+    _extractTables(html) {
         const tables = [];
         const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
-        
         let match;
+        let count = 0;
+        
         while ((match = tableRegex.exec(html)) !== null) {
+            count++;
             const tableHtml = match[0];
             
             // 提取标题
             const captionMatch = tableHtml.match(/<caption[^>]*>([^<]+)<\/caption>/i);
-            const title = captionMatch ? captionMatch[1].trim() : '';
+            const title = captionMatch ? captionMatch[1].trim() : `表格 ${count}`;
             
-            // 提取行数据
-            const rows = this._extractTableRows(tableHtml);
-            
-            // 转换为Markdown
+            // 转换为Markdown表格
             const markdownTable = this._htmlTableToMarkdown(tableHtml);
             
-            tables.push({
-                title,
-                html: tableHtml,
-                markdown: markdownTable,
-                rows: rows,
-                position: match.index
-            });
+            if (markdownTable) {
+                tables.push({
+                    title,
+                    rows: this._extractTableRows(tableHtml),
+                    markdown: markdownTable
+                });
+            }
         }
         
         return tables;
-    }
-    
-    /**
-     * 🎯 提取代码块
-     */
-    _extractCodeBlocks(html) {
-        const codeBlocks = [];
-        const codeRegex = /<pre[^>]*>[\s\S]*?<\/pre>/gi;
-        let match;
-        let count = 0;
-        
-        while ((match = codeRegex.exec(html)) !== null) {
-            count++;
-            const codeHtml = match[0];
-            
-            // 尝试提取语言类型
-            const langMatch = codeHtml.match(/class=["'][^"']*lang(?:uage)?-([^"'\s]+)/i);
-            const language = langMatch ? langMatch[1] : 'plaintext';
-            
-            // 提取代码内容
-            let codeContent = codeHtml.replace(/<\/?pre[^>]*>/gi, '');
-            codeContent = codeContent.replace(/<\/?code[^>]*>/gi, '').trim();
-            
-            codeBlocks.push({
-                id: `CODE_BLOCK_${count}`,
-                language: language,
-                content: codeContent.substring(0, 5000),
-                html: codeHtml,
-                position: match.index
-            });
-        }
-        
-        return codeBlocks;
     }
     
     /**
@@ -1009,32 +1629,207 @@ ${structure && structure.length > 0 ? structure.map(item => {
     }
     
     /**
+     * 🎯 提取图片
+     */
+    _extractImages(html) {
+        const images = [];
+        const imgRegex = /<img[^>]+>/gi;
+        const altRegex = /alt=["']([^"']*)["']/i;
+        const srcRegex = /src=["']([^"']*)["']/i;
+        
+        let match;
+        while ((match = imgRegex.exec(html)) !== null) {
+            const imgTag = match[0];
+            const srcMatch = imgTag.match(srcRegex);
+            if (!srcMatch) continue;
+            
+            const altMatch = imgTag.match(altRegex);
+            
+            images.push({
+                src: srcMatch[1],
+                alt: altMatch ? altMatch[1] : ''
+            });
+        }
+        
+        return images;
+    }
+    
+    /**
+     * 🎯 提取代码块
+     */
+    _extractCodeBlocks(html) {
+        const codeBlocks = [];
+        const codeRegex = /<pre[^>]*>[\s\S]*?<\/pre>/gi;
+        let match;
+        let count = 0;
+        
+        while ((match = codeRegex.exec(html)) !== null) {
+            count++;
+            const codeHtml = match[0];
+            
+            // 尝试提取语言类型
+            const langMatch = codeHtml.match(/class=["'][^"']*lang(?:uage)?-([^"'\s]+)/i);
+            const language = langMatch ? langMatch[1] : 'plaintext';
+            
+            // 提取代码内容
+            let codeContent = codeHtml.replace(/<\/?pre[^>]*>/gi, '');
+            codeContent = codeContent.replace(/<\/?code[^>]*>/gi, '').trim();
+            
+            codeBlocks.push({
+                id: `CODE_BLOCK_${count}`,
+                language: language,
+                content: codeContent.substring(0, 5000) // 限制长度
+            });
+        }
+        
+        return codeBlocks;
+    }
+    
+    /**
+     * 🎯 计算完整性分数
+     */
+    _calculateCompletenessScore(translation) {
+        let score = 10;
+        
+        // 检查必要字段
+        if (!translation.title?.translated) score -= 3;
+        if (!translation.paragraphs || translation.paragraphs.length === 0) score -= 4;
+        
+        // 检查是否有空翻译
+        const emptyTranslations = translation.paragraphs?.filter(p =>
+            !p.translated || p.translated.trim().length === 0
+        ).length || 0;
+        
+        if (emptyTranslations > 0) {
+            score -= (emptyTranslations / translation.paragraphs.length) * 3;
+        }
+        
+        return Math.max(0, Math.min(10, score));
+    }
+    
+    /**
+     * 🎯 修复：计算一致性分数
+     */
+    _calculateConsistencyScore(translation) {
+        const paragraphs = translation.paragraphs || [];
+        if (paragraphs.length === 0) return 8.0;
+        
+        // 1. 检查术语一致性（改进版）
+        const termMap = new Map();
+        const commonTerms = ['AI', 'Claude', '代码', '模型', '工程', '开发', '数据', '系统'];
+        
+        paragraphs.forEach(p => {
+            const text = p.translated || '';
+            
+            // 检查常见术语
+            commonTerms.forEach(term => {
+                if (text.includes(term)) {
+                    termMap.set(term, (termMap.get(term) || 0) + 1);
+                }
+            });
+            
+            // 检查大写英文术语（技术术语）
+            const englishTerms = text.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g) || [];
+            englishTerms.forEach(term => {
+                if (term.length > 2) { // 过滤掉短词
+                    termMap.set(term, (termMap.get(term) || 0) + 1);
+                }
+            });
+        });
+        
+        // 2. 计算一致性得分
+        let consistencyScore = 8.0; // 基础分
+        
+        // 如果术语使用多样，加分
+        const uniqueTerms = termMap.size;
+        if (uniqueTerms > 5) {
+            consistencyScore += Math.min(2.0, (uniqueTerms - 5) * 0.2);
+        }
+        
+        // 检查是否有校对记录（校对通常会提高一致性）
+        if (translation.metadata?.proofread) {
+            consistencyScore += 1.0;
+        }
+        
+        return Math.min(10, Math.max(0, consistencyScore));
+    }
+    
+    /**
+     * 🎯 估计准确性分数
+     */
+    _estimateAccuracyScore(translation) {
+        // 基于校对结果估计
+        if (translation.metadata?.proofread) {
+            switch (translation.metadata.proofread.overall_quality) {
+                case '优秀': return 9.5;
+                case '良好': return 8.0;
+                case '需改进': return 6.0;
+                default: return 7.5;
+            }
+        }
+        
+        // 基于降级段落比例
+        const fallbackRatio = (translation.paragraphs?.filter(p => p.is_fallback).length || 0) / 
+                            Math.max(translation.paragraphs?.length || 1, 1);
+        
+        return Math.max(5, 10 - (fallbackRatio * 5));
+    }
+    
+    /**
+     * 🎯 计算覆盖率分数
+     */
+    _calculateCoverageScore(translation) {
+        const totalParagraphs = translation.metadata?.original_paragraphs || 0;
+        const translatedParagraphs = translation.metadata?.translated_paragraphs || 0;
+        
+        if (totalParagraphs === 0) return 0;
+        
+        const coverage = (translatedParagraphs / totalParagraphs) * 10;
+        return Math.min(10, coverage);
+    }
+    
+    /**
+     * 🎯 获取分数描述
+     */
+    _getScoreDescription(score) {
+        if (score >= 9) return '优秀';
+        if (score >= 7) return '良好';
+        if (score >= 5) return '一般';
+        return '需改进';
+    }
+    
+    /**
      * 🎯 构建元数据
      */
-    _buildMetadata(structureAnalysis) {
+    _buildMetadata(scrapedData, translation) {
         return {
             url: this.currentUrl,
-            processedAt: new Date().toISOString(),
-            title: structureAnalysis.title,
-            paragraphs: structureAnalysis.paragraphs.length,
-            images: structureAnalysis.images.length,
-            tables: structureAnalysis.tables.length,
-            codeBlocks: structureAnalysis.codeBlocks.length,
+            scrapedAt: new Date().toISOString(),
+            translatedAt: translation.metadata?.translated_at,
+            totalCharacters: translation.paragraphs?.reduce((sum, p) => sum + (p.translated || '').length, 0) || 0,
+            processingSteps: this.processingSteps.length,
             model: this.model,
-            temperature: this.temperature
+            temperatures: this.temperature,
+            chunksUsed: translation.metadata?.chunks_used || 1
         };
     }
     
     /**
      * 🎯 计算统计信息
      */
-    _calculateStats(structureAnalysis, finalContent) {
+    _calculateStats(scrapedData, translation) {
+        const originalLength = scrapedData.content?.length || 0;
+        const translatedLength = translation.paragraphs?.reduce((sum, p) => sum + (p.translated || '').length, 0) || 0;
+        
         return {
-            originalParagraphs: structureAnalysis.paragraphs.length,
-            imagesCount: structureAnalysis.images.length,
-            tablesCount: structureAnalysis.tables.length,
-            codeBlocksCount: structureAnalysis.codeBlocks.length,
-            finalContentLength: finalContent.length,
+            originalLength,
+            translatedLength,
+            translationRatio: translatedLength / Math.max(originalLength, 1),
+            paragraphs: translation.paragraphs?.length || 0,
+            tables: translation.tables?.length || 0,
+            images: translation.images?.length || 0,
+            codeBlocks: scrapedData.codeBlocks?.length || 0,
+            fallbackParagraphs: translation.paragraphs?.filter(p => p.is_fallback).length || 0,
             processingTime: this._calculateProcessingTime()
         };
     }
@@ -1067,10 +1862,14 @@ ${structure && structure.length > 0 ? structure.map(item => {
         
         // 发送进度事件
         const progressMap = {
-            'analysis_start': 20,
-            'analysis_complete': 40,
-            'translation_start': 50,
-            'translation_complete': 90
+            'scrape_start': 10,
+            'scrape_complete': 30,
+            'translation_start': 40,
+            'translation_complete': 60,
+            'proofreading_start': 65,
+            'proofreading_complete': 85,
+            'validation_start': 90,
+            'validation_complete': 100
         };
         
         await this.callbackManager.invokeEvent('on_translation_progress', {
@@ -1100,12 +1899,12 @@ ${structure && structure.length > 0 ? structure.map(item => {
     /**
      * 🎯 触发完成事件
      */
-    async _fireCompleteEvent(result) {
+    async _fireCompleteEvent(result, report) {
         await this.callbackManager.invokeEvent('on_translation_complete', {
             run_id: this.runId,
             data: {
                 url: this.currentUrl,
-                content: result.finalContent,
+                report,
                 stats: result.stats,
                 success: true,
                 processingTime: result.stats.processingTime
@@ -1117,13 +1916,21 @@ ${structure && structure.length > 0 ? structure.map(item => {
      * 🎯 处理失败
      */
     async _handleFailure(error) {
-        const fallbackContent = `# 网站翻译失败
+        const fallbackReport = `# 🌐 网站翻译失败报告
 
 ## ❌ 错误信息
 - **目标URL**: ${this.currentUrl}
 - **错误类型**: ${error.name || '处理错误'}
 - **错误信息**: ${error.message}
 - **发生时间**: ${new Date().toISOString()}
+
+## 📝 处理记录
+${this.processingSteps.map((step, i) => `${i+1}. ${step.step} (${step.timestamp})`).join('\n')}
+
+## 🔧 建议措施
+1. **检查URL可访问性**
+2. **尝试缩短内容长度**
+3. **联系技术支持**
 
 > 系统在处理过程中遇到错误，无法完成翻译任务。`;
         
@@ -1132,7 +1939,7 @@ ${structure && structure.length > 0 ? structure.map(item => {
             data: {
                 url: this.currentUrl,
                 error: error.message,
-                content: fallbackContent,
+                report: fallbackReport,
                 success: false
             }
         });
@@ -1142,7 +1949,48 @@ ${structure && structure.length > 0 ? structure.map(item => {
             runId: this.runId,
             url: this.currentUrl,
             error: error.message,
-            content: fallbackContent
+            report: fallbackReport
+        };
+    }
+    
+    /**
+     * 🎯 批量处理接口
+     */
+    async batchTranslate(urls, options = {}) {
+        console.log(`[TranslationProcessor] 🚀 批量翻译 ${urls.length} 个网站`);
+        
+        const results = [];
+        const errors = [];
+        
+        for (let i = 0; i < urls.length; i++) {
+            const url = urls[i];
+            console.log(`[${i+1}/${urls.length}] 处理: ${url}`);
+            
+            try {
+                const result = await this.processWebsite({
+                    url,
+                    ...options
+                });
+                
+                results.push(result);
+                
+                // 添加延迟避免被封
+                if (i < urls.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+                
+            } catch (error) {
+                errors.push({ url, error: error.message });
+                console.error(`[TranslationProcessor] ❌ 处理失败 ${url}:`, error);
+            }
+        }
+        
+        return {
+            total: urls.length,
+            success: results.length,
+            failed: errors.length,
+            results,
+            errors
         };
     }
 }
