@@ -1970,9 +1970,6 @@ ${promptFragment}
         return 0.1; // 默认低优先级
     }
 
-
-
-
     // ✨ 新增：强化资料来源提取
     _extractSourcesFromIntermediateSteps(intermediateSteps) {
         const sources = new Map(); // 使用Map避免重复来源
@@ -2129,6 +2126,130 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             
         return report;
     }
+
+    // 🔥 新增：构建数据挖掘专用提示词
+_buildDataMiningPrompt(topic, intermediateSteps, plan, sources, userInstruction, template, promptFragment) {
+    // 1. 提取所有结构化数据
+    const structuredData = this._extractAllStructuredData(intermediateSteps);
+    
+    // 2. 构建带编号的来源索引
+    const numberedSourcesText = sources.map((s, i) => {
+        const dateStr = s.collectedAt ? ` (${s.collectedAt.split('T')[0]})` : '';
+        return `[${i + 1}] 《${s.title}》${dateStr}`;
+    }).join('\n');
+    
+    return `
+# 🚫 绝对禁止开场白协议
+**禁止生成任何形式的"好的，遵命"等确认语句**
+**必须直接从报告标题开始输出纯净内容**
+
+# 角色：数据整理专家
+# 任务：基于收集的原始数据，生成纯数据报告
+
+# 最终研究主题: "${topic}"
+
+# 0. 🎯 原始用户指令 (最高优先级)
+**请严格遵循此指令中包含的任何数据收集要求。**
+\`\`\`
+${userInstruction}
+\`\`\`
+
+# 1. 📚 资料来源索引 (Source Index)
+**注意：以下编号对应你在表格中应引用的 [x] 标记。**
+${numberedSourcesText}
+
+# 2. 收集到的原始数据
+以下内容是从上述来源中提取的详细信息。请将这些数据整理成规范的表格。
+
+${structuredData}
+
+# 3. 你的数据整理指令 (输出要求)
+现在，请严格遵循以下元结构和要求，将上述数据整理成最终的数据报告。
+
+${promptFragment}
+
+**🚫 绝对禁止:**
+- 添加任何分析、观点、解读、总结
+- 使用主观形容词（如"显著"、"重要"）
+- 进行趋势预测或比较评价
+
+**✅ 核心要求:**
+- **自主生成标题**: 基于数据主题生成精准标题
+- **表格为主**: 所有数据优先以表格形式呈现
+- **来源标注**: 每行数据必须标注来源编号
+- **格式规范**: 数值、百分比、日期格式统一
+- **纯净内容**: 只呈现数据，不添加任何分析
+
+现在，请开始整理这份基于原始数据的数据报告。
+`;
+}
+
+// 🔥 新增：数据挖掘报告生成方法
+async _generateDataMiningReport(dataMiningPrompt, intermediateSteps, sources) {
+    try {
+        const reportResponse = await this.chatApiHandler.completeChat({
+            messages: [{ role: 'user', content: dataMiningPrompt }],
+            model: this.reportModel || 'models/gemini-2.0-flash-exp-summarizer',
+            temperature: 0.1, // 低温确保准确性
+        });
+        
+        this._updateTokenUsage(reportResponse.usage);
+        
+        let finalReport = reportResponse?.choices?.[0]?.message?.content ||
+            this._generateDataTablesFallback(intermediateSteps, sources);
+        
+        console.log(`[DeepResearchAgent] ✅ 数据挖掘报告生成成功`);
+        return finalReport;
+        
+    } catch (error) {
+        console.error('[DeepResearchAgent] ❌ 数据挖掘报告生成失败:', error);
+        return this._generateDataTablesFallback(intermediateSteps, sources);
+    }
+}
+
+// 🔥 新增：数据表格降级方案
+_generateDataTablesFallback(intermediateSteps, sources) {
+    const tables = [];
+    
+    intermediateSteps.forEach((step, index) => {
+        if (step.success && step.observation) {
+            // 提取表格数据
+            const extractedTables = this._extractTablesFromText(step.observation);
+            if (extractedTables.length > 0) {
+                tables.push(`## 步骤 ${index+1} 收集的数据\n${extractedTables.join('\n')}`);
+            }
+        }
+    });
+    
+    if (tables.length > 0) {
+        return `# 数据收集报告 (降级方案)\n\n${tables.join('\n\n')}\n\n## 资料来源\n${sources.map(s => `- ${s.title}: ${s.url}`).join('\n')}`;
+    } else {
+        return `# 数据收集报告\n\n## 提示\n系统收集了 ${intermediateSteps.length} 个步骤的数据，但未能提取到结构化表格。\n\n请检查数据收集的完整性。`;
+    }
+}
+
+// 🔥 新增：提取所有结构化数据
+_extractAllStructuredData(intermediateSteps) {
+    const dataSections = [];
+    
+    intermediateSteps.forEach((step, index) => {
+        if (step.success && step.observation) {
+            // 提取表格数据
+            const tables = this._extractTablesFromText(step.observation);
+            if (tables.length > 0) {
+                dataSections.push(`## 步骤 ${index+1} 数据\n${tables.join('\n')}`);
+            }
+            
+            // 提取列表数据
+            const lists = this._extractListsFromText(step.observation);
+            if (lists.length > 0) {
+                dataSections.push(`## 步骤 ${index+1} 列表\n${lists.join('\n')}`);
+            }
+        }
+    });
+    
+    return dataSections.join('\n\n');
+}
 
 /**
  * 🎯 [最终完美版] 自适应参考文献生成器 (Adaptive IEEE Citation Generator)

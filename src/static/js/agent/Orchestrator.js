@@ -310,7 +310,8 @@ ${cleanTopic}
             '行业分析模式': 'business',
             '技术实现模式': 'technical',
             '深度研究模式': 'deep',
-            '调试模式': 'standard'
+            '调试模式': 'standard',
+            '数据挖掘模式': 'data_mining'
         };
 
         const lowerMessage = userMessage.trim().toLowerCase();
