@@ -114,7 +114,7 @@ ${specificGuidance}
 **强制修正要求**:
 1.  **必须**严格遵循正确的 JSON 语法。
 2.  **特别注意**: 在 JSON 字符串中，请勿使用未被引号包裹的关键字（如 \`AND\`）。
-3.  **请重新生成**完整的"思考"和"行动"/"最终答案"块，并确保 JSON 参数是有效的。
+3.  **请重新生成**完整的“思考”和“行动”/“最终答案”块，并确保 JSON 参数是有效的。
 `;
     }
 
@@ -477,7 +477,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
             try {
                 // 🟢 步骤 C: 呼叫专家模型 (独立上下文)
-                // 这里就是您说的"同模型但不同窗口"
+                // 这里就是您说的“同模型但不同窗口”
                 const response = await this.chatApiHandler.completeChat({
                     messages: [{ role: 'user', content: specialistPrompt }],
                     model: 'gemini-2.5-flash-preview-09-2025', 
@@ -674,7 +674,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 if (visitedUrl) {
                     console.log(`[DeepResearchAgent] 🛑 拦截到重复/相似URL: ${url} (相似于: ${visitedUrl})`);
                     
-                    // 🎯 抛出自定义错误，利用 Agent 的解析错误重试机制实现"零迭代浪费"
+                    // 🎯 抛出自定义错误，利用 Agent 的解析错误重试机制实现“零迭代浪费”
                     const cachedStep = this._findCachedObservationForURL(visitedUrl);
                     const cachedObservation = cachedStep ? cachedStep.observation : '无缓存数据';
                     
@@ -1291,7 +1291,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 **强制修正要求**:
 1.  **必须**立即更换为**新的、未访问过的** URL。
 2.  **或者**，如果所有相关 URL 都已访问，请立即采取 \`final_answer\` 或 \`generate_outline\` 行动，或转向研究计划中的**下一个子问题**。
-3.  **请重新生成**完整的"思考"和"行动"/"最终答案"块，并确保行动是有效的。
+3.  **请重新生成**完整的“思考”和“行动”/“最终答案”块，并确保行动是有效的。
 `;
                         // 注入修正提示，并强制重试
                         this.lastDecisionText = correctionPrompt; // 伪造上次输出，用于生成修正提示
@@ -1399,7 +1399,7 @@ const filteredSources = this._filterUsedSources(uniqueSources, finalReport);
 console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
 
 // 2. 清理幻觉章节 (Cleaning)
-// 截断模型自行生成的"资料来源"部分，防止与系统生成的重复或格式不统一
+// 截断模型自行生成的“资料来源”部分，防止与系统生成的重复或格式不统一
 const sourceKeywords = ["资料来源", "参考文献", "Sources", "References", "参考资料清单"];
 let cleanedReport = finalReport;
 
@@ -1407,7 +1407,7 @@ for (const keyword of sourceKeywords) {
     const regex = new RegExp(`(##|###)\\s*${keyword}`, "i");
     const match = cleanedReport.match(regex);
     if (match) {
-        console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的"${keyword}"章节，正在执行自动清理...`);
+        console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的“${keyword}”章节，正在执行自动清理...`);
         cleanedReport = cleanedReport.substring(0, match.index);
         break;
     }
@@ -1425,7 +1425,7 @@ if (this.generatedImages.size > 0) {
         
         // 检查是否已存在（包括占位符或Base64）
         if (!cleanedReport.includes(placeholder) && !cleanedReport.includes(base64Snippet)) {
-            console.warn(`[DeepResearchAgent] ⚠️ 发现"遗失"的图片 ${imageId}，强制追加占位符。`);
+            console.warn(`[DeepResearchAgent] ⚠️ 发现“遗失”的图片 ${imageId}，强制追加占位符。`);
             cleanedReport += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](${placeholder})`;
         }
     });
@@ -1484,118 +1484,6 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         
         // 🎯 4.3. 调用性能记录方法
         this._recordTemporalPerformance(temporalQualityReport);
-        
-        // =================================================================
-        // 🔥🔥🔥 阶段4.5: 异步生成Word格式报告（完整异步方案）🔥🔥🔥
-        // =================================================================
-        console.log('[DeepResearchAgent] 阶段4.5: 异步生成Word格式报告...');
-
-        // 构建Word生成任务
-        const wordGenerationTask = async () => {
-            try {
-                console.log(`[DeepResearchAgent] 开始异步Word生成，报告长度: ${cleanedReport.length}字符`);
-                
-                // 1. 检查报告长度，避免生成过大文件
-                if (cleanedReport.length > 200000) { // 20万字符限制
-                    console.warn('[DeepResearchAgent] ⚠️ 报告过长，跳过Word生成');
-                    return {
-                        success: false,
-                        error: '报告过长，跳过Word生成',
-                        skip_reason: 'content_too_long',
-                        report_length: cleanedReport.length
-                    };
-                }
-                
-                // 2. 调用现有方法生成Word文档
-                const startTime = Date.now();
-                const wordResult = await this._generateWordDocument(cleanedReport, uiTopic);
-                const endTime = Date.now();
-                
-                console.log(`[DeepResearchAgent] Word生成耗时: ${endTime - startTime}ms`);
-                
-                return wordResult;
-                
-            } catch (error) {
-                console.error('[DeepResearchAgent] ❌ Word文档生成异常:', error);
-                return {
-                    success: false,
-                    error: error.message,
-                    skip_reason: 'exception',
-                    stack_trace: error.stack
-                };
-            }
-        };
-
-        // 3. 立即启动异步任务（不阻塞主线程）
-        const wordPromise = wordGenerationTask();
-
-        // 4. 添加超时处理（30秒超时）
-        const wordTimeoutPromise = new Promise(resolve => {
-            setTimeout(() => {
-                resolve({
-                    success: false,
-                    error: 'Word生成超时（30秒）',
-                    skip_reason: 'timeout'
-                });
-            }, 30000);
-        });
-
-        // 5. 并行执行，处理结果
-        Promise.race([wordPromise, wordTimeoutPromise])
-            .then(wordResult => {
-                if (wordResult.success) {
-                    console.log(`[DeepResearchAgent] ✅ Word文档异步生成成功: ${wordResult.fileName}`);
-                    
-                    // 触发文件生成事件
-                    this.callbackManager.invokeEvent('on_file_generated', {
-                        run_id: runId,
-                        data: {
-                            type: 'word',
-                            title: wordResult.fileName,
-                            data_base64: wordResult.data_base64,
-                            size: wordResult.size,
-                            generated_at: wordResult.generatedAt,
-                            word_count: wordResult.wordCount || 0,
-                            note: `研究报告Word版本，${wordResult.wordCount || 0}字`
-                        }
-                    });
-                    
-                    // 可选：更新Word生成状态
-                    this.callbackManager.invokeEvent('on_word_document_status', {
-                        run_id: runId,
-                        data: {
-                            status: 'success',
-                            file_name: wordResult.fileName,
-                            size: wordResult.size
-                        }
-                    });
-                    
-                } else {
-                    console.warn(`[DeepResearchAgent] ⚠️ Word文档生成失败: ${wordResult.error}`);
-                    
-                    // 发送失败通知（可选）
-                    this.callbackManager.invokeEvent('on_word_document_status', {
-                        run_id: runId,
-                        data: {
-                            status: 'failed',
-                            error: wordResult.error,
-                            skip_reason: wordResult.skip_reason
-                        }
-                    });
-                }
-            })
-            .catch(finalError => {
-                console.error('[DeepResearchAgent] ❌ Word文档生成最终错误:', finalError);
-                // 静默失败
-            });
-
-        // 6. 构建返回结果（不等待Word生成）
-        result.word_document = {
-            status: 'processing',
-            message: 'Word文档正在后台生成中...',
-            estimated_time: 30000, // 预估30秒
-            generated_at: null
-        };
         
         // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
         await this.callbackManager.invokeEvent('on_research_end', {
@@ -1711,7 +1599,7 @@ ${promptFragment}
 **✅ 核心要求:**
 - **自主生成标题:** 基于主题和核心发现，为报告创建一个精准的标题。
 - **章节结构 (最高指示):**
-  - **如果**【原始用户指令】中包含明确的"Outline"或"提纲"，**必须**使用该提纲中的**精确文字**作为报告的章节标题（## 和 ###）。
+  - **如果**【原始用户指令】中包含明确的“Outline”或“提纲”，**必须**使用该提纲中的**精确文字**作为报告的章节标题（## 和 ###）。
   - **否则**（用户未指定提纲），则将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
 - **内容填充:** 用对应研究步骤的详细证据数据来填充该章节。
 - **引用来源 (强制)**: **必须**严格使用 **[x]** 编号格式引用【资料来源索引】中的来源。
@@ -2541,7 +2429,7 @@ _filterUsedSources(sources, reportContent) {
         const summarizerPrompt = `你是一个专业的技术信息分析师。基于"主要研究主题"，从以下原始文本中提取最关键和相关的信息，创建一个详细的技术摘要。
 
 **严格的摘要要求**：
-1. 📊 **数据绝对保留**: 必须保留原文中出现的所有统计数据、年份、数值、单位（如"万人"、"亿元"）。这是最高优先级！
+1. 📊 **数据绝对保留**: 必须保留原文中出现的所有统计数据、年份、数值、单位（如“万人”、“亿元”）。这是最高优先级！
 2. 📉 **表格重构**: 如果原文包含表格数据，请将其转换为 Markdown 表格格式保留。
 3. 🔧 **保留技术规格**：模型名称、参数数量、上下文长度、技术特性
 4. 💡 **保持核心结论**：研究发现、比较结果、优势劣势分析
@@ -3542,406 +3430,6 @@ _checkURLDuplicate(url) {
     }
     return null; // 没有相似或重复的 URL
 }
-
-    // 🔥 步骤1：添加Word文档生成方法
-    /**
-     * 🎯 生成Word文档的Python代码
-     */
-    _buildWordGenerationCode(reportContent, topic) {
-        const safeReportContent = JSON.stringify(reportContent);
-        const timestamp = new Date().toISOString().split('T')[0];
-        const fileName = `${topic.replace(/[^\w\u4e00-\u9fa5]/g, '_')}_研究报告_${timestamp}.docx`;
-        
-        return `
-import json
-import base64
-from docx import Document
-from docx.shared import Inches, Pt, RGBColor, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.style import WD_STYLE_TYPE
-from docx.oxml.ns import qn
-import io
-import re
-from datetime import datetime
-
-# ==================== 核心转换函数 ====================
-def markdown_to_word(doc, markdown_content):
-    """将Markdown转换为Word，保持原有格式"""
-    
-    lines = markdown_content.split('\\n')
-    i = 0
-    line_count = len(lines)
-    
-    while i < line_count:
-        line = lines[i]
-        
-        # 1. 空行处理
-        if line.strip() == '':
-            doc.add_paragraph()
-            i += 1
-            continue
-            
-        # 2. 标题处理
-        heading_match = re.match(r'^(#+)\\s+(.+)$', line)
-        if heading_match:
-            heading_level = len(heading_match.group(1))
-            heading_text = heading_match.group(2)
-            
-            # Word标题级别映射
-            if heading_level == 1:
-                para = doc.add_heading(heading_text, level=0)
-            elif heading_level == 2:
-                para = doc.add_heading(heading_text, level=1)
-            elif heading_level == 3:
-                para = doc.add_heading(heading_text, level=2)
-            elif heading_level == 4:
-                para = doc.add_heading(heading_text, level=3)
-            else:
-                para = doc.add_heading(heading_text, level=4)
-            
-            i += 1
-            continue
-        
-        # 3. 列表处理
-        list_match = re.match(r'^(\\s*)([-*+]|\\d+\\.)\\s+(.+)$', line)
-        if list_match:
-            indent = len(list_match.group(1)) // 2
-            list_type = list_match.group(2)
-            list_text = list_match.group(3)
-            
-            # 收集连续列表项
-            list_items = []
-            j = i
-            while j < line_count and re.match(r'^(\\s*)([-*+]|\\d+\\.)\\s+', lines[j]):
-                list_items.append(lines[j])
-                j += 1
-            
-            # 处理每个列表项
-            for item in list_items:
-                item_match = re.match(r'^(\\s*)([-*+]|\\d+\\.)\\s+(.+)$', item)
-                if item_match:
-                    item_indent = len(item_match.group(1)) // 2
-                    item_type = item_match.group(2)
-                    item_text = item_match.group(3)
-                    
-                    if item_type in ['-', '*', '+']:
-                        # 无序列表
-                        para = doc.add_paragraph(style='List Bullet')
-                        para.paragraph_format.left_indent = Cm(0.5 * item_indent)
-                    else:
-                        # 有序列表
-                        para = doc.add_paragraph(style='List Number')
-                        para.paragraph_format.left_indent = Cm(0.5 * item_indent)
-                    
-                    para.add_run(item_text)
-            
-            i = j
-            continue
-        
-        # 4. 表格处理
-        if '|' in line and i + 1 < line_count and re.match(r'^[\\s|: -]+$', lines[i + 1]):
-            # 收集整个表格
-            table_start = i
-            table_end = i
-            
-            # 找到表格结束行
-            while table_end < line_count and '|' in lines[table_end]:
-                table_end += 1
-            
-            table_lines = lines[table_start:table_end]
-            
-            if len(table_lines) >= 3:
-                # 解析表格数据
-                rows = []
-                for table_line in table_lines:
-                    cells = [cell.strip() for cell in table_line.split('|') if cell.strip()]
-                    if cells:
-                        rows.append(cells)
-                
-                if rows:
-                    # 创建Word表格
-                    table = doc.add_table(rows=len(rows), cols=len(rows[0]))
-                    table.style = 'Light Grid Accent 1'
-                    
-                    # 填充数据
-                    for row_idx, row in enumerate(rows):
-                        for col_idx, cell in enumerate(row):
-                            if col_idx < len(rows[0]):
-                                table.cell(row_idx, col_idx).text = cell
-                
-                i = table_end
-                continue
-        
-        # 5. 代码块处理
-        if line.trim().startsWith('\`\`\`'):
-            # 收集代码块
-            code_lines = []
-            i += 1  # 跳过开始的 \`\`\`
-            
-            while i < line_count and not lines[i].trim().startsWith('\`\`\`'):
-                code_lines.append(lines[i])
-                i += 1
-            
-            if i < line_count:
-                i += 1  # 跳过结束的 \`\`\`
-            
-            if code_lines:
-                code_text = '\\n'.join(code_lines)
-                para = doc.add_paragraph()
-                run = para.add_run(code_text)
-                run.font.name = 'DejaVu Sans Mono'  # ✅ 修改：使用Docker中的等宽字体
-                run.font.size = Pt(9)
-                para.paragraph_format.left_indent = Cm(0.5)
-                continue
-        
-        # 6. 图片处理
-        img_match = re.search(r'!\\[([^\\]]*)\\]\\((data:image/[^)]+)\\)', line)
-        if img_match:
-            alt_text = img_match.group(1)
-            img_data = img_match.group(2)
-            
-            # 提取Base64
-            if img_data.startswith('data:image'):
-                base64_str = img_data.split(',')[1]
-                try:
-                    img_bytes = base64.b64decode(base64_str)
-                    img_stream = io.BytesIO(img_bytes)
-                    
-                    # 添加图片
-                    para = doc.add_paragraph()
-                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = para.add_run()
-                    run.add_picture(img_stream, width=Cm(14))
-                    
-                    # 添加图片标题
-                    if alt_text:
-                        caption = doc.add_paragraph(alt_text)
-                        caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        caption.style = 'Caption'
-                except Exception as img_err:
-                    doc.add_paragraph(f"[图片加载失败: {alt_text}]")
-            
-            i += 1
-            continue
-        
-        # 7. 普通段落（处理粗体、斜体等格式）
-        if line.strip():
-            # 检测是否为引用块
-            if line.trim().startswith('>'):
-                quote_text = line.replace('>', '').strip()
-                para = doc.add_paragraph(quote_text)
-                para.style = 'Intense Quote'
-            else:
-                # 处理内联格式
-                para = doc.add_paragraph()
-                
-                # 简单格式处理
-                parts = re.split(r'(\\*\\*|__|\\\`|\\[|\\])', line)
-                is_bold = False
-                is_italic = False
-                is_code = False
-                
-                for part in parts:
-                    if part == '**':
-                        is_bold = not is_bold
-                    elif part == '__':
-                        is_italic = not is_italic
-                    elif part == '\`':
-                        is_code = not is_code
-                    else:
-                        run = para.add_run(part)
-                        if is_bold:
-                            run.bold = True
-                        if is_italic:
-                            run.italic = True
-                        if is_code:
-                            run.font.name = 'DejaVu Sans Mono'  # ✅ 修改：使用Docker中的等宽字体
-                            run.font.size = Pt(9)
-        
-        i += 1
-    
-    return doc
-
-# ==================== 主函数 ====================
-def create_word_document(markdown_content, title="${topic}"):
-    # 创建文档
-    doc = Document()
-    
-    # ✅ 修改：设置全局中英文字体，使用Docker中已安装的字体
-    styles = doc.styles
-    for style in styles:
-        if style.type == WD_STYLE_TYPE.PARAGRAPH or style.type == WD_STYLE_TYPE.CHARACTER:
-            font = style.font
-            font.name = 'DejaVu Sans'  # ✅ 修改：使用Docker中已安装的字体
-            r = font.element.get_or_add_rPr()
-            rPr = r.get_or_add_rPr()
-            rFonts = rPr.get_or_add_rFonts()
-            rFonts.set(qn('w:eastAsia'), 'WenQuanYi Micro Hei')  # ✅ 修改：使用字体英文名
-            
-    # 设置默认正文样式
-    doc.styles['Normal'].font.size = Pt(10.5)
-    
-    # 设置文档属性
-    doc.core_properties.title = title
-    doc.core_properties.author = "DeepResearch Agent"
-    doc.core_properties.keywords = "AI研究报告"
-    doc.core_properties.created = datetime.now()
-    
-    # 添加主标题
-    title_para = doc.add_heading(title, 0)
-    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    # 添加生成信息
-    info_para = doc.add_paragraph()
-    info_para.add_run("生成时间: ").bold = True
-    info_para.add_run(datetime.now().strftime("%Y年%m月%d日 %H:%M:%S"))
-    info_para.add_run("\\n生成工具: ").bold = True
-    info_para.add_run("DeepResearch Agent 智能研究系统")
-    info_para.add_run("\\n报告字数: ").bold = True
-    info_para.add_run(str(len(markdown_content)))
-    
-    # 添加分隔线
-    sep_para = doc.add_paragraph()
-    sep_para.add_run("─" * 40).bold = True
-    sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    # 转换Markdown内容
-    markdown_to_word(doc, markdown_content)
-    
-    # 添加页脚
-    section = doc.sections[0]
-    footer = section.footer
-    footer_para = footer.paragraphs[0]
-    footer_para.text = f"{title} - 第 \\[页码\\] 页 / 共 \\[总页数\\] 页"
-    footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    return doc
-
-# ==================== 执行入口 ====================
-try:
-    # 加载报告内容
-    report_content = json.loads(${safeReportContent})
-    
-    # 生成Word文档
-    doc = create_word_document(report_content)
-    
-    # 保存到内存
-    output = io.BytesIO()
-    doc.save(output)
-    output.seek(0)
-    
-    # 转换为Base64
-    doc_bytes = output.getvalue()
-    doc_base64 = base64.b64encode(doc_bytes).decode('utf-8')
-    
-    # 返回标准格式
-    result = {
-        "type": "word",
-        "title": "${fileName}",
-        "data_base64": doc_base64,
-        "size": len(doc_bytes),
-        "word_count": len(report_content),
-        "generated_at": datetime.now().isoformat()
-    }
-    
-    print(json.dumps(result))
-    
-except Exception as e:
-    import traceback
-    error_result = {
-        "type": "error",
-        "message": f"Word文档生成失败: {str(e)}",
-        "traceback": traceback.format_exc()[-500:]  # 只返回最后500字符
-    }
-    print(json.dumps(error_result))
-`;
-    }
-
-    /**
-     * 🎯 执行Word文档生成
-     */
-    async _generateWordDocument(reportContent, topic) {
-        console.log('[DeepResearchAgent] 开始生成Word文档...');
-        
-        try {
-            // 构建Python代码
-            const pythonCode = this._buildWordGenerationCode(reportContent, topic);
-            
-            console.log(`[DeepResearchAgent] Word生成代码长度: ${pythonCode.length}字符`);
-            
-            // 调用现有的python_sandbox工具
-            const result = await this._executeToolCall(
-                'python_sandbox',
-                { code: pythonCode },
-                'standard',
-                (toolName, params, success, result) => {
-                    console.log(`[DeepResearchAgent] Word生成工具调用: ${success ? '成功' : '失败'}`);
-                }
-            );
-            
-            if (result.toolSuccess) {
-                try {
-                    const outputData = JSON.parse(result.rawObservation);
-                    
-                    if (outputData.type === 'word' && outputData.data_base64) {
-                        console.log(`[DeepResearchAgent] ✅ Word文档生成成功: ${outputData.title}, 大小: ${outputData.size}字节`);
-                        
-                        return {
-                            success: true,
-                            fileName: outputData.title,
-                            data_base64: outputData.data_base64,
-                            size: outputData.size,
-                            wordCount: outputData.word_count || 0,
-                            generatedAt: outputData.generated_at || new Date().toISOString()
-                        };
-                    } else if (outputData.type === 'error') {
-                        console.error('[DeepResearchAgent] ❌ Word文档生成错误:', outputData.message);
-                        return {
-                            success: false,
-                            error: outputData.message,
-                            fallbackContent: reportContent.substring(0, 500) + '...'
-                        };
-                    }
-                } catch (parseError) {
-                    console.error('[DeepResearchAgent] ❌ Word文档解析失败:', parseError);
-                    // 尝试直接从输出中提取信息
-                    if (result.rawObservation.includes('data_base64')) {
-                        try {
-                            const match = result.rawObservation.match(/"data_base64"\s*:\s*"([^"]+)"/);
-                            if (match) {
-                                return {
-                                    success: true,
-                                    fileName: `${topic}_研究报告.docx`,
-                                    data_base64: match[1],
-                                    size: match[1].length * 3 / 4, // 估算大小
-                                    generatedAt: new Date().toISOString()
-                                };
-                            }
-                        } catch (e) {
-                            // 忽略
-                        }
-                    }
-                }
-            }
-            
-            // 降级方案
-            console.warn('[DeepResearchAgent] ⚠️ Word文档生成失败，返回降级方案');
-            return {
-                success: false,
-                error: 'Word文档生成失败',
-                fallbackContent: reportContent
-            };
-            
-        } catch (error) {
-            console.error('[DeepResearchAgent] ❌ Word文档生成异常:', error);
-            return {
-                success: false,
-                error: error.message,
-                fallbackContent: reportContent.substring(0, 1000) + '...'
-            };
-        }
-    }
-
     resetInjectionState() {
         this.injectedTools.clear();
         this.currentSessionId = `session_${Date.now()}`;
