@@ -2471,17 +2471,156 @@ _filterUsedSources(sources, reportContent) {
 }
 
     // ✨ 新增：信息增益计算
-    _calculateInformationGain(newObservation, history) {
-        const previousText = history.map(h => h.observation).join(' ');
-        const newText = newObservation;
-        
-        // 简单基于新词出现的计算（可升级为更复杂的NLP方法）
-        const previousWords = new Set(previousText.split(/\s+/));
-        const newWords = newText.split(/\s+/).filter(word => word.length > 2);
-        
-        const novelWords = newWords.filter(word => !previousWords.has(word));
-        return novelWords.length / Math.max(newWords.length, 1);
+// ✨ 改进版：多维度信息增益计算（保持向后兼容）
+_calculateInformationGain(newObservation, history, config) {
+    // 🎯 参数兼容处理
+    const useConfig = typeof config === 'object' ? config : {
+        useNovelty: true,
+        useStructure: true,
+        useEntity: false,  // 默认关闭，技术研究时手动开启
+        useLengthRatio: true,
+        decayFactor: 0.9
+    };
+    
+    // 1. 基础参数验证
+    const previousText = history.map(h => h.observation || '').join(' ');
+    const newText = newObservation || '';
+    
+    // 短文本保护
+    if (!newText || newText.length < 50) {
+        return 0.1; // 基础增益，鼓励继续探索
     }
+    
+    let totalScore = 0;
+    let activeDimensions = 0;
+    
+    // 2. 词汇新颖性（核心维度，权重40%）
+    if (useConfig.useNovelty !== false) {
+        const noveltyScore = this._calculateNoveltyScore(newText, previousText);
+        totalScore += noveltyScore * 0.4;
+        activeDimensions++;
+    }
+    
+    // 3. 结构多样性（权重30%）
+    if (useConfig.useStructure !== false) {
+        const structureScore = this._calculateStructureScore(newText);
+        totalScore += structureScore * 0.3;
+        activeDimensions++;
+    }
+    
+    // 4. 长度比率（权重20%）
+    if (useConfig.useLengthRatio !== false) {
+        const lengthScore = this._calculateLengthScore(newText, previousText);
+        totalScore += lengthScore * 0.2;
+        activeDimensions++;
+    }
+    
+    // 5. 技术实体（可选，权重10%）
+    if (useConfig.useEntity === true) {
+        const entityScore = this._calculateEntityScore(newText, previousText);
+        totalScore += entityScore * 0.1;
+        activeDimensions++;
+    }
+    
+    // 避免除零
+    if (activeDimensions === 0) {
+        return 0.1;
+    }
+    
+    // 6. 加权平均
+    const rawScore = totalScore / activeDimensions;
+    
+    // 7. 历史衰减（防止无限迭代）
+    const decayFactor = useConfig.decayFactor || 0.9;
+    const decay = Math.pow(decayFactor, Math.max(0, history.length - 3)); // 从第4步开始衰减
+    const finalScore = rawScore * decay;
+    
+    // 8. 返回[0,1]范围内的值
+    return Math.max(0.05, Math.min(0.95, finalScore));
+}
+
+// ✨ 新增：词汇新颖性计算（私有方法）
+_calculateNoveltyScore(newText, previousText) {
+    // 简化的分词和过滤
+    const tokenize = (text) => {
+        return text
+            .toLowerCase()
+            .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')
+            .split(/\s+/)
+            .filter(word => {
+                if (word.length < 2) return false;
+                if (/^\d+$/.test(word)) return false;
+                // 常见停用词（可根据需求扩展）
+                const stopWords = ['the', 'and', 'for', 'are', 'with', 'this', 'that', 
+                                  '是', '的', '了', '在', '和', '与', '或'];
+                return !stopWords.includes(word);
+            });
+    };
+    
+    const previousWords = new Set(tokenize(previousText));
+    const newWords = tokenize(newText);
+    
+    if (newWords.length === 0) return 0.1;
+    
+    // 新词比例
+    const novelWords = newWords.filter(word => !previousWords.has(word));
+    const basicNovelty = novelWords.length / newWords.length;
+    
+    return Math.max(0.1, Math.min(0.9, basicNovelty));
+}
+
+// ✨ 新增：结构多样性计算
+_calculateStructureScore(newText) {
+    // 检测结构化内容
+    let features = 0;
+    const maxFeatures = 6;
+    
+    if (/\`\`\`[\s\S]*?\`\`\`/.test(newText)) features++; // 代码块
+    if (/\|[\s\S]*?\|/.test(newText)) features++;         // 表格
+    if (/^\s*[\-\*\+]\s|\d+\.\s/.test(newText)) features++; // 列表
+    if (/^>\s/.test(newText)) features++;                 // 引用块
+    if (/^#{1,3}\s/.test(newText)) features++;            // 标题
+    if ((newText.match(/\n\s*\n/g) || []).length >= 3) features++; // 多段落
+    
+    return Math.min(features / maxFeatures, 1);
+}
+
+    // ✨ 新增：长度比率计算
+    _calculateLengthScore(newText, previousText) {
+    if (previousText.length === 0) return 0.5; // 没有历史时中等增益
+    
+    const ratio = newText.length / previousText.length;
+    // 归一化：ratio=1得0.5分，ratio=2得1分，ratio=0.5得0分
+    const normalized = Math.max(0, Math.min(1, (ratio - 0.5) * 1.0));
+    return normalized;
+}
+
+// ✨ 新增：技术实体检测（技术研究场景优化）
+_calculateEntityScore(newText, previousText) {
+    // 技术术语模式
+    const patterns = [
+        /\b[A-Z]{2,}\b/g,           // 大写缩写（CUDA, GPU, API）
+        /\b[\w\-]+(?:\.\d+)+\b/g,   // 版本号（13.1, TensorFlow-2.0）
+        /\b(?:SDK|IDE|IR|SIMD|TPU|HPC)\b/gi // 技术缩写
+    ];
+    
+    const extractEntities = (text) => {
+        const entities = new Set();
+        patterns.forEach(pattern => {
+            const matches = text.match(pattern) || [];
+            matches.forEach(match => entities.add(match.toLowerCase()));
+        });
+        return entities;
+    };
+    
+    const newEntities = extractEntities(newText);
+    const previousEntities = extractEntities(previousText);
+    
+    if (newEntities.size === 0) return 0;
+    
+    const novelEntities = Array.from(newEntities).filter(e => !previousEntities.has(e));
+    return novelEntities.length / newEntities.size;
+}
 
     // ✨ 新增：计划完成度计算
     _calculatePlanCompletion(plan, history) {
