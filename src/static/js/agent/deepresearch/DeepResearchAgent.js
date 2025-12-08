@@ -4,6 +4,8 @@ import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
 // 🎯 核心修改：从 ReportTemplates.js 导入工具函数
 import { getTemplateByResearchMode, getTemplatePromptFragment } from './ReportTemplates.js';
+// 🎯 新增：导入 DataMiningEngine
+import { DataMiningEngine } from './DataMiningEngine.js';
 
 export class DeepResearchAgent {
     constructor(chatApiHandler, tools, callbackManager, config = {}) {
@@ -65,6 +67,13 @@ export class DeepResearchAgent {
         // 🎯 新增：将 intermediateSteps 提升为类属性以支持状态注入
         this.intermediateSteps = [];
 
+        // 🎯 新增：初始化 DataMiningEngine
+        this.dataMiningEngine = null;
+        if (config.dataMiningConfig) {
+            this.dataMiningEngine = new DataMiningEngine(config.dataMiningConfig);
+            console.log('[DeepResearchAgent] DataMiningEngine 初始化完成');
+        }
+
         console.log(`[DeepResearchAgent] 初始化完成，可用研究工具: ${Object.keys(tools).join(', ')}`);
     }
 
@@ -114,7 +123,7 @@ ${specificGuidance}
 **强制修正要求**:
 1.  **必须**严格遵循正确的 JSON 语法。
 2.  **特别注意**: 在 JSON 字符串中，请勿使用未被引号包裹的关键字（如 \`AND\`）。
-3.  **请重新生成**完整的“思考”和“行动”/“最终答案”块，并确保 JSON 参数是有效的。
+3.  **请重新生成**完整的"思考"和"行动"/"最终答案"块，并确保 JSON 参数是有效的。
 `;
     }
 
@@ -242,7 +251,8 @@ ${specificGuidance}
             business: "大纲应侧重于：市场背景、竞争格局、核心发现、商业影响、战略建议。必须有明确的商业洞察。",
             technical: "大纲应侧重于：问题定义、技术架构、实现细节、性能评估、最佳实践。必须包含技术深度。",
             deep: "大纲需要体现多维度、辩证的分析，包含问题解构、多角度论证、解决方案评估和创新性见解。",
-            standard: "大纲应结构清晰，覆盖主题的核心方面，逻辑连贯，易于理解。"
+            standard: "大纲应结构清晰，覆盖主题的核心方面，逻辑连贯，易于理解。",
+            datamining: "大纲应侧重于：数据收集概况、数据质量评估、结构化数据呈现、数据对比分析、数据可视化建议。必须以数据表格为核心。"
         };
 
         const prompt = `
@@ -477,7 +487,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
             try {
                 // 🟢 步骤 C: 呼叫专家模型 (独立上下文)
-                // 这里就是您说的“同模型但不同窗口”
+                // 这里就是您说的"同模型但不同窗口"
                 const response = await this.chatApiHandler.completeChat({
                     messages: [{ role: 'user', content: specialistPrompt }],
                     model: 'gemini-2.5-flash-preview-09-2025', 
@@ -674,7 +684,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 if (visitedUrl) {
                     console.log(`[DeepResearchAgent] 🛑 拦截到重复/相似URL: ${url} (相似于: ${visitedUrl})`);
                     
-                    // 🎯 抛出自定义错误，利用 Agent 的解析错误重试机制实现“零迭代浪费”
+                    // 🎯 抛出自定义错误，利用 Agent 的解析错误重试机制实现"零迭代浪费"
                     const cachedStep = this._findCachedObservationForURL(visitedUrl);
                     const cachedObservation = cachedStep ? cachedStep.observation : '无缓存数据';
                     
@@ -908,7 +918,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             // 查找最近的数据
             const recentData = Array.from(this.dataBus.entries())
                 .filter(([key, data]) => data.metadata.contentType === 'structured_data')
-                .sort((a, b) => new Date(b.metadata.timestamp).getTime() - new Date(a.metadata.timestamp).getTime());
+                .sort((a, b) => new Date(b.metadata.timestamp).getTime() - new Date(a.data.metadata.timestamp).getTime());
             
             if (recentData.length > 0) {
                 const [key, data] = recentData;
@@ -1051,8 +1061,19 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         this.lastParserError = null;
         this.lastDecisionText = null;
         
-        // 🔥 核心修改：在deep模式下，提高终止的难度
-        const noGainThreshold = (detectedMode === 'deep') ? 3 : 2;
+        // 🔥 核心修改：在数据挖掘模式下，使用DataMiningEngine的完成条件检查
+        const isDataMiningMode = detectedMode === 'datamining';
+        let noGainThreshold;
+        
+        if (isDataMiningMode && this.dataMiningEngine) {
+            // 使用数据挖掘引擎的配置
+            const config = this.dataMiningEngine.config;
+            noGainThreshold = config.noGainThreshold || 1;
+            console.log(`[DeepResearchAgent] 数据挖掘模式，使用专用完成条件检查，noGainThreshold: ${noGainThreshold}`);
+        } else {
+            // 其他模式使用原有逻辑
+            noGainThreshold = (detectedMode === 'deep') ? 3 : 2;
+        }
         
         let allSources = [];
         let finalAnswerFromIteration = null;
@@ -1069,6 +1090,21 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
             const planCompletion = this._calculatePlanCompletion(researchPlan, this.intermediateSteps); // 计算完成度
+            
+            // 🎯 数据挖掘模式：使用专用完成条件检查
+            let shouldTerminate = false;
+            if (isDataMiningMode && this.dataMiningEngine) {
+                shouldTerminate = this.dataMiningEngine.checkDataMiningCompletion(
+                    this.intermediateSteps,
+                    allSources,
+                    iterations
+                );
+                
+                if (shouldTerminate) {
+                    console.log(`[DeepResearchAgent] 数据挖掘完成条件满足，提前终止迭代`);
+                    break;
+                }
+            }
             
             await this.callbackManager.invokeEvent('on_research_progress', {
                 run_id: runId,
@@ -1215,7 +1251,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     // ✅✅✅ --- 核心修复：传入工具名称以应用不同的摘要策略 --- ✅✅✅
                     const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
                     
-                    // ✨ 评估信息增益
+                    // ✨ 评估信息增益 - 使用新的多维度计算方法
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, this.intermediateSteps);
                     this.metrics.informationGain.push(currentInfoGain);
                     
@@ -1291,7 +1327,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 **强制修正要求**:
 1.  **必须**立即更换为**新的、未访问过的** URL。
 2.  **或者**，如果所有相关 URL 都已访问，请立即采取 \`final_answer\` 或 \`generate_outline\` 行动，或转向研究计划中的**下一个子问题**。
-3.  **请重新生成**完整的“思考”和“行动”/“最终答案”块，并确保行动是有效的。
+3.  **请重新生成**完整的"思考"和"行动"/"最终答案"块，并确保行动是有效的。
 `;
                         // 注入修正提示，并强制重试
                         this.lastDecisionText = correctionPrompt; // 伪造上次输出，用于生成修正提示
@@ -1385,7 +1421,44 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             finalReport = finalAnswerFromIteration;
         } else {
             console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
-            finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode, originalUserInstruction); // 🎯 修复
+            
+            // 🎯 数据挖掘模式：使用专用报告生成
+            if (isDataMiningMode && this.dataMiningEngine) {
+                console.log('[DeepResearchAgent] 使用DataMiningEngine生成数据挖掘报告');
+                
+                // 获取数据挖掘提示词片段
+                const promptFragment = this.dataMiningEngine.getPromptFragment();
+                
+                // 构建数据挖掘专用提示词
+                const dataMiningPrompt = this.dataMiningEngine.buildDataMiningPrompt(
+                    uiTopic,
+                    this.intermediateSteps,
+                    researchPlan,
+                    uniqueSources,
+                    originalUserInstruction,
+                    null, // template参数，可为空
+                    promptFragment
+                );
+                
+                try {
+                    const reportResponse = await this.chatApiHandler.completeChat({
+                        messages: [{ role: 'user', content: dataMiningPrompt }],
+                        model: this.reportModel || 'models/gemini-2.5-pro',
+                        temperature: 0.1, // 低温确保数据准确性
+                    });
+                    
+                    finalReport = reportResponse?.choices?.[0]?.message?.content ||
+                        this.dataMiningEngine.generateDataTablesFallback(this.intermediateSteps, uniqueSources);
+                    
+                    console.log('[DeepResearchAgent] ✅ 数据挖掘报告生成成功');
+                } catch (error) {
+                    console.error('[DeepResearchAgent] ❌ 数据挖掘报告生成失败:', error);
+                    finalReport = this.dataMiningEngine.generateDataTablesFallback(this.intermediateSteps, uniqueSources);
+                }
+            } else {
+                // 其他模式使用原有报告生成
+                finalReport = await this._generateFinalReport(uiTopic, this.intermediateSteps, researchPlan, uniqueSources, detectedMode, originalUserInstruction);
+            }
         }
 
 // ===========================================================================
@@ -1399,7 +1472,7 @@ const filteredSources = this._filterUsedSources(uniqueSources, finalReport);
 console.log(`[DeepResearchAgent] 资料来源过滤完成: ${uniqueSources.length} → ${filteredSources.length}`);
 
 // 2. 清理幻觉章节 (Cleaning)
-// 截断模型自行生成的“资料来源”部分，防止与系统生成的重复或格式不统一
+// 截断模型自行生成的"资料来源"部分，防止与系统生成的重复或格式不统一
 const sourceKeywords = ["资料来源", "参考文献", "Sources", "References", "参考资料清单"];
 let cleanedReport = finalReport;
 
@@ -1407,7 +1480,7 @@ for (const keyword of sourceKeywords) {
     const regex = new RegExp(`(##|###)\\s*${keyword}`, "i");
     const match = cleanedReport.match(regex);
     if (match) {
-        console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的“${keyword}”章节，正在执行自动清理...`);
+        console.warn(`[DeepResearchAgent] ⚠️ 检测到模型自行生成的"${keyword}"章节，正在执行自动清理...`);
         cleanedReport = cleanedReport.substring(0, match.index);
         break;
     }
@@ -1425,7 +1498,7 @@ if (this.generatedImages.size > 0) {
         
         // 检查是否已存在（包括占位符或Base64）
         if (!cleanedReport.includes(placeholder) && !cleanedReport.includes(base64Snippet)) {
-            console.warn(`[DeepResearchAgent] ⚠️ 发现“遗失”的图片 ${imageId}，强制追加占位符。`);
+            console.warn(`[DeepResearchAgent] ⚠️ 发现"遗失"的图片 ${imageId}，强制追加占位符。`);
             cleanedReport += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](${placeholder})`;
         }
     });
@@ -1599,7 +1672,7 @@ ${promptFragment}
 **✅ 核心要求:**
 - **自主生成标题:** 基于主题和核心发现，为报告创建一个精准的标题。
 - **章节结构 (最高指示):**
-  - **如果**【原始用户指令】中包含明确的“Outline”或“提纲”，**必须**使用该提纲中的**精确文字**作为报告的章节标题（## 和 ###）。
+  - **如果**【原始用户指令】中包含明确的"Outline"或"提纲"，**必须**使用该提纲中的**精确文字**作为报告的章节标题（## 和 ###）。
   - **否则**（用户未指定提纲），则将研究计划中的每一个 "sub_question" 直接转化为报告的一个核心章节标题。
 - **内容填充:** 用对应研究步骤的详细证据数据来填充该章节。
 - **引用来源 (强制)**: **必须**严格使用 **[x]** 编号格式引用【资料来源索引】中的来源。
@@ -1970,8 +2043,156 @@ ${promptFragment}
         return 0.1; // 默认低优先级
     }
 
+    // ✨ 改进版：多维度信息增益计算（保持向后兼容）
+    _calculateInformationGain(newObservation, history, config) {
+        // 🎯 参数兼容处理
+        const useConfig = typeof config === 'object' ? config : {
+            useNovelty: true,
+            useStructure: true,
+            useEntity: false,  // 默认关闭，技术研究时手动开启
+            useLengthRatio: true,
+            decayFactor: 0.9
+        };
+        
+        // 1. 基础参数验证
+        const previousText = history.map(h => h.observation || '').join(' ');
+        const newText = newObservation || '';
+        
+        // 短文本保护
+        if (!newText || newText.length < 50) {
+            return 0.1; // 基础增益，鼓励继续探索
+        }
+        
+        let totalScore = 0;
+        let activeDimensions = 0;
+        
+        // 2. 词汇新颖性（核心维度，权重40%）
+        if (useConfig.useNovelty !== false) {
+            const noveltyScore = this._calculateNoveltyScore(newText, previousText);
+            totalScore += noveltyScore * 0.4;
+            activeDimensions++;
+        }
+        
+        // 3. 结构多样性（权重30%）
+        if (useConfig.useStructure !== false) {
+            const structureScore = this._calculateStructureScore(newText);
+            totalScore += structureScore * 0.3;
+            activeDimensions++;
+        }
+        
+        // 4. 长度比率（权重20%）
+        if (useConfig.useLengthRatio !== false) {
+            const lengthScore = this._calculateLengthScore(newText, previousText);
+            totalScore += lengthScore * 0.2;
+            activeDimensions++;
+        }
+        
+        // 5. 技术实体（可选，权重10%）
+        if (useConfig.useEntity === true) {
+            const entityScore = this._calculateEntityScore(newText, previousText);
+            totalScore += entityScore * 0.1;
+            activeDimensions++;
+        }
+        
+        // 避免除零
+        if (activeDimensions === 0) {
+            return 0.1;
+        }
+        
+        // 6. 加权平均
+        const rawScore = totalScore / activeDimensions;
+        
+        // 7. 历史衰减（防止无限迭代）
+        const decayFactor = useConfig.decayFactor || 0.9;
+        const decay = Math.pow(decayFactor, Math.max(0, history.length - 3)); // 从第4步开始衰减
+        const finalScore = rawScore * decay;
+        
+        // 8. 返回[0,1]范围内的值
+        return Math.max(0.05, Math.min(0.95, finalScore));
+    }
 
+    // ✨ 新增：词汇新颖性计算（私有方法）
+    _calculateNoveltyScore(newText, previousText) {
+        // 简化的分词和过滤
+        const tokenize = (text) => {
+            return text
+                .toLowerCase()
+                .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')
+                .split(/\s+/)
+                .filter(word => {
+                    if (word.length < 2) return false;
+                    if (/^\d+$/.test(word)) return false;
+                    // 常见停用词（可根据需求扩展）
+                    const stopWords = ['the', 'and', 'for', 'are', 'with', 'this', 'that', 
+                                      '是', '的', '了', '在', '和', '与', '或'];
+                    return !stopWords.includes(word);
+                });
+        };
+        
+        const previousWords = new Set(tokenize(previousText));
+        const newWords = tokenize(newText);
+        
+        if (newWords.length === 0) return 0.1;
+        
+        // 新词比例
+        const novelWords = newWords.filter(word => !previousWords.has(word));
+        const basicNovelty = novelWords.length / newWords.length;
+        
+        return Math.max(0.1, Math.min(0.9, basicNovelty));
+    }
 
+    // ✨ 新增：结构多样性计算
+    _calculateStructureScore(newText) {
+        // 检测结构化内容
+        let features = 0;
+        const maxFeatures = 6;
+        
+        if (/\`\`\`[\s\S]*?\`\`\`/.test(newText)) features++; // 代码块
+        if (/\|[\s\S]*?\|/.test(newText)) features++;         // 表格
+        if (/^\s*[\-\*\+]\s|\d+\.\s/.test(newText)) features++; // 列表
+        if (/^>\s/.test(newText)) features++;                 // 引用块
+        if (/^#{1,3}\s/.test(newText)) features++;            // 标题
+        if ((newText.match(/\n\s*\n/g) || []).length >= 3) features++; // 多段落
+        
+        return Math.min(features / maxFeatures, 1);
+    }
+
+    // ✨ 新增：长度比率计算
+    _calculateLengthScore(newText, previousText) {
+        if (previousText.length === 0) return 0.5; // 没有历史时中等增益
+        
+        const ratio = newText.length / previousText.length;
+        // 归一化：ratio=1得0.5分，ratio=2得1分，ratio=0.5得0分
+        const normalized = Math.max(0, Math.min(1, (ratio - 0.5) * 1.0));
+        return normalized;
+    }
+
+    // ✨ 新增：技术实体检测（技术研究场景优化）
+    _calculateEntityScore(newText, previousText) {
+        // 技术术语模式
+        const patterns = [
+            /\b[A-Z]{2,}\b/g,           // 大写缩写（CUDA, GPU, API）
+            /\b[\w\-]+(?:\.\d+)+\b/g,   // 版本号（13.1, TensorFlow-2.0）
+            /\b(?:SDK|IDE|IR|SIMD|TPU|HPC)\b/gi // 技术缩写
+        ];
+        
+        const extractEntities = (text) => {
+            const entities = new Set();
+            patterns.forEach(pattern => {
+                const matches = text.match(pattern) || [];
+                matches.forEach(match => entities.add(match.toLowerCase()));
+            });
+            return entities;
+        };
+        
+        const newEntities = extractEntities(newText);
+        const previousEntities = extractEntities(previousText);
+        
+        if (newEntities.size === 0) return 0;
+        
+        const novelEntities = Array.from(newEntities).filter(e => !previousEntities.has(e));
+        return novelEntities.length / newEntities.size;
+    }
 
     // ✨ 新增：强化资料来源提取
     _extractSourcesFromIntermediateSteps(intermediateSteps) {
@@ -2075,7 +2296,7 @@ ${observations.substring(0, 4000)} ${observations.length > 4000 ? '...（内容�
 # 报告要求 (${template.name})
 
 1.  **格式**: 必须是完整的 Markdown 格式。
-2.  **结构**: 严格按照以下结构组织内容：
+2.  **结构**: 严格按照以下结构组织内容:
 ${config.structure.map(section => `    - ${section}`).join('\n')}
 3.  **字数**: 报告总字数应在 ${config.wordCount} 左右。
 4.  **风格**: ${config.style}
@@ -2087,11 +2308,11 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
 
     *   **原则与目的 (The Why):** 你的每一份报告都必须体现出学术的严谨性。清晰的编号引用能让读者追溯信息的源头，是验证内容准确性的唯一途径，也是一份专业报告的基石。
 
-    *   **格式与位置 (The How):**
+    *   **格式与位置 (The How)**:
         *   **引用内容**: 必须使用方括号和编号，例如 \`[1]\` 或 \`[2, 3]\`。
         *   **引用位置**: 在包含引用信息的**句子或段落结尾处**。
 
-    *   **格式示例 (The Examples):**
+    *   **格式示例 (The Examples)**:
         *   **🚫 错误示例**: \`"...这个结论很重要。来源: 网站A"\` (格式错误且不够自然)
         *   **✅ 正确示例**: \`"...这一观点在最新的研究中得到了详细阐述 [1]。"\`
         *   **✅ 正确示例**: \`"...根据分类，我们可以将其分为三类 [2, 3]。"\`
@@ -2313,19 +2534,6 @@ _filterUsedSources(sources, reportContent) {
   return finalSources;
 }
 
-    // ✨ 新增：信息增益计算
-    _calculateInformationGain(newObservation, history) {
-        const previousText = history.map(h => h.observation).join(' ');
-        const newText = newObservation;
-        
-        // 简单基于新词出现的计算（可升级为更复杂的NLP方法）
-        const previousWords = new Set(previousText.split(/\s+/));
-        const newWords = newText.split(/\s+/).filter(word => word.length > 2);
-        
-        const novelWords = newWords.filter(word => !previousWords.has(word));
-        return novelWords.length / Math.max(newWords.length, 1);
-    }
-
     // ✨ 新增：计划完成度计算
     _calculatePlanCompletion(plan, history) {
         if (!plan || !history || history.length === 0) return 0;
@@ -2429,7 +2637,7 @@ _filterUsedSources(sources, reportContent) {
         const summarizerPrompt = `你是一个专业的技术信息分析师。基于"主要研究主题"，从以下原始文本中提取最关键和相关的信息，创建一个详细的技术摘要。
 
 **严格的摘要要求**：
-1. 📊 **数据绝对保留**: 必须保留原文中出现的所有统计数据、年份、数值、单位（如“万人”、“亿元”）。这是最高优先级！
+1. 📊 **数据绝对保留**: 必须保留原文中出现的所有统计数据、年份、数值、单位（如"万人"、"亿元"）。这是最高优先级！
 2. 📉 **表格重构**: 如果原文包含表格数据，请将其转换为 Markdown 表格格式保留。
 3. 🔧 **保留技术规格**：模型名称、参数数量、上下文长度、技术特性
 4. 💡 **保持核心结论**：研究发现、比较结果、优势劣势分析
@@ -2695,7 +2903,8 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             'academic': '中', 
             'business': '高',
             'technical': '高',
-            'standard': '中'
+            'standard': '中',
+            'datamining': '高' // 数据挖掘模式通常需要最新数据
         };
         
         if (hasHighSensitivity) return '高';
@@ -3073,8 +3282,6 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         }
     }
     
-    /**
--------
     /**
      * 🎯 客户端 Python 导入预检
      */
