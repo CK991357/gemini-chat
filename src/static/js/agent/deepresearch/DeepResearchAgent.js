@@ -3,6 +3,8 @@
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
 // 🎯 核心修改：从 ReportTemplates.js 导入工具函数
+
+
 import { getTemplateByResearchMode, getTemplatePromptFragment } from './ReportTemplates.js';
 
 export class DeepResearchAgent {
@@ -940,6 +942,19 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             reportModel // 🔥 新增：接收用户选择的报告模型
         } = researchRequest;
         
+        // 🔥 新增：数据挖掘模式专用配置
+        const dataMiningConfig = {
+            maxIterations: 5,           // 减少到5轮
+            noGainThreshold: 1,         // 对无新数据更敏感
+            minDataTables: 2,           // 至少2个表格
+            minSources: 3               // 至少3个独立来源
+        };
+        
+        // 在原有配置基础上覆盖
+        const effectiveConfig = researchMode === 'data_mining' ? 
+            { ...this.config, ...dataMiningConfig } : this.config;
+        
+        this.maxIterations = effectiveConfig.maxIterations || 8;
         this.reportModel = reportModel; // 🔥 存储为类属性
         
         const runId = this.callbackManager.generateRunId();
@@ -1065,6 +1080,27 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 iterations++;
             }
             parserErrorOccurred = false; // 重置标志
+            
+            // 🎯 新增：数据挖掘模式专用终止逻辑
+            if (detectedMode === 'data_mining' && iterations >= 2) {
+                const shouldTerminate = this._checkDataMiningCompletion(
+                    this.intermediateSteps,
+                    allSources,
+                    iterations
+                );
+                
+                if (shouldTerminate) {
+                    console.log(`[DeepResearchAgent] 📊 数据挖掘模式：已达到数据收集目标，提前终止（第${iterations}轮）`);
+                    
+                    // 标记为已完成，触发final_answer
+                    finalAnswerFromIteration = await this._generateEarlyDataReport(
+                        uiTopic,
+                        this.intermediateSteps,
+                        allSources
+                    );
+                    break;
+                }
+            }
             
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
