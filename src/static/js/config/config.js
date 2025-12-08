@@ -3,7 +3,7 @@ import { geminiMcpTools, mcpTools } from '../tools_mcp/tool-definitions.js';
 export const CONFIG = {
     API: {
         VERSION: 'v1alpha',
-        MODEL_NAME: 'models/gemini-2.0-flash-exp', // 默认模型
+        MODEL_NAME: 'models/gemini-2.5-flash', // 默认模型
         AVAILABLE_MODELS: [
             {
                 name: 'models/gemini-2.0-flash-exp',
@@ -21,8 +21,8 @@ export const CONFIG = {
                 isWebSocket: false
             },
             {
-                name: 'models/gemini-2.0-flash',
-                displayName: 'gemini-2.0-flash (HTTP)',
+                name: 'models/gemini-2.5-flash-lite',
+                displayName: 'gemini-2.5-flash-lite (HTTP)',
                 isWebSocket: false
             },
             {
