@@ -3,8 +3,6 @@
 import { AgentLogic } from './AgentLogic.js';
 import { AgentOutputParser } from './OutputParser.js';
 // 🎯 核心修改：从 ReportTemplates.js 导入工具函数
-
-
 import { getTemplateByResearchMode, getTemplatePromptFragment } from './ReportTemplates.js';
 
 export class DeepResearchAgent {
@@ -942,19 +940,6 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             reportModel // 🔥 新增：接收用户选择的报告模型
         } = researchRequest;
         
-        // 🔥 新增：数据挖掘模式专用配置
-        const dataMiningConfig = {
-            maxIterations: 5,           // 减少到5轮
-            noGainThreshold: 1,         // 对无新数据更敏感
-            minDataTables: 2,           // 至少2个表格
-            minSources: 3               // 至少3个独立来源
-        };
-        
-        // 在原有配置基础上覆盖
-        const effectiveConfig = researchMode === 'data_mining' ? 
-            { ...this.config, ...dataMiningConfig } : this.config;
-        
-        this.maxIterations = effectiveConfig.maxIterations || 8;
         this.reportModel = reportModel; // 🔥 存储为类属性
         
         const runId = this.callbackManager.generateRunId();
@@ -1080,27 +1065,6 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 iterations++;
             }
             parserErrorOccurred = false; // 重置标志
-            
-            // 🎯 新增：数据挖掘模式专用终止逻辑
-            if (detectedMode === 'data_mining' && iterations >= 2) {
-                const shouldTerminate = this._checkDataMiningCompletion(
-                    this.intermediateSteps,
-                    allSources,
-                    iterations
-                );
-                
-                if (shouldTerminate) {
-                    console.log(`[DeepResearchAgent] 📊 数据挖掘模式：已达到数据收集目标，提前终止（第${iterations}轮）`);
-                    
-                    // 标记为已完成，触发final_answer
-                    finalAnswerFromIteration = await this._generateEarlyDataReport(
-                        uiTopic,
-                        this.intermediateSteps,
-                        allSources
-                    );
-                    break;
-                }
-            }
             
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
@@ -2006,6 +1970,9 @@ ${promptFragment}
         return 0.1; // 默认低优先级
     }
 
+
+
+
     // ✨ 新增：强化资料来源提取
     _extractSourcesFromIntermediateSteps(intermediateSteps) {
         const sources = new Map(); // 使用Map避免重复来源
@@ -2162,130 +2129,6 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             
         return report;
     }
-
-    // 🔥 新增：构建数据挖掘专用提示词
-_buildDataMiningPrompt(topic, intermediateSteps, plan, sources, userInstruction, template, promptFragment) {
-    // 1. 提取所有结构化数据
-    const structuredData = this._extractAllStructuredData(intermediateSteps);
-    
-    // 2. 构建带编号的来源索引
-    const numberedSourcesText = sources.map((s, i) => {
-        const dateStr = s.collectedAt ? ` (${s.collectedAt.split('T')[0]})` : '';
-        return `[${i + 1}] 《${s.title}》${dateStr}`;
-    }).join('\n');
-    
-    return `
-# 🚫 绝对禁止开场白协议
-**禁止生成任何形式的"好的，遵命"等确认语句**
-**必须直接从报告标题开始输出纯净内容**
-
-# 角色：数据整理专家
-# 任务：基于收集的原始数据，生成纯数据报告
-
-# 最终研究主题: "${topic}"
-
-# 0. 🎯 原始用户指令 (最高优先级)
-**请严格遵循此指令中包含的任何数据收集要求。**
-\`\`\`
-${userInstruction}
-\`\`\`
-
-# 1. 📚 资料来源索引 (Source Index)
-**注意：以下编号对应你在表格中应引用的 [x] 标记。**
-${numberedSourcesText}
-
-# 2. 收集到的原始数据
-以下内容是从上述来源中提取的详细信息。请将这些数据整理成规范的表格。
-
-${structuredData}
-
-# 3. 你的数据整理指令 (输出要求)
-现在，请严格遵循以下元结构和要求，将上述数据整理成最终的数据报告。
-
-${promptFragment}
-
-**🚫 绝对禁止:**
-- 添加任何分析、观点、解读、总结
-- 使用主观形容词（如"显著"、"重要"）
-- 进行趋势预测或比较评价
-
-**✅ 核心要求:**
-- **自主生成标题**: 基于数据主题生成精准标题
-- **表格为主**: 所有数据优先以表格形式呈现
-- **来源标注**: 每行数据必须标注来源编号
-- **格式规范**: 数值、百分比、日期格式统一
-- **纯净内容**: 只呈现数据，不添加任何分析
-
-现在，请开始整理这份基于原始数据的数据报告。
-`;
-}
-
-// 🔥 新增：数据挖掘报告生成方法
-async _generateDataMiningReport(dataMiningPrompt, intermediateSteps, sources) {
-    try {
-        const reportResponse = await this.chatApiHandler.completeChat({
-            messages: [{ role: 'user', content: dataMiningPrompt }],
-            model: this.reportModel || 'models/gemini-2.0-flash-exp-summarizer',
-            temperature: 0.1, // 低温确保准确性
-        });
-        
-        this._updateTokenUsage(reportResponse.usage);
-        
-        let finalReport = reportResponse?.choices?.[0]?.message?.content ||
-            this._generateDataTablesFallback(intermediateSteps, sources);
-        
-        console.log(`[DeepResearchAgent] ✅ 数据挖掘报告生成成功`);
-        return finalReport;
-        
-    } catch (error) {
-        console.error('[DeepResearchAgent] ❌ 数据挖掘报告生成失败:', error);
-        return this._generateDataTablesFallback(intermediateSteps, sources);
-    }
-}
-
-// 🔥 新增：数据表格降级方案
-_generateDataTablesFallback(intermediateSteps, sources) {
-    const tables = [];
-    
-    intermediateSteps.forEach((step, index) => {
-        if (step.success && step.observation) {
-            // 提取表格数据
-            const extractedTables = this._extractTablesFromText(step.observation);
-            if (extractedTables.length > 0) {
-                tables.push(`## 步骤 ${index+1} 收集的数据\n${extractedTables.join('\n')}`);
-            }
-        }
-    });
-    
-    if (tables.length > 0) {
-        return `# 数据收集报告 (降级方案)\n\n${tables.join('\n\n')}\n\n## 资料来源\n${sources.map(s => `- ${s.title}: ${s.url}`).join('\n')}`;
-    } else {
-        return `# 数据收集报告\n\n## 提示\n系统收集了 ${intermediateSteps.length} 个步骤的数据，但未能提取到结构化表格。\n\n请检查数据收集的完整性。`;
-    }
-}
-
-// 🔥 新增：提取所有结构化数据
-_extractAllStructuredData(intermediateSteps) {
-    const dataSections = [];
-    
-    intermediateSteps.forEach((step, index) => {
-        if (step.success && step.observation) {
-            // 提取表格数据
-            const tables = this._extractTablesFromText(step.observation);
-            if (tables.length > 0) {
-                dataSections.push(`## 步骤 ${index+1} 数据\n${tables.join('\n')}`);
-            }
-            
-            // 提取列表数据
-            const lists = this._extractListsFromText(step.observation);
-            if (lists.length > 0) {
-                dataSections.push(`## 步骤 ${index+1} 列表\n${lists.join('\n')}`);
-            }
-        }
-    });
-    
-    return dataSections.join('\n\n');
-}
 
 /**
  * 🎯 [最终完美版] 自适应参考文献生成器 (Adaptive IEEE Citation Generator)
@@ -2471,156 +2314,17 @@ _filterUsedSources(sources, reportContent) {
 }
 
     // ✨ 新增：信息增益计算
-// ✨ 改进版：多维度信息增益计算（保持向后兼容）
-_calculateInformationGain(newObservation, history, config) {
-    // 🎯 参数兼容处理
-    const useConfig = typeof config === 'object' ? config : {
-        useNovelty: true,
-        useStructure: true,
-        useEntity: false,  // 默认关闭，技术研究时手动开启
-        useLengthRatio: true,
-        decayFactor: 0.9
-    };
-    
-    // 1. 基础参数验证
-    const previousText = history.map(h => h.observation || '').join(' ');
-    const newText = newObservation || '';
-    
-    // 短文本保护
-    if (!newText || newText.length < 50) {
-        return 0.1; // 基础增益，鼓励继续探索
+    _calculateInformationGain(newObservation, history) {
+        const previousText = history.map(h => h.observation).join(' ');
+        const newText = newObservation;
+        
+        // 简单基于新词出现的计算（可升级为更复杂的NLP方法）
+        const previousWords = new Set(previousText.split(/\s+/));
+        const newWords = newText.split(/\s+/).filter(word => word.length > 2);
+        
+        const novelWords = newWords.filter(word => !previousWords.has(word));
+        return novelWords.length / Math.max(newWords.length, 1);
     }
-    
-    let totalScore = 0;
-    let activeDimensions = 0;
-    
-    // 2. 词汇新颖性（核心维度，权重40%）
-    if (useConfig.useNovelty !== false) {
-        const noveltyScore = this._calculateNoveltyScore(newText, previousText);
-        totalScore += noveltyScore * 0.4;
-        activeDimensions++;
-    }
-    
-    // 3. 结构多样性（权重30%）
-    if (useConfig.useStructure !== false) {
-        const structureScore = this._calculateStructureScore(newText);
-        totalScore += structureScore * 0.3;
-        activeDimensions++;
-    }
-    
-    // 4. 长度比率（权重20%）
-    if (useConfig.useLengthRatio !== false) {
-        const lengthScore = this._calculateLengthScore(newText, previousText);
-        totalScore += lengthScore * 0.2;
-        activeDimensions++;
-    }
-    
-    // 5. 技术实体（可选，权重10%）
-    if (useConfig.useEntity === true) {
-        const entityScore = this._calculateEntityScore(newText, previousText);
-        totalScore += entityScore * 0.1;
-        activeDimensions++;
-    }
-    
-    // 避免除零
-    if (activeDimensions === 0) {
-        return 0.1;
-    }
-    
-    // 6. 加权平均
-    const rawScore = totalScore / activeDimensions;
-    
-    // 7. 历史衰减（防止无限迭代）
-    const decayFactor = useConfig.decayFactor || 0.9;
-    const decay = Math.pow(decayFactor, Math.max(0, history.length - 3)); // 从第4步开始衰减
-    const finalScore = rawScore * decay;
-    
-    // 8. 返回[0,1]范围内的值
-    return Math.max(0.05, Math.min(0.95, finalScore));
-}
-
-// ✨ 新增：词汇新颖性计算（私有方法）
-_calculateNoveltyScore(newText, previousText) {
-    // 简化的分词和过滤
-    const tokenize = (text) => {
-        return text
-            .toLowerCase()
-            .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')
-            .split(/\s+/)
-            .filter(word => {
-                if (word.length < 2) return false;
-                if (/^\d+$/.test(word)) return false;
-                // 常见停用词（可根据需求扩展）
-                const stopWords = ['the', 'and', 'for', 'are', 'with', 'this', 'that', 
-                                  '是', '的', '了', '在', '和', '与', '或'];
-                return !stopWords.includes(word);
-            });
-    };
-    
-    const previousWords = new Set(tokenize(previousText));
-    const newWords = tokenize(newText);
-    
-    if (newWords.length === 0) return 0.1;
-    
-    // 新词比例
-    const novelWords = newWords.filter(word => !previousWords.has(word));
-    const basicNovelty = novelWords.length / newWords.length;
-    
-    return Math.max(0.1, Math.min(0.9, basicNovelty));
-}
-
-// ✨ 新增：结构多样性计算
-_calculateStructureScore(newText) {
-    // 检测结构化内容
-    let features = 0;
-    const maxFeatures = 6;
-    
-    if (/\`\`\`[\s\S]*?\`\`\`/.test(newText)) features++; // 代码块
-    if (/\|[\s\S]*?\|/.test(newText)) features++;         // 表格
-    if (/^\s*[\-\*\+]\s|\d+\.\s/.test(newText)) features++; // 列表
-    if (/^>\s/.test(newText)) features++;                 // 引用块
-    if (/^#{1,3}\s/.test(newText)) features++;            // 标题
-    if ((newText.match(/\n\s*\n/g) || []).length >= 3) features++; // 多段落
-    
-    return Math.min(features / maxFeatures, 1);
-}
-
-    // ✨ 新增：长度比率计算
-    _calculateLengthScore(newText, previousText) {
-    if (previousText.length === 0) return 0.5; // 没有历史时中等增益
-    
-    const ratio = newText.length / previousText.length;
-    // 归一化：ratio=1得0.5分，ratio=2得1分，ratio=0.5得0分
-    const normalized = Math.max(0, Math.min(1, (ratio - 0.5) * 1.0));
-    return normalized;
-}
-
-// ✨ 新增：技术实体检测（技术研究场景优化）
-_calculateEntityScore(newText, previousText) {
-    // 技术术语模式
-    const patterns = [
-        /\b[A-Z]{2,}\b/g,           // 大写缩写（CUDA, GPU, API）
-        /\b[\w\-]+(?:\.\d+)+\b/g,   // 版本号（13.1, TensorFlow-2.0）
-        /\b(?:SDK|IDE|IR|SIMD|TPU|HPC)\b/gi // 技术缩写
-    ];
-    
-    const extractEntities = (text) => {
-        const entities = new Set();
-        patterns.forEach(pattern => {
-            const matches = text.match(pattern) || [];
-            matches.forEach(match => entities.add(match.toLowerCase()));
-        });
-        return entities;
-    };
-    
-    const newEntities = extractEntities(newText);
-    const previousEntities = extractEntities(previousText);
-    
-    if (newEntities.size === 0) return 0;
-    
-    const novelEntities = Array.from(newEntities).filter(e => !previousEntities.has(e));
-    return novelEntities.length / newEntities.size;
-}
 
     // ✨ 新增：计划完成度计算
     _calculatePlanCompletion(plan, history) {
