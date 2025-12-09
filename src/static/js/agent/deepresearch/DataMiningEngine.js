@@ -1171,7 +1171,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
      * 🔥 新增：验证模板兼容性
      */
     validateTemplateCompatibility(template) {
-        const requiredScenarios = ['tech_comparison', 'financial','business_data','academic_research', 'generic'];
+        const requiredScenarios = ['tech_comparison', 'financial','business_data','academic_data', 'generic'];
         const templateScenarios = Object.keys(template?.config?.scenario_adapters || {});
         
         const missingScenarios = requiredScenarios.filter(s => !templateScenarios.includes(s));
