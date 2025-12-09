@@ -832,10 +832,11 @@ ${this._getModeQualityChecklist(researchMode)}
 
     async plan(inputs, runManager) {
         const { topic, intermediateSteps, availableTools, researchPlan, researchMode = 'standard', forceNativeVision = false, dataBus } = inputs; // 🎯 核心修改：接收 dataBus
-        
+    
         // 🎯 关键词检测逻辑
         const detectedMode = researchMode; // 直接使用传入的、正确的模式！
-        
+    
+    try {
         // 动态计算当前步骤
         const currentStep = this._determineCurrentStep(researchPlan, intermediateSteps);
         
@@ -917,7 +918,19 @@ ${this._getModeQualityChecklist(researchMode)}
                 usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } // 提供一个空的usage对象
             };
         }
+    } catch (error) {
+        // 🔥 新增：捕获步骤计算过程中的错误
+        console.error("[AgentLogic] 规划过程错误:", error?.message || error);
+        
+        // 降级方案：使用默认的第一步
+        const fallbackResponse = `思考: 系统在处理历史数据时发生错误，将继续执行研究计划的第一步。\n行动: tavily_search\n行动输入: {"query": "${topic} 最新信息", "max_results": 10}`;
+        
+        return {
+            responseText: fallbackResponse,
+            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        };
     }
+}
 
     // ✨ 重构：主提示词构建 - 核心知识检索集成
     _constructFinalPrompt({ topic, intermediateSteps, availableTools, researchPlan, currentStep = 1, researchMode = 'standard', currentDate, forceNativeVision = false, dataBusSummary = '', similarityDetection = { hasSimilarData: false, recommendations: [] } }) { // 🎯 核心修改：接收新的参数
@@ -2681,23 +2694,28 @@ ${plan.research_plan.map(item =>
                 } else {
                     // 对于其他最近的步骤，检查是否是工具执行，区分警告与错误
                     const rawObs = step.observation || '';
-                    
+
                     // 🎯【通用修复】判断是否是工具执行，是否包含实质性数据
                     const isToolCall = step.action && step.action.tool_name;
                     const isSubstantialData = rawObs.length > 100; // 有实质性内容
-                    
+
                     if (isToolCall && isSubstantialData) {
                         // 🎯 关键：工具调用且有实质数据 -> 视为成功，展示更多内容
-                        
+
                         // 检查是否只是警告而非错误
                         const hasWarnings = this._hasOnlyWarnings(rawObs);
                         const hasErrors = this._hasRealErrors(rawObs);
-                        
+                    
                         if (hasWarnings && !hasErrors) {
                             // 🟡 只有警告：展示足够内容，让Agent能看到警告但也能看到数据
-                            // 优先提取结构化数据
-                            const extractedData = this._extractStructuredData(rawObs, step.action?.tool_name);
-                            
+                            // 🔥 修复：增加try-catch保护
+                            let extractedData = null;
+                            try {
+                                extractedData = this._extractStructuredData(rawObs, step.action?.tool_name);
+                            } catch (e) {
+                                console.warn(`[AgentLogic] _extractStructuredData失败: ${e.message}`);
+                            }
+                        
                             if (extractedData) {
                                 observationText = `🟡 工具执行（含警告）\n关键数据：${extractedData}\n... (完整内容 ${rawObs.length}字符)`;
                             } else {
