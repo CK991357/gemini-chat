@@ -1,8 +1,8 @@
 // src/static/js/agent/deepresearch/DataMiningEngine.js
 
 /**
- * 🔥 数据挖掘专用引擎 - 完整优化版
- * 包含数据挖掘模式的所有专用逻辑、配置和提示词
+ * 🔥 数据挖掘专用引擎 - 完全兼容模板版
+ * 与 ReportTemplates.js 中的数据挖掘模板完全匹配
  */
 export class DataMiningEngine {
     constructor(config = {}) {
@@ -16,7 +16,49 @@ export class DataMiningEngine {
             ...config
         };
         
-        // 数据模式检测器
+        // 🔥 完全与模板匹配的场景检测器
+        this.scenarioDetector = {
+            scenarios: {
+                // 1. 科技产品对比 - 与模板完全一致
+                tech_comparison: {
+                    triggers: ['对比', '比较', 'vs', '哪个好', '参数对比', '规格', '测评', '评测', '对比分析'],
+                    keywords: ['手机', '电脑', '处理器', 'GPU', '显卡', '相机', '电池', '续航', '价格'],
+                    priority: 10,
+                    templateKey: 'tech_comparison' // 与模板中的key完全一致
+                },
+                // 2. 金融数据 - 与模板完全一致
+                financial: {
+                    triggers: ['股票', '股价', '财报', '财务', '收益', '利润率', '估值', '市盈率', '市净率'],
+                    keywords: ['营业收入', '净利润', '毛利率', '净资产收益率', '市盈率', '市净率'],
+                    priority: 9,
+                    templateKey: 'financial' // 与模板中的key完全一致
+                },
+                // 3. 商业市场分析 - 与模板完全一致
+                business_data: {
+                    triggers: ['市场', '规模', '份额', '增长率', '竞争格局', '产业链', '行业分析', '投资分析'],
+                    keywords: ['市场规模', '市场份额', '企业排名', '产业链', '上下游', '财务数据'],
+                    priority: 8,
+                    templateKey: 'business_data' // 与模板中的key完全一致
+                },
+                // 4. 学术研究 - 与模板完全一致
+                academic_data: {
+                    triggers: ['论文', '研究', '实验', '方法', '引用', '学术', '期刊', '会议', '参考文献'],
+                    keywords: ['实验数据', '研究方法', '引用次数', '作者', '发表时间', '期刊影响因子'],
+                    priority: 7,
+                    templateKey: 'academic_data' // 与模板中的key完全一致
+                },
+                // 5. 通用数据（默认） - 与模板完全一致
+                generic: {
+                    triggers: [],
+                    keywords: [],
+                    priority: 0,
+                    templateKey: 'generic' // 与模板中的key完全一致
+                }
+            },
+            detectionCache: new Map()
+        };
+
+        // 数据模式检测器（保持不变）
         this.patternDetector = {
             patterns: [
                 { name: 'comparison_table', keywords: ['对比', '比较', 'vs', 'versus', '参数对比'] },
@@ -28,7 +70,7 @@ export class DataMiningEngine {
             detectionCache: new Map()
         };
         
-        console.log('[DataMiningEngine] 初始化完成，启用自适应模式:', this.config.enableAdaptivePatterns);
+        console.log('[DataMiningEngine] 完全兼容版初始化完成，场景适配器已与模板对齐');
     }
     
     /**
@@ -67,7 +109,7 @@ export class DataMiningEngine {
         // 检查是否达到最大迭代次数
         const hasReachedMaxIterations = iterations >= this.config.maxIterations;
         
-        // 检查数据质量
+        // 检查数据质量（使用模板兼容的评级）
         const dataQuality = this.assessDataQuality(intermediateSteps, allSources);
         const hasGoodQuality = dataQuality.overall_score >= this.config.dataQualityThreshold;
         
@@ -90,6 +132,7 @@ export class DataMiningEngine {
             hasEnoughSources,
             hasReachedMaxIterations,
             dataQuality: dataQuality.overall_score,
+            dataQualityLevel: dataQuality.overall_rating, // 新增：显示评级
             hasGoodQuality,
             hasRecentGain,
             shouldTerminate
@@ -99,34 +142,49 @@ export class DataMiningEngine {
     }
     
     /**
-     * 🔥 构建数据挖掘专用提示词
+     * 🔥 构建数据挖掘专用提示词（完全兼容模板）
      */
     buildDataMiningPrompt(topic, intermediateSteps, plan, sources, userInstruction, template, promptFragment) {
-        // 1. 检测数据模式
+        // 1. 智能场景检测（兼容模板版本）
+        const detectedScenario = this.detectUserScenarioCompatible(topic, userInstruction, intermediateSteps, template);
+        
+        // 2. 数据模式检测
         const detectedPattern = this.detectDataPattern(intermediateSteps);
         
-        // 2. 提取所有结构化数据
+        // 3. 提取所有结构化数据
         const structuredData = this.extractAllStructuredData(intermediateSteps);
         
-        // 3. 数据质量评估
+        // 4. 数据质量评估（使用模板兼容的评级）
         const dataQuality = this.assessDataQuality(intermediateSteps, sources);
         
-        // 4. 构建带编号的来源索引
+        // 5. 构建带编号的来源索引
         const numberedSourcesText = sources.map((s, i) => {
             const dateStr = s.collectedAt ? ` (${s.collectedAt.split('T')[0]})` : '';
             const credibility = this.assessSourceCredibility(s);
             return `[${i + 1}] 《${s.title}》${dateStr} ${credibility.rating}`;
         }).join('\n');
         
-        // 5. 自适应模板选择
+        // 6. 获取最佳模板配置（完全兼容模板）
+        const templateConfig = this.getBestTemplateConfigCompatible(detectedScenario, template, detectedPattern, dataQuality);
+        
+        // 7. 获取自适应角色和指令
         const adaptiveTemplate = this.getAdaptiveTemplate(detectedPattern, dataQuality);
+        
+        // 8. 获取场景映射信息（用于调试）
+        const scenarioInfo = this.getScenarioMappingInfo(detectedScenario, template);
         
         return `
 # 🚫 绝对禁止开场白协议
 **禁止生成任何形式的"好的，遵命"等确认语句**
 **必须直接从报告标题开始输出纯净内容**
 
+# 🎯 数据挖掘引擎状态报告
+**引擎版本**: 完全兼容模板版 v1.0
+**场景映射**: ${scenarioInfo}
+**模板配置源**: ${templateConfig.source}
+
 # 角色：数据整理专家（${adaptiveTemplate.role}）
+# 场景模式：${detectedScenario.name} → ${detectedScenario.templateKey}
 # 任务：基于收集的原始数据，生成纯数据报告
 
 # 最终研究主题: "${topic}"
@@ -138,10 +196,12 @@ ${userInstruction}
 \`\`\`
 
 # 1. 📊 数据收集概况
+**检测到的场景**: ${detectedScenario.name} → ${detectedScenario.templateKey}
+**场景映射状态**: ${scenarioInfo.includes("直接匹配") ? "✅ 直接匹配" : "🔄 智能映射"}
 **检测到的数据模式**: ${detectedPattern}
 **数据质量评分**: ${dataQuality.overall_score.toFixed(2)} (${dataQuality.overall_rating})
 **提取表格数量**: ${dataQuality.table_count}
-**结构化数据比例**: ${dataQuality.structured_ratio}%
+**结构化数据比例**: ${dataQuality.structured_ratio}
 
 # 2. 📚 资料来源索引 (Source Index)
 **注意：以下编号对应你在表格中应引用的 [x] 标记。**
@@ -157,8 +217,17 @@ ${structuredData}
 
 ${promptFragment}
 
-## 🎯 ${detectedPattern.toUpperCase()} 模式专用指令
-${adaptiveTemplate.instructions}
+## 🎯 ${detectedScenario.templateKey.toUpperCase()} 模板专用指令
+${templateConfig.instructions}
+
+## 📋 数据结构要求
+${templateConfig.structure.map(section => `- ${section}`).join('\n')}
+
+## 📊 数据质量评级标准（完全兼容模板）
+1. **A级**: 数据完整，来源可靠，格式统一
+2. **B级**: 数据基本完整，来源一般，格式基本统一  
+3. **C级**: 数据缺失严重，来源单一，格式混乱
+4. **D级**: 数据不可用或无效
 
 **🚫 绝对禁止:**
 - 添加任何分析、观点、解读、总结
@@ -167,12 +236,13 @@ ${adaptiveTemplate.instructions}
 - 合并或修改原始数据值
 
 **✅ 核心要求:**
-- **自主生成标题**: 基于数据主题生成精准标题
+- **自主生成标题**: 基于数据主题和场景生成精准标题
 - **表格为主**: 所有数据优先以表格形式呈现
 - **来源标注**: 每行数据必须标注来源编号 [x]
 - **格式规范**: 数值、百分比、日期格式统一
 - **保留原始**: 保持数据原貌，不进行任何计算
 - **纯净内容**: 只呈现数据，不添加任何分析
+- **质量标注**: 每个表格/数据块必须标注质量等级 [质量: X级]
 
 ## 📋 表格格式化规范
 1. 使用标准的 Markdown 表格语法
@@ -180,13 +250,392 @@ ${adaptiveTemplate.instructions}
 3. 数值右对齐，文本左对齐
 4. 缺失数据标记为 "N/A"
 5. 每个表格不超过 10 列
+6. **必须标注质量等级**，例如：[质量: A级]
+
+## 🔄 场景自适应输出示例
+\`\`\`markdown
+## 表1: 智能手机参数对比 [质量: A级]
+
+| 型号 | 发布年份 | 处理器 | 内存(GB) | 价格(美元) | 来源 |
+|------|----------|--------|----------|------------|------|
+| iPhone 16 | 2024 | A18 Pro | 8 | 999 | [1, 3] |
+| Samsung S24 | 2024 | Snapdragon 8 Gen 3 | 12 | 899 | [2, 4] |
+
+## 时间序列数据: 季度销量 [质量: B级]
+
+| 季度 | iPhone 销量(百万) | Samsung 销量(百万) |
+|------|-------------------|-------------------|
+| 2024 Q1 | 51.2 | 60.1 |
+| 2024 Q2 | 45.8 | 55.3 |
+
+## 地理分布数据 [质量: C级]
+
+- 北美市场占有率: iPhone 52%, Samsung 28% [来源 5]
+- 欧洲市场占有率: iPhone 34%, Samsung 41% [来源 6]
+- *注: 亚洲市场数据暂缺*
+\`\`\`
 
 现在，请开始整理这份基于原始数据的数据报告。
 `;
     }
     
     /**
-     * 🔥 数据表格降级方案
+     * 🔥 智能场景检测 - 完全兼容模板版本
+     */
+    detectUserScenarioCompatible(topic, userInstruction, intermediateSteps, template) {
+        const cacheKey = `${topic.substring(0, 100)}|${userInstruction.substring(0, 100)}|${template?.name || 'no-template'}`;
+        if (this.scenarioDetector.detectionCache.has(cacheKey)) {
+            return this.scenarioDetector.detectionCache.get(cacheKey);
+        }
+        
+        const text = (userInstruction + ' ' + topic).toLowerCase();
+        console.log(`[DataMiningEngine] 检测用户场景（兼容版），输入文本: ${text.substring(0, 200)}...`);
+        
+        // 计算每个场景的得分
+        const scenarioScores = Object.entries(this.scenarioDetector.scenarios).map(([scenarioKey, scenarioConfig]) => {
+            let score = 0;
+            
+            // 1. 触发词匹配
+            scenarioConfig.triggers.forEach(trigger => {
+                const regex = new RegExp(trigger, 'gi');
+                const matches = text.match(regex);
+                if (matches) {
+                    score += matches.length * 10;
+                }
+            });
+            
+            // 2. 关键词匹配
+            scenarioConfig.keywords.forEach(keyword => {
+                if (text.includes(keyword.toLowerCase())) {
+                    score += 5;
+                }
+            });
+            
+            // 3. 优先级加成
+            score += scenarioConfig.priority;
+            
+            // 4. 模板适配器检查加成（如果模板有适配器则加分）
+            if (template?.config?.scenario_adapters?.[scenarioConfig.templateKey]) {
+                score += 20; // 有模板适配器大幅加分
+            }
+            
+            return { 
+                scenario: scenarioKey, 
+                templateKey: scenarioConfig.templateKey,
+                score 
+            };
+        });
+        
+        // 按得分排序
+        scenarioScores.sort((a, b) => b.score - a.score);
+        
+        // 选择得分最高的场景
+        let detectedScenario = scenarioScores[0];
+        if (detectedScenario.score <= 0) {
+            // 如果没有明显匹配，使用generic
+            detectedScenario = { 
+                scenario: 'generic', 
+                templateKey: 'generic',
+                score: 0 
+            };
+        }
+        
+        console.log(`[DataMiningEngine] 检测到用户场景: ${detectedScenario.scenario} → ${detectedScenario.templateKey} (得分: ${detectedScenario.score})`);
+        
+        const result = {
+            name: detectedScenario.scenario,
+            templateKey: detectedScenario.templateKey,
+            score: detectedScenario.score,
+            isDirectMatch: this.scenarioDetector.scenarios[detectedScenario.scenario]?.templateKey === detectedScenario.templateKey
+        };
+        
+        this.scenarioDetector.detectionCache.set(cacheKey, result);
+        
+        return result;
+    }
+    
+    /**
+     * 🔥 获取最佳模板配置 - 完全兼容模板
+     */
+    getBestTemplateConfigCompatible(detectedScenario, template, detectedPattern, dataQuality) {
+        console.log(`[DataMiningEngine] 获取模板配置，场景: ${detectedScenario.name} → ${detectedScenario.templateKey}`);
+        
+        // 1. 优先使用模板中的场景适配器
+        const templateKey = detectedScenario.templateKey;
+        if (template?.config?.scenario_adapters?.[templateKey]) {
+            const templateAdapter = template.config.scenario_adapters[templateKey];
+            console.log(`[DataMiningEngine] ✅ 使用模板场景适配器: ${templateKey}`);
+            
+            return {
+                structure: templateAdapter.structure || [],
+                instructions: templateAdapter.requirements || '使用模板预定义的结构和要求',
+                source: 'template_adapter'
+            };
+        }
+        
+        // 2. 检查模板是否有通用结构
+        if (template?.config?.structure) {
+            console.log(`[DataMiningEngine] 🔄 使用模板通用结构`);
+            
+            return {
+                structure: template.config.structure,
+                instructions: '使用模板通用结构和要求',
+                source: 'template_general'
+            };
+        }
+        
+        // 3. 使用引擎生成的动态结构（兼容模板风格）
+        console.log(`[DataMiningEngine] ⚡ 生成兼容模板的动态结构`);
+        const dynamicStructure = this.generateCompatibleStructure(detectedScenario, detectedPattern, dataQuality, template);
+        
+        return {
+            structure: dynamicStructure,
+            instructions: this.getCompatibleInstructions(detectedScenario, template),
+            source: 'engine_compatible'
+        };
+    }
+    
+    /**
+     * 🔥 生成兼容模板的动态结构
+     */
+    generateCompatibleStructure(detectedScenario, dataPattern, dataQuality, template) {
+        console.log(`[DataMiningEngine] 生成兼容模板的结构，场景: ${detectedScenario.templateKey}`);
+        
+        // 基础结构
+        let structure = [
+            `# [智能生成的${detectedScenario.name}数据报告]`,
+            `## 数据收集说明`,
+            `### 数据模式: ${dataPattern}`,
+            `### 数据质量: ${dataQuality.overall_rating}`,
+            `### 收集时间: ${new Date().toLocaleDateString('zh-CN')}`
+        ];
+        
+        // 根据模板Key添加特定章节
+        if (detectedScenario.templateKey === 'tech_comparison') {
+            structure.push(
+                '## 表1: 核心参数对比',
+                '## 表2: 性能测试数据',
+                '## 表3: 成本与定价',
+                '## 表4: 生态支持对比',
+                '## 时间线数据',
+                '## 数据质量说明',
+                '## 资料来源'
+            );
+        } else if (detectedScenario.templateKey === 'financial') {
+            structure.push(
+                '## 表1: 财务指标对比',
+                '## 表2: 市场表现数据',
+                '## 表3: 估值数据对比',
+                '## 表4: 风险指标',
+                '## 时间序列图表',
+                '## 数据验证说明',
+                '## 资料来源'
+            );
+        } else if (detectedScenario.templateKey === 'business_data') {
+        // 🔥 添加 business_data 结构 - 与模板完全一致
+            structure.push(
+                '## 表1: 市场规模数据',
+                '## 表2: 企业竞争数据',
+                '## 表3: 产业链数据',
+                '## 表4: 财务指标对比',
+                '## 时间序列图表',
+                '## 数据验证说明',
+                '## 资料来源'
+        );
+        } else if (detectedScenario.templateKey === 'academic_data') {
+            structure.push(
+                '## 表1: 实验数据',
+                '## 表2: 统计分析',
+                '## 表3: 文献引用数据',
+                '## 表4: 方法论对比',
+                '## 原始数据清单',
+                '## 数据可重复性说明',
+                '## 资料来源'
+            );
+        } else {
+            // 通用结构（templateKey === 'generic'）
+            structure.push(
+                '## 一、结构化数据表格',
+                '## 二、时间序列数据',
+                '## 三、分类对比数据',
+                '## 四、地理位置数据',
+                '## 五、非结构化数据清单',
+                '## 数据质量评估',
+                '## 资料来源'
+            );
+        }
+        
+        return structure;
+    }
+    
+    /**
+     * 🔥 获取兼容模板的指令
+     */
+    getCompatibleInstructions(detectedScenario, template) {
+        const templateKey = detectedScenario.templateKey;
+        
+        // 如果模板有要求，优先使用
+        if (template?.config?.requirements) {
+            return template.config.requirements;
+        }
+        
+        // 否则使用预设指令
+        const instructions = {
+            tech_comparison: `科技产品对比专用要求：
+1. 对比维度清晰明确
+2. 参数名称统一标准化
+3. 性能指标分离展示
+4. 每个对比项单独标注来源
+5. 使用表格形式呈现对比数据`,
+            financial: `金融数据专用要求：
+1. 财务指标符合会计准则
+2. 时间频率明确（年/季/月）
+3. 货币单位统一
+4. 风险指标单独列出
+5. 市场对比数据完整`,
+            business_data: `商业市场数据专用要求：
+1. 市场规模数据完整
+2. 企业竞争数据准确
+3. 产业链结构清晰
+4. 财务指标可比
+5. 时间序列连续`,  // 🔥 新增 business_data 指令
+            academic_data: `学术研究数据专用要求：
+1. 实验数据详细完整
+2. 统计方法说明清晰
+3. 引用数据准确无误
+4. 方法论对比客观
+5. 数据可重复性说明`,
+            generic: `通用数据收集要求：
+1. 数据分层清晰
+2. 格式统一规范
+3. 质量分级明确
+4. 来源可追溯
+5. 完整性说明详细`
+        };
+        
+        return instructions[templateKey] || instructions.generic;
+    }
+    
+    /**
+     * 🔥 获取场景映射信息
+     */
+    getScenarioMappingInfo(detectedScenario, template) {
+        const templateKey = detectedScenario.templateKey;
+        const hasAdapter = template?.config?.scenario_adapters?.[templateKey];
+        
+        if (detectedScenario.isDirectMatch && hasAdapter) {
+            return `✅ 直接匹配: ${detectedScenario.name} → ${templateKey}`;
+        } else if (hasAdapter) {
+            return `🔄 智能映射: ${detectedScenario.name} → ${templateKey}`;
+        } else {
+            return `⚠️ 使用通用适配器: ${detectedScenario.name} → generic`;
+        }
+    }
+    
+    /**
+     * 🔥 评估数据质量 - 完全兼容模板评级
+     */
+    assessDataQuality(intermediateSteps, sources) {
+        const stats = {
+            total_steps: intermediateSteps.length,
+            successful_steps: intermediateSteps.filter(s => s.success).length,
+            total_tables: this.extractAllStructuredData(intermediateSteps, false).filter(t => t.includes('|')).length,
+            total_lists: this.extractAllStructuredData(intermediateSteps, false).filter(t => t.includes('-') || t.includes('*')).length,
+            avg_observation_length: 0,
+            source_diversity: 0
+        };
+        
+        // 计算平均观察长度
+        const validObservations = intermediateSteps
+            .filter(s => s.success && s.observation)
+            .map(s => s.observation.length);
+        
+        if (validObservations.length > 0) {
+            stats.avg_observation_length = validObservations.reduce((a, b) => a + b) / validObservations.length;
+        }
+        
+        // 计算来源多样性
+        if (sources.length > 0) {
+            const uniqueDomains = new Set();
+            sources.forEach(source => {
+                try {
+                    const url = new URL(source.url);
+                    uniqueDomains.add(url.hostname);
+                } catch (e) {
+                    // 忽略无效URL
+                }
+            });
+            stats.source_diversity = uniqueDomains.size / Math.max(sources.length, 1);
+        }
+        
+        // 计算综合质量分数
+        const successRate = stats.successful_steps / Math.max(stats.total_steps, 1);
+        const structureRate = (stats.total_tables + stats.total_lists) / Math.max(stats.successful_steps, 1);
+        const lengthScore = Math.min(stats.avg_observation_length / 500, 1);
+        const diversityScore = stats.source_diversity;
+        
+        const overallScore = (
+            successRate * 0.3 +
+            structureRate * 0.4 +
+            lengthScore * 0.2 +
+            diversityScore * 0.1
+        );
+        
+        // 🔥 完全兼容模板的评级系统：A/B/C/D级
+        let qualityRating, qualityLevel;
+        if (overallScore >= 0.8) {
+            qualityRating = 'A级 (优秀)';
+            qualityLevel = 'A级';
+        } else if (overallScore >= 0.6) {
+            qualityRating = 'B级 (良好)';
+            qualityLevel = 'B级';
+        } else if (overallScore >= 0.4) {
+            qualityRating = 'C级 (一般)';
+            qualityLevel = 'C级';
+        } else {
+            qualityRating = 'D级 (待改进)';
+            qualityLevel = 'D级';
+        }
+        
+        return {
+            overall_score: overallScore,
+            overall_rating: qualityLevel, // 模板兼容的评级
+            rating_display: qualityRating, // 显示用评级
+            metrics: {
+                success_rate: successRate,
+                structure_rate: structureRate,
+                avg_length: stats.avg_observation_length,
+                source_diversity: stats.source_diversity,
+                table_count: stats.total_tables,
+                list_count: stats.total_lists
+            },
+            structured_ratio: `${(structureRate * 100).toFixed(1)}%`,
+            recommendation: this.getQualityRecommendation(overallScore, stats),
+            template_compatible: true // 标记为模板兼容
+        };
+    }
+    
+    /**
+     * 🔥 获取质量改进建议（兼容模板）
+     */
+    getQualityRecommendation(score, stats) {
+        if (score >= 0.8) {
+            return "数据质量A级：优秀，已满足分析需求";
+        } else if (score >= 0.6) {
+            return "数据质量B级：良好，建议增加数据多样性";
+        } else if (score >= 0.4) {
+            const recommendations = [];
+            if (stats.table_count < 2) recommendations.push("增加表格数据收集");
+            if (stats.avg_observation_length < 300) recommendations.push("增加数据详细程度");
+            if (stats.source_diversity < 0.5) recommendations.push("增加来源多样性");
+            return `数据质量C级：一般，建议：${recommendations.join('；')}`;
+        } else {
+            return "数据质量D级：待改进，建议重新设计数据收集策略";
+        }
+    }
+    
+    /**
+     * 🔥 数据表格降级方案（保持原样）
      */
     generateDataTablesFallback(intermediateSteps, sources) {
         const tables = [];
@@ -242,7 +691,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 提取所有结构化数据
+     * 🔥 提取所有结构化数据（保持原样）
      */
     extractAllStructuredData(intermediateSteps, includeSections = true) {
         const dataSections = [];
@@ -303,7 +752,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 从文本中提取表格
+     * 🔥 从文本中提取表格（保持原样）
      */
     extractTablesFromText(text) {
         if (!text || typeof text !== 'string') return [];
@@ -337,7 +786,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 从文本中提取列表
+     * 🔥 从文本中提取列表（保持原样）
      */
     extractListsFromText(text) {
         if (!text || typeof text !== 'string') return [];
@@ -367,7 +816,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 提取键值对数据
+     * 🔥 提取键值对数据（保持原样）
      */
     extractKeyValueData(text) {
         const patterns = [
@@ -392,7 +841,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 格式化键值对数据
+     * 🔥 格式化键值对数据（保持原样）
      */
     formatKeyValueData(keyValues) {
         if (!keyValues || keyValues.length === 0) return '';
@@ -409,43 +858,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 获取数据挖掘专用提示词片段
-     */
-    getPromptFragment() {
-        return `
-## 🎯 数据挖掘模式专用指令
-
-**核心原则**: 只收集、整理、呈现数据，不进行任何分析解读
-
-**数据质量标准**:
-1. **完整性**: 确保数据覆盖关键维度，标注缺失数据
-2. **一致性**: 统一单位、格式、命名规范
-3. **准确性**: 引用可靠来源，标注数据时间
-4. **结构化**: 优先使用表格，确保可机读
-5. **可追溯**: 每个数据点标注具体来源
-
-**输出规范**:
-1. 使用清晰的表格组织数据
-2. 每个数据点标注来源 [x]
-3. 保留原始单位和数值精度
-4. 标注数据收集时间和质量等级
-5. 使用统一的数据类型标识
-
-**数据处理优先级**:
-1. 原始表格数据 > 列表数据 > 文本数据
-2. 数值数据 > 文本数据 > 日期数据
-3. 最新数据 > 历史数据
-
-**格式要求**:
-- 数值: 保留小数点后两位
-- 百分比: 统一为 "XX.XX%" 格式
-- 日期: 统一为 "YYYY-MM-DD" 格式
-- 货币: 统一为 "¥XX.XX" 或 "$XX.XX" 格式
-`;
-    }
-    
-    /**
-     * 🔥 检测数据模式
+     * 🔥 检测数据模式（保持原样）
      */
     detectDataPattern(intermediateSteps) {
         const cacheKey = JSON.stringify(intermediateSteps.map(s => s.observation?.substring(0, 500) || ''));
@@ -492,7 +905,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 获取自适应模板
+     * 🔥 获取自适应模板（保持原样）
      */
     getAdaptiveTemplate(pattern, dataQuality) {
         const templates = {
@@ -556,95 +969,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 评估数据质量
-     */
-    assessDataQuality(intermediateSteps, sources) {
-        const stats = {
-            total_steps: intermediateSteps.length,
-            successful_steps: intermediateSteps.filter(s => s.success).length,
-            total_tables: this.extractAllStructuredData(intermediateSteps, false).filter(t => t.includes('|')).length,
-            total_lists: this.extractAllStructuredData(intermediateSteps, false).filter(t => t.includes('-') || t.includes('*')).length,
-            avg_observation_length: 0,
-            source_diversity: 0
-        };
-        
-        // 计算平均观察长度
-        const validObservations = intermediateSteps
-            .filter(s => s.success && s.observation)
-            .map(s => s.observation.length);
-        
-        if (validObservations.length > 0) {
-            stats.avg_observation_length = validObservations.reduce((a, b) => a + b) / validObservations.length;
-        }
-        
-        // 计算来源多样性
-        if (sources.length > 0) {
-            const uniqueDomains = new Set();
-            sources.forEach(source => {
-                try {
-                    const url = new URL(source.url);
-                    uniqueDomains.add(url.hostname);
-                } catch (e) {
-                    // 忽略无效URL
-                }
-            });
-            stats.source_diversity = uniqueDomains.size / Math.max(sources.length, 1);
-        }
-        
-        // 计算综合质量分数
-        const successRate = stats.successful_steps / Math.max(stats.total_steps, 1);
-        const structureRate = (stats.total_tables + stats.total_lists) / Math.max(stats.successful_steps, 1);
-        const lengthScore = Math.min(stats.avg_observation_length / 500, 1); // 目标500字符
-        const diversityScore = stats.source_diversity;
-        
-        const overallScore = (
-            successRate * 0.3 +
-            structureRate * 0.4 +
-            lengthScore * 0.2 +
-            diversityScore * 0.1
-        );
-        
-        const qualityRating = overallScore >= 0.8 ? '优秀' :
-                            overallScore >= 0.6 ? '良好' :
-                            overallScore >= 0.4 ? '一般' : '待改进';
-        
-        return {
-            overall_score: overallScore,
-            overall_rating: qualityRating,
-            metrics: {
-                success_rate: successRate,
-                structure_rate: structureRate,
-                avg_length: stats.avg_observation_length,
-                source_diversity: stats.source_diversity,
-                table_count: stats.total_tables,
-                list_count: stats.total_lists
-            },
-            structured_ratio: `${(structureRate * 100).toFixed(1)}%`,
-            recommendation: this.getQualityRecommendation(overallScore, stats)
-        };
-    }
-    
-    /**
-     * 🔥 获取质量改进建议
-     */
-    getQualityRecommendation(score, stats) {
-        if (score >= 0.8) {
-            return "数据质量优秀，已满足分析需求";
-        } else if (score >= 0.6) {
-            return "数据质量良好，建议增加数据多样性";
-        } else if (score >= 0.4) {
-            const recommendations = [];
-            if (stats.table_count < 2) recommendations.push("增加表格数据收集");
-            if (stats.avg_observation_length < 300) recommendations.push("增加数据详细程度");
-            if (stats.source_diversity < 0.5) recommendations.push("增加来源多样性");
-            return `数据质量一般，建议：${recommendations.join('；')}`;
-        } else {
-            return "数据质量待改进，建议重新设计数据收集策略";
-        }
-    }
-    
-    /**
-     * 🔥 评估来源可信度
+     * 🔥 评估来源可信度（保持原样）
      */
     assessSourceCredibility(source) {
         const url = source.url || '';
@@ -691,7 +1016,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 清理表格格式
+     * 🔥 清理表格格式（保持原样）
      */
     cleanTableFormat(tableText) {
         let lines = tableText.split('\n').filter(line => line.trim());
@@ -716,7 +1041,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 建议下一步行动
+     * 🔥 建议下一步行动（保持原样）
      */
     suggestNextAction(intermediateSteps, currentIteration, detectedPattern) {
         const actions = [
@@ -748,7 +1073,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 优化搜索关键词（供外部调用）
+     * 🔥 优化搜索关键词（保持原样）
      */
     optimizeSearchKeywords(originalQuery, detectedPattern) {
         const enhancements = {
@@ -775,7 +1100,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 构建数据挖掘专用的工具调用指南
+     * 🔥 构建数据挖掘专用的工具调用指南（保持原样）
      */
     getToolGuidanceForDataMining(toolName, context) {
         const guidance = {
@@ -839,6 +1164,46 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
         return guidance[toolName] || {
             strategy: "专注于收集和整理结构化数据",
             tips: ["优先获取表格形式的数据", "确保数据来源可靠"]
+        };
+    }
+    
+    /**
+     * 🔥 新增：验证模板兼容性
+     */
+    validateTemplateCompatibility(template) {
+        const requiredScenarios = ['tech_comparison', 'financial', 'academic_research', 'generic'];
+        const templateScenarios = Object.keys(template?.config?.scenario_adapters || {});
+        
+        const missingScenarios = requiredScenarios.filter(s => !templateScenarios.includes(s));
+        const extraScenarios = templateScenarios.filter(s => !requiredScenarios.includes(s));
+        
+        const matchScore = (templateScenarios.length / requiredScenarios.length) * 100;
+        
+        return {
+            isCompatible: missingScenarios.length === 0,
+            missingScenarios,
+            extraScenarios,
+            matchScore,
+            status: matchScore >= 100 ? '完美兼容' : 
+                   matchScore >= 75 ? '基本兼容' : 
+                   matchScore >= 50 ? '部分兼容' : '不兼容'
+        };
+    }
+    
+    /**
+     * 🔥 新增：获取模板兼容性报告
+     */
+    getCompatibilityReport(template) {
+        const compatibility = this.validateTemplateCompatibility(template);
+        const engineScenarios = Object.values(this.scenarioDetector.scenarios)
+            .map(s => ({ name: s.templateKey, hasAdapter: !!template?.config?.scenario_adapters?.[s.templateKey] }));
+        
+        return {
+            engineVersion: '完全兼容模板版 v1.0',
+            templateName: template?.name || '未知模板',
+            compatibility,
+            scenarioMapping: engineScenarios,
+            recommendations: compatibility.missingScenarios.map(s => `建议在模板中添加 ${s} 场景适配器`)
         };
     }
 }

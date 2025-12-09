@@ -69,7 +69,7 @@ export class DeepResearchAgent {
 
         // 🎯 新增：初始化 DataMiningEngine
         this.dataMiningEngine = null;
-        if (config.dataMiningConfig) {
+        if (config.dataMiningConfig !== undefined) {
             this.dataMiningEngine = new DataMiningEngine(config.dataMiningConfig);
             console.log('[DeepResearchAgent] DataMiningEngine 初始化完成');
         }
@@ -1427,7 +1427,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 console.log('[DeepResearchAgent] 使用DataMiningEngine生成数据挖掘报告');
                 
                 // 获取数据挖掘提示词片段
-                const promptFragment = this.dataMiningEngine.getPromptFragment();
+                const promptFragment = this.dataMiningEngine.getDataMiningConfig();
                 
                 // 构建数据挖掘专用提示词
                 const dataMiningPrompt = this.dataMiningEngine.buildDataMiningPrompt(
@@ -1436,7 +1436,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     researchPlan,
                     uniqueSources,
                     originalUserInstruction,
-                    null, // template参数，可为空
+                    dataMiningTemplate, // ✅ 传递模板，不是 null
                     promptFragment
                 );
                 
