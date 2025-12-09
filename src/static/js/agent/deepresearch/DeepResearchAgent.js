@@ -1427,8 +1427,16 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 console.log('[DeepResearchAgent] 使用DataMiningEngine生成数据挖掘报告');
                 
                 // 获取数据挖掘提示词片段
-                const promptFragment = this.dataMiningEngine.getDataMiningConfig();
-                
+                const dataMiningTemplate = getTemplateByResearchMode('data_mining');
+                const promptFragment = getTemplatePromptFragment('data_mining');
+
+                // 🔧 修复：调试日志，确认配置一致性
+                console.log('[DeepResearchAgent] 数据挖掘引擎配置:', {
+                minDataTables: this.dataMiningEngine.config.minDataTables,
+                maxIterations: this.dataMiningEngine.config.maxIterations,
+                qualityThreshold: this.dataMiningEngine.config.dataQualityThreshold
+              });
+              
                 // 构建数据挖掘专用提示词
                 const dataMiningPrompt = this.dataMiningEngine.buildDataMiningPrompt(
                     uiTopic,
