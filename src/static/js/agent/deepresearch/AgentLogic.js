@@ -3192,35 +3192,36 @@ ${actionJson}
     // 🎯 新增：从观察结果中提取结构化数据（例如 JSON 或表格）
     _extractStructuredData(observation, toolName) {
         if (!observation || typeof observation !== 'string') return null;
-        
+    
         // 1. 尝试提取 JSON 代码块
         const jsonBlockMatch = observation.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-        if (jsonBlockMatch && jsonBlockMatch) {
-            const jsonContent = jsonBlockMatch.trim();
+        if (jsonBlockMatch && jsonBlockMatch[1]) { // 🔥 修复：使用 jsonBlockMatch[1]
+            const jsonContent = jsonBlockMatch[1].trim(); // 🔥 修复：对捕获组的内容进行trim
             // 尝试解析 JSON，如果成功则返回预览
             try {
                 const parsed = JSON.parse(jsonContent);
                 // 限制预览长度
                 return JSON.stringify(parsed, null, 2).substring(0, 500) + '...';
             } catch (e) {
-                // 忽略解析错误
+                // 忽略解析错误，继续尝试其他方法
+                console.debug(`[AgentLogic] JSON解析失败: ${e.message}`);
             }
         }
-        
+    
         // 2. 尝试提取 Markdown 表格
         const tableMatch = observation.match(/\|.*\|.*\|[\s\S]*?\|.*\|/);
-        if (tableMatch) {
+        if (tableMatch && tableMatch[0]) { // 🔥 修复：确保有匹配结果
             return `[Markdown 表格预览] ${tableMatch[0].substring(0, 500)}...`;
         }
-        
+    
         // 3. 针对 crawl4ai 成功抓取结果，提取关键发现
         if (toolName === 'crawl4ai') {
             const keyFindingMatch = observation.match(/关键发现[:：]\s*([\s\S]*?)(?=\n\n|\n---|\n##|$)/i);
-            if (keyFindingMatch && keyFindingMatch) {
+            if (keyFindingMatch && keyFindingMatch[1]) { // 🔥 修复：使用 keyFindingMatch[1]
                 return `[关键发现] ${keyFindingMatch[1].trim().substring(0, 500)}...`;
             }
         }
-        
+    
         return null;
     }
 
