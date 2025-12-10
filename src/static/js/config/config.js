@@ -34,6 +34,14 @@ export const CONFIG = {
                 tools: mcpTools
             },
             {
+                name: 'glm-4.6v-flash',
+                displayName: 'glm-4.6v-flash (工具调用)',
+                isWebSocket: false,
+                isZhipu: true, // 标记为智谱模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            },
+            {
                 name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
                 displayName: 'Qwen3-235B-A22B-Thinking-2507 (工具调用)',
                 isWebSocket: false,
@@ -78,6 +86,7 @@ export const CONFIG = {
         PRELOAD_MODELS: [
             'gemini-2.5-flash-preview-09-2025',
             'GLM-4.5-Flash', 
+            'glm-4.6v-flash',
             'Qwen/Qwen3-235B-A22B-Thinking-2507'
         ]
     },
@@ -854,8 +863,8 @@ print(json.dumps(result))
     TRANSLATION: {
         MODELS: [
             {
-                name: 'gemini-2.0-flash',
-                displayName: 'gemini-2.0-flash'
+                name: 'GLM-4.5-Flash',
+                displayName: 'GLM-4.5-Flash'
             },
             {
                 name: 'tencent/Hunyuan-MT-7B',
@@ -914,8 +923,8 @@ print(json.dumps(result))
                 isZhipu: true, // 标记为智谱模型
             },
             {
-                name: 'glm-4v-flash',
-                displayName: 'GLM-4V-Flash',
+                name: 'glm-4.6v-flash',
+                displayName: 'glm-4.6v-flash',
                 isZhipu: true // 标记为智谱模型
             }
         ],
