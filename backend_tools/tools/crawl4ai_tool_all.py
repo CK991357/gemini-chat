@@ -6,6 +6,7 @@ import psutil
 import time
 import json
 from typing import Dict, Any, List, Optional, Literal
+import random
 from pydantic import BaseModel, Field
 from crawl4ai import AsyncWebCrawler
 from crawl4ai import CrawlerRunConfig, CacheMode
@@ -235,29 +236,81 @@ class EnhancedCrawl4AITool:
                 logger.info("✅ crawl4ai 浏览器初始化成功")
 
     async def _create_crawler(self):
-        """创建新的爬虫实例"""
+        """创建新的爬虫实例 - 升级版"""
         logger.info("🆕 创建新的 AsyncWebCrawler 实例...")
         try:
+            # 增强浏览器参数，提升反爬能力
+            browser_args = [
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu',
+                '--memory-pressure-off',
+                '--window-size=1280,720',
+                # 新增反爬参数
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--disable-web-security',
+                '--disable-site-isolation-trials',
+                '--disable-3d-apis',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-breakpad',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-domain-reliability',
+                '--disable-extensions',
+                '--disable-features=AudioServiceOutOfProcess',
+                '--disable-hang-monitor',
+                '--disable-ipc-flooding-protection',
+                '--disable-notifications',
+                '--disable-renderer-backgrounding',
+                '--disable-sync',
+                '--force-color-profile=srgb',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--no-default-browser-check',
+                '--no-pings',
+                '--password-store=basic',
+                '--use-mock-keychain',
+                '--disable-popup-blocking',
+                '--disable-default-apps',
+                '--disable-client-side-phishing-detection',
+                '--disable-component-update',
+                '--disable-speech-api',
+                '--hide-scrollbars',
+                '--disable-logging',
+                '--disable-dev-tools',
+            ]
+            
+            # 随机User-Agent和Viewport
+            user_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            ]
+            
             self.crawler = AsyncWebCrawler(
                 browser_type="chromium",
                 headless=True,
                 verbose=False,
-                browser_args=[
-                    '--disable-dev-shm-usage',
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--single-process',
-                    '--disable-gpu',
-                    '--memory-pressure-off',
-                    '--window-size=1280,720'
-                ]
+                browser_args=browser_args,
+                # 新增随机化配置
+                user_agent=random.choice(user_agents),
+                viewport={"width": random.randint(1280, 1920),
+                         "height": random.randint(720, 1080)},
+                # 增强JS执行环境
+                java_script_enabled=True,
+                ignore_https_errors=True,
+                # 启用隐身模式，减少指纹追踪
+                incognito=True,
             )
             await self.crawler.__aenter__()
             self._browser_start_time = time.time()
-            logger.info("✅ AsyncWebCrawler 实例创建并启动")
+            logger.info("✅ AsyncWebCrawler 实例创建并启动（增强模式）")
         except Exception as e:
             logger.error(f"❌ 创建爬虫实例失败: {e}")
             self.crawler = None
@@ -471,7 +524,7 @@ class EnhancedCrawl4AITool:
             await self._cleanup_after_task()
 
     async def _deep_crawl_website(self, params: DeepCrawlParams) -> Dict[str, Any]:
-        """深度爬取网站 - 基于文档的完整实现"""
+        """深度爬取网站 - 修复Context错误版本"""
         logger.info(f"🕷️ 开始深度网站爬取: {params.url}, 深度: {params.max_depth}, 最大页面: {params.max_pages}")
         
         try:
@@ -544,51 +597,51 @@ class EnhancedCrawl4AITool:
             
             # 🎯 使用流式处理收集结果
             # 使用 _execute_with_timeout 包装 arun，以确保整个流式操作在 400 秒内完成
-            async for result in await self._execute_with_timeout(
-                crawler.arun(params.url, config=config),
-                timeout=400
-            ):
-                if result.success:
-                    page_data = {
-                        "url": result.url,
-                        "title": getattr(result, 'title', ''),
-                        "content": getattr(result, 'markdown', ''),
-                        "depth": result.metadata.get('depth', 0),
-                        "score": result.metadata.get('score', 0),
-                        "metadata": {
-                            "word_count": len(getattr(result, 'markdown', '')),
+            try:
+                # 🔥 核心修复：捕获ContextVar错误
+                async for result in await self._execute_with_timeout(
+                    crawler.arun(params.url, config=config),
+                    timeout=400
+                ):
+                    if result.success:
+                        page_data = {
+                            "url": result.url,
+                            "title": getattr(result, 'title', ''),
+                            "content": getattr(result, 'markdown', ''),
+                            "depth": result.metadata.get('depth', 0),
+                            "score": result.metadata.get('score', 0),
+                            "metadata": {
+                                "word_count": len(getattr(result, 'markdown', '')),
+                            }
                         }
-                    }
-                    crawled_pages.append(page_data)
-                    total_pages += 1
-                    progress_report_count += 1
-                    
-                    # 🎯 定期发送进度心跳（每2个页面或每30秒）
-                    current_time = time.time()
-                    if progress_report_count % 2 == 0 or (current_time - start_time) > 30:
-                        elapsed = current_time - start_time
-                        logger.info(f"DeepCrawl Progress: Crawled {total_pages} pages in {elapsed:.1f}s")
-                        start_time = current_time  # 重置计时器
-                    
-                    # 安全限制
-                    if total_pages >= params.max_pages:
-                        logger.info(f"DeepCrawl Max Pages limit reached: {params.max_pages}")
-                        break
+                        crawled_pages.append(page_data)
+                        total_pages += 1
+                        progress_report_count += 1
+                        
+                        # 🎯 定期发送进度心跳（每2个页面或每30秒）
+                        current_time = time.time()
+                        if progress_report_count % 2 == 0 or (current_time - start_time) > 30:
+                            elapsed = current_time - start_time
+                            logger.info(f"DeepCrawl Progress: Crawled {total_pages} pages in {elapsed:.1f}s")
+                            start_time = current_time  # 重置计时器
+                        
+                        # 安全限制
+                        if total_pages >= params.max_pages:
+                            logger.info(f"DeepCrawl Max Pages limit reached: {params.max_pages}")
+                            break
+                            
+            except ValueError as e:
+                if "was created in a different Context" in str(e):
+                    logger.warning(f"⚠️ 捕获到Crawl4AI内部Context错误，已成功获取{total_pages}个页面")
+                    # 不抛出异常，返回已收集的结果
+                else:
+                    raise e
+            except Exception as e:
+                # 其他异常正常处理
+                logger.error(f"深度爬取迭代错误: {str(e)}")
+                raise
             
             logger.info(f"✅ DeepCrawl Completed: {total_pages} pages")
-            
-            return {
-                "success": True,
-                "crawled_pages": crawled_pages,
-                "total_pages": total_pages,
-                "summary": {
-                    "start_url": params.url,
-                    "max_depth": params.max_depth,
-                    "strategy": params.strategy,
-                    "pages_crawled": total_pages
-                },
-                "memory_info": await self._get_system_memory_info()
-            }
             
             return {
                 "success": True,
