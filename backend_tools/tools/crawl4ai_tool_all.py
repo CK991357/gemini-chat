@@ -172,6 +172,133 @@ class EnhancedCrawl4AITool:
         self._browser_lock = asyncio.Lock()
         self.compressor = ScreenshotCompressor()
         logger.info("EnhancedCrawl4AITool instance created")
+        
+        # 🎯 智能分级系统（在现有基础上添加）
+        self._smart_config_enabled = True  # 默认启用
+        self._config_cache = {}  # 缓存域名的最佳配置
+        self._url_failure_count = {}  # 记录URL失败次数
+        
+        # 预定义的配置策略
+        self._config_strategies = {
+            "standard": self._create_standard_config,  # 新增
+            "enhanced": self._create_enhanced_config,  # 已有（方案1）
+            "fallback": self._create_fallback_config,  # 新增
+        }
+        
+        logger.info("🚀 智能分级系统已启用（Agent完全无感）")
+
+    def _extract_domain(self, url: str) -> str:
+        """从URL提取域名"""
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        return parsed.netloc.lower()
+
+    def _is_javascript_site(self, url: str) -> bool:
+        """检测是否为JavaScript驱动的网站"""
+        url_lower = url.lower()
+        js_patterns = [
+            "react", "vue", "angular", "next", "nuxt", "svelte",
+            "spa", "single-page", "app.", "dashboard.", "admin.",
+            "#!", "/#/", "/app/", "/dashboard/"
+        ]
+        return any(pattern in url_lower for pattern in js_patterns)
+
+    def _has_anti_bot_features(self, url: str) -> bool:
+        """检测是否有反爬特征"""
+        url_lower = url.lower()
+        anti_bot_patterns = [
+            "cloudflare", "recaptcha", "hcaptcha", "datadome",
+            "akamai", "imperva", "distil", "incapsula",
+            "challenge", "verify", "security", "bot"
+        ]
+        return any(pattern in url_lower for pattern in anti_bot_patterns)
+
+    def _is_known_complex_domain(self, domain: str) -> bool:
+        """已知的复杂域名列表"""
+        complex_domains = [
+            "medium.com", "quora.com", "reddit.com", "twitter.com",
+            "linkedin.com", "facebook.com", "instagram.com",
+            "tiktok.com", "youtube.com", "netflix.com"
+        ]
+        return any(complex_domain in domain for complex_domain in complex_domains)
+
+    def _get_next_fallback_config(self, current_config: str) -> str:
+        """获取下一个降级配置"""
+        config_chain = ["standard", "enhanced", "fallback"]
+        try:
+            current_index = config_chain.index(current_config)
+            if current_index < len(config_chain) - 1:
+                return config_chain[current_index + 1]
+        except ValueError:
+            pass
+        return "fallback"
+
+    def _create_standard_config(self, params: ScrapeParams) -> CrawlerRunConfig:
+        """标准配置 - 高性能，适合普通网站"""
+        # 🔧 注意：这里要使用您现有的方案1增强浏览器参数，但减少等待时间和反爬强度
+        return CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            css_selector=params.css_selector,
+            exclude_external_links=params.exclude_external_links,
+            exclude_external_images=not params.include_images,
+            pdf=params.return_pdf,
+            screenshot=params.return_screenshot,
+            word_count_threshold=params.word_count_threshold,
+            remove_overlay_elements=True,
+            process_iframes=True,
+            # 🚀 性能优化
+            scraping_strategy=LXMLWebScrapingStrategy(),
+            delay_before_return_html=1.0,  # 短等待（原来是2.0）
+            page_timeout=30000,  # 30秒超时（原来是45000）
+            # 🛡️ 适度反爬（减少强度）
+            simulate_user=False,  # 不模拟用户（为了速度）
+            magic=False,  # 不启用魔法模式
+            override_navigator=False,
+            # ⚠️ 已移除：random_delay 参数，因为新版本的Crawl4AI不支持
+        )
+
+    def _create_enhanced_config(self, params: ScrapeParams) -> CrawlerRunConfig:
+        """增强配置 - 您已实施的方案1（保持不变）"""
+        # 🎯 这就是您已经实现的方案1配置
+        # 保持您现有的配置逻辑，不要改动
+        config_kwargs = {
+            "cache_mode": CacheMode.BYPASS,
+            "css_selector": params.css_selector,
+            "exclude_external_links": params.exclude_external_links,
+            "exclude_external_images": not params.include_images,
+            "pdf": params.return_pdf,
+            "screenshot": params.return_screenshot,
+            "word_count_threshold": params.word_count_threshold,
+            "remove_overlay_elements": True,
+            "process_iframes": True,
+        }
+        
+        config = CrawlerRunConfig(**config_kwargs)
+        return config
+
+    def _create_fallback_config(self, params: ScrapeParams) -> CrawlerRunConfig:
+        """降级配置 - 最大化兼容性"""
+        return CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            css_selector=params.css_selector,
+            exclude_external_links=params.exclude_external_links,
+            exclude_external_images=not params.include_images,
+            pdf=params.return_pdf,
+            screenshot=params.return_screenshot,
+            word_count_threshold=5,  # 降低阈值
+            # 🛡️ 最大化兼容性
+            remove_overlay_elements=False,  # 不禁用弹窗
+            process_iframes=False,  # 不处理iframe
+            # 🐢 保守设置
+            scraping_strategy=LXMLWebScrapingStrategy(),
+            delay_before_return_html=3.0,  # 长等待
+            page_timeout=60000,  # 60秒超时
+            wait_until="load",  # 等待完全加载
+            # 🔓 禁用所有可能出问题的功能
+            simulate_user=False,
+            magic=False,
+            override_navigator=False,
+        )
 
     async def _check_memory_health(self) -> bool:
         """检查系统内存健康状态 - 优化版本"""
@@ -409,122 +536,189 @@ class EnhancedCrawl4AITool:
             raise
 
     async def _scrape_single_url(self, params: ScrapeParams) -> Dict[str, Any]:
-        """抓取单个URL - 使用文档推荐的最佳实践"""
+        """智能分级抓取 - 核心增强逻辑"""
         try:
             crawler = await self._get_crawler()
             if crawler is None:
                 return {
-                    "success": False, 
+                    "success": False,
                     "error": "浏览器实例未正确初始化",
                     "memory_info": await self._get_system_memory_info()
                 }
             
-            # 使用文档推荐的 CrawlerRunConfig 配置
-            config_kwargs = {
-                "cache_mode": CacheMode.BYPASS,
-                "css_selector": params.css_selector,
-                "exclude_external_links": params.exclude_external_links,
-                "exclude_external_images": not params.include_images,
-                "pdf": params.return_pdf,
-                "screenshot": params.return_screenshot,
-                "word_count_threshold": params.word_count_threshold,
-                "remove_overlay_elements": True,
-                "process_iframes": True
-            }
+            # 🎯 第一步：智能选择首次配置
+            url = params.url
+            domain = self._extract_domain(url)
             
-            config = CrawlerRunConfig(**config_kwargs)
+            # 检查是否有缓存配置
+            if domain in self._config_cache:
+                config_name = self._config_cache[domain]
+                logger.info(f"🧠 使用缓存配置: {domain} -> {config_name}")
+            else:
+                # 智能判断
+                config_name = self._select_best_first_config(url)
+                self._config_cache[domain] = config_name
+                logger.info(f"🔍 智能选择配置: {domain} -> {config_name}")
             
-            logger.info(f"🌐 抓取 URL: {params.url}")
+            # 🎯 第二步：执行首次配置
+            result = await self._execute_with_config(crawler, params, config_name)
             
-            result = await self._execute_with_timeout(
-                crawler.arun(url=params.url, config=config),
-                timeout=90 # 缩短超时时间至 90 秒，以避免 Cloudflare 524 错误
-            )
-            
-            # 🎯 核心修复：增加对结果和内容的双重检查
-            content = getattr(result, 'markdown', '') or getattr(result, 'cleaned_html', '')
-            if not result.success or not content.strip():
-                error_message = result.error_message or "抓取成功但未能提取到任何有效文本内容。"
-                logger.error(f"❌ 抓取失败 {params.url}: {error_message}")
-                return {"success": False, "error": f"抓取失败: {error_message}", "memory_info": await self._get_system_memory_info()}
-            
-            # 构建响应数据
-            output_data = {
-                "success": True,
-                "url": params.url,
-                "content": content, # 使用已校验的内容
-                "cleaned_html": getattr(result, 'cleaned_html', ''),
-                "metadata": {
-                    "title": getattr(result, 'title', ''),
-                    "description": getattr(result, 'description', ''),
-                    "word_count": len(content),
-                    "status_code": getattr(result, 'status_code', 200)
-                },
-                "memory_info": await self._get_system_memory_info()
-            }
-            
-            # 添加链接信息
-            if hasattr(result, 'links'):
-                output_data["links"] = {
-                    "internal": getattr(result, 'internal_links', []),
-                    "external": getattr(result, 'external_links', [])
-                }
+            if result.get("success"):
+                # 成功：记住这个配置
+                logger.info(f"✅ {config_name} 配置成功")
+                return result
+            else:
+                # 失败：立即尝试降级配置
+                logger.warning(f"⚠️ {config_name} 配置失败，尝试降级")
                 
-            # 添加截图（带压缩）
-            if params.return_screenshot and hasattr(result, 'screenshot') and result.screenshot:
-                compressed_screenshot = self.compressor.compress_screenshot(
-                    result.screenshot,
-                    quality=params.screenshot_quality,
-                    max_width=params.screenshot_max_width
-                )
+                # 更新失败计数
+                failure_count = self._url_failure_count.get(url, 0) + 1
+                self._url_failure_count[url] = failure_count
                 
-                original_info = self.compressor.get_screenshot_info(result.screenshot)
-                compressed_info = self.compressor.get_screenshot_info(compressed_screenshot)
+                # 如果失败超过2次，直接使用降级配置
+                if failure_count >= 2:
+                    logger.info(f"🔄 {url} 多次失败，直接使用降级配置")
+                    return await self._execute_with_config(crawler, params, "fallback")
                 
-                output_data["screenshot"] = {
-                    "data": compressed_screenshot,
-                    "format": "base64",
-                    "type": "image/jpeg",
-                    "compression_info": {
-                        "original": original_info,
-                        "compressed": compressed_info
-                    }
-                }
+                # 否则尝试下一个更兼容的配置
+                next_config = self._get_next_fallback_config(config_name)
+                logger.info(f"🔄 降级到: {next_config}")
                 
-            # 添加PDF
-            if params.return_pdf and hasattr(result, 'pdf') and result.pdf:
-                pdf_base64 = base64.b64encode(result.pdf).decode('utf-8')
-                output_data["pdf"] = {
-                    "data": pdf_base64,
-                    "format": "base64",
-                    "type": "application/pdf",
-                    "size_bytes": len(result.pdf)
-                }
+                result = await self._execute_with_config(crawler, params, next_config)
+                if result.get("success"):
+                    # 记住这个URL需要降级配置
+                    self._config_cache[domain] = next_config
                 
-            logger.info(f"✅ 成功抓取 {params.url}, 内容长度: {len(output_data['content'])}")
-            return output_data
+                return result
             
-        except asyncio.TimeoutError:
-            logger.error(f"⏰ 抓取操作超时: {params.url}")
-            return {
-                "success": False,
-                "error": "抓取操作超时（90秒）",
-                "memory_info": await self._get_system_memory_info()
-            }
         except Exception as e:
-            logger.error(f"❌ _scrape_single_url 错误: {str(e)}")
+            logger.error(f"❌ 智能抓取错误: {str(e)}")
             if "browser" in str(e).lower() or "context" in str(e).lower() or "NoneType" in str(e):
                 await self._handle_browser_crash(e)
             return {
-                "success": False, 
+                "success": False,
                 "error": f"抓取错误: {str(e)}",
                 "memory_info": await self._get_system_memory_info()
             }
         finally:
             await self._cleanup_after_task()
 
+    def _select_best_first_config(self, url: str) -> str:
+        """为URL选择最佳的首次配置"""
+        domain = self._extract_domain(url)
+        url_lower = url.lower()
+        
+        # 检查是否为已知复杂网站
+        if self._is_known_complex_domain(domain):
+            logger.info(f"🔍 {domain} 是已知复杂网站，使用增强配置")
+            return "enhanced"
+        
+        # 检查是否为JS网站
+        if self._is_javascript_site(url_lower):
+            logger.info(f"🔍 {url} 检测为JS网站，使用增强配置")
+            return "enhanced"
+        
+        # 检查是否有反爬特征
+        if self._has_anti_bot_features(url_lower):
+            logger.info(f"🔍 {url} 检测到反爬特征，使用增强配置")
+            return "enhanced"
+        
+        # 默认：标准配置（高性能）
+        logger.info(f"🔍 {url} 检测为普通网站，使用标准配置")
+        return "standard"
+
+    async def _execute_with_config(self, crawler, params: ScrapeParams, config_name: str) -> Dict[str, Any]:
+        """使用指定配置进行抓取"""
+        # 获取配置函数
+        config_func = self._config_strategies.get(config_name, self._create_enhanced_config)
+        
+        # 构建配置
+        config = config_func(params)
+        
+        logger.info(f"🔄 执行配置: {config_name} for {params.url}")
+        
+        # 设置超时（不同配置不同超时）
+        timeout = 90  # 默认90秒
+        if config_name == "standard":
+            timeout = 90
+        elif config_name == "enhanced":
+            timeout = 120
+        elif config_name == "fallback":
+            timeout = 180
+        
+        # 执行抓取
+        result = await self._execute_with_timeout(
+            crawler.arun(url=params.url, config=config),
+            timeout=timeout
+        )
+        
+        # 🔥 关键：这里保持您原有的结果处理逻辑完全不变！
+        # 不要改动下面的代码，确保API兼容性
+        
+        content = getattr(result, 'markdown', '') or getattr(result, 'cleaned_html', '')
+        if not result.success or not content.strip():
+            error_message = result.error_message or "抓取成功但未能提取到任何有效文本内容。"
+            logger.error(f"❌ 抓取失败 {params.url}: {error_message}")
+            return {"success": False, "error": f"抓取失败: {error_message}", "memory_info": await self._get_system_memory_info()}
+        
+        # 构建响应数据（保持原有格式）
+        output_data = {
+            "success": True,
+            "url": params.url,
+            "content": content,
+            "cleaned_html": getattr(result, 'cleaned_html', ''),
+            "metadata": {
+                "title": getattr(result, 'title', ''),
+                "description": getattr(result, 'description', ''),
+                "word_count": len(content),
+                "status_code": getattr(result, 'status_code', 200)
+            },
+            "memory_info": await self._get_system_memory_info()
+        }
+        
+        # 添加链接信息（保持原有逻辑）
+        if hasattr(result, 'links'):
+            output_data["links"] = {
+                "internal": getattr(result, 'internal_links', []),
+                "external": getattr(result, 'external_links', [])
+            }
+            
+        # 添加截图（保持原有逻辑）
+        if params.return_screenshot and hasattr(result, 'screenshot') and result.screenshot:
+            compressed_screenshot = self.compressor.compress_screenshot(
+                result.screenshot,
+                quality=params.screenshot_quality,
+                max_width=params.screenshot_max_width
+            )
+            
+            original_info = self.compressor.get_screenshot_info(result.screenshot)
+            compressed_info = self.compressor.get_screenshot_info(compressed_screenshot)
+            
+            output_data["screenshot"] = {
+                "data": compressed_screenshot,
+                "format": "base64",
+                "type": "image/jpeg",
+                "compression_info": {
+                    "original": original_info,
+                    "compressed": compressed_info
+                }
+            }
+            
+        # 添加PDF（保持原有逻辑）
+        if params.return_pdf and hasattr(result, 'pdf') and result.pdf:
+            pdf_base64 = base64.b64encode(result.pdf).decode('utf-8')
+            output_data["pdf"] = {
+                "data": pdf_base64,
+                "format": "base64",
+                "type": "application/pdf",
+                "size_bytes": len(result.pdf)
+            }
+            
+        logger.info(f"✅ 成功抓取 {params.url}, 内容长度: {len(output_data['content'])}")
+        return output_data
+
     async def _deep_crawl_website(self, params: DeepCrawlParams) -> Dict[str, Any]:
-        """深度爬取网站 - 改进版本"""
+        """深度爬取网站 - 修复Context错误版本"""
         logger.info(f"🕷️ 开始深度网站爬取: {params.url}, 深度: {params.max_depth}, 最大页面: {params.max_pages}")
         
         try:
@@ -596,16 +790,11 @@ class EnhancedCrawl4AITool:
             logger.info(f"DeepCrawl Started: {params.url}")
             
             # 🎯 使用流式处理收集结果
+            # 使用 _execute_with_timeout 包装 arun，以确保整个流式操作在 400 秒内完成
             try:
-                # 🎯 关键修复：使用asyncio.create_task创建独立任务
-                # 这样可以隔离ContextVar上下文
-                crawl_task = asyncio.create_task(
-                    crawler.arun(params.url, config=config)
-                )
-                
-                # 🎯 使用超时包装
+                # 🔥 核心修复：捕获ContextVar错误
                 async for result in await self._execute_with_timeout(
-                    crawl_task,
+                    crawler.arun(params.url, config=config),
                     timeout=400
                 ):
                     if result.success:
@@ -633,42 +822,18 @@ class EnhancedCrawl4AITool:
                         # 安全限制
                         if total_pages >= params.max_pages:
                             logger.info(f"DeepCrawl Max Pages limit reached: {params.max_pages}")
-                            # 取消任务以避免继续爬取
-                            if not crawl_task.done():
-                                crawl_task.cancel()
-                                try:
-                                    await crawl_task
-                                except asyncio.CancelledError:
-                                    pass
                             break
                             
             except ValueError as e:
                 if "was created in a different Context" in str(e):
-                    logger.info(f"📝 Crawl4AI内部Context切换，已完成爬取{total_pages}个页面")
-                    # 这是一个无害的内部错误，可以安全忽略
+                    logger.warning(f"⚠️ 捕获到Crawl4AI内部Context错误，已成功获取{total_pages}个页面")
+                    # 不抛出异常，返回已收集的结果
                 else:
-                    logger.error(f"❌ 深度爬取ValueError: {str(e)}")
-                    raise
-            except asyncio.CancelledError:
-                logger.info("深度爬取任务被取消")
+                    raise e
             except Exception as e:
-                logger.error(f"❌ 深度爬取异常: {str(e)}", exc_info=True)
-                # 返回部分结果
-                return {
-                    "success": True,
-                    "crawled_pages": crawled_pages,
-                    "total_pages": total_pages,
-                    "error": f"爬取过程遇到异常: {str(e)}",
-                    "partial_result": True,
-                    "summary": {
-                        "start_url": params.url,
-                        "max_depth": params.max_depth,
-                        "strategy": params.strategy,
-                        "pages_crawled": total_pages,
-                        "error_occurred": True
-                    },
-                    "memory_info": await self._get_system_memory_info()
-                }
+                # 其他异常正常处理
+                logger.error(f"深度爬取迭代错误: {str(e)}")
+                raise
             
             logger.info(f"✅ DeepCrawl Completed: {total_pages} pages")
             
