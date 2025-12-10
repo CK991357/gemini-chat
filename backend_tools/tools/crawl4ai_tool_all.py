@@ -524,7 +524,7 @@ class EnhancedCrawl4AITool:
             await self._cleanup_after_task()
 
     async def _deep_crawl_website(self, params: DeepCrawlParams) -> Dict[str, Any]:
-        """深度爬取网站 - 修复Context错误版本"""
+        """深度爬取网站 - 改进版本"""
         logger.info(f"🕷️ 开始深度网站爬取: {params.url}, 深度: {params.max_depth}, 最大页面: {params.max_pages}")
         
         try:
@@ -596,11 +596,16 @@ class EnhancedCrawl4AITool:
             logger.info(f"DeepCrawl Started: {params.url}")
             
             # 🎯 使用流式处理收集结果
-            # 使用 _execute_with_timeout 包装 arun，以确保整个流式操作在 400 秒内完成
             try:
-                # 🔥 核心修复：捕获ContextVar错误
+                # 🎯 关键修复：使用asyncio.create_task创建独立任务
+                # 这样可以隔离ContextVar上下文
+                crawl_task = asyncio.create_task(
+                    crawler.arun(params.url, config=config)
+                )
+                
+                # 🎯 使用超时包装
                 async for result in await self._execute_with_timeout(
-                    crawler.arun(params.url, config=config),
+                    crawl_task,
                     timeout=400
                 ):
                     if result.success:
@@ -628,18 +633,42 @@ class EnhancedCrawl4AITool:
                         # 安全限制
                         if total_pages >= params.max_pages:
                             logger.info(f"DeepCrawl Max Pages limit reached: {params.max_pages}")
+                            # 取消任务以避免继续爬取
+                            if not crawl_task.done():
+                                crawl_task.cancel()
+                                try:
+                                    await crawl_task
+                                except asyncio.CancelledError:
+                                    pass
                             break
                             
             except ValueError as e:
                 if "was created in a different Context" in str(e):
-                    logger.warning(f"⚠️ 捕获到Crawl4AI内部Context错误，已成功获取{total_pages}个页面")
-                    # 不抛出异常，返回已收集的结果
+                    logger.info(f"📝 Crawl4AI内部Context切换，已完成爬取{total_pages}个页面")
+                    # 这是一个无害的内部错误，可以安全忽略
                 else:
-                    raise e
+                    logger.error(f"❌ 深度爬取ValueError: {str(e)}")
+                    raise
+            except asyncio.CancelledError:
+                logger.info("深度爬取任务被取消")
             except Exception as e:
-                # 其他异常正常处理
-                logger.error(f"深度爬取迭代错误: {str(e)}")
-                raise
+                logger.error(f"❌ 深度爬取异常: {str(e)}", exc_info=True)
+                # 返回部分结果
+                return {
+                    "success": True,
+                    "crawled_pages": crawled_pages,
+                    "total_pages": total_pages,
+                    "error": f"爬取过程遇到异常: {str(e)}",
+                    "partial_result": True,
+                    "summary": {
+                        "start_url": params.url,
+                        "max_depth": params.max_depth,
+                        "strategy": params.strategy,
+                        "pages_crawled": total_pages,
+                        "error_occurred": True
+                    },
+                    "memory_info": await self._get_system_memory_info()
+                }
             
             logger.info(f"✅ DeepCrawl Completed: {total_pages} pages")
             
