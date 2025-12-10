@@ -26,16 +26,14 @@ export const CONFIG = {
                 isWebSocket: false
             },
             {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash (工具调用)',
+                name: 'glm-4.6v-flash',
+                displayName: 'glm-4.6v-flash (HTTP)',
                 isWebSocket: false,
                 isZhipu: true, // 标记为智谱模型
-                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
-                tools: mcpTools
             },
             {
-                name: 'glm-4.6v-flash',
-                displayName: 'glm-4.6v-flash (工具调用)',
+                name: 'GLM-4.5-Flash',
+                displayName: 'GLM-4.5-Flash (工具调用)',
                 isWebSocket: false,
                 isZhipu: true, // 标记为智谱模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
@@ -916,11 +914,6 @@ print(json.dumps(result))
                 isGemini: true, // 标记为 Gemini 模型以进行工具调用格式区分
                 enableReasoning: true, // 为此模型启用思考链
                 mcp_server_url: "/api/mcp-proxy" // All MCP calls go through our proxy
-            },
-            {
-                name: 'glm-4.1v-thinking-flash',
-                displayName: 'GLM-4.1V-Thinking-Flash',
-                isZhipu: true, // 标记为智谱模型
             },
             {
                 name: 'glm-4.6v-flash',
