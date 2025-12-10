@@ -2140,9 +2140,32 @@ if __name__ == "__main__":
 ${availableToolsText}
 
 ## 🕷️ crawl4ai 工具使用说明 (由模式策略提供)
-- **核心增强：批量爬取 (Batch Crawl)**：使用 \`batch_crawl\` 模式，传入 \`urls\` 数组。
-- **重要**: 当使用 \`extract\` 模式时，必须提供一个名为 \`schema_definition\` 的参数来定义提取的数据结构。请勿使用 \`schema\` 作为参数名。
-- **限制**: 仅支持基于 **精确 CSS 选择器** 的结构化数据提取（\`extraction_type: 'css'\`）。**严禁**尝试进行 LLM 驱动的智能提取（\`extraction_type: 'llm'\`）。
+
+### 🔧 可用模式：
+1. **scrape**：抓取单个网页，返回Markdown/HTML
+2. **batch_crawl**：批量抓取多个URL（最大4并发）
+3. **deep_crawl**：深度探索网站结构（支持三种模式：bfs/dfs/best_first）
+4. **extract**：基于CSS选择器提取结构化数据，注意仅支持基于 **精确 CSS 选择器** 的结构化数据提取（\`extraction_type: 'css'\`）。**严禁**尝试进行 LLM 驱动的智能提取（\`extraction_type: 'llm'\`）。
+5. **pdf_export**：将当前页面导出为PDF
+6. **screenshot**：捕获页面截图并压缩
+
+### 📌 重要参数规范：
+- **Extract模式**：必须提供一个名为 \`schema_definition\` 的参数来定义提取的数据结构。请勿使用 \`schema\` 作为参数名。
+- **Batch Crawl模式**：使用 \`batch_crawl\` 模式，传入 \`urls\` 数组。模式支持最多4个并发请求
+- **深度爬取**：默认最大深度3，最大页面80
+
+### ⚠️ 工具限制（Agent必须注意）：
+1. **无法处理PDF文件**：如果URL以.pdf结尾，会直接失败
+2. **无法抓取API接口**：只处理HTML网页，不处理JSON/API
+3. **JS渲染有限**：对复杂JS网站可能需要多次尝试或降级配置
+4. **反爬严格网站**：可能触发降级配置或失败
+
+### 🚀 新增能力：
+- **智能分级抓取**：\`scrape\`模式能力增强，可自动检测网站类型，智能选择最佳配置
+- **增强反爬能力**：120+浏览器参数，随机化指纹，减少被屏蔽风险
+- **批量抓取优化**：\`batch_crawl\` 模式支持最多4个并发请求
+- **内存智能管理**：自动监控和清理，支持长时间稳定运行
+- **截图压缩**：自动压缩大尺寸截图，减少数据传输
 `;
 
         const prompt = `
