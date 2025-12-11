@@ -383,9 +383,11 @@ print(stderr_val, file=sys.stderr, end='')
                 "command": ["python", "-c", runner_script],
                 "network_disabled": True,
                 "environment": {'MPLCONFIGDIR': '/tmp'},
-                "mem_limit": "1g",
+                "mem_limit": "6g",
+                "mem_reservation": "4g",        # 预留内存
+                "memswap_limit": "0",           # ❗ 必须禁用swap！机械硬盘用swap会死机
                 "cpu_period": 100_000,
-                "cpu_quota": 50_000,
+                "cpu_quota": 75_000,
                 "read_only": True,
                 "tmpfs": {'/tmp': 'size=100M,mode=1777'},
                 "detach": True
