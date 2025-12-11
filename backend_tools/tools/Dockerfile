@@ -58,7 +58,6 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     tqdm==4.66.4 \
     joblib==1.3.2 \
     aiofiles==24.1.0 \
-    lxml==5.2.2 \
     numexpr==2.10.0 \      
     bottleneck==1.3.8 \     
     duckdb==0.10.2 \        
