@@ -657,6 +657,107 @@ def model_optimization_pipeline(X, y, problem_type='regression'):
 # optimized_classification = model_optimization_pipeline(X_clf, y_clf, 'classification')
 ```
 
+## 机器学习增强(v2.5新增)
+
+### LightGBM - 高效梯度提升
+
+**用途**: 高性能梯度提升树算法
+**优势**: 比XGBoost训练更快，内存占用更少
+
+```python
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+import pandas as pd
+
+# 准备数据
+data = pd.read_csv('/data/train.csv')
+X = data.drop('target', axis=1)
+y = data['target']
+
+# 划分数据集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 创建数据集
+train_data = lgb.Dataset(X_train, label=y_train)
+test_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
+
+# 参数设置（优化内存使用）
+params = {
+    'boosting_type': 'gbdt',
+    'objective': 'binary',
+    'metric': 'binary_logloss',
+    'num_leaves': 31,
+    'learning_rate': 0.05,
+    'feature_fraction': 0.9,
+    'bagging_fraction': 0.8,
+    'bagging_freq': 5,
+    'verbose': -1,
+    'num_threads': 2  # 限制线程数
+}
+
+# 训练模型
+gbm = lgb.train(params, train_data, num_boost_round=100)
+```
+
+### Category Encoders - 分类特征编码
+
+**用途**: 各种分类编码方法
+**优势**: 提升分类模型性能，支持多种编码策略
+
+```python
+import pandas as pd
+import category_encoders as ce
+
+# 创建示例数据
+df = pd.DataFrame({
+    'category': ['A', 'B', 'A', 'C', 'B', 'A'],
+    'value': [1, 2, 3, 4, 5, 6]
+})
+
+# 使用Target Encoding
+encoder = ce.TargetEncoder(cols=['category'])
+df_encoded = encoder.fit_transform(df['category'], df['value'])
+
+print(df_encoded)
+```
+
+### scikit-optimize - 贝叶斯超参数优化
+
+**用途**: 自动化超参数优化
+**优势**: 比网格搜索更高效，找到更好参数组合
+
+```python
+from skopt import BayesSearchCV
+from sklearn.ensemble import RandomForestClassifier
+import pandas as pd
+
+# 准备数据
+data = pd.read_csv('/data/train.csv')
+X = data.drop('target', axis=1)
+y = data['target']
+
+# 定义参数搜索空间
+param_space = {
+    'n_estimators': (50, 200),
+    'max_depth': (3, 10),
+    'min_samples_split': (2, 10),
+    'min_samples_leaf': (1, 4)
+}
+
+# 贝叶斯优化搜索
+opt = BayesSearchCV(
+    RandomForestClassifier(),
+    param_space,
+    n_iter=50,
+    cv=5,
+    n_jobs=2  # 限制并行线程
+)
+
+opt.fit(X, y)
+print(f"最佳参数: {opt.best_params_}")
+print(f"最佳分数: {opt.best_score_:.4f}")
+```
+
 ## ⚠️ 使用注意事项
 
 ### ✅ 推荐做法：

@@ -383,6 +383,62 @@ print(f"\n外连接结果 (共{len(outer_join)}行):")
 print(outer_join)
 ```
 
+### 高性能数据处理库 (v2.5新增)
+
+#### DuckDB - 内存SQL引擎
+**用途**: 对DataFrame执行高性能SQL查询，替代复杂Pandas操作
+**优势**: 比Pandas快3-10倍，内存效率高，机械硬盘友好
+```python
+import duckdb
+import pandas as pd
+
+# 将Pandas DataFrame注册到DuckDB
+df = pd.read_csv('/data/financial_data.csv')
+result = duckdb.sql("""
+    SELECT category, 
+           AVG(value) as avg_value,
+           COUNT(*) as count
+    FROM df 
+    WHERE date >= '2024-01-01'
+    GROUP BY category
+    ORDER BY avg_value DESC
+""").df()  # 返回Pandas DataFrame
+```
+
+#### Numexpr - 表达式加速
+**用途**: 加速复杂数值表达式计算（如 `df[df.A > df.B]` 类操作）
+**优势**: 比纯NumPy快3-5倍，减少中间数组创建
+```python
+import pandas as pd
+import numexpr as ne
+
+# 传统方式（慢）
+df['result'] = df['A'] * 2 + df['B'] ** 2 - df['C'] / 3
+
+# Numexpr方式（快3-5倍）
+df['result'] = ne.evaluate("A * 2 + B ** 2 - C / 3", 
+                          local_dict={k: df[k].values for k in ['A', 'B', 'C']})
+```
+
+#### Bottleneck - 滚动统计加速
+**用途**: 加速移动窗口、滚动统计操作
+**优势**: 比NumPy快5-100倍，特别适合时间序列分析
+```python
+import bottleneck as bn
+import numpy as np
+
+data = np.random.randn(1000000)
+
+# 传统方式
+mean_slow = np.mean(data)
+
+# Bottleneck方式（快5-100倍）
+mean_fast = bn.nanmean(data)
+
+# 滚动窗口操作（特别快）
+rolling_mean = bn.move_mean(data, window=50)
+```
+
 ## ⚠️ 使用注意事项
 
 ### ✅ 推荐做法：

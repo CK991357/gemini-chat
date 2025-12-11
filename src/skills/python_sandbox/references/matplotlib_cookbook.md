@@ -233,6 +233,36 @@ def create_network_diagram():
 create_network_diagram()
 ```
 
+### 进度显示与表格格式化 (v2.5新增)
+
+#### tqdm - 进度条显示
+**用途**: 为长时间操作提供进度反馈
+```python
+from tqdm import tqdm
+import time
+
+# 为循环添加进度条
+for i in tqdm(range(100), desc="处理中"):
+    time.sleep(0.01)  # 模拟耗时操作
+    # 你的处理逻辑
+```
+
+#### tabulate - 美观表格输出
+**用途**: 格式化表格输出，提升可读性
+```python
+from tabulate import tabulate
+import pandas as pd
+
+df = pd.DataFrame({
+    '姓名': ['张三', '李四', '王五'],
+    '年龄': [25, 30, 35],
+    '分数': [85.5, 92.0, 78.5]
+})
+
+# 输出为漂亮的表格
+print(tabulate(df, headers='keys', tablefmt='grid', showindex=False))
+```
+
 ## 🔄 后端实际捕获机制说明
 
 ### 捕获优先级顺序：
