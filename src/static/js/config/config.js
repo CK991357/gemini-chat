@@ -48,6 +48,14 @@ export const CONFIG = {
                 tools: mcpTools
             },
             {
+                name: 'deepseek-ai/DeepSeek-V3.2',
+                displayName: 'deepseek-ai/DeepSeek-V3.2 (工具调用)',
+                isWebSocket: false,
+                isQwen: true, // 标记为通义千问模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            },
+            {
                 name: 'gemini-2.5-flash-preview-09-2025',
                 displayName: 'gemini-2.5-flash-preview-09-2025 (工具调用)',
                 isWebSocket: false,
