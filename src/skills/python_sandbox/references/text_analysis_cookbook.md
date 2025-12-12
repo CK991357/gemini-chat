@@ -156,34 +156,77 @@ print("价格：$299.99")  # 系统无法结构化处理
 ## 🛠️ 专业分析工具箱
 
 ### 1. 价格提取器
+
+## 🔧 价格信息提取（关键更新）
+
+### 🚫 禁止操作
+- ❌ 类定义（`class PriceExtractor:`） - 沙盒环境不支持
+- ❌ 使用不存在的库（如 `PriceExtractor`）
+
+### ✅ 推荐方案：使用正则表达式提取价格
 ```python
-class PriceExtractor:
-    """专业价格提取工具，支持全球货币"""
+import re
+import json
+
+def extract_price_info(text):
+    """从文本中提取价格信息"""
+    price_patterns = [
+        r'(\$\d+(?:\.\d+)?)\s*per\s*1[kK]\s*tokens?',
+        r'(\d+(?:\.\d+)?)\s*USD\s*per\s*1[kK]\s*tokens?',
+        r'输入\s*:\s*(\$\d+\.\d+)\s*输出\s*:\s*(\$\d+\.\d+)',
+        r'(\$\d+(?:\.\d+)?)\s*/\s*1[kK]\s*tokens?'
+    ]
     
-    CURRENCY_PATTERNS = {
-        'USD': [r'\$\s*(\d+\.?\d*)', r'USD\s*(\d+)'],
-        'EUR': [r'€\s*(\d+\.?\d*)', r'EUR\s*(\d+)'],
-        'GBP': [r'£\s*(\d+\.?\d*)', r'GBP\s*(\d+)'],
-        'CNY': [r'¥\s*(\d+)', r'RMB\s*(\d+)', r'人民币\s*(\d+)'],
-        'HKD': [r'HK\$\s*(\d+)', r'HKD\s*(\d+)'],
-        'JPY': [r'JPY\s*(\d+)', r'¥\s*(\d+)']
+    prices = []
+    for pattern in price_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            prices.extend(matches)
+    
+    return {
+        'extraction_method': 'regex',
+        'price_matches': prices,
+        'sample_text': text[:500]  # 保留样本用于验证
     }
-    
-    def extract_all_prices(self, text: str) -> dict:
-        """从文本中提取所有货币价格"""
-        found_prices = {}
-        
-        for currency, patterns in self.CURRENCY_PATTERNS.items():
-            for pattern in patterns:
-                matches = re.findall(pattern, text)
-                if matches:
-                    found_prices[currency] = matches[0]
-                    break  # 每种货币取第一个匹配
-        
-        return found_prices
+
+# 使用示例
+text_content = "从所有步骤收集的文本..."
+price_info = extract_price_info(text_content)
+print(json.dumps(price_info, indent=2))
 ```
 
-### 2. 规格提取器
+### 2. 技术参数提取器
+```python
+import re
+
+def extract_tech_specs(text):
+    """提取技术参数"""
+    specs = {}
+    
+    # 参数数量
+    param_match = re.search(r'(\d+(?:\.\d+)?)\s*万亿?\s*参数', text)
+    if param_match:
+        specs['parameter_count'] = param_match.group(1) + '万亿'
+    
+    # 上下文长度
+    context_match = re.search(r'(\d+(?:,\d+)?[kK]?)\s*tokens?\s*上下文', text)
+    if context_match:
+        specs['context_length'] = context_match.group(1)
+    
+    # MMLU 分数
+    mmlu_match = re.search(r'MMLU\s*[:：]?\s*(\d+(?:\.\d+)?)', text)
+    if mmlu_match:
+        specs['mmlu_score'] = float(mmlu_match.group(1))
+    
+    return specs
+
+# 使用示例
+text_content = "某模型具有3.5万亿参数，支持128K tokens上下文长度，MMLU分数为85.2"
+tech_specs = extract_tech_specs(text_content)
+print(json.dumps(tech_specs, ensure_ascii=False, indent=2))
+```
+
+### 3. 规格提取器
 ```python
 class SpecificationExtractor:
     """产品规格信息提取"""
@@ -208,7 +251,7 @@ class SpecificationExtractor:
         return dimensions
 ```
 
-### 3. 关键词分析器
+### 4. 关键词分析器
 ```python
 class KeywordAnalyzer:
     """基于关键词的分类分析"""
@@ -232,7 +275,7 @@ class KeywordAnalyzer:
         return categories if categories else ["未分类"]
 ```
 
-### 4. HTML结构化提取器
+### 5. HTML结构化提取器
 ```python
 from bs4 import BeautifulSoup
 from lxml import etree

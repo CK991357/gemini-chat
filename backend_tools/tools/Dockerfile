@@ -64,7 +64,8 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
     scikit-learn==1.5.0 \   
     scikit-optimize==0.9.0 \
     lightgbm==4.3.0 \     
-    category_encoders==2.6.3 
+    category_encoders==2.6.3 \
+    polars-lts-cpu==0.20.3
 
 
 # 复制您的 code_interpreter.py 文件到容器的 /app 目录

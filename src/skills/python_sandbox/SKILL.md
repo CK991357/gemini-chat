@@ -143,17 +143,9 @@ print(df.head())
 - **指令**: **请参考 `references/matplotlib_cookbook.md` 中的流程图章节**
 - **适用场景**: 技术架构说明、系统设计、流程可视化
 
-### **9. 性能优化与高效数据处理** *(v2.5新增)*
-- **任务**: 处理大型数据集、优化计算性能、减少内存使用
-- **指令**: **查阅 `references/performance_optimization.md`** 了解如何使用DuckDB、Numexpr、Polars等库进行高效数据处理
-
-### **10. 异步文件操作与IO优化** *(v2.5新增)*
-- **任务**: 处理大文件、优化磁盘IO、避免阻塞操作
-- **指令**: **参考 `references/async_io_guide.md`** 了解如何使用aiofiles进行异步文件操作
-
-### **11. 高级机器学习与模型优化** *(v2.5新增)*
+### **9. 高级机器学习与模型优化** *(v2.5新增)*
 - **任务**: 使用梯度提升树、特征编码、超参数优化
-- **指令**: **查阅 `references/advanced_ml_workflow.md`** 了解LightGBM、Category Encoders等高级ML工具的使用
+- **指令**: **查阅 `references/ml_workflow.md`** 了解LightGBM、Category Encoders等高级ML工具的使用
 
 ---
 
@@ -356,7 +348,7 @@ result = duckdb.sql("""
 4.  **利用会话文件系统**: 你可以向 `/data` 目录写入和读取文件，这在多步骤的复杂分析中非常有用。
 5.  **按需加载**: 对于复杂任务，优先参考对应的references文件。
 6.  **机械硬盘优化**: 使用Feather格式、分块处理、DuckDB替代重Pandas操作。
-7.  **内存限制**: 容器内存限制为5GB，避免使用swap，确保稳定性。
+7.  **内存限制**: 容器内存限制为6GB，避免使用swap，确保稳定性。
 8.  **新库使用**: v2.5新增库无需特殊配置，直接导入即可使用。
 
 ---
