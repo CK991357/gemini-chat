@@ -627,13 +627,13 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-            } else if (model === 'Qwen/Qwen3-Coder-480B-A35B-Instruct') {
-                console.log(`DEBUG: Routing to ModelScope chat proxy for model: ${model}`);
-                const targetUrl = 'https://api-inference.modelscope.cn/v1/chat/completions';
-                const apiKey = env.QWEN_API_KEY;
+            } else if (model === 'deepseek-ai/DeepSeek-V3.2') {
+                console.log(`DEBUG: Routing to SiliconFlow chat proxy for model: ${model}`);
+                const targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
+                const apiKey = env.SF_API_TOKEN;
 
                 if (!apiKey) {
-                    throw new Error('QWEN_API_KEY is not configured in environment variables.');
+                    throw new Error('SF_API_TOKEN is not configured in environment variables.');
                 }
 
                 // 直接将请求体转发到中转端点
@@ -655,7 +655,8 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-            } else if (model === 'deepseek-ai/DeepSeek-V3.2') {
+            
+            } else if (model === 'Qwen/Qwen3-Coder-480B-A35B-Instruct') {
                 console.log(`DEBUG: Routing to ModelScope chat proxy for model: ${model}`);
                 const targetUrl = 'https://api-inference.modelscope.cn/v1/chat/completions';
                 const apiKey = env.QWEN_API_KEY;
