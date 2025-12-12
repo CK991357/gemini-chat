@@ -487,7 +487,7 @@ print(f"微分方程: {ode}")
 print(f"通解: {solution}")
 
 # 添加初始条件：y(0)=1, y'(0)=0
-ics = {y(0): 1, sp.diff(y(t), t).subs(t, 0): 0}
+ics = {y(0): 1, y(t).diff(t).subs(t, 0): 0}
 particular_solution = sp.dsolve(ode, y(t), ics=ics)
 print(f"特解: {particular_solution}")
 ```
@@ -505,7 +505,8 @@ f = x**2 + y**2  # 最小化 x² + y²
 constraint = sp.Eq(x + y, 1)  # 约束 x + y = 1
 
 # 使用拉格朗日乘子法
-L = f + sp.symbols('λ') * (x + y - 1)
+lam = sp.symbols('λ')
+L = f + lam * (x + y - 1)
 
 # 求偏导
 eq1 = sp.Eq(sp.diff(L, x), 0)

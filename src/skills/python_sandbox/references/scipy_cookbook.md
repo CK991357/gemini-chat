@@ -649,19 +649,45 @@ plt.show()
 3. 不要忽略求解器的收敛状态
 4. 不要在循环中重复创建大型数组
 
+### ⚠️ 内存限制提醒：
+在执行大型计算前，请添加内存使用提醒：
+```python
+# 在大型计算前添加提醒
+print("注意：以下计算可能需要较大内存，如有问题请分块处理")
+```
+
+### 📊 性能监控：
+添加性能监控代码可以帮助了解计算资源消耗：
+```python
+import time
+import psutil
+
+start_time = time.time()
+process = psutil.Process()
+initial_memory = process.memory_info().rss / 1024**2
+
+# ... 执行计算 ...
+
+end_time = time.time()
+final_memory = process.memory_info().rss / 1024**2
+
+print(f"计算时间: {end_time - start_time:.2f}秒")
+print(f"内存使用: {final_memory - initial_memory:.2f} MB")
+```
+
 ### 🔧 错误处理：
 ```python
+# 在关键计算周围添加try-except
 try:
-    from scipy import optimize
-    result = optimize.minimize_scalar(lambda x: x**2, bounds=(0, 1))
+    result = optimize.minimize_scalar(func, bounds=(0, 10))
     if result.success:
-        print(f"优化成功: x = {result.x:.4f}, f(x) = {result.fun:.4f}")
+        print(f"优化成功: x={result.x:.4f}")
     else:
         print(f"优化失败: {result.message}")
-except ImportError:
-    print("SciPy 优化模块不可用")
 except Exception as e:
     print(f"计算错误: {e}")
+    # 提供替代方案
+    print("尝试使用不同的初始值或方法...")
 ```
 
 ### 💡 性能优化建议：
@@ -670,6 +696,9 @@ except Exception as e:
 # 2. 对于大型线性系统，使用稀疏矩阵
 # 3. 重复计算时缓存中间结果
 # 4. 使用适当精度，避免不必要的高精度计算
+# 5. 大型计算前添加内存使用提醒
+# 6. 监控计算时间和内存消耗
+# 7. 为关键计算添加错误处理机制
 ```
 
 ## 📋 快速参考卡
