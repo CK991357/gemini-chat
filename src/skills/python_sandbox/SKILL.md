@@ -9,7 +9,7 @@ version: 2.5
 references: ["matplotlib_cookbook.md", "pandas_cheatsheet.md", "report_generator_workflow.md", "ml_workflow.md", "sympy_cookbook.md","scipy_cookbook.md", "text_analysis_cookbook.md"]
 ---
 
-# Python沙盒工具使用指南 v2.5 (审查优化版)
+# Python沙盒工具使用指南 v2.5 (最终完整优化版)
 
 ## 🎯 **核心能力概览**
 
@@ -70,9 +70,9 @@ import json
 # 生成文件内容后...
 file_data = base64.b64encode(content).decode('utf-8')
 output = {
-    "type": "excel",  # 或 "word", "pdf", "ppt"
+    "type": "excel",  # 或 "word", "pdf", "ppt", "image", "analysis_report", "ml_report"
     "title": "销售报告.xlsx",
-    "data_base64": file_data
+    "data_base64": file_data  # 对于图片用 "image_base64"
 }
 print(json.dumps(output))  # 🎯 必须用JSON格式打印
 ```
@@ -217,16 +217,65 @@ df['result'] = ne.evaluate(
 )
 ```
 
-### **3. 异步文件操作**
+### **3. 高级优化技巧 (完整版补充)**
+
+#### **异步文件操作 - aiofiles**
 ```python
 import aiofiles
 import asyncio
 
-async def process_file_async():
-    async with aiofiles.open('/data/large.txt', 'r') as f:
+async def process_large_file():
+    # 异步读取，不阻塞主线程（机械硬盘特别受益）
+    async with aiofiles.open('/data/large_file.csv', 'r') as f:
         content = await f.read()
-    # 异步处理...
-    return processed_content
+    
+    # 处理数据...
+    
+    # 异步写入
+    async with aiofiles.open('/data/processed.csv', 'w') as f:
+        await f.write(processed_content)
+
+# 在异步环境中调用
+await process_large_file()
+```
+
+#### **内存缓存与并行计算 - joblib**
+```python
+from joblib import Memory
+import time
+
+# 创建内存缓存（可配置到磁盘）
+cachedir = '/data/cache'
+memory = Memory(cachedir, verbose=0)
+
+@memory.cache
+def expensive_computation(x, y):
+    """计算结果会被缓存到磁盘"""
+    time.sleep(2)  # 模拟耗时计算
+    return x * y + x**2
+
+# 第一次计算慢，后续从磁盘读取快
+result1 = expensive_computation(10, 20)  # 慢
+result2 = expensive_computation(10, 20)  # 快（从缓存）
+```
+
+#### **DuckDB替代Pandas重操作**
+```python
+import duckdb
+
+# ❌ 耗内存的Pandas操作
+# df = pd.read_csv('/data/large.csv')
+# result = df.groupby('category').agg({'value': ['mean', 'sum', 'count']})
+
+# ✅ 内存友好的DuckDB操作
+result = duckdb.sql("""
+    SELECT category, 
+           AVG(value) as mean_value,
+           SUM(value) as sum_value,
+           COUNT(value) as count_value
+    FROM read_csv('/data/large.csv')
+    GROUP BY category
+""").df()
 ```
 
 ---
@@ -235,35 +284,58 @@ async def process_file_async():
 
 ### **数据处理核心**
 ```python
-import pandas as pd          # 数据分析
-import numpy as np           # 数值计算
-import duckdb                # 内存SQL (v2.5新增)
-import numexpr as ne         # 表达式加速 (v2.5新增)
-import bottleneck as bn      # 滚动统计加速 (v2.5新增)
+import pandas as pd          # 数据分析 (v2.2.2)
+import numpy as np           # 数值计算 (v1.26.4)
+import duckdb                # 内存SQL (v0.10.2) - v2.5新增
+import numexpr as ne         # 表达式加速 (v2.10.0) - v2.5新增
+import bottleneck as bn      # 滚动统计加速 (v1.3.8) - v2.5新增
+import pyarrow.feather as feather  # Feather格式支持 (v14.0.2)
 ```
 
 ### **机器学习增强**
 ```python
-from sklearn.ensemble import RandomForestClassifier
-import lightgbm as lgb       # 梯度提升树 (v2.5新增)
-import category_encoders as ce  # 分类编码 (v2.5新增)
-from skopt import BayesSearchCV  # 贝叶斯优化 (v2.5新增)
+from sklearn.ensemble import RandomForestClassifier  # scikit-learn v1.5.0
+import lightgbm as lgb       # 梯度提升树 (v4.3.0) - v2.5新增
+import category_encoders as ce  # 分类编码 (v2.6.3) - v2.5新增
+from skopt import BayesSearchCV  # 贝叶斯优化 (v0.9.0) - v2.5新增
+import statsmodels.api as sm  # 统计模型 (v0.14.1)
 ```
 
 ### **可视化与图表**
 ```python
-import matplotlib.pyplot as plt  # 基础绘图
-import seaborn as sns            # 统计可视化
+import matplotlib.pyplot as plt  # 基础绘图 (v3.8.4)
+import seaborn as sns            # 统计可视化 (v0.13.2)
 import graphviz                  # 流程图 (自动布局)
 import networkx as nx            # 网络图
 ```
 
 ### **文档生成**
 ```python
-from docx import Document        # Word文档
-from reportlab.lib.pagesizes import letter  # PDF生成
-from pptx import Presentation    # PPT演示文稿
-import openpyxl                  # Excel操作
+from docx import Document        # Word文档 (v1.1.2)
+from reportlab.lib.pagesizes import letter  # PDF生成 (v4.0.7)
+from pptx import Presentation    # PPT演示文稿 (v0.6.23)
+import openpyxl                  # Excel操作 (v3.1.2)
+```
+
+### **科学计算与数学**
+```python
+import sympy as sp               # 符号数学 (v1.12)
+import scipy                     # 科学计算 (v1.14.1)
+import scipy.optimize as opt     # 优化算法
+```
+
+### **网页内容处理**
+```python
+from bs4 import BeautifulSoup    # HTML解析 (v4.12.3)
+import lxml                      # 高性能解析器 (v5.2.2)
+from tabulate import tabulate    # 格式化表格 (v0.9.0)
+```
+
+### **性能优化与工具**
+```python
+from tqdm import tqdm            # 进度条显示 (v4.66.4) - v2.5新增
+from joblib import Memory        # 磁盘缓存和并行 (v1.3.2) - v2.5新增
+import aiofiles                  # 异步文件操作 (v24.1.0) - v2.5新增
 ```
 
 ---
@@ -282,6 +354,8 @@ import openpyxl                  # Excel操作
 exec("危险代码")                 # ❌ 动态执行
 __import__('os').system('rm')   # ❌ 系统命令
 open('/etc/passwd')             # ❌ 访问系统文件
+class MyClass:                   # ❌ 类定义
+    pass
 ```
 
 ### **⚠️ 性能警告**
@@ -289,6 +363,11 @@ open('/etc/passwd')             # ❌ 访问系统文件
 2. **复杂计算**: 使用DuckDB或Numexpr加速
 3. **重复操作**: 使用Feather格式缓存中间结果
 4. **内存监控**: 及时删除大变量 `del large_df`
+
+### **🔧 高级使用建议**
+1. **纯函数式编程**: 使用字典和列表组织数据，避免类定义
+2. **复杂逻辑拆分**: 将复杂任务拆分为多个小函数
+3. **分步骤执行**: 利用会话持久化，分步执行复杂分析
 
 ---
 
@@ -308,6 +387,12 @@ for chunk in pd.read_csv('/data/huge.csv', chunksize=50000):
 
 # 方案B: 使用DuckDB内存外查询
 result = duckdb.sql("SELECT * FROM read_csv_auto('/data/huge.csv') LIMIT 10000").df()
+
+# 方案C: 转换为Feather格式
+import pyarrow.feather as feather
+df = pd.read_csv('/data/huge.csv')
+feather.write_feather(df, '/data/huge.feather')  # 保存为高效格式
+df_fast = feather.read_feather('/data/huge.feather')  # 快速读取
 ```
 
 #### **问题2: 处理速度慢**
@@ -318,6 +403,10 @@ df['result'] = df['A'] * 2 + df['B'] ** 2 - df['C'] / 3
 # ✅ 使用Numexpr加速
 df['result'] = ne.evaluate("A * 2 + B ** 2 - C / 3", 
                           {k: df[k].values for k in ['A', 'B', 'C']})
+
+# ✅ 使用Bottleneck加速滚动统计
+import bottleneck as bn
+df['rolling_mean'] = bn.move_mean(df['value'], window=20)
 ```
 
 #### **问题3: 图表不显示**
@@ -332,6 +421,33 @@ plt.title('图表')
 plt.show()  # 🎯 关键！
 ```
 
+#### **问题4: 大型文件IO慢**
+```python
+# ❌ 同步IO阻塞
+with open('/data/large.txt', 'r') as f:
+    content = f.read()  # 阻塞主线程
+
+# ✅ 异步IO (机械硬盘特别有效)
+import aiofiles
+import asyncio
+
+async def read_file_async():
+    async with aiofiles.open('/data/large.txt', 'r') as f:
+        return await f.read()
+```
+
+### **性能监控命令 (完整版补充)**
+```bash
+# 监控内存使用
+watch -n 2 "free -h | grep -E 'Mem|Swap'"
+
+# 监控磁盘IO（机械硬盘关键指标）
+iostat -x 2
+
+# 监控Docker容器
+docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}"
+```
+
 ---
 
 ## 📈 **版本更新日志**
@@ -341,11 +457,17 @@ plt.show()  # 🎯 关键！
 2. **ML增强**: LightGBM、Category Encoders、scikit-optimize (贝叶斯优化)
 3. **工具完善**: tqdm进度条、joblib缓存、aiofiles异步IO
 4. **机械硬盘优化**: Feather格式指南、分块处理策略、内存外计算
+5. **库版本升级**: scikit-learn升级到1.5.0，pandas 2.2.2
 
 ### **v2.4 主要功能**
 - 文本分析能力 (BeautifulSoup4 + lxml)
 - 图表自动捕获系统完善
 - 会话文件管理优化
+
+### **v2.3 及更早**
+- 基础沙盒功能
+- 图表自动捕获
+- 文件上传支持
 
 ---
 
@@ -374,12 +496,71 @@ plt.show()
 ```python
 # 参考: report_generator_workflow.md
 # 包含数据读取、分析、图表、文档生成全流程
+
+import pandas as pd
+import matplotlib.pyplot as plt
+from docx import Document
+import base64, json
+
+# 1. 数据读取与分析
+df = pd.read_excel('/data/sales_data.xlsx')
+summary = df.groupby('region')['sales'].sum()
+
+# 2. 创建图表
+summary.plot(kind='bar')
+plt.title('各地区销售总额')
+plt.tight_layout()
+plt.show()
+
+# 3. 生成Word报告
+doc = Document()
+doc.add_heading('销售分析报告', 0)
+doc.add_paragraph(f"总销售额: ${df['sales'].sum():,.2f}")
+doc.add_paragraph(f"平均销售额: ${df['sales'].mean():,.2f}")
+
+# 4. 保存并输出
+doc.save('/data/report.docx')
+with open('/data/report.docx', 'rb') as f:
+    file_data = base64.b64encode(f.read()).decode('utf-8')
+
+output = {
+    "type": "word",
+    "title": "销售分析报告.docx",
+    "data_base64": file_data
+}
+print(json.dumps(output))
 ```
 
 ### **模板3: 机器学习建模**
 ```python
 # 参考: ml_workflow.md
 # 包含数据预处理、特征工程、模型训练、评估
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+
+# 1. 加载数据
+df = pd.read_csv('/data/iris.csv')
+
+# 2. 特征与标签
+X = df.drop('species', axis=1)
+y = df['species']
+
+# 3. 划分数据集
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# 4. 训练模型
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# 5. 评估
+y_pred = model.predict(X_test)
+print(classification_report(y_test, y_pred))
 ```
 
 ---
@@ -391,6 +572,9 @@ plt.show()
 3. **信任自动化系统** - 图表、输出格式等交给后端处理
 4. **性能敏感用优化库** - 大文件用DuckDB，复杂计算用Numexpr
 5. **测试代码片段** - 复杂逻辑先小规模测试
+6. **机械硬盘优化** - 使用Feather格式、异步IO、内存外计算
+7. **新库直接使用** - v2.5新增库无需特殊配置，直接导入
+8. **内存管理** - 及时删除大变量，使用分块处理避免OOM
 
 ---
 
