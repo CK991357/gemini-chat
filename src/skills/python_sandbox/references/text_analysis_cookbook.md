@@ -1,4 +1,4 @@
-# 📚 文本分析与结构化提取教程 (v2.1 - AI优化版)
+# 📚 文本分析与结构化提取教程 (v2.2 - 沙盒优化版)
 
 ## 🎯 文档目标
 为AI助手提供一套**无需网络权限**、**安全可靠**的文本分析解决方案，专门用于处理已获取的网页内容、文档数据等结构化信息提取。
@@ -12,12 +12,14 @@
 2. **安全第一** - 仅使用Python标准库和预装安全库
 3. **格式标准化** - 输出必须符合系统可识别的JSON结构
 4. **错误包容性** - 提取失败时提供合理的默认值
+5. **函数式编程** - 避免使用类定义，沙盒环境对类支持有限
 
 ### ❌ 必须避免
 1. 网络请求、API调用
 2. 文件系统越权访问
 3. 非安全的库导入
 4. 无限循环或资源耗尽操作
+5. 类定义（使用函数式替代）
 
 ---
 
@@ -149,6 +151,10 @@ print("价格：$299.99")  # 系统无法结构化处理
 
 # 错误3：缺少type字段
 {"data": {...}}  # 系统无法识别类型
+
+# 错误4：使用类定义
+class Extractor:  # 沙盒环境可能不支持
+    def extract(self): pass
 ```
 
 ---
@@ -226,36 +232,70 @@ tech_specs = extract_tech_specs(text_content)
 print(json.dumps(tech_specs, ensure_ascii=False, indent=2))
 ```
 
-### 3. 规格提取器
+### 3. 规格提取器（函数式版本）
 ```python
-class SpecificationExtractor:
-    """产品规格信息提取"""
+import re
+
+def extract_dimensions(text: str) -> dict:
+    """产品规格信息提取 - 函数式版本"""
+    dimensions = {}
     
-    def extract_dimensions(self, text: str) -> dict:
-        dimensions = {}
-        
-        # 提取尺寸信息
-        patterns = {
-            "height": [r'(\d+(?:\.\d+)?)\s*(cm|mm|m)\s*高', r'高度[:：]\s*(\d+)'],
-            "width": [r'(\d+(?:\.\d+)?)\s*(cm|mm|m)\s*宽', r'宽度[:：]\s*(\d+)'],
-            "weight": [r'(\d+(?:\.\d+)?)\s*(kg|g)\s*重', r'重量[:：]\s*(\d+)']
-        }
-        
-        for dim, pattern_list in patterns.items():
-            for pattern in pattern_list:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    dimensions[dim] = f"{match.group(1)}{match.group(2) if match.group(2) else ''}"
-                    break
-        
-        return dimensions
+    # 提取尺寸信息
+    patterns = {
+        "height": [r'(\d+(?:\.\d+)?)\s*(cm|mm|m)\s*高', r'高度[:：]\s*(\d+)'],
+        "width": [r'(\d+(?:\.\d+)?)\s*(cm|mm|m)\s*宽', r'宽度[:：]\s*(\d+)'],
+        "weight": [r'(\d+(?:\.\d+)?)\s*(kg|g)\s*重', r'重量[:：]\s*(\d+)']
+    }
+    
+    for dim, pattern_list in patterns.items():
+        for pattern in pattern_list:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                # 处理匹配组
+                value = match.group(1)
+                unit = match.group(2) if len(match.groups()) > 1 else ""
+                dimensions[dim] = f"{value}{unit}"
+                break
+    
+    return dimensions
+
+# 增强版：支持更多规格类型
+def extract_all_specs(text: str) -> dict:
+    """提取所有规格参数"""
+    specs = {}
+    
+    # 材质提取
+    material_match = re.search(r'材质[:：]\s*([^\n，。]+)', text)
+    if material_match:
+        specs['material'] = material_match.group(1)
+    
+    # 颜色提取
+    color_match = re.search(r'颜色[:：]\s*([^\n，。]+)', text)
+    if color_match:
+        specs['color'] = color_match.group(1)
+    
+    # 尺寸组合
+    dimensions = extract_dimensions(text)
+    if dimensions:
+        specs['dimensions'] = dimensions
+    
+    # 型号提取
+    model_match = re.search(r'型号[:：]\s*([A-Za-z0-9\-_]+)', text)
+    if model_match:
+        specs['model'] = model_match.group(1)
+    
+    return specs
+
+# 使用示例
+text_content = "产品尺寸：高度45mm，宽度30cm，重量2.5kg，材质：皮革"
+specs = extract_all_specs(text_content)
+print(json.dumps(specs, ensure_ascii=False, indent=2))
 ```
 
-### 4. 关键词分析器
+### 4. 关键词分析器（函数式版本）
 ```python
-class KeywordAnalyzer:
-    """基于关键词的分类分析"""
-    
+def categorize_content(text: str) -> list:
+    """基于关键词的分类分析 - 函数式版本"""
     CATEGORY_KEYWORDS = {
         "奢侈品": ["奢侈", "高端", "premium", "luxury", "designer"],
         "电子产品": ["电子", "智能", "tech", "digital", "gadget"],
@@ -263,71 +303,144 @@ class KeywordAnalyzer:
         "家居用品": ["家居", "家具", "home", "furniture", "decor"]
     }
     
-    def categorize_content(self, text: str) -> list:
-        """识别文本所属类别"""
-        text_lower = text.lower()
-        categories = []
-        
-        for category, keywords in self.CATEGORY_KEYWORDS.items():
-            if any(keyword in text_lower for keyword in keywords):
-                categories.append(category)
-        
-        return categories if categories else ["未分类"]
+    text_lower = text.lower()
+    categories = []
+    
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        if any(keyword.lower() in text_lower for keyword in keywords):
+            categories.append(category)
+    
+    return categories if categories else ["未分类"]
+
+# 增强版：带置信度的分类
+def categorize_with_confidence(text: str) -> dict:
+    """带置信度的内容分类"""
+    CATEGORY_KEYWORDS = {
+        "奢侈品": ["奢侈", "高端", "premium", "luxury", "designer", "豪华", "尊享"],
+        "电子产品": ["电子", "智能", "tech", "digital", "gadget", "手机", "电脑", "数码"],
+        "服装鞋履": ["服装", "鞋", "wear", "apparel", "footwear", "服饰", "穿戴"],
+        "家居用品": ["家居", "家具", "home", "furniture", "decor", "家用", "摆设"],
+        "美妆护肤": ["美妆", "护肤", "化妆品", "美容", "skincare", "makeup"]
+    }
+    
+    text_lower = text.lower()
+    scores = {}
+    
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        score = sum(1 for keyword in keywords if keyword.lower() in text_lower)
+        if score > 0:
+            scores[category] = min(score / 5, 1.0)  # 归一化到0-1
+    
+    if scores:
+        # 按置信度排序
+        sorted_categories = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        return {
+            "primary_category": sorted_categories[0][0],
+            "confidence": round(sorted_categories[0][1], 2),
+            "all_categories": {cat: round(conf, 2) for cat, conf in sorted_categories[:3]}
+        }
+    else:
+        return {"primary_category": "未分类", "confidence": 0.0, "all_categories": {}}
+
+# 使用示例
+text_content = "这款奢侈品手表采用高端设计，适合商务场合"
+categorization = categorize_with_confidence(text_content)
+print(json.dumps(categorization, ensure_ascii=False, indent=2))
 ```
 
-### 5. HTML结构化提取器
+### 5. HTML结构化提取器（函数式版本）
 ```python
-from bs4 import BeautifulSoup
-from lxml import etree
-
-class HTMLContentExtractor:
+def extract_html_title_and_links(html_content: str) -> dict:
     """
-    基于BeautifulSoup和lxml的HTML结构化提取工具。
-    适用于爬虫获取的原始HTML文本。
+    提取HTML页面标题和链接 - 函数式版本
+    注意：沙盒环境中可能没有BeautifulSoup，使用正则表达式
     """
+    # 使用正则提取标题
+    title_match = re.search(r'<title[^>]*>(.*?)</title>', html_content, re.IGNORECASE | re.DOTALL)
+    title = title_match.group(1).strip() if title_match else "无标题"
     
-    def extract_title_and_links(self, html_content: str) -> dict:
-        """提取页面标题和前5个链接"""
-        try:
-            # 使用lxml解析器以获得更好的性能和容错性
-            soup = BeautifulSoup(html_content, 'lxml')
-            
-            title = soup.title.string if soup.title else "无标题"
-            
-            links = []
-            for a_tag in soup.find_all('a', href=True)[:5]:
-                links.append({
-                    "text": a_tag.get_text(strip=True),
-                    "href": a_tag['href']
-                })
-                
-            return {
-                "title": title,
-                "links": links
-            }
-        except Exception as e:
-            return {
-                "title": f"HTML解析失败: {e}",
-                "links": []
-            }
-            
-    def extract_table_data(self, html_content: str) -> list:
-        """提取HTML中的第一个表格数据"""
-        try:
-            soup = BeautifulSoup(html_content, 'lxml')
-            table = soup.find('table')
-            if not table:
-                return []
-                
-            data = []
-            for row in table.find_all('tr'):
-                cols = [ele.text.strip() for ele in row.find_all(['td', 'th'])]
-                if cols:
-                    data.append(cols)
-            return data
-        except Exception:
-            return []
+    # 使用正则提取链接
+    links = []
+    link_pattern = r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>'
+    
+    for match in re.finditer(link_pattern, html_content, re.IGNORECASE | re.DOTALL):
+        href = match.group(1)
+        text = re.sub(r'<[^>]+>', '', match.group(2)).strip()  # 移除HTML标签
+        
+        if href and (href.startswith('http://') or href.startswith('https://') or href.startswith('/')):
+            links.append({
+                "text": text[:50],  # 限制文本长度
+                "href": href[:200]  # 限制URL长度
+            })
+        
+        if len(links) >= 10:  # 最多提取10个链接
+            break
+    
+    return {
+        "title": title,
+        "links": links,
+        "total_links_found": len(links)
+    }
 
+def extract_simple_table_data(html_content: str) -> list:
+    """
+    简单提取HTML表格数据 - 函数式版本
+    使用正则表达式，不依赖外部库
+    """
+    tables = []
+    
+    # 查找所有<table>标签
+    table_pattern = r'<table[^>]*>(.*?)</table>'
+    
+    for table_match in re.finditer(table_pattern, html_content, re.IGNORECASE | re.DOTALL):
+        table_html = table_match.group(1)
+        rows = []
+        
+        # 提取行
+        row_pattern = r'<tr[^>]*>(.*?)</tr>'
+        for row_match in re.finditer(row_pattern, table_html, re.IGNORECASE | re.DOTALL):
+            row_html = row_match.group(1)
+            cells = []
+            
+            # 提取单元格
+            cell_pattern = r'<t[dh][^>]*>(.*?)</t[dh]>'
+            for cell_match in re.finditer(cell_pattern, row_html, re.IGNORECASE | re.DOTALL):
+                cell_content = re.sub(r'<[^>]+>', '', cell_match.group(1)).strip()
+                cells.append(cell_content)
+            
+            if cells:  # 只添加非空行
+                rows.append(cells)
+        
+        if rows:  # 只添加有数据的表格
+            tables.append({
+                "row_count": len(rows),
+                "col_count": len(rows[0]) if rows else 0,
+                "data": rows[:20]  # 限制行数
+            })
+    
+    return tables
+
+# 使用示例
+html_content = """
+<html>
+<head><title>示例页面</title></head>
+<body>
+    <h1>产品列表</h1>
+    <a href="/products/1">产品1</a>
+    <a href="/products/2">产品2</a>
+    <table>
+        <tr><th>名称</th><th>价格</th></tr>
+        <tr><td>产品A</td><td>$100</td></tr>
+    </table>
+</body>
+</html>
+"""
+
+title_links = extract_html_title_and_links(html_content)
+tables = extract_simple_table_data(html_content)
+
+print("标题和链接:", json.dumps(title_links, ensure_ascii=False, indent=2))
+print("\n表格数据:", json.dumps(tables, ensure_ascii=False, indent=2))
 ```
 
 ---
@@ -339,13 +452,16 @@ class HTMLContentExtractor:
 1. 确认文本内容是否已提供
 2. 识别分析目标（价格、规格、分类等）
 3. 选择合适的提取器组合
+4. **避免使用类定义，使用函数式编程**
 
 ### 步骤二：生成执行代码
 ```python
 def generate_analysis_code_for_ai(user_text: str, analysis_type: str) -> str:
     """
     AI调用此函数生成可执行的沙盒代码
+    注意：这是给AI看的模板，不是直接在沙盒中执行的代码
     """
+    # 示例代码模板
     code_template = f'''
 import json
 import re
@@ -354,8 +470,8 @@ from datetime import datetime
 # 用户提供的分析文本
 TEXT_TO_ANALYZE = """{user_text}"""
 
-# 根据分析类型选择工具
 def analyze_content(text):
+    """分析函数 - 函数式版本"""
     result = {{
         "type": "analysis_report",
         "title": "{analysis_type}分析结果",
@@ -363,11 +479,20 @@ def analyze_content(text):
         "data": {{}}
     }}
     
-    # 这里插入具体的分析逻辑
-    # 示例：提取价格
-    price_match = re.search(r'\\$\\s*(\\d+\\.?\\d*)', text)
+    # 价格提取
+    price_match = re.search(r'\\$\\s*(\\d+[,\\d]*\\.?\\d*)', text)
     if price_match:
         result["data"]["price_usd"] = price_match.group(1)
+    
+    # 规格提取
+    dimensions = {{
+        "height": re.search(r'(\\d+(?:\\.\\d+)?)\\s*(cm|mm|m)\\s*高', text, re.IGNORECASE),
+        "width": re.search(r'(\\d+(?:\\.\\d+)?)\\s*(cm|mm|m)\\s*宽', text, re.IGNORECASE)
+    }}
+    
+    for key, match in dimensions.items():
+        if match:
+            result["data"][key] = match.group(1) + (match.group(2) if match.group(2) else "")
     
     return result
 
@@ -398,43 +523,44 @@ AI收到沙盒执行结果后：
 | 格式错误 | 非JSON输出 | 使用json.dumps()而非str() |
 | 提取为空 | 文本格式不匹配 | 添加更灵活的正则表达式 |
 | 编码问题 | 中文字符乱码 | 使用ensure_ascii=False参数 |
+| 类定义错误 | 沙盒不支持类 | 使用函数式编程替代 |
 
 ### 优化建议
 1. **增量提取**：先尝试简单规则，再逐步复杂化
 2. **错误恢复**：提取失败时提供默认值而非中断
 3. **性能优化**：限制正则表达式复杂度
 4. **结果验证**：检查提取结果的合理性
+5. **函数式优先**：避免类定义，使用纯函数
 
 ---
 
 ## 📋 完整工作流示例
 
 ```python
-# ===================== 完整分析工作流 =====================
+# ===================== 完整分析工作流（函数式版本）=====================
+import json
+import re
+from datetime import datetime
+
 def complete_analysis_workflow(data_context: str) -> str:
     """
-    端到端的文本分析工作流
+    端到端的文本分析工作流 - 函数式版本
     输入：爬虫获取的文本数据
     输出：标准化的分析报告
     """
     
-    # 1. 初始化工具
-    price_extractor = PriceExtractor()
-    spec_extractor = SpecificationExtractor()
-    keyword_analyzer = KeywordAnalyzer()
+    # 1. 并行提取各类信息（使用函数而非类）
+    price_info = extract_price_info(data_context)
+    dimensions = extract_dimensions(data_context)
+    categories = categorize_with_confidence(data_context)
     
-    # 2. 并行提取各类信息
-    prices = price_extractor.extract_all_prices(data_context)
-    specs = spec_extractor.extract_dimensions(data_context)
-    categories = keyword_analyzer.categorize_content(data_context)
-    
-    # 3. 构建结果
+    # 2. 构建结果
     report = {
         "type": "comprehensive_analysis",
         "title": "综合文本分析报告",
         "data": {
-            "价格信息": prices,
-            "规格参数": specs,
+            "价格信息": price_info,
+            "规格参数": dimensions,
             "内容分类": categories,
             "文本长度": len(data_context),
             "关键句子": extract_key_sentences(data_context)
@@ -442,41 +568,62 @@ def complete_analysis_workflow(data_context: str) -> str:
         "metadata": {
             "分析工具": "沙盒内置分析套件",
             "分析时间": datetime.now().isoformat(),
-            "置信度": calculate_confidence(prices, specs)  # 自定义置信度计算
+            "置信度": calculate_confidence(price_info, dimensions)
         }
     }
     
-    # 4. 标准化输出 (使用tabulate格式化表格数据作为辅助信息)
-    # 假设我们有一个表格数据需要美化输出
-    sample_table_data = [
-        ["货币", "价格", "置信度"],
-        ["USD", prices.get("USD", "N/A"), "高"],
-        ["CNY", prices.get("CNY", "N/A"), "中"]
-    ]
-    
-    try:
-        from tabulate import tabulate
-        table_output = tabulate(sample_table_data, headers="firstrow", tablefmt="pipe")
-        report["metadata"]["格式化表格示例"] = table_output
-    except ImportError:
-        report["metadata"]["格式化表格示例"] = "tabulate库未导入或不可用"
-        
     return json.dumps(report, ensure_ascii=False, indent=2)
 
 # 辅助函数
 def extract_key_sentences(text: str, max_sentences: int = 3) -> list:
     """提取关键句子"""
-    sentences = [s.strip() for s in text.split('。') if len(s.strip()) > 10]
+    # 简单分句逻辑
+    sentences = []
+    current = ""
+    
+    for char in text:
+        current += char
+        if char in '。！？.!?':
+            sentence = current.strip()
+            if len(sentence) > 10:
+                sentences.append(sentence)
+            current = ""
+        
+        if len(sentences) >= max_sentences:
+            break
+    
+    # 如果没找到足够句子，按换行分割
+    if len(sentences) < max_sentences:
+        lines = [line.strip() for line in text.split('\n') if len(line.strip()) > 10]
+        sentences.extend(lines[:max_sentences - len(sentences)])
+    
     return sentences[:max_sentences]
 
-def calculate_confidence(prices: dict, specs: dict) -> str:
+def calculate_confidence(price_info: dict, dimensions: dict) -> str:
     """计算分析置信度"""
-    if prices and specs:
+    price_matches = price_info.get('price_matches', [])
+    has_dimensions = bool(dimensions)
+    
+    if price_matches and has_dimensions:
         return "高"
-    elif prices or specs:
+    elif price_matches or has_dimensions:
         return "中"
     else:
         return "低"
+
+# 主执行逻辑
+if __name__ == "__main__":
+    # 示例文本
+    sample_text = """
+    产品：高端智能手表
+    价格：$299.99
+    尺寸：高度45mm，宽度38mm
+    材质：不锈钢表壳，蓝宝石玻璃
+    功能：心率监测，GPS定位
+    """
+    
+    result = complete_analysis_workflow(sample_text)
+    print(result)
 ```
 
 ---
@@ -486,15 +633,28 @@ def calculate_confidence(prices: dict, specs: dict) -> str:
 运行以下代码验证您的分析器：
 
 ```python
-# 测试用例
+# 测试用例 - 函数式版本
+import json
+
 test_cases = [
-    ("Jimmy Choo DIDI 45 价格 $299.99 材质皮革", "产品页面分析"),
-    ("iPhone 15 Pro Max 售价 ¥9999 重量 221g", "电子产品分析"),
-    ("实木餐桌 尺寸 180x90cm 价格 €459", "家居产品分析")
+    ("Jimmy Choo DIDI 45 价格 $299.99 材质皮革 高度45mm", "产品页面分析"),
+    ("iPhone 15 Pro Max 售价 ¥9999 重量 221g 宽度78mm", "电子产品分析"),
+    ("实木餐桌 尺寸 180x90cm 价格 €459 高度75cm", "家居产品分析")
 ]
 
 for test_text, expected_type in test_cases:
-    result = analyze_webpage_content(test_text)
+    # 使用函数式分析器
+    dimensions = extract_dimensions(test_text)
+    categories = categorize_content(test_text)
+    
+    result = {
+        "type": "test_result",
+        "test_case": expected_type,
+        "dimensions": dimensions,
+        "categories": categories,
+        "has_price": "$" in test_text or "¥" in test_text or "€" in test_text
+    }
+    
     print(f"测试: {expected_type}")
     print(f"结果: {json.dumps(result, ensure_ascii=False, indent=2)}")
     print("-" * 50)
@@ -506,8 +666,28 @@ for test_text, expected_type in test_cases:
 
 1. **安全第一**：所有代码在沙盒中运行，无网络无文件风险
 2. **格式为王**：输出必须符合标准JSON结构，包含type字段
-3. **渐进提取**：从简单规则开始，逐步增加复杂性
-4. **错误处理**：提取失败时提供合理默认值
-5. **性能意识**：避免复杂正则和无限循环
+3. **函数式优先**：避免类定义，使用纯函数进行数据提取
+4. **渐进提取**：从简单规则开始，逐步增加复杂性
+5. **错误处理**：提取失败时提供合理默认值
+6. **性能意识**：避免复杂正则和无限循环
+
+## 🔄 从类到函数的转换指南
+
+| 原类定义 | 转换后的函数 | 使用方式 |
+|---------|------------|---------|
+| `class Extractor:`<br>`def extract(self, text):` | `def extract_data(text):` | `result = extract_data(text)` |
+| `obj = Extractor()`<br>`obj.extract(text)` | 直接调用函数 | `extract_data(text)` |
+| 类属性（`self.config`） | 函数参数或全局常量 | `def func(text, config={})` |
+| 多个相关方法 | 多个独立函数或主函数调用子函数 | `def main_func():`<br>`data1 = func1()`<br>`data2 = func2()` |
+
+## 🎯 最终检查清单
+
+在生成沙盒代码前，请确认：
+- [ ] 没有`class`关键字
+- [ ] 所有功能都是函数
+- [ ] 输出包含`type`字段
+- [ ] 使用`json.dumps()`输出
+- [ ] 没有网络请求或文件系统访问
+- [ ] 正则表达式有限制（避免ReDoS）
 
 ---

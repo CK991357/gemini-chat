@@ -1,8 +1,14 @@
-# SymPy 符号数学指南 (v2.2)
+# SymPy 符号数学指南 (v2.5)
 
 ## 🎯 工具概述
 **功能**：符号数学计算，包括方程求解、微积分、代数运算等
 **输出原则**：直接打印结果，系统自动处理输出格式
+
+## ✅ 代码解释器适配说明
+- **直接打印**：所有计算结果直接使用 `print()` 输出
+- **符号表达式**：SymPy 表达式会以美观的数学格式显示
+- **自动渲染**：复杂数学公式会自动转换为易读格式
+- **数值计算**：需要数值结果时使用 `.evalf()` 或 `sp.N()`
 
 ## 🧮 基础符号运算
 
@@ -344,18 +350,66 @@ x, y = sp.symbols('x y')
 verify_identity((x + y)**2, x**2 + 2*x*y + y**2, "expand")
 ```
 
+## 🔧 代码解释器适配优化
+
+### SymPy 与图表集成
+```python
+import sympy as sp
+import matplotlib.pyplot as plt
+import numpy as np
+
+x = sp.symbols('x')
+
+print("=== SymPy 与 Matplotlib 集成 ===")
+
+# 定义符号函数
+f_sym = sp.sin(x) * sp.exp(-x/5)
+
+# 转换为数值函数用于绘图
+f_num = sp.lambdify(x, f_sym, 'numpy')
+
+# 创建数据点
+x_vals = np.linspace(0, 20, 400)
+y_vals = f_num(x_vals)
+
+# 绘图
+plt.figure(figsize=(10, 6))
+plt.plot(x_vals, y_vals, 'b-', linewidth=2, label='f(x) = sin(x)·e^(-x/5)')
+plt.title('SymPy 符号函数可视化')
+plt.xlabel('x')
+plt.ylabel('f(x)')
+plt.grid(True, alpha=0.3)
+plt.legend()
+
+# 计算并标记极值点
+f_prime_sym = sp.diff(f_sym, x)
+critical_points = sp.solve(f_prime_sym, x)
+
+# 筛选实数解
+real_critical_points = [cp.evalf() for cp in critical_points if cp.is_real]
+for cp in real_critical_points:
+    if 0 <= cp <= 20:
+        y_cp = f_sym.subs(x, cp).evalf()
+        plt.plot(cp, y_cp, 'ro', markersize=8)
+        plt.text(cp, y_cp + 0.1, f'({cp:.2f}, {y_cp:.2f})', 
+                ha='center', fontsize=9)
+
+plt.tight_layout()
+plt.show()
+```
+
 ## ⚠️ 使用注意事项
 
 ### ✅ 推荐做法：
-- 正常导入：`import sympy as sp`
-- 使用标准的 SymPy 函数和语法
-- 直接使用 `print()` 输出结果
-- 对于复杂表达式，使用 `sp.N()` 获取数值结果
+1. **标准导入**：`import sympy as sp`
+2. **符号定义**：明确使用 `sp.symbols()` 定义变量
+3. **数值计算**：需要数值结果时使用 `.evalf()` 或 `sp.N()`
+4. **直接打印**：使用 `print()` 输出所有结果
 
 ### ❌ 避免的操作：
-- 不要手动构建 JSON 输出
-- 不要使用复杂的自定义输出格式
-- 不要混合使用 SymPy 和数值计算库（除非必要）
+1. 不要手动构建 JSON 输出
+2. 不要使用复杂的自定义输出格式
+3. 不要省略符号定义直接使用变量
 
 ### 🔧 错误处理：
 ```python
@@ -370,4 +424,105 @@ except Exception as e:
     print(f"计算错误: {e}")
 ```
 
-**记住**：系统会自动处理所有输出格式，您只需要专注于符号数学计算！
+### 💡 实用技巧：
+```python
+# 快速获取符号表达式的数值近似
+expr = sp.integrate(sp.sin(x**2), (x, 0, 1))
+print(f"符号结果: {expr}")
+print(f"数值近似: {expr.evalf(10)}")  # 10位精度
+
+# 生成LaTeX代码用于文档
+latex_code = sp.latex(expr)
+print(f"LaTeX代码: {latex_code}")
+
+# 漂亮打印
+sp.pprint(expr, use_unicode=True)
+```
+
+## 📋 快速参考卡
+
+```python
+import sympy as sp
+
+# 定义符号
+x, y = sp.symbols('x y')
+
+# 方程求解
+sp.solve(x**2 - 4, x)  # [-2, 2]
+
+# 微分
+sp.diff(sp.sin(x), x)  # cos(x)
+
+# 积分
+sp.integrate(x**2, x)  # x³/3
+
+# 极限
+sp.limit(sp.sin(x)/x, x, 0)  # 1
+
+# 级数展开
+sp.sin(x).series(x, 0, 4)  # x - x³/6 + O(x⁵)
+
+# 矩阵运算
+A = sp.Matrix([[1, 2], [3, 4]])
+A.det()  # -2
+```
+
+## 🚀 高级应用示例
+
+### 微分方程求解
+```python
+import sympy as sp
+
+t = sp.symbols('t')
+y = sp.Function('y')
+
+print("=== 微分方程求解 ===")
+
+# 定义微分方程：y'' + y = 0
+ode = sp.Eq(sp.diff(y(t), t, 2) + y(t), 0)
+
+# 求解
+solution = sp.dsolve(ode, y(t))
+print(f"微分方程: {ode}")
+print(f"通解: {solution}")
+
+# 添加初始条件：y(0)=1, y'(0)=0
+ics = {y(0): 1, sp.diff(y(t), t).subs(t, 0): 0}
+particular_solution = sp.dsolve(ode, y(t), ics=ics)
+print(f"特解: {particular_solution}")
+```
+
+### 符号优化问题
+```python
+import sympy as sp
+
+x, y = sp.symbols('x y', real=True)
+
+print("=== 符号优化问题 ===")
+
+# 目标函数和约束
+f = x**2 + y**2  # 最小化 x² + y²
+constraint = sp.Eq(x + y, 1)  # 约束 x + y = 1
+
+# 使用拉格朗日乘子法
+L = f + sp.symbols('λ') * (x + y - 1)
+
+# 求偏导
+eq1 = sp.Eq(sp.diff(L, x), 0)
+eq2 = sp.Eq(sp.diff(L, y), 0)
+eq3 = sp.Eq(sp.diff(L, sp.symbols('λ')), 0)
+
+# 求解方程组
+solution = sp.solve([eq1, eq2, eq3], (x, y, sp.symbols('λ')))
+print(f"优化问题: 最小化 {f}, 约束 {constraint}")
+print(f"拉格朗日乘子法解: {solution}")
+
+# 验证结果
+optimal_point = solution[0]
+print(f"最优点: x={optimal_point[0]}, y={optimal_point[1]}")
+print(f"最优值: {f.subs({x: optimal_point[0], y: optimal_point[1]})}")
+```
+
+---
+
+**记住**：系统会自动处理所有输出格式，您只需要专注于符号数学计算！SymPy 表达式会以美观的数学格式自动渲染，复杂公式也会被正确处理。

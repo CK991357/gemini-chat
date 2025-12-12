@@ -1,484 +1,366 @@
-# Pandas 数据处理指南 (v2.2)
+# 代码解释器使用指南 v2.5 (最终融合版)
 
-## 🎯 工具概述
-**功能**：数据清洗、转换、分析和可视化
-**输出原则**：直接打印结果，系统自动处理输出格式
+## 🎯 核心原则：后端自动化，代码要简洁
 
-## 🔧 基础数据操作
+### ✅ **后端已自动处理的功能：**
+1. **图表捕获**：`plt.show()` 自动生成图片，无需手动编码
+2. **文件管理**：`/data` 目录已配置好，支持会话持久化
+3. **输出处理**：系统自动处理所有 `print()` 输出
+4. **错误捕获**：后端有完整的错误处理系统
 
-### 数据创建与查看
+### ❌ **模型不需要做的：**
+1. 不要手动编码图表为 base64
+2. 不要编写复杂的错误处理包装器
+3. 不要管理文件格式转换（后端自动处理）
+4. 不要处理图表标题和格式（系统自动优化）
+
+---
+
+## 📂 文件操作（会话工作区：`/data`）
+
+### 从工作区读取文件
 ```python
 import pandas as pd
-import numpy as np
 
-# 创建示例数据
-df = pd.DataFrame({
-    'Name': ['Alice', 'Bob', 'Charlie', 'David', 'Eva'],
-    'Age': [25, 30, 35, 28, 32],
-    'Salary': [50000, 60000, 70000, 55000, 65000],
-    'Department': ['IT', 'HR', 'IT', 'Finance', 'Marketing'],
-    'Join_Date': pd.date_range('2020-01-01', periods=5, freq='Y')
-})
+# 最简单的文件读取（支持 CSV、Excel、Parquet 等）
+df = pd.read_csv('/data/your_file.csv')
 
-print("=== 数据基本信息 ===")
+# 快速查看数据
 print(f"数据形状: {df.shape}")
-print(f"列名: {list(df.columns)}")
-print("\n前5行数据:")
 print(df.head())
-print("\n数据信息:")
-print(df.info())
-print("\n数值列统计:")
-print(df.describe())
 ```
 
-### 数据筛选与排序
+### 保存文件到工作区
 ```python
-import pandas as pd
+# 保存处理结果
+df_processed.to_csv('/data/processed_data.csv', index=False)
 
-# 假设df是已有的DataFrame
-print("=== 数据筛选与排序 ===")
-
-# 条件筛选
-age_above_30 = df[df['Age'] > 30]
-print(f"年龄大于30的员工: {len(age_above_30)}人")
-print(age_above_30[['Name', 'Age', 'Department']])
-
-# 多条件筛选
-it_high_salary = df[(df['Department'] == 'IT') & (df['Salary'] > 55000)]
-print(f"\nIT部门高薪员工:")
-print(it_high_salary[['Name', 'Salary']])
-
-# 数据排序
-sorted_by_salary = df.sort_values('Salary', ascending=False)
-print(f"\n按薪资降序排列:")
-print(sorted_by_salary[['Name', 'Salary', 'Department']])
+# 保存为高效格式（供后续使用）
+import pyarrow.feather as feather
+feather.write_feather(df_processed, '/data/processed_data.feather')
 ```
 
-## 🧹 数据清洗模板
+### 📝 重要说明
+- **文件位置**：所有文件都在 `/data` 目录下
+- **会话持久**：文件在同一会话的多次执行中保持可用
+- **自动清理**：24小时后会话文件自动清理
 
-### 基础数据清洗
-```python
-import pandas as pd
-import numpy as np
+---
 
-def basic_data_cleaning(df):
-    """基础数据清洗流程"""
-    
-    print("=== 数据清洗流程 ===")
-    df_clean = df.copy()
-    
-    # 1. 检查数据质量
-    print(f"原始数据形状: {df_clean.shape}")
-    print(f"缺失值统计:")
-    print(df_clean.isnull().sum())
-    print(f"重复行数: {df_clean.duplicated().sum()}")
-    
-    # 2. 处理缺失值
-    numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
-    categorical_cols = df_clean.select_dtypes(include=['object']).columns
-    
-    # 数值列用中位数填充
-    for col in numeric_cols:
-        if df_clean[col].isnull().any():
-            median_val = df_clean[col].median()
-            df_clean[col].fillna(median_val, inplace=True)
-            print(f"列 '{col}' 用中位数 {median_val} 填充缺失值")
-    
-    # 分类列用众数填充
-    for col in categorical_cols:
-        if df_clean[col].isnull().any():
-            mode_val = df_clean[col].mode()[0] if not df_clean[col].mode().empty else 'Unknown'
-            df_clean[col].fillna(mode_val, inplace=True)
-            print(f"列 '{col}' 用众数 '{mode_val}' 填充缺失值")
-    
-    # 3. 删除重复行
-    before_dedup = len(df_clean)
-    df_clean = df_clean.drop_duplicates()
-    after_dedup = len(df_clean)
-    print(f"删除重复行: {before_dedup - after_dedup} 行")
-    
-    print(f"\n清洗后数据形状: {df_clean.shape}")
-    return df_clean
-
-# 使用示例
-# df_with_issues = pd.DataFrame({
-#     'A': [1, 2, np.nan, 4, 4],
-#     'B': ['x', 'y', np.nan, 'x', 'z']
-# })
-# cleaned_df = basic_data_cleaning(df_with_issues)
-```
-
-### 异常值处理
-```python
-import pandas as pd
-import numpy as np
-
-def handle_outliers(df):
-    """异常值检测与处理"""
-    
-    print("=== 异常值处理 ===")
-    df_clean = df.copy()
-    numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
-    
-    outliers_info = {}
-    
-    for col in numeric_cols:
-        Q1 = df_clean[col].quantile(0.25)
-        Q3 = df_clean[col].quantile(0.75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
-        
-        # 检测异常值
-        outliers = df_clean[(df_clean[col] < lower_bound) | (df_clean[col] > upper_bound)]
-        outlier_count = len(outliers)
-        
-        if outlier_count > 0:
-            print(f"列 '{col}' 发现 {outlier_count} 个异常值")
-            print(f"  范围: [{lower_bound:.2f}, {upper_bound:.2f}]")
-            print(f"  异常值: {outliers[col].tolist()}")
-            
-            # 用边界值替换异常值（可选）
-            df_clean[col] = np.where(df_clean[col] < lower_bound, lower_bound, df_clean[col])
-            df_clean[col] = np.where(df_clean[col] > upper_bound, upper_bound, df_clean[col])
-    
-    return df_clean
-
-# 使用示例
-# df_with_outliers = pd.DataFrame({'Values': [1, 2, 3, 100, 2, 3, 1, -50]})
-# cleaned_df = handle_outliers(df_with_outliers)
-```
-
-## 📊 数据分析与统计
-
-### 分组统计
-```python
-import pandas as pd
-
-# 假设df是已有的DataFrame
-print("=== 分组统计分析 ===")
-
-# 基础分组统计
-dept_stats = df.groupby('Department').agg({
-    'Age': ['mean', 'min', 'max', 'count'],
-    'Salary': ['mean', 'sum', 'std']
-}).round(2)
-
-print("各部门统计:")
-print(dept_stats)
-
-# 更详细的分组分析
-print("\n各部门详细分析:")
-for dept, group in df.groupby('Department'):
-    print(f"\n{dept}部门:")
-    print(f"  员工数: {len(group)}")
-    print(f"  平均年龄: {group['Age'].mean():.1f}")
-    print(f"  平均薪资: {group['Salary'].mean():.0f}")
-    print(f"  总薪资: {group['Salary'].sum():.0f}")
-```
-
-### 数据透视表
-```python
-import pandas as pd
-
-print("=== 数据透视表 ===")
-
-# 创建更丰富的数据用于演示
-sales_data = pd.DataFrame({
-    'Region': ['North', 'South', 'East', 'West'] * 6,
-    'Product': ['A', 'B'] * 12,
-    'Quarter': ['Q1', 'Q1', 'Q1', 'Q1', 'Q2', 'Q2', 'Q2', 'Q2', 'Q3', 'Q3', 'Q3', 'Q3'] * 2,
-    'Sales': np.random.randint(1000, 5000, 24),
-    'Profit': np.random.randint(100, 1000, 24)
-})
-
-# 基础数据透视表
-pivot1 = pd.pivot_table(sales_data, 
-                       values='Sales', 
-                       index='Region', 
-                       columns='Quarter', 
-                       aggfunc='sum')
-
-print("各地区各季度销售总额:")
-print(pivot1)
-
-# 多指标数据透视表
-pivot2 = pd.pivot_table(sales_data,
-                       values=['Sales', 'Profit'],
-                       index=['Region', 'Product'],
-                       columns='Quarter',
-                       aggfunc={'Sales': 'sum', 'Profit': 'mean'})
-
-print("\n各地区产品详细分析:")
-print(pivot2)
-```
-
-## 📈 数据可视化
+## 📊 数据可视化（自动捕获）
 
 ### 基础图表
 ```python
-import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
 
-print("=== 数据可视化 ===")
+# 设置中文字体（后端已配置，这里只是确保）
+plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei']
 
-# 创建示例数据
-sales_data = pd.DataFrame({
-    'Month': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    'Sales': [120, 150, 130, 170, 160, 190],
-    'Profit': [40, 50, 45, 60, 55, 70]
-})
-
-# 折线图
+# 1. 折线图
 plt.figure(figsize=(10, 6))
-plt.plot(sales_data['Month'], sales_data['Sales'], marker='o', label='Sales', linewidth=2)
-plt.plot(sales_data['Month'], sales_data['Profit'], marker='s', label='Profit', linewidth=2)
-plt.title('月度销售与利润趋势')
-plt.xlabel('月份')
-plt.ylabel('金额 (千元)')
-plt.legend()
+plt.plot(df['date'], df['value'], marker='o', linewidth=2)
+plt.title('销售趋势图')  # 标题会被自动捕获
+plt.xlabel('日期')
+plt.ylabel('销售额')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.show()
+plt.show()  # 🎯 关键：直接 show()，系统自动捕获！
 
-# 条形图
+# 2. 柱状图
 plt.figure(figsize=(10, 6))
-plt.bar(sales_data['Month'], sales_data['Sales'], alpha=0.7, label='Sales')
-plt.title('月度销售额')
-plt.xlabel('月份')
-plt.ylabel('销售额 (千元)')
+df.groupby('category')['sales'].sum().plot(kind='bar')
+plt.title('各品类销售额')
 plt.tight_layout()
-plt.show()
+plt.show()  # 🎯 关键：系统自动处理！
+
+# 3. 散点图
+plt.figure(figsize=(10, 6))
+plt.scatter(df['x'], df['y'], alpha=0.6, c=df['value'], cmap='viridis')
+plt.title('散点分布图')
+plt.colorbar(label='值大小')
+plt.tight_layout()
+plt.show()  # 🎯 关键：系统自动捕获！
 ```
 
-### 高级可视化
+### 高级图表
 ```python
-import pandas as pd
-import matplotlib.pyplot as plt
+# 4. 子图（多图表）
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+axes[0, 0].plot(df['date'], df['value1'])
+axes[0, 0].set_title('图表1')
+
+axes[0, 1].hist(df['value2'], bins=30)
+axes[0, 1].set_title('图表2')
+
+axes[1, 0].scatter(df['x'], df['y'])
+axes[1, 0].set_title('图表3')
+
+axes[1, 1].boxplot([df['group1'], df['group2']])
+axes[1, 1].set_title('图表4')
+
+plt.tight_layout()
+plt.show()  # 🎯 系统自动捕获整个图形！
+
+# 5. 热力图（相关性矩阵）
 import seaborn as sns
 
-# 创建相关数据示例
-data = pd.DataFrame({
-    'Feature1': np.random.normal(0, 1, 100),
-    'Feature2': np.random.normal(0, 1, 100),
-    'Feature3': np.random.normal(0, 1, 100),
-    'Target': np.random.normal(0, 1, 100)
-})
-
-# 相关性热力图
-plt.figure(figsize=(8, 6))
-correlation_matrix = data.corr()
-sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+corr_matrix = df.corr()
+plt.figure(figsize=(10, 8))
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0)
 plt.title('特征相关性热力图')
 plt.tight_layout()
-plt.show()
-
-# 分布直方图
-plt.figure(figsize=(12, 4))
-
-plt.subplot(1, 3, 1)
-data['Feature1'].hist(bins=15, alpha=0.7, edgecolor='black')
-plt.title('Feature1 分布')
-
-plt.subplot(1, 3, 2)
-data['Feature2'].hist(bins=15, alpha=0.7, edgecolor='black')
-plt.title('Feature2 分布')
-
-plt.subplot(1, 3, 3)
-data['Feature3'].hist(bins=15, alpha=0.7, edgecolor='black')
-plt.title('Feature3 分布')
-
-plt.tight_layout()
-plt.show()
+plt.show()  # 🎯 系统自动捕获！
 ```
 
-## 🚀 高级数据处理
+### 📝 图表说明
+- **后端自动处理**：所有图表类型（Matplotlib、Seaborn、Graphviz、NetworkX）
+- **标题捕获**：系统会自动提取图表标题显示给用户
+- **中文字体**：后端已配置中文支持，无需担心乱码
 
-### 时间序列分析
+---
+
+## 🧹 数据处理（简洁实用版）
+
+### 基础清洗
 ```python
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 
-print("=== 时间序列分析 ===")
+# 读取数据
+df = pd.read_csv('/data/raw_data.csv')
 
-# 创建时间序列数据
-dates = pd.date_range('2024-01-01', periods=100, freq='D')
-time_series = pd.DataFrame({
-    'date': dates,
-    'value': np.random.randn(100).cumsum() + 100,
-    'volume': np.random.randint(100, 1000, 100)
-})
+# 打印基本信息
+print(f"原始数据: {df.shape[0]}行 × {df.shape[1]}列")
+print(f"缺失值总数: {df.isnull().sum().sum()}")
 
-# 设置时间索引
-time_series.set_index('date', inplace=True)
+# 处理缺失值（数值列用中位数）
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+for col in numeric_cols:
+    if df[col].isnull().any():
+        df[col].fillna(df[col].median(), inplace=True)
 
-print("时间序列基本信息:")
-print(f"时间范围: {time_series.index.min()} 到 {time_series.index.max()}")
-print(f"数据点数: {len(time_series)}")
+# 处理缺失值（文本列用众数）
+text_cols = df.select_dtypes(include=['object']).columns
+for col in text_cols:
+    if df[col].isnull().any():
+        if not df[col].mode().empty:
+            df[col].fillna(df[col].mode()[0], inplace=True)
 
-# 重采样（日数据转为周数据）
-weekly_data = time_series.resample('W').agg({'value': 'mean', 'volume': 'sum'})
-print("\n周度聚合数据:")
-print(weekly_data.head())
-
-# 移动平均
-time_series['7_day_ma'] = time_series['value'].rolling(window=7).mean()
-
-# 可视化时间序列
-plt.figure(figsize=(12, 8))
-
-plt.subplot(2, 1, 1)
-plt.plot(time_series.index, time_series['value'], label='原始值', alpha=0.7)
-plt.plot(time_series.index, time_series['7_day_ma'], label='7日移动平均', linewidth=2)
-plt.title('时间序列与移动平均')
-plt.legend()
-plt.grid(True, alpha=0.3)
-
-plt.subplot(2, 1, 2)
-plt.bar(weekly_data.index, weekly_data['volume'], alpha=0.7)
-plt.title('周度交易量')
-plt.tight_layout()
-plt.show()
+# 删除重复行
+df = df.drop_duplicates()
+print(f"清洗后数据: {df.shape[0]}行 × {df.shape[1]}列")
 ```
 
-### 数据合并与连接
+### 统计分析
 ```python
-import pandas as pd
+# 基础统计
+print("数值列统计:")
+print(df.describe())
 
-print("=== 数据合并操作 ===")
+# 分组统计
+print("\n分组统计:")
+group_stats = df.groupby('category').agg({
+    'value': ['mean', 'sum', 'count', 'std']
+}).round(2)
+print(group_stats)
 
-# 创建示例数据
-df1 = pd.DataFrame({
-    'ID': [1, 2, 3, 4],
-    'Name': ['Alice', 'Bob', 'Charlie', 'David'],
-    'Dept': ['IT', 'HR', 'IT', 'Finance']
-})
-
-df2 = pd.DataFrame({
-    'ID': [1, 2, 5, 6],
-    'Salary': [50000, 60000, 70000, 55000],
-    'Join_Date': ['2020-01-01', '2019-03-15', '2021-06-01', '2018-11-20']
-})
-
-print("数据表1:")
-print(df1)
-print("\n数据表2:")
-print(df2)
-
-# 内连接
-inner_join = pd.merge(df1, df2, on='ID', how='inner')
-print(f"\n内连接结果 (共{len(inner_join)}行):")
-print(inner_join)
-
-# 左连接
-left_join = pd.merge(df1, df2, on='ID', how='left')
-print(f"\n左连接结果 (共{len(left_join)}行):")
-print(left_join)
-
-# 外连接
-outer_join = pd.merge(df1, df2, on='ID', how='outer')
-print(f"\n外连接结果 (共{len(outer_join)}行):")
-print(outer_join)
+# 透视表
+print("\n透视表:")
+pivot = pd.pivot_table(df, 
+                      values='sales', 
+                      index='region', 
+                      columns='month',
+                      aggfunc='sum')
+print(pivot)
 ```
 
-### 高性能数据处理库 (v2.5新增)
+---
 
-#### DuckDB - 内存SQL引擎
-**用途**: 对DataFrame执行高性能SQL查询，替代复杂Pandas操作
-**优势**: 比Pandas快3-10倍，内存效率高，机械硬盘友好
+## 🚀 性能优化（针对大文件）
+
+### 方法1：DuckDB（SQL查询，比Pandas快3-10倍）
 ```python
 import duckdb
-import pandas as pd
 
-# 将Pandas DataFrame注册到DuckDB
-df = pd.read_csv('/data/financial_data.csv')
+# 直接查询CSV/Parquet文件（不加载到内存）
 result = duckdb.sql("""
-    SELECT category, 
-           AVG(value) as avg_value,
-           COUNT(*) as count
-    FROM df 
-    WHERE date >= '2024-01-01'
-    GROUP BY category
-    ORDER BY avg_value DESC
-""").df()  # 返回Pandas DataFrame
+    SELECT department, 
+           AVG(salary) as avg_salary,
+           COUNT(*) as employee_count
+    FROM read_csv_auto('/data/employees.csv')
+    WHERE department IS NOT NULL
+    GROUP BY department
+    ORDER BY avg_salary DESC
+""").df()
+
+print("部门薪资统计:")
+print(result)
 ```
 
-#### Numexpr - 表达式加速
-**用途**: 加速复杂数值表达式计算（如 `df[df.A > df.B]` 类操作）
-**优势**: 比纯NumPy快3-5倍，减少中间数组创建
+### 方法2：分块处理（大CSV文件）
+```python
+# 分块读取大文件
+chunks = []
+for chunk in pd.read_csv('/data/large_file.csv', chunksize=50000):
+    # 处理每个数据块
+    processed = chunk[chunk['value'] > 0]  # 示例筛选
+    chunks.append(processed)
+
+# 合并结果
+final_df = pd.concat(chunks, ignore_index=True)
+print(f"处理完成: {len(final_df)}行")
+```
+
+### 方法3：高效格式转换
+```python
+# 将CSV转换为Feather格式（提速10-100倍）
+import pyarrow.feather as feather
+
+df = pd.read_csv('/data/large.csv')
+feather.write_feather(df, '/data/large.feather')
+
+# 下次读取时（极速）
+df_fast = feather.read_feather('/data/large.feather')
+```
+
+---
+
+## 💡 实用代码片段
+
+### 模板1：基础分析
 ```python
 import pandas as pd
-import numexpr as ne
+import matplotlib.pyplot as plt
 
-# 传统方式（慢）
-df['result'] = df['A'] * 2 + df['B'] ** 2 - df['C'] / 3
+# 1. 读取数据
+df = pd.read_csv('/data/data.csv')
 
-# Numexpr方式（快3-5倍）
-df['result'] = ne.evaluate("A * 2 + B ** 2 - C / 3", 
-                          local_dict={k: df[k].values for k in ['A', 'B', 'C']})
+# 2. 快速分析
+print(f"数据形状: {df.shape}")
+print(df.describe())
+
+# 3. 简单可视化
+df.groupby('category')['value'].mean().plot(kind='bar')
+plt.title('各分类平均值')
+plt.tight_layout()
+plt.show()
 ```
 
-#### Bottleneck - 滚动统计加速
-**用途**: 加速移动窗口、滚动统计操作
-**优势**: 比NumPy快5-100倍，特别适合时间序列分析
+### 模板2：数据清洗流水线
 ```python
-import bottleneck as bn
-import numpy as np
+# 1. 读取
+df = pd.read_csv('/data/raw.csv')
 
-data = np.random.randn(1000000)
+# 2. 清洗
+df = df.dropna().drop_duplicates()
 
-# 传统方式
-mean_slow = np.mean(data)
+# 3. 分析
+print(f"清洗后: {df.shape}")
+print(df.groupby('group')['value'].mean())
 
-# Bottleneck方式（快5-100倍）
-mean_fast = bn.nanmean(data)
-
-# 滚动窗口操作（特别快）
-rolling_mean = bn.move_mean(data, window=50)
+# 4. 保存
+df.to_csv('/data/cleaned.csv', index=False)
 ```
 
-## ⚠️ 使用注意事项
-
-### ✅ 推荐做法：
-- 正常导入：`import pandas as pd`
-- 使用标准的 Pandas 函数和方法
-- 直接使用 `print()` 输出结果
-- 使用 `plt.show()` 显示图表
-
-### ❌ 避免的操作：
-- 不要手动构建 JSON 输出
-- 不要使用 `base64` 编码图像
-- 不要创建复杂的自定义输出格式
-
-### 🔧 错误处理：
+### 模板3：完整报告生成
 ```python
-try:
-    import pandas as pd
-    # 数据处理代码
-    result = df.groupby('Department')['Salary'].mean()
-    print(f"各部门平均薪资: {result}")
-except ImportError:
-    print("Pandas 不可用")
-except Exception as e:
-    print(f"数据处理错误: {e}")
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+print("=" * 50)
+print(f"数据分析报告 - {datetime.now().strftime('%Y-%m-%d')}")
+print("=" * 50)
+
+# 1. 数据概览
+df = pd.read_csv('/data/sales.csv')
+print(f"数据集: {df.shape[0]}行 × {df.shape[1]}列")
+print(f"时间范围: {df['date'].min()} 至 {df['date'].max()}")
+
+# 2. 关键指标
+total_sales = df['amount'].sum()
+avg_sale = df['amount'].mean()
+print(f"\n关键指标:")
+print(f"  总销售额: ¥{total_sales:,.2f}")
+print(f"  平均交易额: ¥{avg_sale:,.2f}")
+
+# 3. 可视化
+plt.figure(figsize=(12, 5))
+
+# 销售额趋势
+plt.subplot(1, 2, 1)
+df.groupby('date')['amount'].sum().plot()
+plt.title('每日销售额')
+plt.grid(True, alpha=0.3)
+
+# 品类分布
+plt.subplot(1, 2, 2)
+df['category'].value_counts().head(10).plot(kind='bar')
+plt.title('Top 10 品类')
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+print("\n✅ 分析完成！")
 ```
 
-### 💡 实用技巧：
+---
+
+## ⚠️ 重要提醒（基于后端特性）
+
+### 后端已配置，无需担心：
+1. **中文字体**：已安装 WenQuanYi 字体，图表无乱码
+2. **图表捕获**：所有 `plt.show()` 自动转换为图片
+3. **内存管理**：容器限制 6GB，自动处理内存溢出
+4. **文件权限**：`/data` 目录有读写权限
+
+### 代码编写原则：
+1. **保持简洁**：写直白的 Python 代码，无需复杂包装
+2. **相信后端**：系统会自动处理图表、错误、输出格式
+3. **使用标准库**：Pandas、Matplotlib、NumPy 等已预装
+4. **关注业务逻辑**：让后端处理技术细节
+
+---
+
+## 🔧 故障排除
+
+### 常见问题：
+1. **文件不存在**：检查文件名是否正确，注意大小写
+2. **内存不足**：使用分块处理或 DuckDB 查询
+3. **图表不显示**：确保调用了 `plt.show()`
+4. **中文乱码**：后端已配置字体，无需额外处理
+
+### 性能建议：
+- **小文件**：直接使用 Pandas
+- **大文件**：使用 DuckDB 或分块处理
+- **重复计算**：保存中间结果到 `/data` 目录
+- **复杂图表**：后端会自动优化渲染
+
+---
+
+## 📋 快速参考卡
+
 ```python
-# 快速查看数据分布
-def quick_analysis(df):
-    print("数据快速分析:")
-    print(f"形状: {df.shape}")
-    print(f"内存使用: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
-    print("\n数值列统计:")
-    print(df.describe())
-    print("\n缺失值统计:")
-    print(df.isnull().sum())
+# 读取文件
+df = pd.read_csv('/data/file.csv')
 
-# 使用示例
-# quick_analysis(your_dataframe)
+# 保存文件
+df.to_csv('/data/output.csv', index=False)
+
+# 显示图表
+plt.plot(x, y)
+plt.show()  # 🎯 关键！
+
+# 打印结果
+print(df.describe())
+
+# 高效查询（大文件）
+import duckdb
+result = duckdb.sql("SELECT * FROM read_csv_auto('/data/big.csv')").df()
 ```
 
-**记住**：系统会自动处理所有输出格式，您只需要专注于数据处理逻辑！
+---
+
+**最终原则**：写你**想写**的代码，后端会处理**该处理**的细节！图表、文件、输出都交给系统，你只需要关注数据分析和业务逻辑。

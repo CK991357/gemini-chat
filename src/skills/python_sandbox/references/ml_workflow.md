@@ -805,3 +805,190 @@ def quick_model_evaluation(model, X_test, y_test, problem_type='regression'):
 ```
 
 **记住**：系统会自动处理所有输出格式，您只需要专注于机器学习建模和分析逻辑！
+
+## 📁 沙盒环境文件操作指南
+
+### 文件上传（必须步骤）
+在沙盒中运行代码前，**必须先上传数据文件**：
+
+```python
+# 示例：如何引用已上传的文件
+# 假设您已经通过前端界面上传了以下文件：
+# - /data/train.csv      （通过文件上传API上传）
+# - /data/dataset.xlsx   （通过文件上传API上传）
+# - /data/sales.parquet  （通过文件上传API上传）
+
+import pandas as pd
+import os
+
+def list_uploaded_files():
+    """列出所有已上传的文件"""
+    data_dir = '/data'
+    if os.path.exists(data_dir):
+        files = os.listdir(data_dir)
+        print(f"已上传的文件: {files}")
+        return files
+    else:
+        print("没有找到/data目录")
+        return []
+
+# 列出文件
+available_files = list_uploaded_files()
+
+# 读取特定文件
+if 'train.csv' in available_files:
+    df = pd.read_csv('/data/train.csv')
+    print(f"成功读取 train.csv，形状: {df.shape}")
+    
+if 'dataset.xlsx' in available_files:
+    df = pd.read_excel('/data/dataset.xlsx')
+    print(f"成功读取 dataset.xlsx，形状: {df.shape}")
+```
+
+### 支持的文件格式
+根据code_interpreter.py，系统支持以下文件格式：
+- 📊 数据文件：`.csv`, `.xlsx`, `.xls`, `.parquet`, `.json`
+
+### 文件读取最佳实践
+```python
+def safe_read_data(filename):
+    """安全读取数据文件，带错误处理"""
+    try:
+        filepath = f'/data/{filename}'
+        
+        # 根据扩展名选择读取方法
+        if filename.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        elif filename.endswith('.parquet'):
+            df = pd.read_parquet(filepath)
+        elif filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(filepath)
+        elif filename.endswith('.json'):
+            df = pd.read_json(filepath)
+        else:
+            raise ValueError(f"不支持的文件格式: {filename}")
+        
+        print(f"✅ 成功读取 {filename}")
+        print(f"   行数: {len(df)}, 列数: {len(df.columns)}")
+        print(f"   列名: {list(df.columns)}")
+        
+        return df
+        
+    except FileNotFoundError:
+        print(f"❌ 文件不存在: {filename}")
+        print("请先通过文件上传功能上传文件")
+        return None
+    except Exception as e:
+        print(f"❌ 读取文件时出错: {e}")
+        return None
+
+# 使用示例
+if __name__ == "__main__":
+    # 检查可用的文件
+    files = list_uploaded_files()
+    if files:
+        for file in files:
+            print(f"发现文件: {file}")
+        
+        # 读取第一个CSV文件
+        csv_files = [f for f in files if f.endswith('.csv')]
+        if csv_files:
+            df = safe_read_data(csv_files[0])
+            if df is not None:
+                # 进行机器学习分析
+                pass
+```
+
+### 工作流整合示例
+```python
+# 完整的ML工作流，包含文件检查
+def complete_ml_workflow_with_file_check():
+    """包含文件检查的完整ML工作流"""
+    
+    print("=== 机器学习工作流开始 ===")
+    
+    # 1. 检查数据文件
+    files = list_uploaded_files()
+    if not files:
+        print("警告：没有找到上传的文件，将使用示例数据")
+        # 使用generate_sample_data()函数创建示例数据
+        from sklearn.datasets import make_regression
+        X, y = make_regression(n_samples=1000, n_features=10, random_state=42)
+    else:
+        print(f"找到 {len(files)} 个文件: {files}")
+        
+        # 读取第一个数据文件
+        data_file = files[0]
+        df = safe_read_data(data_file)
+        
+        if df is None:
+            print("无法读取文件，使用示例数据")
+            from sklearn.datasets import make_regression
+            X, y = make_regression(n_samples=1000, n_features=10, random_state=42)
+        else:
+            # 假设最后一列是目标变量
+            X = df.iloc[:, :-1].values
+            y = df.iloc[:, -1].values
+    
+    # 2. 执行ML分析（使用文档中的函数）
+    results = standard_ml_pipeline(X, y, problem_type='regression')
+    
+    return results
+```
+
+### ⚡ 快速使用模板
+```python
+# 在沙盒中运行机器学习分析的完整示例
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+
+# 步骤1：读取数据（替换为您的文件名）
+try:
+    # 如果您上传了train.csv
+    df = pd.read_csv('/data/train.csv')
+    print(f"数据形状: {df.shape}")
+    
+    # 步骤2：准备特征和目标
+    X = df.drop('target_column', axis=1)  # 替换为您的目标列名
+    y = df['target_column']
+    
+    # 步骤3：训练模型
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    # 步骤4：评估
+    y_pred = model.predict(X_test)
+    r2 = r2_score(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    
+    print(f"模型性能: R²={r2:.4f}, RMSE={rmse:.4f}")
+    
+    # 步骤5：可视化
+    plt.figure(figsize=(10, 5))
+    plt.scatter(y_test, y_pred, alpha=0.6)
+    plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+    plt.xlabel('实际值')
+    plt.ylabel('预测值')
+    plt.title(f'预测效果 (R² = {r2:.3f})')
+    plt.grid(True, alpha=0.3)
+    plt.show()
+    
+except FileNotFoundError:
+    print("❌ 未找到文件。请确保：")
+    print("   1. 已通过文件上传功能上传train.csv")
+    print("   2. 文件位于/data目录下")
+    print("   3. 文件名拼写正确")
+    
+    # 提供示例数据作为备选
+    print("\n🔧 正在生成示例数据进行分析...")
+    from sklearn.datasets import make_regression
+    X, y = make_regression(n_samples=1000, n_features=5, random_state=42)
+    
+    # 继续执行分析...
+```
