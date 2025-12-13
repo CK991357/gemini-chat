@@ -48,6 +48,22 @@ export const CONFIG = {
                 tools: mcpTools
             },
             {
+                name: 'deepseek-reasoner',
+                displayName: 'deepseek-reasoner (工具调用)',
+                isWebSocket: false,
+                isDeepSeek: true, // 标记为deepseek模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            },
+            {
+                name: 'deepseek-chat',
+                displayName: 'deepseek-chat (工具调用)',
+                isWebSocket: false,
+                isDeepSeek: true, // 标记为deepseek模型
+                mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
+                tools: mcpTools
+            },
+            {
                 name: 'gemini-2.5-flash-preview-09-2025',
                 displayName: 'gemini-2.5-flash-preview-09-2025 (工具调用)',
                 isWebSocket: false,

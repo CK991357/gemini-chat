@@ -108,6 +108,18 @@ export class ChatApiHandler {
     }
 
     /**
+     * 🎯 判断是否为 DeepSeek 模型
+     */
+    _isDeepSeekModel(modelName) {
+        return modelName && (
+            modelName === 'deepseek-chat' || 
+            modelName === 'deepseek-reasoner' ||
+            modelName.includes('deepseek') ||
+            modelName.includes('DeepSeek')
+        );
+    }
+
+    /**
      * Processes an HTTP Server-Sent Events (SSE) stream from the chat completions API.
      * It handles text accumulation, UI updates, and tool calls.
      * @param {object} requestBody - The request body to be sent to the model.
@@ -121,6 +133,11 @@ export class ChatApiHandler {
         let currentMessages = requestBody.messages;
         const selectedModelName = requestBody.model; // 获取当前模型名称
         const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === selectedModelName);
+        
+        // ================================================================
+        // 🎯 新增：DeepSeek 模型特殊处理
+        // ================================================================
+        const isDeepSeekModel = this._isDeepSeekModel(selectedModelName);
         
         // 检查当前模型是否为Gemini类型（通过名称判断，不依赖isGemini标签）
         const isCurrentModelGeminiType = selectedModelName.includes('gemini');
@@ -141,6 +158,27 @@ export class ChatApiHandler {
         const tools = requestBody.tools;
 
         try {
+            // ================================================================
+            // 🎯 构建适用于 DeepSeek 的请求体
+            // ================================================================
+            let requestBodyToSend = { ...requestBody, tools };
+            
+            // 如果是 DeepSeek 模型，添加 thinking 参数（如果使用思考模式）
+            if (isDeepSeekModel) {
+                // 对于 DeepSeek，移除 Gemini 特有的参数
+                delete requestBodyToSend.enableReasoning;
+                delete requestBodyToSend.disableSearch;
+                
+                // 如果模型是 deepseek-reasoner，开启思考模式
+                if (selectedModelName === 'deepseek-reasoner') {
+                    requestBodyToSend.thinking = { type: "enabled" };
+                }
+            } else {
+                // 非 DeepSeek 模型，保留原有的参数
+                requestBodyToSend.enableReasoning = enableReasoning;
+                requestBodyToSend.disableSearch = disableSearch;
+            }
+            
             // 🎯 注意：streamChatCompletion 保持原有的 fetch 逻辑，不在这里使用重试
             // 因为流式响应不适合重试机制
             const response = await fetch('/api/chat/completions', {
@@ -149,8 +187,8 @@ export class ChatApiHandler {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                // 将 tools, enableReasoning 和 disableSearch 参数添加到请求体中
-                body: JSON.stringify({ ...requestBody, tools, enableReasoning, disableSearch })
+                // 使用调整后的请求体
+                body: JSON.stringify(requestBodyToSend)
             });
 
             if (!response.ok) {
@@ -231,28 +269,34 @@ export class ChatApiHandler {
 
                                 } else if (choice.delta && !functionCallDetected && !qwenToolCallAssembler) {
                                     // Process reasoning and content only if no tool call is active
-                                    if (choice.delta.reasoning_content) {
-                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
-                                        
-                                        // 兼容性检查：确保 reasoningContainer 存在
-                                        if (this.state.currentAIMessageContentDiv.reasoningContainer) {
-                                            if (!reasoningStarted) {
-                                                this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                                reasoningStarted = true;
-                                            }
-                                            const reasoningText = choice.delta.reasoning_content;
+                                    // ================================================================
+                                    // 🎯 新增：DeepSeek 思考模式特殊处理
+                                    // ================================================================
+                                    if (isDeepSeekModel) {
+                                        // DeepSeek 模型在 delta 中返回 reasoning_content
+                                        if (choice.delta.reasoning_content) {
+                                            if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
                                             
-                                            // 兼容性检查：确保 rawReasoningBuffer 存在
-                                            if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string') {
-                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
-                                            } else {
-                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer = reasoningText;
-                                            }
-                                            
-                                            // 兼容性检查：确保 reasoning-content 元素存在
-                                            const reasoningContentEl = this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
-                                            if (reasoningContentEl) {
-                                                reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
+                                            // 兼容性检查：确保 reasoningContainer 存在
+                                            if (this.state.currentAIMessageContentDiv.reasoningContainer) {
+                                                if (!reasoningStarted) {
+                                                    this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
+                                                    reasoningStarted = true;
+                                                }
+                                                const reasoningText = choice.delta.reasoning_content;
+                                                
+                                                // 兼容性检查：确保 rawReasoningBuffer 存在
+                                                if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string') {
+                                                    this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
+                                                } else {
+                                                    this.state.currentAIMessageContentDiv.rawReasoningBuffer = reasoningText;
+                                                }
+                                                
+                                                // 兼容性检查：确保 reasoning-content 元素存在
+                                                const reasoningContentEl = this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
+                                                if (reasoningContentEl) {
+                                                    reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
+                                                }
                                             }
                                         }
                                     }
@@ -356,9 +400,10 @@ export class ChatApiHandler {
                 const isQwenModel = modelConfig && modelConfig.isQwen;
                 const isZhipuModel = modelConfig && modelConfig.isZhipu;
                 const isGeminiToolModel = modelConfig && modelConfig.isGemini; // 新增：检查Gemini工具模型标签
+                const isDeepSeekModel = modelConfig && modelConfig.isDeepSeek; // 新增
 
                 // 为 Qwen、Zhipu 和启用了工具的 Gemini 模型统一路由到 MCP 处理器
-                if (isQwenModel || isZhipuModel || isGeminiToolModel) {
+                if (isQwenModel || isZhipuModel || isGeminiToolModel|| isDeepSeekModel) {
                     // 对于 Gemini 风格的 functionCall，我们将其标准化为 MCP 期望的格式
                     const mcpToolCall = currentFunctionCall.tool_name
                         ? currentFunctionCall
@@ -386,7 +431,14 @@ export class ChatApiHandler {
                     };
                     
                     // 兼容性检查：如果有思维链内容也保存
-                    if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string' &&
+                    // ================================================================
+                    // 🎯 新增：DeepSeek 思考内容保存
+                    // ================================================================
+                    if (isDeepSeekModel && 
+                        typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string' &&
+                        this.state.currentAIMessageContentDiv.rawReasoningBuffer.trim() !== '') {
+                        historyEntry.reasoning = this.state.currentAIMessageContentDiv.rawReasoningBuffer;
+                    } else if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string' &&
                         this.state.currentAIMessageContentDiv.rawReasoningBuffer.trim() !== '') {
                         historyEntry.reasoning = this.state.currentAIMessageContentDiv.rawReasoningBuffer;
                     }
@@ -428,6 +480,7 @@ export class ChatApiHandler {
      */
     async completeChat(requestBody, apiKey) {
         const isAgentMode = this._isAgentRequest(requestBody);
+        const isDeepSeekModel = this._isDeepSeekModel(requestBody.model);
         
         try {
             let response;
@@ -435,13 +488,30 @@ export class ChatApiHandler {
             if (isAgentMode) {
                 // 🎯 Agent模式：使用带重试的专用方法
                 console.log('[ChatApiHandler] Agent模式检测到，启用智能重试机制');
+                
+                // ================================================================
+                // 🎯 新增：DeepSeek 模型特殊处理
+                // ================================================================
+                let requestBodyToSend = { ...requestBody, stream: false };
+                
+                if (isDeepSeekModel) {
+                    // 对于 DeepSeek，移除 Gemini 特有的参数
+                    delete requestBodyToSend.enableReasoning;
+                    delete requestBodyToSend.disableSearch;
+                    
+                    // 如果模型是 deepseek-reasoner，开启思考模式
+                    if (requestBody.model === 'deepseek-reasoner') {
+                        requestBodyToSend.thinking = { type: "enabled" };
+                    }
+                }
+                
                 response = await this._fetchWithAgentRetry('/api/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify({ ...requestBody, stream: false })
+                    body: JSON.stringify(requestBodyToSend)
                 });
             } else {
                 // 标准模式：保持原有逻辑
@@ -461,6 +531,13 @@ export class ChatApiHandler {
 
                 // 检查是否为预期的非流式响应（含 choices/message）
                 if (json && Array.isArray(json.choices) && json.choices[0] && json.choices[0].message && json.choices[0].message.content) {
+                    // ================================================================
+                    // 🎯 新增：DeepSeek 思考内容处理
+                    // ================================================================
+                    if (isDeepSeekModel && json.choices[0].message.reasoning_content) {
+                        // DeepSeek 返回的思考内容，可以用于后续处理
+                        json.choices[0].message.reasoning = json.choices[0].message.reasoning_content;
+                    }
                     return json;
                 }
                 // 如果返回结构不符，继续走流式回退逻辑
@@ -776,7 +853,7 @@ export class ChatApiHandler {
                     toolResultContent = { output: toolRawResult };
                     console.warn(`[MCP] Python Sandbox executed with error.`);
                 } else {
-                    // 如果没有错误，尝试将 stdout 解析为“智能包裹” (JSON)
+                    // 如果没有错误，尝试将 stdout 解析为"智能包裹" (JSON)
                     try {
                         const outputData = JSON.parse(stdout.trim());
                         

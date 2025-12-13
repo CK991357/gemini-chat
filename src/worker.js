@@ -627,7 +627,54 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-            } else if (model === 'deepseek-ai/DeepSeek-V3.2') {
+            
+            // ================================================================
+            // 🎯 新增：DeepSeek-V3.2 模型路由
+            // ================================================================
+            } else if (model === 'deepseek-chat' || model === 'deepseek-reasoner') {
+                console.log(`DEBUG: Routing to DeepSeek chat proxy for model: ${model}`);
+                
+                // 根据 DeepSeek API 文档，base_url 为 https://api.deepseek.com
+                const targetUrl = 'https://api.deepseek.com/v1/chat/completions';
+                const apiKey = env.DEEPSEEK_API_KEY; // 需要添加环境变量
+
+                if (!apiKey) {
+                    throw new Error('DEEPSEEK_API_KEY is not configured in environment variables.');
+                }
+
+                // 处理思考模式：如果模型是 deepseek-reasoner，确保开启思考模式
+                if (model === 'deepseek-reasoner') {
+                    // 确保请求体包含 thinking 参数
+                    if (!body.thinking) {
+                        body.thinking = { type: "enabled" };
+                    }
+                    console.log(`[Worker] DeepSeek 思考模式已启用`);
+                }
+
+                // 直接将请求体转发到 DeepSeek API
+                const proxyResponse = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                // 将 DeepSeek API 的响应直接返回给客户端
+                return new Response(proxyResponse.body, {
+                    status: proxyResponse.status,
+                    statusText: proxyResponse.statusText,
+                    headers: {
+                        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                    }
+                });
+            // ================================================================
+            // 🎯 DeepSeek 模型路由结束
+            // ================================================================
+            
+            } else if (model === 'deepseek-ai/DeepSeek-OCR') {
                 console.log(`DEBUG: Routing to SiliconFlow chat proxy for model: ${model}`);
                 const targetUrl = 'https://api.siliconflow.cn/v1/chat/completions';
                 const apiKey = env.SF_API_TOKEN;
