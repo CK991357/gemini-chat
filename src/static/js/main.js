@@ -1310,15 +1310,24 @@ function getAvailableToolNames(currentModel) {
 }
 
 /**
- * ✨ [修复] 标准聊天请求处理函数
- * @description 根据模型配置决定是否添加工具定义
+ * 🎯 【修改】标准聊天请求处理函数（集成技能指南）
  */
-async function handleStandardChatRequest(message, attachedFiles, modelName, apiKey, pushToHistory = true) {
+async function handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, pushToHistory = true, contextResult = null) {
     const userContent = [];
-    if (message) {
-        userContent.push({ type: 'text', text: message });
+    
+    // 🎯 【新增】如果提供了contextResult，使用其enhancedPrompt作为系统消息
+    if (contextResult && contextResult.enhancedPrompt) {
+        // 将技能指南作为系统消息的一部分
+        console.log(`🎯 [普通模式] 注入技能指南，长度: ${contextResult.enhancedPrompt.length} 字符`);
+        
+        // 方案B：将技能指南作为第一个用户消息的一部分
+        userContent.push({ type: 'text', text: contextResult.enhancedPrompt });
     }
+    
+    // 添加用户实际消息
+    userContent.push({ type: 'text', text: messageText });
 
+    // 处理附件
     attachedFiles.forEach(file => {
         if (file.type.startsWith('image/')) {
             userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
@@ -1333,9 +1342,7 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
         chatHistory.push({ role: 'user', content: userContent });
     }
 
-    // 🎯 修复：只在模型配置明确要求时才添加工具定义
-    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
-    
+    // 构建请求体
     const requestBody = {
         model: modelName,
         messages: chatHistory,
@@ -1344,7 +1351,9 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
         sessionId: currentSessionId
     };
 
-    // 🎯 关键修复：只有配置了 tools 字段的模型才添加工具定义
+    // 🎯 修复：只在模型配置明确要求时才添加工具定义
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    
     if (modelConfig && modelConfig.tools) {
         const toolType = modelConfig.isGemini ? 'geminiMcpTools' :
                         modelConfig.isZhipu ? 'mcpTools' : 'customTools';
@@ -1463,7 +1472,7 @@ async function initializeEnhancedSkillSystem() {
  * 🚀 修改核心消息处理函数
  */
 // =========================================================================
-// 🚀 [最终方案 V2 - 修改] 增强的消息处理函数，整合新的skillContextManager调用方式
+// 🚀 [修正] 增强的消息处理函数 - 按照步骤3要求修改
 // =========================================================================
 async function handleEnhancedHttpMessage(messageText, attachedFiles) {
     if (!currentSessionId) {
@@ -1474,44 +1483,27 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
     const modelName = selectedModelConfig.name;
     const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
     
-    // 🎯 新增：获取当前会话的迭代次数
-    const iteration = skillContextManager.getNextIteration(currentSessionId);
-    
-    // 如果 Agent 模式未启用，使用增强的普通模式
+    // 🎯 如果 Agent 模式未启用，使用增强的普通模式
     if (!isAgentModeEnabled) {
-        console.log("💬 Agent 模式未启用，使用增强普通模式");
+        console.log("💬 普通模式（带智能缓存）");
         
-        // 获取可用工具名称和增强工具定义
+        // 获取可用工具名称
         const availableToolNames = getAvailableToolNames(modelName);
-        const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
         
-        // 🎯 关键修改：使用新的 generateRequestContext
+        // 🎯 【关键】按照步骤3要求传递当前会话ID
         const contextResult = await skillContextManager.generateRequestContext(
             messageText,
             availableToolNames,
             selectedModelConfig,
-            {
-                sessionId: currentSessionId,
-                mode: 'standard',
-                iteration: iteration
-            }
+            currentSessionId // 只传递会话ID字符串
         );
         
-        // 更新会话迭代状态
-        skillContextManager.updateSessionIteration(currentSessionId, contextResult.injectedTools);
-        
-        // 使用增强的标准请求处理
-        await handleEnhancedStandardRequest(
-            messageText, 
-            attachedFiles, 
-            modelName, 
-            apiKey, 
-            enhancedTools, 
-            contextResult
-        );
+        // 使用标准请求处理
+        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, true, contextResult);
         return;
     }
 
+    // ... Agent模式原有代码保持不变 ...
     try {
         // 🎯 核心修复：在 Agent 流程开始前，将用户消息推入历史记录
         const userContent = [];
@@ -2678,6 +2670,14 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     newChatButton.addEventListener('click', () => {
         if (currentSessionId) {
+            // 🎯 清理技能系统缓存
+            if (skillContextManager && skillContextManager.resetSession) {
+            skillContextManager.resetSession(currentSessionId);
+            }
+            // 🎯 清理 skill-manager 中的会话缓存（如果需要）
+            if (window.__globalSkillManagerInstance?.sessionInjectionTracker) {
+            window.__globalSkillManagerInstance.sessionInjectionTracker.delete(currentSessionId);
+        }
             cleanupSession(currentSessionId);
         }
         resetFileManagerAuth(); // 🎯 核心修改：重置文件管理器状态（包括关闭模态框）
