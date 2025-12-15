@@ -1,12 +1,14 @@
 // D:\Github_10110531\gemini_chat\src\static\js\tool-spec-system\skill-context-manager.js
 
+
 // Modified to use global skill manager singleton
 async function getSkillManager() {
+  // 首先尝试全局增强管理器
   if (typeof window.getGlobalSkillManager === 'function') {
     return await window.getGlobalSkillManager();
   }
 
-  // 降级方案
+  // 降级方案：直接使用EnhancedSkillManager
   const { EnhancedSkillManager } = await import('../agent/EnhancedSkillManager.js');
   const manager = new EnhancedSkillManager();
   await manager.waitUntilReady();
@@ -109,15 +111,21 @@ class SkillContextManager {
       return { enhancedPrompt: userQuery, relevantTools: [] };
     }
 
-    // 1. 查找相关技能 - 添加 await 确保获取结果
-    const relevantSkills = await this.skillManager.findRelevantSkills(userQuery, {
-      availableTools,
-      category: modelConfig.category
-    });
+    // 1. 查找相关技能 - 🎯【修复】添加 await
+    let relevantSkills;
+    try {
+      relevantSkills = await this.skillManager.findRelevantSkills(userQuery, {
+        availableTools,
+        category: modelConfig.category
+      });
+    } catch (error) {
+      console.error('❌ 获取相关技能失败:', error);
+      relevantSkills = [];
+    }
 
     // 🎯 【重要】确保 relevantSkills 是数组
     if (!Array.isArray(relevantSkills) || relevantSkills.length === 0) {
-      console.warn('[SkillContextManager] 未找到相关技能或结果格式错误:', relevantSkills);
+      console.log('[SkillContextManager] 未找到相关技能或结果格式错误:', relevantSkills);
       return { 
         enhancedPrompt: userQuery, 
         relevantTools: [],
@@ -130,6 +138,7 @@ class SkillContextManager {
     if (this.sessionIterations.has(sessionId)) {
       iteration = this.sessionIterations.get(sessionId);
     }
+    
     // 🎯 【新增】检查工具使用历史
     const toolHistory = this.sessionToolUsage.has(sessionId) 
       ? this.sessionToolUsage.get(sessionId)
@@ -138,38 +147,38 @@ class SkillContextManager {
     // 2. 生成增强提示词（使用智能缓存）
     let enhancedPrompt = '';
     const injectedTools = [];
-  
+    
     // 🎯 【修复】这里是对 relevantSkills 进行迭代
     for (const skill of relevantSkills) {
       const toolName = skill.toolName;
-    
+      
       // 🎯 【关键】检查是否已经注入过
       // 注意：这里需要skillManager提供hasToolBeenInjected方法
       const hasBeenInjected = this.skillManager.hasToolBeenInjected ? 
-        this.skillManager.hasToolBeenInjected(toolName, sessionId) : false;
+        await this.skillManager.hasToolBeenInjected(toolName, sessionId) : false;
       const usageCount = toolHistory.get(toolName) || 0;
-    
+      
       // 🎯 决定是否使用完整指南还是引用
       const isFirstTime = !hasBeenInjected || usageCount === 0;
-    
+      
       // 生成技能指南
       let skillGuide;
       if (this.skillManager.generateSmartSkillInjection) {
-      // 使用增强管理器的智能注入
-      skillGuide = await this.skillManager.generateSmartSkillInjection(
-        skill.skill || skill,
-        userQuery,
-        sessionId,
-        isFirstTime
-      );
-    } else {
-      // 降级方案：构建基本指南
-      skillGuide = this._buildBasicSkillGuide(skill, userQuery, isFirstTime);
-    }
-    
+        // 使用增强管理器的智能注入
+        skillGuide = await this.skillManager.generateSmartSkillInjection(
+          skill.skill || skill,
+          userQuery,
+          sessionId,
+          isFirstTime
+        );
+      } else {
+        // 降级方案：构建基本指南
+        skillGuide = await this._buildBasicSkillGuide(skill, userQuery, isFirstTime);
+      }
+      
       enhancedPrompt += skillGuide + '\n\n';
       injectedTools.push(toolName);
-    
+      
       // 🎯 更新工具使用计数
       toolHistory.set(toolName, usageCount + 1);
     }
@@ -186,7 +195,7 @@ class SkillContextManager {
     } else {
       enhancedPrompt = userQuery;
     }
-  
+    
     // 4. 清理过时会话（可选）
     this.cleanupOldSessions();
 
@@ -202,6 +211,32 @@ class SkillContextManager {
       sessionId,
       iteration
     };
+  }
+
+  /**
+   * 🎯 构建基本技能指南（降级方案）
+   */
+  async _buildBasicSkillGuide(skill, userQuery, isFirstTime) {
+    const toolName = skill.toolName;
+    const name = skill.name || toolName;
+    const description = skill.description || '未提供描述';
+    
+    // 🎯 检查工具类型，调用对应的构建方法
+    if (toolName === 'python_sandbox') {
+      return await this._buildPythonSandboxContext(skill, userQuery);
+    } else if (toolName === 'crawl4ai') {
+      return await this._buildCrawl4AIContext(skill, userQuery);
+    }
+    
+    // 🎯 通用工具的基本指南
+    let guide = `### 🛠️ 工具: ${name}\n\n`;
+    guide += `**功能**: ${description}\n`;
+    
+    if (!isFirstTime) {
+      guide += `\n**提示**: 该工具的详细指南已在之前的对话中提供，请参考之前的说明。`;
+    }
+    
+    return guide;
   }
 
   /**
@@ -252,7 +287,10 @@ class SkillContextManager {
    * 🚀 crawl4ai 专用上下文构建
    */
   async _buildCrawl4AIContext(skill, userQuery) {
-    const { skill: skillData, score, name, description } = skill;
+    const skillData = skill.skill || skill;
+    const score = skill.score || 0;
+    const name = skill.name || skill.toolName;
+    const description = skill.description || skillData.description || '未提供描述';
     
     let context = `### 🕷️ 网页抓取工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**核心功能**: ${description}\n\n`;
@@ -264,7 +302,7 @@ class SkillContextManager {
     }
     
     // 2. 提取关键调用结构
-    const keyInfo = this._extractCrawl4AIKeyInformation(skillData.content, userQuery);
+    const keyInfo = this._extractCrawl4AIKeyInformation(skillData.content || '', userQuery);
     context += keyInfo;
     
     // 3. 添加专用提醒
@@ -280,13 +318,16 @@ class SkillContextManager {
    * 🚀 Python沙盒专用上下文构建
    */
   async _buildPythonSandboxContext(skill, userQuery) {
-    const { skill: skillData, score, name, description } = skill;
+    const skillData = skill.skill || skill;
+    const score = skill.score || 0;
+    const name = skill.name || skill.toolName;
+    const description = skill.description || skillData.description || '未提供描述';
     
     let context = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**核心功能**: ${description}\n\n`;
     
     // 1. 提取主文档的关键信息
-    const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
+    const mainContent = this._extractPythonKeyInformation(skillData.content || '', userQuery);
     context += mainContent;
     
     // 2. 🎯 【新增】智能章节匹配：根据用户查询推断相关章节
@@ -297,7 +338,7 @@ class SkillContextManager {
       
       // 从技能内容中提取相关章节
       for (const section of relevantSections.slice(0, 3)) { // 限制前3个
-        const sectionContent = this._extractSpecificSection(skillData.content, section);
+        const sectionContent = this._extractSpecificSection(skillData.content || '', section);
         if (sectionContent) {
           context += `#### ${section}\n`;
           context += this._compressSection(sectionContent, 300) + '\n\n'; // 压缩到300字符
@@ -486,6 +527,8 @@ class SkillContextManager {
    * 🎯 【新增】从内容中提取特定章节
    */
   _extractSpecificSection(content, sectionKeyword) {
+    if (!content) return null;
+    
     // 智能提取章节内容
     const sections = content.split(/(?=^#{2,4}\s)/m);
     
@@ -565,6 +608,8 @@ class SkillContextManager {
    * 提取crawl4ai关键信息
    */
   _extractCrawl4AIKeyInformation(skillContent, userQuery) {
+    if (!skillContent) return '';
+    
     let keyInfo = '';
     
     // 提取通用调用结构
@@ -601,6 +646,8 @@ class SkillContextManager {
    * 提取Python关键信息
    */
   _extractPythonKeyInformation(skillContent, userQuery) {
+    if (!skillContent) return '';
+    
     let keyInfo = '';
     
     // 提取基础调用规范
@@ -650,6 +697,8 @@ class SkillContextManager {
    * 从参考文件内容提取摘要
    */
   _extractReferenceSummary(refContent, fileName) {
+    if (!refContent) return '';
+    
     // 提取第一段有意义的描述
     const firstParagraph = refContent.split('\n\n').find(p => 
       p.trim().length > 50 && !p.startsWith('#')
@@ -676,8 +725,10 @@ class SkillContextManager {
    * 标准技能上下文构建（用于非复杂工具）
    */
   _buildStandardSkillContext(skill, userQuery) {
-    const { name, description, score } = skill;
-    const keyHint = this._extractKeyHint(skill.skill.content, userQuery);
+    const name = skill.name || skill.toolName;
+    const description = skill.description || '未提供描述';
+    const score = skill.score || 0;
+    const keyHint = this._extractKeyHint(skill.skill?.content || '', userQuery);
     
     let context = `### 🛠️ 工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**功能**: ${description}\n`;
