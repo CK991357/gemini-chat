@@ -26,9 +26,17 @@ class EnhancedSkillManager {
    * 🎯 新增：初始化联邦知识库
    */
   async initializeFederation() {
-    // 🎯 如果已经初始化，跳过
+    // 🎯 优化：添加初始化状态检查
     if (this.isFederationReady) {
       console.log('[SkillManager] 🎯 知识库已就绪，跳过重复初始化');
+      return;
+    }
+    
+    // 🎯 新增：如果全局技能管理器已存在，使用其联邦知识库
+    if (window.__globalSkillManagerInstance?.knowledgeFederationInitialized) {
+      console.log('[SkillManager] 🔄 使用全局技能管理器的联邦知识库');
+      this.knowledgeFederation = window.__globalSkillManagerInstance.knowledgeFederation;
+      this.isFederationReady = true;
       return;
     }
     

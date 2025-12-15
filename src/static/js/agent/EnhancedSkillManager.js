@@ -48,9 +48,17 @@ export class EnhancedSkillManager {
       
       // 🎯 新增：确保联邦知识库初始化（防重初始化）
       if (!this.knowledgeFederationInitialized && this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
-        await this.knowledgeFederation.initializeFromRegistry();
+        // 🎯 检查全局单例是否已经初始化过联邦知识库
+        const globalInstance = window.__globalSkillManagerInstance;
+        if (globalInstance && globalInstance.knowledgeFederation === this.knowledgeFederation) {
+          // 如果是同一个实例，使用其初始化状态
+          this.knowledgeFederationInitialized = globalInstance.knowledgeFederationInitialized;
+        } else {
+          // 否则正常初始化
+          await this.knowledgeFederation.initializeFromRegistry();
+          this.knowledgeFederationInitialized = true;
+        }
         console.log("[EnhancedSkillManager] ✅ 联邦知识库初始化完成");
-        this.knowledgeFederationInitialized = true;
       }
       
       this.isInitialized = true;

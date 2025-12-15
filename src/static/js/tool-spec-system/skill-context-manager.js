@@ -1,16 +1,4 @@
 // D:\Github_10110531\gemini_chat\src\static\js\tool-spec-system\skill-context-manager.js
-// Modified to use global skill manager singleton
-async function getSkillManager() {
-  if (typeof window.getGlobalSkillManager === 'function') {
-    return await window.getGlobalSkillManager();
-  }
-
-  // 降级方案
-  const { EnhancedSkillManager } = await import('../agent/EnhancedSkillManager.js');
-  const manager = new EnhancedSkillManager();
-  await manager.waitUntilReady();
-  return manager;
-}
 
 import { skillManagerPromise } from './skill-manager.js';
 
