@@ -1,8 +1,14 @@
-# 机器学习工作流指南 (v2.2)
+# 机器学习工作流指南 (v2.3)
 
 ## 🎯 工具概述
-**功能**：机器学习模型训练、评估、统计分析和可视化
-**输出原则**：直接打印结果，系统自动处理输出格式
+**功能**：机器学习模型训练、评估、统计分析和可视化  
+**输出原则**：直接打印结果，系统自动处理输出格式  
+
+**新增功能**：
+- ✅ **XGBoost 1.7.6**：高性能梯度提升树模型
+- ✅ **pmdarima 2.0.4**：自动化ARIMA时间序列建模
+- ✅ 增强的时间序列分析能力
+- ✅ 非线性模型与线性模型的对比分析
 
 ## 📊 基础机器学习模板
 
@@ -584,6 +590,500 @@ def statistical_modeling_analysis():
 # stats_results = statistical_modeling_analysis()
 ```
 
+## ⏰ 时间序列分析（v2.3新增）
+
+### 使用pmdarima进行自动化ARIMA建模
+
+```python
+from pmdarima import auto_arima
+import xgboost as xgb
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+def time_series_arima_analysis(series, seasonal_period=7, forecast_steps=30):
+    """自动化ARIMA时间序列分析"""
+    
+    print("=== 开始时间序列ARIMA分析 ===")
+    
+    # 1. 数据检查
+    print(f"时间序列长度: {len(series)}")
+    print(f"数据类型: {type(series)}")
+    
+    # 2. 自动ARIMA建模
+    print("\n=== 自动ARIMA参数选择 ===")
+    try:
+        model = auto_arima(
+            series,
+            seasonal=True,
+            m=seasonal_period,  # 季节性周期（7天为周季节性）
+            stepwise=True,      # 使用逐步搜索，节省内存
+            suppress_warnings=True,
+            error_action='ignore',
+            trace=True,         # 显示搜索过程
+            random_state=42
+        )
+        
+        print(f"最佳ARIMA参数: {model.order}")
+        print(f"最佳季节性参数: {model.seasonal_order}")
+        print(f"模型AIC: {model.aic():.2f}")
+        
+    except Exception as e:
+        print(f"自动ARIMA失败: {e}")
+        return None
+    
+    # 3. 模型摘要
+    print("\n=== 模型摘要 ===")
+    print(model.summary())
+    
+    # 4. 预测
+    print(f"\n=== 未来{forecast_steps}期预测 ===")
+    forecast, conf_int = model.predict(
+        n_periods=forecast_steps,
+        return_conf_int=True,
+        alpha=0.05  # 95%置信区间
+    )
+    
+    # 5. 模型评估（使用训练集最后部分作为验证）
+    train_size = int(len(series) * 0.8)
+    train = series[:train_size]
+    test = series[train_size:]
+    
+    # 在训练集上重新拟合模型
+    model.fit(train)
+    predictions = model.predict(n_periods=len(test))
+    
+    # 计算指标
+    mae = mean_absolute_error(test, predictions)
+    rmse = np.sqrt(mean_squared_error(test, predictions))
+    mape = np.mean(np.abs((test - predictions) / test)) * 100
+    
+    print(f"\n=== 模型性能评估 ===")
+    print(f"MAE (平均绝对误差): {mae:.2f}")
+    print(f"RMSE (均方根误差): {rmse:.2f}")
+    print(f"MAPE (平均绝对百分比误差): {mape:.2f}%")
+    
+    # 6. 可视化
+    plt.figure(figsize=(15, 10))
+    
+    # 原始序列与拟合值
+    plt.subplot(2, 2, 1)
+    plt.plot(series.index, series, label='原始序列', alpha=0.7)
+    plt.plot(series.index, model.predict_in_sample(), label='拟合值', alpha=0.7)
+    plt.xlabel('时间')
+    plt.ylabel('值')
+    plt.title('原始序列与模型拟合')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # 残差分析
+    plt.subplot(2, 2, 2)
+    residuals = series - model.predict_in_sample()
+    plt.plot(residuals.index, residuals, alpha=0.7)
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.xlabel('时间')
+    plt.ylabel('残差')
+    plt.title('模型残差')
+    plt.grid(True, alpha=0.3)
+    
+    # 预测结果
+    plt.subplot(2, 2, 3)
+    last_n = min(100, len(series))
+    plt.plot(series.index[-last_n:], series.values[-last_n:], label='历史数据')
+    
+    # 创建未来时间索引
+    if hasattr(series.index, 'freq'):
+        future_index = pd.date_range(start=series.index[-1], periods=forecast_steps+1, freq=series.index.freq)[1:]
+    else:
+        future_index = range(len(series), len(series) + forecast_steps)
+    
+    plt.plot(future_index, forecast, label='预测值', color='red')
+    plt.fill_between(future_index, conf_int[:, 0], conf_int[:, 1], color='pink', alpha=0.3, label='95%置信区间')
+    plt.xlabel('时间')
+    plt.ylabel('值')
+    plt.title(f'未来{forecast_steps}期预测')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # 残差分布
+    plt.subplot(2, 2, 4)
+    plt.hist(residuals.dropna(), bins=30, alpha=0.7, edgecolor='black')
+    plt.xlabel('残差值')
+    plt.ylabel('频数')
+    plt.title('残差分布')
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return {
+        'model': model,
+        'order': model.order,
+        'seasonal_order': model.seasonal_order,
+        'forecast': forecast,
+        'confidence_interval': conf_int,
+        'metrics': {'mae': mae, 'rmse': rmse, 'mape': mape},
+        'residuals': residuals
+    }
+
+# 使用示例
+# 假设df是一个时间序列DataFrame，index为日期，有一列'销售额'
+# results = time_series_arima_analysis(df['销售额'], seasonal_period=7, forecast_steps=30)
+```
+
+### 使用XGBoost进行时间序列预测
+
+```python
+def time_series_xgboost_analysis(df, target_col, lag_features=7, forecast_steps=30):
+    """使用XGBoost进行时间序列预测"""
+    
+    print("=== 开始时间序列XGBoost分析 ===")
+    
+    # 1. 准备特征
+    print("准备时间序列特征...")
+    features_df = pd.DataFrame(index=df.index)
+    
+    # 滞后特征
+    for lag in range(1, lag_features + 1):
+        features_df[f'lag_{lag}'] = df[target_col].shift(lag)
+    
+    # 滚动统计特征
+    for window in [3, 7, 14, 30]:
+        features_df[f'ma_{window}'] = df[target_col].rolling(window).mean().shift(1)
+        features_df[f'std_{window}'] = df[target_col].rolling(window).std().shift(1)
+    
+    # 日期特征
+    if hasattr(df.index, 'month'):
+        features_df['month'] = df.index.month
+        features_df['dayofweek'] = df.index.dayofweek
+        features_df['dayofmonth'] = df.index.day
+        features_df['quarter'] = df.index.quarter
+    
+    # 外部特征（如果存在）
+    external_features = ['Temperature', 'Promotion', 'Competitor_Price', 'Holiday']
+    for feat in external_features:
+        if feat in df.columns:
+            features_df[feat] = df[feat]
+    
+    # 目标变量
+    features_df['target'] = df[target_col]
+    
+    # 移除缺失值
+    features_df = features_df.dropna()
+    
+    print(f"特征矩阵形状: {features_df.shape}")
+    
+    # 2. 划分训练集和测试集
+    X = features_df.drop('target', axis=1)
+    y = features_df['target']
+    
+    split_idx = int(len(X) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+    
+    print(f"训练集大小: {X_train.shape}")
+    print(f"测试集大小: {X_test.shape}")
+    
+    # 3. 训练XGBoost模型
+    print("\n训练XGBoost模型...")
+    
+    xgb_model = xgb.XGBRegressor(
+        n_estimators=100,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        tree_method='hist',  # 内存友好
+        n_jobs=2,           # 6GB内存下使用2个线程
+        random_state=42,
+        verbosity=0
+    )
+    
+    xgb_model.fit(X_train, y_train)
+    
+    # 4. 模型评估
+    y_pred = xgb_model.predict(X_test)
+    
+    mae = mean_absolute_error(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+    
+    print(f"\n=== XGBoost模型性能 ===")
+    print(f"MAE (平均绝对误差): {mae:.2f}")
+    print(f"RMSE (均方根误差): {rmse:.2f}")
+    print(f"MAPE (平均绝对百分比误差): {mape:.2f}%")
+    
+    # 5. 特征重要性
+    feature_importance = pd.DataFrame({
+        '特征': X.columns,
+        '重要性': xgb_model.feature_importances_
+    }).sort_values('重要性', ascending=False)
+    
+    print(f"\n=== 特征重要性（Top 10）===")
+    for _, row in feature_importance.head(10).iterrows():
+        print(f"  {row['特征']}: {row['重要性']:.4f}")
+    
+    # 6. 可视化
+    plt.figure(figsize=(15, 10))
+    
+    # 预测 vs 实际
+    plt.subplot(2, 3, 1)
+    plt.scatter(y_test, y_pred, alpha=0.6)
+    plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
+    plt.xlabel('实际值')
+    plt.ylabel('预测值')
+    plt.title(f'XGBoost预测效果 (MAE = {mae:.2f})')
+    plt.grid(True, alpha=0.3)
+    
+    # 特征重要性
+    plt.subplot(2, 3, 2)
+    top_features = feature_importance.head(10)
+    plt.barh(top_features['特征'], top_features['重要性'])
+    plt.xlabel('重要性')
+    plt.title('Top 10 特征重要性')
+    plt.gca().invert_yaxis()
+    
+    # 时间序列预测对比
+    plt.subplot(2, 3, 3)
+    plt.plot(y_test.index, y_test.values, label='实际值', alpha=0.7)
+    plt.plot(y_test.index, y_pred, label='预测值', alpha=0.7)
+    plt.xlabel('时间')
+    plt.ylabel('值')
+    plt.title('时间序列预测对比')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # 残差分析
+    plt.subplot(2, 3, 4)
+    residuals = y_test - y_pred
+    plt.scatter(y_pred, residuals, alpha=0.6)
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.xlabel('预测值')
+    plt.ylabel('残差')
+    plt.title('残差分析')
+    plt.grid(True, alpha=0.3)
+    
+    # 误差分布
+    plt.subplot(2, 3, 5)
+    plt.hist(residuals, bins=30, alpha=0.7, edgecolor='black')
+    plt.xlabel('残差')
+    plt.ylabel('频数')
+    plt.title('误差分布')
+    plt.grid(True, alpha=0.3)
+    
+    # 滚动预测
+    plt.subplot(2, 3, 6)
+    # 取最后100个点展示
+    last_n = min(100, len(y_test))
+    plt.plot(y_test.index[-last_n:], y_test.values[-last_n:], label='实际值')
+    plt.plot(y_test.index[-last_n:], y_pred[-last_n:], label='预测值')
+    plt.xlabel('时间')
+    plt.ylabel('值')
+    plt.title('滚动预测对比（最后100点）')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # 7. 未来预测（如果需要）
+    if forecast_steps > 0:
+        print(f"\n=== 未来{forecast_steps}期预测 ===")
+        # 注意：这里需要根据具体业务逻辑实现滚动预测
+        # 简化版：使用最后lag_features个点作为初始特征
+        
+        last_features = X.iloc[-1:].copy()
+        future_predictions = []
+        
+        for i in range(forecast_steps):
+            # 预测下一步
+            pred = xgb_model.predict(last_features)[0]
+            future_predictions.append(pred)
+            
+            # 更新特征（如果是时间序列预测，需要更新滞后特征）
+            # 这里简化为只使用最新预测值
+            # 实际应用中需要根据特征工程逻辑更新
+            
+        print(f"未来预测值: {future_predictions}")
+    
+    return {
+        'model': xgb_model,
+        'metrics': {'mae': mae, 'rmse': rmse, 'mape': mape},
+        'feature_importance': feature_importance,
+        'predictions': y_pred,
+        'future_predictions': future_predictions if forecast_steps > 0 else None
+    }
+
+# 使用示例
+# 假设df是一个DataFrame，包含时间序列和外部特征
+# results = time_series_xgboost_analysis(df, target_col='Sales', lag_features=14, forecast_steps=30)
+```
+
+### 时间序列模型对比
+
+```python
+def compare_time_series_models(df, target_col, seasonal_period=7, lag_features=14):
+    """对比不同时间序列模型性能"""
+    
+    print("=== 时间序列模型对比分析 ===")
+    
+    # 准备数据
+    series = df[target_col]
+    
+    # 1. ARIMA模型
+    print("\n1. 训练ARIMA模型...")
+    arima_results = time_series_arima_analysis(series, seasonal_period, forecast_steps=0)
+    
+    # 2. XGBoost模型
+    print("\n2. 训练XGBoost模型...")
+    xgb_results = time_series_xgboost_analysis(df, target_col, lag_features, forecast_steps=0)
+    
+    # 3. LightGBM模型（如果可用）
+    try:
+        import lightgbm as lgb
+        print("\n3. 训练LightGBM模型...")
+        
+        # 准备特征（复用XGBoost的特征）
+        features_df = pd.DataFrame(index=df.index)
+        for lag in range(1, lag_features + 1):
+            features_df[f'lag_{lag}'] = df[target_col].shift(lag)
+        
+        for window in [3, 7, 14, 30]:
+            features_df[f'ma_{window}'] = df[target_col].rolling(window).mean().shift(1)
+        
+        if hasattr(df.index, 'month'):
+            features_df['month'] = df.index.month
+            features_df['dayofweek'] = df.index.dayofweek
+        
+        external_features = ['Temperature', 'Promotion', 'Competitor_Price', 'Holiday']
+        for feat in external_features:
+            if feat in df.columns:
+                features_df[feat] = df[feat]
+        
+        features_df['target'] = df[target_col]
+        features_df = features_df.dropna()
+        
+        X = features_df.drop('target', axis=1)
+        y = features_df['target']
+        
+        split_idx = int(len(X) * 0.8)
+        X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+        y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+        
+        # 训练LightGBM
+        lgb_model = lgb.LGBMRegressor(
+            num_leaves=31,
+            learning_rate=0.05,
+            n_estimators=100,
+            n_jobs=2,
+            random_state=42,
+            verbose=-1
+        )
+        
+        lgb_model.fit(X_train, y_train)
+        y_pred_lgb = lgb_model.predict(X_test)
+        
+        mae_lgb = mean_absolute_error(y_test, y_pred_lgb)
+        rmse_lgb = np.sqrt(mean_squared_error(y_test, y_pred_lgb))
+        
+        print(f"LightGBM性能: MAE={mae_lgb:.2f}, RMSE={rmse_lgb:.2f}")
+        
+        lgb_results = {
+            'model': lgb_model,
+            'metrics': {'mae': mae_lgb, 'rmse': rmse_lgb}
+        }
+        
+    except ImportError:
+        print("LightGBM不可用，跳过")
+        lgb_results = None
+    
+    # 4. 模型对比
+    print("\n=== 模型性能对比 ===")
+    
+    comparison_data = []
+    
+    if arima_results:
+        comparison_data.append({
+            '模型': 'ARIMA',
+            'MAE': arima_results['metrics']['mae'],
+            'RMSE': arima_results['metrics']['rmse'],
+            'MAPE': arima_results['metrics']['mape']
+        })
+    
+    if xgb_results:
+        comparison_data.append({
+            '模型': 'XGBoost',
+            'MAE': xgb_results['metrics']['mae'],
+            'RMSE': xgb_results['metrics']['rmse'],
+            'MAPE': xgb_results['metrics']['mape']
+        })
+    
+    if lgb_results:
+        comparison_data.append({
+            '模型': 'LightGBM',
+            'MAE': lgb_results['metrics']['mae'],
+            'RMSE': lgb_results['metrics']['rmse'],
+            'MAPE': None
+        })
+    
+    comparison_df = pd.DataFrame(comparison_data)
+    print(comparison_df.to_string(index=False))
+    
+    # 5. 可视化对比
+    if len(comparison_data) > 1:
+        plt.figure(figsize=(12, 5))
+        
+        # MAE对比
+        plt.subplot(1, 2, 1)
+        models = [d['模型'] for d in comparison_data]
+        maes = [d['MAE'] for d in comparison_data]
+        
+        bars = plt.bar(models, maes, alpha=0.7)
+        plt.xlabel('模型')
+        plt.ylabel('MAE')
+        plt.title('模型MAE对比')
+        plt.grid(True, alpha=0.3)
+        
+        # 在柱子上添加数值
+        for bar, mae in zip(bars, maes):
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height(), 
+                    f'{mae:.2f}', ha='center', va='bottom')
+        
+        # RMSE对比
+        plt.subplot(1, 2, 2)
+        rmses = [d['RMSE'] for d in comparison_data]
+        
+        bars = plt.bar(models, rmses, alpha=0.7, color='orange')
+        plt.xlabel('模型')
+        plt.ylabel('RMSE')
+        plt.title('模型RMSE对比')
+        plt.grid(True, alpha=0.3)
+        
+        for bar, rmse in zip(bars, rmses):
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height(), 
+                    f'{rmse:.2f}', ha='center', va='bottom')
+        
+        plt.tight_layout()
+        plt.show()
+        
+        # 推荐模型
+        best_model_idx = np.argmin(maes)
+        best_model = models[best_model_idx]
+        print(f"\n=== 推荐模型 ===")
+        print(f"根据MAE指标，推荐使用: {best_model}模型")
+        print(f"理由: 在测试集上表现最佳 (MAE = {maes[best_model_idx]:.2f})")
+    
+    return {
+        'arima': arima_results,
+        'xgboost': xgb_results,
+        'lightgbm': lgb_results,
+        'comparison': comparison_df
+    }
+
+# 使用示例
+# 假设有完整的时间序列数据集df
+# model_comparison = compare_time_series_models(df, target_col='Sales', seasonal_period=7, lag_features=14)
+```
+
 ## 🔧 模型优化与调参
 
 ```python
@@ -661,8 +1161,8 @@ def model_optimization_pipeline(X, y, problem_type='regression'):
 
 ### LightGBM - 高效梯度提升
 
-**用途**: 高性能梯度提升树算法
-**优势**: 比XGBoost训练更快，内存占用更少
+**用途**: 高性能梯度提升树算法  
+**优势**: 比XGBoost训练更快，内存占用更少  
 
 ```python
 import lightgbm as lgb
@@ -701,8 +1201,8 @@ gbm = lgb.train(params, train_data, num_boost_round=100)
 
 ### Category Encoders - 分类特征编码
 
-**用途**: 各种分类编码方法
-**优势**: 提升分类模型性能，支持多种编码策略
+**用途**: 各种分类编码方法  
+**优势**: 提升分类模型性能，支持多种编码策略  
 
 ```python
 import pandas as pd
@@ -721,10 +1221,68 @@ df_encoded = encoder.fit_transform(df['category'], df['value'])
 print(df_encoded)
 ```
 
+### XGBoost - 高性能梯度提升树 (v2.3新增)
+
+**用途**: 高级梯度提升树算法，支持回归、分类、排序任务  
+**优势**: 精度高，支持自定义目标函数，可解释性好  
+
+```python
+import xgboost as xgb
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, mean_squared_error
+
+# 准备数据
+data = pd.read_csv('/data/train.csv')
+X = data.drop('target', axis=1)
+y = data['target']
+
+# 划分数据集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 创建DMatrix（XGBoost高效数据结构）
+dtrain = xgb.DMatrix(X_train, label=y_train)
+dtest = xgb.DMatrix(X_test, label=y_test)
+
+# 参数设置（回归问题示例）
+params = {
+    'objective': 'reg:squarederror',  # 回归任务
+    'max_depth': 5,
+    'eta': 0.1,  # 学习率
+    'subsample': 0.8,
+    'colsample_bytree': 0.8,
+    'tree_method': 'hist',  # 内存友好的直方图算法
+    'n_jobs': 2,  # 6GB内存下使用2个线程
+    'random_state': 42
+}
+
+# 训练模型
+num_rounds = 100
+model = xgb.train(params, dtrain, num_rounds)
+
+# 预测
+y_pred = model.predict(dtest)
+
+# 评估
+if data['target'].dtype == 'object':  # 分类任务
+    accuracy = accuracy_score(y_test, y_pred.round())
+    print(f"准确率: {accuracy:.4f}")
+else:  # 回归任务
+    mse = mean_squared_error(y_test, y_pred)
+    print(f"MSE: {mse:.4f}")
+
+# 特征重要性
+importance = model.get_score(importance_type='weight')
+print("特征重要性:", importance)
+
+# 保存模型
+model.save_model('/data/xgboost_model.json')
+```
+
 ### scikit-optimize - 贝叶斯超参数优化
 
-**用途**: 自动化超参数优化
-**优势**: 比网格搜索更高效，找到更好参数组合
+**用途**: 自动化超参数优化  
+**优势**: 比网格搜索更高效，找到更好参数组合  
 
 ```python
 from skopt import BayesSearchCV
@@ -765,11 +1323,14 @@ print(f"最佳分数: {opt.best_score_:.4f}")
 - 直接使用 `print()` 输出结果和指标
 - 使用 `plt.show()` 显示图表
 - 对数据进行适当的预处理和标准化
+- 时间序列分析优先使用pmdarima自动选择ARIMA参数
+- 非线性建模优先使用XGBoost或LightGBM
 
 ### ❌ 避免的操作：
 - 不要手动构建 JSON 输出
 - 不要使用 `base64` 编码
 - 不要创建复杂的自定义输出格式
+- 不要对明显季节性数据使用非季节性ARIMA
 
 ### 🔧 错误处理：
 ```python
@@ -784,6 +1345,18 @@ try:
     # 统计建模代码
 except ImportError:
     print("statsmodels 不可用")
+
+try:
+    import xgboost as xgb
+    # XGBoost代码
+except ImportError:
+    print("XGBoost 不可用，请检查环境配置")
+
+try:
+    import pmdarima as pm
+    # ARIMA代码
+except ImportError:
+    print("pmdarima 不可用，请检查环境配置")
 ```
 
 ### 💡 实用技巧：
@@ -802,6 +1375,19 @@ def quick_model_evaluation(model, X_test, y_test, problem_type='regression'):
         print(f"准确率: {accuracy:.4f}")
     
     return y_pred
+
+# 时间序列分析快速模板
+def quick_time_series_analysis(series, model_type='auto_arima'):
+    """快速时间序列分析模板"""
+    if model_type == 'auto_arima':
+        from pmdarima import auto_arima
+        model = auto_arima(series, seasonal=True, m=7, suppress_warnings=True)
+        forecast = model.predict(n_periods=30)
+    elif model_type == 'xgboost':
+        # 使用time_series_xgboost_analysis函数
+        pass
+    
+    return model, forecast
 ```
 
 **记住**：系统会自动处理所有输出格式，您只需要专注于机器学习建模和分析逻辑！
