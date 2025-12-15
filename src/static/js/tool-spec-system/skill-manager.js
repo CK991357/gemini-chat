@@ -26,11 +26,26 @@ class EnhancedSkillManager {
    * 🎯 新增：初始化联邦知识库
    */
   async initializeFederation() {
+    // 🎯 如果已经初始化，跳过
+    if (this.isFederationReady) {
+      console.log('[SkillManager] 🎯 知识库已就绪，跳过重复初始化');
+      return;
+    }
+    
+    // 🎯 修复：不要通过全局获取，直接使用已导入的knowledgeFederation
     if (this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
-      await this.knowledgeFederation.initializeFromRegistry();
-      console.log(`🎯 [联邦知识] 初始化完成，知识库大小: ${this.knowledgeFederation.knowledgeBase?.size || 0}`);
+      try {
+        // 🎯 直接调用，不带参数（skill-loader.js中的方法已改为无参数）
+        await this.knowledgeFederation.initializeFromRegistry();
+        this.isFederationReady = true;
+        console.log(`🎯 [SkillManager] 联邦知识库初始化完成`);
+      } catch (error) {
+        console.warn(`🎯 [SkillManager] 联邦知识库初始化失败:`, error);
+        this.isFederationReady = false;
+      }
     } else {
-      console.warn(`🎯 [联邦知识] 知识库模块不可用`);
+      console.warn(`🎯 [SkillManager] 知识库模块不可用`);
+      this.isFederationReady = false;
     }
   }
 

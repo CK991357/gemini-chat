@@ -23,6 +23,27 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 import { skillContextManager } from './tool-spec-system/skill-context-manager.js';
 import { enhancedToolDefinitions } from './tools_mcp/enhanced-tool-definitions.js';
 
+// 🎯 新增：全局技能管理器实例
+let globalSkillManager = null;
+
+/**
+ * 🎯 获取全局技能管理器单例
+ */
+async function getGlobalSkillManager() {
+  if (!globalSkillManager) {
+    console.log('🚀 正在创建全局技能管理器单例...');
+    // 🎯 修改：使用 EnhancedSkillManager.js 中的类
+    const { EnhancedSkillManager } = await import('./agent/EnhancedSkillManager.js');
+    globalSkillManager = new EnhancedSkillManager();
+    
+    // 🎯 等待初始化完成
+    await globalSkillManager.waitUntilReady();
+    
+    console.log('✅ 全局技能管理器单例已创建并初始化完成');
+  }
+  return globalSkillManager;
+}
+
 // 🚀 增强的模型工具管理器
 class EnhancedModelToolManager {
   constructor() {
@@ -948,211 +969,214 @@ let _realtimeDetectDone = false;
 
 // 🚀 修改智能代理系统初始化函数
 async function initializeEnhancedAgent() {
-    try {
-        console.log('🚀 准备智能代理系统（开关控制初始化模式）...');
+  try {
+    console.log('🚀 准备智能代理系统（开关控制初始化模式）...');
+    
+    // 🎯 新增：预初始化全局技能管理器
+    await getGlobalSkillManager();
+    
+    // 🎯 提前初始化 AgentThinkingDisplay (保留自原有逻辑)
+    const { AgentThinkingDisplay } = await import('./agent/AgentThinkingDisplay.js');
+    agentThinkingDisplay = new AgentThinkingDisplay();
+    console.log('✅ AgentThinkingDisplay 初始化完成');
+    
+    // 🎯 关键修改：创建占位符Orchestrator，不立即初始化
+    orchestrator = {
+      isEnabled: false,
+      isInitialized: false,
+      _initState: 'created',
+      _initializing: false,
+      
+      // 占位方法
+      handleUserRequest: (userMessage, files = [], context = {}) => {
+        console.log('🔌 Orchestrator 未初始化，使用标准模式');
+        return { enhanced: false, type: 'standard_fallback' };
+      },
+      
+      setEnabled: async function(enabled) {
+        console.log(`🎯 设置智能代理开关: ${enabled}, 当前初始化状态: ${this._initState}`);
         
-        // 🎯 提前初始化 AgentThinkingDisplay (保留自原有逻辑)
-        const { AgentThinkingDisplay } = await import('./agent/AgentThinkingDisplay.js');
-        agentThinkingDisplay = new AgentThinkingDisplay();
-        console.log('✅ AgentThinkingDisplay 初始化完成');
+        // 🎯 立即更新开关状态
+        this.isEnabled = enabled;
+        localStorage.setItem('agentModeEnabled', enabled);
         
-        // 🎯 关键修改：创建占位符Orchestrator，不立即初始化
-        orchestrator = {
-            isEnabled: false,
-            isInitialized: false,
-            _initState: 'created',
-            _initializing: false,
-            
-            // 占位方法
-            handleUserRequest: (userMessage, files = [], context = {}) => {
-                console.log('🔌 Orchestrator 未初始化，使用标准模式');
-                return { enhanced: false, type: 'standard_fallback' };
-            },
-            
-            setEnabled: async function(enabled) {
-                console.log(`🎯 设置智能代理开关: ${enabled}, 当前初始化状态: ${this._initState}`);
-                
-                // 🎯 立即更新开关状态
-                this.isEnabled = enabled;
-                localStorage.setItem('agentModeEnabled', enabled);
-                
-                if (enabled && this._initState === 'created') {
-                    // 🎯 开关打开且未初始化，开始初始化
-                    console.log('🔌 开关触发Orchestrator初始化...');
-                    await this._initializeOrchestrator();
-                } else if (!enabled && this._initState === 'initialized') {
-                    // 🎯 开关关闭且已初始化，清理资源
-                    console.log('🔌 开关关闭，清理Agent资源');
-                    // 🎯 修复：在关闭模式时隐藏仪表盘
-                    if (agentThinkingDisplay) {
-                        agentThinkingDisplay.hide();
-                    }
-                    this._cleanupResources();
-                }
-                
-                // 🎯 简化：直接使用Toast提示状态
-                if (enabled && this._initState === 'initialized') {
-                    showToast('智能代理系统已启用');
-                } else if (!enabled) {
-                    showToast('智能代理系统已禁用');
-                }
-            },
-            
-            // 真正的初始化方法
-            _initializeOrchestrator: async function() {
-                if (this._initState === 'initialized') {
-                    console.log('✅ Orchestrator 已初始化');
-                    return true;
-                }
-                
-                if (this._initializing) {
-                    console.log('🔄 Orchestrator 正在初始化中...');
-                    return new Promise((resolve) => {
-                        const checkInterval = setInterval(() => {
-                            if (this._initState === 'initialized') {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                            }
-                        }, 100);
-                    });
-                }
-                
-                this._initializing = true;
-                console.log('🔄 开始初始化 Orchestrator...');
-                showToast('智能代理系统初始化中...', 3000);
-                
-                try {
-                    // 动态导入 Orchestrator
-                    const { Orchestrator } = await import('./agent/Orchestrator.js');
-                    
-                    // 创建真正的 Orchestrator 实例
-                    const realOrchestrator = new Orchestrator(chatApiHandler, {
-                        enabled: true,
-                        containerId: 'workflow-container',
-                        maxIterations: 10,
-                    });
-                    
-                    // 等待初始化完成
-                    await realOrchestrator.ensureInitialized();
-                    
-                    // 🎯 替换占位符为真实实例
-                    // Object.assign 复制实例属性 (如 this.agentSystem, this.tools)
-                    Object.assign(this, realOrchestrator);
-                    
-                    // 🎯 关键修复：手动复制原型方法，确保外部调用指向真实实例的逻辑
-                    // 占位符的 handleUserRequest 必须被真实实例的同名方法覆盖
-                    this.handleUserRequest = realOrchestrator.handleUserRequest.bind(realOrchestrator);
-                    
-                    this._initState = 'initialized';
-                    this._initializing = false;
-                    
-                    console.log('✅ Orchestrator 初始化完成');
-                    showToast('智能代理系统已就绪', 2000);
-                    
-                    return true;
-                } catch (error) {
-                    console.error('❌ Orchestrator 初始化失败:', error);
-                    this._initializing = false;
-                    this._initState = 'failed';
-                    showToast('智能代理系统初始化失败，使用标准模式', 3000);
-                    this.isEnabled = false;
-                    
-                    // 更新开关状态
-                    if (agentModeToggle) {
-                        agentModeToggle.checked = false;
-                    }
-                    
-                    return false;
-                }
-            },
-            
-            _cleanupResources: function() {
-                // 清理Agent相关资源，但不销毁实例
-                this.currentWorkflow = null;
-                this.currentContext = null;
-                if (this.agentSystem) {
-                    this.agentSystem.executor = null;
-                }
-                console.log('🔌 Agent资源清理完成');
-            },
-            
-            ensureInitialized: function() {
-                if (this._initState === 'initialized') return Promise.resolve(true);
-                if (this.isEnabled) {
-                    return this._initializeOrchestrator();
-                } else {
-                    return Promise.resolve(false);
-                }
-            }
-        };
-        
-        // 挂载到全局
-        window.orchestrator = orchestrator;
-        
-        // 🎯 初始化 Agent 开关状态和事件监听
-        const isAgentEnabled = localStorage.getItem('agentModeEnabled') === 'true';
-        if (agentModeToggle) {
-            agentModeToggle.checked = isAgentEnabled;
-            agentModeToggle.disabled = false;
-            
-            // 🎯 修改开关事件监听器 - 核心逻辑
-            agentModeToggle.addEventListener('change', async (e) => {
-                const enabled = e.target.checked;
-                console.log(`🔘 智能代理开关状态变化: ${enabled}`);
-                
-                // 立即更新开关视觉状态
-                agentModeToggle.checked = enabled;
-                
-                // 调用 Orchestrator 的 setEnabled 方法
-                await orchestrator.setEnabled(enabled);
-                
-                // 如果初始化失败，确保开关状态正确
-                if (enabled && orchestrator._initState === 'failed') {
-                    agentModeToggle.checked = false;
-                }
-            });
-            
-            // 🎯 如果之前是开启状态，触发初始化
-            if (isAgentEnabled) {
-                console.log('🔘 检测到之前开启状态，触发Orchestrator初始化...');
-                setTimeout(async () => {
-                    await orchestrator.setEnabled(true);
-                }, 1000);
-            }
+        if (enabled && this._initState === 'created') {
+          // 🎯 开关打开且未初始化，开始初始化
+          console.log('🔌 开关触发Orchestrator初始化...');
+          await this._initializeOrchestrator();
+        } else if (!enabled && this._initState === 'initialized') {
+          // 🎯 开关关闭且已初始化，清理资源
+          console.log('🔌 开关关闭，清理Agent资源');
+          // 🎯 修复：在关闭模式时隐藏仪表盘
+          if (agentThinkingDisplay) {
+            agentThinkingDisplay.hide();
+          }
+          this._cleanupResources();
         }
         
-        console.log('✅ 智能代理系统准备完成（开关控制初始化模式）');
-
-        // 🎯 临时调试：强行触发一次已知会发出的事件，检查是否能被接收
-        // 延迟执行，确保 Orchestrator 有足够时间完成初始化（如果 isAgentEnabled 为 true）
-        setTimeout(async () => {
-            if (orchestrator && orchestrator.callbackManager && orchestrator.isEnabled) {
-                try {
-                    console.log('[Main.js Debug] 尝试手动触发一个研究开始事件...');
-                    // 使用 Orchestrator.js 中 setupHandlers 映射的事件名称 on_research_start
-                    await orchestrator.callbackManager.invokeEvent('on_research_start', {
-                        run_id: 'debug_run_id',
-                        data: {
-                            topic: '测试主题',
-                            availableTools: ['tool1'],
-                            researchMode: 'standard',
-                            researchData: { keywords: ['test'], sources: [], toolCalls: [], metrics: {} }
-                        },
-                        agentType: 'deep_research' // 模拟 Agent 传递的类型
-                    });
-                    console.log('[Main.js Debug] 手动触发事件成功。');
-                } catch (eventError) {
-                    console.error('[Main.js Debug] 手动触发事件失败:', eventError);
-                }
-            } else {
-                console.log('[Main.js Debug] Orchestrator 未启用或未初始化，跳过手动触发事件。');
-            }
-        }, 2000); // 给予 2 秒时间确保异步初始化完成
+        // 🎯 简化：直接使用Toast提示状态
+        if (enabled && this._initState === 'initialized') {
+          showToast('智能代理系统已启用');
+        } else if (!enabled) {
+          showToast('智能代理系统已禁用');
+        }
+      },
+      
+      // 真正的初始化方法
+      _initializeOrchestrator: async function() {
+        if (this._initState === 'initialized') {
+          console.log('✅ Orchestrator 已初始化');
+          return true;
+        }
         
-    } catch (error) {
-        console.error('智能代理系统准备失败:', error);
-        ensureBasicAgentFunctionality();
+        if (this._initializing) {
+          console.log('🔄 Orchestrator 正在初始化中...');
+          return new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+              if (this._initState === 'initialized') {
+                clearInterval(checkInterval);
+                resolve(true);
+              }
+            }, 100);
+          });
+        }
+        
+        this._initializing = true;
+        console.log('🔄 开始初始化 Orchestrator...');
+        showToast('智能代理系统初始化中...', 3000);
+        
+        try {
+          // 动态导入 Orchestrator
+          const { Orchestrator } = await import('./agent/Orchestrator.js');
+          
+          // 创建真正的 Orchestrator 实例
+          const realOrchestrator = new Orchestrator(chatApiHandler, {
+            enabled: true,
+            containerId: 'workflow-container',
+            maxIterations: 10,
+          });
+          
+          // 等待初始化完成
+          await realOrchestrator.ensureInitialized();
+          
+          // 🎯 替换占位符为真实实例
+          // Object.assign 复制实例属性 (如 this.agentSystem, this.tools)
+          Object.assign(this, realOrchestrator);
+          
+          // 🎯 关键修复：手动复制原型方法，确保外部调用指向真实实例的逻辑
+          // 占位符的 handleUserRequest 必须被真实实例的同名方法覆盖
+          this.handleUserRequest = realOrchestrator.handleUserRequest.bind(realOrchestrator);
+          
+          this._initState = 'initialized';
+          this._initializing = false;
+          
+          console.log('✅ Orchestrator 初始化完成');
+          showToast('智能代理系统已就绪', 2000);
+          
+          return true;
+        } catch (error) {
+          console.error('❌ Orchestrator 初始化失败:', error);
+          this._initializing = false;
+          this._initState = 'failed';
+          showToast('智能代理系统初始化失败，使用标准模式', 3000);
+          this.isEnabled = false;
+          
+          // 更新开关状态
+          if (agentModeToggle) {
+            agentModeToggle.checked = false;
+          }
+          
+          return false;
+        }
+      },
+      
+      _cleanupResources: function() {
+        // 清理Agent相关资源，但不销毁实例
+        this.currentWorkflow = null;
+        this.currentContext = null;
+        if (this.agentSystem) {
+          this.agentSystem.executor = null;
+        }
+        console.log('🔌 Agent资源清理完成');
+      },
+      
+      ensureInitialized: function() {
+        if (this._initState === 'initialized') return Promise.resolve(true);
+        if (this.isEnabled) {
+          return this._initializeOrchestrator();
+        } else {
+          return Promise.resolve(false);
+        }
+      }
+    };
+    
+    // 挂载到全局
+    window.orchestrator = orchestrator;
+    
+    // 🎯 初始化 Agent 开关状态和事件监听
+    const isAgentEnabled = localStorage.getItem('agentModeEnabled') === 'true';
+    if (agentModeToggle) {
+      agentModeToggle.checked = isAgentEnabled;
+      agentModeToggle.disabled = false;
+      
+      // 🎯 修改开关事件监听器 - 核心逻辑
+      agentModeToggle.addEventListener('change', async (e) => {
+        const enabled = e.target.checked;
+        console.log(`🔘 智能代理开关状态变化: ${enabled}`);
+        
+        // 立即更新开关视觉状态
+        agentModeToggle.checked = enabled;
+        
+        // 调用 Orchestrator 的 setEnabled 方法
+        await orchestrator.setEnabled(enabled);
+        
+        // 如果初始化失败，确保开关状态正确
+        if (enabled && orchestrator._initState === 'failed') {
+          agentModeToggle.checked = false;
+        }
+      });
+      
+      // 🎯 如果之前是开启状态，触发初始化
+      if (isAgentEnabled) {
+        console.log('🔘 检测到之前开启状态，触发Orchestrator初始化...');
+        setTimeout(async () => {
+          await orchestrator.setEnabled(true);
+        }, 1000);
+      }
     }
+    
+    console.log('✅ 智能代理系统准备完成（开关控制初始化模式）');
+
+    // 🎯 临时调试：强行触发一次已知会发出的事件，检查是否能被接收
+    // 延迟执行，确保 Orchestrator 有足够时间完成初始化（如果 isAgentEnabled 为 true）
+    setTimeout(async () => {
+      if (orchestrator && orchestrator.callbackManager && orchestrator.isEnabled) {
+        try {
+          console.log('[Main.js Debug] 尝试手动触发一个研究开始事件...');
+          // 使用 Orchestrator.js 中 setupHandlers 映射的事件名称 on_research_start
+          await orchestrator.callbackManager.invokeEvent('on_research_start', {
+            run_id: 'debug_run_id',
+            data: {
+              topic: '测试主题',
+              availableTools: ['tool1'],
+              researchMode: 'standard',
+              researchData: { keywords: ['test'], sources: [], toolCalls: [], metrics: {} }
+            },
+            agentType: 'deep_research' // 模拟 Agent 传递的类型
+          });
+          console.log('[Main.js Debug] 手动触发事件成功。');
+        } catch (eventError) {
+          console.error('[Main.js Debug] 手动触发事件失败:', eventError);
+        }
+      } else {
+        console.log('[Main.js Debug] Orchestrator 未启用或未初始化，跳过手动触发事件。');
+      }
+    }, 2000); // 给予 2 秒时间确保异步初始化完成
+    
+  } catch (error) {
+    console.error('智能代理系统准备失败:', error);
+    ensureBasicAgentFunctionality();
+  }
 }
 
 // 🛡️ 确保基础功能可用的降级方案
@@ -1388,6 +1412,9 @@ async function handleWebSocketMessage(messageText, attachedFiles) {
 async function initializeEnhancedSkillSystem() {
   try {
     console.log('🚀 正在初始化增强技能系统...');
+    
+    // 🎯 修改：使用全局技能管理器单例
+    const skillManager = await getGlobalSkillManager();
     
     // 1. 初始化技能上下文管理器
     const contextReady = await skillContextManager.ensureInitialized();

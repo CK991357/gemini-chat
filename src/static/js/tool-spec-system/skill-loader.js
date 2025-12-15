@@ -7,6 +7,8 @@ class KnowledgeFederationLoader {
   constructor() {
     // knowledgeBase 将存储完整的联邦知识，包括文档内容
     this.knowledgeBase = new Map(); // tool_name -> {metadata, content, references}
+    this._initialized = false;  // 🎯 新增：初始化状态标志
+    this._initializationPromise = null; // 🎯 新增：Promise缓存
   }
 
   /**
@@ -14,42 +16,66 @@ class KnowledgeFederationLoader {
    *   这个方法现在将成为知识库的唯一数据来源。
    */
   async initializeFromRegistry() {
-    // 1. 直接从您已有的文件/模块中获取技能注册表
-    const skillsRegistry = getSkillsRegistry(); 
-
-    if (!skillsRegistry || skillsRegistry.size === 0) {
-      console.warn('[KnowledgeFederation] 技能注册表为空或未加载，无法初始化知识库。');
-      return;
+    // 🎯 修复：如果已初始化，直接返回
+    if (this._initialized) {
+      console.log('[KnowledgeFederation] ✅ 知识库已初始化，跳过重复加载');
+      return Promise.resolve();
     }
+    
+    // 🎯 新增：防止并发初始化
+    if (this._initializationPromise) {
+      console.log('[KnowledgeFederation] 🔄 初始化已在进行中，等待完成...');
+      return this._initializationPromise;
+    }
+    
+    // 🎯 创建初始化Promise
+    this._initializationPromise = (async () => {
+      try {
+        // 1. 直接从您已有的文件/模块中获取技能注册表
+        const skillsRegistry = getSkillsRegistry(); 
 
-    console.log(`[KnowledgeFederation] 开始从已编译的技能注册表加载知识库...`);
-
-    // 2. 遍历注册表，为每个技能填充完整的知识内容
-    for (const [skillName, skillData] of skillsRegistry.entries()) {
-        // 确保 skillData 和 metadata 存在
-        if (skillData && skillData.metadata) {
-            const toolName = skillData.metadata.tool_name;
-            
-            // 3. 将 skillData 中已有的信息（元数据、内容、引用）
-            //    转换为 knowledgeBase 需要的格式。
-            //    这里的关键是，我们假设您的 build-skills.js 已经把内容都打包进来了。
-            
-            // 将 resources.references 对象（如果存在）转换为 Map 结构
-            const referencesMap = new Map(Object.entries(skillData.resources?.references || {}));
-            
-            this.knowledgeBase.set(toolName, {
-                metadata: skillData.metadata,
-                content: skillData.content || '主技能文档内容缺失。', // 提供一个默认值
-                references: referencesMap,
-            });
-        } else {
-            console.warn(`[KnowledgeFederation] 技能 "${skillName}" 数据格式不完整，已跳过。`);
+        if (!skillsRegistry || skillsRegistry.size === 0) {
+          console.warn('[KnowledgeFederation] 技能注册表为空或未加载，无法初始化知识库。');
+          return;
         }
-    }
 
-    console.log(`[KnowledgeFederation] ✅ 知识库加载完成，已加载 ${this.knowledgeBase.size} 个技能。`);
-    // 返回一个 resolved Promise 以保持与现有 await 语法的兼容性
-    return Promise.resolve();
+        console.log(`[KnowledgeFederation] 开始从已编译的技能注册表加载知识库...`);
+
+        // 2. 遍历注册表，为每个技能填充完整的知识内容
+        for (const [skillName, skillData] of skillsRegistry.entries()) {
+            // 确保 skillData 和 metadata 存在
+            if (skillData && skillData.metadata) {
+                const toolName = skillData.metadata.tool_name;
+                
+                // 3. 将 skillData 中已有的信息（元数据、内容、引用）
+                //    转换为 knowledgeBase 需要的格式。
+                //    这里的关键是，我们假设您的 build-skills.js 已经把内容都打包进来了。
+                
+                // 将 resources.references 对象（如果存在）转换为 Map 结构
+                const referencesMap = new Map(Object.entries(skillData.resources?.references || {}));
+                
+                this.knowledgeBase.set(toolName, {
+                    metadata: skillData.metadata,
+                    content: skillData.content || '主技能文档内容缺失。', // 提供一个默认值
+                    references: referencesMap,
+                });
+            } else {
+                console.warn(`[KnowledgeFederation] 技能 "${skillName}" 数据格式不完整，已跳过。`);
+            }
+        }
+
+        // 初始化完成后设置标志
+        this._initialized = true;
+        console.log(`[KnowledgeFederation] ✅ 知识库加载完成，已加载 ${this.knowledgeBase.size} 个技能。`);
+        return Promise.resolve();
+      } catch (error) {
+        this._initialized = false;
+        this._initializationPromise = null;
+        throw error;
+      }
+    })();
+    
+    return this._initializationPromise;
   }
 
   // --------------------------------------------------------------------
