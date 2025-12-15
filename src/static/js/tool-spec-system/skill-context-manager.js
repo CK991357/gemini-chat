@@ -109,13 +109,15 @@ class SkillContextManager {
       return { enhancedPrompt: userQuery, relevantTools: [] };
     }
 
-    // 1. 查找相关技能
-    const relevantSkills = this.skillManager.findRelevantSkills(userQuery, {
+    // 1. 查找相关技能 - 添加 await 确保获取结果
+    const relevantSkills = await this.skillManager.findRelevantSkills(userQuery, {
       availableTools,
       category: modelConfig.category
     });
 
-    if (relevantSkills.length === 0) {
+    // 🎯 【重要】确保 relevantSkills 是数组
+    if (!Array.isArray(relevantSkills) || relevantSkills.length === 0) {
+      console.warn('[SkillContextManager] 未找到相关技能或结果格式错误:', relevantSkills);
       return { 
         enhancedPrompt: userQuery, 
         relevantTools: [],
@@ -128,7 +130,6 @@ class SkillContextManager {
     if (this.sessionIterations.has(sessionId)) {
       iteration = this.sessionIterations.get(sessionId);
     }
-    
     // 🎯 【新增】检查工具使用历史
     const toolHistory = this.sessionToolUsage.has(sessionId) 
       ? this.sessionToolUsage.get(sessionId)
@@ -137,28 +138,38 @@ class SkillContextManager {
     // 2. 生成增强提示词（使用智能缓存）
     let enhancedPrompt = '';
     const injectedTools = [];
-    
+  
+    // 🎯 【修复】这里是对 relevantSkills 进行迭代
     for (const skill of relevantSkills) {
       const toolName = skill.toolName;
-      
+    
       // 🎯 【关键】检查是否已经注入过
-      const hasBeenInjected = this.skillManager.hasToolBeenInjected(toolName, sessionId);
+      // 注意：这里需要skillManager提供hasToolBeenInjected方法
+      const hasBeenInjected = this.skillManager.hasToolBeenInjected ? 
+        this.skillManager.hasToolBeenInjected(toolName, sessionId) : false;
       const usageCount = toolHistory.get(toolName) || 0;
-      
+    
       // 🎯 决定是否使用完整指南还是引用
       const isFirstTime = !hasBeenInjected || usageCount === 0;
-      
+    
       // 生成技能指南
-      const skillGuide = this.skillManager.generateSmartSkillInjection(
-        skill.skill,
+      let skillGuide;
+      if (this.skillManager.generateSmartSkillInjection) {
+      // 使用增强管理器的智能注入
+      skillGuide = await this.skillManager.generateSmartSkillInjection(
+        skill.skill || skill,
         userQuery,
         sessionId,
         isFirstTime
       );
-      
+    } else {
+      // 降级方案：构建基本指南
+      skillGuide = this._buildBasicSkillGuide(skill, userQuery, isFirstTime);
+    }
+    
       enhancedPrompt += skillGuide + '\n\n';
       injectedTools.push(toolName);
-      
+    
       // 🎯 更新工具使用计数
       toolHistory.set(toolName, usageCount + 1);
     }
@@ -175,7 +186,7 @@ class SkillContextManager {
     } else {
       enhancedPrompt = userQuery;
     }
-    
+  
     // 4. 清理过时会话（可选）
     this.cleanupOldSessions();
 

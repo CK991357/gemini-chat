@@ -1311,6 +1311,7 @@ function getAvailableToolNames(currentModel) {
 
 /**
  * 🎯 【修改】标准聊天请求处理函数（集成技能指南）
+ * @description 根据模型配置决定是否添加工具定义
  */
 async function handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, pushToHistory = true, contextResult = null) {
     const userContent = [];
