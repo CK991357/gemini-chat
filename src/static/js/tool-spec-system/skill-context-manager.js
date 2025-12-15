@@ -83,6 +83,10 @@ class SkillContextManager {
       '统计': 'scipy_cookbook.md',
       '计算': 'scipy_cookbook.md'
     };
+    
+    // 🎯 【新增】会话迭代跟踪
+    this.sessionIterations = new Map(); // sessionId -> iterationCount
+    this.sessionToolUsage = new Map(); // sessionId -> toolUsageCount
   }
 
   async ensureInitialized() {
@@ -102,7 +106,7 @@ class SkillContextManager {
   /**
    * 🚀 核心方法：为模型请求生成智能上下文
    */
-  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}) {
+  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}, sessionId = 'default') {
     if (!await this.ensureInitialized()) {
       return { enhancedPrompt: userQuery, relevantTools: [] };
     }
@@ -121,23 +125,91 @@ class SkillContextManager {
       };
     }
 
-    // 2. 检查是否有需要特殊处理的复杂工具
-    const hasComplexTools = relevantSkills.some(skill => 
-      ['crawl4ai', 'python_sandbox'].includes(skill.toolName)
-    );
-
-    // 3. 生成增强的提示词
-    const enhancedPrompt = hasComplexTools 
-      ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig)
-      : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig);
+    // 🎯 【新增】获取当前会话的迭代次数
+    let iteration = 0;
+    if (this.sessionIterations.has(sessionId)) {
+      iteration = this.sessionIterations.get(sessionId);
+    }
     
+    // 🎯 【新增】检查工具使用历史
+    const toolHistory = this.sessionToolUsage.has(sessionId) 
+      ? this.sessionToolUsage.get(sessionId)
+      : new Map();
+
+    // 2. 生成增强提示词（使用智能缓存）
+    let enhancedPrompt = '';
+    const injectedTools = [];
+    
+    for (const skill of relevantSkills) {
+      const toolName = skill.toolName;
+      
+      // 🎯 【关键】检查是否已经注入过
+      const hasBeenInjected = this.skillManager.hasToolBeenInjected(toolName, sessionId);
+      const usageCount = toolHistory.get(toolName) || 0;
+      
+      // 🎯 决定是否使用完整指南还是引用
+      const isFirstTime = !hasBeenInjected || usageCount === 0;
+      
+      // 生成技能指南
+      const skillGuide = this.skillManager.generateSmartSkillInjection(
+        skill.skill,
+        userQuery,
+        sessionId,
+        isFirstTime
+      );
+      
+      enhancedPrompt += skillGuide + '\n\n';
+      injectedTools.push(toolName);
+      
+      // 🎯 更新工具使用计数
+      toolHistory.set(toolName, usageCount + 1);
+    }
+
+    // 🎯 【新增】更新会话状态
+    this.sessionIterations.set(sessionId, iteration + 1);
+    this.sessionToolUsage.set(sessionId, toolHistory);
+
+    // 3. 添加通用指导
+    if (enhancedPrompt) {
+      enhancedPrompt += `## 💡 执行指导\n`;
+      enhancedPrompt += `请基于以上工具指南来响应用户请求。特别注意复杂工具的特殊调用规范。\n\n`;
+      enhancedPrompt += `---\n\n## 👤 用户原始请求\n${userQuery}`;
+    } else {
+      enhancedPrompt = userQuery;
+    }
+    
+    // 4. 清理过时会话（可选）
+    this.cleanupOldSessions();
+
     return {
       enhancedPrompt,
       relevantTools: relevantSkills.map(skill => skill.toolName),
+      injectedTools, // 🎯 新增：记录实际注入的工具
       contextLevel: relevantSkills.length > 1 ? 'multi' : 'single',
       skillCount: relevantSkills.length,
-      hasComplexTools
+      hasComplexTools: relevantSkills.some(skill => 
+        ['crawl4ai', 'python_sandbox'].includes(skill.toolName)
+      ),
+      sessionId,
+      iteration
     };
+  }
+
+  /**
+   * 🎯 【新增】清理过时会话
+   */
+  cleanupOldSessions(maxAge = 30 * 60 * 1000) { // 30分钟
+    const now = Date.now();
+    // 注意：skill-manager.js 中的缓存有自己的TTL，这里只清理迭代记录
+  }
+
+  /**
+   * 🎯 【新增】重置会话状态（用于新建聊天）
+   */
+  resetSession(sessionId) {
+    this.sessionIterations.delete(sessionId);
+    this.sessionToolUsage.delete(sessionId);
+    console.log(`[SkillContextManager] 已重置会话 ${sessionId} 的状态`);
   }
 
   /**

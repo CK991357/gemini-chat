@@ -928,7 +928,32 @@ fileManagerModal.addEventListener('click', (e) => {
         closeFileManager();
     }
 });
-});
+
+// 步骤5：添加会话清理逻辑
+/**
+ * 清理会话相关的技能缓存
+ */
+function cleanupSession(sessionId) {
+  if (!sessionId) return;
+  
+  try {
+    // 清理技能上下文管理器的会话状态
+    if (skillContextManager && skillContextManager.cleanupSession) {
+      skillContextManager.cleanupSession(sessionId);
+    }
+    
+    // 清理 EnhancedSkillManager 的注入历史
+    if (window.__globalSkillManagerInstance && window.__globalSkillManagerInstance.injectionHistory) {
+      window.__globalSkillManagerInstance.injectionHistory.delete(sessionId);
+    }
+    
+    console.log(`✅ 会话 ${sessionId} 技能缓存已清理`);
+  } catch (error) {
+    console.error('❌ 会话清理错误:', error);
+  }
+}
+
+}); // 修复：这是DOMContentLoaded事件处理函数的结束大括号 - 这是修复的关键！
 
 // State variables
 let isRecording = false;
@@ -1438,7 +1463,7 @@ async function initializeEnhancedSkillSystem() {
  * 🚀 修改核心消息处理函数
  */
 // =========================================================================
-// 🚀 [最终方案 V2 - 替换] 增强的消息处理函数，仅负责启动 Agent
+// 🚀 [最终方案 V2 - 修改] 增强的消息处理函数，整合新的skillContextManager调用方式
 // =========================================================================
 async function handleEnhancedHttpMessage(messageText, attachedFiles) {
     if (!currentSessionId) {
@@ -1449,10 +1474,41 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
     const modelName = selectedModelConfig.name;
     const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
     
-    // 如果 Agent 模式未启用，直接回退到标准模式
+    // 🎯 新增：获取当前会话的迭代次数
+    const iteration = skillContextManager.getNextIteration(currentSessionId);
+    
+    // 如果 Agent 模式未启用，使用增强的普通模式
     if (!isAgentModeEnabled) {
-        console.log("💬 Agent 模式未启用，使用标准对话");
-        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+        console.log("💬 Agent 模式未启用，使用增强普通模式");
+        
+        // 获取可用工具名称和增强工具定义
+        const availableToolNames = getAvailableToolNames(modelName);
+        const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
+        
+        // 🎯 关键修改：使用新的 generateRequestContext
+        const contextResult = await skillContextManager.generateRequestContext(
+            messageText,
+            availableToolNames,
+            selectedModelConfig,
+            {
+                sessionId: currentSessionId,
+                mode: 'standard',
+                iteration: iteration
+            }
+        );
+        
+        // 更新会话迭代状态
+        skillContextManager.updateSessionIteration(currentSessionId, contextResult.injectedTools);
+        
+        // 使用增强的标准请求处理
+        await handleEnhancedStandardRequest(
+            messageText, 
+            attachedFiles, 
+            modelName, 
+            apiKey, 
+            enhancedTools, 
+            contextResult
+        );
         return;
     }
 
@@ -1477,11 +1533,16 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
         const availableToolNames = getAvailableToolNames(modelName);
         const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
         
-        // 🚀 生成技能上下文
+        // 🚀 生成技能上下文（使用新的参数格式）
         const contextResult = await skillContextManager.generateRequestContext(
             messageText,
             availableToolNames,
-            selectedModelConfig
+            selectedModelConfig,
+            {
+                sessionId: currentSessionId,
+                mode: 'agent',
+                iteration: iteration
+            }
         );
 
         console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
@@ -1498,7 +1559,7 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
         };
         
         // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
-        // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
+        // 我们在这里"发射后不管"，渲染工作将由 'research:end' 事件监听器处理
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
 
         // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
