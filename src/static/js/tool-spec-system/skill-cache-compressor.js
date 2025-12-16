@@ -173,12 +173,20 @@ export class SkillCacheCompressor {
   getFromCache(toolName, userQuery, context = {}) {
     const cacheKey = this._generateCacheKey(toolName, userQuery, context);
     
+    console.log('🔍 缓存查询:', {
+        toolName,
+        query: userQuery.substring(0, 50),
+        cacheKey,
+        hasCache: this.knowledgeCache.has(cacheKey)
+    });
+    
     if (this.knowledgeCache.has(cacheKey)) {
       const cached = this.knowledgeCache.get(cacheKey);
       
       // 缓存有效（5分钟内）
       if (Date.now() - cached.timestamp < 5 * 60 * 1000) {
         console.log(`🎯 [缓存命中] ${toolName}: ${cached.content.length} 字符`);
+        console.log('✅ 缓存命中，大小:', cached.content.length);
         return cached.content;
       }
     }

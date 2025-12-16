@@ -318,13 +318,17 @@ class SkillContextManager {
     const queryLower = userQuery.toLowerCase();
     const matchedReferences = new Set();
     
+    console.log('🔍 [参考文件匹配] 查询:', queryLower);
+    
     // 基于关键词匹配参考文件
     for (const [keyword, referenceFile] of Object.entries(this.pythonReferenceMap)) {
       if (queryLower.includes(keyword)) {
+        console.log(`✅ 匹配关键词 "${keyword}" -> ${referenceFile}`);
         matchedReferences.add(referenceFile);
       }
     }
     
+    console.log('📚 匹配到的参考文件:', Array.from(matchedReferences));
     return Array.from(matchedReferences);
   }
 
