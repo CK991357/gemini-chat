@@ -1486,8 +1486,8 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
             if (agentResult && !agentResult.enhanced) {
                 console.log("💬 Orchestrator 决定不处理，回退到标准对话");
-                // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
-                await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
+                // 🎯 确保普通模式也使用缓存压缩
+                await handleStandardChatRequestWithCache(messageText, attachedFiles, modelName, apiKey);
             }
             
             // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
@@ -1512,8 +1512,8 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
                 chatHistory.pop();
             }
-            // 使用标准模式重新发送，让标准模式自己处理历史记录推入
-            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, true);
+            // 🎯 确保普通模式也使用缓存压缩
+            await handleStandardChatRequestWithCache(messageText, attachedFiles, modelName, apiKey);
         }
         return;
     }

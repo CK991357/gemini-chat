@@ -6,6 +6,15 @@ class SkillContextManager {
     this.skillManager = null;
     this.initialized = false;
     
+    // 🎯 新增：缓存压缩系统引用
+    this.cacheCompressor = null;
+    
+    // 初始化时获取缓存压缩器
+    skillManagerPromise.then(skillManager => {
+        this.cacheCompressor = skillManager.cacheCompressor;
+        console.log('✅ SkillContextManager 已集成缓存压缩系统');
+    });
+    
     // 🚀 crawl4ai 专用关键词映射
     this.crawl4aiModeMap = {
       '提取': 'extract',
@@ -199,40 +208,84 @@ class SkillContextManager {
   /**
    * 🚀 Python沙盒专用上下文构建
    */
-  async _buildPythonSandboxContext(skill, userQuery) {
+  async _buildPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
     const { skill: skillData, score, name, description } = skill;
     
-    let context = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
-    context += `**核心功能**: ${description}\n\n`;
+    // 🎯 先尝试从缓存获取压缩内容
+    const cacheKey = this.skillManager.cacheCompressor._generateCacheKey(
+        'python_sandbox', 
+        userQuery, 
+        { sessionId, ...context }
+    );
     
-    // 1. 提取主文档的关键信息
-    const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
-    context += mainContent;
+    const cachedContent = this.skillManager.cacheCompressor.getFromCache(
+        'python_sandbox', 
+        userQuery, 
+        { sessionId, ...context }
+    );
     
-    // 2. 智能匹配相关参考文件
-    const relevantReferences = this._findRelevantPythonReferences(userQuery);
+    let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
+    contextContent += `**核心功能**: ${description}\n\n`;
     
-    if (relevantReferences.length > 0) {
-      context += `**📚 相关参考指南**:\n`;
-      
-      for (const refFile of relevantReferences.slice(0, 2)) {
-        const refContent = skillData.resources?.references?.[refFile];
-        if (refContent) {
-          const summary = this._extractReferenceSummary(refContent, refFile);
-          context += `• **${refFile}**: ${summary}\n`;
+    if (cachedContent) {
+        // 使用缓存内容
+        contextContent += cachedContent;
+        console.log(`🎯 [上下文缓存命中] python_sandbox: ${cachedContent.length} 字符`);
+    } else {
+        // 生成新的压缩内容
+        let fullContent = '';
+        
+        // 1. 提取主文档的关键信息
+        const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
+        fullContent += mainContent;
+        
+        // 2. 智能匹配相关参考文件
+        const relevantReferences = this._findRelevantPythonReferences(userQuery);
+        
+        if (relevantReferences.length > 0) {
+          fullContent += `**📚 相关参考指南**:\n`;
+          
+          for (const refFile of relevantReferences.slice(0, 2)) {
+            const refContent = skillData.resources?.references?.[refFile];
+            if (refContent) {
+              const summary = this._extractReferenceSummary(refContent, refFile);
+              fullContent += `• **${refFile}**: ${summary}\n`;
+            }
+          }
+          
+          fullContent += `\n💡 **提示**: 执行相关任务时请严格参考这些指南中的代码模板和工作流。\n`;
         }
-      }
-      
-      context += `\n💡 **提示**: 执行相关任务时请严格参考这些指南中的代码模板和工作流。\n`;
+        
+        // 3. 添加Python沙盒专用提醒
+        fullContent += `\n**🚨 输出规范**:\n`;
+        fullContent += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
+        fullContent += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
+        fullContent += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
+        
+        const compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
+            fullContent,
+            {
+                level: 'smart',
+                maxChars: 12000,
+                userQuery: userQuery
+            }
+        );
+        
+        // 缓存结果
+        this.skillManager.cacheCompressor.setToCache(
+            'python_sandbox', 
+            userQuery, 
+            { sessionId, ...context }, 
+            compressedContent
+        );
+        
+        // 记录注入
+        this.skillManager.cacheCompressor.recordToolInjection(sessionId, 'python_sandbox');
+        
+        contextContent += compressedContent;
     }
     
-    // 3. 添加Python沙盒专用提醒
-    context += `\n**🚨 输出规范**:\n`;
-    context += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
-    context += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
-    context += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
-    
-    return context;
+    return contextContent;
   }
 
   /**
