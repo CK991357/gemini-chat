@@ -236,7 +236,11 @@ class EnhancedSkillManager {
     }
 
     // 🎯 检查缓存
-    const cacheKey = this.cacheCompressor._generateCacheKey(toolName, userQuery, context);
+    const contextWithVersion = {
+        ...context,
+        version: metadata.version || '1.0' // 假设 metadata 中有版本字段
+    };
+    const cacheKey = this.cacheCompressor._generateCacheKey(toolName, userQuery, contextWithVersion);
     const cachedContent = this.cacheCompressor.getFromCache(cacheKey);
     
     if (cachedContent) {
@@ -262,7 +266,7 @@ class EnhancedSkillManager {
           );
           
           // 记录注入并缓存
-          this.cacheCompressor.setToCache(cacheKey, compressedContent);
+          this.cacheCompressor.setToCache(toolName, userQuery, contextWithVersion, compressedContent);
           this.cacheCompressor.recordToolInjection(sessionId, toolName);
           
           return compressedContent;
@@ -277,7 +281,7 @@ class EnhancedSkillManager {
     const basicContent = await this.generateBasicInjectionWithCompression(skill, userQuery, context);
 
     // 记录注入并缓存
-    this.cacheCompressor.setToCache(cacheKey, basicContent);
+    this.cacheCompressor.setToCache(toolName, userQuery, contextWithVersion, basicContent);
     this.cacheCompressor.recordToolInjection(sessionId, toolName);
 
     return basicContent;

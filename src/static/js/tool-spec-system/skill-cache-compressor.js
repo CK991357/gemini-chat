@@ -22,8 +22,8 @@ export class SkillCacheCompressor {
    * 🎯 核心：智能知识压缩算法（Agent模式同款）
    */
   async compressKnowledge(content, options = {}) {
-    const {
-      level = 'smart', // smart, minimal, reference
+    let {
+      level = 'auto', // 改为 auto，支持自动选择
       maxChars = this.maxKnowledgeChars,
       userQuery = '',
       iteration = 0
@@ -31,6 +31,18 @@ export class SkillCacheCompressor {
 
     // 如果内容已经很小，直接返回
     if (content.length <= maxChars) return content;
+
+    // 🎯 新增：自动压缩级别选择逻辑
+    if (level === 'auto') {
+      if (content.length > 30000) {
+        level = 'minimal'; // 超长内容用最小化
+      } else if (content.length > 10000) {
+        level = 'smart';   // 中等长度用智能压缩
+      } else {
+        level = 'reference'; // 短内容用引用模式
+      }
+      console.log(`🎯 [自动压缩] ${content.length}字符 → 选择${level}级别`);
+    }
 
     let compressed = content;
 
@@ -310,7 +322,11 @@ export class SkillCacheCompressor {
   _generateCacheKey(toolName, userQuery, context) {
     const contextStr = context.sessionId || 'default';
     const queryHash = this._hashString(userQuery.substring(0, 100));
-    return `${toolName}_${contextStr}_${queryHash}`;
+    // 从 context 获取版本号，如果没有则使用默认
+    const version = context.version || 'v1.0';
+    // 增加时间粒度（按小时），避免长时间缓存
+    const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60)); // 每小时一个slot
+    return `${toolName}_${version}_${contextStr}_${queryHash}_${hourSlot}`;
   }
 
   _hashString(str) {
