@@ -4,8 +4,23 @@ import { knowledgeFederation } from './skill-loader.js';
 
 class EnhancedSkillManager {
   constructor(synonyms) {
+    // 🎯 新增：检查是否已存在实例
+    if (window.__globalSkillManagerInstance && this.constructor.name === 'EnhancedSkillManager') {
+      console.log('[SkillManager] 🚀 检测到全局技能管理器实例，直接引用');
+      // 这里不能直接返回，因为构造函数不能返回值
+      // 但我们可以标记这个实例为"影子实例"
+      this._isShadowInstance = true;
+      return;
+    }
+    
     this.skills = getSkillsRegistry();
     this.synonymMap = synonyms;
+    
+    // 🎯 新增：如果已经是影子实例，跳过初始化
+    if (this._isShadowInstance) {
+      console.log('[SkillManager] ⚡ 影子实例，跳过联邦知识库初始化');
+      return;
+    }
     
     // 🎯 【新增】普通模式专用缓存
     this.guideCache = new Map(); // 缓存生成的技能指南
@@ -217,9 +232,15 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 🎯 新增：初始化联邦知识库
+   * 🎯 修改：按需初始化联邦知识库
    */
   async initializeFederation() {
+    // 🎯 如果是影子实例，直接返回全局单例的状态
+    if (this._isShadowInstance && window.__globalSkillManagerInstance) {
+      this.isFederationReady = window.__globalSkillManagerInstance.knowledgeFederationInitialized;
+      return;
+    }
+    
     // 🎯 优化：添加初始化状态检查
     if (this.isFederationReady) {
       console.log('[SkillManager] 🎯 知识库已就绪，跳过重复初始化');
@@ -940,6 +961,8 @@ export let skillManager; // 导出一个变量，稍后填充
 // ✨ 步骤 4: 异步填充 skillManager 实例
 skillManagerPromise.then(instance => {
   skillManager = instance;
+  // 🎯 设置全局实例引用
+  window.__globalSkillManagerInstance = instance;
 });
 
 // 导出函数以便外部模块可以获取基础技能管理器
