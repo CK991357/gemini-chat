@@ -1467,7 +1467,7 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             };
             
             // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
-            // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
+            // 我们在这里"发射后不管"，渲染工作将由 'research:end' 事件监听器处理
             const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
 
             // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
@@ -1523,7 +1523,7 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
 }
 
 /**
- * 🎯 新增：带缓存压缩的标准聊天请求处理
+ * 🎯 新增：带缓存压缩的标准聊天请求处理（修复版）
  */
 async function handleStandardChatRequestWithCache(messageText, attachedFiles, modelName, apiKey) {
     const userContent = [];
@@ -1560,9 +1560,14 @@ async function handleStandardChatRequestWithCache(messageText, attachedFiles, mo
         
         // 获取相关工具（使用现有的技能匹配）
         const availableToolNames = getAvailableToolNames(modelName);
+        
+        // 🎯 关键修复：构建完整的上下文对象
         const context = { 
             availableTools: availableToolNames,
-            sessionId: currentSessionId
+            sessionId: currentSessionId,  // 🚨 关键：传递会话ID
+            toolCallHistory: [],  // 传递历史
+            userQuery: messageText,  // 传递用户查询
+            mode: 'standard'  // 标识为普通模式
         };
         
         // 🎯 关键优化：使用技能上下文管理器生成增强提示
@@ -1570,11 +1575,12 @@ async function handleStandardChatRequestWithCache(messageText, attachedFiles, mo
             // 确保技能上下文管理器已初始化
             await skillContextManager.ensureInitialized();
             
-            // 生成智能上下文
+            // 🎯 修复：传递完整的上下文，包含sessionId
             const contextResult = await skillContextManager.generateRequestContext(
                 messageText,
                 availableToolNames,
-                modelConfig
+                modelConfig,
+                context  // 🚨 传递上下文，包括sessionId
             );
             
             // 🎯 如果生成了增强提示，使用它替换原始用户消息
@@ -1589,6 +1595,9 @@ async function handleStandardChatRequestWithCache(messageText, attachedFiles, mo
                         content: [{ type: 'text', text: contextResult.enhancedPrompt }]
                     }
                 ];
+                
+                console.log(`🎯 [消息增强] 原始查询: "${messageText.substring(0, 50)}..."`);
+                console.log(`🎯 [消息增强] 增强后: "${contextResult.enhancedPrompt.substring(0, 100)}..."`);
             }
             
         } catch (error) {
