@@ -64,6 +64,14 @@ class EnhancedSkillManager {
         ]
       },
       
+      // 图像分析
+      'glm4v_analyze_image': {
+        keywords: [
+          '图片', '图像', '照片', '分析图片', '识别图片',
+          'image', 'photo', 'picture', 'analyze image', 'recognize'
+        ]
+      },
+      
       // 国际象棋
       'stockfish_analyzer': {
         keywords: [
@@ -209,7 +217,7 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 🚀 新增：集成关键词映射的增强相关性计算
+   * 🚀 新增：集成关键词映射的增强相关性计算（带性能优化）
    */
   calculateEnhancedRelevanceScoreWithKeywords(query, skill, context) {
     // 保留原有的所有逻辑
@@ -220,10 +228,13 @@ class EnhancedSkillManager {
     
     if (mapping) {
       const queryLower = query.toLowerCase();
+      const matchedKeywords = new Set(); // 🎯 优化：使用Set防止重复加分
       
       // 🎯 基础关键词匹配增强
       mapping.keywords.forEach(keyword => {
-        if (queryLower.includes(keyword.toLowerCase())) {
+        const lowerKeyword = keyword.toLowerCase();
+        if (queryLower.includes(lowerKeyword) && !matchedKeywords.has(lowerKeyword)) {
+          matchedKeywords.add(lowerKeyword);
           score += 0.15; // 关键词匹配额外加分
         }
       });
@@ -232,7 +243,9 @@ class EnhancedSkillManager {
       if (mapping.modes) {
         Object.values(mapping.modes).forEach(modeKeywords => {
           modeKeywords.forEach(keyword => {
-            if (queryLower.includes(keyword.toLowerCase())) {
+            const lowerKeyword = keyword.toLowerCase();
+            if (queryLower.includes(lowerKeyword) && !matchedKeywords.has(lowerKeyword)) {
+              matchedKeywords.add(lowerKeyword);
               score += 0.2; // 模式匹配权重更高
             }
           });
@@ -243,7 +256,9 @@ class EnhancedSkillManager {
       if (toolName === 'python_sandbox' && mapping.libraries) {
         Object.values(mapping.libraries).forEach(libKeywords => {
           libKeywords.forEach(keyword => {
-            if (queryLower.includes(keyword.toLowerCase())) {
+            const lowerKeyword = keyword.toLowerCase();
+            if (queryLower.includes(lowerKeyword) && !matchedKeywords.has(lowerKeyword)) {
+              matchedKeywords.add(lowerKeyword);
               score += 0.1; // 库匹配额外加分
             }
           });
@@ -600,7 +615,7 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 🚀 新增：生成Python沙盒的增强注入内容
+   * 🚀 新增：生成Python沙盒的增强注入内容（带完整导入映射）
    */
   async generateEnhancedPythonInjection(skill, userQuery = '', context = {}) {
     const { metadata, content } = skill;
@@ -620,18 +635,49 @@ class EnhancedSkillManager {
         libraryText += `**适用任务**: ${suggestion.tasks.join('、')}\n`;
         libraryText += `**推荐库**: ${suggestion.libraries.join(', ')}\n`;
         
-        // 添加示例导入语句
+        // 添加示例导入语句（使用完整的导入映射）
         libraryText += `**示例导入**:\n\`\`\`python\n`;
         suggestion.libraries.slice(0, 3).forEach(lib => {
           const importMap = {
+            // 数据处理和分析
             'pandas': 'import pandas as pd',
             'numpy': 'import numpy as np',
+            'scipy': 'import scipy',
+            'pyarrow': 'import pyarrow',
+            'polars-lts-cpu': 'import polars as pl',
+            
+            // 数据可视化
             'matplotlib': 'import matplotlib.pyplot as plt',
             'seaborn': 'import seaborn as sns',
-            'scikit-learn': 'from sklearn import ...',
-            'sympy': 'import sympy as sp'
+            
+            // 机器学习和统计
+            'scikit-learn': 'from sklearn import preprocessing, model_selection, metrics',
+            'xgboost': 'import xgboost as xgb',
+            'lightgbm': 'import lightgbm as lgb',
+            'statsmodels': 'import statsmodels.api as sm',
+            
+            // 数学和符号计算
+            'sympy': 'import sympy as sp',
+            
+            // 文档处理
+            'python-docx': 'import docx',
+            'python-pptx': 'from pptx import Presentation',
+            'reportlab': 'from reportlab.lib.pagesizes import letter',
+            'openpyxl': 'import openpyxl',
+            
+            // 网络和图分析
+            'networkx': 'import networkx as nx',
+            'beautifulsoup4': 'from bs4 import BeautifulSoup',
+            'lxml': 'import lxml.etree as ET',
+            
+            // 其他
+            'statsmodels': 'import statsmodels.api as sm',
+            'pyarrow': 'import pyarrow as pa'
           };
-          libraryText += `${importMap[lib] || `import ${lib}`}\n`;
+          
+          // 如果找不到特定导入映射，使用通用导入
+          const importStatement = importMap[lib] || `import ${lib}`;
+          libraryText += `${importStatement}\n`;
         });
         libraryText += `\`\`\`\n`;
       });
