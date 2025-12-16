@@ -22,6 +22,8 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 // 🚀 新增导入
 import { skillContextManager } from './tool-spec-system/skill-context-manager.js';
 import { enhancedToolDefinitions } from './tools_mcp/enhanced-tool-definitions.js';
+import { skillCacheCompressor } from './tool-spec-system/skill-cache-compressor.js';
+
 
 // 🚀 增强的模型工具管理器
 class EnhancedModelToolManager {
@@ -2591,6 +2593,21 @@ document.addEventListener('DOMContentLoaded', () => {
     newChatButton.addEventListener('click', () => {
         if (currentSessionId) {
             cleanupSession(currentSessionId);
+            
+            // 🎯 新增：清理技能系统缓存
+            if (skillContextManager && skillContextManager.clearSessionCache) {
+                skillContextManager.clearSessionCache(currentSessionId);
+            }
+            
+            // 清理共享缓存
+            skillCacheCompressor.clearSession(currentSessionId);
+            
+            // 清理技能管理器的注入历史
+            if (window.skillManagerModule && window.skillManagerModule.enhancedSkillManager) {
+                window.skillManagerModule.enhancedSkillManager.clearSession(currentSessionId);
+            }
+            
+            console.log(`🗑️ 已清理会话 ${currentSessionId} 的所有技能缓存`);
         }
         resetFileManagerAuth(); // 🎯 核心修改：重置文件管理器状态（包括关闭模态框）
         // 仅在 HTTP 模式下启用历史记录功能
@@ -2606,11 +2623,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    /**
-     * @function
-     * @description 处理"新建聊天"按钮点击事件，刷新页面以开始新的聊天。
-     * @returns {void}
-     */
+    // 🎯 新增：在发送消息前添加会话ID到上下文
+    const originalHandleSendMessage = handleSendMessage;
+    
+    async function handleSendMessageWithCache(attachmentManager) {
+        // 确保有会话ID
+        if (!currentSessionId) {
+            historyManager.generateNewSession();
+        }
+        
+        // 原有逻辑...
+        return originalHandleSendMessage.call(this, attachmentManager);
+    }
+    
+    // 🎯 替换原有函数
+    window.handleSendMessage = handleSendMessageWithCache;
+    
+    // 🎯 新增：在生成请求上下文时传递会话ID
+    const originalGenerateRequestContext = skillContextManager.generateRequestContext;
+    
+    skillContextManager.generateRequestContext = async function(userQuery, availableTools = [], modelConfig = {}) {
+        const context = {
+            sessionId: currentSessionId,
+            toolCallHistory: this._getRecentToolCalls(currentSessionId) // 可以从历史记录中获取
+        };
+        
+        return originalGenerateRequestContext.call(this, userQuery, availableTools, modelConfig, context);
+    };
+    
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {
         // 仅在非 message-history 区域阻止缩放行为
