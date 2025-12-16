@@ -88,6 +88,8 @@ export class SkillCacheCompressor {
       toolName = 'unspecified_tool'
     } = options;
 
+    console.log(`📦 [压缩开始] 工具: ${toolName}, 原始大小: ${content.length}字符`);
+
     // 如果内容已经很小，直接返回
     if (content.length <= maxChars) {
       // 即使内容很小也进行质量监控
@@ -98,6 +100,7 @@ export class SkillCacheCompressor {
         userQuery, 
         content
       );
+      console.log(`📦 [压缩跳过] 内容已足够小(${content.length} ≤ ${maxChars})`);
       return content;
     }
 
@@ -112,6 +115,8 @@ export class SkillCacheCompressor {
       }
       console.log(`🎯 [自动压缩] ${content.length}字符 → 选择${level}级别`);
     }
+    
+    console.log(`📦 [压缩级别] 选择: ${level}, 用户查询: "${userQuery.substring(0, 50)}..."`);
 
     let compressed = content;
 
@@ -119,22 +124,26 @@ export class SkillCacheCompressor {
       case 'minimal':
         // 最小化：只保留最关键的部分
         compressed = this.extractMinimalGuide(content);
+        console.log(`📦 [最小化压缩] 提取核心内容`);
         break;
 
       case 'reference':
         // 引用模式：不注入内容，只给提示
         compressed = this.createKnowledgeReference(content);
+        console.log(`📦 [引用模式] 创建知识引用`);
         break;
 
       case 'smart':
       default:
         // 智能压缩：根据查询提取相关部分
         compressed = await this.smartCompress(content, maxChars, userQuery);
+        console.log(`📦 [智能压缩] 基于查询提取相关章节`);
         break;
     }
 
     // 确保不超过最大长度
     if (compressed.length > maxChars) {
+      console.log(`📦 [长度截断] ${compressed.length} → ${maxChars}字符`);
       compressed = compressed.substring(0, maxChars) + '...';
     }
 
@@ -146,6 +155,14 @@ export class SkillCacheCompressor {
       userQuery,
       compressed
     );
+
+    // 详细压缩统计
+    const compressionRate = ((1 - compressed.length / content.length) * 100).toFixed(1);
+    const bytesSaved = content.length - compressed.length;
+    
+    console.log(`✅ [压缩完成] ${content.length} → ${compressed.length}字符`);
+    console.log(`📊 [压缩统计] 压缩率: ${compressionRate}%, 节省: ${bytesSaved}字符`);
+    console.log(`📊 [性能指标] 预计节省上下文窗口: ${Math.round(bytesSaved / 4)}tokens`);
 
     console.log(`🎯 [压缩] ${content.length} → ${compressed.length} 字符 (压缩率: ${((1 - compressed.length/content.length)*100).toFixed(1)}%)`);
     return compressed;
