@@ -1,6 +1,8 @@
 // src/tool-spec-system/skill-manager.js
 import { getSkillsRegistry } from './generated-skills.js';
 import { knowledgeFederation } from './skill-loader.js';
+// 🎯 新增：导入缓存压缩模块
+import { skillCacheCompressor } from './skill-cache-compressor.js'; // 假设这个文件放在同级目录
 
 class EnhancedSkillManager {
   constructor(synonyms) {
@@ -10,6 +12,9 @@ class EnhancedSkillManager {
     // 🎯 新增：联邦知识库集成
     this.knowledgeFederation = knowledgeFederation;
     this.isFederationReady = false;
+    
+    // 🎯 新增：缓存压缩系统集成
+    this.cacheCompressor = skillCacheCompressor;
     
     // 🎯 自动初始化联邦知识库
     this.initializeFederation().then(() => {
@@ -210,50 +215,194 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 🎯 [升级版] 智能生成单个技能的注入内容
-   * 集成联邦知识检索系统，为复杂工具提供更丰富的上下文
-   */
-  /**
    * 🎯 [增强版] 智能生成单个技能的注入内容（支持缓存和压缩）
    * 为普通模式提供与Agent模式相同的知识检索能力
    */
-  generateSkillInjection(skill, userQuery = '', context = {}) {
+  async generateSkillInjection(skill, userQuery = '', context = {}) {
     const { metadata, content } = skill;
     const toolName = metadata.tool_name;
-
+    
+    // 🎯 获取会话ID
+    const sessionId = context.sessionId || 'default';
+    
     console.log(`🎯 [普通模式注入] 开始为 ${toolName} 生成注入内容`);
 
     // 🎯 检查是否已经注入过（会话级跟踪）
-    const sessionId = context.sessionId || 'default';
-    if (this.injectionHistory.has(sessionId) &&
-        this.injectionHistory.get(sessionId).includes(toolName)) {
-
+    if (this.cacheCompressor.hasToolBeenInjected(sessionId, toolName)) {
       console.log(`🎯 [普通模式注入] ${toolName} 已在会话中注入过，使用引用模式`);
       return this._createReferenceModeContent(metadata, userQuery);
+    }
+
+    // 🎯 检查缓存
+    const cacheKey = this.cacheCompressor._generateCacheKey(toolName, userQuery, context);
+    const cachedContent = this.cacheCompressor.getFromCache(cacheKey);
+    
+    if (cachedContent) {
+      console.log(`🎯 [普通模式注入] ${toolName} 缓存命中，使用缓存内容`);
+      // 记录注入
+      this.cacheCompressor.recordToolInjection(sessionId, toolName);
+      return cachedContent;
     }
 
     // 🎯 特殊处理：对 python_sandbox 使用联邦知识库
     if (toolName === 'python_sandbox' && this.isFederationReady) {
       try {
-        const federatedContent = this._generateFederatedInjectionForNormalMode(toolName, userQuery, metadata, context);
+        const federatedContent = await this._generateFederatedInjectionForNormalMode(toolName, userQuery, metadata, context);
         if (federatedContent) {
-          // 记录注入
-          this._recordInjection(sessionId, toolName);
-          return federatedContent;
+          // 压缩并缓存
+          const compressedContent = await this.cacheCompressor.compressKnowledge(
+            federatedContent,
+            {
+              level: 'smart',
+              maxChars: 15000,
+              userQuery: userQuery
+            }
+          );
+          
+          // 记录注入并缓存
+          this.cacheCompressor.setToCache(cacheKey, compressedContent);
+          this.cacheCompressor.recordToolInjection(sessionId, toolName);
+          
+          return compressedContent;
         }
       } catch (error) {
         console.warn(`🎯 [普通模式注入] 联邦知识库调用失败，回退到基础模式:`, error);
       }
     }
 
-    // 🎯 回退：原始逻辑（保持向后兼容）
-    console.log(`🎯 [普通模式注入] 为 ${toolName} 使用基础注入模式`);
-    const basicContent = this.generateBasicInjection(skill, userQuery);
+    // 🎯 基础注入内容生成（带压缩）
+    console.log(`🎯 [普通模式注入] 为 ${toolName} 使用基础注入模式（带压缩）`);
+    const basicContent = await this.generateBasicInjectionWithCompression(skill, userQuery, context);
 
-    // 记录注入
-    this._recordInjection(sessionId, toolName);
+    // 记录注入并缓存
+    this.cacheCompressor.setToCache(cacheKey, basicContent);
+    this.cacheCompressor.recordToolInjection(sessionId, toolName);
 
     return basicContent;
+  }
+
+  /**
+   * 🎯 新增：带压缩的基础注入内容生成
+   */
+  async generateBasicInjectionWithCompression(skill, userQuery = '', context = {}) {
+    const { metadata, content } = skill;
+    
+    // 构建知识包
+    let knowledgePackage = `## 🛠️ 工具指南: ${metadata.name} (${metadata.tool_name})\n\n`;
+    knowledgePackage += `**核心功能**: ${metadata.description}\n\n`;
+    
+    // 智能章节提取逻辑
+    const sectionKeywords = {
+      'extract': ['结构化数据提取 (`extract`)', 'Schema Definition 结构说明'],
+      'scrape': ['抓取单个网页 (`scrape`)'],
+      'deep_crawl': ['深度网站爬取 (`deep_crawl`)'],
+      'batch': ['批量 URL 处理 (`batch_crawl`)'],
+      'screenshot': ['截图捕获 (`screenshot`)'],
+      'pdf': ['PDF 导出 (`pdf_export`)']
+    };
+    
+    // 根据用户查询找到相关的关键词
+    let relevantSectionTitle = null;
+    const queryLower = userQuery.toLowerCase();
+    
+    for (const keyword in sectionKeywords) {
+      if (queryLower.includes(keyword)) {
+        relevantSectionTitle = sectionKeywords[keyword];
+        break;
+      }
+    }
+    
+    // 如果找到了相关章节，提取其完整内容
+    if (relevantSectionTitle) {
+      knowledgePackage += `### 📖 相关操作指南 (已为您提取)\n\n`;
+      let sectionFound = false;
+      
+      relevantSectionTitle.forEach(title => {
+        const regex = new RegExp(`##\\s+${this.escapeRegex(title)}[\\s\\S]*?(?=\\n##\\s|$)`, 'i');
+        const match = content.match(regex);
+        
+        if (match) {
+          knowledgePackage += match[0] + '\n\n';
+          sectionFound = true;
+        }
+      });
+      
+      if (!sectionFound) {
+        knowledgePackage += `*未找到与'${relevantSectionTitle.join(', ')}'直接相关的详细章节，请参考通用指南。*\n\n`;
+      }
+    }
+
+    // 添加通用调用结构和错误示例
+    knowledgePackage += `### 🚨 【强制遵守】通用调用结构与常见错误\n\n`;
+    
+    const generalStructureRegex = /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i;
+    const generalStructureMatch = content.match(generalStructureRegex);
+    if (generalStructureMatch) {
+      knowledgePackage += generalStructureMatch[0] + '\n\n';
+    }
+
+    const commonErrorsRegex = /### ❌ 常见致命错误[\s\S]*?(?=\n##\s|$)/i;
+    const commonErrorsMatch = content.match(commonErrorsRegex);
+    if (commonErrorsMatch) {
+      knowledgePackage += commonErrorsMatch[0] + '\n\n';
+    }
+
+    knowledgePackage += `请严格遵循上述指南和示例来使用 **${metadata.tool_name}** 工具。`;
+    
+    // 🎯 应用智能压缩
+    const compressedContent = await this.cacheCompressor.compressKnowledge(
+      knowledgePackage,
+      {
+        level: 'smart',
+        maxChars: 12000, // 稍小一些，为普通模式优化
+        userQuery: userQuery
+      }
+    );
+    
+    return compressedContent;
+  }
+
+  /**
+   * 🎯 新增：创建引用模式内容
+   */
+  _createReferenceModeContent(metadata, userQuery) {
+    return `## 🛠️ 工具引用: ${metadata.name}\n\n` +
+           `**功能**: ${metadata.description}\n\n` +
+           `*该工具的操作指南已在之前步骤中提供，请参考已有指南使用。*\n\n` +
+           `**当前任务提示**: 专注于当前查询"${userQuery.substring(0, 50)}..."的相关操作。`;
+  }
+
+  /**
+   * 🎯 新增：为普通模式生成联邦知识注入
+   */
+  async _generateFederatedInjectionForNormalMode(toolName, userQuery, metadata, context) {
+    if (!this.knowledgeFederation || !this.isFederationReady) {
+      console.warn(`🎯 [普通模式联邦注入] 知识库未就绪，无法为 ${toolName} 生成增强内容`);
+      return null;
+    }
+    
+    // 🎯 构建上下文
+    const fedContext = {
+      userQuery: userQuery,
+      toolCallHistory: [],
+      mode: 'standard'
+    };
+    
+    // 🎯 使用缓存压缩系统的章节推断
+    const relevantSections = this.cacheCompressor.inferRelevantSections(userQuery, fedContext);
+    
+    // 🎯 从联邦知识库获取内容
+    const knowledgePackage = this.knowledgeFederation.getFederatedKnowledge(
+      toolName, 
+      relevantSections
+    );
+    
+    if (!knowledgePackage) {
+      console.warn(`🎯 [普通模式联邦注入] 知识库中未找到 ${toolName} 的内容`);
+      return null;
+    }
+    
+    return knowledgePackage;
   }
 
   /**
@@ -576,7 +725,7 @@ class EnhancedSkillManager {
    * [升级版] 多技能注入内容生成
    * 对 crawl4ai 等复杂工具进行特殊处理，注入更详细的指南
    */
-  generateMultiSkillInjection(skills, userQuery) {
+  async generateMultiSkillInjection(skills, userQuery) {
     if (skills.length === 0) return '';
     
     // 🎯 特殊处理：对 python_sandbox 使用联邦知识库
@@ -596,7 +745,8 @@ class EnhancedSkillManager {
     
     // 如果只有一个技能，或者最重要的技能是 crawl4ai，则使用单技能的详细注入
     if (skills.length === 1 || toolName === 'crawl4ai') {
-      return this.generateBasicInjection(primarySkill.skill, userQuery);
+      // 使用新的异步方法
+      return await this.generateSkillInjection(primarySkill.skill, userQuery, {});
     }
     
     // 对于多个非关键技能，保持摘要模式
@@ -743,358 +893,6 @@ export let skillManager; // 导出一个变量，稍后填充
 skillManagerPromise.then(instance => {
   skillManager = instance;
 });
-
-// 🎯 共享的缓存与压缩核心模块
-// 为普通模式和Agent模式提供统一的缓存、压缩、章节检索服务
-
-class SkillCacheCompressor {
-  constructor() {
-    // 🎯 缓存系统
-    this.knowledgeCache = new Map(); // tool -> {full, summary, compressed, timestamp}
-    this.injectionHistory = new Map(); // sessionId -> [toolNames]
-    
-    // 🎯 压缩配置
-    this.compressionEnabled = true;
-    this.maxKnowledgeChars = 15000;
-    this.minimalLength = 3000;
-    
-    // 🎯 会话管理
-    this.activeSessions = new Map();
-    
-    console.log('✅ SkillCacheCompressor 初始化完成');
-  }
-
-  /**
-   * 🎯 核心：智能知识压缩算法（Agent模式同款）
-   */
-  async compressKnowledge(content, options = {}) {
-    const {
-      level = 'smart', // smart, minimal, reference
-      maxChars = this.maxKnowledgeChars,
-      userQuery = '',
-      iteration = 0
-    } = options;
-
-    // 如果内容已经很小，直接返回
-    if (content.length <= maxChars) return content;
-
-    let compressed = content;
-
-    switch (level) {
-      case 'minimal':
-        // 最小化：只保留最关键的部分
-        compressed = this.extractMinimalGuide(content);
-        break;
-
-      case 'reference':
-        // 引用模式：不注入内容，只给提示
-        compressed = this.createKnowledgeReference(content);
-        break;
-
-      case 'smart':
-      default:
-        // 智能压缩：根据查询提取相关部分
-        compressed = await this.smartCompress(content, maxChars, userQuery);
-        break;
-    }
-
-    // 确保不超过最大长度
-    if (compressed.length > maxChars) {
-      compressed = compressed.substring(0, maxChars) + '...';
-    }
-
-    console.log(`🎯 [压缩] ${content.length} → ${compressed.length} 字符 (压缩率: ${((1 - compressed.length/content.length)*100).toFixed(1)}%)`);
-    return compressed;
-  }
-
-  /**
-   * 🎯 提取最小化指南（保留最核心内容）
-   */
-  extractMinimalGuide(content) {
-    let minimal = '';
-
-    // 1. 提取通用调用结构（最重要！）
-    const structureMatch = content.match(/## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i);
-    if (structureMatch) {
-      minimal += structureMatch + '\n\n';
-    }
-
-    // 2. 提取常见错误（第二重要）
-    const errorsMatch = content.match(/### ❌ 常见致命错误[\s\S]*?(?=\n##\s|$)/i);
-    if (errorsMatch) {
-      minimal += errorsMatch + '\n\n';
-    }
-
-    // 3. 提取关键指令
-    const instructionsMatch = content.match(/##\s+关键指令[\s\S]*?(?=##|$)/i);
-    if (instructionsMatch) {
-      minimal += '## 关键指令摘要\n' +
-                instructionsMatch[0].split('\n')
-                  .filter(line => line.trim() && !line.trim().startsWith('#') && line.trim().length > 10)
-                  .slice(0, 10) // 只取前10行
-                  .join('\n') + '\n\n';
-    }
-
-    // 4. 如果没有找到关键部分，返回前3000字符
-    if (minimal.length < 500) {
-      minimal = content.substring(0, Math.min(this.minimalLength, content.length)) + '...';
-    }
-
-    return minimal;
-  }
-
-  /**
-   * 🎯 智能压缩（基于查询相关性）
-   */
-  async smartCompress(content, maxChars, userQuery) {
-    if (!userQuery) return this.extractMinimalGuide(content);
-
-    const sections = content.split(/(?=^#{2,4}\s)/m);
-    let compressed = '';
-    let remaining = maxChars;
-
-    // 根据查询关键词给章节评分
-    const queryWords = userQuery.toLowerCase().split(/[\s,，、]+/).filter(w => w.length > 1);
-    
-    const scoredSections = sections.map(section => {
-      let score = 0;
-      const sectionLower = section.toLowerCase();
-      
-      queryWords.forEach(word => {
-        if (sectionLower.includes(word)) {
-          score += 1;
-          // 标题中包含关键词权重更高
-          const titleMatch = section.match(/^#{2,4}\s+([^\n]+)/i);
-          if (titleMatch && titleMatch[1].toLowerCase().includes(word)) {
-            score += 3;
-          }
-        }
-      });
-      
-      return { section, score };
-    }).filter(s => s.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    // 添加高评分章节
-    for (const { section, score } of scoredSections) {
-      if (section.length <= remaining * 0.6) {
-        compressed += section + '\n\n';
-        remaining -= section.length;
-      } else {
-        // 章节过长，截取开头
-        compressed += section.substring(0, Math.min(section.length, remaining * 0.3)) + '...\n\n';
-        remaining -= Math.min(section.length, remaining * 0.3);
-      }
-      
-      if (remaining < 1000) break;
-    }
-
-    // 如果压缩后内容太少，添加最小化指南
-    if (compressed.length < 1000) {
-      compressed = this.extractMinimalGuide(content).substring(0, maxChars);
-    }
-
-    return compressed;
-  }
-
-  /**
-   * 🎯 创建知识引用（不注入内容）
-   */
-  createKnowledgeReference(content) {
-    // 提取关键信息点
-    const keyPoints = [];
-    
-    // 提取标题
-    const titles = content.match(/^#{2,4}\s+([^\n]+)/gm) || [];
-    keyPoints.push(...titles.slice(0, 3).map(t => t.replace(/^#{2,4}\s+/, '')));
-    
-    return `## 工具参考指南（已在前序步骤中提供）\n\n` +
-           `**关键要点**:\n${keyPoints.map(p => `- ${p}`).join('\n')}\n\n` +
-           `*如需查看完整操作指南，请参考之前步骤中的详细说明。*`;
-  }
-
-  /**
-   * 🎯 缓存管理
-   */
-  getFromCache(toolName, userQuery, context = {}) {
-    const cacheKey = this._generateCacheKey(toolName, userQuery, context);
-    
-    if (this.knowledgeCache.has(cacheKey)) {
-      const cached = this.knowledgeCache.get(cacheKey);
-      
-      // 缓存有效（5分钟内）
-      if (Date.now() - cached.timestamp < 5 * 60 * 1000) {
-        console.log(`🎯 [缓存命中] ${toolName}: ${cached.content.length} 字符`);
-        return cached.content;
-      }
-    }
-    
-    return null;
-  }
-
-  setToCache(toolName, userQuery, context, content) {
-    const cacheKey = this._generateCacheKey(toolName, userQuery, context);
-    
-    this.knowledgeCache.set(cacheKey, {
-      content,
-      timestamp: Date.now(),
-      toolName,
-      userQuery: userQuery.substring(0, 50)
-    });
-    
-    // 限制缓存大小
-    if (this.knowledgeCache.size > 100) {
-      const oldestKey = Array.from(this.knowledgeCache.keys())[0];
-      this.knowledgeCache.delete(oldestKey);
-    }
-  }
-
-  /**
-   * 🎯 会话级工具使用跟踪（避免重复注入）
-   */
-  recordToolInjection(sessionId, toolName) {
-    if (!this.injectionHistory.has(sessionId)) {
-      this.injectionHistory.set(sessionId, new Set());
-    }
-    
-    this.injectionHistory.get(sessionId).add(toolName);
-  }
-
-  hasToolBeenInjected(sessionId, toolName) {
-    return this.injectionHistory.has(sessionId) && 
-           this.injectionHistory.get(sessionId).has(toolName);
-  }
-
-  /**
-   * 🎯 章节推断逻辑（共享版）
-   */
-  inferRelevantSections(userQuery, context = {}) {
-    const sections = new Set();
-    const queryLower = userQuery.toLowerCase();
-    const toolCallHistory = context.toolCallHistory || [];
-    
-    // 🎯 数据分析与清洗
-    if (this._containsKeywords(queryLower,
-        ['分析', '数据处理', '清洗', '清洗数据', '清理数据', 'data analysis', 'data clean', '数据清洗'])) {
-        sections.add('text_analysis_cookbook.md');
-        sections.add('pandas_cheatsheet');
-        sections.add('数据清洗与分析');
-    }
-    
-    // 🎯 表格与结构化数据处理
-    if (this._containsKeywords(queryLower,
-        ['表格', '表', '结构化', '表格数据', 'table', 'excel', 'csv', '趋势表', '汇总表'])) {
-        sections.add('pandas_cheatsheet');
-        sections.add('ETL管道模式');
-    }
-    
-    // 🎯 趋势分析与预测
-    if (this._containsKeywords(queryLower,
-        ['趋势', '预测', '增长', '增速', '变化趋势', '趋势分析', '增长预测'])) {
-        sections.add('text_analysis_cookbook.md');
-        sections.add('pandas_cheatsheet');
-    }
-    
-    // 🎯 文本处理相关查询
-    if (this._containsKeywords(queryLower, ['文本', 'text', '字符串', '提取', '解析'])) {
-        sections.add('text_analysis_cookbook.md');
-        sections.add('文本分析与结构化提取');
-    }
-    
-    // 🎯 可视化相关查询
-    if (this._containsKeywords(queryLower, ['可视化', 'visual', 'plot', 'chart', '图表', '绘图', 'matplotlib'])) {
-        sections.add('matplotlib_cookbook');
-        sections.add('数据可视化');
-    }
-    
-    // 🎯 数学/计算相关查询
-    if (this._containsKeywords(queryLower, ['数学', '公式', '计算', '证明', 'sympy', '科学'])) {
-        sections.add('公式证明工作流');
-        sections.add('sympy_cookbook');
-        sections.add('科学计算与优化');
-    }
-    
-    // 🎯 机器学习相关查询
-    if (this._containsKeywords(queryLower, ['机器学习', 'ml', '模型', '训练', '预测', '分类'])) {
-        sections.add('机器学习');
-        sections.add('ml_workflow');
-    }
-    
-    // 🎯 报告生成
-    if (this._containsKeywords(queryLower, ['报告', '文档', 'word', 'excel', 'pdf', 'ppt'])) {
-        sections.add('自动化报告生成');
-        sections.add('report_generator_workflow');
-    }
-    
-    // 🎯 上下文增强：考虑之前的工具调用历史
-    const recentTools = toolCallHistory.slice(-3).map(h => h.toolName);
-    
-    if (recentTools.includes('python_sandbox')) {
-        sections.add('pandas_cheatsheet');
-        sections.add('matplotlib_cookbook');
-    }
-    
-    if (recentTools.includes('crawl4ai') || recentTools.includes('firecrawl')) {
-        sections.add('ETL管道模式');
-        sections.add('文本分析与结构化提取');
-    }
-    
-    return Array.from(sections);
-  }
-
-  /**
-   * 🎯 辅助方法
-   */
-  _generateCacheKey(toolName, userQuery, context) {
-    const contextStr = context.sessionId || 'default';
-    const queryHash = this._hashString(userQuery.substring(0, 100));
-    return `${toolName}_${contextStr}_${queryHash}`;
-  }
-
-  _hashString(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash) + str.charCodeAt(i);
-      hash |= 0; // Convert to 32bit integer
-    }
-    return hash.toString(36);
-  }
-
-  _containsKeywords(text, keywords) {
-    return keywords.some(keyword => text.includes(keyword.toLowerCase()));
-  }
-
-  /**
-   * 🎯 清理会话数据
-   */
-  clearSession(sessionId) {
-    if (this.injectionHistory.has(sessionId)) {
-      this.injectionHistory.delete(sessionId);
-    }
-    
-    // 清理该会话相关的缓存
-    const sessionPrefix = `${sessionId}_`;
-    for (const key of this.knowledgeCache.keys()) {
-      if (key.includes(sessionPrefix)) {
-        this.knowledgeCache.delete(key);
-      }
-    }
-  }
-
-  /**
-   * 🎯 获取缓存统计
-   */
-  getCacheStats() {
-    return {
-      cacheSize: this.knowledgeCache.size,
-      injectionHistorySize: this.injectionHistory.size,
-      activeSessions: this.activeSessions.size
-    };
-  }
-}
-
-// 导出单例实例
-export const skillCacheCompressor = new SkillCacheCompressor();
 
 // 导出函数以便外部模块可以获取基础技能管理器
 export { EnhancedSkillManager, getBaseSkillManager };
