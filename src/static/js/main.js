@@ -1534,7 +1534,7 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             {
                 sessionId: currentSessionId,
                 mode: 'agent',
-                iteration: iteration
+                iteration: agentIteration // 使用已定义的变量
             }
         );
 
@@ -1800,6 +1800,19 @@ const client = new MultimodalLiveClient();
 
 // State variables
 let selectedModelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === CONFIG.API.MODEL_NAME); // 初始选中默认模型
+
+// 在 main.js 的 State variables 部分之后添加这个辅助函数
+function getSafeIteration(sessionId) {
+    try {
+        if (skillContextManager && typeof skillContextManager.getNextIteration === 'function') {
+            const iteration = skillContextManager.getNextIteration(sessionId);
+            return (iteration !== undefined && iteration !== null) ? iteration : 1;
+        }
+    } catch (error) {
+        console.warn('获取迭代次数失败，使用默认值:', error);
+    }
+    return 1; // 默认值
+}
 
 /**
  * 格式化秒数为 MM:SS 格式。
