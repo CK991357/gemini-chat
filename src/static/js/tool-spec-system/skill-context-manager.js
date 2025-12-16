@@ -1,19 +1,5 @@
 // D:\Github_10110531\gemini_chat\src\static\js\tool-spec-system\skill-context-manager.js
-
-
-// Modified to use global skill manager singleton
-async function getSkillManager() {
-  // 首先尝试全局增强管理器
-  if (typeof window.getGlobalSkillManager === 'function') {
-    return await window.getGlobalSkillManager();
-  }
-
-  // 降级方案：直接使用EnhancedSkillManager
-  const { EnhancedSkillManager } = await import('../agent/EnhancedSkillManager.js');
-  const manager = new EnhancedSkillManager();
-  await manager.waitUntilReady();
-  return manager;
-}
+import { skillManagerPromise } from './skill-manager.js';
 
 class SkillContextManager {
   constructor() {
@@ -83,17 +69,13 @@ class SkillContextManager {
       '统计': 'scipy_cookbook.md',
       '计算': 'scipy_cookbook.md'
     };
-    
-    // 🎯 【新增】会话迭代跟踪
-    this.sessionIterations = new Map(); // sessionId -> iterationCount
-    this.sessionToolUsage = new Map(); // sessionId -> toolUsageCount
   }
 
   async ensureInitialized() {
     if (this.initialized) return true;
     
     try {
-      this.skillManager = await getSkillManager();
+      this.skillManager = await skillManagerPromise;
       this.initialized = true;
       console.log('✅ SkillContextManager 初始化完成');
       return true;
@@ -106,26 +88,18 @@ class SkillContextManager {
   /**
    * 🚀 核心方法：为模型请求生成智能上下文
    */
-  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}, sessionId = 'default') {
+  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}) {
     if (!await this.ensureInitialized()) {
       return { enhancedPrompt: userQuery, relevantTools: [] };
     }
 
-    // 1. 查找相关技能 - 🎯【修复】添加 await
-    let relevantSkills;
-    try {
-      relevantSkills = await this.skillManager.findRelevantSkills(userQuery, {
-        availableTools,
-        category: modelConfig.category
-      });
-    } catch (error) {
-      console.error('❌ 获取相关技能失败:', error);
-      relevantSkills = [];
-    }
+    // 1. 查找相关技能
+    const relevantSkills = this.skillManager.findRelevantSkills(userQuery, {
+      availableTools,
+      category: modelConfig.category
+    });
 
-    // 🎯 【重要】确保 relevantSkills 是数组
-    if (!Array.isArray(relevantSkills) || relevantSkills.length === 0) {
-      console.log('[SkillContextManager] 未找到相关技能或结果格式错误:', relevantSkills);
+    if (relevantSkills.length === 0) {
       return { 
         enhancedPrompt: userQuery, 
         relevantTools: [],
@@ -133,127 +107,23 @@ class SkillContextManager {
       };
     }
 
-    // 🎯 【新增】获取当前会话的迭代次数
-    let iteration = 0;
-    if (this.sessionIterations.has(sessionId)) {
-      iteration = this.sessionIterations.get(sessionId);
-    }
+    // 2. 检查是否有需要特殊处理的复杂工具
+    const hasComplexTools = relevantSkills.some(skill => 
+      ['crawl4ai', 'python_sandbox'].includes(skill.toolName)
+    );
+
+    // 3. 生成增强的提示词
+    const enhancedPrompt = hasComplexTools 
+      ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig)
+      : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig);
     
-    // 🎯 【新增】检查工具使用历史
-    const toolHistory = this.sessionToolUsage.has(sessionId) 
-      ? this.sessionToolUsage.get(sessionId)
-      : new Map();
-
-    // 2. 生成增强提示词（使用智能缓存）
-    let enhancedPrompt = '';
-    const injectedTools = [];
-    
-    // 🎯 【修复】这里是对 relevantSkills 进行迭代
-    for (const skill of relevantSkills) {
-      const toolName = skill.toolName;
-      
-      // 🎯 【关键】检查是否已经注入过
-      // 注意：这里需要skillManager提供hasToolBeenInjected方法
-      const hasBeenInjected = this.skillManager.hasToolBeenInjected ? 
-        await this.skillManager.hasToolBeenInjected(toolName, sessionId) : false;
-      const usageCount = toolHistory.get(toolName) || 0;
-      
-      // 🎯 决定是否使用完整指南还是引用
-      const isFirstTime = !hasBeenInjected || usageCount === 0;
-      
-      // 生成技能指南
-      let skillGuide;
-      if (this.skillManager.generateSmartSkillInjection) {
-        // 使用增强管理器的智能注入
-        skillGuide = await this.skillManager.generateSmartSkillInjection(
-          skill.skill || skill,
-          userQuery,
-          sessionId,
-          isFirstTime
-        );
-      } else {
-        // 降级方案：构建基本指南
-        skillGuide = await this._buildBasicSkillGuide(skill, userQuery, isFirstTime);
-      }
-      
-      enhancedPrompt += skillGuide + '\n\n';
-      injectedTools.push(toolName);
-      
-      // 🎯 更新工具使用计数
-      toolHistory.set(toolName, usageCount + 1);
-    }
-
-    // 🎯 【新增】更新会话状态
-    this.sessionIterations.set(sessionId, iteration + 1);
-    this.sessionToolUsage.set(sessionId, toolHistory);
-
-    // 3. 添加通用指导
-    if (enhancedPrompt) {
-      enhancedPrompt += `## 💡 执行指导\n`;
-      enhancedPrompt += `请基于以上工具指南来响应用户请求。特别注意复杂工具的特殊调用规范。\n\n`;
-      enhancedPrompt += `---\n\n## 👤 用户原始请求\n${userQuery}`;
-    } else {
-      enhancedPrompt = userQuery;
-    }
-    
-    // 4. 清理过时会话（可选）
-    this.cleanupOldSessions();
-
     return {
       enhancedPrompt,
       relevantTools: relevantSkills.map(skill => skill.toolName),
-      injectedTools, // 🎯 新增：记录实际注入的工具
       contextLevel: relevantSkills.length > 1 ? 'multi' : 'single',
       skillCount: relevantSkills.length,
-      hasComplexTools: relevantSkills.some(skill => 
-        ['crawl4ai', 'python_sandbox'].includes(skill.toolName)
-      ),
-      sessionId,
-      iteration
+      hasComplexTools
     };
-  }
-
-  /**
-   * 🎯 构建基本技能指南（降级方案）
-   */
-  async _buildBasicSkillGuide(skill, userQuery, isFirstTime) {
-    const toolName = skill.toolName;
-    const name = skill.name || toolName;
-    const description = skill.description || '未提供描述';
-    
-    // 🎯 检查工具类型，调用对应的构建方法
-    if (toolName === 'python_sandbox') {
-      return await this._buildPythonSandboxContext(skill, userQuery);
-    } else if (toolName === 'crawl4ai') {
-      return await this._buildCrawl4AIContext(skill, userQuery);
-    }
-    
-    // 🎯 通用工具的基本指南
-    let guide = `### 🛠️ 工具: ${name}\n\n`;
-    guide += `**功能**: ${description}\n`;
-    
-    if (!isFirstTime) {
-      guide += `\n**提示**: 该工具的详细指南已在之前的对话中提供，请参考之前的说明。`;
-    }
-    
-    return guide;
-  }
-
-  /**
-   * 🎯 【新增】清理过时会话
-   */
-  cleanupOldSessions(maxAge = 30 * 60 * 1000) { // 30分钟
-    const now = Date.now();
-    // 注意：skill-manager.js 中的缓存有自己的TTL，这里只清理迭代记录
-  }
-
-  /**
-   * 🎯 【新增】重置会话状态（用于新建聊天）
-   */
-  resetSession(sessionId) {
-    this.sessionIterations.delete(sessionId);
-    this.sessionToolUsage.delete(sessionId);
-    console.log(`[SkillContextManager] 已重置会话 ${sessionId} 的状态`);
   }
 
   /**
@@ -287,10 +157,7 @@ class SkillContextManager {
    * 🚀 crawl4ai 专用上下文构建
    */
   async _buildCrawl4AIContext(skill, userQuery) {
-    const skillData = skill.skill || skill;
-    const score = skill.score || 0;
-    const name = skill.name || skill.toolName;
-    const description = skill.description || skillData.description || '未提供描述';
+    const { skill: skillData, score, name, description } = skill;
     
     let context = `### 🕷️ 网页抓取工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**核心功能**: ${description}\n\n`;
@@ -302,7 +169,7 @@ class SkillContextManager {
     }
     
     // 2. 提取关键调用结构
-    const keyInfo = this._extractCrawl4AIKeyInformation(skillData.content || '', userQuery);
+    const keyInfo = this._extractCrawl4AIKeyInformation(skillData.content, userQuery);
     context += keyInfo;
     
     // 3. 添加专用提醒
@@ -318,37 +185,16 @@ class SkillContextManager {
    * 🚀 Python沙盒专用上下文构建
    */
   async _buildPythonSandboxContext(skill, userQuery) {
-    const skillData = skill.skill || skill;
-    const score = skill.score || 0;
-    const name = skill.name || skill.toolName;
-    const description = skill.description || skillData.description || '未提供描述';
+    const { skill: skillData, score, name, description } = skill;
     
     let context = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**核心功能**: ${description}\n\n`;
     
     // 1. 提取主文档的关键信息
-    const mainContent = this._extractPythonKeyInformation(skillData.content || '', userQuery);
+    const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
     context += mainContent;
     
-    // 2. 🎯 【新增】智能章节匹配：根据用户查询推断相关章节
-    const relevantSections = this._inferRelevantSections(userQuery);
-    
-    if (relevantSections.length > 0) {
-      context += `**📚 相关操作指南（根据您的查询智能提取）**:\n\n`;
-      
-      // 从技能内容中提取相关章节
-      for (const section of relevantSections.slice(0, 3)) { // 限制前3个
-        const sectionContent = this._extractSpecificSection(skillData.content || '', section);
-        if (sectionContent) {
-          context += `#### ${section}\n`;
-          context += this._compressSection(sectionContent, 300) + '\n\n'; // 压缩到300字符
-        }
-      }
-      
-      context += `💡 **提示**: 执行相关任务时请参考以上指南中的代码模板和工作流。\n\n`;
-    }
-    
-    // 3. 智能匹配相关参考文件
+    // 2. 智能匹配相关参考文件
     const relevantReferences = this._findRelevantPythonReferences(userQuery);
     
     if (relevantReferences.length > 0) {
@@ -365,220 +211,13 @@ class SkillContextManager {
       context += `\n💡 **提示**: 执行相关任务时请严格参考这些指南中的代码模板和工作流。\n`;
     }
     
-    // 4. 添加Python沙盒专用提醒
+    // 3. 添加Python沙盒专用提醒
     context += `\n**🚨 输出规范**:\n`;
     context += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
     context += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
     context += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
     
     return context;
-  }
-
-  /**
-   * 🎯 【新增】智能章节推断方法（从EnhancedSkillManager复制）
-   * 基于上下文智能推断相关章节
-   * 构建高密度的关键词映射网络，覆盖更多隐晦场景
-   */
-  _inferRelevantSections(userQuery, toolCallHistory = []) {
-    const sections = new Set(); // 使用Set避免重复
-    
-    if (!userQuery) return Array.from(sections);
-    
-    const queryLower = userQuery.toLowerCase();
-    
-    // ============================================================
-    // 1. 精确关键词匹配 + 优先级评分
-    // ============================================================
-    const keywordPatterns = [
-      // 高优先级匹配（精确词组）
-      {
-        patterns: ['数据清洗', '清洗数据', '清理数据', 'data clean', 'data cleaning'],
-        sections: ['数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式'],
-        score: 1.0
-      },
-      {
-        patterns: ['数据分析', '分析数据', 'data analysis', 'analyze data'],
-        sections: ['数据清洗与分析', 'pandas_cheatsheet', 'ETL管道模式', '数据可视化'],
-        score: 0.9
-      },
-      {
-        patterns: ['数据可视化', '可视化', '画图', '绘图', 'plot', 'chart', 'graph'],
-        sections: ['数据可视化', 'matplotlib_cookbook'],
-        score: 1.0
-      },
-      {
-        patterns: ['文本分析', '文本处理', '结构化提取', 'extract text', 'text analysis', '正则表达式'],
-        sections: ['文本分析与结构化提取', 'text_analysis_cookbook.md'],
-        score: 1.0
-      },
-      {
-        patterns: ['公式', '证明', '推导', '计算', 'formula', 'proof', 'derivative', '微积分'],
-        sections: ['公式证明工作流', 'sympy_cookbook'],
-        score: 0.8
-      },
-      {
-        patterns: ['机器学习', '模型训练', '预测', '分类', 'ml', 'machine learning', '回归', '聚类'],
-        sections: ['机器学习', 'ml_workflow'],
-        score: 0.9
-      },
-      {
-        patterns: ['报告生成', '文档导出', '生成pdf', '生成word', 'report generate'],
-        sections: ['自动化报告生成', 'report_generator_workflow'],
-        score: 0.8
-      }
-    ];
-    
-    // 执行精确匹配
-    keywordPatterns.forEach(pattern => {
-      const hasMatch = pattern.patterns.some(p =>
-        queryLower.includes(p.toLowerCase())
-      );
-      
-      if (hasMatch) {
-        pattern.sections.forEach(section => sections.add(section));
-      }
-    });
-    
-    // ============================================================
-    // 2. 模糊匹配（分词+语义相似度）
-    // ============================================================
-    const queryWords = queryLower.split(/[\s,\，、;；]+/);
-    
-    // 构建语义相似度词典
-    const semanticGroups = {
-      'data': ['数据', 'dataset', 'dataframe', '表格', 'excel', 'csv'],
-      'analysis': ['分析', 'analyze', 'process', '处理', '统计'],
-      'visualization': ['可视化', 'visualize', '图表', 'plot', 'graph', 'chart'],
-      'cleaning': ['清洗', '清理', 'clean', 'cleaning', 'preprocess'],
-      'text': ['文本', '文字', 'text', 'string', '文档'],
-      'extract': ['提取', '抽取', 'extract', 'parse', '解析'],
-      'math': ['数学', '计算', '公式', '方程', 'math', 'calculate'],
-      'ml': ['机器学习', 'ai', '人工智能', '模型', '训练']
-    };
-    
-    queryWords.forEach(word => {
-      // 查找语义相关组
-      Object.entries(semanticGroups).forEach(([group, synonyms]) => {
-        if (synonyms.includes(word)) {
-          // 根据组别添加相关章节
-          switch(group) {
-            case 'data':
-            case 'analysis':
-            case 'cleaning':
-              sections.add('pandas_cheatsheet');
-              sections.add('ETL管道模式');
-              sections.add('数据清洗与分析');
-              break;
-            case 'visualization':
-              sections.add('matplotlib_cookbook');
-              sections.add('数据可视化');
-              break;
-            case 'text':
-            case 'extract':
-              sections.add('text_analysis_cookbook.md');
-              sections.add('文本分析与结构化提取');
-              break;
-            case 'math':
-              sections.add('公式证明工作流');
-              sections.add('sympy_cookbook');
-              sections.add('科学计算与优化');
-              break;
-            case 'ml':
-              sections.add('机器学习');
-              sections.add('ml_workflow');
-              break;
-          }
-        }
-      });
-    });
-    
-    // ============================================================
-    // 3. 上下文增强（考虑之前的工具调用历史）
-    // ============================================================
-    const recentTools = toolCallHistory.slice(-3).map(h => h.toolName); // 最近3个工具
-    
-    if (recentTools.includes('python_sandbox')) {
-      // 如果最近使用了python_sandbox，增加相关章节的权重
-      sections.add('pandas_cheatsheet');
-      sections.add('matplotlib_cookbook');
-      sections.add('scipy_cookbook');
-    }
-    
-    if (recentTools.includes('crawl4ai') || recentTools.includes('firecrawl')) {
-      // 如果最近抓取了数据，添加数据处理章节
-      sections.add('ETL管道模式');
-      sections.add('文本分析与结构化提取');
-    }
-    
-    // ============================================================
-    // 4. 章节存在性验证（预检查） - 仅日志输出
-    // ============================================================
-    
-    console.log(`[SkillContextManager] 🧠 智能章节推断完成:`, {
-      原始查询: userQuery,
-      推断章节: Array.from(sections),
-      匹配模式: '混合策略（精确+模糊+语义+上下文）'
-    });
-    
-    return Array.from(sections);
-  }
-
-  /**
-   * 🎯 【新增】从内容中提取特定章节
-   */
-  _extractSpecificSection(content, sectionKeyword) {
-    if (!content) return null;
-    
-    // 智能提取章节内容
-    const sections = content.split(/(?=^#{2,4}\s)/m);
-    
-    // 精确标题匹配
-    for (const section of sections) {
-      const titleMatch = section.match(/^#{2,4}\s+([^\n]+)/i);
-      if (titleMatch) {
-        const title = titleMatch[1];
-        if (title.toLowerCase().includes(sectionKeyword.toLowerCase()) ||
-            sectionKeyword.toLowerCase().includes(title.toLowerCase())) {
-          return section;
-        }
-      }
-    }
-    
-    // 模糊内容匹配
-    for (const section of sections) {
-      if (section.toLowerCase().includes(sectionKeyword.toLowerCase())) {
-        return section;
-      }
-    }
-    
-    return null;
-  }
-  
-  /**
-   * 🎯 【新增】压缩章节内容
-   */
-  _compressSection(content, maxChars = 500) {
-    if (!content) return '';
-    if (content.length <= maxChars) return content;
-    
-    // 1. 提取代码示例（优先保留）
-    const codeMatch = content.match(/```[\s\S]*?```/);
-    if (codeMatch) {
-      const codeBlock = codeMatch[0];
-      const remainingChars = maxChars - codeBlock.length;
-      if (remainingChars > 100) {
-        // 保留代码块和部分文字
-        const textBefore = content.substring(0, content.indexOf(codeBlock));
-        const textAfter = content.substring(content.indexOf(codeBlock) + codeBlock.length);
-        
-        return textBefore.substring(0, Math.min(remainingChars/2, textBefore.length)) + 
-               '\n' + codeBlock + '\n' +
-               textAfter.substring(0, Math.min(remainingChars/2, textAfter.length)) + '...';
-      }
-    }
-    
-    // 2. 没有代码块，简单截断
-    return content.substring(0, maxChars) + '...';
   }
 
   /**
@@ -608,8 +247,6 @@ class SkillContextManager {
    * 提取crawl4ai关键信息
    */
   _extractCrawl4AIKeyInformation(skillContent, userQuery) {
-    if (!skillContent) return '';
-    
     let keyInfo = '';
     
     // 提取通用调用结构
@@ -646,8 +283,6 @@ class SkillContextManager {
    * 提取Python关键信息
    */
   _extractPythonKeyInformation(skillContent, userQuery) {
-    if (!skillContent) return '';
-    
     let keyInfo = '';
     
     // 提取基础调用规范
@@ -697,8 +332,6 @@ class SkillContextManager {
    * 从参考文件内容提取摘要
    */
   _extractReferenceSummary(refContent, fileName) {
-    if (!refContent) return '';
-    
     // 提取第一段有意义的描述
     const firstParagraph = refContent.split('\n\n').find(p => 
       p.trim().length > 50 && !p.startsWith('#')
@@ -725,10 +358,8 @@ class SkillContextManager {
    * 标准技能上下文构建（用于非复杂工具）
    */
   _buildStandardSkillContext(skill, userQuery) {
-    const name = skill.name || skill.toolName;
-    const description = skill.description || '未提供描述';
-    const score = skill.score || 0;
-    const keyHint = this._extractKeyHint(skill.skill?.content || '', userQuery);
+    const { name, description, score } = skill;
+    const keyHint = this._extractKeyHint(skill.skill.content, userQuery);
     
     let context = `### 🛠️ 工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**功能**: ${description}\n`;
