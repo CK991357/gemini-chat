@@ -38,36 +38,30 @@ export class Orchestrator {
     }
 
     async _realInitialize() {
-      this._initState = 'initializing';
-      console.log('[Orchestrator] 按需初始化...');
-      
-      try {
-        // 🎯 修改：使用全局技能管理器单例
-        if (typeof window.getGlobalSkillManager === 'function') {
-          this.skillManager = await window.getGlobalSkillManager();
-        } else {
-          // 降级方案
-          this.skillManager = new EnhancedSkillManager();
-          await this.skillManager.waitUntilReady();
+        this._initState = 'initializing';
+        console.log('[Orchestrator] 按需初始化...');
+        
+        try {
+            this.skillManager = new EnhancedSkillManager();
+            await this.skillManager.waitUntilReady();
+            
+            this.tools = await this._initializeTools();
+            this.researchToolsSet = this._initializeResearchTools();
+            this.deepResearchAgent = this._initializeDeepResearchAgent();
+            this.setupHandlers();
+            
+            this._initState = 'initialized';
+            this._isInitialized = true;
+            console.log(`[Orchestrator] 初始化完成。可用研究工具:`, Object.keys(this.researchToolsSet));
+            this._initializationPromise = Promise.resolve(true);
+            return true;
+        } catch (error) {
+            console.error('[Orchestrator] 初始化失败:', error);
+            this._initState = 'failed';
+            this.isEnabled = false;
+            this._initializationPromise = Promise.resolve(false);
+            return false;
         }
-        
-        this.tools = await this._initializeTools();
-        this.researchToolsSet = this._initializeResearchTools();
-        this.deepResearchAgent = this._initializeDeepResearchAgent();
-        this.setupHandlers();
-        
-        this._initState = 'initialized';
-        this._isInitialized = true;
-        console.log(`[Orchestrator] 初始化完成。可用研究工具:`, Object.keys(this.researchToolsSet));
-        this._initializationPromise = Promise.resolve(true);
-        return true;
-      } catch (error) {
-        console.error('[Orchestrator] 初始化失败:', error);
-        this._initState = 'failed';
-        this.isEnabled = false;
-        this._initializationPromise = Promise.resolve(false);
-        return false;
-      }
     }
 
     /**

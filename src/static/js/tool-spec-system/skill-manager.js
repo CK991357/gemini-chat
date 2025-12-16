@@ -7,247 +7,30 @@ class EnhancedSkillManager {
     this.skills = getSkillsRegistry();
     this.synonymMap = synonyms;
     
-    // 🎯 【新增】普通模式专用缓存
-    this.guideCache = new Map(); // 缓存生成的技能指南
-    this.sessionInjectionTracker = new Map(); // sessionId -> Set(toolNames)
-    this.cacheTTL = 5 * 60 * 1000; // 5分钟缓存时间
-    
     // 🎯 新增：联邦知识库集成
     this.knowledgeFederation = knowledgeFederation;
     this.isFederationReady = false;
     
-    // 🎯 【修改】移除自动初始化，改为按需
-    console.log(`🎯 [普通模式] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
-  }
-
-  /**
-   * 🎯 【新增】普通模式技能指南缓存方法
-   */
-  getCachedSkillGuide(toolName, sessionId = 'default') {
-    const cacheKey = `${sessionId}_${toolName}`;
-    
-    if (this.guideCache.has(cacheKey)) {
-      const cached = this.guideCache.get(cacheKey);
-      // 检查缓存是否过期
-      if (Date.now() - cached.timestamp < this.cacheTTL) {
-        return {
-          ...cached,
-          isCached: true,
-          isFirstTime: false
-        };
-      }
-    }
-    
-    return null;
-  }
-
-  /**
-   * 🎯 【新增】缓存技能指南
-   */
-  cacheSkillGuide(toolName, content, sessionId = 'default') {
-    const cacheKey = `${sessionId}_${toolName}`;
-    this.guideCache.set(cacheKey, {
-      content,
-      timestamp: Date.now(),
-      toolName,
-      sessionId
+    // 🎯 自动初始化联邦知识库
+    this.initializeFederation().then(() => {
+      this.isFederationReady = true;
+      console.log(`🎯 [联邦知识] 系统已就绪，可用技能: ${this.skills.size} 个`);
+    }).catch(err => {
+      console.warn(`🎯 [联邦知识] 初始化失败，将使用基础模式:`, err);
     });
     
-    // 记录此会话已注入此工具
-    if (!this.sessionInjectionTracker.has(sessionId)) {
-      this.sessionInjectionTracker.set(sessionId, new Set());
-    }
-    this.sessionInjectionTracker.get(sessionId).add(toolName);
-    
-    console.log(`🎯 [普通模式缓存] 已缓存 ${toolName} 指南，会话: ${sessionId}`);
-  }
-
-  /**
-   * 🎯 【新增】检查是否已在会话中注入过
-   */
-  hasToolBeenInjected(toolName, sessionId = 'default') {
-    if (!this.sessionInjectionTracker.has(sessionId)) return false;
-    return this.sessionInjectionTracker.get(sessionId).has(toolName);
-  }
-
-  /**
-   * 🎯 【新增】生成智能引用（用于后续调用）
-   */
-  generateSkillReference(toolName, skill, userQuery) {
-    const { metadata } = skill;
-    
-    let reference = `### 🔁 工具复用提示: ${metadata.name}\n\n`;
-    reference += `**工具**: ${metadata.name} (${metadata.tool_name})\n`;
-    reference += `**功能**: ${metadata.description}\n\n`;
-    
-    // 提取关键提示
-    const keyInstructions = this.extractKeyInstructions(skill.content, 2);
-    if (keyInstructions) {
-      reference += `**关键提醒**:\n${keyInstructions}\n\n`;
-    }
-    
-    reference += `*完整操作指南已在之前的对话中提供，请参考之前的指南进行操作。*\n`;
-    
-    return reference;
-  }
-
-  /**
-   * 🎯 【修改】提取关键指令（支持限制数量）
-   */
-  extractKeyInstructions(content, maxPoints = 5) {
-    const instructionMatch = content.match(/##\s+关键指令[\s\S]*?(?=##|$)/i);
-    if (instructionMatch) {
-      return instructionMatch[0]
-        .replace(/##\s+关键指令/gi, '')
-        .trim()
-        .split('\n')
-        .filter(line => line.trim() && !line.trim().startsWith('#'))
-        .slice(0, maxPoints) // 🎯 限制数量
-        .map(line => `- ${line.trim()}`)
-        .join('\n');
-    }
-    
-    // 备用：提取编号列表
-    const numberedItems = content.match(/\d+\.\s+[^\n]+/g);
-    if (numberedItems && numberedItems.length > 0) {
-      return numberedItems.slice(0, maxPoints).map(item => `- ${item}`).join('\n');
-    }
-    
-    return '';
-  }
-
-  /**
-   * 🎯 【新增】智能生成技能指南（带缓存逻辑）
-   */
-  generateSmartSkillInjection(skill, userQuery = '', sessionId = 'default', isFirstTime = true) {
-    const { metadata, content } = skill;
-    const toolName = metadata.tool_name;
-    
-    // 🎯 如果不是第一次，返回引用
-    if (!isFirstTime) {
-      return this.generateSkillReference(toolName, skill, userQuery);
-    }
-    
-    // 🎯 第一次：生成完整指南
-    console.log(`🎯 [普通模式] 首次为 ${toolName} 生成完整指南，会话: ${sessionId}`);
-    
-    let injectionContent = `## 🛠️ 工具指南: ${metadata.name} (${toolName})\n\n`;
-    injectionContent += `**核心功能**: ${metadata.description}\n\n`;
-    
-    // 提取最相关的部分（基于用户查询）
-    const relevantContent = this.extractRelevantContent(content, userQuery);
-    if (relevantContent) {
-      injectionContent += `### 📖 相关操作指南\n\n${relevantContent}\n\n`;
-    }
-    
-    // 添加通用调用结构和错误示例
-    injectionContent += `### 🚨 【重要】通用调用结构\n\n`;
-    
-    const generalStructureRegex = /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i;
-    const generalStructureMatch = content.match(generalStructureRegex);
-    if (generalStructureMatch) {
-      // 🎯 智能截断：只保留最关键的JSON示例
-      const structureText = generalStructureMatch[0];
-      const jsonMatch = structureText.match(/```json\n([\s\S]*?)\n```/);
-      if (jsonMatch) {
-        injectionContent += `**必须遵循的调用格式**:\n\n\`\`\`json\n${jsonMatch[1]}\n\`\`\`\n\n`;
-      } else {
-        injectionContent += structureText.substring(0, 500) + '...\n\n';
-      }
-    }
-    
-    const commonErrorsRegex = /### ❌ 常见致命错误[\s\S]*?(?=\n##\s|$)/i;
-    const commonErrorsMatch = content.match(commonErrorsRegex);
-    if (commonErrorsMatch) {
-      // 🎯 截取前3个错误
-      const errorsText = commonErrorsMatch[0];
-      const errorLines = errorsText.split('\n').filter(line => line.trim());
-      injectionContent += `### ⚠️ 关键注意事项\n\n`;
-      errorLines.slice(0, 6).forEach(line => {
-        injectionContent += `${line}\n`;
-      });
-      injectionContent += `\n`;
-    }
-    
-    injectionContent += `请严格遵循上述指南来使用 **${toolName}** 工具。`;
-    
-    // 🎯 缓存这个指南
-    this.cacheSkillGuide(toolName, injectionContent, sessionId);
-    
-    return injectionContent;
-  }
-
-  /**
-   * 🎯 【修改】提取相关内容（优化版）
-   */
-  extractRelevantContent(content, userQuery) {
-    if (!userQuery || !content) return '';
-    
-    // 按章节分割内容
-    const sections = content.split(/\n## /);
-    const queryKeywords = this.extractKeywords(userQuery.toLowerCase());
-    
-    // 计算每个章节的相关性得分
-    const scoredSections = sections.map(section => {
-      let score = 0;
-      const sectionLower = section.toLowerCase();
-      
-      queryKeywords.forEach(keyword => {
-        if (sectionLower.includes(keyword)) {
-          score += 1;
-          // 标题中包含关键词权重更高
-          const titleMatch = section.match(/^#{1,3}\s+([^\n]+)/i);
-          if (titleMatch && titleMatch[1].toLowerCase().includes(keyword)) {
-            score += 3;
-          }
-        }
-      });
-      
-      return { section, score };
-    }).filter(s => s.score > 0)
-      .sort((a, b) => b.score - a.score);
-    
-    if (scoredSections.length === 0) return '';
-    
-    // 返回最高分的章节（限制长度）
-    const bestSection = scoredSections[0].section;
-    return bestSection.length > 1500 
-      ? bestSection.substring(0, 1500) + '...'
-      : bestSection;
+    console.log(`🎯 [运行时] 技能系统已就绪，可用技能: ${this.skills.size} 个`);
   }
 
   /**
    * 🎯 新增：初始化联邦知识库
    */
   async initializeFederation() {
-    // 🎯 优化：添加初始化状态检查
-    if (this.isFederationReady) {
-      console.log('[SkillManager] 🎯 知识库已就绪，跳过重复初始化');
-      return;
-    }
-    
-    // 🎯 新增：如果全局技能管理器已存在，使用其联邦知识库
-    if (window.__globalSkillManagerInstance?.knowledgeFederationInitialized) {
-      console.log('[SkillManager] 🔄 使用全局技能管理器的联邦知识库');
-      this.knowledgeFederation = window.__globalSkillManagerInstance.knowledgeFederation;
-      this.isFederationReady = true;
-      return;
-    }
-    
-    // 🎯 修复：不要通过全局获取，直接使用已导入的knowledgeFederation
     if (this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
-      try {
-        // 🎯 直接调用，不带参数（skill-loader.js中的方法已改为无参数）
-        await this.knowledgeFederation.initializeFromRegistry();
-        this.isFederationReady = true;
-        console.log(`🎯 [SkillManager] 联邦知识库初始化完成`);
-      } catch (error) {
-        console.warn(`🎯 [SkillManager] 联邦知识库初始化失败:`, error);
-        this.isFederationReady = false;
-      }
+      await this.knowledgeFederation.initializeFromRegistry();
+      console.log(`🎯 [联邦知识] 初始化完成，知识库大小: ${this.knowledgeFederation.knowledgeBase?.size || 0}`);
     } else {
-      console.warn(`🎯 [SkillManager] 知识库模块不可用`);
-      this.isFederationReady = false;
+      console.warn(`🎯 [联邦知识] 知识库模块不可用`);
     }
   }
 
@@ -428,7 +211,7 @@ class EnhancedSkillManager {
 
   /**
    * 🎯 [升级版] 智能生成单个技能的注入内容
-   * 集成联邦知识库检索系统，为复杂工具提供更丰富的上下文
+   * 集成联邦知识检索系统，为复杂工具提供更丰富的上下文
    */
   generateSkillInjection(skill, userQuery = '') {
     const { metadata, content } = skill;

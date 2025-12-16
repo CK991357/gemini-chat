@@ -4,18 +4,11 @@ import { getBaseSkillManager } from '../tool-spec-system/skill-manager.js';
 
 export class EnhancedSkillManager {
   constructor() {
-    // 🎯 新增：检查全局单例
-    if (window.__globalSkillManagerInstance) {
-      console.log('🚀 检测到全局技能管理器实例，直接引用');
-      return window.__globalSkillManagerInstance;
-    }
-    
     this.baseSkillManager = null;
     this.isInitialized = false;
     this.executionHistory = this.loadExecutionHistory();
     this.knowledgeFederation = knowledgeFederation;
-    this.knowledgeFederationInitialized = false;
-
+    
     // 🎯 新增：知识库缓存系统
     this.knowledgeCache = new Map(); // tool -> {full, summary, compressed, timestamp}
     this.injectionHistory = new Map(); // sessionId -> [toolNames]
@@ -30,9 +23,6 @@ export class EnhancedSkillManager {
       this.initializationResolve = resolve;
       this.initializationReject = reject;
     });
-    
-    // 🎯 新增：存储为全局实例
-    window.__globalSkillManagerInstance = this;
   }
 
   async initialize() {
@@ -46,19 +36,13 @@ export class EnhancedSkillManager {
         this.baseSkillManager = this.createFallbackSkillManager();
       }
       
-      // 🎯 新增：确保联邦知识库初始化（防重初始化）
-      if (!this.knowledgeFederationInitialized && this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
-        // 🎯 检查全局单例是否已经初始化过联邦知识库
-        const globalInstance = window.__globalSkillManagerInstance;
-        if (globalInstance && globalInstance.knowledgeFederation === this.knowledgeFederation) {
-          // 如果是同一个实例，使用其初始化状态
-          this.knowledgeFederationInitialized = globalInstance.knowledgeFederationInitialized;
-        } else {
-          // 否则正常初始化
-          await this.knowledgeFederation.initializeFromRegistry();
-          this.knowledgeFederationInitialized = true;
+      // 🎯 新增：确保联邦知识库初始化
+      if (this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
+        const skillsRegistry = await this.getSkillsRegistry();
+        if (skillsRegistry) {
+          await this.knowledgeFederation.initializeFromRegistry(skillsRegistry);
+          console.log("[EnhancedSkillManager] ✅ 联邦知识库初始化完成");
         }
-        console.log("[EnhancedSkillManager] ✅ 联邦知识库初始化完成");
       }
       
       this.isInitialized = true;
