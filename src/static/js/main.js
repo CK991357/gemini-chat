@@ -1527,6 +1527,8 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
         const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
         
         // 🚀 生成技能上下文（使用新的参数格式）
+        const agentIterationValue = 1; // 或者任何合适的默认值
+
         const contextResult = await skillContextManager.generateRequestContext(
             messageText,
             availableToolNames,
