@@ -2679,6 +2679,10 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     newChatButton.addEventListener('click', () => {
         if (currentSessionId) {
+            // 清理旧会话的缓存
+            if (window.skillCacheCompressor) {
+                window.skillCacheCompressor.clearSession(currentSessionId);
+            }
             cleanupSession(currentSessionId);
         }
         resetFileManagerAuth(); // 🎯 核心修改：重置文件管理器状态（包括关闭模态框）

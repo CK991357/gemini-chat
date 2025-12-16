@@ -343,20 +343,102 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 清理会话数据
+   * 🎯 清理指定会话的所有相关数据
    */
   clearSession(sessionId) {
-    if (this.injectionHistory.has(sessionId)) {
+    if (!sessionId || typeof sessionId !== 'string') {
+      console.warn('❌ clearSession: 无效的会话ID');
+      return;
+    }
+    
+    // 统计清理前的状态
+    const beforeSize = this.knowledgeCache.size;
+    
+    // 1. 清理注入历史
+    const hadInjectionHistory = this.injectionHistory.has(sessionId);
+    if (hadInjectionHistory) {
       this.injectionHistory.delete(sessionId);
     }
     
-    // 清理该会话相关的缓存
-    const sessionPrefix = `${sessionId}_`;
+    // 2. 清理会话相关的缓存
+    const deletedKeys = this._deleteSessionCache(sessionId);
+    
+    // 3. 清理活跃会话（如果存在）
+    const hadActiveSession = this.activeSessions.has(sessionId);
+    if (hadActiveSession) {
+      this.activeSessions.delete(sessionId);
+    }
+    
+    // 4. 记录日志
+    const stats = {
+      injectionHistoryRemoved: hadInjectionHistory ? 1 : 0,
+      cacheEntriesRemoved: deletedKeys.length,
+      activeSessionRemoved: hadActiveSession ? 1 : 0,
+      beforeSize,
+      afterSize: this.knowledgeCache.size
+    };
+    
+    console.log(`🧹 会话清理完成: ${sessionId}`, stats);
+    return stats;
+  }
+  
+  /**
+   * 🎯 内部方法：删除会话相关的缓存
+   * 支持多种缓存键格式，确保精确匹配
+   */
+  _deleteSessionCache(sessionId) {
+    const deletedKeys = [];
+    
+    // 缓存键可能的格式：
+    // 1. tool_sessionId_queryHash
+    // 2. tool_version_sessionId_queryHash_timeslot
+    // 3. 未来可能增加更多下划线
+    
     for (const key of this.knowledgeCache.keys()) {
-      if (key.includes(sessionPrefix)) {
-        this.knowledgeCache.delete(key);
+      const parts = key.split('_');
+      
+      // 检查会话ID可能出现的所有位置
+      // 从索引1开始检查，因为索引0总是工具名
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i] === sessionId) {
+          // 🔍 验证：确保这是会话ID而不是其他部分
+          // 会话ID通常是UUID格式或特定格式，这里只做简单验证
+          if (this._isValidSessionIdFormat(parts[i])) {
+            deletedKeys.push(key);
+            break;
+          }
+        }
       }
     }
+    
+    // 批量删除
+    for (const key of deletedKeys) {
+      this.knowledgeCache.delete(key);
+    }
+    
+    return deletedKeys;
+  }
+  
+  /**
+   * 🎯 验证ID格式是否可能是会话ID
+   * 可扩展用于更复杂的验证逻辑
+   */
+  _isValidSessionIdFormat(id) {
+    // 简单验证：不是纯数字、长度合理、可能包含连字符
+    if (!id || typeof id !== 'string') return false;
+    
+    // UUID格式：8-4-4-4-12 或类似
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return true;
+    }
+    
+    // 时间戳格式：数字长度10-13
+    if (/^\d{10,13}$/.test(id)) {
+      return true;
+    }
+    
+    // 默认：长度在8-64之间的字符串
+    return id.length >= 8 && id.length <= 64;
   }
 
   /**
