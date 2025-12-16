@@ -40,38 +40,33 @@ export class EnhancedSkillManager {
       // 🎯 修复：动态获取基础技能管理器
       if (typeof getBaseSkillManager === 'function') {
         this.baseSkillManager = await getBaseSkillManager();
-        console.log(`[EnhancedSkillManager] ✅ 基础技能管理器获取完成`);
       } else {
-        console.warn("[EnhancedSkillManager] 基础技能管理器不可用，使用简化版本");
+        // 🎯 备用方案：创建一个简单的技能匹配器
+        console.warn("基础技能管理器不可用，使用简化版本");
         this.baseSkillManager = this.createFallbackSkillManager();
       }
       
-      // 🎯 优化联邦知识库初始化日志
-      if (!this.knowledgeFederationInitialized && this.knowledgeFederation) {
+      // 🎯 新增：确保联邦知识库初始化（防重初始化）
+      if (!this.knowledgeFederationInitialized && this.knowledgeFederation && typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
+        // 🎯 检查全局单例是否已经初始化过联邦知识库
         const globalInstance = window.__globalSkillManagerInstance;
         if (globalInstance && globalInstance.knowledgeFederation === this.knowledgeFederation) {
+          // 如果是同一个实例，使用其初始化状态
           this.knowledgeFederationInitialized = globalInstance.knowledgeFederationInitialized;
-          console.log(`[EnhancedSkillManager] 🔄 复用全局实例的联邦知识库状态: ${this.knowledgeFederationInitialized ? '已初始化' : '未初始化'}`);
-        } else if (typeof this.knowledgeFederation.initializeFromRegistry === 'function') {
-          // 检查是否已经初始化过
-          if (this.knowledgeFederation._initialized) {
-            console.log(`[EnhancedSkillManager] ✅ 联邦知识库已初始化，直接使用`);
-            this.knowledgeFederationInitialized = true;
-          } else {
-            console.log(`[EnhancedSkillManager] 🚀 开始初始化联邦知识库...`);
-            await this.knowledgeFederation.initializeFromRegistry();
-            this.knowledgeFederationInitialized = true;
-            console.log(`[EnhancedSkillManager] ✅ 联邦知识库初始化完成`);
-          }
+        } else {
+          // 否则正常初始化
+          await this.knowledgeFederation.initializeFromRegistry();
+          this.knowledgeFederationInitialized = true;
         }
+        console.log("[EnhancedSkillManager] ✅ 联邦知识库初始化完成");
       }
       
       this.isInitialized = true;
       this.initializationResolve(true);
-      console.log("[EnhancedSkillManager] ✅ 初始化完成");
-      
+      console.log("EnhancedSkillManager initialized with skill manager.");
     } catch (error) {
-      console.error("[EnhancedSkillManager] ❌ 初始化失败:", error);
+      console.error("EnhancedSkillManager 初始化失败:", error);
+      // 🎯 确保即使初始化失败也能继续工作
       this.baseSkillManager = this.createFallbackSkillManager();
       this.isInitialized = true;
       this.initializationResolve(false);
