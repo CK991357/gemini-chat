@@ -1,5 +1,4 @@
 // D:\Github_10110531\gemini_chat\src\static\js\tool-spec-system\skill-context-manager.js
-import { skillCacheCompressor } from './skill-cache-compressor.js';
 import { skillManagerPromise } from './skill-manager.js';
 
 class SkillContextManager {
@@ -70,17 +69,6 @@ class SkillContextManager {
       '统计': 'scipy_cookbook.md',
       '计算': 'scipy_cookbook.md'
     };
-    
-    // 🎯 新增：缓存系统
-    this.localCache = new Map();
-    this.sessionInjectionTracker = new Map(); // sessionId -> Set(toolNames)
-    
-    // 🎯 配置
-    this.cacheEnabled = true;
-    this.compressionEnabled = true;
-    this.maxContextChars = 12000; // 普通模式上下文限制
-    
-    console.log('✅ SkillContextManager 升级版初始化');
   }
 
   async ensureInitialized() {
@@ -98,16 +86,13 @@ class SkillContextManager {
   }
 
   /**
-   * 🚀 核心方法：为模型请求生成智能上下文（增强版）
+   * 🚀 核心方法：为模型请求生成智能上下文
    */
-  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}, context = {}) {
+  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}) {
     if (!await this.ensureInitialized()) {
       return { enhancedPrompt: userQuery, relevantTools: [] };
     }
 
-    // 🎯 获取会话ID（用于跟踪工具使用）
-    const sessionId = context.sessionId || this._getCurrentSessionId();
-    
     // 1. 查找相关技能
     const relevantSkills = this.skillManager.findRelevantSkills(userQuery, {
       availableTools,
@@ -127,42 +112,35 @@ class SkillContextManager {
       ['crawl4ai', 'python_sandbox'].includes(skill.toolName)
     );
 
-    // 3. 生成增强的提示词（使用缓存+压缩）
+    // 3. 生成增强的提示词
     const enhancedPrompt = hasComplexTools 
-      ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig, sessionId)
-      : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig, sessionId);
-    
-    // 🎯 记录工具使用
-    this._recordToolsUsed(sessionId, relevantSkills.map(skill => skill.toolName));
+      ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig)
+      : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig);
     
     return {
       enhancedPrompt,
       relevantTools: relevantSkills.map(skill => skill.toolName),
       contextLevel: relevantSkills.length > 1 ? 'multi' : 'single',
       skillCount: relevantSkills.length,
-      hasComplexTools,
-      cacheStats: skillCacheCompressor.getCacheStats()
+      hasComplexTools
     };
   }
 
   /**
-   * 🎯 构建包含复杂工具的增强提示词（使用缓存）
+   * 🎯 构建包含复杂工具的增强提示词
    */
-  async _buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig, sessionId) {
+  async _buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig) {
     let context = `## 🎯 智能工具指南 (检测到复杂工具)\n\n`;
     
     // 分别处理每个复杂工具
     for (const skill of relevantSkills) {
       if (skill.toolName === 'crawl4ai') {
-        context += await this._buildCrawl4AIContext(skill, userQuery, sessionId);
+        context += await this._buildCrawl4AIContext(skill, userQuery);
       } else if (skill.toolName === 'python_sandbox') {
-        context += await this._buildPythonSandboxContext(skill, userQuery, sessionId, {
-          modelConfig,
-          availableTools: modelConfig.tools || []
-        });
+        context += await this._buildPythonSandboxContext(skill, userQuery);
       } else {
-        // 其他工具的标准处理（使用缓存）
-        context += await this._buildStandardSkillContext(skill, userQuery, sessionId);
+        // 其他工具的标准处理
+        context += this._buildStandardSkillContext(skill, userQuery);
       }
       context += '\n\n';
     }
@@ -176,20 +154,10 @@ class SkillContextManager {
   }
 
   /**
-   * 🚀 crawl4ai 专用上下文构建（增强版 - 使用缓存）
+   * 🚀 crawl4ai 专用上下文构建
    */
-  async _buildCrawl4AIContext(skill, userQuery, sessionId) {
+  async _buildCrawl4AIContext(skill, userQuery) {
     const { skill: skillData, score, name, description } = skill;
-    const toolName = 'crawl4ai';
-    
-    // 🎯 检查缓存
-    const cacheKey = `${toolName}_${sessionId}_${this._hashQuery(userQuery)}`;
-    
-    if (this.cacheEnabled && this.localCache.has(cacheKey)) {
-      const cached = this.localCache.get(cacheKey);
-      console.log(`🎯 [Crawl4AI缓存命中] ${toolName} (${cached.content.length} 字符)`);
-      return cached.content;
-    }
     
     let context = `### 🕷️ 网页抓取工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**核心功能**: ${description}\n\n`;
@@ -200,20 +168,9 @@ class SkillContextManager {
       context += `**🎯 推荐模式**: ${recommendedMode}\n\n`;
     }
     
-    // 2. 提取关键调用结构（使用压缩）
-    const fullContent = this._extractCrawl4AIKeyInformation(skillData.content, userQuery);
-    
-    // 压缩内容
-    let compressedContent = fullContent;
-    if (this.compressionEnabled && fullContent.length > 2000) {
-      compressedContent = await skillCacheCompressor.compressKnowledge(fullContent, {
-        level: 'smart',
-        maxChars: 5000,
-        userQuery
-      });
-    }
-    
-    context += compressedContent;
+    // 2. 提取关键调用结构
+    const keyInfo = this._extractCrawl4AIKeyInformation(skillData.content, userQuery);
+    context += keyInfo;
     
     // 3. 添加专用提醒
     context += `**🚨 关键规范**:\n`;
@@ -221,198 +178,45 @@ class SkillContextManager {
     context += `• URL必须以 http:// 或 https:// 开头\n`;
     context += `• extract模式必须使用 "schema_definition" 参数名\n`;
     
-    // 🎯 缓存结果
-    if (this.cacheEnabled) {
-      this.localCache.set(cacheKey, {
-        content: context,
-        timestamp: Date.now(),
-        toolName,
-        userQuery: userQuery.substring(0, 50)
-      });
-    }
-    
     return context;
   }
 
   /**
-   * 🚀 Python沙盒专用上下文构建（增强版 - 使用缓存+章节传递）
+   * 🚀 Python沙盒专用上下文构建
    */
-  async _buildPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
+  async _buildPythonSandboxContext(skill, userQuery) {
     const { skill: skillData, score, name, description } = skill;
-    const toolName = 'python_sandbox';
     
-    // 🎯 检查缓存
-    const cacheKey = `${toolName}_${sessionId}_${this._hashQuery(userQuery)}`;
+    let context = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
+    context += `**核心功能**: ${description}\n\n`;
     
-    if (this.cacheEnabled && this.localCache.has(cacheKey)) {
-      const cached = this.localCache.get(cacheKey);
-      console.log(`🎯 [Python缓存命中] ${toolName} (${cached.content.length} 字符)`);
-      return cached.content;
-    }
+    // 1. 提取主文档的关键信息
+    const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
+    context += mainContent;
     
-    // 🎯 检查是否已经在当前会话中注入过该工具
-    const hasBeenInjected = skillCacheCompressor.hasToolBeenInjected(sessionId, toolName);
+    // 2. 智能匹配相关参考文件
+    const relevantReferences = this._findRelevantPythonReferences(userQuery);
     
-    let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
-    contextContent += `**核心功能**: ${description}\n\n`;
-    
-    // 🎯 如果已经注入过，使用引用模式
-    if (hasBeenInjected) {
-      contextContent += `**📚 提示**: 此工具的详细指南已在之前的步骤中提供。请参考之前的指南来使用。\n\n`;
+    if (relevantReferences.length > 0) {
+      context += `**📚 相关参考指南**:\n`;
       
-      // 只提供关键提示
-      const keyHint = this._extractKeyHint(skillData.content, userQuery);
-      if (keyHint) {
-        contextContent += `**💡 关键提醒**: ${keyHint}\n\n`;
-      }
-    } else {
-      // 🎯 首次注入，使用详细内容（带压缩）
-      
-      // 1. 获取完整知识内容
-      let fullContent = '';
-      try {
-        // 尝试使用联邦知识库（如果可用）
-        if (this.skillManager.knowledgeFederation && this.skillManager.isFederationReady) {
-          // 🎯 推断相关章节
-          const relevantSections = skillCacheCompressor.inferRelevantSections(userQuery, {
-            toolCallHistory: context.toolCallHistory || [],
-            sessionId
-          });
-          
-          // 获取联邦知识包
-          const knowledgePackage = this.skillManager.knowledgeFederation.getFederatedKnowledge(
-            toolName,
-            relevantSections
-          );
-          
-          if (knowledgePackage) {
-            fullContent = knowledgePackage;
-            console.log(`🎯 [联邦知识] 为 ${toolName} 获取 ${relevantSections.length} 个章节`);
-          }
+      for (const refFile of relevantReferences.slice(0, 2)) {
+        const refContent = skillData.resources?.references?.[refFile];
+        if (refContent) {
+          const summary = this._extractReferenceSummary(refContent, refFile);
+          context += `• **${refFile}**: ${summary}\n`;
         }
-        
-        // 降级方案：使用基础技能内容
-        if (!fullContent) {
-          fullContent = this._extractPythonKeyInformation(skillData.content, userQuery);
-          
-          // 🎯 添加相关参考文件内容
-          const relevantReferences = this._findRelevantPythonReferences(userQuery);
-          if (relevantReferences.length > 0) {
-            fullContent += `\n\n## 📚 相关参考指南\n`;
-            
-            for (const refFile of relevantReferences.slice(0, 2)) {
-              const refContent = skillData.resources?.references?.[refFile];
-              if (refContent) {
-                const summary = this._extractReferenceSummary(refContent, refFile);
-                fullContent += `\n### ${refFile}\n${summary}\n`;
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('获取Python知识包失败，使用降级方案:', error);
-        fullContent = this._extractPythonKeyInformation(skillData.content, userQuery);
       }
       
-      // 2. 智能压缩
-      let compressedContent = fullContent;
-      if (this.compressionEnabled && fullContent.length > 3000) {
-        compressedContent = await skillCacheCompressor.compressKnowledge(fullContent, {
-          level: 'smart',
-          maxChars: 8000, // Python沙盒分配更多空间
-          userQuery,
-          iteration: 0
-        });
-      }
-      
-      contextContent += compressedContent;
-      
-      // 3. 记录已注入
-      skillCacheCompressor.recordToolInjection(sessionId, toolName);
+      context += `\n💡 **提示**: 执行相关任务时请严格参考这些指南中的代码模板和工作流。\n`;
     }
     
-    // 🎯 添加Python沙盒专用提醒
-    contextContent += `\n**🚨 输出规范**:\n`;
-    contextContent += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
-    contextContent += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
-    contextContent += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
+    // 3. 添加Python沙盒专用提醒
+    context += `\n**🚨 输出规范**:\n`;
+    context += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
+    context += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
+    context += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
     
-    // 🎯 缓存结果
-    if (this.cacheEnabled) {
-      this.localCache.set(cacheKey, {
-        content: contextContent,
-        timestamp: Date.now(),
-        toolName,
-        userQuery: userQuery.substring(0, 50)
-      });
-      
-      // 限制缓存大小
-      if (this.localCache.size > 50) {
-        const oldestKey = Array.from(this.localCache.keys())[0];
-        this.localCache.delete(oldestKey);
-      }
-    }
-    
-    return contextContent;
-  }
-
-  /**
-   * 🎯 标准技能上下文构建（使用缓存）
-   */
-  async _buildStandardSkillContext(skill, userQuery, sessionId) {
-    const { name, description, score, toolName } = skill;
-    
-    // 🎯 检查缓存
-    const cacheKey = `${toolName}_${sessionId}_${this._hashQuery(userQuery)}`;
-    
-    if (this.cacheEnabled && this.localCache.has(cacheKey)) {
-      const cached = this.localCache.get(cacheKey);
-      console.log(`🎯 [标准缓存命中] ${toolName} (${cached.content.length} 字符)`);
-      return cached.content;
-    }
-    
-    const keyHint = this._extractKeyHint(skill.skill.content, userQuery);
-    
-    let context = `### 🛠️ 工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
-    context += `**功能**: ${description}\n`;
-    
-    if (keyHint) {
-      context += `**提示**: ${keyHint}\n`;
-    }
-    
-    // 🎯 简单压缩：只保留前500字符
-    if (this.compressionEnabled && context.length > 500) {
-      context = context.substring(0, 500) + '...';
-    }
-    
-    // 🎯 缓存结果
-    if (this.cacheEnabled) {
-      this.localCache.set(cacheKey, {
-        content: context,
-        timestamp: Date.now(),
-        toolName,
-        userQuery: userQuery.substring(0, 50)
-      });
-    }
-    
-    return context;
-  }
-
-  /**
-   * 🎯 标准增强提示词构建（使用缓存）
-   */
-  async _buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig, sessionId) {
-    let context = `## 🎯 相关工具指南\n\n`;
-    
-    for (const skill of relevantSkills) {
-      context += await this._buildStandardSkillContext(skill, userQuery, sessionId);
-      context += '\n\n';
-    }
-
-    context += `## 💡 执行指导\n`;
-    context += `请基于以上工具信息来响应用户请求。\n\n`;
-    context += `---\n\n## 👤 用户原始请求\n${userQuery}`;
-
     return context;
   }
 
@@ -551,6 +355,43 @@ class SkillContextManager {
   }
 
   /**
+   * 标准技能上下文构建（用于非复杂工具）
+   */
+  _buildStandardSkillContext(skill, userQuery) {
+    const { name, description, score } = skill;
+    const keyHint = this._extractKeyHint(skill.skill.content, userQuery);
+    
+    let context = `### 🛠️ 工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
+    context += `**功能**: ${description}\n`;
+    
+    if (keyHint) {
+      context += `**提示**: ${keyHint}\n`;
+    }
+    
+    return context;
+  }
+
+  /**
+   * 标准增强提示词构建
+   */
+  async _buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig) {
+    let context = `## 🎯 相关工具指南\n\n`;
+    
+    relevantSkills.forEach((skill, index) => {
+      context += this._buildStandardSkillContext(skill, userQuery);
+      if (index < relevantSkills.length - 1) {
+        context += '\n';
+      }
+    });
+
+    context += `\n\n## 💡 执行指导\n`;
+    context += `请基于以上工具信息来响应用户请求。\n\n`;
+    context += `---\n\n## 👤 用户原始请求\n${userQuery}`;
+
+    return context;
+  }
+
+  /**
    * 提取关键提示
    */
   _extractKeyHint(skillContent, userQuery) {
@@ -568,64 +409,6 @@ class SkillContextManager {
     }
     
     return null;
-  }
-
-  /**
-   * 🎯 辅助方法
-   */
-  _hashQuery(query) {
-    let hash = 0;
-    for (let i = 0; i < Math.min(query.length, 50); i++) {
-      hash = ((hash << 5) - hash) + query.charCodeAt(i);
-      hash |= 0;
-    }
-    return hash.toString(36);
-  }
-
-  _getCurrentSessionId() {
-    // 从全局状态获取当前会话ID
-    return window.currentSessionId || 'default_session';
-  }
-
-  _recordToolsUsed(sessionId, toolNames) {
-    if (!this.sessionInjectionTracker.has(sessionId)) {
-      this.sessionInjectionTracker.set(sessionId, new Set());
-    }
-    
-    const tracker = this.sessionInjectionTracker.get(sessionId);
-    toolNames.forEach(tool => tracker.add(tool));
-  }
-
-  /**
-   * 🎯 清理会话缓存
-   */
-  clearSessionCache(sessionId) {
-    // 清理本地缓存
-    const sessionPrefix = `${sessionId}_`;
-    for (const key of this.localCache.keys()) {
-      if (key.startsWith(sessionPrefix)) {
-        this.localCache.delete(key);
-      }
-    }
-    
-    // 清理会话跟踪器
-    this.sessionInjectionTracker.delete(sessionId);
-    
-    // 清理共享缓存
-    skillCacheCompressor.clearSession(sessionId);
-    
-    console.log(`🗑️ 清理会话 ${sessionId} 的缓存`);
-  }
-
-  /**
-   * 🎯 获取缓存统计
-   */
-  getCacheStats() {
-    return {
-      localCacheSize: this.localCache.size,
-      sessionTrackerSize: this.sessionInjectionTracker.size,
-      sharedCacheStats: skillCacheCompressor.getCacheStats()
-    };
   }
 }
 

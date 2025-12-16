@@ -20,10 +20,10 @@ import { displayVisionMessage, initializeVisionCore } from './vision/vision-core
 // ✨ 1. 新增：导入工具定义，这是让Skill模式工作的关键
 
 // 🚀 新增导入
+import { enhancedNormalModeManager } from './tool-spec-system/enhanced-normal-mode.js'; // 添加这一行
+import { skillCacheCompressor } from './tool-spec-system/skill-cache-compressor.js';
 import { skillContextManager } from './tool-spec-system/skill-context-manager.js';
 import { enhancedToolDefinitions } from './tools_mcp/enhanced-tool-definitions.js';
-import { skillCacheCompressor } from './tool-spec-system/skill-cache-compressor.js';
-
 
 // 🚀 增强的模型工具管理器
 class EnhancedModelToolManager {
@@ -369,6 +369,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (globalThis.innerWidth <= 1200) {
             document.body.style.overflow = '';
         }
+    });
+
+    // 🎯 初始化普通模式增强管理器
+    enhancedNormalModeManager.ensureInitialized().then(() => {
+        console.log('✅ 普通模式增强管理器已就绪');
     });
 
    // 附件按钮事件监听 (只绑定一次)
@@ -1315,29 +1320,42 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
  * @description 严格区分WebSocket和HTTP模式，确保WebSocket模式完全独立
  */
 async function handleSendMessage(attachmentManager) {
-    const messageText = messageInput.value.trim();
-    const attachedFiles = attachmentManager.getChatAttachedFiles();
-    if (!messageText && attachedFiles.length === 0) return;
+  const messageText = messageInput.value.trim();
+  const attachedFiles = attachmentManager.getChatAttachedFiles();
+  if (!messageText && attachedFiles.length === 0) return;
 
-    // 如果是 HTTP 模式且尚无 session，先创建会话以避免后续生成新会话时清空刚刚渲染的用户消息
-    if (!selectedModelConfig.isWebSocket && !currentSessionId) {
-        historyManager.generateNewSession();
+  // 如果是 HTTP 模式且尚无 session，先创建会话
+  if (!selectedModelConfig.isWebSocket && !currentSessionId) {
+    historyManager.generateNewSession();
+  }
+
+  // 🎯 确保对应模式的管理器已初始化
+  const isAgentMode = orchestrator && orchestrator.isEnabled;
+  
+  if (isAgentMode) {
+    // Agent模式：确保Agent系统已就绪
+    if (orchestrator._initState !== 'initialized') {
+      await orchestrator.ensureInitialized();
     }
+  } else {
+    // 普通模式：确保普通模式增强管理器已初始化
+    await enhancedNormalModeManager.ensureInitialized();
+  }
+  
+  // 🚀 关键修复：立即执行所有UI更新和清理操作
+  chatUI.displayUserMessage(messageText, attachedFiles);
+  messageInput.value = '';
+  attachmentManager.clearAttachedFile('chat');
+  window.currentAIMessageContentDiv = null;
 
-    // 🚀 关键修复：立即执行所有UI更新和清理操作
-    chatUI.displayUserMessage(messageText, attachedFiles);
-    messageInput.value = '';
-    attachmentManager.clearAttachedFile('chat');
-    window.currentAIMessageContentDiv = null;
-
-    // 🚀 严格分离WebSocket和HTTP模式
-    if (selectedModelConfig.isWebSocket) {
-        // WebSocket模式 - 完全独立，不涉及任何HTTP请求
-        await handleWebSocketMessage(messageText, attachedFiles);
-    } else {
-        // HTTP模式 - 使用增强的逻辑
-        await handleEnhancedHttpMessage(messageText, attachedFiles);
-    }
+  // 🚀 严格分离WebSocket和HTTP模式
+  if (selectedModelConfig.isWebSocket) {
+    // WebSocket模式
+    await handleWebSocketMessage(messageText, attachedFiles);
+  } else {
+    // HTTP模式
+    await handleEnhancedHttpMessage(messageText, attachedFiles);
+  }
 }
 
 /**
@@ -1416,111 +1434,160 @@ async function initializeEnhancedSkillSystem() {
 // 🚀 [最终方案 V2 - 替换] 增强的消息处理函数，仅负责启动 Agent
 // =========================================================================
 async function handleEnhancedHttpMessage(messageText, attachedFiles) {
-    if (!currentSessionId) {
-        historyManager.generateNewSession();
-    }
+  if (!currentSessionId) {
+    historyManager.generateNewSession();
+  }
 
-    const apiKey = apiKeyInput.value;
-    const modelName = selectedModelConfig.name;
-    const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
+  const apiKey = apiKeyInput.value;
+  const modelName = selectedModelConfig.name;
+  const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
+  
+  // 如果 Agent 模式未启用，使用普通模式
+  if (!isAgentModeEnabled) {
+    console.log("💬 使用普通模式对话");
     
-    // 如果 Agent 模式未启用，直接回退到标准模式
-    if (!isAgentModeEnabled) {
-        console.log("💬 Agent 模式未启用，使用标准对话");
-        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
-        return;
+    // 🎯 普通模式：使用增强管理器
+    const availableToolNames = getAvailableToolNames(modelName);
+    const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
+    
+    // 使用增强普通模式管理器生成上下文
+    const contextResult = await enhancedNormalModeManager.generateEnhancedContext(
+      messageText,
+      availableToolNames,
+      selectedModelConfig,
+      {
+        sessionId: currentSessionId,
+        useCache: true,
+        compression: 'smart'
+      }
+    );
+
+    console.log(`🎯 [普通模式] 级别: ${contextResult.contextLevel}, 缓存: ${contextResult.cached}`);
+
+    // 构建用户消息内容
+    const userContent = [];
+    userContent.push({ type: 'text', text: contextResult.enhancedPrompt });
+
+    attachedFiles.forEach(file => {
+      if (file.type.startsWith('image/')) {
+        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+      } else if (file.type === 'application/pdf') {
+        userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+      } else if (file.type.startsWith('audio/')) {
+        userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+      }
+    });
+
+    chatHistory.push({ role: 'user', content: userContent });
+
+    // 构建请求体
+    const requestBody = {
+      model: modelName,
+      messages: chatHistory,
+      generationConfig: { responseModalities: ['text'] },
+      stream: true,
+      sessionId: currentSessionId
+    };
+
+    // 注入增强工具定义
+    if (enhancedTools && enhancedTools.length > 0) {
+      requestBody.tools = enhancedTools;
+      console.log(`🎯 [普通模式工具注入] 为模型 ${modelName} 注入 ${enhancedTools.length} 个增强工具定义`);
     }
 
-    try {
-        // 🎯 核心修复：在 Agent 流程开始前，将用户消息推入历史记录
-        const userContent = [];
-        if (messageText) {
-            userContent.push({ type: 'text', text: messageText });
-        }
-        attachedFiles.forEach(file => {
-            if (file.type.startsWith('image/')) {
-                userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-            } else if (file.type === 'application/pdf') {
-                userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
-            } else if (file.type.startsWith('audio/')) {
-                userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
-            }
-        });
-        chatHistory.push({ role: 'user', content: userContent });
-        
-        // 🚀 获取可用工具名称和增强工具定义
-        const availableToolNames = getAvailableToolNames(modelName);
-        const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
-        
-        // 🚀 生成技能上下文
-        const contextResult = await skillContextManager.generateRequestContext(
-            messageText,
-            availableToolNames,
-            selectedModelConfig
-        );
+    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+    return;
+  }
 
-        console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
+  // 🎯 Agent 模式处理（保持不变）
+  try {
+    const userContent = [];
+    if (messageText) {
+      userContent.push({ type: 'text', text: messageText });
+    }
+    attachedFiles.forEach(file => {
+      if (file.type.startsWith('image/')) {
+        userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+      } else if (file.type === 'application/pdf') {
+        userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+      } else if (file.type.startsWith('audio/')) {
+        userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+      }
+    });
+    chatHistory.push({ role: 'user', content: userContent });
 
-        // 2. 准备 Agent 上下文
-        const agentContext = {
-            model: modelName,
-            apiKey: apiKey,
-            messages: chatHistory,
-            apiHandler: chatApiHandler,
-            availableTools: availableToolNames, // 传递原始工具名称列表
-            enhancedTools: enhancedTools, // 传递增强工具定义
-            contextResult: contextResult // 传递技能上下文结果
-        };
-        
-        // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
-        // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
-        const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
+    // 🚀 获取可用工具名称和增强工具定义
+    
+    const availableToolNames = getAvailableToolNames(modelName);
+    const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
+    
+    // 🎯 Agent模式使用原始技能上下文管理器
+    const contextResult = await skillContextManager.generateRequestContext(
+      messageText,
+      availableToolNames,
+      selectedModelConfig
+    );
 
-        // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
-        // Orchestrator 返回的 originalUserMessage 包含完整的用户原始指令，用于历史记录持久化
-        if (agentResult && agentResult.enhanced && agentResult.originalUserMessage) {
-            // 找到 chatHistory 中最后一条用户消息（即当前消息）
-            const lastUserMessageIndex = chatHistory.length - 1;
-            if (lastUserMessageIndex >= 0 && chatHistory[lastUserMessageIndex].role === 'user') {
-                // 替换为 Orchestrator 返回的、包含完整上下文的原始消息
-                // 确保 content 结构是正确的数组格式
-                chatHistory[lastUserMessageIndex].content = [{ type: 'text', text: agentResult.originalUserMessage }];
-                console.log('✅ 历史记录中的用户消息已更新为 Orchestrator 返回的原始消息。');
-            }
-        }
+    // 准备 Agent 上下文
+    const agentContext = {
+      model: modelName,
+      apiKey: apiKey,
+      messages: chatHistory,
+      apiHandler: chatApiHandler,
+      availableTools: availableToolNames, // 传递原始工具名称列表
+      enhancedTools: enhancedTools, // 传递增强工具定义
+      contextResult: contextResult // 传递技能上下文结果
+    };
 
-        // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
-        if (agentResult && !agentResult.enhanced) {
-            console.log("💬 Orchestrator 决定不处理，回退到标准对话");
-            // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
-            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
-        }
-        
-        // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
+    // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
+    // 我们在这里"发射后不管"，渲染工作将由 'research:end' 事件监听器处理
+    
+    const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
+    // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
+    // Orchestrator 返回的 originalUserMessage 包含完整的用户原始指令，用于历史记录持久化
+
+    if (agentResult && agentResult.enhanced && agentResult.originalUserMessage) {
+      // 找到 chatHistory 中最后一条用户消息（即当前消息）
+      const lastUserMessageIndex = chatHistory.length - 1;
+      if (lastUserMessageIndex >= 0 && chatHistory[lastUserMessageIndex].role === 'user') {
+        // 替换为 Orchestrator 返回的、包含完整上下文的原始消息
+        // 确保 content 结构是正确的数组格式
+        chatHistory[lastUserMessageIndex].content = [{ type: 'text', text: agentResult.originalUserMessage }];
+        console.log('✅ 历史记录中的用户消息已更新为 Orchestrator 返回的原始消息。');
+      }
+    }
+
+    if (agentResult && !agentResult.enhanced) {
+      // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
+      await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
+    }
+    
+            // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
         // 我们相信 'research:end' 事件会最终触发渲染。
         // 对于 user_guide 等简单情况，Orchestrator 内部会直接触发事件或返回可直接显示的内容，
         // 我们可以在这里做一个简单的处理。
-        if (agentResult && agentResult.type === 'user_guide') {
-             const aiMessage = chatUI.createAIMessageElement();
-             aiMessage.markdownContainer.innerHTML = marked.parse(agentResult.content);
-             chatUI.scrollToBottom();
-        }
-
-    } catch (error) {
-        console.error("🤖 Agent 模式执行失败:", error);
-        if (window.agentThinkingDisplay) {
-            window.agentThinkingDisplay.hide();
-        }
-        showSystemMessage(`智能代理执行时发生错误: ${error.message}`);
-        
-        // 🎯 关键修复：如果 Agent 失败，将用户消息从历史记录中移除，并回退到标准模式
-        // 移除刚刚推入的 user 消息
-        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
-            chatHistory.pop();
-        }
-        // 使用标准模式重新发送，让标准模式自己处理历史记录推入
-        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, true);
+    if (agentResult && agentResult.type === 'user_guide') {
+      const aiMessage = chatUI.createAIMessageElement();
+      aiMessage.markdownContainer.innerHTML = marked.parse(agentResult.content);
+      chatUI.scrollToBottom();
     }
+
+  } catch (error) {
+    console.error("🤖 Agent 模式执行失败:", error);
+    if (window.agentThinkingDisplay) {
+        window.agentThinkingDisplay.hide();
+    }
+    showSystemMessage(`智能代理执行时发生错误: ${error.message}`);
+
+    // 🎯 关键修复：如果 Agent 失败，将用户消息从历史记录中移除，并回退到标准模式
+        // 移除刚刚推入的 user 消息
+    
+    if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
+      chatHistory.pop();
+    }
+    // 使用标准模式重新发送，让标准模式自己处理历史记录推入
+    await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, true);
+  }
 }
 
 /**
@@ -2585,6 +2652,11 @@ document.addEventListener('DOMContentLoaded', () => {
         initMobileHandlers();
     }
 
+    // 🎯 新增：在DOMContentLoaded中初始化普通模式增强管理器
+    enhancedNormalModeManager.ensureInitialized().then(() => {
+        console.log('✅ 普通模式增强管理器已就绪');
+    });
+
     /**
      * @function
      * @description 处理"新建聊天"按钮点击事件，刷新页面以开始新的聊天。
@@ -2593,23 +2665,32 @@ document.addEventListener('DOMContentLoaded', () => {
     newChatButton.addEventListener('click', () => {
         if (currentSessionId) {
             cleanupSession(currentSessionId);
-            
-            // 🎯 新增：清理技能系统缓存
-            if (skillContextManager && skillContextManager.clearSessionCache) {
-                skillContextManager.clearSessionCache(currentSessionId);
+        
+            // 🎯 清理普通模式增强管理器的缓存
+            if (enhancedNormalModeManager && enhancedNormalModeManager.clearSessionCache) {
+                enhancedNormalModeManager.clearSessionCache(currentSessionId);
             }
-            
-            // 清理共享缓存
-            skillCacheCompressor.clearSession(currentSessionId);
-            
-            // 清理技能管理器的注入历史
+        
+            // 🎯 清理共享缓存压缩器
+            if (skillCacheCompressor && skillCacheCompressor.clearSession) {
+                skillCacheCompressor.clearSession(currentSessionId);
+            }
+        
+            // 🎯 清理Agent技能管理器的缓存（Agent模式专用）
             if (window.skillManagerModule && window.skillManagerModule.enhancedSkillManager) {
-                window.skillManagerModule.enhancedSkillManager.clearSession(currentSessionId);
+                // 注意：这里需要检查方法名是否正确
+                if (window.skillManagerModule.enhancedSkillManager.clearSession) {
+                    window.skillManagerModule.enhancedSkillManager.clearSession(currentSessionId);
+                } else if (window.skillManagerModule.enhancedSkillManager.clearSessionCache) {
+                    window.skillManagerModule.enhancedSkillManager.clearSessionCache(currentSessionId);
+                }
             }
-            
+        
             console.log(`🗑️ 已清理会话 ${currentSessionId} 的所有技能缓存`);
-        }
+        } // 修复缺少的闭合括号
+    
         resetFileManagerAuth(); // 🎯 核心修改：重置文件管理器状态（包括关闭模态框）
+    
         // 仅在 HTTP 模式下启用历史记录功能
         if (selectedModelConfig && !selectedModelConfig.isWebSocket) {
             historyManager.generateNewSession();
@@ -2623,34 +2704,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 🎯 新增：在发送消息前添加会话ID到上下文
-    const originalHandleSendMessage = handleSendMessage;
-    
-    async function handleSendMessageWithCache(attachmentManager) {
-        // 确保有会话ID
-        if (!currentSessionId) {
-            historyManager.generateNewSession();
-        }
-        
-        // 原有逻辑...
-        return originalHandleSendMessage.call(this, attachmentManager);
-    }
-    
-    // 🎯 替换原有函数
-    window.handleSendMessage = handleSendMessageWithCache;
-    
-    // 🎯 新增：在生成请求上下文时传递会话ID
-    const originalGenerateRequestContext = skillContextManager.generateRequestContext;
-    
-    skillContextManager.generateRequestContext = async function(userQuery, availableTools = [], modelConfig = {}) {
-        const context = {
-            sessionId: currentSessionId,
-            toolCallHistory: this._getRecentToolCalls(currentSessionId) // 可以从历史记录中获取
-        };
-        
-        return originalGenerateRequestContext.call(this, userQuery, availableTools, modelConfig, context);
-    };
-    
+    /**
+     * @function
+     * @description 处理"新建聊天"按钮点击事件，刷新页面以开始新的聊天。
+     * @returns {void}
+     */
     // 添加视图缩放阻止
     document.addEventListener('touchmove', (e) => {
         // 仅在非 message-history 区域阻止缩放行为
@@ -3278,3 +3336,15 @@ function displayAgentSummary(agentResult) {
     messageHistoryElement.appendChild(summaryDiv);
     chatUI.scrollToBottom();
 }
+
+// 🎯 新增调试函数
+window.debugNormalModeCache = function() {
+  console.log('🔍 普通模式缓存状态:', enhancedNormalModeManager.getCacheStats());
+};
+
+window.clearNormalModeCache = function() {
+  if (enhancedNormalModeManager && enhancedNormalModeManager.clearSessionCache) {
+    enhancedNormalModeManager.clearSessionCache(currentSessionId);
+  }
+  showToast('已清理普通模式缓存');
+};
