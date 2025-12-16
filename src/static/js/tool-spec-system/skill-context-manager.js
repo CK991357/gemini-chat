@@ -88,56 +88,41 @@ class SkillContextManager {
   /**
    * 🚀 核心方法：为模型请求生成智能上下文
    */
-  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}, context = {}) {
+  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}) {
     if (!await this.ensureInitialized()) {
-        return { 
-            enhancedPrompt: userQuery, 
-            relevantTools: [],
-            contextLevel: 'none'
-        };
+      return { enhancedPrompt: userQuery, relevantTools: [] };
     }
 
-    console.log(`🔍 [技能上下文生成] 查询: "${userQuery.substring(0, 50)}..."`, {
-        可用工具数: availableTools.length,
-        模型: modelConfig.name,
-        会话ID: context.sessionId || 'default'
+    // 1. 查找相关技能
+    const relevantSkills = this.skillManager.findRelevantSkills(userQuery, {
+      availableTools,
+      category: modelConfig.category
     });
 
-    // 🎯 合并上下文信息
-    const skillContext = {
-        ...context,  // 包含 sessionId, userQuery, mode 等
-        availableTools,
-        category: modelConfig.category
-    };
-
-    // 1. 查找相关技能
-    const relevantSkills = this.skillManager.findRelevantSkills(userQuery, skillContext);
-
     if (relevantSkills.length === 0) {
-        return { 
-            enhancedPrompt: userQuery, 
-            relevantTools: [],
-            contextLevel: 'none'
-        };
+      return { 
+        enhancedPrompt: userQuery, 
+        relevantTools: [],
+        contextLevel: 'none'
+      };
     }
 
     // 2. 检查是否有需要特殊处理的复杂工具
     const hasComplexTools = relevantSkills.some(skill => 
-        ['crawl4ai', 'python_sandbox'].includes(skill.toolName)
+      ['crawl4ai', 'python_sandbox'].includes(skill.toolName)
     );
 
     // 3. 生成增强的提示词
     const enhancedPrompt = hasComplexTools 
-        ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig)
-        : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig);
+      ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, modelConfig)
+      : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig);
     
     return {
-        enhancedPrompt,
-        relevantTools: relevantSkills.map(skill => skill.toolName),
-        contextLevel: relevantSkills.length > 1 ? 'multi' : 'single',
-        skillCount: relevantSkills.length,
-        hasComplexTools,
-        sessionId: context.sessionId || 'default'
+      enhancedPrompt,
+      relevantTools: relevantSkills.map(skill => skill.toolName),
+      contextLevel: relevantSkills.length > 1 ? 'multi' : 'single',
+      skillCount: relevantSkills.length,
+      hasComplexTools
     };
   }
 

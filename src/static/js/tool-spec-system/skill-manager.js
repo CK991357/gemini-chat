@@ -1,26 +1,20 @@
 // src/tool-spec-system/skill-manager.js
 import { getSkillsRegistry } from './generated-skills.js';
 import { knowledgeFederation } from './skill-loader.js';
-// 🎯 关键修改：使用统一的缓存压缩系统
-import { skillCacheCompressor } from './skill-cache-compressor.js';
-// 🎯 新增：导入增强技能管理器以重用缓存系统
-import { EnhancedSkillManager as OriginalEnhancedSkillManager } from '../agent/EnhancedSkillManager.js';
+// 🎯 新增：导入缓存压缩模块
+import { skillCacheCompressor } from './skill-cache-compressor.js'; // 假设这个文件放在同级目录
 
 class EnhancedSkillManager {
   constructor(synonyms) {
     this.skills = getSkillsRegistry();
     this.synonymMap = synonyms;
     
-    // 🎯 关键修改：使用共享的缓存压缩系统
-    this.cacheCompressor = skillCacheCompressor;
-    
-    // 🎯 创建代理的增强技能管理器实例（用于共享缓存）
-    this.enhancedManagerProxy = null;
-    this._initEnhancedManagerProxy();
-    
-    // 🎯 联邦知识库集成
+    // 🎯 新增：联邦知识库集成
     this.knowledgeFederation = knowledgeFederation;
     this.isFederationReady = false;
+    
+    // 🎯 新增：缓存压缩系统集成
+    this.cacheCompressor = skillCacheCompressor;
     
     // 🎯 自动初始化联邦知识库
     this.initializeFederation().then(() => {
@@ -46,86 +40,6 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 🎯 新增：初始化增强管理器代理（用于共享缓存）
-   */
-  async _initEnhancedManagerProxy() {
-    try {
-      // 创建代理实例，但只使用其缓存功能
-      this.enhancedManagerProxy = new OriginalEnhancedSkillManager();
-      // 等待初始化完成
-      await this.enhancedManagerProxy.waitUntilReady();
-      console.log('🎯 [缓存代理] 增强管理器代理初始化完成');
-    } catch (error) {
-      console.warn('🎯 [缓存代理] 初始化失败，将使用独立缓存:', error);
-    }
-  }
-
-  /**
-   * 🎯 新增：智能获取知识内容（优先使用代理缓存）
-   */
-  async _getCachedKnowledge(toolName, userQuery, context = {}) {
-    // 如果有代理实例，优先使用其缓存系统
-    if (this.enhancedManagerProxy && this.enhancedManagerProxy.isInitialized) {
-      try {
-        console.log(`🎯 [缓存代理] 通过代理检索缓存: ${toolName}`);
-        const knowledge = await this.enhancedManagerProxy.retrieveFederatedKnowledge(
-          toolName,
-          context,
-          { 
-            compression: 'smart',
-            sessionId: context.sessionId || 'default'
-          }
-        );
-        
-        if (knowledge && knowledge.content) {
-          console.log(`🎯 [缓存代理] 缓存命中: ${toolName}, 字符数: ${knowledge.content.length}`);
-          return knowledge.content;
-        }
-      } catch (error) {
-        console.warn(`🎯 [缓存代理] 代理检索失败:`, error);
-      }
-    }
-    
-    // 降级：使用本地缓存压缩系统
-    const cacheKey = this.cacheCompressor._generateCacheKey(toolName, userQuery, context);
-    const cached = this.cacheCompressor.getFromCache(cacheKey);
-    
-    if (cached) {
-      console.log(`🎯 [本地缓存] 命中: ${toolName}`);
-      return cached;
-    }
-    
-    return null;
-  }
-
-  /**
-   * 🎯 新增：设置缓存内容（双写策略）
-   */
-  _setCachedKnowledge(toolName, userQuery, context, content) {
-    // 1. 写入本地缓存
-    const cacheKey = this.cacheCompressor._generateCacheKey(toolName, userQuery, context);
-    this.cacheCompressor.setToCache(cacheKey, content);
-    
-    // 2. 如果代理可用，也写入其缓存
-    if (this.enhancedManagerProxy && this.enhancedManagerProxy.knowledgeCache) {
-      try {
-        const cacheKey = `${toolName}_smart`;
-        this.enhancedManagerProxy.knowledgeCache.set(cacheKey, {
-          content: content,
-          metadata: this.skills.get(toolName)?.metadata || {},
-          timestamp: Date.now(),
-          originalLength: content.length,
-          compressedLength: content.length,
-          compression: 'smart'
-        });
-        console.log(`🎯 [缓存同步] 已同步到代理缓存: ${toolName}`);
-      } catch (_error) {
-        // 忽略代理缓存写入错误
-      }
-    }
-  }
-
-  /**
    * 增强的技能匹配算法
    */
   findRelevantSkills(userQuery, context = {}) {
@@ -134,10 +48,8 @@ class EnhancedSkillManager {
       return [];
     }
     
-    console.log(`🔍 [技能匹配] 查询: "${query}"`, {
-        会话ID: context.sessionId || '无',
-        可用工具数: context.availableTools?.length || 0
-    });
+    console.log(`🔍 [技能匹配] 查询: "${query}"`,
+      context.availableTools ? `可用工具: ${context.availableTools.length}个` : '');
     
     const matches = [];
     const expandedQuery = this.expandQuery(query);
@@ -146,7 +58,7 @@ class EnhancedSkillManager {
     const availableTools = context.availableTools || [];
     const shouldFilterByAvailableTools = availableTools.length > 0;
     
-    for (const [_skillName, skill] of this.skills) {
+    for (const [skillName, skill] of this.skills) {
       const toolName = skill.metadata.tool_name;
       
       // 🎯 新增：如果指定了可用工具，进行过滤
@@ -303,7 +215,8 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 🎯 [核心优化版] 智能生成单个技能的注入内容（完全复用Agent缓存系统）
+   * 🎯 [增强版] 智能生成单个技能的注入内容（支持缓存和压缩）
+   * 为普通模式提供与Agent模式相同的知识检索能力
    */
   async generateSkillInjection(skill, userQuery = '', context = {}) {
     const { metadata, content } = skill;
@@ -311,111 +224,115 @@ class EnhancedSkillManager {
     
     // 🎯 获取会话ID
     const sessionId = context.sessionId || 'default';
-    const sessionContext = {
-      ...context,
-      sessionId: sessionId,
-      userQuery: userQuery
-    };
     
-    console.log(`🎯 [普通模式注入] 开始为 ${toolName} 生成注入内容`, {
-      toolName,
-      sessionId,
-      queryLength: userQuery.length
-    });
+    console.log(`🎯 [普通模式注入] 开始为 ${toolName} 生成注入内容`);
 
-    // 🎯 第一步：检查是否已经注入过（会话级跟踪）
+    // 🎯 检查是否已经注入过（会话级跟踪）
     if (this.cacheCompressor.hasToolBeenInjected(sessionId, toolName)) {
-      console.log(`🎯 [会话重复] ${toolName} 已在当前会话中注入过，使用引用模式`);
-      this.cacheCompressor.recordToolInjection(sessionId, toolName);
+      console.log(`🎯 [普通模式注入] ${toolName} 已在会话中注入过，使用引用模式`);
       return this._createReferenceModeContent(metadata, userQuery);
     }
 
-    // 🎯 第二步：尝试从缓存获取（包括代理缓存）
-    const cachedContent = await this._getCachedKnowledge(toolName, userQuery, sessionContext);
+    // 🎯 检查缓存
+    const cacheKey = this.cacheCompressor._generateCacheKey(toolName, userQuery, context);
+    const cachedContent = this.cacheCompressor.getFromCache(cacheKey);
     
     if (cachedContent) {
-      console.log(`🎯 [缓存命中] ${toolName} 缓存命中，使用缓存内容 (${cachedContent.length}字符)`);
+      console.log(`🎯 [普通模式注入] ${toolName} 缓存命中，使用缓存内容`);
       // 记录注入
       this.cacheCompressor.recordToolInjection(sessionId, toolName);
       return cachedContent;
     }
 
-    // 🎯 第三步：特殊处理 - 对 python_sandbox 使用联邦知识库
+    // 🎯 特殊处理：对 python_sandbox 使用联邦知识库
     if (toolName === 'python_sandbox' && this.isFederationReady) {
       try {
-        console.log(`🎯 [联邦检索] 为 ${toolName} 检索联邦知识...`);
-        const federatedContent = await this._generateFederatedInjectionForNormalMode(
-          toolName, 
-          userQuery, 
-          metadata, 
-          sessionContext
-        );
-        
+        const federatedContent = await this._generateFederatedInjectionForNormalMode(toolName, userQuery, metadata, context);
         if (federatedContent) {
-          // 🎯 智能压缩内容
+          // 压缩并缓存
           const compressedContent = await this.cacheCompressor.compressKnowledge(
             federatedContent,
             {
               level: 'smart',
               maxChars: 15000,
-              userQuery: userQuery,
-              iteration: 0
+              userQuery: userQuery
             }
           );
           
-          // 🎯 双写缓存
-          await this._setCachedKnowledge(toolName, userQuery, sessionContext, compressedContent);
+          // 记录注入并缓存
+          this.cacheCompressor.setToCache(cacheKey, compressedContent);
           this.cacheCompressor.recordToolInjection(sessionId, toolName);
           
-          console.log(`🎯 [联邦注入完成] ${toolName} (${federatedContent.length} → ${compressedContent.length} 字符)`);
           return compressedContent;
         }
       } catch (error) {
-        console.warn(`🎯 [联邦注入失败] ${toolName}, 回退到基础模式:`, error);
+        console.warn(`🎯 [普通模式注入] 联邦知识库调用失败，回退到基础模式:`, error);
       }
     }
 
-    // 🎯 第四步：基础注入内容生成（带智能压缩）
-    console.log(`🎯 [基础注入] 为 ${toolName} 生成基础内容（带压缩）`);
-    const basicContent = await this.generateBasicInjectionWithCompression(skill, userQuery, sessionContext);
+    // 🎯 基础注入内容生成（带压缩）
+    console.log(`🎯 [普通模式注入] 为 ${toolName} 使用基础注入模式（带压缩）`);
+    const basicContent = await this.generateBasicInjectionWithCompression(skill, userQuery, context);
 
-    // 🎯 双写缓存并记录注入
-    await this._setCachedKnowledge(toolName, userQuery, sessionContext, basicContent);
+    // 记录注入并缓存
+    this.cacheCompressor.setToCache(cacheKey, basicContent);
     this.cacheCompressor.recordToolInjection(sessionId, toolName);
 
-    console.log(`🎯 [注入完成] ${toolName} 内容已生成并缓存 (${basicContent.length}字符)`);
     return basicContent;
   }
 
   /**
-   * 🎯 新增：带智能压缩的基础注入内容生成
+   * 🎯 新增：带压缩的基础注入内容生成
    */
   async generateBasicInjectionWithCompression(skill, userQuery = '', context = {}) {
     const { metadata, content } = skill;
-    const toolName = metadata.tool_name;
     
-    console.log(`🎯 [智能压缩] 为 ${toolName} 生成基础内容，查询: "${userQuery.substring(0, 50)}..."`);
-    
-    // 🎯 步骤1：构建完整知识包
-    let knowledgePackage = `## 🛠️ 工具指南: ${metadata.name} (${toolName})\n\n`;
+    // 构建知识包
+    let knowledgePackage = `## 🛠️ 工具指南: ${metadata.name} (${metadata.tool_name})\n\n`;
     knowledgePackage += `**核心功能**: ${metadata.description}\n\n`;
     
-    // 🎯 步骤2：智能章节提取（使用统一的章节推断逻辑）
-    const relevantSections = this.cacheCompressor.inferRelevantSections(userQuery, context);
+    // 智能章节提取逻辑
+    const sectionKeywords = {
+      'extract': ['结构化数据提取 (`extract`)', 'Schema Definition 结构说明'],
+      'scrape': ['抓取单个网页 (`scrape`)'],
+      'deep_crawl': ['深度网站爬取 (`deep_crawl`)'],
+      'batch': ['批量 URL 处理 (`batch_crawl`)'],
+      'screenshot': ['截图捕获 (`screenshot`)'],
+      'pdf': ['PDF 导出 (`pdf_export`)']
+    };
     
-    if (relevantSections.length > 0) {
-      knowledgePackage += `### 📖 智能提取的相关指导\n\n`;
-      
-      // 尝试从内容中提取相关章节
-      const extractedContent = this._extractRelevantSectionsFromContent(content, relevantSections);
-      if (extractedContent) {
-        knowledgePackage += extractedContent + '\n\n';
-      } else {
-        knowledgePackage += `*根据您的查询，建议参考以下章节: ${relevantSections.join(', ')}*\n\n`;
+    // 根据用户查询找到相关的关键词
+    let relevantSectionTitle = null;
+    const queryLower = userQuery.toLowerCase();
+    
+    for (const keyword in sectionKeywords) {
+      if (queryLower.includes(keyword)) {
+        relevantSectionTitle = sectionKeywords[keyword];
+        break;
       }
     }
     
-    // 🎯 步骤3：添加通用调用结构和错误示例（核心内容）
+    // 如果找到了相关章节，提取其完整内容
+    if (relevantSectionTitle) {
+      knowledgePackage += `### 📖 相关操作指南 (已为您提取)\n\n`;
+      let sectionFound = false;
+      
+      relevantSectionTitle.forEach(title => {
+        const regex = new RegExp(`##\\s+${this.escapeRegex(title)}[\\s\\S]*?(?=\\n##\\s|$)`, 'i');
+        const match = content.match(regex);
+        
+        if (match) {
+          knowledgePackage += match[0] + '\n\n';
+          sectionFound = true;
+        }
+      });
+      
+      if (!sectionFound) {
+        knowledgePackage += `*未找到与'${relevantSectionTitle.join(', ')}'直接相关的详细章节，请参考通用指南。*\n\n`;
+      }
+    }
+
+    // 添加通用调用结构和错误示例
     knowledgePackage += `### 🚨 【强制遵守】通用调用结构与常见错误\n\n`;
     
     const generalStructureRegex = /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i;
@@ -430,47 +347,19 @@ class EnhancedSkillManager {
       knowledgePackage += commonErrorsMatch[0] + '\n\n';
     }
 
-    // 🎯 步骤4：关键指令摘要
-    const keyInstructions = this.extractKeyInstructions(content);
-    if (keyInstructions) {
-      knowledgePackage += `### 🔑 关键指令摘要\n\n${keyInstructions}\n\n`;
-    }
-
-    knowledgePackage += `请严格遵循上述指南和示例来使用 **${toolName}** 工具。`;
+    knowledgePackage += `请严格遵循上述指南和示例来使用 **${metadata.tool_name}** 工具。`;
     
-    // 🎯 步骤5：智能压缩（使用统一的压缩算法）
+    // 🎯 应用智能压缩
     const compressedContent = await this.cacheCompressor.compressKnowledge(
       knowledgePackage,
       {
         level: 'smart',
-        maxChars: 12000,
-        userQuery: userQuery,
-        iteration: 0
+        maxChars: 12000, // 稍小一些，为普通模式优化
+        userQuery: userQuery
       }
     );
     
-    console.log(`🎯 [压缩完成] ${toolName}: ${knowledgePackage.length} → ${compressedContent.length} 字符`);
     return compressedContent;
-  }
-
-  /**
-   * 🎯 新增：从内容中提取相关章节
-   */
-  _extractRelevantSectionsFromContent(content, sections) {
-    let extracted = '';
-    
-    sections.forEach(sectionName => {
-      // 尝试匹配章节标题
-      const escapedSection = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`##\\s+${escapedSection}[\\s\\S]*?(?=\\n##\\s|$)`, 'i');
-      const match = content.match(regex);
-      
-      if (match) {
-        extracted += match[0] + '\n\n';
-      }
-    });
-    
-    return extracted || null;
   }
 
   /**
@@ -492,13 +381,15 @@ class EnhancedSkillManager {
       return null;
     }
     
-    // 🎯 使用缓存压缩系统的章节推断（统一逻辑）
-    const relevantSections = this.cacheCompressor.inferRelevantSections(userQuery, context);
+    // 🎯 构建上下文
+    const fedContext = {
+      userQuery: userQuery,
+      toolCallHistory: [],
+      mode: 'standard'
+    };
     
-    if (relevantSections.length === 0) {
-      console.log(`🎯 [章节推断] 未找到相关章节，使用默认章节`);
-      relevantSections.push('pandas_cheatsheet'); // 默认章节
-    }
+    // 🎯 使用缓存压缩系统的章节推断
+    const relevantSections = this.cacheCompressor.inferRelevantSections(userQuery, fedContext);
     
     // 🎯 从联邦知识库获取内容
     const knowledgePackage = this.knowledgeFederation.getFederatedKnowledge(
@@ -511,16 +402,7 @@ class EnhancedSkillManager {
       return null;
     }
     
-    // 🎯 构建增强的注入内容
-    let injectionContent = `## 🛠️ 增强工具指南: ${metadata.name} (${toolName})\n\n`;
-    injectionContent += `**核心功能**: ${metadata.description}\n\n`;
-    
-    // 添加联邦知识库提供的内容
-    injectionContent += `### 📚 智能提取的相关指导\n`;
-    injectionContent += knowledgePackage;
-    
-    console.log(`🎯 [联邦注入] 成功为 ${toolName} 生成增强内容 (${knowledgePackage.length} 字符)`);
-    return injectionContent;
+    return knowledgePackage;
   }
 
   /**
@@ -984,24 +866,6 @@ class EnhancedSkillManager {
         resolve(false);
       }, 10000);
     });
-  }
-
-  /**
-   * 🎯 新增：获取缓存统计信息
-   */
-  getCacheStats() {
-    const localStats = this.cacheCompressor.getCacheStats();
-    let proxyStats = { cacheSize: 0 };
-    
-    if (this.enhancedManagerProxy && this.enhancedManagerProxy.knowledgeCache) {
-      proxyStats.cacheSize = this.enhancedManagerProxy.knowledgeCache.size;
-    }
-    
-    return {
-      local: localStats,
-      proxy: proxyStats,
-      totalCacheSize: localStats.cacheSize + proxyStats.cacheSize
-    };
   }
 }
 
