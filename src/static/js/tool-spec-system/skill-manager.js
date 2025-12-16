@@ -16,6 +16,117 @@ class EnhancedSkillManager {
     // 🎯 新增：缓存压缩系统集成
     this.cacheCompressor = skillCacheCompressor;
     
+    // 🚀 新增：工具关键词映射系统
+    this.toolKeywordMapping = {
+      // 爬虫类工具
+      'crawl4ai': {
+        keywords: [
+          '抓取', '爬取', '提取', '网页', '网站', '网络', '数据抓取', '网络爬虫',
+          'scrape', 'crawl', 'extract', 'web', 'website', 'html', '数据采集'
+        ],
+        modes: {
+          'extract': ['结构化', 'schema', '提取数据', '数据提取', 'structured data'],
+          'scrape': ['单个网页', '单页面', 'single page', '抓取网页'],
+          'deep_crawl': ['深度爬取', '整站爬取', '网站地图', 'site map', '深度采集'],
+          'batch_crawl': ['批量', '多个url', '列表', 'list', 'batch'],
+          'screenshot': ['截图', '截屏', 'screenshot', 'capture'],
+          'pdf_export': ['pdf', '导出pdf', 'pdf导出', 'export pdf']
+        }
+      },
+      
+      // Python沙盒
+      'python_sandbox': {
+        keywords: [
+          'python', '代码', '编程', '脚本', '执行', '运行',
+          '数据分析', '数据处理', '可视化', '图表', '画图',
+          '机器学习', '模型训练', '预测', 'ai', '人工智能',
+          '数学', '计算', '公式', '统计', '数学计算',
+          '文档处理', 'word', 'excel', 'pdf', '报告生成'
+        ],
+        libraries: {
+          // Docker中安装的库映射
+          'pandas': ['数据处理', '数据分析', '表格', 'excel', 'csv', '数据清洗'],
+          'matplotlib': ['可视化', '图表', '画图', 'plot', 'chart', '条形图', '折线图'],
+          'seaborn': ['统计可视化', '热力图', '分布图', '统计图表'],
+          'scikit-learn': ['机器学习', '模型', '训练', '预测', '分类', '回归'],
+          'sympy': ['数学', '公式', '符号计算', '微积分', '代数'],
+          'python-docx': ['word', '文档', '报告', 'docx'],
+          'reportlab': ['pdf生成', 'pdf报告', 'pdf导出'],
+          'networkx': ['图分析', '网络分析', '关系图', '拓扑']
+        }
+      },
+      
+      // 网络搜索
+      'tavily_search': {
+        keywords: [
+          '搜索', '查询', '查找', '信息', '实时', '最新',
+          'search', 'query', 'find', 'information', 'news'
+        ]
+      },
+      
+      // 国际象棋
+      'stockfish_analyzer': {
+        keywords: [
+          '国际象棋', '象棋', '棋局', '棋盘', '分析棋局', '最佳走法',
+          'chess', 'fen', '棋谱', '棋局分析', 'best move'
+        ],
+        modes: {
+          'get_best_move': ['最佳走法', '下一步', '建议走法'],
+          'get_top_moves': ['多个走法', '候选走法', 'top moves'],
+          'evaluate_position': ['局面评估', '分数', '优势', '劣势']
+        }
+      },
+      
+      // Firecrawl
+      'firecrawl': {
+        keywords: [
+          'firecrawl', '网页抓取', '网站爬取', '网络爬虫', 'firecrawl'
+        ],
+        modes: {
+          'scrape': ['抓取单个', '单页面'],
+          'search': ['查询网站'],
+          'crawl': ['爬取整站', '网站爬虫'],
+          'extract': ['提取结构化', '数据提取']
+        }
+      }
+    };
+    
+    // 🚀 新增：Python沙盒能力矩阵（基于Docker库）
+    this.pythonSandboxCapabilities = {
+      data_analysis: {
+        libraries: ['pandas', 'numpy', 'scipy', 'pyarrow', 'polars-lts-cpu'],
+        tasks: ['数据清洗', '数据转换', '统计分析', '数据聚合', '时间序列分析']
+      },
+      visualization: {
+        libraries: ['matplotlib', 'seaborn'],
+        tasks: ['图表制作', '数据可视化', '统计图表', '画图', '绘图']
+      },
+      machine_learning: {
+        libraries: ['scikit-learn', 'xgboost', 'lightgbm', 'statsmodels'],
+        tasks: ['分类', '回归', '聚类', '预测', '模型评估', '特征工程', '机器学习']
+      },
+      document_processing: {
+        libraries: ['python-docx', 'python-pptx', 'reportlab', 'openpyxl'],
+        tasks: ['Word文档', 'Excel文件', 'PDF生成', 'PPT制作', '报告生成']
+      },
+      mathematical_computing: {
+        libraries: ['sympy', 'scipy', 'numpy'],
+        tasks: ['符号计算', '数值计算', '微积分', '线性代数', '优化问题', '数学']
+      },
+      web_scraping: {
+        libraries: ['beautifulsoup4', 'lxml'],
+        tasks: ['网页解析', 'HTML处理', '数据提取', '网页抓取']
+      },
+      advanced_statistics: {
+        libraries: ['statsmodels', 'scipy', 'numpy'],
+        tasks: ['统计分析', '假设检验', '回归分析', '时间序列', '统计']
+      },
+      optimization: {
+        libraries: ['scipy', 'numpy'],
+        tasks: ['优化', '线性规划', '非线性优化', '最优化']
+      }
+    };
+    
     // 🎯 自动初始化联邦知识库
     this.initializeFederation().then(() => {
       this.isFederationReady = true;
@@ -40,7 +151,7 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 增强的技能匹配算法
+   * 增强的技能匹配算法（集成关键词映射）
    */
   findRelevantSkills(userQuery, context = {}) {
     const query = userQuery.toLowerCase().trim();
@@ -48,7 +159,7 @@ class EnhancedSkillManager {
       return [];
     }
     
-    console.log(`🔍 [技能匹配] 查询: "${userQuery}"`, {
+    console.log(`🔍 [增强匹配] 查询: "${userQuery.substring(0, 50)}..."`, {
         会话ID: context.sessionId || '无',
         可用工具数: context.availableTools?.length || 0
     });
@@ -68,7 +179,8 @@ class EnhancedSkillManager {
         continue; // 跳过不可用的工具
       }
       
-      const relevanceScore = this.calculateEnhancedRelevanceScore(expandedQuery, skill, context);
+      // 🚀 修改：使用增强版相关性计算（包含关键词映射）
+      const relevanceScore = this.calculateEnhancedRelevanceScoreWithKeywords(expandedQuery, skill, context);
       
       if (relevanceScore >= 0.15) {
         matches.push({
@@ -85,19 +197,65 @@ class EnhancedSkillManager {
     const sortedMatches = matches.sort((a, b) => b.score - a.score).slice(0, 3);
     
     if (sortedMatches.length > 0) {
-      console.log(`📊 [技能匹配] 完成，找到 ${sortedMatches.length} 个相关技能 (已过滤):`);
+      console.log(`📊 [增强匹配] 完成，找到 ${sortedMatches.length} 个相关技能:`);
       sortedMatches.forEach(match => {
         console.log(`   - ${match.name} (${match.toolName}): ${(match.score * 100).toFixed(1)}%`);
       });
     } else {
-      console.log(`🔍 [技能匹配] 未找到相关技能`);
+      console.log(`🔍 [增强匹配] 未找到相关技能`);
     }
     
     return sortedMatches;
   }
 
   /**
-   * 增强的相关性计算
+   * 🚀 新增：集成关键词映射的增强相关性计算
+   */
+  calculateEnhancedRelevanceScoreWithKeywords(query, skill, context) {
+    // 保留原有的所有逻辑
+    let score = this.calculateEnhancedRelevanceScore(query, skill, context);
+    
+    const toolName = skill.metadata.tool_name;
+    const mapping = this.toolKeywordMapping[toolName];
+    
+    if (mapping) {
+      const queryLower = query.toLowerCase();
+      
+      // 🎯 基础关键词匹配增强
+      mapping.keywords.forEach(keyword => {
+        if (queryLower.includes(keyword.toLowerCase())) {
+          score += 0.15; // 关键词匹配额外加分
+        }
+      });
+      
+      // 🎯 模式匹配增强（针对多模式工具）
+      if (mapping.modes) {
+        Object.values(mapping.modes).forEach(modeKeywords => {
+          modeKeywords.forEach(keyword => {
+            if (queryLower.includes(keyword.toLowerCase())) {
+              score += 0.2; // 模式匹配权重更高
+            }
+          });
+        });
+      }
+      
+      // 🎯 Python库匹配增强
+      if (toolName === 'python_sandbox' && mapping.libraries) {
+        Object.values(mapping.libraries).forEach(libKeywords => {
+          libKeywords.forEach(keyword => {
+            if (queryLower.includes(keyword.toLowerCase())) {
+              score += 0.1; // 库匹配额外加分
+            }
+          });
+        });
+      }
+    }
+    
+    return Math.min(score, 1.0);
+  }
+
+  /**
+   * 原有的增强相关性计算（保持原有逻辑）
    */
   calculateEnhancedRelevanceScore(query, skill, context) {
     let score = 0;
@@ -223,6 +381,11 @@ class EnhancedSkillManager {
   async generateSkillInjection(skill, userQuery = '', context = {}) {
     const { metadata, content } = skill;
     const toolName = metadata.tool_name;
+    
+    // 🚀 特殊处理：Python沙盒使用增强注入
+    if (toolName === 'python_sandbox') {
+      return await this.generateEnhancedPythonInjection(skill, userQuery, context);
+    }
     
     // 🎯 获取会话ID
     const sessionId = context.sessionId || 'default';
@@ -409,6 +572,82 @@ class EnhancedSkillManager {
     }
     
     return knowledgePackage;
+  }
+
+  /**
+   * 🚀 新增：根据查询推荐Python库
+   */
+  suggestPythonLibrariesForQuery(query) {
+    const queryLower = query.toLowerCase();
+    const suggestions = [];
+    
+    for (const [category, info] of Object.entries(this.pythonSandboxCapabilities)) {
+      const hasRelatedTask = info.tasks.some(task => 
+        queryLower.includes(task.toLowerCase())
+      );
+      
+      if (hasRelatedTask) {
+        suggestions.push({
+          category: category,
+          libraries: info.libraries,
+          tasks: info.tasks.filter(task => queryLower.includes(task.toLowerCase())),
+          reason: `查询涉及${info.tasks.filter(task => queryLower.includes(task.toLowerCase())).join('、')}等任务`
+        });
+      }
+    }
+    
+    return suggestions;
+  }
+
+  /**
+   * 🚀 新增：生成Python沙盒的增强注入内容
+   */
+  async generateEnhancedPythonInjection(skill, userQuery = '', context = {}) {
+    const { metadata, content } = skill;
+    
+    // 基础注入内容
+    let injectionContent = await this.generateBasicInjectionWithCompression(skill, userQuery, context);
+    
+    // 🎯 添加库推荐
+    const librarySuggestions = this.suggestPythonLibrariesForQuery(userQuery);
+    
+    if (librarySuggestions.length > 0) {
+      const librarySection = `\n\n## 📚 推荐使用的Python库\n`;
+      let libraryText = librarySection;
+      
+      librarySuggestions.forEach(suggestion => {
+        libraryText += `\n### ${suggestion.category} (${suggestion.libraries.length}个库)\n`;
+        libraryText += `**适用任务**: ${suggestion.tasks.join('、')}\n`;
+        libraryText += `**推荐库**: ${suggestion.libraries.join(', ')}\n`;
+        
+        // 添加示例导入语句
+        libraryText += `**示例导入**:\n\`\`\`python\n`;
+        suggestion.libraries.slice(0, 3).forEach(lib => {
+          const importMap = {
+            'pandas': 'import pandas as pd',
+            'numpy': 'import numpy as np',
+            'matplotlib': 'import matplotlib.pyplot as plt',
+            'seaborn': 'import seaborn as sns',
+            'scikit-learn': 'from sklearn import ...',
+            'sympy': 'import sympy as sp'
+          };
+          libraryText += `${importMap[lib] || `import ${lib}`}\n`;
+        });
+        libraryText += `\`\`\`\n`;
+      });
+      
+      // 将库推荐插入到合适位置（在通用调用结构之前）
+      const structureIndex = injectionContent.indexOf('## 🎯 【至关重要】通用调用结构');
+      if (structureIndex !== -1) {
+        injectionContent = injectionContent.substring(0, structureIndex) + 
+                          libraryText + 
+                          injectionContent.substring(structureIndex);
+      } else {
+        injectionContent += libraryText;
+      }
+    }
+    
+    return injectionContent;
   }
 
   /**
