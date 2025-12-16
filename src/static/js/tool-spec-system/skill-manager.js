@@ -48,9 +48,11 @@ class EnhancedSkillManager {
       return [];
     }
     
-    console.log(`🔍 [技能匹配] 查询: "${query}"`,
-      context.availableTools ? `可用工具: ${context.availableTools.length}个` : '');
-    
+    console.log(`🔍 [技能匹配] 查询: "${userQuery}"`, {
+        会话ID: context.sessionId || '无',
+        可用工具数: context.availableTools?.length || 0
+    });
+
     const matches = [];
     const expandedQuery = this.expandQuery(query);
     

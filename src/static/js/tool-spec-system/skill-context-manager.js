@@ -88,16 +88,30 @@ class SkillContextManager {
   /**
    * 🚀 核心方法：为模型请求生成智能上下文
    */
-  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}) {
+  async generateRequestContext(userQuery, availableTools = [], modelConfig = {}, context = {}) {
     if (!await this.ensureInitialized()) {
-      return { enhancedPrompt: userQuery, relevantTools: [] };
+      return { 
+        enhancedPrompt: userQuery, 
+        relevantTools: [],
+        contextLevel: 'none'
+      };
     }
 
-    // 1. 查找相关技能
-    const relevantSkills = this.skillManager.findRelevantSkills(userQuery, {
+    console.log(`🔍 [技能上下文生成] 查询: "${userQuery.substring(0, 50)}..."`, {
+      可用工具数: availableTools.length,
+      模型: modelConfig.name,
+      会话ID: context.sessionId || 'default'
+    });
+
+    // 🎯 合并上下文信息
+    const skillContext = {
+      ...context,  // 包含 sessionId, userQuery, mode 等
       availableTools,
       category: modelConfig.category
-    });
+    };
+
+    // 1. 查找相关技能
+    const relevantSkills = this.skillManager.findRelevantSkills(userQuery, skillContext);
 
     if (relevantSkills.length === 0) {
       return { 
@@ -122,7 +136,8 @@ class SkillContextManager {
       relevantTools: relevantSkills.map(skill => skill.toolName),
       contextLevel: relevantSkills.length > 1 ? 'multi' : 'single',
       skillCount: relevantSkills.length,
-      hasComplexTools
+      hasComplexTools,
+      sessionId: context.sessionId || 'default'
     };
   }
 
