@@ -215,150 +215,86 @@ class SkillContextManager {
    */
   async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
     try {
+      const { skill: skillData, score, name, description } = skill;
+      
       console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
+      console.log(`📦 [技能文档] 主文档大小: ${skillData.content.length}字符`);
       
-      // 直接从skill对象获取内容（避免解析错误）
-      const skillContent = skill.skill.content;
+      // 🎯 检查缓存
+      const cachedContent = this.skillManager.cacheCompressor.getFromCache(
+        'python_sandbox', 
+        userQuery, 
+        { sessionId, ...context }
+      );
       
-      // 构建智能上下文
-      let contextContent = `### 🐍 Python沙盒工具: ${skill.name}\n\n`;
-      contextContent += `**核心功能**: ${skill.description}\n\n`;
+      // 构建基础上下文
+      let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
+      contextContent += `**核心功能**: ${description}\n\n`;
       
-      // 1. 提取核心信息（智能回退）
-      const coreInfo = this._extractCoreInfoSmart(skillContent);
-      contextContent += coreInfo;
-      
-      // 2. 根据查询类型添加专项内容
-      if (userQuery.includes('折线图') || userQuery.includes('饼图') || userQuery.includes('图表')) {
-        contextContent += this._extractChartSpecificContent(userQuery, skillContent);
+      if (cachedContent) {
+        contextContent += cachedContent;
+        console.log(`🎯 [缓存命中] python_sandbox: ${cachedContent.length} 字符`);
+        return contextContent;
       }
       
-      // 3. 添加关键代码模板
-      contextContent += this._extractCodeTemplates(skillContent, 2);
+      // 🎯 智能内容构建策略
+      console.log('🔄 [开始构建智能内容]');
       
-      // 4. 添加使用指南
-      contextContent += `## 🚀 快速使用指南\n\n`;
-      contextContent += `1. 图表生成：使用 \`plt.plot()\` + \`plt.show()\`\n`;
-      contextContent += `2. 文件输出：使用指定JSON格式\n`;
-      contextContent += `3. 数据处理：从 \`/data\` 目录读取文件\n`;
-      contextContent += `4. 内存注意：容器限制6GB，Swap已禁用\n\n`;
+      // 1. 从技能文档提取核心结构
+      const skillCore = this._extractSkillDocumentCore(skillData.content);
+      console.log(`📘 [技能核心] 提取: ${skillCore.length}字符`);
       
+      // 2. 根据查询构建相关内容
+      const queryContent = this._buildQuerySpecificContent(skillData, userQuery);
+      console.log(`🎯 [查询内容] 构建: ${queryContent.length}字符`);
+      
+      // 3. 合并内容
+      const mergedContent = this._mergeSkillAndQueryContent(skillCore, queryContent, userQuery);
+      console.log(`🔗 [合并内容] 总大小: ${mergedContent.length}字符`);
+      
+      // 🎯 使用新的压缩器进行智能压缩
+      let compressedContent = '';
+      try {
+        // 为新压缩器传递额外的上下文信息
+        compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
+          mergedContent,
+          {
+            level: 'smart',
+            maxChars: 15000,  // 增加最大字符数
+            userQuery: userQuery,
+            toolName: 'python_sandbox',
+            preserveSections: [
+              '通用调用结构',
+              '输出规范',
+              '核心工作流模式',
+              '可直接使用的代码模板'
+            ]
+          }
+        );
+      } catch (compressError) {
+        console.error(`🚨 [内容压缩失败]`, compressError);
+        // 压缩失败时使用未压缩的合并内容
+        compressedContent = this._formatContentForPrompt(mergedContent, userQuery);
+      }
+      
+      // 缓存结果
+      this.skillManager.cacheCompressor.setToCache(
+        'python_sandbox', 
+        userQuery, 
+        { 
+          sessionId, 
+          ...context,
+          contentType: 'mixedContent'  // 告知缓存器这是混合内容
+        }, 
+        compressedContent
+      );
+      
+      contextContent += compressedContent;
       return contextContent;
-      
     } catch (error) {
-      console.error(`🚨 [上下文构建失败]`, error);
+      console.error(`🚨 [Python沙盒上下文构建失败]`, error);
       return this._buildFallbackContext(skill.skill, userQuery);
     }
-  }
-
-  _extractCoreInfoSmart(content) {
-    let core = '## 📋 核心信息摘要\n\n';
-    
-    // 关键词提取法（不依赖正则）
-    const infoSections = [
-      {
-        title: '🎯 核心能力',
-        keywords: ['多功能的代码执行环境', '数据分析', '可视化', '文档自动化'],
-        extract: (lines) => lines.slice(0, 10).join('\n')
-      },
-      {
-        title: '🚀 输出规范',
-        keywords: ['JSON格式', 'plt.show()', '自动捕获', 'base64'],
-        extract: (lines) => lines.filter(l => l.includes('JSON') || l.includes('show()')).join('\n')
-      },
-      {
-        title: '💾 文件操作',
-        keywords: ['/data', '工作区', '会话持久化', '读取文件'],
-        extract: (lines) => lines.filter(l => l.includes('/data') || l.includes('pd.read')).join('\n')
-      }
-    ];
-    
-    const lines = content.split('\n');
-    
-    for (const section of infoSections) {
-      const relevantLines = [];
-      let inSection = false;
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        // 检查是否进入相关章节
-        if (line.startsWith('## ') && section.keywords.some(kw => line.includes(kw))) {
-          inSection = true;
-          relevantLines.push(line);
-        } else if (line.startsWith('## ') && inSection) {
-          break;
-        } else if (inSection) {
-          relevantLines.push(line);
-        }
-      }
-      
-      if (relevantLines.length > 0) {
-        core += `### ${section.title}\n`;
-        core += relevantLines.slice(0, 8).join('\n') + '\n\n';
-      }
-    }
-    
-    return core;
-  }
-
-  _extractChartSpecificContent(userQuery, skillContent) {
-    let chartContent = '\n## 📊 图表示例\n\n';
-    
-    if (userQuery.includes('折线图')) {
-      chartContent += '检测到您想生成折线图，以下是一个简单的折线图代码模板：\n\n';
-      chartContent += '``python\n';
-      chartContent += 'import matplotlib.pyplot as plt\n';
-      chartContent += '# 示例数据\n';
-      chartContent += 'x = [1, 2, 3, 4, 5]\n';
-      chartContent += 'y = [2, 4, 1, 5, 3]\n';
-      chartContent += '# 绘制折线图\n';
-      chartContent += 'plt.plot(x, y, marker=\'o\')\n';
-      chartContent += 'plt.title("折线图示例")\n';
-      chartContent += 'plt.xlabel("X轴")\n';
-      chartContent += 'plt.ylabel("Y轴")\n';
-      chartContent += 'plt.show()\n';
-      chartContent += '```\n\n';
-    } else if (userQuery.includes('饼图')) {
-      chartContent += '检测到您想生成饼图，以下是一个简单的饼图代码模板：\n\n';
-      chartContent += '``python\n';
-      chartContent += 'import matplotlib.pyplot as plt\n';
-      chartContent += '# 示例数据\n';
-      chartContent += 'labels = [\'A\', \'B\', \'C\', \'D\']\n';
-      chartContent += 'sizes = [15, 30, 45, 10]\n';
-      chartContent += '# 绘制饼图\n';
-      chartContent += 'plt.pie(sizes, labels=labels, autopct=\'%1.1f%%\')\n';
-      chartContent += 'plt.title("饼图示例")\n';
-      chartContent += 'plt.show()\n';
-      chartContent += '```\n\n';
-    } else {
-      chartContent += '检测到您想生成图表，以下是一些常用的图表示例：\n\n';
-      chartContent += '``python\n';
-      chartContent += 'import matplotlib.pyplot as plt\n';
-      chartContent += '# 这里放置您的数据和图表代码\n';
-      chartContent += 'plt.show()\n';
-      chartContent += '```\n\n';
-    }
-    
-    return chartContent;
-  }
-
-  _extractCodeTemplates(skillContent, count) {
-    let templateContent = '\n## 💻 代码模板\n\n';
-    
-    // 简单提取代码块
-    const codeBlocks = skillContent.match(/```python[\s\S]*?```/g) || [];
-    
-    if (codeBlocks.length > 0) {
-      const limitedBlocks = codeBlocks.slice(0, count);
-      limitedBlocks.forEach((block, index) => {
-        templateContent += `**模板 ${index + 1}**:\n\n${block}\n\n`;
-      });
-    } else {
-      templateContent += '暂无可用代码模板\n\n';
-    }
-    
-    return templateContent;
   }
 
   /**
