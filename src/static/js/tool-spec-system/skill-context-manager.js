@@ -1,5 +1,5 @@
 // src/tool-spec-system/skill-context-manager.js
-// ✅ 增强版本：精确的图表类型匹配 + 针对性的代码示例提取
+// 🎯 重构版本：智能内容构建 + 匹配压缩器新架构
 
 import { skillManagerPromise } from './skill-manager.js';
 
@@ -26,44 +26,41 @@ class SkillContextManager {
       'pdf': 'pdf_export'
     };
     
-    // 🚀 Python沙盒参考文件映射（增强版）
+    // 🚀 Python沙盒参考文件映射（优化版）
     this.pythonReferenceMap = {
-      // matplotlib 相关
+      // 基础图表绘制
       'matplotlib': 'matplotlib_cookbook.md',
       '可视化': 'matplotlib_cookbook.md',
       '图表': 'matplotlib_cookbook.md',
       '画图': 'matplotlib_cookbook.md',
-      'chart': 'matplotlib_cookbook.md',
-      'plot': 'matplotlib_cookbook.md',
-      '图形': 'matplotlib_cookbook.md',
       '绘图': 'matplotlib_cookbook.md',
       
-      // 具体图表类型 - 精确匹配
-      '折线图': 'matplotlib_cookbook.md:折线图',
-      '折线': 'matplotlib_cookbook.md:折线图',
-      'line': 'matplotlib_cookbook.md:折线图',
-      'line_chart': 'matplotlib_cookbook.md:折线图',
+      // 具体图表类型
+      '折线图': 'matplotlib_cookbook.md:line',
+      '折线': 'matplotlib_cookbook.md:line',
+      'line': 'matplotlib_cookbook.md:line',
+      'line_chart': 'matplotlib_cookbook.md:line',
       
-      '饼图': 'matplotlib_cookbook.md:饼图',
-      'pie': 'matplotlib_cookbook.md:饼图',
-      'pie_chart': 'matplotlib_cookbook.md:饼图',
+      '饼图': 'matplotlib_cookbook.md:pie',
+      'pie': 'matplotlib_cookbook.md:pie',
+      'pie_chart': 'matplotlib_cookbook.md:pie',
       
-      '条形图': 'matplotlib_cookbook.md:条形图',
-      '柱状图': 'matplotlib_cookbook.md:条形图',
-      'bar': 'matplotlib_cookbook.md:条形图',
-      'bar_chart': 'matplotlib_cookbook.md:条形图',
+      '条形图': 'matplotlib_cookbook.md:bar',
+      '柱状图': 'matplotlib_cookbook.md:bar',
+      'bar': 'matplotlib_cookbook.md:bar',
+      'bar_chart': 'matplotlib_cookbook.md:bar',
       
-      '散点图': 'matplotlib_cookbook.md:散点图',
-      'scatter': 'matplotlib_cookbook.md:散点图',
-      'scatter_plot': 'matplotlib_cookbook.md:散点图',
+      '散点图': 'matplotlib_cookbook.md:scatter',
+      'scatter': 'matplotlib_cookbook.md:scatter',
+      'scatter_plot': 'matplotlib_cookbook.md:scatter',
       
-      '热力图': 'matplotlib_cookbook.md:热力图',
-      'heatmap': 'matplotlib_cookbook.md:热力图',
+      '热力图': 'matplotlib_cookbook.md:heatmap',
+      'heatmap': 'matplotlib_cookbook.md:heatmap',
       
-      '直方图': 'matplotlib_cookbook.md:直方图',
-      'histogram': 'matplotlib_cookbook.md:直方图',
+      '直方图': 'matplotlib_cookbook.md:histogram',
+      'histogram': 'matplotlib_cookbook.md:histogram',
       
-      // pandas 相关
+      // 数据处理
       'pandas': 'pandas_cheatsheet.md',
       '数据清洗': 'pandas_cheatsheet.md',
       '数据分析': 'pandas_cheatsheet.md',
@@ -114,39 +111,7 @@ class SkillContextManager {
       'integrate': 'scipy_cookbook.md'
     };
     
-    // 🎯 图表类型与章节映射
-    this.chartTypeToSection = {
-      // 折线图相关章节
-      '折线图': ['折线图示例', '折线图详细配置', '折线图与散点图组合'],
-      'line': ['折线图示例', '折线图详细配置', '折线图与散点图组合'],
-      'line_chart': ['折线图示例', '折线图详细配置', '折线图与散点图组合'],
-      
-      // 饼图相关章节
-      '饼图': ['饼图示例', '环形图（甜甜圈图）', '饼图高级配置'],
-      'pie': ['饼图示例', '环形图（甜甜圈图）', '饼图高级配置'],
-      'pie_chart': ['饼图示例', '环形图（甜甜圈图）', '饼图高级配置'],
-      
-      // 条形图相关章节
-      '条形图': ['条形图示例', '分组条形图', '堆叠条形图'],
-      '柱状图': ['条形图示例', '分组条形图', '堆叠条形图'],
-      'bar': ['条形图示例', '分组条形图', '堆叠条形图'],
-      'bar_chart': ['条形图示例', '分组条形图', '堆叠条形图'],
-      
-      // 散点图相关章节
-      '散点图': ['散点图示例', '气泡图', '散点图矩阵'],
-      'scatter': ['散点图示例', '气泡图', '散点图矩阵'],
-      'scatter_plot': ['散点图示例', '气泡图', '散点图矩阵'],
-      
-      // 热力图相关章节
-      '热力图': ['热力图示例', '相关性热力图', '密度热力图'],
-      'heatmap': ['热力图示例', '相关性热力图', '密度热力图'],
-      
-      // 直方图相关章节
-      '直方图': ['直方图示例', '分布直方图', '累积分布直方图'],
-      'histogram': ['直方图示例', '分布直方图', '累积分布直方图']
-    };
-    
-    console.log('✅ SkillContextManager 已加载 - 增强的图表类型匹配系统');
+    console.log('✅ SkillContextManager 已加载 - 重构的上下文构建系统');
   }
 
   async ensureInitialized() {
@@ -246,14 +211,14 @@ class SkillContextManager {
   }
 
   /**
-   * 🚀 增强的Python沙盒上下文构建 - 精确版本
+   * 🚀 增强的Python沙盒上下文构建 - 重构版
    */
   async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
     try {
       const { skill: skillData, score, name, description } = skill;
       
       console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
-      console.log(`📦 [文档结构] 主文档: ${skillData.content.length}字符`);
+      console.log(`📦 [技能文档] 主文档大小: ${skillData.content.length}字符`);
       
       // 🎯 检查缓存
       const cachedContent = this.skillManager.cacheCompressor.getFromCache(
@@ -262,6 +227,7 @@ class SkillContextManager {
         { sessionId, ...context }
       );
       
+      // 构建基础上下文
       let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
       contextContent += `**核心功能**: ${description}\n\n`;
       
@@ -271,42 +237,55 @@ class SkillContextManager {
         return contextContent;
       }
       
-      // 🎯 查找相关参考文件
-      const relevantReferences = this._findRelevantPythonReferencesEnhanced(userQuery);
+      // 🎯 智能内容构建策略
+      console.log('🔄 [开始构建智能内容]');
       
-      // 🎯 从合并内容中提取相关部分
-      let enhancedContent = this._buildContentFromCombinedSource(skillData.content, userQuery, relevantReferences);
+      // 1. 从技能文档提取核心结构
+      const skillCore = this._extractSkillDocumentCore(skillData.content);
+      console.log(`📘 [技能核心] 提取: ${skillCore.length}字符`);
       
-      // 🎯 验证提取结果
-      console.log('🔍 [内容提取]', {
-        内容长度: enhancedContent.length,
-        参考文件匹配数: relevantReferences.length,
-        是否包含代码块: enhancedContent.includes('```python'),
-        代码块数量: (enhancedContent.match(/```python/g) || []).length
-      });
+      // 2. 根据查询构建相关内容
+      const queryContent = this._buildQuerySpecificContent(skillData, userQuery);
+      console.log(`🎯 [查询内容] 构建: ${queryContent.length}字符`);
       
-      // 🎯 压缩内容
+      // 3. 合并内容
+      const mergedContent = this._mergeSkillAndQueryContent(skillCore, queryContent, userQuery);
+      console.log(`🔗 [合并内容] 总大小: ${mergedContent.length}字符`);
+      
+      // 🎯 使用新的压缩器进行智能压缩
       let compressedContent = '';
       try {
+        // 为新压缩器传递额外的上下文信息
         compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
-          enhancedContent,
+          mergedContent,
           {
             level: 'smart',
-            maxChars: 12000,
+            maxChars: 15000,  // 增加最大字符数
             userQuery: userQuery,
-            toolName: 'python_sandbox'
+            toolName: 'python_sandbox',
+            preserveSections: [
+              '通用调用结构',
+              '输出规范',
+              '核心工作流模式',
+              '可直接使用的代码模板'
+            ]
           }
         );
       } catch (compressError) {
         console.error(`🚨 [内容压缩失败]`, compressError);
-        compressedContent = enhancedContent;
+        // 压缩失败时使用未压缩的合并内容
+        compressedContent = this._formatContentForPrompt(mergedContent, userQuery);
       }
       
       // 缓存结果
       this.skillManager.cacheCompressor.setToCache(
         'python_sandbox', 
         userQuery, 
-        { sessionId, ...context }, 
+        { 
+          sessionId, 
+          ...context,
+          contentType: 'mixedContent'  // 告知缓存器这是混合内容
+        }, 
         compressedContent
       );
       
@@ -314,53 +293,353 @@ class SkillContextManager {
       return contextContent;
     } catch (error) {
       console.error(`🚨 [Python沙盒上下文构建失败]`, error);
-      return this._buildFallbackContent(skill.skill, userQuery);
+      return this._buildFallbackContext(skill.skill, userQuery);
     }
   }
 
   /**
-   * 🎯 增强的参考文件查找 - 支持图表类型精确匹配
+   * 🎯 从技能文档提取核心结构 - 修复版
    */
-  _findRelevantPythonReferencesEnhanced(userQuery) {
+  _extractSkillDocumentCore(skillContent) {
+    let core = '';
+    
+    // 核心章节的优先级顺序
+    const coreSections = [
+      {
+        pattern: /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i,
+        name: '调用结构',
+        required: true,
+        maxLength: 3000
+      },
+      {
+        pattern: /## 🚀 输出规范 - 后端实际支持的格式[\s\S]*?(?=\n##\s|$)/i,
+        name: '输出规范',
+        required: true,
+        maxLength: 2500
+      },
+      {
+        pattern: /## 💡 核心工作流模式[\s\S]*?(?=\n##\s|$)/i,
+        name: '工作流模式',
+        required: true,
+        maxLength: 2000
+      },
+      {
+        pattern: /## 📋 可用库快速参考[\s\S]*?(?=\n##\s|$)/i,
+        name: '库参考',
+        required: false,
+        maxLength: 1500
+      },
+      {
+        pattern: /## 🎯 快速开始模板[\s\S]*?(?=\n##\s|$)/i,
+        name: '快速开始',
+        required: false,
+        maxLength: 2000
+      }
+    ];
+    
+    // 首先提取标题和描述
+    const introMatch = skillContent.match(/^# [^\n]+[\s\S]*?(?=\n##\s|$)/);
+    if (introMatch) {
+      core += introMatch[0] + '\n\n';
+    }
+    
+    // 提取核心章节
+    for (const section of coreSections) {
+      if (section.required || core.length < 4000) { // 确保有足够内容
+        const match = skillContent.match(section.pattern);
+        if (match) {
+          let content = match[0];
+          if (content.length > section.maxLength) {
+            content = content.substring(0, section.maxLength) + '\n\n...';
+          }
+          core += content + '\n\n';
+          console.log(`✅ [提取核心] ${section.name}: ${Math.min(content.length, section.maxLength)}字符`);
+        } else if (section.required) {
+          console.warn(`⚠️ [缺少核心章节] ${section.name}`);
+        }
+      }
+    }
+    
+    // 确保有JSON示例
+    if (!core.includes('```json')) {
+      const jsonExample = skillContent.match(/```json[\s\S]*?```/);
+      if (jsonExample) {
+        core += '## 🎯 调用示例\n\n' + jsonExample[0] + '\n\n';
+      }
+    }
+    
+    console.log(`📘 [技能核心完成] 总大小: ${core.length}字符`);
+    return core;
+  }
+
+  /**
+   * 🎯 根据查询构建特定内容
+   */
+  _buildQuerySpecificContent(skillData, userQuery) {
     const queryLower = userQuery.toLowerCase();
-    const matchedReferences = new Set();
+    let queryContent = '';
     
-    console.log(`🔍 [增强匹配] 分析查询: "${userQuery.substring(0, 50)}..."`);
-    
-    // 🎯 第一步：提取查询中的图表类型
+    // 检测用户意图
     const chartType = this._extractChartType(userQuery);
-    console.log(`🎯 [图表类型识别] 识别到: ${chartType || '无'}`);
+    const relevantRefs = this._findRelevantReferences(userQuery);
     
-    // 🎯 第二步：基于图表类型进行精确匹配
-    if (chartType) {
-        // 优先匹配图表类型对应的参考文件
-        matchedReferences.add('matplotlib_cookbook.md');
-        
-        // 根据图表类型添加其他可能相关的文件
-        if (chartType.includes('数据') || chartType.includes('清洗') || chartType.includes('处理')) {
-            matchedReferences.add('pandas_cheatsheet.md');
+    console.log(`🎯 [用户意图] 图表类型: ${chartType || '无'}, 相关参考: ${relevantRefs.length}个`);
+    
+    // 如果是图表相关查询
+    if (chartType && relevantRefs.includes('matplotlib_cookbook.md')) {
+      const refContent = skillData.resources?.references?.['matplotlib_cookbook.md'];
+      if (refContent) {
+        const chartExamples = this._extractChartExamples(refContent, chartType, userQuery);
+        if (chartExamples) {
+          queryContent += `## 📊 ${chartType}专项代码示例\n\n`;
+          queryContent += `检测到您的查询关于 **${chartType}**，已提取最相关的代码模板：\n\n`;
+          queryContent += chartExamples;
+          
+          // 添加图表使用提示
+          queryContent += this._getChartUsageTips(chartType);
         }
+      }
     }
     
-    // 🎯 第三步：关键词匹配（备用）
-    if (matchedReferences.size === 0) {
-        console.log(`📋 [无图表类型匹配] 使用关键词匹配`);
-        for (const [keyword, referenceFile] of Object.entries(this.pythonReferenceMap)) {
-            if (queryLower.includes(keyword)) {
-                console.log(`✅ 匹配关键词 "${keyword}" -> ${referenceFile}`);
-                matchedReferences.add(referenceFile.split(':')[0]); // 去掉章节部分
-            }
+    // 如果是数据处理相关
+    if (queryLower.includes('数据') && queryLower.includes('处理')) {
+      const refContent = skillData.resources?.references?.['pandas_cheatsheet.md'];
+      if (refContent) {
+        const dataExamples = this._extractDataProcessingExamples(refContent, userQuery);
+        if (dataExamples) {
+          queryContent += `## 📈 数据处理代码示例\n\n`;
+          queryContent += dataExamples;
         }
+      }
     }
     
-    // 🎯 第四步：默认文件（如果没有任何匹配）
-    if (matchedReferences.size === 0) {
-        console.log(`📋 [无匹配] 使用默认参考文件`);
-        matchedReferences.add('matplotlib_cookbook.md');
+    // 如果没有特定内容，添加一些通用示例
+    if (!queryContent && skillData.content.includes('```python')) {
+      const codeBlocks = skillData.content.match(/```python[\s\S]*?```/g) || [];
+      if (codeBlocks.length > 0) {
+        queryContent += `## 💻 通用Python代码示例\n\n`;
+        queryContent += `以下是几个可以直接使用的代码模板：\n\n`;
+        codeBlocks.slice(0, 2).forEach((block, idx) => {
+          queryContent += `**示例 ${idx + 1}**:\n\n${block}\n\n`;
+        });
+      }
     }
     
-    console.log('📚 最终匹配到的参考文件:', Array.from(matchedReferences));
-    return Array.from(matchedReferences);
+    console.log(`🎯 [查询内容构建] 大小: ${queryContent.length}字符`);
+    return queryContent;
+  }
+
+  /**
+   * 🎯 提取图表示例
+   */
+  _extractChartExamples(refContent, chartType, userQuery) {
+    const chartPatterns = {
+      '折线图': ['plt.plot', 'plot(', '折线图示例', 'line'],
+      '饼图': ['plt.pie', 'pie(', '饼图示例'],
+      '条形图': ['plt.bar', 'bar(', '条形图示例'],
+      '散点图': ['plt.scatter', 'scatter(', '散点图示例'],
+      '热力图': ['plt.imshow', 'heatmap', '热力图示例'],
+      '直方图': ['plt.hist', 'hist(', '直方图示例']
+    };
+    
+    const keywords = chartPatterns[chartType] || [chartType];
+    const allCodeBlocks = refContent.match(/```python[\s\S]*?```/g) || [];
+    
+    // 优先选择包含关键词的代码块
+    const relevantBlocks = [];
+    for (const block of allCodeBlocks) {
+      const blockLower = block.toLowerCase();
+      const isRelevant = keywords.some(keyword => 
+        blockLower.includes(keyword.toLowerCase())
+      );
+      
+      if (isRelevant) {
+        relevantBlocks.push(block);
+        if (relevantBlocks.length >= 2) break;
+      }
+    }
+    
+    // 如果没有找到，取前两个通用代码块
+    const displayBlocks = relevantBlocks.length > 0 
+      ? relevantBlocks.slice(0, 2)
+      : allCodeBlocks.slice(0, 2);
+    
+    if (displayBlocks.length === 0) {
+      return null;
+    }
+    
+    let examples = '';
+    displayBlocks.forEach((block, index) => {
+      examples += `**模板 ${index + 1}**:\n\n${block}\n\n`;
+    });
+    
+    return examples;
+  }
+
+  /**
+   * 🎯 提取数据处理示例
+   */
+  _extractDataProcessingExamples(refContent, userQuery) {
+    const queryLower = userQuery.toLowerCase();
+    const allCodeBlocks = refContent.match(/```python[\s\S]*?```/g) || [];
+    
+    // 根据查询关键词选择代码块
+    const keywords = [];
+    if (queryLower.includes('清洗')) keywords.push('清洗', 'clean');
+    if (queryLower.includes('分析')) keywords.push('分析', 'analyze');
+    if (queryLower.includes('转换')) keywords.push('转换', 'transform');
+    if (queryLower.includes('聚合')) keywords.push('聚合', 'aggregate');
+    
+    const relevantBlocks = [];
+    for (const block of allCodeBlocks) {
+      if (relevantBlocks.length >= 2) break;
+      
+      const blockLower = block.toLowerCase();
+      const isRelevant = keywords.length === 0 || 
+        keywords.some(keyword => blockLower.includes(keyword));
+      
+      if (isRelevant) {
+        relevantBlocks.push(block);
+      }
+    }
+    
+    if (relevantBlocks.length === 0 && allCodeBlocks.length > 0) {
+      relevantBlocks.push(...allCodeBlocks.slice(0, 2));
+    }
+    
+    if (relevantBlocks.length === 0) {
+      return null;
+    }
+    
+    let examples = '';
+    relevantBlocks.forEach((block, index) => {
+      examples += `**示例 ${index + 1}**:\n\n${block}\n\n`;
+    });
+    
+    return examples;
+  }
+
+  /**
+   * 🎯 合并技能核心和查询内容
+   */
+  _mergeSkillAndQueryContent(skillCore, queryContent, userQuery) {
+    if (!queryContent) {
+      console.log('📋 [合并内容] 只有技能核心，无查询特定内容');
+      return skillCore;
+    }
+    
+    // 如果技能核心太小，直接合并
+    if (skillCore.length < 2000) {
+      const merged = skillCore + '\n\n' + queryContent;
+      console.log(`🔗 [简单合并] 大小: ${merged.length}字符`);
+      return merged;
+    }
+    
+    // 智能合并：确保不重复，结构清晰
+    let merged = skillCore;
+    
+    // 只在技能核心没有代码示例时添加查询内容
+    if (!skillCore.includes('```python') && queryContent.includes('```python')) {
+      merged += '\n\n---\n\n' + queryContent;
+    }
+    // 如果技能核心已经有代码，但查询内容有更相关的示例
+    else if (queryContent.length > 1000) {
+      // 添加一个专门的"查询相关"章节
+      merged += '\n\n## 🎯 查询相关内容\n\n';
+      merged += `以下内容专门针对您的查询"${userQuery.substring(0, 50)}..."：\n\n`;
+      merged += queryContent;
+    }
+    
+    console.log(`🔗 [智能合并完成] 总大小: ${merged.length}字符`);
+    return merged;
+  }
+
+  /**
+   * 🎯 格式化内容以供提示使用
+   */
+  _formatContentForPrompt(content, userQuery) {
+    // 确保内容结构清晰
+    let formatted = content;
+    
+    // 如果内容太大，进行基本截断
+    if (formatted.length > 12000) {
+      // 保留开头的重要部分
+      const preserved = formatted.substring(0, 10000);
+      
+      // 查找最后一个完整段落
+      const lastSection = preserved.lastIndexOf('## ');
+      if (lastSection > 8000) {
+        formatted = preserved.substring(0, lastSection);
+      } else {
+        formatted = preserved;
+      }
+      
+      formatted += '\n\n...\n\n**提示**: 内容已截断，如需完整文档请查阅参考文件。';
+    }
+    
+    // 添加执行指导
+    formatted += `\n\n## 🚀 执行步骤\n\n`;
+    formatted += `1. 参考上面的调用结构和代码示例\n`;
+    formatted += `2. 根据您的需求调整代码\n`;
+    formatted += `3. 确保遵循输出规范\n`;
+    formatted += `4. 图表输出使用 \`plt.show()\`\n`;
+    formatted += `5. 文件输出使用JSON格式\n`;
+    
+    return formatted;
+  }
+
+  /**
+   * 🎯 获取图表使用提示
+   */
+  _getChartUsageTips(chartType) {
+    const tips = {
+      '折线图': '\n**💡 折线图要点**:\n• 使用 `plt.plot(x, y)` 绘制折线\n• 添加 `marker` 参数显示数据点\n• 使用 `plt.title()` 和 `plt.xlabel()`/`plt.ylabel()` 添加标签',
+      '饼图': '\n**💡 饼图要点**:\n• 使用 `plt.pie(sizes, labels=labels)` 绘制饼图\n• 添加 `autopct` 参数显示百分比\n• 使用 `explode` 参数突出某部分',
+      '条形图': '\n**💡 条形图要点**:\n• 使用 `plt.bar(x, height)` 绘制条形图\n• 使用 `plt.barh()` 绘制水平条形图\n• 设置 `color` 参数改变颜色',
+      '散点图': '\n**💡 散点图要点**:\n• 使用 `plt.scatter(x, y)` 绘制散点图\n• 使用 `s` 参数设置点的大小\n• 使用 `c` 参数设置点的颜色',
+      '热力图': '\n**💡 热力图要点**:\n• 使用 `plt.imshow(data)` 显示热力图\n• 使用 `cmap` 参数设置颜色映射\n• 添加 `plt.colorbar()` 显示颜色条'
+    };
+    
+    return tips[chartType] || '\n**💡 通用图表提示**:\n• 使用 `plt.figure(figsize=(宽, 高))` 设置画布大小\n• 使用 `plt.tight_layout()` 防止标签重叠\n• 使用 `plt.show()` 显示图表';
+  }
+
+  /**
+   * 🎯 降级上下文构建
+   */
+  _buildFallbackContext(skillData, userQuery) {
+    console.log('🔄 [使用降级方案构建上下文]');
+    
+    let content = `## 🐍 Python沙盒工具\n\n`;
+    
+    // 提取最关键的信息
+    const keySections = [
+      skillData.content.match(/## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i),
+      skillData.content.match(/## 🚀 输出规范 - 后端实际支持的格式[\s\S]*?(?=\n##\s|$)/i)
+    ].filter(Boolean);
+    
+    keySections.forEach(section => {
+      if (section) {
+        const truncated = section[0].length > 1500 
+          ? section[0].substring(0, 1500) + '...'
+          : section[0];
+        content += truncated + '\n\n';
+      }
+    });
+    
+    // 添加一个代码示例
+    const codeBlock = skillData.content.match(/```python[\s\S]*?```/);
+    if (codeBlock) {
+      content += `## 💻 代码示例\n\n${codeBlock[0]}\n\n`;
+    }
+    
+    // 添加执行指导
+    content += `## 🚀 快速使用\n\n`;
+    content += `1. 遵循上面的调用结构格式\n`;
+    content += `2. 图表输出使用 \`plt.show()\`\n`;
+    content += `3. 文件输出使用指定的JSON格式\n`;
+    content += `4. 复杂任务可查阅完整参考文件\n`;
+    
+    return content;
   }
 
   /**
@@ -369,34 +648,21 @@ class SkillContextManager {
   _extractChartType(userQuery) {
     const queryLower = userQuery.toLowerCase();
     
-    // 图表类型关键词映射
     const chartKeywords = {
-      '折线图': ['折线图', '折线', 'line', 'line_chart', '折线图', '趋势图'],
+      '折线图': ['折线图', '折线', 'line', 'line_chart', '趋势图'],
       '饼图': ['饼图', 'pie', 'pie_chart', '扇形图', '占比图'],
       '条形图': ['条形图', '柱状图', 'bar', 'bar_chart', '柱形图'],
       '散点图': ['散点图', 'scatter', 'scatter_plot', '散点', '点图'],
       '热力图': ['热力图', 'heatmap', '热图'],
-      '直方图': ['直方图', 'histogram', '分布图'],
-      '箱线图': ['箱线图', 'box', 'box_plot', '箱型图'],
-      '面积图': ['面积图', 'area', 'area_chart'],
-      '雷达图': ['雷达图', 'radar', 'radar_chart', '蛛网图']
+      '直方图': ['直方图', 'histogram', '分布图']
     };
     
     for (const [chartType, keywords] of Object.entries(chartKeywords)) {
       for (const keyword of keywords) {
         if (queryLower.includes(keyword)) {
-          console.log(`🎯 识别到图表类型: ${chartType} (通过关键词: ${keyword})`);
+          console.log(`🎯 [图表类型识别] ${chartType} (通过关键词: ${keyword})`);
           return chartType;
         }
-      }
-    }
-    
-    // 如果没有精确匹配，检查通用图表关键词
-    const generalChartKeywords = ['图', 'chart', 'plot', 'graph', '可视化', '画图'];
-    for (const keyword of generalChartKeywords) {
-      if (queryLower.includes(keyword)) {
-        console.log(`📊 识别到通用图表需求 (通过关键词: ${keyword})`);
-        return '通用图表';
       }
     }
     
@@ -404,493 +670,32 @@ class SkillContextManager {
   }
 
   /**
-   * 🎯 构建针对性的内容 - 根据图表类型提取专门的内容
+   * 🎯 查找相关参考文件
    */
-  _buildTargetedContentFromReferences(relevantReferences, skillData, userQuery) {
-    let content = `## 📚 相关参考指南\n\n`;
+  _findRelevantReferences(userQuery) {
+    const queryLower = userQuery.toLowerCase();
+    const matchedRefs = new Set();
     
-    // 提取图表类型
+    // 优先匹配具体图表类型
     const chartType = this._extractChartType(userQuery);
-    const queryLower = userQuery.toLowerCase();
-    
     if (chartType) {
-      content += `检测到您的查询关于 **${chartType}**，已提取相关代码示例和配置：\n\n`;
-    } else {
-      content += `检测到您的查询与以下文档相关：\n\n`;
+      matchedRefs.add('matplotlib_cookbook.md');
     }
     
-    let totalExtracted = 0;
-    const TARGET_MIN_LENGTH = 3000;
-    const TARGET_MAX_LENGTH = 8000;
-    
-    for (const refFile of relevantReferences) {
-      if (totalExtracted >= TARGET_MAX_LENGTH) break;
-      
-      const refContent = skillData.resources?.references?.[refFile];
-      if (!refContent) {
-        console.warn(`📋 [参考文件不存在] ${refFile}`);
-        continue;
-      }
-      
-      console.log(`🔍 [处理文件] ${refFile}, 大小: ${refContent.length}字符`);
-      
-      // 🎯 针对性的内容提取
-      const extracted = this._extractTargetedContent(refContent, refFile, userQuery, chartType);
-      
-      if (extracted && extracted.length > 500) {
-        content += `### 📖 ${refFile.replace('.md', '')}\n\n`;
-        content += extracted + '\n\n';
-        totalExtracted += extracted.length;
-        
-        console.log(`📦 [文件提取] ${refFile}: ${extracted.length}字符, 累计: ${totalExtracted}字符`);
-        
-        // 添加分隔符
-        if (totalExtracted < TARGET_MAX_LENGTH && refFile !== relevantReferences[relevantReferences.length - 1]) {
-          content += '---\n\n';
-        }
+    // 关键词匹配
+    for (const [keyword, refFile] of Object.entries(this.pythonReferenceMap)) {
+      if (queryLower.includes(keyword)) {
+        const baseFile = refFile.split(':')[0];
+        matchedRefs.add(baseFile);
       }
     }
     
-    console.log(`📊 [内容提取统计] 总共提取: ${totalExtracted}字符, 目标: ${TARGET_MIN_LENGTH}-${TARGET_MAX_LENGTH}字符`);
-    
-    // 🎯 如果提取不足，补充更多内容
-    if (totalExtracted < TARGET_MIN_LENGTH) {
-      console.log('📋 [提取不足] 补充更多通用内容');
-      content += this._extractMoreGeneralContent(skillData, userQuery, chartType, TARGET_MIN_LENGTH - totalExtracted);
+    // 默认文件
+    if (matchedRefs.size === 0) {
+      matchedRefs.add('matplotlib_cookbook.md');
     }
     
-    // 🎯 添加Python沙盒专用提醒
-    content += `\n**🚨 输出规范**:\n`;
-    content += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
-    content += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
-    
-    // 根据图表类型添加特定提示
-    if (chartType) {
-      content += `\n**💡 关于${chartType}的提示**:\n`;
-      content += this._getChartSpecificTips(chartType);
-    }
-    
-    return content;
-  }
-
-  /**
-   * 🎯 针对性的内容提取 - 根据图表类型提取相关章节
-   */
-  _extractTargetedContent(refContent, refFileName, userQuery, chartType) {
-    const queryLower = userQuery.toLowerCase();
-    let extracted = '';
-    
-    // 1. 提取文件标题
-    const titleMatch = refContent.match(/^#\s+([^\n]+)/m);
-    if (titleMatch) {
-      extracted += `## ${titleMatch[1]}\n\n`;
-    }
-    
-    // 2. 如果识别到具体图表类型，提取相关章节
-    if (chartType && refFileName === 'matplotlib_cookbook.md') {
-      const chartSpecificContent = this._extractChartSpecificSections(refContent, chartType, queryLower);
-      if (chartSpecificContent.length > 1000) {
-        extracted += chartSpecificContent;
-        console.log(`🎯 [图表特定内容] ${chartType}: ${chartSpecificContent.length}字符`);
-        return extracted;
-      }
-    }
-    
-    // 3. 提取与查询相关的章节
-    const relevantSections = this._extractRelevantSections(refContent, userQuery);
-    if (relevantSections.length > 500) {
-      extracted += relevantSections;
-      console.log(`🔍 [相关章节] 提取: ${relevantSections.length}字符`);
-    }
-    
-    // 4. 提取代码示例（最重要！）
-    const codeExtracted = this._extractRelevantCodeExamples(refContent, userQuery, chartType);
-    if (codeExtracted.length > 300) {
-      extracted += codeExtracted;
-      console.log(`💻 [代码示例] 提取: ${codeExtracted.length}字符, 代码块数量: ${(codeExtracted.match(/```python/g) || []).length}`);
-    }
-    
-    // 5. 如果还是太少，提取前几个段落
-    if (extracted.length < 800) {
-      const firstParagraphs = this._extractFirstParagraphs(refContent, 3);
-      extracted += firstParagraphs;
-    }
-    
-    // 6. 限制长度
-    if (extracted.length > 4000) {
-      extracted = extracted.substring(0, 4000) + '\n\n*(内容截断，如需完整文档请查阅对应文件)*';
-    }
-    
-    return extracted;
-  }
-
-  /**
-   * 🎯 提取图表特定章节
-   */
-  _extractChartSpecificSections(refContent, chartType, queryLower) {
-    let extracted = '';
-    
-    // 根据图表类型查找相关章节
-    const sectionKeywords = {
-      '折线图': ['折线图', 'line', 'plot', '趋势', '时间序列'],
-      '饼图': ['饼图', 'pie', '扇形', '占比', '百分比'],
-      '条形图': ['条形图', '柱状图', 'bar', '分组', '堆叠'],
-      '散点图': ['散点图', 'scatter', '点图', '相关性'],
-      '热力图': ['热力图', 'heatmap', '热图', '颜色映射'],
-      '直方图': ['直方图', 'histogram', '分布', '频率']
-    };
-    
-    const keywords = sectionKeywords[chartType] || [chartType];
-    
-    // 查找所有二级和三级标题
-    const sectionRegex = /(#{2,3}\s+[^\n]+)([\s\S]*?)(?=\n#{2,3}\s|$)/g;
-    let match;
-    
-    while ((match = sectionRegex.exec(refContent)) !== null) {
-      const [fullMatch, title, content] = match;
-      
-      // 检查标题是否包含关键词
-      const titleLower = title.toLowerCase();
-      const hasKeyword = keywords.some(keyword => 
-        titleLower.includes(keyword.toLowerCase())
-      );
-      
-      if (hasKeyword) {
-        extracted += `${title}\n${content}\n\n`;
-        
-        // 如果已经提取了足够的内容，可以提前结束
-        if (extracted.length > 2500) {
-          break;
-        }
-      }
-    }
-    
-    // 如果找到了特定章节，添加说明
-    if (extracted.length > 500) {
-      extracted = `**以下是关于${chartType}的专门章节和代码示例：**\n\n${extracted}`;
-    }
-    
-    return extracted;
-  }
-
-  /**
-   * 🎯 提取与查询相关的章节
-   */
-  _extractRelevantSections(refContent, userQuery) {
-    const queryLower = userQuery.toLowerCase();
-    let extracted = '';
-    
-    // 将查询拆分为关键词（中文和英文单词）
-    const keywords = this._extractKeywordsFromQuery(userQuery);
-    
-    if (keywords.length === 0) {
-      return extracted;
-    }
-    
-    // 查找所有二级标题
-    const sections = refContent.split(/\n#{2,3}\s+/);
-    
-    for (let i = 1; i < sections.length; i++) { // 从1开始，跳过第一个（标题）
-      const section = sections[i];
-      const firstNewline = section.indexOf('\n');
-      const title = firstNewline !== -1 ? section.substring(0, firstNewline) : section;
-      const content = firstNewline !== -1 ? section.substring(firstNewline + 1) : '';
-      
-      // 检查标题或内容是否包含关键词
-      const sectionLower = (title + ' ' + content).toLowerCase();
-      const hasKeyword = keywords.some(keyword => 
-        sectionLower.includes(keyword.toLowerCase())
-      );
-      
-      if (hasKeyword) {
-        extracted += `## ${title}\n\n${content.substring(0, 1000)}`;
-        if (content.length > 1000) {
-          extracted += '...\n\n';
-        } else {
-          extracted += '\n\n';
-        }
-        
-        // 限制提取的章节数量
-        if ((extracted.match(/## /g) || []).length >= 2) {
-          break;
-        }
-      }
-    }
-    
-    return extracted;
-  }
-
-  /**
-   * 🎯 提取相关的代码示例
-   */
-  _extractRelevantCodeExamples(refContent, userQuery, chartType) {
-    let extracted = '';
-    const queryLower = userQuery.toLowerCase();
-    
-    // 查找所有Python代码块
-    const codeBlockRegex = /```python\n([\s\S]*?)\n```/g;
-    const codeBlocks = [];
-    let match;
-    
-    while ((match = codeBlockRegex.exec(refContent)) !== null) {
-      codeBlocks.push({
-        code: match[0],
-        index: match.index,
-        content: match[1]
-      });
-    }
-    
-    if (codeBlocks.length === 0) {
-      return extracted;
-    }
-    
-    // 根据图表类型或查询关键词选择代码块
-    const selectedBlocks = [];
-    
-    // 优先选择与图表类型相关的代码
-    if (chartType) {
-      const chartTypeMap = {
-        '折线图': ['plot(', 'plt.plot', '折线图', 'line', '趋势'],
-        '饼图': ['pie(', 'plt.pie', '饼图', '扇形', '占比'],
-        '条形图': ['bar(', 'plt.bar', '条形图', '柱状图', 'bar'],
-        '散点图': ['scatter(', 'plt.scatter', '散点图', 'scatter'],
-        '热力图': ['imshow(', 'heatmap', '热力图'],
-        '直方图': ['hist(', 'plt.hist', '直方图', 'histogram']
-      };
-      
-      const keywords = chartTypeMap[chartType] || [chartType];
-      
-      for (const block of codeBlocks) {
-        const blockLower = block.content.toLowerCase();
-        const hasKeyword = keywords.some(keyword => 
-          blockLower.includes(keyword.toLowerCase())
-        );
-        
-        if (hasKeyword) {
-          selectedBlocks.push(block);
-          if (selectedBlocks.length >= 2) break;
-        }
-      }
-    }
-    
-    // 如果图表类型匹配不够，使用查询关键词匹配
-    if (selectedBlocks.length < 2) {
-      const queryKeywords = this._extractKeywordsFromQuery(userQuery);
-      
-      for (const block of codeBlocks) {
-        if (selectedBlocks.length >= 3) break;
-        
-        const blockLower = block.content.toLowerCase();
-        const hasKeyword = queryKeywords.some(keyword => 
-          blockLower.includes(keyword.toLowerCase())
-        );
-        
-        // 避免重复添加
-        if (hasKeyword && !selectedBlocks.includes(block)) {
-          selectedBlocks.push(block);
-        }
-      }
-    }
-    
-    // 如果还是不够，添加通用的代码示例
-    if (selectedBlocks.length < 2 && codeBlocks.length > 0) {
-      // 选择前几个代码块
-      const additionalBlocks = codeBlocks.slice(0, Math.min(2, codeBlocks.length));
-      for (const block of additionalBlocks) {
-        if (!selectedBlocks.includes(block)) {
-          selectedBlocks.push(block);
-        }
-      }
-    }
-    
-    // 构建提取内容
-    if (selectedBlocks.length > 0) {
-      extracted += `\n**💻 相关代码示例** (已筛选最相关的${selectedBlocks.length}个):\n\n`;
-      selectedBlocks.forEach((block, index) => {
-        extracted += `${block.code}\n\n`;
-      });
-    }
-    
-    return extracted;
-  }
-
-  /**
-   * 🎯 从查询中提取关键词
-   */
-  _extractKeywordsFromQuery(userQuery) {
-    const queryLower = userQuery.toLowerCase();
-    
-    // 移除常见停用词
-    const stopWords = new Set([
-      '这个', '那个', '怎么', '如何', '请', '谢谢', '你好',
-      '请问', '可以', '帮助', '需要', '想要', '希望', '一下',
-      '一张', '一个', '一种', '一些', '不要', '测试', '代码', '解释器'
-    ]);
-    
-    // 分割查询为单词（支持中文和英文）
-    const words = queryLower.split(/[\s,，、.。!！?？]+/);
-    
-    // 过滤停用词和短词
-    const keywords = words.filter(word => 
-      word.length > 1 && 
-      !stopWords.has(word) &&
-      !/^[0-9]+$/.test(word)
-    );
-    
-    return keywords;
-  }
-
-  /**
-   * 🎯 提取前几个段落
-   */
-  _extractFirstParagraphs(refContent, count = 3) {
-    let extracted = '';
-    const paragraphs = refContent.split('\n\n');
-    
-    let extractedCount = 0;
-    for (const para of paragraphs) {
-      if (para.trim() && !para.startsWith('#') && !para.startsWith('```')) {
-        extracted += para + '\n\n';
-        extractedCount++;
-        if (extractedCount >= count) break;
-      }
-    }
-    
-    return extracted;
-  }
-
-  /**
-   * 🎯 提取更多通用内容
-   */
-  _extractMoreGeneralContent(skillData, userQuery, chartType, minLength) {
-    let content = '\n**📋 更多相关内容**:\n\n';
-    
-    // 提取主技能文档的关键部分
-    const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
-    if (mainContent.length > 500) {
-      content += mainContent + '\n\n';
-    }
-    
-    // 如果还是不够，添加一些通用提示
-    if (content.length < minLength) {
-      content += `**💡 通用Python沙盒使用提示**:\n`;
-      content += `• 所有代码都在安全的沙盒环境中执行\n`;
-      content += `• 支持matplotlib、pandas、numpy等常用库\n`;
-      content += `• 图像会自动捕获并返回base64格式\n`;
-      content += `• 复杂任务可以分步执行多个代码块\n`;
-      
-      if (chartType) {
-        content += `\n**🎨 ${chartType}绘制要点**:\n`;
-        content += `• 使用plt.figure()设置画布大小\n`;
-        content += `• 使用plt.title()添加标题\n`;
-        content += `• 使用plt.xlabel()/plt.ylabel()添加坐标轴标签\n`;
-        content += `• 使用plt.legend()显示图例\n`;
-        content += `• 使用plt.show()显示图表\n`;
-      }
-    }
-    
-    return content;
-  }
-
-  /**
-   * 🎯 获取图表特定提示
-   */
-  _getChartSpecificTips(chartType) {
-    const tips = {
-      '折线图': '• 使用plt.plot(x, y)绘制折线\n• marker参数可以添加数据点标记\n• linestyle参数可以设置线型（实线、虚线等）',
-      '饼图': '• 使用plt.pie(sizes, labels=labels)绘制饼图\n• autopct参数可以显示百分比\n• explode参数可以突出某一部分',
-      '条形图': '• 使用plt.bar(x, height)绘制条形图\n• 可以设置color参数改变颜色\n• 使用plt.barh()绘制水平条形图',
-      '散点图': '• 使用plt.scatter(x, y)绘制散点图\n• s参数可以设置点的大小\n• c参数可以设置点的颜色',
-      '热力图': '• 使用plt.imshow(data)显示热力图\n• cmap参数可以设置颜色映射\n• 使用plt.colorbar()添加颜色条',
-      '直方图': '• 使用plt.hist(data, bins=10)绘制直方图\n• bins参数控制柱子数量\n• 可以设置alpha参数调整透明度'
-    };
-    
-    return tips[chartType] || '• 参考matplotlib官方文档获取更多图表类型和配置选项';
-  }
-
-  /**
-   * 🎯 检查是否包含对应图表代码
-   */
-  _checkContainsChartCode(content, userQuery) {
-    const chartType = this._extractChartType(userQuery);
-    if (!chartType) return false;
-    
-    const chartCodePatterns = {
-      '折线图': ['plt\\.plot', 'plt\\.plot\\(', 'plot\\('],
-      '饼图': ['plt\\.pie', 'plt\\.pie\\(', 'pie\\('],
-      '条形图': ['plt\\.bar', 'plt\\.bar\\(', 'bar\\('],
-      '散点图': ['plt\\.scatter', 'plt\\.scatter\\(', 'scatter\\('],
-      '热力图': ['plt\\.imshow', 'heatmap', 'sns\\.heatmap'],
-      '直方图': ['plt\\.hist', 'plt\\.hist\\(', 'hist\\(']
-    };
-    
-    const patterns = chartCodePatterns[chartType];
-    if (!patterns) return false;
-    
-    return patterns.some(pattern => {
-      const regex = new RegExp(pattern, 'i');
-      return regex.test(content);
-    });
-  }
-
-  /**
-   * 🎯 降级内容构建
-   */
-  _buildFallbackContent(skillData, userQuery) {
-    let fullContent = '';
-    
-    // 1. 提取主文档的关键信息
-    const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
-    fullContent += mainContent;
-    
-    // 2. 尝试匹配相关参考文件
-    const relevantReferences = this._findRelevantPythonReferencesEnhanced(userQuery);
-    
-    if (relevantReferences.length > 0) {
-      fullContent += `\n**📚 相关参考指南**:\n`;
-      
-      for (const refFile of relevantReferences.slice(0, 2)) {
-        const refContent = skillData.resources?.references?.[refFile];
-        if (refContent) {
-          const summary = this._extractReferenceSummary(refContent, refFile);
-          fullContent += `• **${refFile.replace('.md', '')}**: ${summary}\n`;
-        }
-      }
-    }
-    
-    // 3. 添加Python沙盒专用提醒
-    fullContent += `\n**🚨 输出规范**:\n`;
-    fullContent += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
-    fullContent += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
-    fullContent += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
-    
-    return fullContent;
-  }
-
-  /**
-   * 🎯 从参考文件内容提取摘要
-   */
-  _extractReferenceSummary(refContent, fileName) {
-    // 提取第一段有意义的描述
-    const firstParagraph = refContent.split('\n\n').find(p => 
-      p.trim().length > 50 && !p.startsWith('#')
-    );
-    
-    if (firstParagraph) {
-      return firstParagraph.substring(0, 150) + '...';
-    }
-    
-    // 降级方案：基于文件名返回描述
-    const fileDescriptions = {
-      'matplotlib_cookbook.md': '数据可视化与图表制作指南，包含各种图表类型的代码示例',
-      'pandas_cheatsheet.md': '数据清洗与分析速查表，包含数据处理和性能优化代码',
-      'report_generator_workflow.md': '自动化报告生成工作流，支持Word/Excel/PDF/PPT',
-      'ml_workflow.md': '机器学习工作流指南，包含分类、回归、时间序列分析',
-      'sympy_cookbook.md': '符号数学与公式证明，支持方程求解和微积分运算',
-      'scipy_cookbook.md': '科学计算与统计分析，支持优化、积分和统计计算'
-    };
-    
-    return fileDescriptions[fileName] || '相关代码示例和最佳实践';
+    return Array.from(matchedRefs);
   }
 
   /**
@@ -978,222 +783,6 @@ class SkillContextManager {
     }
 
     return keyInfo;
-  }
-
-  /**
-   * 提取Python关键信息
-   */
-  _extractPythonKeyInformation(skillContent, userQuery) {
-    let keyInfo = '';
-    
-    // 提取基础调用规范
-    const basicUsage = skillContent.match(/## 🚀 基础调用规范[\s\S]*?(?=\n##|\n#|$)/);
-    if (basicUsage) {
-      keyInfo += `**📋 基础调用**:\n`;
-      const jsonExample = basicUsage[0].match(/```json\n([\s\S]*?)\n```/);
-      if (jsonExample) {
-        keyInfo += `简单代码执行格式：\n\`\`\`json\n${jsonExample[1]}\n\`\`\`\n\n`;
-      }
-    }
-
-    // 提取工作流模式
-    const workflowSection = skillContent.match(/## 💡 核心工作流模式[\s\S]*?(?=\n##|\n#|$)/);
-    if (workflowSection) {
-      keyInfo += `**🔄 核心工作流**:\n`;
-      const workflows = workflowSection[0].match(/### [^\n]+/g);
-      if (workflows) {
-        workflows.forEach(workflow => {
-          keyInfo += `• ${workflow.replace('###', '').trim()}\n`;
-        });
-      }
-      keyInfo += `\n`;
-    }
-
-    return keyInfo;
-  }
-
-  /**
-   * 🎯 从合并内容中提取参考文件部分
-   */
-  _extractReferenceFromCombinedContent(combinedContent, refFileName) {
-    // 在合并内容中查找参考文件章节
-    const chapterPattern = new RegExp(`### 📖 ${refFileName.replace('.md', '')}[\\s\\S]*?(?=\\n### 📖 |\\n<hr>|$)`, 'i');
-    const match = combinedContent.match(chapterPattern);
-    
-    if (match) {
-      // 提取章节内容（去掉标题）
-      const content = match[0].replace(new RegExp(`^### 📖 ${refFileName.replace('.md', '')}[\\s\\S]*?\\n\\n`), '');
-      return content;
-    }
-    
-    return '';
-  }
-
-  /**
-   * 🎯 从合并内容中构建目标内容
-   */
-  _buildContentFromCombinedSource(combinedContent, userQuery, relevantReferences) {
-    const chartType = this._extractChartType(userQuery);
-    let content = `## 📚 相关参考指南\n\n`;
-    
-    if (chartType) {
-      content += `检测到您的查询关于 **${chartType}**，已提取相关代码示例：\n\n`;
-    } else {
-      content += `检测到您的查询与以下文档相关：\n\n`;
-    }
-    
-    // 1. 首先尝试提取图表特定内容
-    if (chartType) {
-      const chartContent = this._extractChartSpecificContent(combinedContent, chartType, userQuery);
-      if (chartContent && chartContent.length > 1000) {
-        content += chartContent;
-        console.log(`🎯 [图表特定内容] ${chartType}: ${chartContent.length}字符`);
-      }
-    }
-    
-    // 2. 如果图表特定内容不足，提取参考文件章节
-    if (content.length < 2000 && relevantReferences.length > 0) {
-      for (const refFile of relevantReferences.slice(0, 2)) {
-        const refContent = this._extractReferenceFromCombinedContent(combinedContent, refFile);
-        if (refContent) {
-          const extracted = this._extractRelevantParts(refContent, userQuery, chartType);
-          if (extracted.length > 500) {
-            content += `### 📖 ${refFile.replace('.md', '')}\n\n`;
-            content += extracted + '\n\n';
-          }
-        }
-      }
-    }
-    
-    // 3. 如果还是不足，提取主文档的关键部分
-    if (content.length < 3000) {
-      const mainContent = this._extractPythonKeyInformation(combinedContent, userQuery);
-      if (mainContent.length > 500) {
-        content += `### 📋 核心使用指南\n\n`;
-        content += mainContent + '\n\n';
-      }
-    }
-    
-    // 添加输出规范
-    content += `\n**🚨 输出规范**:\n`;
-    content += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
-    content += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
-    
-    return content;
-  }
-
-  /**
-   * 🎯 从合并内容中提取图表特定内容
-   */
-  _extractChartSpecificContent(combinedContent, chartType, userQuery) {
-    const queryLower = userQuery.toLowerCase();
-    let extracted = '';
-    
-    // 图表类型关键词映射
-    const chartKeywords = {
-      '折线图': ['折线图', '折线', 'line', 'plot', '趋势图'],
-      '饼图': ['饼图', 'pie', '扇形图', '占比图'],
-      '条形图': ['条形图', '柱状图', 'bar'],
-      '散点图': ['散点图', 'scatter'],
-      '热力图': ['热力图', 'heatmap'],
-      '直方图': ['直方图', 'histogram']
-    };
-    
-    const keywords = chartKeywords[chartType] || [];
-    
-    if (keywords.length === 0) return extracted;
-    
-    // 查找所有包含这些关键词的章节
-    const chapterRegex = /### 📖 [^\n]+[\s\S]*?(?=\n### 📖 |\n<hr>|$)/g;
-    let match;
-    
-    while ((match = chapterRegex.exec(combinedContent)) !== null) {
-      const chapter = match[0];
-      const chapterLower = chapter.toLowerCase();
-      
-      // 检查章节是否包含图表关键词
-      const hasKeyword = keywords.some(keyword => 
-        chapterLower.includes(keyword.toLowerCase())
-      );
-      
-      if (hasKeyword) {
-        extracted += chapter + '\n\n';
-        
-        // 在章节内查找与查询相关的代码
-        const codeRegex = /```python[\s\S]*?```/g;
-        const codeBlocks = chapter.match(codeRegex) || [];
-        
-        if (codeBlocks.length > 0) {
-          extracted += `**💻 相关代码示例**:\n\n`;
-          // 优先选择包含查询关键词的代码
-          const relevantCodeBlocks = codeBlocks.filter(block => {
-            const blockLower = block.toLowerCase();
-            return queryLower.split(/\s+/).some(word => 
-              word.length > 2 && blockLower.includes(word)
-            );
-          });
-          
-          // 如果没有完全匹配的，取前2个
-          const displayBlocks = relevantCodeBlocks.length > 0 ? 
-            relevantCodeBlocks.slice(0, 2) : codeBlocks.slice(0, 2);
-          
-          displayBlocks.forEach(block => {
-            extracted += block + '\n\n';
-          });
-        }
-        
-        // 如果已经提取了足够内容，停止
-        if (extracted.length > 3000) break;
-      }
-    }
-    
-    return extracted;
-  }
-
-  /**
-   * 🎯 从章节内容中提取相关部分
-   */
-  _extractRelevantParts(chapterContent, userQuery, chartType) {
-    const queryLower = userQuery.toLowerCase();
-    let extracted = '';
-    
-    // 1. 提取标题和简介
-    const lines = chapterContent.split('\n');
-    let inCodeBlock = false;
-    let codeBlockCount = 0;
-    
-    for (const line of lines) {
-      // 处理代码块
-      if (line.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-        if (!inCodeBlock) codeBlockCount++;
-      }
-      
-      // 提取非代码部分（最多前10行）
-      if (!inCodeBlock && extracted.split('\n').length < 15) {
-        // 检查行是否与查询相关
-        const lineLower = line.toLowerCase();
-        const isRelevant = queryLower.split(/\s+/).some(word => 
-          word.length > 2 && lineLower.includes(word)
-        );
-        
-        if (isRelevant || line.match(/^#|^[-*]/)) {
-          extracted += line + '\n';
-        }
-      }
-      
-      // 提取代码块（最多2个）
-      if (inCodeBlock || (line.startsWith('```') && line.includes('python'))) {
-        extracted += line + '\n';
-      }
-      
-      // 如果已经提取了足够内容，停止
-      if (extracted.length > 2000 || codeBlockCount >= 2) {
-        break;
-      }
-    }
-    
-    return extracted;
   }
 
   /**
