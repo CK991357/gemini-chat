@@ -790,6 +790,16 @@ export class SkillCacheCompressor {
    * 🎯 新增：检查精准匹配
    */
   async checkPreciseMatch(toolName, userQuery, fullContent) {
+    // 🚨 降低匹配阈值
+    if (fullContent.length < 5000) {
+        console.log(`📦 [精准匹配] 内容较小(${fullContent.length})，直接返回`);
+        return {
+            content: fullContent,
+            confidence: 0.9,
+            matchType: 'full_content'
+        };
+    }
+    
     // 简化的精准匹配逻辑
     // 在实际实现中，这里可以查询历史匹配记录
     
@@ -1527,13 +1537,12 @@ export class SkillCacheCompressor {
    * 🎯 辅助方法
    */
   _generateCacheKey(toolName, userQuery, context) {
-    const contextStr = context.sessionId || 'default';
-    const queryHash = this._hashString(userQuery.substring(0, 100));
-    // 从 context 获取版本号，如果没有则使用默认
-    const version = context.version || 'v1.0';
-    // 增加时间粒度（按小时），避免长时间缓存
-    const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60)); // 每小时一个slot
-    return `${toolName}_${version}_${contextStr}_${queryHash}_${hourSlot}`;
+    // 🚨 简化缓存键，提高命中率
+    const sessionId = context.sessionId || 'default';
+    const queryHash = userQuery.substring(0, 50).toLowerCase().replace(/[^a-z0-9]/g, '_');
+    
+    // 只使用工具名和查询关键词
+    return `${toolName}_${queryHash}_${sessionId}`;
   }
 
   _hashString(str) {
