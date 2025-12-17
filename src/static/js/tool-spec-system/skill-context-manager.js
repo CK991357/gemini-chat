@@ -306,32 +306,58 @@ class SkillContextManager {
     // 移除Markdown加粗标记以简化匹配
     const normalizedContent = skillContent.replace(/\*\*/g, '');
     
-    // 核心章节的优先级顺序 - 修正的正则表达式
+    // 修正的核心章节优先级顺序 - 基于SKILL.md实际结构
     const coreSections = [
+        // 第1章：核心能力概览
         {
             pattern: /## 🎯 核心能力概览[\s\S]*?(?=\n##\s|$)/i,
             name: '核心能力概览',
             required: true,
-            maxLength: 3000
+            maxLength: 2000
         },
+        // 第2章：文件处理指南
+        {
+            pattern: /## 📁 文件处理指南 - 两种模式必须分清[\s\S]*?(?=\n##\s|$)/i,
+            name: '文件处理指南',
+            required: true,
+            maxLength: 1500
+        },
+        // 第3章：输出规范
         {
             pattern: /## 🚀 输出规范 - 后端实际支持的格式[\s\S]*?(?=\n##\s|$)/i,
             name: '输出规范',
             required: true,
             maxLength: 2500
         },
+        // 第4章：会话持久化
         {
-            pattern: /## 💡 核心工作流模式[\s\S]*?(?=\n##\s|$)/i,
-            name: '工作流模式',
+            pattern: /## 💾 会话持久化 - 跨代码执行的文件共享[\s\S]*?(?=\n##\s|$)/i,
+            name: '会话持久化',
+            required: true,
+            maxLength: 1500
+        },
+        // 第5章：工作流参考（不是"工作流模式"！）
+        {
+            pattern: /## 📚 工作流参考 - 按需查阅[\s\S]*?(?=\n##\s|$)/i,
+            name: '工作流参考',
             required: true,
             maxLength: 2000
         },
+        // 第6章：性能优化指南
         {
-            pattern: /## 📋 可用库快速参考[\s\S]*?(?=\n##\s|$)/i,
+            pattern: /## ⚡ 性能优化指南 \(与后端完全匹配\)[\s\S]*?(?=\n##\s|$)/i,
+            name: '性能优化指南',
+            required: true,
+            maxLength: 2000
+        },
+        // 第7章：可用库快速参考
+        {
+            pattern: /## 📋 可用库快速参考 \(与Dockerfile完全一致\)[\s\S]*?(?=\n##\s|$)/i,
             name: '库参考',
             required: false,
             maxLength: 1500
         },
+        // 第8章：快速开始模板
         {
             pattern: /## 🎯 快速开始模板[\s\S]*?(?=\n##\s|$)/i,
             name: '快速开始',
@@ -348,24 +374,19 @@ class SkillContextManager {
     
     // 提取核心章节
     for (const section of coreSections) {
-      if (section.required || core.length < 4000) {
-        const match = normalizedContent.match(section.pattern);
-        if (match) {
-          let content = match[0];
-          if (content.length > section.maxLength) {
-            content = content.substring(0, section.maxLength) + '\n\n...';
-          }
-          core += content + '\n\n';
-          console.log(`✅ [提取核心] ${section.name}: ${Math.min(content.length, section.maxLength)}字符`);
-        } else if (section.required) {
-          console.warn(`⚠️ [缺少核心章节] ${section.name}`);
-          // 回退方案：手动提取相关内容
-          const fallbackContent = this._extractFallbackSection(normalizedContent, section.name);
-          if (fallbackContent) {
-            core += fallbackContent + '\n\n';
-          }
+        if (section.required || core.length < 4000) {
+            const match = normalizedContent.match(section.pattern);
+            if (match) {
+                let content = match[0];
+                if (content.length > section.maxLength) {
+                    content = content.substring(0, section.maxLength) + '\n\n...';
+                }
+                core += content + '\n\n';
+                console.log(`✅ [提取核心] ${section.name}: ${Math.min(content.length, section.maxLength)}字符`);
+            } else if (section.required) {
+                console.warn(`⚠️ [缺少章节] ${section.name}`);
+            }
         }
-      }
     }
     
     // 确保有JSON示例
