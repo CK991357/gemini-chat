@@ -1,16 +1,16 @@
 ---
 name: crawl4ai
-description: 功能强大的开源网页抓取和数据处理工具，支持7种工作模式，包括截图、PDF导出和智能爬取
+description: 功能强大的开源网页抓取和数据处理工具，支持6种工作模式，包括截图、PDF导出和智能爬取
 tool_name: crawl4ai
 category: web-crawling
 priority: 9
-tags: ["web-scraping", "screenshot", "pdf-export", "data-extraction", "crawling", "automation", "content-extraction","crawl4ai"]
+tags: ["web-scraping", "screenshot", "pdf-export", "structured-data-extraction", "deep-crawling", "batch-processing", "content-extraction", "anti-detection", "automation"]
 version: 1.2
 ---
 
 # Crawl4AI 网页抓取工具指南
 
-Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支持 7 种不同的工作模式。所有二进制输出（截图、PDF）都以 base64 编码返回，便于模型处理。
+Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支持 6 种不同的工作模式。所有二进制输出（截图、PDF）都以 base64 编码返回，便于模型处理。
 
 ## 🎯 【至关重要】通用调用结构
 
@@ -75,6 +75,8 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 | `pdf_export` | PDF 导出 | 将网页导出为 PDF | ⭐ | 文档保存 |
 | `screenshot` | 截图捕获 | 捕获网页截图 | ⭐ | 视觉证据保存 |
 
+**注意：** `crawl` 模式已在最新版本中移除，请使用 `scrape` 或 `deep_crawl` 替代。
+
 ## 🎯 使用场景快速指南
 
 ### 场景1：快速获取页面内容
@@ -113,6 +115,7 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
   "parameters": {
     "url": "https://example.com/docs",
     "max_depth": 3,
+    "max_pages": 80,
     "keywords": ["教程", "指南", "API"],
     "strategy": "best_first"
   }
@@ -203,9 +206,9 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 **智能分级抓取原理：**
 1. **自动识别**：工具会分析URL特征，判断网站类型
 2. **分级配置**：
-   - **标准配置**：普通网站，30秒超时，高性能
-   - **增强配置**：JS网站/反爬网站，45秒超时，完整渲染
-   - **降级配置**：极端复杂网站，60秒超时，最大化兼容
+   - **标准配置**：普通网站，90秒超时，高性能
+   - **增强配置**：JS网站/反爬网站，120秒超时，完整渲染
+   - **降级配置**：极端复杂网站，180秒超时，最大化兼容
 3. **失败降级**：如果当前配置失败，自动尝试更兼容的配置
 4. **配置缓存**：成功配置会缓存，后续同域名请求更快
 
@@ -340,42 +343,18 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 }
 ```
 
-**✅ 正确示例 (LLM 提取):**
-```json
-{
-  "mode": "extract",
-  "parameters": {
-    "url": "https://news.example.com/article",
-    "schema_definition": {
-      "type": "object",
-      "properties": {
-        "title": {"type": "string"},
-        "author": {"type": "string"},
-        "summary": {"type": "string"},
-        "key_points": {"type": "array", "items": {"type": "string"}}
-      }
-    },
-    "extraction_type": "llm",
-    "prompt": "从文章中提取标题、作者、摘要和关键要点"
-  }
-}
-```
-
 **⚠️ 关键限制与最佳实践：**
 - **AI 智能提取限制**: `crawl4ai` 的 `extraction_type: "llm"` 模式**尚未部署**有效的 LLM 实例。
 - **注意事项做法**: **`crawl4ai` 提取场景**: 仅适用于您能提供**精确 CSS 选择器**的简单、结构固定的页面。无法实现**仅凭自然语言描述和 JSON Schema**（即不提供 CSS 选择器）从复杂页面（如表格、列表）中智能提取数据。
 
 **🛡️ 自动修复机制：**
-我们的工具会自动确保 `schema_definition` 包含所有必需字段：
+我们的工具会自动修复常见的 schema 格式问题：
 - 如果缺少 `baseSelector`，自动设置为 `css_selector` 或 `'body'`
 - 如果缺少 `fields`，自动创建默认字段配置  
 - 如果缺少 `name`，自动设置为 `"ExtractedData"`
+- 如果 schema 是数组格式，自动转换为对象格式
 
 **💡 最佳实践：** 虽然工具会自动修复，但提供完整的 schema 可以获得更精确的提取结果。
-
-**⚠️ 重要提示:**
-- **参数名称**: 用于定义提取结构的参数必须命名为 `schema_definition`
-- **常见错误**: 请勿使用 `schema` 作为参数名，这会导致调用失败
 
 **参数说明:**
 - `url` (必需): 要提取的网页 URL
@@ -735,4 +714,20 @@ Crawl4AI 是一个功能强大的开源网页抓取和数据处理工具，支�
 10. **质量优化**: 使用 `word_count_threshold` 过滤低质量内容块
 11. **Schema 完整性**: 为 CSS 提取提供完整的 schema 结构以获得最佳结果
 12. **信任智能分级**: 无需手动调整配置，工具会自动选择最佳方案
+13. **注意模式变更**: 已移除 `crawl` 模式，请使用 `scrape` 或 `deep_crawl` 替代
 
+## 🔄 版本更新说明
+
+### 版本 1.2 主要更新
+1. **新增智能分级系统**: 自动适应不同网站类型的配置策略
+2. **增强反爬能力**: 改进浏览器指纹混淆和反检测机制
+3. **内存管理优化**: 提升内存使用效率和稳定性
+4. **错误处理改进**: 增强对 Context 错误的捕获和恢复
+5. **移除 `crawl` 模式**: 简化模式选择，聚焦核心功能
+6. **参数自动修复**: 增强对输入参数的容错能力
+
+### 向后兼容性
+- ✅ 所有现有调用格式保持兼容
+- ✅ 智能分级系统对 Agent 完全透明
+- ✅ 新增功能不影响现有功能
+- ❌ 不再支持 `mode: "crawl"`，请使用替代模式
