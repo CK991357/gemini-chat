@@ -215,86 +215,150 @@ class SkillContextManager {
    */
   async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
     try {
-      const { skill: skillData, score, name, description } = skill;
-      
       console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
-      console.log(`📦 [技能文档] 主文档大小: ${skillData.content.length}字符`);
       
-      // 🎯 检查缓存
-      const cachedContent = this.skillManager.cacheCompressor.getFromCache(
-        'python_sandbox', 
-        userQuery, 
-        { sessionId, ...context }
-      );
+      // 直接从skill对象获取内容（避免解析错误）
+      const skillContent = skill.skill.content;
       
-      // 构建基础上下文
-      let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
-      contextContent += `**核心功能**: ${description}\n\n`;
+      // 构建智能上下文
+      let contextContent = `### 🐍 Python沙盒工具: ${skill.name}\n\n`;
+      contextContent += `**核心功能**: ${skill.description}\n\n`;
       
-      if (cachedContent) {
-        contextContent += cachedContent;
-        console.log(`🎯 [缓存命中] python_sandbox: ${cachedContent.length} 字符`);
-        return contextContent;
+      // 1. 提取核心信息（智能回退）
+      const coreInfo = this._extractCoreInfoSmart(skillContent);
+      contextContent += coreInfo;
+      
+      // 2. 根据查询类型添加专项内容
+      if (userQuery.includes('折线图') || userQuery.includes('饼图') || userQuery.includes('图表')) {
+        contextContent += this._extractChartSpecificContent(userQuery, skillContent);
       }
       
-      // 🎯 智能内容构建策略
-      console.log('🔄 [开始构建智能内容]');
+      // 3. 添加关键代码模板
+      contextContent += this._extractCodeTemplates(skillContent, 2);
       
-      // 1. 从技能文档提取核心结构
-      const skillCore = this._extractSkillDocumentCore(skillData.content);
-      console.log(`📘 [技能核心] 提取: ${skillCore.length}字符`);
+      // 4. 添加使用指南
+      contextContent += `## 🚀 快速使用指南\n\n`;
+      contextContent += `1. 图表生成：使用 \`plt.plot()\` + \`plt.show()\`\n`;
+      contextContent += `2. 文件输出：使用指定JSON格式\n`;
+      contextContent += `3. 数据处理：从 \`/data\` 目录读取文件\n`;
+      contextContent += `4. 内存注意：容器限制6GB，Swap已禁用\n\n`;
       
-      // 2. 根据查询构建相关内容
-      const queryContent = this._buildQuerySpecificContent(skillData, userQuery);
-      console.log(`🎯 [查询内容] 构建: ${queryContent.length}字符`);
-      
-      // 3. 合并内容
-      const mergedContent = this._mergeSkillAndQueryContent(skillCore, queryContent, userQuery);
-      console.log(`🔗 [合并内容] 总大小: ${mergedContent.length}字符`);
-      
-      // 🎯 使用新的压缩器进行智能压缩
-      let compressedContent = '';
-      try {
-        // 为新压缩器传递额外的上下文信息
-        compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
-          mergedContent,
-          {
-            level: 'smart',
-            maxChars: 15000,  // 增加最大字符数
-            userQuery: userQuery,
-            toolName: 'python_sandbox',
-            preserveSections: [
-              '通用调用结构',
-              '输出规范',
-              '核心工作流模式',
-              '可直接使用的代码模板'
-            ]
-          }
-        );
-      } catch (compressError) {
-        console.error(`🚨 [内容压缩失败]`, compressError);
-        // 压缩失败时使用未压缩的合并内容
-        compressedContent = this._formatContentForPrompt(mergedContent, userQuery);
-      }
-      
-      // 缓存结果
-      this.skillManager.cacheCompressor.setToCache(
-        'python_sandbox', 
-        userQuery, 
-        { 
-          sessionId, 
-          ...context,
-          contentType: 'mixedContent'  // 告知缓存器这是混合内容
-        }, 
-        compressedContent
-      );
-      
-      contextContent += compressedContent;
       return contextContent;
+      
     } catch (error) {
-      console.error(`🚨 [Python沙盒上下文构建失败]`, error);
+      console.error(`🚨 [上下文构建失败]`, error);
       return this._buildFallbackContext(skill.skill, userQuery);
     }
+  }
+
+  _extractCoreInfoSmart(content) {
+    let core = '## 📋 核心信息摘要\n\n';
+    
+    // 关键词提取法（不依赖正则）
+    const infoSections = [
+      {
+        title: '🎯 核心能力',
+        keywords: ['多功能的代码执行环境', '数据分析', '可视化', '文档自动化'],
+        extract: (lines) => lines.slice(0, 10).join('\n')
+      },
+      {
+        title: '🚀 输出规范',
+        keywords: ['JSON格式', 'plt.show()', '自动捕获', 'base64'],
+        extract: (lines) => lines.filter(l => l.includes('JSON') || l.includes('show()')).join('\n')
+      },
+      {
+        title: '💾 文件操作',
+        keywords: ['/data', '工作区', '会话持久化', '读取文件'],
+        extract: (lines) => lines.filter(l => l.includes('/data') || l.includes('pd.read')).join('\n')
+      }
+    ];
+    
+    const lines = content.split('\n');
+    
+    for (const section of infoSections) {
+      const relevantLines = [];
+      let inSection = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // 检查是否进入相关章节
+        if (line.startsWith('## ') && section.keywords.some(kw => line.includes(kw))) {
+          inSection = true;
+          relevantLines.push(line);
+        } else if (line.startsWith('## ') && inSection) {
+          break;
+        } else if (inSection) {
+          relevantLines.push(line);
+        }
+      }
+      
+      if (relevantLines.length > 0) {
+        core += `### ${section.title}\n`;
+        core += relevantLines.slice(0, 8).join('\n') + '\n\n';
+      }
+    }
+    
+    return core;
+  }
+
+  _extractChartSpecificContent(userQuery, skillContent) {
+    let chartContent = '\n## 📊 图表示例\n\n';
+    
+    if (userQuery.includes('折线图')) {
+      chartContent += '检测到您想生成折线图，以下是一个简单的折线图代码模板：\n\n';
+      chartContent += '``python\n';
+      chartContent += 'import matplotlib.pyplot as plt\n';
+      chartContent += '# 示例数据\n';
+      chartContent += 'x = [1, 2, 3, 4, 5]\n';
+      chartContent += 'y = [2, 4, 1, 5, 3]\n';
+      chartContent += '# 绘制折线图\n';
+      chartContent += 'plt.plot(x, y, marker=\'o\')\n';
+      chartContent += 'plt.title("折线图示例")\n';
+      chartContent += 'plt.xlabel("X轴")\n';
+      chartContent += 'plt.ylabel("Y轴")\n';
+      chartContent += 'plt.show()\n';
+      chartContent += '```\n\n';
+    } else if (userQuery.includes('饼图')) {
+      chartContent += '检测到您想生成饼图，以下是一个简单的饼图代码模板：\n\n';
+      chartContent += '``python\n';
+      chartContent += 'import matplotlib.pyplot as plt\n';
+      chartContent += '# 示例数据\n';
+      chartContent += 'labels = [\'A\', \'B\', \'C\', \'D\']\n';
+      chartContent += 'sizes = [15, 30, 45, 10]\n';
+      chartContent += '# 绘制饼图\n';
+      chartContent += 'plt.pie(sizes, labels=labels, autopct=\'%1.1f%%\')\n';
+      chartContent += 'plt.title("饼图示例")\n';
+      chartContent += 'plt.show()\n';
+      chartContent += '```\n\n';
+    } else {
+      chartContent += '检测到您想生成图表，以下是一些常用的图表示例：\n\n';
+      chartContent += '``python\n';
+      chartContent += 'import matplotlib.pyplot as plt\n';
+      chartContent += '# 这里放置您的数据和图表代码\n';
+      chartContent += 'plt.show()\n';
+      chartContent += '```\n\n';
+    }
+    
+    return chartContent;
+  }
+
+  _extractCodeTemplates(skillContent, count) {
+    let templateContent = '\n## 💻 代码模板\n\n';
+    
+    // 简单提取代码块
+    const codeBlocks = skillContent.match(/```python[\s\S]*?```/g) || [];
+    
+    if (codeBlocks.length > 0) {
+      const limitedBlocks = codeBlocks.slice(0, count);
+      limitedBlocks.forEach((block, index) => {
+        templateContent += `**模板 ${index + 1}**:\n\n${block}\n\n`;
+      });
+    } else {
+      templateContent += '暂无可用代码模板\n\n';
+    }
+    
+    return templateContent;
   }
 
   /**
@@ -303,50 +367,53 @@ class SkillContextManager {
   _extractSkillDocumentCore(skillContent) {
     let core = '';
     
-    // 核心章节的优先级顺序
+    // 移除Markdown加粗标记以简化匹配
+    const normalizedContent = skillContent.replace(/\*\*/g, '');
+    
+    // 核心章节的优先级顺序 - 修正的正则表达式
     const coreSections = [
-      {
-        pattern: /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i,
-        name: '调用结构',
-        required: true,
-        maxLength: 3000
-      },
-      {
-        pattern: /## 🚀 输出规范 - 后端实际支持的格式[\s\S]*?(?=\n##\s|$)/i,
-        name: '输出规范',
-        required: true,
-        maxLength: 2500
-      },
-      {
-        pattern: /## 💡 核心工作流模式[\s\S]*?(?=\n##\s|$)/i,
-        name: '工作流模式',
-        required: true,
-        maxLength: 2000
-      },
-      {
-        pattern: /## 📋 可用库快速参考[\s\S]*?(?=\n##\s|$)/i,
-        name: '库参考',
-        required: false,
-        maxLength: 1500
-      },
-      {
-        pattern: /## 🎯 快速开始模板[\s\S]*?(?=\n##\s|$)/i,
-        name: '快速开始',
-        required: false,
-        maxLength: 2000
-      }
+        {
+            pattern: /## 🎯 核心能力概览[\s\S]*?(?=\n##\s|$)/i,
+            name: '核心能力概览',
+            required: true,
+            maxLength: 3000
+        },
+        {
+            pattern: /## 🚀 输出规范 - 后端实际支持的格式[\s\S]*?(?=\n##\s|$)/i,
+            name: '输出规范',
+            required: true,
+            maxLength: 2500
+        },
+        {
+            pattern: /## 💡 核心工作流模式[\s\S]*?(?=\n##\s|$)/i,
+            name: '工作流模式',
+            required: true,
+            maxLength: 2000
+        },
+        {
+            pattern: /## 📋 可用库快速参考[\s\S]*?(?=\n##\s|$)/i,
+            name: '库参考',
+            required: false,
+            maxLength: 1500
+        },
+        {
+            pattern: /## 🎯 快速开始模板[\s\S]*?(?=\n##\s|$)/i,
+            name: '快速开始',
+            required: false,
+            maxLength: 2000
+        }
     ];
     
     // 首先提取标题和描述
-    const introMatch = skillContent.match(/^# [^\n]+[\s\S]*?(?=\n##\s|$)/);
+    const introMatch = normalizedContent.match(/^# [^\n]+[\s\S]*?(?=\n##\s|$)/);
     if (introMatch) {
       core += introMatch[0] + '\n\n';
     }
     
     // 提取核心章节
     for (const section of coreSections) {
-      if (section.required || core.length < 4000) { // 确保有足够内容
-        const match = skillContent.match(section.pattern);
+      if (section.required || core.length < 4000) {
+        const match = normalizedContent.match(section.pattern);
         if (match) {
           let content = match[0];
           if (content.length > section.maxLength) {
@@ -356,13 +423,18 @@ class SkillContextManager {
           console.log(`✅ [提取核心] ${section.name}: ${Math.min(content.length, section.maxLength)}字符`);
         } else if (section.required) {
           console.warn(`⚠️ [缺少核心章节] ${section.name}`);
+          // 回退方案：手动提取相关内容
+          const fallbackContent = this._extractFallbackSection(normalizedContent, section.name);
+          if (fallbackContent) {
+            core += fallbackContent + '\n\n';
+          }
         }
       }
     }
     
     // 确保有JSON示例
     if (!core.includes('```json')) {
-      const jsonExample = skillContent.match(/```json[\s\S]*?```/);
+      const jsonExample = normalizedContent.match(/```json[\s\S]*?```/);
       if (jsonExample) {
         core += '## 🎯 调用示例\n\n' + jsonExample[0] + '\n\n';
       }
@@ -370,6 +442,62 @@ class SkillContextManager {
     
     console.log(`📘 [技能核心完成] 总大小: ${core.length}字符`);
     return core;
+  }
+
+  // 添加回退提取方法
+  _extractFallbackSection(content, sectionName) {
+    const lines = content.split('\n');
+    let inSection = false;
+    let sectionContent = [];
+    let sectionFound = false;
+    
+    for (const line of lines) {
+      if (line.startsWith('## ') && line.includes(sectionName)) {
+        inSection = true;
+        sectionFound = true;
+        sectionContent.push(line);
+      } else if (line.startsWith('## ') && inSection) {
+        break;
+      } else if (inSection) {
+        sectionContent.push(line);
+      }
+    }
+    
+    if (sectionFound) {
+      return sectionContent.join('\n');
+    }
+    return null;
+  }
+
+  // 添加基于关键词的内容提取方法
+  _extractByKeywords(content, keywords, maxLength = 2000) {
+    const lines = content.split('\n');
+    let extracted = [];
+    let keywordFound = false;
+    let charCount = 0;
+    
+    for (const line of lines) {
+      if (charCount > maxLength) break;
+      
+      // 检查是否包含关键词
+      const hasKeyword = keywords.some(keyword => 
+        line.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      if (hasKeyword || keywordFound) {
+        if (!keywordFound) {
+          // 找到关键词，开始收集
+          keywordFound = true;
+        }
+        
+        if (charCount + line.length <= maxLength) {
+          extracted.push(line);
+          charCount += line.length;
+        }
+      }
+    }
+    
+    return extracted.length > 0 ? extracted.join('\n') : null;
   }
 
   /**
@@ -413,6 +541,24 @@ class SkillContextManager {
       }
     }
     
+    // 基于现有文档结构提取内容
+    const skillContent = skillData.content;
+    
+    // 如果正则匹配失败，使用关键词回退
+    const sectionKeywords = {
+      '输出规范': ['输出规范', 'json格式', 'plt.show()'],
+      '调用结构': ['通用调用结构', '参数', 'parameters'],
+      '工作流模式': ['工作流', '示例', '模板']
+    };
+    
+    // 尝试提取核心章节
+    for (const [section, keywords] of Object.entries(sectionKeywords)) {
+      const extracted = this._extractByKeywords(skillContent, keywords, 1500);
+      if (extracted && !queryContent.includes(section)) {
+        queryContent += `## 📋 ${section}\n\n${extracted}\n\n`;
+      }
+    }
+    
     // 如果没有特定内容，添加一些通用示例
     if (!queryContent && skillData.content.includes('```python')) {
       const codeBlocks = skillData.content.match(/```python[\s\S]*?```/g) || [];
@@ -423,6 +569,15 @@ class SkillContextManager {
           queryContent += `**示例 ${idx + 1}**:\n\n${block}\n\n`;
         });
       }
+    }
+    
+    // 添加代码示例（直接从skillData.content中提取）
+    const codeBlocks = skillData.content.match(/```python[\s\S]*?```/g) || [];
+    if (codeBlocks.length > 0) {
+      queryContent += `## 💻 相关代码示例\n\n`;
+      codeBlocks.slice(0, 2).forEach((block, idx) => {
+        queryContent += `**示例 ${idx + 1}**:\n\n${block}\n\n`;
+      });
     }
     
     console.log(`🎯 [查询内容构建] 大小: ${queryContent.length}字符`);
