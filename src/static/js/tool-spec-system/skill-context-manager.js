@@ -877,24 +877,32 @@ class SkillContextManager {
    * 🎯 从文档中提取指定章节内容
    */
   _extractSectionContent(docContent, sectionName) {
-    // 使用正则表达式匹配章节
+    // 安全检查：确保docContent存在
+    if (!docContent || typeof docContent !== 'string') {
+        console.warn(`📚 [章节提取] 文档内容无效:`, { docContent, sectionName });
+        return '';
+    }
+    
     const sectionPattern = new RegExp(
-      `(#{2,}\\s*${this._escapeRegex(sectionName)}[\\s\\S]*?)(?=\\n#{2,}\\s|$)`,
-      'i'
+        `(#{2,}\\s*${this._escapeRegex(sectionName)}[\\s\\S]*?)(?=\\n#{2,}\\s|$)`,
+        'i'
     );
     
     const match = docContent.match(sectionPattern);
     if (match) {
-      // 截取前1500字符，避免内容过长
-      const content = match[0];
-      if (content.length > 1500) {
-        return content.substring(0, 1500) + '...\n*(内容截断，如需完整章节请查阅对应文档)*';
-      }
-      return content;
+        // 截取前1500字符，避免内容过长
+        const content = match[0];
+        if (content.length > 1500) {
+            return content.substring(0, 1500) + '...\n*(内容截断，如需完整章节请查阅对应文档)*';
+        }
+        return content;
     }
     
     // 如果精确匹配失败，尝试模糊匹配
-    return this._findSimilarSection(docContent, sectionName);
+    const similarSection = this._findSimilarSection(docContent, sectionName);
+    
+    // 🎯 修复：确保总是返回字符串
+    return similarSection || '';
   }
 
   /**
@@ -945,7 +953,8 @@ class SkillContextManager {
       return sectionContent;
     }
     
-    return null;
+    // 🎯 修复：返回空字符串而不是null
+    return '';  // 修改这里
   }
 
   /**
