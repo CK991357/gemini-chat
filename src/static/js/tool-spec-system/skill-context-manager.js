@@ -1,5 +1,5 @@
 // src/tool-spec-system/skill-context-manager.js
-// 🎯 增强章节推断 + 语义理解 + 上下文动态匹配
+// 🎯 精准修复版 - 只修复核心问题，保持现有架构
 
 import { skillManagerPromise } from './skill-manager.js';
 
@@ -283,36 +283,29 @@ class SkillContextManager {
   }
 
   /**
-   * 🚀 增强的Python沙盒上下文构建（替换原有方法）
+   * 🚀 增强的Python沙盒上下文构建（修复版）
    */
   async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
     try {
-        const { skill: skillData, score, name, description } = skill;  // ✅ skillData是完整技能对象
+        const { skill: skillData, score, name, description } = skill;
         
-        console.log(`🔍 [增强Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
-        console.log(`📊 [技能数据] 内容长度: ${skillData.content?.length || 0}字符`);
-        
-        // 🎯 添加调试信息
-        console.log('🔍 [技能内容检查]', {
+        console.log(`🔍 [增强Python沙盒-修复版] 查询: "${userQuery.substring(0, 50)}..."`);
+        console.log(`📊 [技能数据检查]`, {
             hasContent: !!skillData.content,
             contentLength: skillData.content?.length || 0,
-            contentPreview: skillData.content?.substring(0, 100) + '...',
             hasResources: !!skillData.resources,
-            resourcesCount: Object.keys(skillData.resources?.references || {}).length
+            resourcesCount: Object.keys(skillData.resources?.references || {}).length,
+            referenceFiles: Object.keys(skillData.resources?.references || {})
         });
         
-        // 🎯 确保skillData.content存在且有效
+        // 🎯 修复1：确保skillData.content存在且有效
         if (!skillData.content || skillData.content.length < 100) {
-            console.error('🚨 [严重错误] skillData.content 为空或太小:', {
-                contentLength: skillData.content?.length || 0,
-                skillName: name,
-                toolName: skillData.metadata?.tool_name
-            });
+            console.error('🚨 [严重错误] skillData.content 为空或太小');
             // 降级到fallback内容
             return this._buildFallbackContent(skillData, userQuery);
         }
         
-        // 🎯 1. 先检查缓存（保持原有逻辑）
+        // 🎯 修复2：先检查缓存（保持原有逻辑）
         const cacheKey = this.skillManager.cacheCompressor._generateCacheKey(
             'python_sandbox', 
             userQuery, 
@@ -335,119 +328,80 @@ class SkillContextManager {
             return contextContent;
         }
         
-        // 🎯 2. 分析用户查询，推断相关文档和章节
-        let sectionAnalysis;
-        try {
-            if (this.enhancedInferenceEnabled) {
-                sectionAnalysis = this._analyzeQueryForSections(userQuery);
-                console.log('📚 [章节分析结果]', {
-                    相关文档数: sectionAnalysis.relevantDocuments.length,
-                    相关章节数: sectionAnalysis.relevantSections.length,
-                    具体章节: sectionAnalysis.relevantSections.map(s => s.section)
-                });
-            } else {
-                // 降级：使用原有方法
-                sectionAnalysis = {
-                    relevantDocuments: this._findRelevantPythonReferences(userQuery),
-                    relevantSections: [],
-                    hasExactSectionMatch: false
-                };
-            }
-        } catch (analysisError) {
-            console.error(`🚨 [章节分析失败] ${analysisError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: analysisError
-            });
-            // 降级处理
-            sectionAnalysis = {
-                relevantDocuments: this._findRelevantPythonReferences(userQuery),
-                relevantSections: [],
-                hasExactSectionMatch: false
-            };
-        }
+        // 🎯 修复3：获取完整的技能数据
+        const mainContent = skillData.content; // 主SKILL.md内容
+        const references = skillData.resources?.references || {}; // 参考文件内容映射
         
-        // 🎯 3. 语义理解增强
-        let semanticAnalysis = null;
-        try {
-            if (this.semanticUnderstandingEnabled) {
-                semanticAnalysis = this._performSemanticAnalysis(userQuery, context);
-                console.log('🧠 [语义分析]', {
-                    意图: semanticAnalysis.intent,
-                    复杂度: semanticAnalysis.complexity,
-                    扩展词数: semanticAnalysis.expandedQuery.expanded.length
-                });
-            }
-        } catch (semanticError) {
-            console.error(`🚨 [语义分析失败] ${semanticError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: semanticError
-            });
-            // 继续执行但不使用语义分析结果
-            semanticAnalysis = null;
-        }
+        console.log(`📚 [文档统计-修复] 主文档: ${mainContent.length}字符, 参考文件: ${Object.keys(references).length}个`);
         
-        // 🎯 4. 上下文感知
-        let conversationContext = null;
-        try {
-            if (this.contextAwareMatchingEnabled && sessionId) {
-                conversationContext = this._getOrCreateConversationContext(sessionId, userQuery, context);
-            }
-        } catch (contextError) {
-            console.error(`🚨 [上下文感知失败] ${contextError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: contextError
-            });
-            // 继续执行但不使用会话上下文
-            conversationContext = null;
-        }
+        // 🎯 修复4：分析用户查询，推断相关参考文件
+        const relevantRefs = this._findRelevantReferencesFix(userQuery);
+        console.log(`📚 [相关参考文件-修复] ${relevantRefs.length}个:`, relevantRefs);
         
-        // 🎯 5. 构建增强的上下文内容
-        let enhancedContent = '';
-        try {
-            if (sectionAnalysis.hasExactSectionMatch || (semanticAnalysis && semanticAnalysis.intent.confidence > 0.5)) {
-                enhancedContent = this._buildEnhancedSectionsContent(
-                    sectionAnalysis, 
-                    semanticAnalysis, 
-                    conversationContext, 
-                    skillData,  // ✅ 传递完整的skill对象 
-                    userQuery
-                );
-            } else {
-                enhancedContent = this._buildFallbackContent(skillData, userQuery);
-            }
-        } catch (enhanceError) {
-            console.error(`🚨 [章节构建失败] ${enhanceError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: enhanceError
-            });
-            // 降级到基础内容
-            enhancedContent = this._buildFallbackContent(skillData, userQuery);
-        }
+        // 🎯 修复5：构建上下文内容
+        // 5.1 添加主文档的关键部分
+        const mainKeyContent = this._extractKeySectionsFromMainDocFix(mainContent);
+        contextContent += mainKeyContent;
         
-        // 🎯 6. 压缩内容（保持原有逻辑）
-        let compressedContent = '';
-        try {
-            compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
-                enhancedContent,
-                {
-                    level: 'smart',
-                    maxChars: 12000,
-                    userQuery: userQuery,
-                    toolName: 'python_sandbox'  // 🎯 明确指定工具名
+        // 5.2 添加相关参考文件的内容
+        if (relevantRefs.length > 0) {
+            contextContent += `\n## 📚 相关参考指南\n\n`;
+            
+            for (const refFile of relevantRefs.slice(0, 2)) { // 最多2个参考文件
+                if (references[refFile]) {
+                    const refContent = references[refFile];
+                    console.log(`📖 [提取参考文件-修复] ${refFile}, 大小: ${refContent.length}字符`);
+                    
+                    // 提取参考文件的关键内容
+                    const extracted = this._extractKeyContentFromReferenceFix(refContent, refFile, userQuery);
+                    if (extracted && extracted.length > 100) {
+                        contextContent += `### 📖 ${refFile.replace('.md', '')}\n\n`;
+                        contextContent += extracted + '\n\n';
+                    }
                 }
-            );
-        } catch (compressError) {
-            console.error(`🚨 [内容压缩失败] ${compressError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: compressError
-            });
-            // 使用未压缩的内容
-            compressedContent = enhancedContent;
+            }
+        }
+        
+        // 🎯 修复6：如果内容太少，添加库推荐
+        if (contextContent.length < 1500) {
+            console.log('⚠️ [内容过少-修复] 添加库推荐');
+            const librarySuggestions = this.skillManager?.suggestPythonLibrariesForQuery?.(userQuery) || [];
+            if (librarySuggestions.length > 0) {
+                contextContent += `\n## 📚 推荐使用的Python库\n`;
+                
+                librarySuggestions.forEach(suggestion => {
+                    contextContent += `\n### ${suggestion.category}\n`;
+                    contextContent += `**适用任务**: ${suggestion.tasks.join('、')}\n`;
+                    contextContent += `**推荐库**: ${suggestion.libraries.join(', ')}\n`;
+                });
+            }
+        }
+        
+        // 🎯 修复7：添加Python沙盒专用提醒
+        contextContent += `\n**🚨 输出规范**:\n`;
+        contextContent += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
+        contextContent += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
+        contextContent += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
+        
+        console.log(`✅ [上下文构建完成-修复] 总长度: ${contextContent.length}字符`);
+        
+        // 🎯 修复8：压缩内容
+        let compressedContent = contextContent;
+        if (this.skillManager.cacheCompressor) {
+            try {
+                compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
+                    contextContent,
+                    {
+                        level: 'smart',
+                        maxChars: 12000,
+                        userQuery: userQuery,
+                        toolName: 'python_sandbox'
+                    }
+                );
+                console.log(`📦 [压缩完成-修复] ${contextContent.length} → ${compressedContent.length}字符`);
+            } catch (compressError) {
+                console.error('🚨 [内容压缩失败-修复]', compressError);
+            }
         }
         
         // 缓存结果
@@ -459,43 +413,14 @@ class SkillContextManager {
                 compressedContent
             );
         } catch (cacheError) {
-            console.error(`🚨 [缓存写入失败] ${cacheError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: cacheError
-            });
-            // 缓存失败不影响主流程
+            console.error('🚨 [缓存写入失败-修复]', cacheError);
         }
         
         // 记录注入
         try {
             this.skillManager.cacheCompressor.recordToolInjection(sessionId, 'python_sandbox');
         } catch (recordError) {
-            console.error(`🚨 [工具注入记录失败] ${recordError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: recordError
-            });
-            // 记录失败不影响主流程
-        }
-        
-        // 更新会话上下文
-        try {
-            if (conversationContext) {
-                this._updateConversationContext(sessionId, {
-                    query: userQuery,
-                    matchedSections: sectionAnalysis.relevantSections.map(s => s.section),
-                    intent: semanticAnalysis?.intent?.type || 'unknown',
-                    timestamp: Date.now()
-                });
-            }
-        } catch (updateContextError) {
-            console.error(`🚨 [会话上下文更新失败] ${updateContextError.message}`, {
-                toolName: 'python_sandbox',
-                userQuery: userQuery.substring(0, 50),
-                error: updateContextError
-            });
-            // 更新失败不影响主流程
+            console.error('🚨 [工具注入记录失败-修复]', recordError);
         }
         
         contextContent += compressedContent;
@@ -511,679 +436,292 @@ class SkillContextManager {
         try {
             return this._buildFallbackContent(skill.skill, userQuery);
         } catch (fallbackError) {
-            console.error(`🚨 [降级内容构建失败] ${fallbackError.message}`, {
-                error: fallbackError,
-                userQuery: userQuery.substring(0, 50)
-            });
-            
-            // 最后的兜底方案
+            console.error(`🚨 [降级内容构建失败] ${fallbackError.message}`);
             return `### 🐍 Python沙盒工具 (降级模式)\n\n由于系统错误，无法提供详细的上下文信息，请直接使用Python沙盒工具执行代码。`;
         }
     }
   }
 
   /**
-   * 🎯 分析查询，推断相关章节
+   * 🎯 修复：从主文档提取关键章节
+   */
+  _extractKeySectionsFromMainDocFix(mainContent) {
+    let extracted = '';
+    
+    console.log(`📄 [提取主文档-修复] 文档长度: ${mainContent.length}`);
+    
+    // 必须包含的关键章节
+    const keySections = [
+        { pattern: /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i, name: '调用结构' },
+        { pattern: /## 📋 基础调用规范[\s\S]*?(?=\n##\s|$)/i, name: '基础调用' },
+        { pattern: /## 🚀 输出规范[\s\S]*?(?=\n##\s|$)/i, name: '输出规范' },
+        { pattern: /## ⚠️ 重要限制与最佳实践[\s\S]*?(?=\n##\s|$)/i, name: '限制实践' }
+    ];
+    
+    for (const { pattern, name } of keySections) {
+        const match = mainContent.match(pattern);
+        if (match) {
+            console.log(`✅ [提取主文档章节-修复] ${name}: ${match[0].length}字符`);
+            extracted += match[0] + '\n\n';
+        }
+    }
+    
+    // 如果提取的内容太少，添加通用部分
+    if (extracted.length < 500) {
+        const firstSection = mainContent.substring(0, Math.min(2000, mainContent.length));
+        extracted = firstSection + '\n\n';
+        console.log(`📝 [提取主文档通用部分-修复] ${firstSection.length}字符`);
+    }
+    
+    console.log(`📊 [主文档提取完成-修复] 总长度: ${extracted.length}字符`);
+    return extracted;
+  }
+
+  /**
+   * 🎯 修复：查找相关参考文件
+   */
+  _findRelevantReferencesFix(userQuery) {
+    const queryLower = userQuery.toLowerCase();
+    const matchedRefs = new Set();
+    
+    console.log(`🔍 [参考文件匹配-修复] 查询: "${queryLower}"`);
+    
+    // 1. 基于关键词精确匹配
+    for (const [keyword, refFile] of Object.entries(this.pythonReferenceMap)) {
+        if (queryLower.includes(keyword)) {
+            matchedRefs.add(refFile);
+            console.log(`✅ [关键词匹配-修复] "${keyword}" → ${refFile}`);
+        }
+    }
+    
+    // 2. 基于任务类型推断
+    if (queryLower.includes('可视化') || queryLower.includes('画图') || queryLower.includes('图表')) {
+        matchedRefs.add('matplotlib_cookbook.md');
+        console.log(`📊 [任务推断-修复] 可视化任务 → matplotlib_cookbook.md`);
+    }
+    
+    if (queryLower.includes('数据') && (queryLower.includes('处理') || queryLower.includes('分析'))) {
+        matchedRefs.add('pandas_cheatsheet.md');
+        console.log(`📊 [任务推断-修复] 数据处理任务 → pandas_cheatsheet.md`);
+    }
+    
+    if (queryLower.includes('报告') || queryLower.includes('文档') || queryLower.includes('生成')) {
+        matchedRefs.add('report_generator_workflow.md');
+        console.log(`📊 [任务推断-修复] 报告生成任务 → report_generator_workflow.md`);
+    }
+    
+    // 3. 确保至少有一个参考文件
+    if (matchedRefs.size === 0) {
+        console.log(`📚 [默认参考文件-修复] 添加matplotlib和pandas`);
+        matchedRefs.add('matplotlib_cookbook.md');
+        matchedRefs.add('pandas_cheatsheet.md');
+    }
+    
+    const result = Array.from(matchedRefs);
+    console.log(`📚 [最终匹配参考文件-修复] ${result.length}个:`, result);
+    return result;
+  }
+
+  /**
+   * 🎯 修复：从参考文件提取关键内容
+   */
+  _extractKeyContentFromReferenceFix(refContent, refFileName, userQuery) {
+    if (!refContent || refContent.length < 100) {
+        console.warn(`📄 [参考文件太小-修复] ${refFileName}: ${refContent?.length || 0}字符`);
+        return refContent || '';
+    }
+    
+    console.log(`📝 [参考文件提取-修复] ${refFileName}: ${refContent.length}字符`);
+    
+    const queryLower = userQuery.toLowerCase();
+    let extracted = '';
+    
+    // 1. 提取参考文件的标题和简介
+    const titleMatch = refContent.match(/^#\s+([^\n]+)/m);
+    if (titleMatch) {
+        extracted += `## ${titleMatch[1]}\n\n`;
+    }
+    
+    // 2. 提取文件的前几段（简介部分）
+    const paragraphs = refContent.split('\n\n');
+    let introCount = 0;
+    for (const para of paragraphs) {
+        if (para.trim() && !para.trim().startsWith('#') && para.length > 50) {
+            extracted += para + '\n\n';
+            introCount++;
+            if (introCount >= 3) break; // 最多3段
+        }
+    }
+    
+    // 3. 提取与查询相关的代码示例
+    const codeBlocks = refContent.match(/```[\s\S]*?```/g) || [];
+    if (codeBlocks.length > 0) {
+        extracted += `\n**💻 相关代码示例**:\n\n`;
+        
+        // 选择前2个代码块
+        codeBlocks.slice(0, 2).forEach(block => {
+            extracted += block + '\n\n';
+        });
+    }
+    
+    // 4. 根据文件类型提取特定内容
+    if (refFileName.includes('matplotlib') && (queryLower.includes('折线图') || queryLower.includes('饼图'))) {
+        // 查找具体的图表类型部分
+        const chartPattern = new RegExp(`(#{1,3}\\s*.*?${queryLower.includes('折线图') ? '折线图' : '饼图'}.*?[\\s\\S]*?)(?=\\n#{1,3}\\s|$)`, 'i');
+        const chartMatch = refContent.match(chartPattern);
+        if (chartMatch) {
+            extracted += `\n**📈 具体图表指南**:\n\n${chartMatch[0].substring(0, 1500)}...\n\n`;
+        }
+    }
+    
+    // 5. 限制总长度
+    if (extracted.length > 3500) {
+        extracted = extracted.substring(0, 3500) + '\n\n...*(内容截断，完整内容请参考原文件)*';
+    }
+    
+    console.log(`✅ [参考文件提取完成-修复] ${extracted.length}字符`);
+    return extracted;
+  }
+
+  /**
+   * 🎯 修复：分析查询，推断相关文档和章节
    */
   _analyzeQueryForSections(userQuery) {
     const queryLower = userQuery.toLowerCase();
     const relevantDocuments = [];
     const relevantSections = [];
     
-    // 1. 文档级别匹配
+    console.log(`🔍 [章节推断-修复] 查询: "${queryLower}"`);
+    
+    // 🎯 修复：直接匹配参考文件，而不是章节
     for (const [docName, docInfo] of Object.entries(this.enhancedPythonSectionMap)) {
-      // 检查文档关键词
-      const docMatch = docInfo.keywords.some(keyword => 
-        queryLower.includes(keyword.toLowerCase())
-      );
-      
-      if (docMatch) {
-        relevantDocuments.push(docName);
-        
-        // 2. 章节级别匹配
-        docInfo.sections.forEach(section => {
-          const sectionMatch = section.keywords.some(keyword =>
+        // 检查文档关键词
+        const docMatch = docInfo.keywords.some(keyword => 
             queryLower.includes(keyword.toLowerCase())
-          );
-          
-          if (sectionMatch) {
-            relevantSections.push({
-              document: docName,
-              section: section.name,
-              keywords: section.keywords.filter(kw => queryLower.includes(kw.toLowerCase())),
-              score: this._calculateSectionScore(section.keywords, queryLower)
-            });
-          }
-        });
-      }
-    }
-    
-    // 3. 语义扩展匹配（如果启用）
-    if (this.semanticUnderstandingEnabled) {
-      const expandedMatches = this._semanticExpansionMatch(queryLower);
-      relevantDocuments.push(...expandedMatches.documents);
-      relevantSections.push(...expandedMatches.sections);
-    }
-    
-    // 4. 去重和排序
-    const uniqueDocuments = [...new Set(relevantDocuments)];
-    const sortedSections = relevantSections
-      .filter((section, index, self) => 
-        index === self.findIndex(s => 
-          s.document === section.document && s.section === section.section
-        )
-      )
-      .sort((a, b) => b.score - a.score);
-    
-    // 5. 如果没有明确匹配，使用原有的参考文件匹配（保持向后兼容）
-    if (uniqueDocuments.length === 0) {
-      const originalReferences = this._findRelevantPythonReferences(userQuery);
-      uniqueDocuments.push(...originalReferences);
-    }
-    
-    return {
-      relevantDocuments: uniqueDocuments,
-      relevantSections: sortedSections,
-      hasExactSectionMatch: sortedSections.length > 0
-    };
-  }
-
-  /**
-   * 🎯 计算章节匹配分数
-   */
-  _calculateSectionScore(keywords, queryLower) {
-    let score = 0;
-    
-    keywords.forEach(keyword => {
-      const keywordLower = keyword.toLowerCase();
-      if (queryLower.includes(keywordLower)) {
-        score += 1;
+        );
         
-        // 关键词位置权重
-        if (queryLower.startsWith(keywordLower)) {
-          score += 2; // 查询开头出现权重更高
-        }
-        
-        // 关键词长度权重
-        if (keywordLower.length > 4) {
-          score += 0.5; // 长关键词更具体
-        }
-      }
-    });
-    
-    return score;
-  }
-
-  /**
-   * 🎯 语义扩展匹配
-   */
-  _semanticExpansionMatch(queryLower) {
-    const documents = new Set();
-    const sections = [];
-    
-    // 检查每个语义簇
-    for (const [cluster, synonyms] of Object.entries(this.semanticClusters)) {
-      const clusterInQuery = synonyms.some(synonym => queryLower.includes(synonym.toLowerCase()));
-      
-      if (clusterInQuery) {
-        // 找到包含该簇的文档
-        for (const [docName, docInfo] of Object.entries(this.enhancedPythonSectionMap)) {
-          const docHasCluster = docInfo.keywords.some(keyword => 
-            synonyms.some(syn => keyword.toLowerCase().includes(syn.toLowerCase()))
-          );
-          
-          if (docHasCluster) {
-            documents.add(docName);
+        if (docMatch) {
+            relevantDocuments.push(docName);
+            console.log(`✅ [文档匹配-修复] ${docName}`);
             
-            // 找到相关章节
-            docInfo.sections.forEach(section => {
-              const sectionHasCluster = section.keywords.some(keyword =>
-                synonyms.some(syn => keyword.toLowerCase().includes(syn.toLowerCase()))
-              );
-              
-              if (sectionHasCluster) {
-                sections.push({
-                  document: docName,
-                  section: section.name,
-                  keywords: [cluster, ...synonyms.slice(0, 2)],
-                  score: 0.7, // 语义匹配的基础分数
-                  reason: `语义扩展匹配到"${cluster}"`
-                });
-              }
-            });
-          }
+            // 🎯 修复：不提取具体章节，只返回文档名
+            // 具体章节提取在后续步骤中进行
         }
-      }
     }
+    
+    // 🎯 修复：确保至少有一个文档
+    if (relevantDocuments.length === 0) {
+        console.log('📚 [默认文档-修复] 添加matplotlib_cookbook.md');
+        relevantDocuments.push('matplotlib_cookbook.md');
+    }
+    
+    // 🎯 修复：不返回章节，只返回文档
+    // 章节提取逻辑在后续的_extractKeyContentFromReferenceFix中处理
     
     return {
-      documents: Array.from(documents),
-      sections: sections
+        relevantDocuments: relevantDocuments,
+        relevantSections: [], // 🎯 修复：返回空数组，章节提取在后续步骤
+        hasExactSectionMatch: false
     };
   }
 
   /**
-   * 🎯 语义分析
-   */
-  _performSemanticAnalysis(userQuery, context) {
-    const queryLower = userQuery.toLowerCase();
-    
-    // 1. 意图识别
-    const intent = this._detectUserIntent(queryLower);
-    
-    // 2. 语义扩展
-    const expandedQuery = this._expandQuerySemantically(queryLower);
-    
-    // 3. 复杂度评估
-    const complexity = this._assessQueryComplexity(userQuery);
-    
-    return {
-      intent,
-      expandedQuery,
-      complexity,
-      context: {
-        toolCallHistory: context.toolCallHistory || [],
-        userPreferences: context.userPreferences || {}
-      }
-    };
-  }
-
-  /**
-   * 🎯 检测用户意图
-   */
-  _detectUserIntent(queryLower) {
-    const intentPatterns = {
-      visualization: {
-        patterns: [/画(?:一个|张|幅)?/, /可视化(?:一下)?/, /图表(?:展示|表示)/, /plot/, /chart/, /graph/],
-        weight: 0.9
-      },
-      data_processing: {
-        patterns: [/处理(?:一下)?数据/, /清洗(?:数据)?/, /整理(?:数据)?/, /data process/, /clean data/],
-        weight: 0.8
-      },
-      code_execution: {
-        patterns: [/如何(?:使用|实现|编写)?/, /请(?:写|给)?(?:一个|一段)?代码/, /代码(?:示例|例子)?/, /code/, /example/],
-        weight: 0.7
-      },
-      analysis: {
-        patterns: [/分析(?:一下|下)?/, /看看(?:数据|趋势)?/, /有什么(?:发现|结论)/, /analyze/, /analysis/],
-        weight: 0.8
-      }
-    };
-    
-    let bestIntent = { type: 'general', confidence: 0.3 };
-    
-    for (const [intentType, config] of Object.entries(intentPatterns)) {
-      for (const pattern of config.patterns) {
-        if (pattern.test(queryLower)) {
-          const confidence = config.weight;
-          if (confidence > bestIntent.confidence) {
-            bestIntent = { type: intentType, confidence };
-          }
-        }
-      }
-    }
-    
-    return bestIntent;
-  }
-
-  /**
-   * 🎯 语义扩展查询
-   */
-  _expandQuerySemantically(queryLower) {
-    const words = queryLower.split(/[\s,，、.。!！?？]+/);
-    const expandedWords = new Set(words);
-    
-    // 基于语义簇扩展
-    for (const word of words) {
-      if (word.length < 2) continue;
-      
-      for (const [cluster, synonyms] of Object.entries(this.semanticClusters)) {
-        if (synonyms.includes(word) || word.includes(cluster)) {
-          // 添加整个簇的同义词
-          synonyms.forEach(syn => {
-            if (syn.length > 1) expandedWords.add(syn);
-          });
-        }
-      }
-    }
-    
-    return {
-      original: words,
-      expanded: Array.from(expandedWords)
-    };
-  }
-
-  /**
-   * 🎯 评估查询复杂度
-   */
-  _assessQueryComplexity(userQuery) {
-    const wordCount = userQuery.split(/\s+/).length;
-    const charCount = userQuery.length;
-    
-    let level = 'simple';
-    let requires = '代码示例';
-    
-    if (charCount > 100 || wordCount > 25) {
-      level = 'complex';
-      requires = '完整文档+示例+最佳实践';
-    } else if (charCount > 50 || wordCount > 15) {
-      level = 'medium';
-      requires = '工作流+代码';
-    }
-    
-    // 检查是否包含复杂操作词汇
-    const complexIndicators = [
-      '多个', '批量', '自动化', '工作流', '流程', '完整',
-      'complex', 'workflow', 'automation', 'batch'
-    ];
-    
-    if (complexIndicators.some(ind => userQuery.includes(ind))) {
-      level = 'complex';
-      requires = '完整工作流+多个示例';
-    }
-    
-    return { level, requires, wordCount, charCount };
-  }
-
-  /**
-   * 🎯 获取或创建会话上下文
-   */
-  _getOrCreateConversationContext(sessionId, userQuery, context) {
-    if (!this.conversationContexts.has(sessionId)) {
-      this.conversationContexts.set(sessionId, {
-        history: [],
-        patterns: {},
-        preferences: {},
-        recentTopics: new Set()
-      });
-    }
-    
-    const conversationContext = this.conversationContexts.get(sessionId);
-    
-    // 分析当前查询的主题
-    const topics = this._extractTopicsFromQuery(userQuery);
-    topics.forEach(topic => conversationContext.recentTopics.add(topic));
-    
-    // 限制主题数量
-    if (conversationContext.recentTopics.size > 10) {
-      const topicsArray = Array.from(conversationContext.recentTopics);
-      conversationContext.recentTopics = new Set(topicsArray.slice(-10));
-    }
-    
-    return conversationContext;
-  }
-
-  /**
-   * 🎯 从查询中提取主题
-   */
-  _extractTopicsFromQuery(userQuery) {
-    const topics = new Set();
-    const words = userQuery.toLowerCase().split(/[\s,，、.。!！?？]+/);
-    
-    const stopWords = new Set([
-      '这个', '那个', '怎么', '如何', '请', '谢谢', '你好',
-      '请问', '可以', '帮助', '需要', '想要', '希望'
-    ]);
-    
-    words.forEach(word => {
-      if (word.length > 1 && !stopWords.has(word)) {
-        // 检查是否是内容词（不是功能词）
-        if (this._isContentWord(word)) {
-          topics.add(word);
-        }
-      }
-    });
-    
-    return Array.from(topics);
-  }
-
-  /**
-   * 🎯 判断是否为内容词
-   */
-  _isContentWord(word) {
-    // 简单的启发式规则
-    const functionWords = ['一个', '一种', '一下', '一些', '不要', '需要', '想要'];
-    return !functionWords.includes(word) && word.length > 1;
-  }
-
-  /**
-   * 🎯 更新会话上下文
-   */
-  _updateConversationContext(sessionId, entry) {
-    if (!this.conversationContexts.has(sessionId)) return;
-    
-    const context = this.conversationContexts.get(sessionId);
-    context.history.push(entry);
-    
-    // 限制历史长度
-    if (context.history.length > 20) {
-      context.history = context.history.slice(-20);
-    }
-    
-    // 分析模式
-    this._analyzeConversationPatterns(context);
-  }
-
-  /**
-   * 🎯 分析会话模式
-   */
-  _analyzeConversationPatterns(context) {
-    const history = context.history;
-    if (history.length < 3) return;
-    
-    // 分析查询类型分布
-    const queryTypes = {
-      codeRequest: 0,
-      analysisRequest: 0,
-      visualizationRequest: 0,
-      dataRequest: 0
-    };
-    
-    history.forEach(entry => {
-      const query = entry.query?.toLowerCase() || '';
-      if (query.includes('代码') || query.includes('示例')) queryTypes.codeRequest++;
-      if (query.includes('分析') || query.includes('统计')) queryTypes.analysisRequest++;
-      if (query.includes('图表') || query.includes('可视化')) queryTypes.visualizationRequest++;
-      if (query.includes('数据') || query.includes('处理')) queryTypes.dataRequest++;
-    });
-    
-    // 设置用户偏好
-    context.preferences = {
-      prefersCodeExamples: queryTypes.codeRequest > queryTypes.analysisRequest,
-      prefersDetailedExplanations: history.some(entry => (entry.query?.length || 0) > 50),
-      commonTopics: Array.from(context.recentTopics || [])
-    };
-    
-    // 检测使用模式
-    const toolNames = history.map(entry => entry.tool || 'unknown');
-    const uniqueTools = new Set(toolNames);
-    
-    if (uniqueTools.size === 1 && toolNames.length > 2) {
-      context.patterns.usage = 'specialized';
-    } else if (uniqueTools.size > 3) {
-      context.patterns.usage = 'exploratory';
-    } else {
-      context.patterns.usage = 'balanced';
-    }
-  }
-
-  /**
-   * 🎯 构建增强的章节内容
-   */
-  _buildEnhancedSectionsContent(sectionAnalysis, semanticAnalysis, conversationContext, skillData, userQuery) {
-    // 🎯 参数验证和重命名
-    const skill = skillData;  // 重命名避免混淆
-    const skillContent = skill.content;  // 完整的SKILL.md内容
-    
-    console.log('🔍 [增强章节构建]', {
-        skillContentLength: skillContent?.length || 0,
-        sectionCount: sectionAnalysis?.relevantSections?.length || 0,
-        documentCount: sectionAnalysis?.relevantDocuments?.length || 0
-    });
-    
-    // 如果skillContent太小或不存在，直接返回fallback
-    if (!skillContent || skillContent.length < 500) {
-        console.warn('📋 [章节构建] 技能内容太小，使用fallback');
-        return this._buildFallbackContent(skill, userQuery);
-    }
-    
-    let content = '';
-    
-    // 1. 意图和复杂度说明
-    if (semanticAnalysis) {
-      content += `## 🧠 智能分析结果\n\n`;
-      content += `**用户意图**: ${semanticAnalysis.intent.type} (置信度: ${(semanticAnalysis.intent.confidence * 100).toFixed(0)}%)\n`;
-      content += `**查询复杂度**: ${semanticAnalysis.complexity.level}\n`;
-      content += `**推荐处理方式**: ${semanticAnalysis.complexity.requires}\n\n`;
-    }
-    
-    // 2. 相关章节推荐
-    if (sectionAnalysis.relevantSections && sectionAnalysis.relevantSections.length > 0) {
-      content += `## 📚 相关章节推荐\n\n`;
-      content += `检测到您的查询与以下章节高度相关：\n\n`;
-      
-      // 按文档分组显示
-      const sectionsByDoc = {};
-      sectionAnalysis.relevantSections.forEach(section => {
-        if (!sectionsByDoc[section.document]) {
-          sectionsByDoc[section.document] = [];
-        }
-        sectionsByDoc[section.document].push(section);
-      });
-      
-      for (const [docName, sections] of Object.entries(sectionsByDoc)) {
-        const docContent = skill.resources?.references?.[docName];
-        if (!docContent) continue;
-        
-        content += `### 📖 ${docName.replace('.md', '')}\n`;
-        
-        sections.forEach(sectionInfo => {
-          content += `\n**${sectionInfo.section}**\n`;
-          if (sectionInfo.keywords && sectionInfo.keywords.length > 0) {
-            content += `*匹配关键词: ${sectionInfo.keywords.join(', ')}*\n`;
-          }
-          if (sectionInfo.score) {
-            content += `*匹配分数: ${sectionInfo.score.toFixed(2)}*\n`;
-          }
-          
-          // 提取该章节的内容
-          const sectionContent = this._extractSectionContent(docContent, sectionInfo.section);
-          if (sectionContent) {
-            content += '\n' + sectionContent + '\n';
-          }
-        });
-        
-        content += '\n---\n\n';
-      }
-    } else if (sectionAnalysis.relevantDocuments && sectionAnalysis.relevantDocuments.length > 0) {
-      // 只有文档级别匹配
-      content += `## 📚 相关参考文档\n\n`;
-      content += `根据您的查询，以下文档可能对您有帮助：\n\n`;
-      
-      sectionAnalysis.relevantDocuments.forEach(docName => {
-        const docContent = skill.resources?.references?.[docName];
-        if (docContent) {
-          const summary = this._extractReferenceSummary(docContent, docName);
-          content += `• **${docName.replace('.md', '')}**: ${summary}\n`;
-        }
-      });
-    }
-    
-    // 3. 基于会话上下文的建议
-    if (conversationContext && conversationContext.preferences && conversationContext.preferences.commonTopics && conversationContext.preferences.commonTopics.length > 0) {
-      content += `\n**🎯 基于您近期关注的领域**:\n`;
-      conversationContext.preferences.commonTopics.slice(0, 5).forEach(topic => {
-        content += `• ${topic}\n`;
-      });
-      content += `\n`;
-    }
-    
-    // 4. 添加通用指导
-    content += `**💡 提示**: 执行相关任务时请严格参考上述指南中的代码模板和工作流。\n`;
-    
-    // 5. 添加Python沙盒专用提醒
-    content += `\n**🚨 输出规范**:\n`;
-    content += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
-    content += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
-    content += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
-    
-    return content;
-  }
-
-  /**
-   * 🎯 从文档中提取指定章节内容
+   * 🎯 修复：从文档中提取指定章节内容
    */
   _extractSectionContent(docContent, sectionName) {
-    // 🎯 增强输入验证
+    // 🎯 修复：增强输入验证
     if (!docContent || typeof docContent !== 'string') {
-        console.warn('📚 [章节提取] 无效的文档内容', {
-            docContentType: typeof docContent,
-            sectionName,
-            docContentLength: docContent?.length
-        });
+        console.warn('📚 [章节提取-修复] 无效的文档内容');
         return '';
     }
     
     if (!sectionName || typeof sectionName !== 'string') {
-        console.warn('📚 [章节提取] 无效的章节名称', { sectionName });
+        console.warn('📚 [章节提取-修复] 无效的章节名称');
         return '';
     }
     
-    console.log(`📚 [章节提取] 查找章节: "${sectionName}", 文档大小: ${docContent.length}字符`);
+    console.log(`📚 [章节提取-修复] 查找章节: "${sectionName}", 文档大小: ${docContent.length}字符`);
     
-    // 安全检查：确保docContent存在
-    if (!docContent || typeof docContent !== 'string') {
-        console.warn(`📚 [章节提取] 文档内容无效:`, { docContent, sectionName });
-        return '';
+    // 🎯 修复：检查是否是参考文件（.md文件）
+    if (sectionName.includes('.md')) {
+        // 这是整个参考文件，直接返回前3000字符
+        console.log(`📄 [提取整个参考文件-修复] ${sectionName}: ${docContent.length}字符`);
+        const content = docContent.substring(0, Math.min(3000, docContent.length));
+        return content + (docContent.length > 3000 ? '...' : '');
     }
     
-    const sectionPattern = new RegExp(
-        `(#{2,}\\s*${this._escapeRegex(sectionName)}[\\s\\S]*?)(?=\\n#{2,}\\s|$)`,
-        'i'
-    );
+    // 🎯 修复：增强正则表达式匹配
+    const patterns = [
+        // 策略1：精确章节标题匹配 (### 章节标题)
+        new RegExp(`(#{1,3}\\s*${this._escapeRegex(sectionName)}[\\s\\S]*?)(?=\\n#{1,3}\\s|$)`, 'i'),
+        // 策略2：模糊标题匹配 (包含章节名)
+        new RegExp(`(#{1,3}\\s+[^\\n]*${this._escapeRegex(sectionName)}[^\\n]*\\n[\\s\\S]*?)(?=\\n#{1,3}\\s|$)`, 'i')
+    ];
     
-    const match = docContent.match(sectionPattern);
-    if (match) {
-        // 截取前1500字符，避免内容过长
-        const content = match[0];
-        if (content.length > 1500) {
-            return content.substring(0, 1500) + '...\n*(内容截断，如需完整章节请查阅对应文档)*';
+    for (const pattern of patterns) {
+        try {
+            const match = docContent.match(pattern);
+            if (match && match[0].length > 100) {
+                const content = match[0];
+                console.log(`✅ [章节提取成功-修复] "${sectionName}": ${content.length}字符`);
+                
+                // 限制长度
+                if (content.length > 2500) {
+                    return content.substring(0, 2500) + '...\n*(内容截断)*';
+                }
+                return content;
+            }
+        } catch (error) {
+            console.warn('⚠️ 正则匹配失败-修复:', error);
         }
-        return content;
     }
     
-    // 如果精确匹配失败，尝试模糊匹配
-    const similarSection = this._findSimilarSection(docContent, sectionName);
-    
-    // 🎯 修复：确保总是返回字符串
-    return similarSection || '';
+    // 🎯 修复：如果找不到章节，返回文档开头部分
+    console.log(`🔄 [章节提取降级-修复] 未找到"${sectionName}"，返回文档开头`);
+    const fallback = docContent.substring(0, Math.min(2000, docContent.length));
+    return fallback + (docContent.length > 2000 ? '...' : '');
   }
 
   /**
-   * 🎯 查找相似章节（模糊匹配）
-   */
-  _findSimilarSection(docContent, sectionName) {
-    // 提取所有章节标题
-    const sectionRegex = /#{2,}\s+([^\n]+)/g;
-    const sections = [];
-    let match;
-    
-    while ((match = sectionRegex.exec(docContent)) !== null) {
-      sections.push({
-        title: match[1],
-        index: match.index
-      });
-    }
-    
-    // 找到最相似的章节
-    let bestMatch = null;
-    let bestScore = 0;
-    
-    sections.forEach(section => {
-      const score = this._calculateSimilarity(section.title, sectionName);
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = section;
-      }
-    });
-    
-    // 如果相似度足够高，提取该章节
-    if (bestMatch && bestScore > 0.6) {
-      const startIndex = bestMatch.index;
-      let endIndex = docContent.length;
-      
-      // 找到下一个章节的开始
-      for (let i = 0; i < sections.length; i++) {
-        if (sections[i].index > startIndex) {
-          endIndex = sections[i].index;
-          break;
-        }
-      }
-      
-      const sectionContent = docContent.substring(startIndex, endIndex);
-      if (sectionContent.length > 1500) {
-        return sectionContent.substring(0, 1500) + '...';
-      }
-      return sectionContent;
-    }
-    
-    // 🎯 修复：返回空字符串而不是null
-    return '';  // 修改这里
-  }
-
-  /**
-   * 🎯 计算字符串相似度
-   */
-  _calculateSimilarity(str1, str2) {
-    const s1 = str1.toLowerCase();
-    const s2 = str2.toLowerCase();
-    
-    if (s1 === s2) return 1;
-    if (s1.includes(s2) || s2.includes(s1)) return 0.8;
-    
-    // 计算公共字符数量
-    const commonChars = this._countCommonChars(s1, s2);
-    return commonChars / Math.max(s1.length, s2.length);
-  }
-
-  /**
-   * 🎯 计算公共字符数量
-   */
-  _countCommonChars(str1, str2) {
-    const chars1 = new Set(str1);
-    const chars2 = new Set(str2);
-    let count = 0;
-    
-    chars1.forEach(char => {
-      if (chars2.has(char)) count++;
-    });
-    
-    return count;
-  }
-
-  /**
-   * 🎯 转义正则表达式特殊字符
+   * 🎯 修复：转义正则表达式特殊字符
    */
   _escapeRegex(string) {
+    if (!string || typeof string !== 'string') return '';
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
-   * 🎯 降级内容构建（当增强匹配失败时使用）
+   * 🎯 修复：降级内容构建
    */
   _buildFallbackContent(skillData, userQuery) {
-    // 使用原有的方法
-    let fullContent = '';
+    console.log('🔄 [降级内容构建-修复]');
     
-    // 1. 提取主文档的关键信息（原有方法）
-    const mainContent = this._extractPythonKeyInformation(skillData.content, userQuery);
-    fullContent += mainContent;
+    let content = '';
+    const mainContent = skillData.content || '';
     
-    // 2. 智能匹配相关参考文件（原有方法）
-    const relevantReferences = this._findRelevantPythonReferences(userQuery);
-    
-    if (relevantReferences.length > 0) {
-      fullContent += `**📚 相关参考指南**:\n`;
-      
-      for (const refFile of relevantReferences.slice(0, 2)) {
-        const refContent = skillData.resources?.references?.[refFile];
-        if (refContent) {
-          const summary = this._extractReferenceSummary(refContent, refFile);
-          fullContent += `• **${refFile}**: ${summary}\n`;
+    // 1. 提取主文档的关键部分
+    if (mainContent.length > 0) {
+        // 提取调用结构和输出规范
+        const structureMatch = mainContent.match(/## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i);
+        if (structureMatch) {
+            content += structureMatch[0] + '\n\n';
         }
-      }
-      
-      fullContent += `\n💡 **提示**: 执行相关任务时请严格参考这些指南中的代码模板和工作流。\n`;
+        
+        // 如果内容太少，添加更多
+        if (content.length < 1000) {
+            const intro = mainContent.substring(0, Math.min(1500, mainContent.length));
+            content += intro + (mainContent.length > 1500 ? '...' : '') + '\n\n';
+        }
     }
     
-    // 3. 添加Python沙盒专用提醒（原有内容）
-    fullContent += `\n**🚨 输出规范**:\n`;
-    fullContent += `• 图片输出：必须使用包含 type: "image" 和 image_base64 的JSON对象\n`;
-    fullContent += `• 文件输出：必须使用包含 type: "word|excel|..." 和 data_base64 的JSON对象\n`;
-    fullContent += `• 复杂任务：请优先参考对应的参考文件获取完整工作流\n`;
+    // 2. 添加基本指导
+    content += `**💡 基本指导**:\n`;
+    content += `• 使用 python_sandbox 工具执行Python代码\n`;
+    content += `• 图片输出必须使用包含 type: "image" 的JSON对象\n`;
+    content += `• 复杂任务请参考相关参考文件\n`;
     
-    return fullContent;
+    console.log(`✅ [降级内容构建完成-修复] ${content.length}字符`);
+    return content;
   }
 
   // ==================== 原有方法保持不变 ====================
