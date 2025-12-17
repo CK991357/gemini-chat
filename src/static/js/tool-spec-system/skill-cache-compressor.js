@@ -1,5 +1,5 @@
 // src/tool-spec-system/skill-cache-compressor.js
-// 🎯 增强章节推断 + 语义扩展 + 上下文感知
+// 🎯 增强章节推断 + 语义扩展 + 上下文感知 + 工具感知智能压缩
 
 // 添加压缩质量追踪
 class CompressionQualityMonitor {
@@ -56,13 +56,83 @@ class CompressionQualityMonitor {
     }
 }
 
+// 🎯 新增：压缩质量分析器
+class CompressionQualityAnalyzer {
+    constructor() {
+        this.keyElementsByTool = this.defineKeyElements();
+    }
+    
+    defineKeyElements() {
+        return {
+            'python_sandbox': [
+                '通用调用结构', '代码示例', '参数说明', '错误处理',
+                '输出格式', '文件操作指南', '图表生成说明', '性能优化'
+            ],
+            'crawl4ai': [
+                '通用调用结构', '模式选择指南', '参数说明',
+                '错误示例', 'JSON结构示例', 'schema_definition'
+            ],
+            'default': ['调用结构', '参数说明', '示例代码', '关键指令']
+        };
+    }
+    
+    analyze(content, compressed, toolName, userQuery) {
+        // 检查关键元素是否保留
+        const keyElements = this.keyElementsByTool[toolName] || this.keyElementsByTool.default;
+        const preservedElements = keyElements.filter(element => 
+            compressed.includes(element)
+        );
+        
+        // 计算语义覆盖率（简化版）
+        const queryKeywords = userQuery.toLowerCase().split(/[\s,，、]+/).filter(w => w.length > 1);
+        let keywordCoverage = 0;
+        if (queryKeywords.length > 0) {
+            const foundKeywords = queryKeywords.filter(keyword => 
+                compressed.toLowerCase().includes(keyword)
+            );
+            keywordCoverage = foundKeywords.length / queryKeywords.length;
+        }
+        
+        // 结构完整性评分
+        const originalSections = (content.match(/#{1,3}\s+[^\n]+/g) || []).length;
+        const compressedSections = (compressed.match(/#{1,3}\s+[^\n]+/g) || []).length;
+        const structureScore = originalSections > 0 ? 
+            Math.min(compressedSections / originalSections, 1) : 1;
+        
+        // 综合评分
+        const score = (
+            (preservedElements.length / keyElements.length) * 0.4 +
+            keywordCoverage * 0.3 +
+            structureScore * 0.3
+        );
+        
+        return {
+            score,
+            keyElementsPreserved: preservedElements,
+            keywordCoverage,
+            structureScore,
+            compressionRate: 1 - (compressed.length / content.length),
+            details: {
+                originalSize: content.length,
+                compressedSize: compressed.length,
+                originalSections,
+                compressedSections
+            }
+        };
+    }
+    
+    checkElementPresence(content, element) {
+        return content.includes(element);
+    }
+}
+
 export class SkillCacheCompressor {
   constructor() {
     // 🎯 缓存系统
     this.knowledgeCache = new Map(); // tool -> {full, summary, compressed, timestamp}
     this.injectionHistory = new Map(); // sessionId -> [toolNames]
     
-    // 🎯 压缩配置
+    // 🎯 压缩配置 - 调整为工具感知的智能配置
     this.compressionEnabled = true;
     this.maxKnowledgeChars = 15000;
     this.minimalLength = 3000;
@@ -72,6 +142,9 @@ export class SkillCacheCompressor {
     
     // 🎯 压缩质量监控
     this.qualityMonitor = new CompressionQualityMonitor();
+    
+    // 🎯 新增：压缩质量分析器
+    this.qualityAnalyzer = new CompressionQualityAnalyzer();
     
     // 🎯 ==================== 新增部分 ====================
     
@@ -114,11 +187,56 @@ export class SkillCacheCompressor {
       semanticSimilarity: 1.4   // 语义相似性权重
     };
     
+    // 🎯 新增：工具感知压缩配置
+    this.toolTypeConfig = {
+      // Python沙盒：需要多文档融合，适度压缩
+      'python_sandbox': {
+        compressionThreshold: 12000,    // 超过12KB才压缩
+        maxCompressionRate: 0.4,        // 最多压缩40%
+        minPreservedLength: 8000,       // 至少保留8KB
+        compressionMethod: 'semantic_extract',
+        preserveCodeExamples: true,
+        preserveTables: true,
+        preserveStructure: true
+      },
+      
+      // Crawl4AI：结构化文档，保守压缩
+      'crawl4ai': {
+        compressionThreshold: 15000,    // 超过15KB才压缩
+        maxCompressionRate: 0.3,        // 最多压缩30%
+        minPreservedLength: 10000,      // 至少保留10KB
+        compressionMethod: 'smart_trim',
+        preserveStructure: true,
+        preserveJsonExamples: true
+      },
+      
+      // 其他简单工具：基本不压缩
+      'default': {
+        compressionThreshold: 18000,    // 超过18KB才压缩
+        maxCompressionRate: 0.2,        // 最多压缩20%
+        minPreservedLength: 12000,      // 至少保留12KB
+        compressionMethod: 'minimal_trim',
+        preserveCoreSections: true
+      }
+    };
+    
+    // 🎯 新增：Python沙盒参考文件优先级
+    this.pythonReferencePriority = {
+      'matplotlib_cookbook.md': 1.0,
+      'pandas_cheatsheet.md': 0.9,
+      'report_generator_workflow.md': 0.8,
+      'ml_workflow.md': 0.7,
+      'sympy_cookbook.md': 0.6,
+      'scipy_cookbook.md': 0.5,
+      'text_analysis_cookbook.md': 0.8
+    };
+    
     console.log('✅ SkillCacheCompressor 章节推断增强已启用');
+    console.log('✅ 工具感知智能压缩系统已加载');
   }
 
   /**
-   * 🎯 核心：智能知识压缩算法
+   * 🎯 核心：智能知识压缩算法 - 增强版
    */
   async compressKnowledge(content, options = {}) {
     let {
@@ -131,9 +249,25 @@ export class SkillCacheCompressor {
 
     console.log(`📦 [压缩开始] 工具: ${toolName}, 原始大小: ${content.length}字符`);
 
-    // 如果内容已经很小，直接返回
-    if (content.length <= maxChars) {
-      // 即使内容很小也进行质量监控
+    // 🎯 优化1: 先检查精准匹配缓存
+    const preciseMatch = await this.checkPreciseMatch(toolName, userQuery, content);
+    if (preciseMatch && preciseMatch.confidence > 0.8) {
+      console.log(`🎯 [精准匹配命中] ${toolName}, 置信度: ${preciseMatch.confidence.toFixed(2)}`);
+      return preciseMatch.content;
+    }
+
+    // 🎯 优化2: 工具感知的压缩决策
+    const compressionDecision = this.decideCompressionStrategy(content, {
+      toolName,
+      userQuery,
+      maxChars
+    });
+
+    // 如果决定不压缩或内容已足够小
+    if (!compressionDecision.shouldCompress || compressionDecision.skipCompression) {
+      console.log(`📦 [压缩跳过] 原因: ${compressionDecision.reason}`);
+      
+      // 即使不压缩也进行质量监控
       this.qualityMonitor.trackCompression(
         toolName, 
         content.length, 
@@ -141,19 +275,15 @@ export class SkillCacheCompressor {
         userQuery, 
         content
       );
-      console.log(`📦 [压缩跳过] 内容已足够小(${content.length} ≤ ${maxChars})`);
+      
       return content;
     }
 
+    console.log(`📦 [压缩决策] 策略: ${compressionDecision.strategy}, 目标大小: ${compressionDecision.targetSize}字符`);
+
     // 🎯 自动压缩级别选择逻辑
     if (level === 'auto') {
-      if (content.length > 30000) {
-        level = 'minimal'; // 超长内容用最小化
-      } else if (content.length > 10000) {
-        level = 'smart'; // 中等长度用智能压缩
-      } else {
-        level = 'reference'; // 短内容用引用模式
-      }
+      level = this.autoSelectCompressionLevel(content.length, toolName);
       console.log(`🎯 [自动压缩] ${content.length}字符 → 选择${level}级别`);
     }
     
@@ -176,16 +306,30 @@ export class SkillCacheCompressor {
 
       case 'smart':
       default:
-        // 🎯 增强的智能压缩：包含语义扩展和上下文感知
-        compressed = await this.smartCompressWithEnhancements(content, maxChars, userQuery, toolName);
-        console.log(`📦 [智能压缩增强] 基于查询提取相关章节`);
+        // 🎯 增强的智能压缩：基于工具类型的智能压缩
+        compressed = await this.toolAwareSmartCompress(content, maxChars, userQuery, toolName);
+        console.log(`📦 [智能压缩] 基于工具类型提取相关章节`);
         break;
     }
 
-    // 确保不超过最大长度
-    if (compressed.length > maxChars) {
-      console.log(`📦 [长度截断] ${compressed.length} → ${maxChars}字符`);
-      compressed = compressed.substring(0, maxChars) + '...';
+    // 🎯 优化3: 确保压缩质量，不盲目截断
+    if (compressed.length > compressionDecision.targetSize) {
+      console.log(`📦 [长度优化] ${compressed.length} → ${compressionDecision.targetSize}字符`);
+      compressed = this.intelligentTrim(compressed, compressionDecision.targetSize, toolName);
+    }
+
+    // 🎯 新增：压缩质量分析
+    const qualityReport = this.qualityAnalyzer.analyze(
+      content, 
+      compressed, 
+      toolName, 
+      userQuery
+    );
+
+    // 🎯 质量检查：如果质量过低，使用备用策略
+    if (qualityReport.score < 0.7) {
+      console.warn(`⚠️ 压缩质量低: ${qualityReport.score.toFixed(2)}, 使用备用策略`);
+      compressed = this.fallbackCompressionStrategy(content, compressionDecision.targetSize, toolName);
     }
 
     // 🎯 添加压缩质量监控
@@ -203,13 +347,576 @@ export class SkillCacheCompressor {
     
     console.log(`✅ [压缩完成] ${content.length} → ${compressed.length}字符`);
     console.log(`📊 [压缩统计] 压缩率: ${compressionRate}%, 节省: ${bytesSaved}字符`);
+    console.log(`📊 [质量评分] 综合质量: ${qualityReport.score.toFixed(2)}`);
     console.log(`📊 [性能指标] 预计节省上下文窗口: ${Math.round(bytesSaved / 4)}tokens`);
+    
+    // 显示关键元素保留情况
+    if (qualityReport.keyElementsPreserved.length > 0) {
+      console.log(`📊 [关键元素] 保留: ${qualityReport.keyElementsPreserved.join(', ')}`);
+    }
 
     return compressed;
   }
 
   /**
-   * 🎯 增强的智能压缩（包含语义扩展和上下文感知）
+   * 🎯 新增：工具感知的智能压缩决策
+   */
+  decideCompressionStrategy(content, options = {}) {
+    const { toolName, userQuery, maxChars } = options;
+    const contentLength = content.length;
+    
+    // 获取工具特定配置
+    const toolConfig = this.toolTypeConfig[toolName] || this.toolTypeConfig.default;
+    
+    // 1. 如果内容很小，不压缩
+    if (contentLength <= toolConfig.compressionThreshold) {
+      return {
+        shouldCompress: false,
+        skipCompression: true,
+        reason: `内容大小(${contentLength})未达到压缩阈值(${toolConfig.compressionThreshold})`
+      };
+    }
+    
+    // 2. 如果是Python沙盒且有精确查询，优先精准匹配
+    if (toolName === 'python_sandbox' && this.isSpecificPythonQuery(userQuery)) {
+      return {
+        shouldCompress: true,
+        strategy: 'precise_extract',
+        targetSize: Math.min(maxChars, toolConfig.minPreservedLength * 1.5),
+        preserveStructure: true
+      };
+    }
+    
+    // 3. 计算目标大小（考虑工具的最小保留长度）
+    const targetSize = Math.max(
+      Math.min(
+        contentLength * (1 - toolConfig.maxCompressionRate),
+        maxChars
+      ),
+      toolConfig.minPreservedLength
+    );
+    
+    return {
+      shouldCompress: true,
+      strategy: toolConfig.compressionMethod,
+      targetSize,
+      toolConfig,
+      skipCompression: false,
+      reason: `内容大小(${contentLength})超过阈值，使用${toolConfig.compressionMethod}策略`
+    };
+  }
+
+  /**
+   * 🎯 新增：工具感知的智能压缩
+   */
+  async toolAwareSmartCompress(content, maxChars, userQuery, toolName) {
+    // 根据工具类型选择不同的压缩策略
+    switch (toolName) {
+      case 'python_sandbox':
+        return await this.compressPythonSandbox(content, maxChars, userQuery);
+        
+      case 'crawl4ai':
+        return await this.compressCrawl4AI(content, maxChars, userQuery);
+        
+      default:
+        return await this.compressGeneralTool(content, maxChars, userQuery, toolName);
+    }
+  }
+
+  /**
+   * 🎯 新增：Python沙盒专用压缩
+   */
+  async compressPythonSandbox(content, maxChars, userQuery) {
+    console.log(`🐍 [Python沙盒压缩] 查询: "${userQuery.substring(0, 50)}..."`);
+    
+    // 1. 识别用户意图
+    const intent = this.classifyUserIntent(userQuery);
+    console.log(`🐍 [用户意图] ${intent}`);
+    
+    // 2. 提取必须包含的核心部分
+    let compressed = this.extractPythonSandboxCore(content);
+    
+    // 3. 基于意图添加相关内容
+    const intentContent = this.extractIntentBasedContent(content, userQuery, intent, maxChars - compressed.length);
+    compressed += intentContent;
+    
+    // 4. 如果还有空间，添加代码示例
+    const remainingSpace = maxChars - compressed.length;
+    if (remainingSpace > 1000) {
+      const examples = this.extractRelevantCodeExamples(content, userQuery, remainingSpace);
+      compressed += examples;
+    }
+    
+    return compressed;
+  }
+
+  /**
+   * 🎯 新增：提取Python沙盒核心内容
+   */
+  extractPythonSandboxCore(content) {
+    let coreContent = '';
+    const requiredPatterns = [
+      { pattern: /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i, name: '调用结构' },
+      { pattern: /```json[\s\S]*?```/, name: 'JSON示例', limit: 2 },
+      { pattern: /## 📁 文件处理指南[\s\S]*?(?=\n##\s|$)/i, name: '文件处理' },
+      { pattern: /## 🚀 输出规范[\s\S]*?(?=\n##\s|$)/i, name: '输出规范' },
+      { pattern: /## ⚠️ 重要限制与最佳实践[\s\S]*?(?=\n##\s|$)/i, name: '限制实践' }
+    ];
+    
+    for (const { pattern, name, limit } of requiredPatterns) {
+      const matches = content.match(new RegExp(pattern.source, 'g')) || [];
+      let addedCount = 0;
+      
+      for (const match of matches) {
+        if (!limit || addedCount < limit) {
+          coreContent += match + '\n\n';
+          addedCount++;
+        }
+      }
+    }
+    
+    console.log(`🐍 [提取核心] ${coreContent.length}字符`);
+    return coreContent;
+  }
+
+  /**
+   * 🎯 新增：基于意图提取内容
+   */
+  extractIntentBasedContent(content, userQuery, intent, maxLength) {
+    let intentContent = '';
+    
+    // 根据意图类型提取相关内容
+    switch (intent) {
+      case 'visualization':
+        intentContent += this.extractSection(content, '图表', maxLength * 0.7);
+        intentContent += this.extractSection(content, 'matplotlib', maxLength * 0.3);
+        break;
+        
+      case 'data_analysis':
+        intentContent += this.extractSection(content, '数据', maxLength * 0.6);
+        intentContent += this.extractSection(content, 'pandas', maxLength * 0.4);
+        break;
+        
+      case 'code_execution':
+        intentContent += this.extractSection(content, '代码', maxLength * 0.5);
+        intentContent += this.extractCodeBlocks(content, maxLength * 0.5);
+        break;
+        
+      case 'report_generation':
+        intentContent += this.extractSection(content, '报告', maxLength * 0.8);
+        intentContent += this.extractSection(content, 'Word|Excel|PDF', maxLength * 0.2);
+        break;
+        
+      default:
+        // 通用意图：提取查询关键词相关的内容
+        const keywords = userQuery.toLowerCase().split(/[\s,，、]+/).filter(w => w.length > 1);
+        for (const keyword of keywords.slice(0, 3)) {
+          if (intentContent.length < maxLength * 0.8) {
+            intentContent += this.extractSection(content, keyword, maxLength * 0.3);
+          }
+        }
+    }
+    
+    return intentContent;
+  }
+
+  /**
+   * 🎯 新增：提取相关代码示例
+   */
+  extractRelevantCodeExamples(content, userQuery, maxLength) {
+    let examples = '\n\n## 💻 相关代码示例\n\n';
+    const codeBlocks = content.match(/```[\s\S]*?```/g) || [];
+    
+    // 按相关性筛选
+    const relevantBlocks = codeBlocks.filter(block => {
+      const queryKeywords = userQuery.toLowerCase().split(/[\s,，、]+/);
+      return queryKeywords.some(keyword => 
+        keyword.length > 2 && block.toLowerCase().includes(keyword)
+      );
+    });
+    
+    // 如果没有相关代码块，返回通用示例
+    if (relevantBlocks.length === 0) {
+      // 取前两个代码块
+      examples += codeBlocks.slice(0, 2).join('\n\n');
+    } else {
+      // 取相关的前三个代码块
+      examples += relevantBlocks.slice(0, 3).join('\n\n');
+    }
+    
+    // 确保不超过最大长度
+    if (examples.length > maxLength) {
+      examples = examples.substring(0, maxLength) + '\n\n...';
+    }
+    
+    return examples;
+  }
+
+  /**
+   * 🎯 新增：Crawl4AI专用压缩
+   */
+  async compressCrawl4AI(content, maxChars, userQuery) {
+    console.log(`🕷️ [Crawl4AI压缩] 查询: "${userQuery.substring(0, 50)}..."`);
+    
+    // 1. 提取核心结构（必须保留）
+    let compressed = this.extractCrawl4AICore(content);
+    
+    // 2. 识别请求的模式类型
+    const mode = this.detectCrawl4AIMode(userQuery);
+    if (mode) {
+      const modeContent = this.extractModeSpecificContent(content, mode, maxChars - compressed.length);
+      compressed += modeContent;
+    }
+    
+    // 3. 添加JSON示例
+    const jsonExamples = this.extractJsonExamples(content, 1500);
+    compressed += jsonExamples;
+    
+    return compressed;
+  }
+
+  /**
+   * 🎯 新增：提取Crawl4AI核心内容
+   */
+  extractCrawl4AICore(content) {
+    let coreContent = '';
+    const requiredPatterns = [
+      { pattern: /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i, name: '调用结构' },
+      { pattern: /## 📋 可用模式快速选择指南[\s\S]*?(?=\n##\s|$)/i, name: '模式选择' },
+      { pattern: /## 🎯 使用场景快速指南[\s\S]*?(?=\n##\s|$)/i, name: '使用场景' },
+      { pattern: /## ✅ 正确示例.*?\n```json[\s\S]*?```/gs, name: '正确示例' },
+      { pattern: /## ❌ 错误示例.*?\n```json[\s\S]*?```/gs, name: '错误示例' }
+    ];
+    
+    for (const { pattern, name } of requiredPatterns) {
+      const match = content.match(pattern);
+      if (match) {
+        coreContent += match[0] + '\n\n';
+      }
+    }
+    
+    console.log(`🕷️ [提取核心] ${coreContent.length}字符`);
+    return coreContent;
+  }
+
+  /**
+   * 🎯 新增：检测Crawl4AI模式
+   */
+  detectCrawl4AIMode(userQuery) {
+    const queryLower = userQuery.toLowerCase();
+    const modeKeywords = {
+      'scrape': ['抓取', '单个', '网页', 'scrape'],
+      'extract': ['提取', '结构化', '数据提取', 'schema', 'extract'],
+      'deep_crawl': ['深度', '整站', '网站', 'deep', 'crawl'],
+      'batch_crawl': ['批量', '多个', 'url', '列表', 'batch']
+    };
+    
+    for (const [mode, keywords] of Object.entries(modeKeywords)) {
+      if (keywords.some(keyword => queryLower.includes(keyword))) {
+        return mode;
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * 🎯 新增：提取模式特定内容
+   */
+  extractModeSpecificContent(content, mode, maxLength) {
+    let modeContent = `\n\n## 🎯 ${mode.toUpperCase()} 模式详细指南\n\n`;
+    
+    // 查找模式相关的章节
+    const modePattern = new RegExp(`##.*?${mode}.*?[\\s\\S]*?(?=\\n##|$)`, 'i');
+    const modeMatch = content.match(modePattern);
+    
+    if (modeMatch) {
+      modeContent += modeMatch[0].substring(0, Math.min(modeMatch[0].length, maxLength));
+    } else {
+      // 如果没有找到特定模式章节，提取通用内容
+      modeContent += this.extractSection(content, '参数', maxLength);
+    }
+    
+    return modeContent;
+  }
+
+  /**
+   * 🎯 新增：通用工具压缩
+   */
+  async compressGeneralTool(content, maxChars, userQuery, toolName) {
+    console.log(`🛠️ [通用工具压缩] ${toolName}, 查询: "${userQuery.substring(0, 50)}..."`);
+    
+    // 1. 提取最小化指南（确保核心内容）
+    let compressed = this.extractMinimalGuide(content);
+    
+    // 2. 基于查询添加相关章节
+    const relevantSections = this.extractRelevantSections(content, userQuery, maxChars - compressed.length);
+    compressed += relevantSections;
+    
+    // 3. 确保不超过最大长度
+    if (compressed.length > maxChars) {
+      compressed = this.preserveCoreContent(compressed, maxChars, toolName);
+    }
+    
+    return compressed;
+  }
+
+  /**
+   * 🎯 新增：智能截断（保留核心内容）
+   */
+  intelligentTrim(content, targetSize, toolName) {
+    // 按章节分割
+    const sections = this.splitIntoSections(content);
+    const sectionScores = [];
+    
+    // 为每个章节评分（根据工具类型）
+    sections.forEach(section => {
+      let score = 0;
+      
+      // 检查是否包含关键元素
+      const keyElements = this.qualityAnalyzer.keyElementsByTool[toolName] || 
+                         this.qualityAnalyzer.keyElementsByTool.default;
+      
+      keyElements.forEach(element => {
+        if (section.includes(element)) {
+          score += 10;
+        }
+      });
+      
+      // 检查是否包含代码块
+      if (section.includes('```')) {
+        score += 5;
+      }
+      
+      // 检查是否包含标题
+      if (section.match(/^#{1,3}\s/)) {
+        score += 3;
+      }
+      
+      sectionScores.push({ section, score });
+    });
+    
+    // 按分数排序
+    sectionScores.sort((a, b) => b.score - a.score);
+    
+    // 按优先级拼接，直到达到目标大小
+    let result = '';
+    for (const { section } of sectionScores) {
+      if (result.length + section.length <= targetSize) {
+        result += section + '\n\n';
+      } else if (result.length < targetSize * 0.8) {
+        // 如果内容太少，添加部分内容
+        const availableSpace = targetSize - result.length;
+        if (availableSpace > 200) {
+          result += section.substring(0, availableSpace - 50) + '...\n\n';
+        }
+        break;
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * 🎯 新增：备用压缩策略（当质量过低时）
+   */
+  fallbackCompressionStrategy(content, targetSize, toolName) {
+    console.log(`🔄 [备用策略] ${toolName}`);
+    
+    // 策略1: 只保留核心章节
+    let compressed = '';
+    const corePatterns = [
+      /## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i,
+      /## 🚀 .*?[\s\S]*?(?=\n##\s|$)/i,
+      /## ✅ 正确示例[\s\S]*?(?=\n##\s|$)/i
+    ];
+    
+    for (const pattern of corePatterns) {
+      const match = content.match(pattern);
+      if (match && compressed.length + match[0].length <= targetSize) {
+        compressed += match[0] + '\n\n';
+      }
+    }
+    
+    // 策略2: 如果内容还不足，添加引用模式
+    if (compressed.length < targetSize * 0.5) {
+      compressed += this.createKnowledgeReference(content);
+    }
+    
+    // 确保不超过目标大小
+    if (compressed.length > targetSize) {
+      compressed = compressed.substring(0, targetSize) + '...';
+    }
+    
+    return compressed;
+  }
+
+  /**
+   * 🎯 新增：检查精准匹配
+   */
+  async checkPreciseMatch(toolName, userQuery, fullContent) {
+    // 简化的精准匹配逻辑
+    // 在实际实现中，这里可以查询历史匹配记录
+    
+    // 检查是否为常见查询模式
+    const commonQueries = {
+      'python_sandbox': [
+        { pattern: /如何.*?画.*?图/, content: 'matplotlib' },
+        { pattern: /数据.*?分析/, content: 'pandas' },
+        { pattern: /生成.*?报告/, content: 'report' }
+      ],
+      'crawl4ai': [
+        { pattern: /抓取.*?网页/, content: 'scrape' },
+        { pattern: /提取.*?数据/, content: 'extract' }
+      ]
+    };
+    
+    const queries = commonQueries[toolName] || [];
+    for (const { pattern, content } of queries) {
+      if (pattern.test(userQuery)) {
+        // 提取相关内容
+        const section = this.extractSection(fullContent, content, 3000);
+        if (section) {
+          return {
+            content: section,
+            confidence: 0.85,
+            matchType: 'pattern'
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * 🎯 新增：自动选择压缩级别
+   */
+  autoSelectCompressionLevel(contentLength, toolName) {
+    const toolConfig = this.toolTypeConfig[toolName] || this.toolTypeConfig.default;
+    
+    if (contentLength > 30000) {
+      return 'minimal'; // 超长内容用最小化
+    } else if (contentLength > toolConfig.compressionThreshold * 1.5) {
+      return 'smart'; // 中等长度用智能压缩
+    } else {
+      return 'reference'; // 短内容用引用模式
+    }
+  }
+
+  /**
+   * 🎯 新增：是否是具体的Python查询
+   */
+  isSpecificPythonQuery(userQuery) {
+    const specificPatterns = [
+      /如何.*?(画图|图表|可视化)/,
+      /数据.*?(分析|清洗|处理)/,
+      /生成.*?(报告|文档|word|excel|pdf)/,
+      /训练.*?(模型|机器学习)/,
+      /计算.*?(公式|数学)/
+    ];
+    
+    return specificPatterns.some(pattern => pattern.test(userQuery));
+  }
+
+  /**
+   * 🎯 新增：提取章节内容（辅助方法）
+   */
+  extractSection(content, keyword, maxLength) {
+    // 查找包含关键词的章节
+    const sectionPattern = new RegExp(`##.*?${keyword}.*?[\\s\\S]*?(?=\\n##|$)`, 'i');
+    const match = content.match(sectionPattern);
+    
+    if (match) {
+      const section = match[0];
+      if (section.length > maxLength) {
+        return section.substring(0, maxLength - 100) + '...\n\n';
+      }
+      return section + '\n\n';
+    }
+    
+    return '';
+  }
+
+  /**
+   * 🎯 新增：提取JSON示例
+   */
+  extractJsonExamples(content, maxLength) {
+    const jsonExamples = content.match(/```json[\s\S]*?```/g) || [];
+    let result = '\n\n## 📋 JSON调用示例\n\n';
+    
+    if (jsonExamples.length > 0) {
+      // 取前2个示例
+      result += jsonExamples.slice(0, 2).join('\n\n');
+      
+      if (result.length > maxLength) {
+        result = result.substring(0, maxLength) + '\n\n...';
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * 🎯 新增：提取代码块
+   */
+  extractCodeBlocks(content, maxLength) {
+    const codeBlocks = content.match(/```[\s\S]*?```/g) || [];
+    let result = '\n\n## 💻 代码示例\n\n';
+    
+    if (codeBlocks.length > 0) {
+      // 取前3个代码块
+      result += codeBlocks.slice(0, 3).join('\n\n');
+      
+      if (result.length > maxLength) {
+        result = result.substring(0, maxLength) + '\n\n...';
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * 🎯 新增：保留核心内容
+   */
+  preserveCoreContent(content, maxLength, toolName) {
+    // 按行分割
+    const lines = content.split('\n');
+    let result = '';
+    let inImportantSection = false;
+    
+    const importantMarkers = [
+      '🎯', '🚀', '✅', '❌', '⚠️', '📋', '💡'
+    ];
+    
+    for (const line of lines) {
+      // 检查是否是重要部分
+      if (importantMarkers.some(marker => line.includes(marker))) {
+        inImportantSection = true;
+      }
+      
+      // 如果是重要部分或者结果还足够小，添加该行
+      if (inImportantSection || result.length < maxLength * 0.7) {
+        if (result.length + line.length + 1 <= maxLength) {
+          result += line + '\n';
+        } else {
+          // 添加省略号并退出
+          result += '...\n';
+          break;
+        }
+      }
+      
+      // 如果遇到空行且不在重要部分，检查是否应该停止
+      if (line.trim() === '' && !inImportantSection && result.length > maxLength * 0.8) {
+        break;
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * 🎯 增强的智能压缩（包含语义扩展和上下文感知）- 保持原有方法
    */
   async smartCompressWithEnhancements(content, maxChars, userQuery, toolName) {
     // 🎯 1. 先提取关键部分（确保基础）
@@ -250,7 +957,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 用户意图分类（增强版）
+   * 🎯 用户意图分类（增强版）- 保持原有方法
    */
   classifyUserIntent(query) {
     const intents = {
@@ -294,7 +1001,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 语义扩展查询
+   * 🎯 语义扩展查询 - 保持原有方法
    */
   expandQuerySemantically(userQuery) {
     const queryLower = userQuery.toLowerCase();
@@ -325,7 +1032,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 增强的章节评分（包含语义扩展和上下文）
+   * 🎯 增强的章节评分（包含语义扩展和上下文）- 保持原有方法
    */
   scoreSectionsWithEnhancements(sections, userQuery, expandedQuery, userIntent) {
     const queryWords = userQuery.toLowerCase().split(/[\s,，、]+/).filter(w => w.length > 1);
@@ -395,7 +1102,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 增强的章节推断（新增方法，可选使用）
+   * 🎯 增强的章节推断（新增方法，可选使用）- 保持原有方法
    */
   inferSectionsWithDetail(userQuery, context = {}) {
     // 只对Python沙盒相关的查询使用增强推断
@@ -488,7 +1195,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 包含语义扩展的关键词匹配
+   * 🎯 包含语义扩展的关键词匹配 - 保持原有方法
    */
   _containsKeywordsWithExpansion(text, keywords) {
     for (const keyword of keywords) {
@@ -508,7 +1215,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 从对话历史中提取近期主题
+   * 🎯 从对话历史中提取近期主题 - 保持原有方法
    */
   _extractRecentTopics(conversationHistory) {
     const topics = new Set();
@@ -529,7 +1236,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 判断是否为话题词
+   * 🎯 判断是否为话题词 - 保持原有方法
    */
   _isTopicWord(word) {
     const stopWords = new Set([
@@ -540,7 +1247,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 辅助方法：提取最小化指南（保留最核心内容）
+   * 🎯 辅助方法：提取最小化指南（保留最核心内容）- 保持原有方法
    */
   extractMinimalGuide(content) {
     const MINIMAL_REQUIRED_LENGTH = 800;
@@ -580,21 +1287,21 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 辅助方法：将内容分割成章节
+   * 🎯 辅助方法：将内容分割成章节 - 保持原有方法
    */
   splitIntoSections(content) {
     return content.split(/(?=^#{2,4}\s)/m);
   }
 
   /**
-   * 🎯 辅助方法：判断是否为代码章节
+   * 🎯 辅助方法：判断是否为代码章节 - 保持原有方法
    */
   isCodeSection(section) {
     return section.includes('```');
   }
 
   /**
-   * 🎯 辅助方法：提取完整的代码块
+   * 🎯 辅助方法：提取完整的代码块 - 保持原有方法
    */
   extractCompleteCodeBlock(section) {
     // 提取所有代码块，合并前两个
@@ -605,7 +1312,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 辅助方法：添加上下文示例
+   * 🎯 辅助方法：添加上下文示例 - 保持原有方法
    */
   addContextualExamples(content, userQuery, maxLength, userIntent) {
     // 根据意图选择示例类型
@@ -632,7 +1339,7 @@ export class SkillCacheCompressor {
   }
 
   /**
-   * 🎯 创建知识引用（不注入内容）
+   * 🎯 创建知识引用（不注入内容）- 保持原有方法
    */
   createKnowledgeReference(content) {
     // 提取关键信息点
@@ -909,6 +1616,53 @@ export class SkillCacheCompressor {
       cacheSize: this.knowledgeCache.size,
       injectionHistorySize: this.injectionHistory.size,
       activeSessions: this.activeSessions.size
+    };
+  }
+
+  /**
+   * 🎯 新增：获取压缩统计报告
+   */
+  getCompressionReport() {
+    const recentMetrics = this.qualityMonitor.qualityMetrics.slice(-20);
+    const toolStats = {};
+    
+    recentMetrics.forEach(metric => {
+      if (!toolStats[metric.toolName]) {
+        toolStats[metric.toolName] = {
+          count: 0,
+          totalCompressionRate: 0,
+          avgQualityScore: 0,
+          lowQualityCount: 0
+        };
+      }
+      
+      const stats = toolStats[metric.toolName];
+      stats.count++;
+      stats.totalCompressionRate += metric.compressionRate;
+      stats.avgQualityScore += metric.qualityScore;
+      
+      if (metric.qualityScore < 0.6) {
+        stats.lowQualityCount++;
+      }
+    });
+    
+    // 计算平均值
+    Object.keys(toolStats).forEach(tool => {
+      const stats = toolStats[tool];
+      if (stats.count > 0) {
+        stats.avgCompressionRate = stats.totalCompressionRate / stats.count;
+        stats.avgQualityScore = stats.avgQualityScore / stats.count;
+        stats.lowQualityRate = stats.lowQualityCount / stats.count;
+      }
+    });
+    
+    return {
+      recentMetrics: recentMetrics.length,
+      toolStats,
+      config: {
+        toolTypeConfig: this.toolTypeConfig,
+        maxKnowledgeChars: this.maxKnowledgeChars
+      }
     };
   }
 }
