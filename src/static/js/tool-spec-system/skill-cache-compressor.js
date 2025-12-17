@@ -31,18 +31,53 @@ class CompressionQualityMonitor {
     }
     
     calculateQualityScore(content) {
+        // 🎯 新增：如果内容太小，返回基础分
+        if (!content || content.length < 200) {
+            console.log(`📊 [质量评分] 内容太小(${content.length})，返回基础分`);
+            return 0.5; // 小内容基础分，避免误报
+        }
+        
+        // 🎯 新增：检查是否是完整的SKILL.md内容
+        const isLikelyFullSkill = content.length > 5000 || 
+                                 content.includes('# Python沙盒工具使用指南') ||
+                                 content.includes('# Crawl4AI 网页抓取工具指南');
+        
+        if (!isLikelyFullSkill) {
+            console.log(`📊 [质量评分] 内容可能不是完整技能文档，长度: ${content.length}`);
+            // 对于非完整文档，调整评分权重
+            return this.calculatePartialContentScore(content);
+        }
+        
+        // 原有的评分逻辑
         const checks = [
             { test: /通用调用结构/.test(content), weight: 0.3 },
             { test: /```json[\s\S]*?```/.test(content), weight: 0.25 },
             { test: /参数|parameters/.test(content), weight: 0.15 },
             { test: content.length >= 200 && content.length <= 5000, weight: 0.1 },
-            { test: /#{1,3}\s/.test(content), weight: 0.1 }, // 有标题结构
-            { test: !/\.\.\.$/.test(content.trim()), weight: 0.1 } // 没有截断痕迹
+            { test: /#{1,3}\s/.test(content), weight: 0.1 },
+            { test: !/\.\.\.$/.test(content.trim()), weight: 0.1 }
         ];
         
         return checks.reduce((score, check) => 
             score + (check.test ? check.weight : 0), 0
         );
+    }
+    
+    // 🎯 新增：计算部分内容的评分
+    calculatePartialContentScore(content) {
+        const checks = [
+            { test: content.includes('```'), weight: 0.3 },
+            { test: /#{1,3}\s+/.test(content), weight: 0.2 },
+            { test: content.length > 100, weight: 0.2 },
+            { test: /参数|示例|代码/.test(content), weight: 0.3 }
+        ];
+        
+        const score = checks.reduce((total, check) => 
+            total + (check.test ? check.weight : 0), 0
+        );
+        
+        console.log(`📊 [部分内容评分] 长度: ${content.length}, 得分: ${score.toFixed(2)}`);
+        return score;
     }
     
     checkKeyElements(content) {

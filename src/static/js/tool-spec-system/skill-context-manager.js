@@ -286,118 +286,240 @@ class SkillContextManager {
    * 🚀 增强的Python沙盒上下文构建（替换原有方法）
    */
   async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
-    const { skill: skillData, score, name, description } = skill;
-    
-    console.log(`🔍 [增强Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
-    
-    // 🎯 1. 先检查缓存（保持原有逻辑）
-    const cacheKey = this.skillManager.cacheCompressor._generateCacheKey(
-      'python_sandbox', 
-      userQuery, 
-      { sessionId, ...context }
-    );
-    
-    const cachedContent = this.skillManager.cacheCompressor.getFromCache(
-      'python_sandbox', 
-      userQuery, 
-      { sessionId, ...context }
-    );
-    
-    let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
-    contextContent += `**核心功能**: ${description}\n\n`;
-    
-    if (cachedContent) {
-      // ✅ 缓存命中，直接返回
-      contextContent += cachedContent;
-      console.log(`🎯 [上下文缓存命中] python_sandbox: ${cachedContent.length} 字符`);
-      return contextContent;
+    try {
+        const { skill: skillData, score, name, description } = skill;  // ✅ skillData是完整技能对象
+        
+        console.log(`🔍 [增强Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
+        console.log(`📊 [技能数据] 内容长度: ${skillData.content?.length || 0}字符`);
+        
+        // 🎯 添加调试信息
+        console.log('🔍 [技能内容检查]', {
+            hasContent: !!skillData.content,
+            contentLength: skillData.content?.length || 0,
+            contentPreview: skillData.content?.substring(0, 100) + '...',
+            hasResources: !!skillData.resources,
+            resourcesCount: Object.keys(skillData.resources?.references || {}).length
+        });
+        
+        // 🎯 确保skillData.content存在且有效
+        if (!skillData.content || skillData.content.length < 100) {
+            console.error('🚨 [严重错误] skillData.content 为空或太小:', {
+                contentLength: skillData.content?.length || 0,
+                skillName: name,
+                toolName: skillData.metadata?.tool_name
+            });
+            // 降级到fallback内容
+            return this._buildFallbackContent(skillData, userQuery);
+        }
+        
+        // 🎯 1. 先检查缓存（保持原有逻辑）
+        const cacheKey = this.skillManager.cacheCompressor._generateCacheKey(
+            'python_sandbox', 
+            userQuery, 
+            { sessionId, ...context }
+        );
+        
+        const cachedContent = this.skillManager.cacheCompressor.getFromCache(
+            'python_sandbox', 
+            userQuery, 
+            { sessionId, ...context }
+        );
+        
+        let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
+        contextContent += `**核心功能**: ${description}\n\n`;
+        
+        if (cachedContent) {
+            // ✅ 缓存命中，直接返回
+            contextContent += cachedContent;
+            console.log(`🎯 [上下文缓存命中] python_sandbox: ${cachedContent.length} 字符`);
+            return contextContent;
+        }
+        
+        // 🎯 2. 分析用户查询，推断相关文档和章节
+        let sectionAnalysis;
+        try {
+            if (this.enhancedInferenceEnabled) {
+                sectionAnalysis = this._analyzeQueryForSections(userQuery);
+                console.log('📚 [章节分析结果]', {
+                    相关文档数: sectionAnalysis.relevantDocuments.length,
+                    相关章节数: sectionAnalysis.relevantSections.length,
+                    具体章节: sectionAnalysis.relevantSections.map(s => s.section)
+                });
+            } else {
+                // 降级：使用原有方法
+                sectionAnalysis = {
+                    relevantDocuments: this._findRelevantPythonReferences(userQuery),
+                    relevantSections: [],
+                    hasExactSectionMatch: false
+                };
+            }
+        } catch (analysisError) {
+            console.error(`🚨 [章节分析失败] ${analysisError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: analysisError
+            });
+            // 降级处理
+            sectionAnalysis = {
+                relevantDocuments: this._findRelevantPythonReferences(userQuery),
+                relevantSections: [],
+                hasExactSectionMatch: false
+            };
+        }
+        
+        // 🎯 3. 语义理解增强
+        let semanticAnalysis = null;
+        try {
+            if (this.semanticUnderstandingEnabled) {
+                semanticAnalysis = this._performSemanticAnalysis(userQuery, context);
+                console.log('🧠 [语义分析]', {
+                    意图: semanticAnalysis.intent,
+                    复杂度: semanticAnalysis.complexity,
+                    扩展词数: semanticAnalysis.expandedQuery.expanded.length
+                });
+            }
+        } catch (semanticError) {
+            console.error(`🚨 [语义分析失败] ${semanticError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: semanticError
+            });
+            // 继续执行但不使用语义分析结果
+            semanticAnalysis = null;
+        }
+        
+        // 🎯 4. 上下文感知
+        let conversationContext = null;
+        try {
+            if (this.contextAwareMatchingEnabled && sessionId) {
+                conversationContext = this._getOrCreateConversationContext(sessionId, userQuery, context);
+            }
+        } catch (contextError) {
+            console.error(`🚨 [上下文感知失败] ${contextError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: contextError
+            });
+            // 继续执行但不使用会话上下文
+            conversationContext = null;
+        }
+        
+        // 🎯 5. 构建增强的上下文内容
+        let enhancedContent = '';
+        try {
+            if (sectionAnalysis.hasExactSectionMatch || (semanticAnalysis && semanticAnalysis.intent.confidence > 0.5)) {
+                enhancedContent = this._buildEnhancedSectionsContent(
+                    sectionAnalysis, 
+                    semanticAnalysis, 
+                    conversationContext, 
+                    skillData,  // ✅ 传递完整的skill对象 
+                    userQuery
+                );
+            } else {
+                enhancedContent = this._buildFallbackContent(skillData, userQuery);
+            }
+        } catch (enhanceError) {
+            console.error(`🚨 [章节构建失败] ${enhanceError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: enhanceError
+            });
+            // 降级到基础内容
+            enhancedContent = this._buildFallbackContent(skillData, userQuery);
+        }
+        
+        // 🎯 6. 压缩内容（保持原有逻辑）
+        let compressedContent = '';
+        try {
+            compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
+                enhancedContent,
+                {
+                    level: 'smart',
+                    maxChars: 12000,
+                    userQuery: userQuery,
+                    toolName: 'python_sandbox'  // 🎯 明确指定工具名
+                }
+            );
+        } catch (compressError) {
+            console.error(`🚨 [内容压缩失败] ${compressError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: compressError
+            });
+            // 使用未压缩的内容
+            compressedContent = enhancedContent;
+        }
+        
+        // 缓存结果
+        try {
+            this.skillManager.cacheCompressor.setToCache(
+                'python_sandbox', 
+                userQuery, 
+                { sessionId, ...context }, 
+                compressedContent
+            );
+        } catch (cacheError) {
+            console.error(`🚨 [缓存写入失败] ${cacheError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: cacheError
+            });
+            // 缓存失败不影响主流程
+        }
+        
+        // 记录注入
+        try {
+            this.skillManager.cacheCompressor.recordToolInjection(sessionId, 'python_sandbox');
+        } catch (recordError) {
+            console.error(`🚨 [工具注入记录失败] ${recordError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: recordError
+            });
+            // 记录失败不影响主流程
+        }
+        
+        // 更新会话上下文
+        try {
+            if (conversationContext) {
+                this._updateConversationContext(sessionId, {
+                    query: userQuery,
+                    matchedSections: sectionAnalysis.relevantSections.map(s => s.section),
+                    intent: semanticAnalysis?.intent?.type || 'unknown',
+                    timestamp: Date.now()
+                });
+            }
+        } catch (updateContextError) {
+            console.error(`🚨 [会话上下文更新失败] ${updateContextError.message}`, {
+                toolName: 'python_sandbox',
+                userQuery: userQuery.substring(0, 50),
+                error: updateContextError
+            });
+            // 更新失败不影响主流程
+        }
+        
+        contextContent += compressedContent;
+        return contextContent;
+    } catch (error) {
+        console.error(`🚨 [Python沙盒上下文构建失败] ${error.message}`, {
+            error,
+            userQuery: userQuery.substring(0, 50),
+            sessionId
+        });
+        
+        // 返回基础的降级内容
+        try {
+            return this._buildFallbackContent(skill.skill, userQuery);
+        } catch (fallbackError) {
+            console.error(`🚨 [降级内容构建失败] ${fallbackError.message}`, {
+                error: fallbackError,
+                userQuery: userQuery.substring(0, 50)
+            });
+            
+            // 最后的兜底方案
+            return `### 🐍 Python沙盒工具 (降级模式)\n\n由于系统错误，无法提供详细的上下文信息，请直接使用Python沙盒工具执行代码。`;
+        }
     }
-    
-    // 🎯 2. 分析用户查询，推断相关文档和章节
-    let sectionAnalysis;
-    if (this.enhancedInferenceEnabled) {
-      sectionAnalysis = this._analyzeQueryForSections(userQuery);
-      console.log('📚 [章节分析结果]', {
-        相关文档数: sectionAnalysis.relevantDocuments.length,
-        相关章节数: sectionAnalysis.relevantSections.length,
-        具体章节: sectionAnalysis.relevantSections.map(s => s.section)
-      });
-    } else {
-      // 降级：使用原有方法
-      sectionAnalysis = {
-        relevantDocuments: this._findRelevantPythonReferences(userQuery),
-        relevantSections: [],
-        hasExactSectionMatch: false
-      };
-    }
-    
-    // 🎯 3. 语义理解增强
-    let semanticAnalysis = null;
-    if (this.semanticUnderstandingEnabled) {
-      semanticAnalysis = this._performSemanticAnalysis(userQuery, context);
-      console.log('🧠 [语义分析]', {
-        意图: semanticAnalysis.intent,
-        复杂度: semanticAnalysis.complexity,
-        扩展词数: semanticAnalysis.expandedQuery.expanded.length
-      });
-    }
-    
-    // 🎯 4. 上下文感知
-    let conversationContext = null;
-    if (this.contextAwareMatchingEnabled && sessionId) {
-      conversationContext = this._getOrCreateConversationContext(sessionId, userQuery, context);
-    }
-    
-    // 🎯 5. 构建增强的上下文内容
-    let enhancedContent = '';
-    
-    if (sectionAnalysis.hasExactSectionMatch || (semanticAnalysis && semanticAnalysis.intent.confidence > 0.5)) {
-      // 有明确的匹配或高置信度意图
-      enhancedContent = this._buildEnhancedSectionsContent(
-        sectionAnalysis, 
-        semanticAnalysis, 
-        conversationContext, 
-        skillData, 
-        userQuery
-      );
-    } else {
-      // 降级：使用原有方法
-      enhancedContent = this._buildFallbackContent(skillData, userQuery);
-    }
-    
-    // 🎯 6. 压缩内容（保持原有逻辑）
-    const compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
-      enhancedContent,
-      {
-        level: 'smart',
-        maxChars: 12000,
-        userQuery: userQuery
-      }
-    );
-    
-    // 缓存结果
-    this.skillManager.cacheCompressor.setToCache(
-      'python_sandbox', 
-      userQuery, 
-      { sessionId, ...context }, 
-      compressedContent
-    );
-    
-    // 记录注入
-    this.skillManager.cacheCompressor.recordToolInjection(sessionId, 'python_sandbox');
-    
-    // 更新会话上下文
-    if (conversationContext) {
-      this._updateConversationContext(sessionId, {
-        query: userQuery,
-        matchedSections: sectionAnalysis.relevantSections.map(s => s.section),
-        intent: semanticAnalysis?.intent?.type || 'unknown',
-        timestamp: Date.now()
-      });
-    }
-    
-    contextContent += compressedContent;
-    return contextContent;
   }
 
   /**
@@ -790,6 +912,22 @@ class SkillContextManager {
    * 🎯 构建增强的章节内容
    */
   _buildEnhancedSectionsContent(sectionAnalysis, semanticAnalysis, conversationContext, skillData, userQuery) {
+    // 🎯 参数验证和重命名
+    const skill = skillData;  // 重命名避免混淆
+    const skillContent = skill.content;  // 完整的SKILL.md内容
+    
+    console.log('🔍 [增强章节构建]', {
+        skillContentLength: skillContent?.length || 0,
+        sectionCount: sectionAnalysis?.relevantSections?.length || 0,
+        documentCount: sectionAnalysis?.relevantDocuments?.length || 0
+    });
+    
+    // 如果skillContent太小或不存在，直接返回fallback
+    if (!skillContent || skillContent.length < 500) {
+        console.warn('📋 [章节构建] 技能内容太小，使用fallback');
+        return this._buildFallbackContent(skill, userQuery);
+    }
+    
     let content = '';
     
     // 1. 意图和复杂度说明
@@ -801,7 +939,7 @@ class SkillContextManager {
     }
     
     // 2. 相关章节推荐
-    if (sectionAnalysis.relevantSections.length > 0) {
+    if (sectionAnalysis.relevantSections && sectionAnalysis.relevantSections.length > 0) {
       content += `## 📚 相关章节推荐\n\n`;
       content += `检测到您的查询与以下章节高度相关：\n\n`;
       
@@ -815,7 +953,7 @@ class SkillContextManager {
       });
       
       for (const [docName, sections] of Object.entries(sectionsByDoc)) {
-        const docContent = skillData.resources?.references?.[docName];
+        const docContent = skill.resources?.references?.[docName];
         if (!docContent) continue;
         
         content += `### 📖 ${docName.replace('.md', '')}\n`;
@@ -838,13 +976,13 @@ class SkillContextManager {
         
         content += '\n---\n\n';
       }
-    } else if (sectionAnalysis.relevantDocuments.length > 0) {
+    } else if (sectionAnalysis.relevantDocuments && sectionAnalysis.relevantDocuments.length > 0) {
       // 只有文档级别匹配
       content += `## 📚 相关参考文档\n\n`;
       content += `根据您的查询，以下文档可能对您有帮助：\n\n`;
       
       sectionAnalysis.relevantDocuments.forEach(docName => {
-        const docContent = skillData.resources?.references?.[docName];
+        const docContent = skill.resources?.references?.[docName];
         if (docContent) {
           const summary = this._extractReferenceSummary(docContent, docName);
           content += `• **${docName.replace('.md', '')}**: ${summary}\n`;
@@ -853,7 +991,7 @@ class SkillContextManager {
     }
     
     // 3. 基于会话上下文的建议
-    if (conversationContext && conversationContext.preferences.commonTopics.length > 0) {
+    if (conversationContext && conversationContext.preferences && conversationContext.preferences.commonTopics && conversationContext.preferences.commonTopics.length > 0) {
       content += `\n**🎯 基于您近期关注的领域**:\n`;
       conversationContext.preferences.commonTopics.slice(0, 5).forEach(topic => {
         content += `• ${topic}\n`;
@@ -877,6 +1015,23 @@ class SkillContextManager {
    * 🎯 从文档中提取指定章节内容
    */
   _extractSectionContent(docContent, sectionName) {
+    // 🎯 增强输入验证
+    if (!docContent || typeof docContent !== 'string') {
+        console.warn('📚 [章节提取] 无效的文档内容', {
+            docContentType: typeof docContent,
+            sectionName,
+            docContentLength: docContent?.length
+        });
+        return '';
+    }
+    
+    if (!sectionName || typeof sectionName !== 'string') {
+        console.warn('📚 [章节提取] 无效的章节名称', { sectionName });
+        return '';
+    }
+    
+    console.log(`📚 [章节提取] 查找章节: "${sectionName}", 文档大小: ${docContent.length}字符`);
+    
     // 安全检查：确保docContent存在
     if (!docContent || typeof docContent !== 'string') {
         console.warn(`📚 [章节提取] 文档内容无效:`, { docContent, sectionName });

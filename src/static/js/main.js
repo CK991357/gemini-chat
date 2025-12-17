@@ -1565,7 +1565,7 @@ async function handleStandardChatRequestWithCache(messageText, attachedFiles, mo
         const context = { 
             availableTools: availableToolNames,
             sessionId: currentSessionId,  // 🚨 关键：传递会话ID
-            toolCallHistory: [],  // 传递历史
+            toolCallHistory:getToolCallHistory(currentSessionId),  // 传递调用历史
             userQuery: messageText,  // 传递用户查询
             mode: 'standard'  // 标识为普通模式
         };
