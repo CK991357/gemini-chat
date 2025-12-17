@@ -250,118 +250,71 @@ class SkillContextManager {
    */
   async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
     try {
-        const { skill: skillData, score, name, description } = skill;
-        
-        console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
-        
-        // 🎯 确保skillData.content存在
-        if (!skillData.content || skillData.content.length < 100) {
-            console.error('🚨 skillData.content 为空或太小');
-            return this._buildFallbackContent(skillData, userQuery);
-        }
-        
-        // 🎯 1. 检查缓存
-        const cacheKey = this.skillManager.cacheCompressor._generateCacheKey(
-            'python_sandbox', 
-            userQuery, 
-            { sessionId, ...context }
-        );
-        
-        const cachedContent = this.skillManager.cacheCompressor.getFromCache(
-            'python_sandbox', 
-            userQuery, 
-            { sessionId, ...context }
-        );
-        
-        let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
-        contextContent += `**核心功能**: ${description}\n\n`;
-        
-        if (cachedContent) {
-            // ✅ 缓存命中，直接返回
-            contextContent += cachedContent;
-            console.log(`🎯 [缓存命中] python_sandbox: ${cachedContent.length} 字符`);
-            return contextContent;
-        }
-        
-        // 🎯 2. 查找相关参考文件 - 增强的精确匹配
-        const relevantReferences = this._findRelevantPythonReferencesEnhanced(userQuery);
-        console.log('📚 [增强参考文件匹配]', {
-            查询: userQuery.substring(0, 50),
-            匹配到: relevantReferences,
-            图表类型: this._extractChartType(userQuery)
-        });
-        
-        // 🎯 3. 构建增强内容 - 针对性的内容提取
-        let enhancedContent = '';
-        
-        if (relevantReferences.length > 0) {
-            // 🎯 针对性的内容提取：根据图表类型提取专门的内容
-            enhancedContent = this._buildTargetedContentFromReferences(
-                relevantReferences, 
-                skillData, 
-                userQuery
-            );
-        } else {
-            enhancedContent = this._buildFallbackContent(skillData, userQuery);
-        }
-        
-        // 🎯 4. 验证提取结果
-        console.log('🔍 [提取验证]', {
-            内容长度: enhancedContent.length,
-            是否包含代码块: enhancedContent.includes('```python'),
-            代码块数量: (enhancedContent.match(/```python/g) || []).length,
-            包含图表类型: this._extractChartType(userQuery),
-            是否包含对应代码: this._checkContainsChartCode(enhancedContent, userQuery)
-        });
-        
-        // 🎯 5. 压缩内容
-        let compressedContent = '';
-        try {
-            compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
-                enhancedContent,
-                {
-                    level: 'smart',
-                    maxChars: 12000,
-                    userQuery: userQuery,
-                    toolName: 'python_sandbox'
-                }
-            );
-        } catch (compressError) {
-            console.error(`🚨 [内容压缩失败]`, compressError);
-            compressedContent = enhancedContent;
-        }
-        
-        // 缓存结果
-        try {
-            this.skillManager.cacheCompressor.setToCache(
-                'python_sandbox', 
-                userQuery, 
-                { sessionId, ...context }, 
-                compressedContent
-            );
-        } catch (cacheError) {
-            console.error(`🚨 [缓存写入失败]`, cacheError);
-        }
-        
-        // 记录工具注入
-        try {
-            this.skillManager.cacheCompressor.recordToolInjection(sessionId, 'python_sandbox');
-        } catch (recordError) {
-            console.error(`🚨 [工具注入记录失败]`, recordError);
-        }
-        
-        contextContent += compressedContent;
+      const { skill: skillData, score, name, description } = skill;
+      
+      console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
+      console.log(`📦 [文档结构] 主文档: ${skillData.content.length}字符`);
+      
+      // 🎯 检查缓存
+      const cachedContent = this.skillManager.cacheCompressor.getFromCache(
+        'python_sandbox', 
+        userQuery, 
+        { sessionId, ...context }
+      );
+      
+      let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
+      contextContent += `**核心功能**: ${description}\n\n`;
+      
+      if (cachedContent) {
+        contextContent += cachedContent;
+        console.log(`🎯 [缓存命中] python_sandbox: ${cachedContent.length} 字符`);
         return contextContent;
+      }
+      
+      // 🎯 查找相关参考文件
+      const relevantReferences = this._findRelevantPythonReferencesEnhanced(userQuery);
+      
+      // 🎯 从合并内容中提取相关部分
+      let enhancedContent = this._buildContentFromCombinedSource(skillData.content, userQuery, relevantReferences);
+      
+      // 🎯 验证提取结果
+      console.log('🔍 [内容提取]', {
+        内容长度: enhancedContent.length,
+        参考文件匹配数: relevantReferences.length,
+        是否包含代码块: enhancedContent.includes('```python'),
+        代码块数量: (enhancedContent.match(/```python/g) || []).length
+      });
+      
+      // 🎯 压缩内容
+      let compressedContent = '';
+      try {
+        compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
+          enhancedContent,
+          {
+            level: 'smart',
+            maxChars: 12000,
+            userQuery: userQuery,
+            toolName: 'python_sandbox'
+          }
+        );
+      } catch (compressError) {
+        console.error(`🚨 [内容压缩失败]`, compressError);
+        compressedContent = enhancedContent;
+      }
+      
+      // 缓存结果
+      this.skillManager.cacheCompressor.setToCache(
+        'python_sandbox', 
+        userQuery, 
+        { sessionId, ...context }, 
+        compressedContent
+      );
+      
+      contextContent += compressedContent;
+      return contextContent;
     } catch (error) {
-        console.error(`🚨 [Python沙盒上下文构建失败]`, error);
-        
-        // 返回降级内容
-        try {
-            return this._buildFallbackContent(skill.skill, userQuery);
-        } catch (fallbackError) {
-            console.error(`🚨 [降级内容构建失败]`, fallbackError);
-            return `### 🐍 Python沙盒工具 (降级模式)\n\n请直接使用Python沙盒工具执行代码。`;
-        }
+      console.error(`🚨 [Python沙盒上下文构建失败]`, error);
+      return this._buildFallbackContent(skill.skill, userQuery);
     }
   }
 
@@ -1073,80 +1026,7 @@ class SkillContextManager {
       return content;
     }
     
-    return null;
-  }
-
-  /**
-   * 🎯 增强的Python沙盒上下文构建 - 针对合并内容优化
-   */
-  async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
-    try {
-      const { skill: skillData, score, name, description } = skill;
-      
-      console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
-      console.log(`📦 [文档结构] 主文档: ${skillData.content.length}字符`);
-      
-      // 🎯 检查缓存
-      const cachedContent = this.skillManager.cacheCompressor.getFromCache(
-        'python_sandbox', 
-        userQuery, 
-        { sessionId, ...context }
-      );
-      
-      let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
-      contextContent += `**核心功能**: ${description}\n\n`;
-      
-      if (cachedContent) {
-        contextContent += cachedContent;
-        console.log(`🎯 [缓存命中] python_sandbox: ${cachedContent.length} 字符`);
-        return contextContent;
-      }
-      
-      // 🎯 查找相关参考文件
-      const relevantReferences = this._findRelevantPythonReferencesEnhanced(userQuery);
-      
-      // 🎯 从合并内容中提取相关部分
-      let enhancedContent = this._buildContentFromCombinedSource(skillData.content, userQuery, relevantReferences);
-      
-      // 🎯 验证提取结果
-      console.log('🔍 [内容提取]', {
-        内容长度: enhancedContent.length,
-        参考文件匹配数: relevantReferences.length,
-        是否包含代码块: enhancedContent.includes('```python'),
-        代码块数量: (enhancedContent.match(/```python/g) || []).length
-      });
-      
-      // 🎯 压缩内容
-      let compressedContent = '';
-      try {
-        compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
-          enhancedContent,
-          {
-            level: 'smart',
-            maxChars: 12000,
-            userQuery: userQuery,
-            toolName: 'python_sandbox'
-          }
-        );
-      } catch (compressError) {
-        console.error(`🚨 [内容压缩失败]`, compressError);
-        compressedContent = enhancedContent;
-      }
-      
-      // 缓存结果
-      this.skillManager.cacheCompressor.setToCache(
-        'python_sandbox', 
-        userQuery, 
-        { sessionId, ...context }, 
-        compressedContent
-      );
-      
-      contextContent += compressedContent;
-      return contextContent;
-    } catch (error) {
-      console.error(`🚨 [Python沙盒上下文构建失败]`, error);
-      return this._buildFallbackContent(skill.skill, userQuery);
-    }
+    return '';
   }
 
   /**
@@ -1289,7 +1169,7 @@ class SkillContextManager {
         if (!inCodeBlock) codeBlockCount++;
       }
       
-      // 提取非代码部分（最多前15行）
+      // 提取非代码部分（最多前10行）
       if (!inCodeBlock && extracted.split('\n').length < 15) {
         // 检查行是否与查询相关
         const lineLower = line.toLowerCase();
