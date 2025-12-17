@@ -1537,12 +1537,13 @@ export class SkillCacheCompressor {
    * 🎯 辅助方法
    */
   _generateCacheKey(toolName, userQuery, context) {
-    // 🚨 简化缓存键，提高命中率
-    const sessionId = context.sessionId || 'default';
-    const queryHash = userQuery.substring(0, 50).toLowerCase().replace(/[^a-z0-9]/g, '_');
-    
-    // 只使用工具名和查询关键词
-    return `${toolName}_${queryHash}_${sessionId}`;
+    const contextStr = context.sessionId || 'default';
+    const queryHash = this._hashString(userQuery.substring(0, 100));
+    // 从 context 获取版本号，如果没有则使用默认
+    const version = context.version || 'v1.0';
+    // 增加时间粒度（按小时），避免长时间缓存
+    const hourSlot = Math.floor(Date.now() / (1000 * 60 * 60)); // 每小时一个slot
+    return `${toolName}_${version}_${contextStr}_${queryHash}_${hourSlot}`;
   }
 
   _hashString(str) {
