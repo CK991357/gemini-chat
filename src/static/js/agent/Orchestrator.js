@@ -124,7 +124,7 @@ ${injectionContent}
 ${cleanTopic}
 `;
             } else {
-                console.log('[Orchestrator] ✅ Agent使用自己的联邦知识库，不需要普通技能注入');
+                console.log('[Orchestrator] ✅ Agent使用自己的联邦知识库，不需要普通技能注入。');
             }
 
             // ✅ 修复：使用正确的路径调用 getAllSkills
@@ -428,23 +428,37 @@ ${cleanTopic}
     }
 
     /**
-     * 🎯 优化版技能注入生成 - 为Agent模式完全跳过普通技能系统
+     * 🎯 优化版技能注入生成
      */
     async generateOptimizedInjection(userQuery, detectedMode) {
-        console.log(`\n==============================`);
-        console.log(`[Orchestrator] 🎯 AGENT管道启动`);
-        console.log(`模式: ${detectedMode}`);
-        console.log(`查询: ${userQuery.substring(0, 80)}...`);
-        console.log(`使用: Agent专用联邦知识库`);
-        console.log(`跳过: 普通技能系统`);
-        console.log(`==============================\n`);
+        // 1. 查找相关技能
+        const relevantSkills = await this.skillManager.findRelevantSkills(userQuery, {
+            availableTools: this.researchTools
+        });
+
+        if (!relevantSkills || relevantSkills.length === 0) {
+            return { injectionContent: '', relevantSkills: [] };
+        }
+
+        // 2. 确定主要技能
+        const primarySkill = relevantSkills[0];
         
-        // 🚀 直接返回空，让Agent使用自己的知识注入系统
-        return { 
-            injectionContent: '', 
-            relevantSkills: [],
-            skipReason: 'agent_dedicated_pipeline'
-        };
+        // 3. 关键优化：只注入主要技能，且使用压缩
+        const knowledge = await this.skillManager.retrieveFederatedKnowledge(
+            primarySkill.toolName,
+            { userQuery, mode: detectedMode, step: 0 },
+            { compression: 'smart', maxChars: 15000, iteration: 0 }
+        );
+        
+        let injectionContent = '';
+        if (knowledge && knowledge.content) {
+            injectionContent = knowledge.content;
+        } else {
+            // 降级到原有逻辑（如果新方法失败）
+            injectionContent = this.skillManager.baseSkillManager.generateMultiSkillInjection(relevantSkills, userQuery);
+        }
+
+        return { injectionContent, relevantSkills };
     }
 
     setEnabled(enabled) {
