@@ -124,7 +124,7 @@ ${injectionContent}
 ${cleanTopic}
 `;
             } else {
-                console.log('[Orchestrator] 未找到与主题直接相关的技能，Agent 将依赖通用知识');
+                console.log('[Orchestrator] ✅ Agent使用自己的联邦知识库，不需要普通技能注入');
             }
 
             // ✅ 修复：使用正确的路径调用 getAllSkills
