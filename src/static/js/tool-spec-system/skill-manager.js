@@ -737,40 +737,6 @@ class EnhancedSkillManager {
   }
 
   /**
-   * 提取相关内容片段
-   */
-  extractRelevantContent(content, userQuery) {
-    if (!userQuery || !content) return '';
-    
-    // 按章节分割内容
-    const sections = content.split(/\n## /);
-    let bestSection = '';
-    let bestScore = 0;
-    
-    const queryKeywords = this.extractKeywords(userQuery.toLowerCase());
-    
-    sections.forEach(section => {
-      let score = 0;
-      const sectionLower = section.toLowerCase();
-      
-      queryKeywords.forEach(keyword => {
-        // 移除转义字符用于字符串包含检查
-        const cleanKeyword = keyword.replace(/\\/g, '');
-        if (sectionLower.includes(cleanKeyword)) {
-          score += 1;
-        }
-      });
-      
-      if (score > bestScore) {
-        bestScore = score;
-        bestSection = section;
-      }
-    });
-    
-    return bestScore > 0 ? `**相关指导:**\n## ${bestSection}` : '';
-  }
-
-  /**
    * [升级版] 多技能注入内容生成
    * 对 crawl4ai 等复杂工具进行特殊处理，注入更详细的指南
    */
