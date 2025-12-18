@@ -128,6 +128,25 @@ class SkillContextManager {
    * 🚀 核心方法：为模型请求生成智能上下文
    */
   async generateRequestContext(userQuery, availableTools = [], modelConfig = {}, context = {}) {
+    // 🎯 关键修复：多种方式检测 Agent 模式
+    const isAgentMode = context.mode === 'agent' || 
+                        context.isAgentMode || 
+                        (context.agentContext && context.agentContext !== 'none') ||
+                        (modelConfig.category && modelConfig.category.includes('agent')) ||
+                        (context.researchMode && context.researchMode !== 'standard');
+    
+    if (isAgentMode) {
+      console.log(`🎯 [Agent模式检测] 跳过普通模式上下文增强，由Agent系统专用管道处理`);
+      console.log(`   - 检测依据: mode=${context.mode}, isAgentMode=${context.isAgentMode}, researchMode=${context.researchMode}`);
+      
+      return { 
+        enhancedPrompt: userQuery, 
+        relevantTools: [],
+        contextLevel: 'agent_mode_skipped',
+        isAgentMode: true  // 明确标记
+      };
+    }
+  
     if (!await this.ensureInitialized()) {
       return { 
         enhancedPrompt: userQuery, 
@@ -136,25 +155,25 @@ class SkillContextManager {
       };
     }
 
-    console.log(`🔍 [技能上下文生成] 查询: "${userQuery.substring(0, 50)}..."`, {
+    console.log(`🔍 [技能上下文生成-普通模式] 查询: "${userQuery.substring(0, 50)}..."`, {
       可用工具数: availableTools.length,
       会话ID: context.sessionId || 'default',
       模式: context.mode || 'normal'
     });
 
     // 🎯 检查是否Agent模式
-    const isAgentMode = context.mode === 'agent' || context.isAgentMode;
+    const isAgentContext = context.mode === 'agent' || context.isAgentMode;
     
     // 🎯 合并上下文信息
     const skillContext = {
       ...context,
       availableTools,
       category: modelConfig.category,
-      isAgentMode: isAgentMode
+      isAgentMode: isAgentContext
     };
 
     // 1. 查找相关技能
-    const relevantSkills = isAgentMode 
+    const relevantSkills = isAgentContext 
       ? this.skillManager.findAgentSkills(userQuery, skillContext)
       : this.skillManager.findRelevantSkills(userQuery, skillContext);
 
@@ -183,7 +202,7 @@ class SkillContextManager {
       skillCount: relevantSkills.length,
       hasComplexTools,
       sessionId: context.sessionId || 'default',
-      isAgentMode: isAgentMode
+      isAgentMode: isAgentContext
     };
   }
 

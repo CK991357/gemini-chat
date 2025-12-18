@@ -1269,13 +1269,125 @@ function getAvailableToolNames(currentModel) {
 }
 
 /**
- * ✨ [修复] 标准聊天请求处理函数
- * @description 根据模型配置决定是否添加工具定义
+ * 🚀 修改核心消息处理函数 - 普通模式专用
  */
-async function handleStandardChatRequest(message, attachedFiles, modelName, apiKey, pushToHistory = true) {
+// =========================================================================
+// 🚀 [最终方案 V2 - 修复版] 增强的消息处理函数，严格隔离 Agent/普通模式
+// =========================================================================
+async function handleEnhancedHttpMessage(messageText, attachedFiles) {
+    if (!currentSessionId) {
+        historyManager.generateNewSession();
+    }
+
+    const apiKey = apiKeyInput.value;
+    const modelName = selectedModelConfig.name;
+    const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
+    
+    // 如果 Agent 模式启用，使用 Agent 流程
+    if (isAgentModeEnabled && orchestrator._initState === 'initialized') {
+        console.log("🤖 Agent 模式已启用，使用智能代理");
+        try {
+            // 🎯 核心修复：在 Agent 流程开始前，将用户消息推入历史记录
+            const userContent = [];
+            if (messageText) {
+                userContent.push({ type: 'text', text: messageText });
+            }
+            attachedFiles.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+                } else if (file.type === 'application/pdf') {
+                    userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+                } else if (file.type.startsWith('audio/')) {
+                    userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+                }
+            });
+            chatHistory.push({ role: 'user', content: userContent });
+            
+            // 🚀 获取可用工具名称和增强工具定义
+            const availableToolNames = getAvailableToolNames(modelName);
+            const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
+            
+            // 🎯 关键修复：Agent 模式下完全跳过 skillContextManager
+            // 不要调用 skillContextManager，Agent 有自己的专用系统
+            console.log('🎯 [Agent模式] 跳过 skillContextManager，使用 Agent 专用系统');
+            
+            // 2. 准备 Agent 上下文
+            const agentContext = {
+                model: modelName,
+                apiKey: apiKey,
+                messages: chatHistory,
+                apiHandler: chatApiHandler,
+                availableTools: availableToolNames, // 传递原始工具名称列表
+                enhancedTools: enhancedTools, // 传递增强工具定义
+                // 🎯 不再传递 skillContextManager 的结果
+                sessionId: currentSessionId || 'default',
+                mode: 'agent',
+                isAgentMode: true
+            };
+            
+            // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
+            // 我们在这里"发射后不管"，渲染工作将由 'research:end' 事件监听器处理
+            const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
+
+            // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
+            // Orchestrator 返回的 originalUserMessage 包含完整的用户原始指令，用于历史记录持久化
+            if (agentResult && agentResult.enhanced && agentResult.originalUserMessage) {
+                // 找到 chatHistory 中最后一条用户消息（即当前消息）
+                const lastUserMessageIndex = chatHistory.length - 1;
+                if (lastUserMessageIndex >= 0 && chatHistory[lastUserMessageIndex].role === 'user') {
+                    // 替换为 Orchestrator 返回的、包含完整上下文的原始消息
+                    // 确保 content 结构是正确的数组格式
+                    chatHistory[lastUserMessageIndex].content = [{ type: 'text', text: agentResult.originalUserMessage }];
+                    console.log('✅ 历史记录中的用户消息已更新为 Orchestrator 返回的原始消息。');
+                }
+            }
+
+            // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
+            if (agentResult && !agentResult.enhanced) {
+                console.log("💬 Orchestrator 决定不处理，回退到标准对话");
+                // 🎯 回退到普通模式时，使用标准处理（不带技能上下文）
+                await handleStandardChatRequestWithoutAgent(messageText, attachedFiles, modelName, apiKey);
+            }
+            
+            // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
+            // 我们相信 'research:end' 事件会最终触发渲染。
+            // 对于 user_guide 等简单情况，Orchestrator 内部会直接触发事件或返回可直接显示的内容，
+            // 我们可以在这里做一个简单的处理。
+            if (agentResult && agentResult.type === 'user_guide') {
+                 const aiMessage = chatUI.createAIMessageElement();
+                 aiMessage.markdownContainer.innerHTML = marked.parse(agentResult.content);
+                 chatUI.scrollToBottom();
+            }
+
+        } catch (error) {
+            console.error("🤖 Agent 模式执行失败:", error);
+            if (window.agentThinkingDisplay) {
+                window.agentThinkingDisplay.hide();
+            }
+            showSystemMessage(`智能代理执行时发生错误: ${error.message}`);
+            
+            // 🎯 关键修复：如果 Agent 失败，将用户消息从历史记录中移除，并回退到标准模式
+            // 移除刚刚推入的 user 消息
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
+                chatHistory.pop();
+            }
+            // 🎯 回退到普通模式（不带技能上下文）
+            await handleStandardChatRequestWithoutAgent(messageText, attachedFiles, modelName, apiKey);
+        }
+        return;
+    }
+
+    // 🎯 普通模式处理（使用技能上下文增强）
+    await handleStandardChatRequestWithSkillContext(messageText, attachedFiles, modelName, apiKey);
+}
+
+/**
+ * 🎯 新增：普通模式标准处理（不带技能上下文，用于Agent回退）
+ */
+async function handleStandardChatRequestWithoutAgent(messageText, attachedFiles, modelName, apiKey) {
     const userContent = [];
-    if (message) {
-        userContent.push({ type: 'text', text: message });
+    if (messageText) {
+        userContent.push({ type: 'text', text: messageText });
     }
 
     attachedFiles.forEach(file => {
@@ -1288,13 +1400,9 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
         }
     });
 
-    if (pushToHistory) {
-        chatHistory.push({ role: 'user', content: userContent });
-    }
+    // 🎯 推送用户消息到历史
+    chatHistory.push({ role: 'user', content: userContent });
 
-    // 🎯 修复：只在模型配置明确要求时才添加工具定义
-    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
-    
     const requestBody = {
         model: modelName,
         messages: chatHistory,
@@ -1303,16 +1411,144 @@ async function handleStandardChatRequest(message, attachedFiles, modelName, apiK
         sessionId: currentSessionId
     };
 
-    // 🎯 关键修复：只有配置了 tools 字段的模型才添加工具定义
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    
+    // 🎯 普通工具注入（不使用技能上下文）
     if (modelConfig && modelConfig.tools) {
-        const toolType = modelConfig.isGemini ? 'geminiMcpTools' :
-                        modelConfig.isZhipu ? 'mcpTools' : 'customTools';
-        console.log(`🎯 [工具注入] 为模型 ${modelName} 注入工具定义 (${toolType})`);
+        console.log(`🎯 [普通模式工具注入] 为模型 ${modelName} 注入工具定义`);
         requestBody.tools = modelConfig.tools;
+    }
+
+    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+}
+
+/**
+ * 🎯 新增：带技能上下文的普通聊天请求处理（修复版）
+ */
+async function handleStandardChatRequestWithSkillContext(messageText, attachedFiles, modelName, apiKey) {
+    const userContent = [];
+    if (messageText) {
+        userContent.push({ type: 'text', text: messageText });
+    }
+
+    attachedFiles.forEach(file => {
+        if (file.type.startsWith('image/')) {
+            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+        } else if (file.type === 'application/pdf') {
+            userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+        } else if (file.type.startsWith('audio/')) {
+            userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+        }
+    });
+
+    // 🎯 推送用户消息到历史
+    chatHistory.push({ role: 'user', content: userContent });
+
+    const requestBody = {
+        model: modelName,
+        messages: chatHistory,
+        generationConfig: { responseModalities: ['text'] },
+        stream: true,
+        sessionId: currentSessionId
+    };
+
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    
+    // 🎯 智能工具注入：使用技能上下文系统（仅普通模式）
+    if (modelConfig && modelConfig.tools) {
+        console.log(`🎯 [普通模式工具注入] 为模型 ${modelName} 注入工具定义`);
+        
+        // 获取相关工具（使用现有的技能匹配）
+        const availableToolNames = getAvailableToolNames(modelName);
+        
+        // 🎯 关键优化：使用技能上下文管理器生成增强提示（仅普通模式）
+        try {
+            // 确保技能上下文管理器已初始化
+            await skillContextManager.ensureInitialized();
+            
+            // 🎯 修复：传递完整的上下文，包含sessionId和模式标识
+            const contextResult = await skillContextManager.generateRequestContext(
+                messageText,
+                availableToolNames,
+                modelConfig,
+                {
+                    sessionId: currentSessionId || 'default',
+                    mode: 'standard',  // 明确指定普通模式
+                    isAgentMode: false // 明确关闭Agent模式
+                }
+            );
+            
+            // 🎯 如果生成了增强提示，使用它替换原始用户消息
+            if (contextResult.enhancedPrompt && contextResult.enhancedPrompt !== messageText) {
+                console.log(`🎯 [普通模式上下文增强] 已为查询生成${contextResult.skillCount || 0}个技能上下文`);
+                
+                // 更新请求体中的消息
+                requestBody.messages = [
+                    ...chatHistory.slice(0, -1), // 除了最后一条用户消息
+                    { 
+                        role: 'user', 
+                        content: [{ type: 'text', text: contextResult.enhancedPrompt }]
+                    }
+                ];
+                
+                console.log(`🎯 [消息增强] 原始查询: "${messageText.substring(0, 50)}..."`);
+                console.log(`🎯 [消息增强] 增强后: "${contextResult.enhancedPrompt.substring(0, 100)}..."`);
+            } else {
+                console.log(`🎯 [消息增强] 未生成技能上下文，使用原始消息`);
+            }
+            
+        } catch (error) {
+            console.warn('🎯 [普通模式上下文增强] 失败，使用原始消息:', error);
+        }
+        
+        requestBody.tools = modelConfig.tools;
+    }
+
+    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
+}
+
+/**
+ * 🚀 处理增强的标准 Skill 模式请求 (修正版)
+ */
+async function handleEnhancedStandardRequest(messageText, attachedFiles, modelName, apiKey, enhancedTools, contextResult) {
+    // 1. 构造用户内容
+    const userContent = [];
+    
+    // ✅ 关键修正：直接使用 skillContextManager 生成的增强版Prompt
+    // 它已经包含了技能指南和用户的原始请求
+    userContent.push({ type: 'text', text: contextResult.enhancedPrompt });
+
+    attachedFiles.forEach(file => {
+        if (file.type.startsWith('image/')) {
+            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+        } else if (file.type === 'application/pdf') {
+            userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+        } else if (file.type.startsWith('audio/')) {
+            userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+        }
+    });
+
+    chatHistory.push({ role: 'user', content: userContent });
+
+    // 2. 构造请求体
+    const requestBody = {
+        model: modelName,
+        messages: chatHistory,
+        generationConfig: { responseModalities: ['text'] },
+        stream: true,
+        sessionId: currentSessionId
+        // ✅ 移除对 systemInstruction 的动态修改
+    };
+
+    // 3. 注入增强工具定义
+    if (enhancedTools && enhancedTools.length > 0) {
+        requestBody.tools = enhancedTools;
+        console.log(`🎯 [增强工具注入] 为模型 ${modelName} 注入 ${enhancedTools.length} 个增强工具定义`);
     } else {
         console.log(`🔍 [工具跳过] 模型 ${modelName} 未配置工具，使用标准请求`);
     }
 
+    // 4. 发送请求
     await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 }
 
