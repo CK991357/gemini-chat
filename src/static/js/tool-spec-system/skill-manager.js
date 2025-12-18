@@ -176,7 +176,7 @@ class EnhancedSkillManager {
     
     return injectionContent;
   }
-  
+
   /**
    * 🎯 【修改】提取相关内容（优化版）
    */
@@ -251,283 +251,180 @@ class EnhancedSkillManager {
     }
   }
 
-// 在 EnhancedSkillManager 类中添加以下优化方法：
-
-/**
- * 🎯 【简洁优化版】智能工具匹配算法
- */
-findRelevantSkills(userQuery, context = {}) {
-  const query = userQuery.toLowerCase().trim();
-  if (!query || query.length < 2) return [];
-  
-  console.log(`🔍 [智能匹配] 查询: "${query}"`);
-  
-  // 1. 分析查询意图
-  const queryIntent = this.analyzeQueryIntent(query);
-  console.log(`🎯 [查询分析] 意图: ${queryIntent.primary}, 置信度: ${(queryIntent.confidence * 100).toFixed(1)}%`);
-  
-  // 2. 获取可用工具过滤
-  const availableTools = context.availableTools || [];
-  const shouldFilter = availableTools.length > 0;
-  
-  // 3. 智能匹配所有工具
-  const matches = [];
-  
-  for (const [skillName, skill] of this.skills) {
-    const toolName = skill.metadata.tool_name;
+  /**
+   * 增强的技能匹配算法
+   */
+  findRelevantSkills(userQuery, context = {}) {
+    const query = userQuery.toLowerCase().trim();
+    if (!query || query.length < 2) {
+      return [];
+    }
     
-    // 过滤不可用工具
-    if (shouldFilter && !availableTools.includes(toolName)) continue;
+    console.log(`🔍 [技能匹配] 查询: "${query}"`,
+      context.availableTools ? `可用工具: ${context.availableTools.length}个` : '');
     
-    // 计算匹配分数（简化版）
-    const score = this.calculateToolMatchScore(query, queryIntent, skill, toolName);
+    const matches = [];
+    const expandedQuery = this.expandQuery(query);
     
-    if (score >= 0.2) { // 适当降低阈值
-      matches.push({
-        skill,
-        score,
-        toolName,
-        name: skill.metadata.name,
-        description: skill.metadata.description
+    // 🎯 新增：获取可用工具过滤条件
+    const availableTools = context.availableTools || [];
+    const shouldFilterByAvailableTools = availableTools.length > 0;
+    
+    for (const [skillName, skill] of this.skills) {
+      const toolName = skill.metadata.tool_name;
+      
+      // 🎯 新增：如果指定了可用工具，进行过滤
+      if (shouldFilterByAvailableTools && !availableTools.includes(toolName)) {
+        continue; // 跳过不可用的工具
+      }
+      
+      const relevanceScore = this.calculateEnhancedRelevanceScore(expandedQuery, skill, context);
+      
+      if (relevanceScore >= 0.15) {
+        matches.push({
+          skill,
+          score: relevanceScore,
+          toolName: toolName,
+          name: skill.metadata.name,
+          description: skill.metadata.description,
+          category: skill.metadata.category
+        });
+      }
+    }
+    
+    const sortedMatches = matches.sort((a, b) => b.score - a.score).slice(0, 3);
+    
+    if (sortedMatches.length > 0) {
+      console.log(`📊 [技能匹配] 完成，找到 ${sortedMatches.length} 个相关技能 (已过滤):`);
+      sortedMatches.forEach(match => {
+        console.log(`   - ${match.name} (${match.toolName}): ${(match.score * 100).toFixed(1)}%`);
       });
-    }
-  }
-  
-  // 4. 排序并限制结果
-  const sortedMatches = matches.sort((a, b) => b.score - a.score);
-
-  // 🎯 【新增】领先优势独占逻辑
-  if (sortedMatches.length >= 2) {
-  const topScore = sortedMatches[0].score;
-  const secondScore = sortedMatches[1].score;
-  const scoreGap = topScore - secondScore;
-  
-  // 如果第一名领先优势巨大（例如超过25%），则只返回第一名
-  if (scoreGap > 0.25) {
-    console.log(`🎯 [领先独占] ${sortedMatches[0].toolName} 领先优势显著 (${(scoreGap*100).toFixed(1)}%)，将独占注入`);
-    return [sortedMatches[0]]; // 只返回核心工具
-  }
-  
-  // 如果领先优势较大（例如超过15%），仍返回多项，但标记出核心工具（供后续流程参考）
-  if (scoreGap > 0.15) {
-    sortedMatches[0].isPrimary = true;
-    console.log(`🎯 [核心标记] ${sortedMatches[0].toolName} 为核心工具，将在上下文中重点处理`);
-  }
-}
-
-  // 原有逻辑：限制返回数量
-  return sortedMatches.slice(0, 3);
-}
-
-/**
- * 🎯 【核心方法】分析查询意图
- */
-analyzeQueryIntent(query) {
-  const intentPatterns = {
-    // 搜索意图
-    search: {
-      keywords: ['搜索', '查询', '查找', '最新', 'news', '信息', '什么', '哪里'],
-      boost: 1.0,
-      tools: ['tavily_search']
-    },
-    // 爬取意图
-    crawl: {
-      keywords: ['抓取', '爬取', '网页', '网站', 'html', '数据提取', 'scrape'],
-      boost: 0.9,
-      tools: ['crawl4ai', 'firecrawl']
-    },
-    // 编程意图
-    programming: {
-      keywords: ['代码', '编程', '计算', '脚本', 'python', '分析', '处理', '可视化', '图表', '画图', '数据清洗', '数据分析',  'word', 'excel', '机器学习','公式','证明','科学计算'],
-      boost: 0.8,
-      tools: ['python_sandbox']
-    },
-    // 图像分析意图
-    image: {
-      keywords: ['图像', '识别', '分析', '视觉'],
-      boost: 0.8,
-      tools: ['glm4v_analyze_image']
-    },
-    // 棋类分析意图
-    chess: {
-      keywords: ['象棋', '国际象棋', '棋局', '走法', '残局', 'stockfish','fen',],
-      boost: 0.7,
-      tools: ['stockfish_analyzer'],
-      exclusive: true
-    }
-  };
-  
-  let bestIntent = { type: 'general', confidence: 0.1, tools: [] };
-  
-  // 检查每个意图模式
-  for (const [intentType, pattern] of Object.entries(intentPatterns)) {
-    let confidence = 0;
-    
-    // 关键词匹配
-    pattern.keywords.forEach(keyword => {
-      if (query.includes(keyword)) {
-        confidence += 0.3;
-      }
-    });
-    
-    // 专用工具处理
-    if (pattern.exclusive && confidence > 0) {
-      confidence += 0.4; // 专用意图大幅加分
+    } else {
+      console.log(`🔍 [技能匹配] 未找到相关技能`);
     }
     
-    // 应用增强系数
-    confidence *= pattern.boost;
+    return sortedMatches;
+  }
+
+  /**
+   * 增强的相关性计算
+   */
+  calculateEnhancedRelevanceScore(query, skill, context) {
+    let score = 0;
+    const { metadata, content } = skill;
     
-    if (confidence > bestIntent.confidence) {
-      bestIntent = {
-        type: intentType,
-        confidence,
-        tools: pattern.tools,
-        exclusive: pattern.exclusive
-      };
+    // 1. 工具名精确匹配（最高权重）
+    const cleanToolName = metadata.tool_name.replace(/^default_api:/, '');
+    if (query.includes(cleanToolName) || query.includes(metadata.name.replace('-', '_'))) {
+      score += 0.6;
     }
-  }
-  
-  return bestIntent;
-}
+    
+    // 2. 描述关键词匹配
+    const searchText = `
+      ${metadata.name || ''}
+      ${metadata.description || ''}
+      ${content || ''}
+      ${(metadata.tags || []).join(' ')}
+    `.toLowerCase();
+    
+    const keywords = this.extractKeywords(query);
+    const tagsLower = (metadata.tags || []).map(tag => tag.toLowerCase());
+    // 增强功能性动词的权重
+    const coreVerbs = ['extract', 'scrape', 'crawl', '提取', '抓取', '爬取', '搜索', '查询'];
 
-/**
- * 🎯 【核心方法】计算工具匹配分数
- */
-calculateToolMatchScore(query, queryIntent, skill, toolName) {
-  const { metadata, content } = skill;
-  let score = 0;
-  
-  // 1. 意图匹配（最高优先级）
-  if (queryIntent.tools.includes(toolName)) {
-    score += 0.4; // 意图匹配基础分
-    score += queryIntent.confidence * 0.3; // 根据置信度加分
-  }
-  
-  // 2. 工具名直接匹配
-  if (query.includes(toolName.toLowerCase())) {
-    score += 0.5;
-  }
-  
-  // 3. 工具别名匹配
-  const aliases = this.getToolAliases(toolName);
-  if (aliases.some(alias => query.includes(alias))) {
-    score += 0.3;
-  }
-  
-  // 4. 元数据关键词匹配
-  const searchText = `${metadata.name} ${metadata.description} ${(metadata.tags || []).join(' ')}`.toLowerCase();
-  const keywords = this.extractKeywords(query);
-  
-  keywords.forEach(keyword => {
-    if (searchText.includes(keyword)) {
-      score += 0.1;
-      
-      // 在描述中匹配权重更高
-      if (metadata.description.toLowerCase().includes(keyword)) {
-        score += 0.15;
-      }
-      
-      // 在标签中匹配权重更高
-      if (metadata.tags?.some(tag => tag.toLowerCase().includes(keyword))) {
-        score += 0.2;
-      }
-    }
-  });
-  
-  // 5. 同义词扩展匹配
-  const synonymScore = this.calculateSynonymScore(query, skill);
-  score += synonymScore * 0.2;
-  
-  // 6. 内容相关度（轻量级检查）
-  if (content && content.length < 5000) { // 只检查短内容
-    const contentLower = content.toLowerCase();
-    const exactMatch = keywords.some(keyword => 
-      contentLower.includes(keyword) && keyword.length > 3
-    );
-    if (exactMatch) score += 0.2;
-  }
-  
-  // 7. 专用工具检查
-  if (this.isExclusiveTool(toolName) && !this.isExclusiveQuery(query, toolName)) {
-    score *= 0.1; // 非专用查询大幅减分
-  }
-  
-  return Math.min(Math.max(score, 0), 1.0);
-}
+    keywords.forEach(keyword => {
+      // 1. 基础匹配
+      if (searchText.includes(keyword)) {
+        score += 0.1; // 基础分
 
-/**
- * 🎯 【辅助方法】获取工具别名
- */
-getToolAliases(toolName) {
-  const aliasMap = {
-    'tavily_search': ['tavily', '搜索工具', '信息查询'],
-    'crawl4ai': ['爬虫', '网页抓取', '数据爬取'],
-    'python_sandbox': ['python', '代码执行', '编程环境'],
-    'glm4v_analyze_image': ['glm4v', '图像分析', '图片识别'],
-    'stockfish_analyzer': ['stockfish', '象棋分析']
-  };
-  
-  return aliasMap[toolName] || [];
-}
-
-/**
- * 🎯 【辅助方法】检查是否为专用工具
- */
-isExclusiveTool(toolName) {
-  const exclusiveTools = ['stockfish_analyzer'];
-  return exclusiveTools.includes(toolName);
-}
-
-/**
- * 🎯 【辅助方法】检查是否为专用查询
- */
-isExclusiveQuery(query, toolName) {
-  if (toolName === 'stockfish_analyzer') {
-    const chessKeywords = ['象棋', '国际象棋', '棋局', '走法', '残局'];
-    return chessKeywords.some(keyword => query.includes(keyword));
-  }
-  return true; // 非专用工具默认匹配
-}
-
-/**
- * 🎯 【优化版】提取关键词
- */
-extractKeywords(text) {
-  // 简化停用词
-  const stopWords = ['请', '帮', '我', '怎么', '如何', '什么', '的', '了'];
-  
-  return text
-    .toLowerCase()
-    .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ' ')
-    .split(/\s+/)
-    .filter(word => {
-      if (word.length < 2) return false;
-      if (stopWords.includes(word)) return false;
-      if (/^\d+$/.test(word)) return false;
-      return true;
-    });
-}
-
-/**
- * 🎯 【保持兼容】同义词匹配
- */
-calculateSynonymScore(query, skill) {
-  let score = 0;
-  const searchText = skill.metadata.description.toLowerCase();
-  
-  Object.entries(this.synonymMap).forEach(([key, synonyms]) => {
-    if (query.includes(key)) {
-      synonyms.forEach(synonym => {
-        if (searchText.includes(synonym)) {
-          score += 0.1;
+        // 2. 标签加权 (如果是标签中的词，权重翻倍)
+        if (tagsLower.some(tag => tag.includes(keyword))) {
+          score += 0.15;
         }
-      });
+
+        // 3. 关键动词加权 (针对核心功能)
+        if (coreVerbs.includes(keyword)) {
+          score += 0.2;
+        }
+      }
+    });
+    
+    // 3. 同义词扩展匹配
+    const synonymScore = this.calculateSynonymScore(query, skill);
+    score += synonymScore * 0.3;
+    
+    // 4. 类别匹配
+    if (context.category && metadata.category === context.category) {
+      score += 0.25;
     }
-  });
-  
-  return Math.min(score, 0.5);
-}
+    
+    // 5. 优先级调整
+    if (metadata.priority) {
+      score += (metadata.priority / 10) * 0.15;
+    }
+    
+    return Math.min(Math.max(score, 0), 1.0);
+  }
+
+  /**
+   * 扩展查询词
+   */
+  expandQuery(query) {
+    const words = query.toLowerCase().split(/\s+/);
+    const expanded = new Set(words);
+    
+    words.forEach(word => {
+      if (this.synonymMap[word]) {
+        this.synonymMap[word].forEach(synonym => expanded.add(synonym));
+      }
+    });
+    
+    return Array.from(expanded).join(' ');
+  }
+
+  /**
+   * 同义词匹配得分
+   */
+  calculateSynonymScore(query, skill) {
+    let score = 0;
+    const searchText = skill.metadata.description.toLowerCase();
+    
+    Object.entries(this.synonymMap).forEach(([key, synonyms]) => {
+      if (query.includes(key)) {
+        synonyms.forEach(synonym => {
+          if (searchText.includes(synonym)) {
+            score += 0.1;
+          }
+        });
+      }
+    });
+    
+    return score;
+  }
+
+  /**
+   * 提取关键词 (优化版)
+   */
+  extractKeywords(text) {
+    const stopWords = ['请', '帮', '我', '怎么', '如何', '什么', '为什么', 'the', 'and', 'for', '从', '的', '提取', '获取'];
+    
+    // 1. 预处理：移除 URL
+    const textWithoutUrls = text.replace(/https?:\/\/[^\s]+/g, '');
+    
+    // 2. 预处理：将非字母数字字符替换为空格 (保留中文)
+    // 这一步有助于拆分像 "crawl4ai的extract功能" 这样的连词
+    const cleanText = textWithoutUrls.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ' ');
+
+    return cleanText.split(/\s+/)
+        .filter(k => {
+            if (typeof k !== 'string') return false;
+            if (k.length <= 1) return false; // 过滤单字
+            if (stopWords.includes(k)) return false;
+            return true;
+        })
+        // 移除转义逻辑，直接返回清洗后的关键词
+        .map(k => k.toLowerCase());
+  }
 
   /**
    * 🎯 [升级版] 智能生成单个技能的注入内容
@@ -839,6 +736,39 @@ calculateSynonymScore(query, skill) {
       return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
   }
 
+  /**
+   * 提取相关内容片段
+   */
+  extractRelevantContent(content, userQuery) {
+    if (!userQuery || !content) return '';
+    
+    // 按章节分割内容
+    const sections = content.split(/\n## /);
+    let bestSection = '';
+    let bestScore = 0;
+    
+    const queryKeywords = this.extractKeywords(userQuery.toLowerCase());
+    
+    sections.forEach(section => {
+      let score = 0;
+      const sectionLower = section.toLowerCase();
+      
+      queryKeywords.forEach(keyword => {
+        // 移除转义字符用于字符串包含检查
+        const cleanKeyword = keyword.replace(/\\/g, '');
+        if (sectionLower.includes(cleanKeyword)) {
+          score += 1;
+        }
+      });
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestSection = section;
+      }
+    });
+    
+    return bestScore > 0 ? `**相关指导:**\n## ${bestSection}` : '';
+  }
 
   /**
    * [升级版] 多技能注入内容生成
