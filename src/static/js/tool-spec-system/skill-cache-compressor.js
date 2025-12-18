@@ -322,8 +322,8 @@ export class SkillCacheCompressor {
       
       // 混合内容：智能提取
       'mixedContent': {
-        compressionThreshold: 15000,    // 超过15KB才压缩
-        maxCompressionRate: 0.3,        // 最多压缩30%
+        compressionThreshold: 8000,    // 超过8KB才压缩
+        maxCompressionRate: 0.5,        // 最多压缩50%
         minPreservedLength: 6000,       // 至少保留6KB
         preserveSections: [
           '通用调用结构',

@@ -1,8 +1,8 @@
 // src/tool-spec-system/skill-context-manager.js
 // 🎯 修复版：移除对skillManager.cacheCompressor的依赖
 
-import { skillManagerPromise } from './skill-manager.js';
 import { skillCacheCompressor } from './skill-cache-compressor.js';
+import { skillManagerPromise } from './skill-manager.js';
 
 class SkillContextManager {
   constructor() {
@@ -286,7 +286,7 @@ class SkillContextManager {
       // 🎯 使用智能压缩器替换原来的简单截断
       const compressedContent = await this.cacheCompressor.compressKnowledge(mergedContent, {
         level: 'smart',
-        maxChars: 15000,
+        maxChars: 8000,
         userQuery: userQuery,
         toolName: 'python_sandbox',
         preserveSections: [
