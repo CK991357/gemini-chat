@@ -282,7 +282,7 @@ findRelevantSkills(userQuery, context = {}) {
     // 计算匹配分数（简化版）
     const score = this.calculateToolMatchScore(query, queryIntent, skill, toolName);
     
-    if (score >= 0.2) { // 适当降低阈值
+    if (score >= 0.3) { // 适当降低阈值
       matches.push({
         skill,
         score,
@@ -294,16 +294,29 @@ findRelevantSkills(userQuery, context = {}) {
   }
   
   // 4. 排序并限制结果
-  const sortedMatches = matches.sort((a, b) => b.score - a.score).slice(0, 3);
+  const sortedMatches = matches.sort((a, b) => b.score - a.score);
+
+  // 🎯 【新增】领先优势独占逻辑
+  if (sortedMatches.length >= 2) {
+  const topScore = sortedMatches[0].score;
+  const secondScore = sortedMatches[1].score;
+  const scoreGap = topScore - secondScore;
   
-  if (sortedMatches.length > 0) {
-    console.log(`📊 [匹配结果] 找到 ${sortedMatches.length} 个相关工具:`);
-    sortedMatches.forEach(match => {
-      console.log(`   - ${match.name}: ${(match.score * 100).toFixed(1)}%`);
-    });
+  // 如果第一名领先优势巨大（例如超过25%），则只返回第一名
+  if (scoreGap > 0.25) {
+    console.log(`🎯 [领先独占] ${sortedMatches[0].toolName} 领先优势显著 (${(scoreGap*100).toFixed(1)}%)，将独占注入`);
+    return [sortedMatches[0]]; // 只返回核心工具
   }
   
-  return sortedMatches;
+  // 如果领先优势较大（例如超过15%），仍返回多项，但标记出核心工具（供后续流程参考）
+  if (scoreGap > 0.15) {
+    sortedMatches[0].isPrimary = true;
+    console.log(`🎯 [核心标记] ${sortedMatches[0].toolName} 为核心工具，将在上下文中重点处理`);
+  }
+}
+
+  // 原有逻辑：限制返回数量
+  return sortedMatches.slice(0, 3);
 }
 
 /**
