@@ -1,5 +1,5 @@
 // src/tool-spec-system/skill-context-manager.js
-// 🎯 重构版本：智能内容构建 + 匹配压缩器新架构
+// 🎯 修复版：移除对skillManager.cacheCompressor的依赖
 
 import { skillManagerPromise } from './skill-manager.js';
 
@@ -7,14 +7,6 @@ class SkillContextManager {
   constructor() {
     this.skillManager = null;
     this.initialized = false;
-    
-    // 缓存压缩系统引用
-    this.cacheCompressor = null;
-    
-    skillManagerPromise.then(skillManager => {
-        this.cacheCompressor = skillManager.cacheCompressor;
-        console.log('✅ SkillContextManager 已集成缓存压缩系统');
-    });
     
     // 🚀 crawl4ai 专用关键词映射
     this.crawl4aiModeMap = {
@@ -111,7 +103,11 @@ class SkillContextManager {
       'integrate': 'scipy_cookbook.md'
     };
     
-    console.log('✅ SkillContextManager 已加载 - 重构的上下文构建系统');
+    // 🎯 新增：简单的内容缓存（独立于skillManager）
+    this.contextCache = new Map();
+    this.maxCacheSize = 50;
+    
+    console.log('✅ SkillContextManager 已加载 - 修复版本（独立缓存）');
   }
 
   async ensureInitialized() {
@@ -142,18 +138,25 @@ class SkillContextManager {
 
     console.log(`🔍 [技能上下文生成] 查询: "${userQuery.substring(0, 50)}..."`, {
       可用工具数: availableTools.length,
-      会话ID: context.sessionId || 'default'
+      会话ID: context.sessionId || 'default',
+      模式: context.mode || 'normal'
     });
 
-    // 合并上下文信息
+    // 🎯 检查是否Agent模式
+    const isAgentMode = context.mode === 'agent' || context.isAgentMode;
+    
+    // 🎯 合并上下文信息
     const skillContext = {
       ...context,
       availableTools,
-      category: modelConfig.category
+      category: modelConfig.category,
+      isAgentMode: isAgentMode
     };
 
     // 1. 查找相关技能
-    const relevantSkills = this.skillManager.findRelevantSkills(userQuery, skillContext);
+    const relevantSkills = isAgentMode 
+      ? this.skillManager.findAgentSkills(userQuery, skillContext)
+      : this.skillManager.findRelevantSkills(userQuery, skillContext);
 
     if (relevantSkills.length === 0) {
       return { 
@@ -170,8 +173,8 @@ class SkillContextManager {
 
     // 3. 生成增强的提示词
     const enhancedPrompt = hasComplexTools 
-      ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, context)
-      : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills);
+      ? await this._buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, skillContext)
+      : await this._buildStandardEnhancedPrompt(userQuery, relevantSkills, skillContext);
     
     return {
       enhancedPrompt,
@@ -179,7 +182,8 @@ class SkillContextManager {
       contextLevel: relevantSkills.length > 1 ? 'multi' : 'single',
       skillCount: relevantSkills.length,
       hasComplexTools,
-      sessionId: context.sessionId || 'default'
+      sessionId: context.sessionId || 'default',
+      isAgentMode: isAgentMode
     };
   }
 
@@ -187,55 +191,61 @@ class SkillContextManager {
    * 🎯 构建包含复杂工具的增强提示词
    */
   async _buildEnhancedPromptWithComplexTools(userQuery, relevantSkills, context = {}) {
-    let contextPrompt = `## 🎯 智能工具指南 (检测到复杂工具)\n\n`;
+    const isAgentMode = context.isAgentMode;
+    
+    let contextPrompt = isAgentMode 
+      ? `## 🤖 Agent模式工具指南\n\n`
+      : `## 🎯 智能工具指南 (检测到复杂工具)\n\n`;
     
     // 分别处理每个复杂工具
     for (const skill of relevantSkills) {
       if (skill.toolName === 'crawl4ai') {
-        contextPrompt += await this._buildCrawl4AIContext(skill, userQuery);
+        contextPrompt += await this._buildCrawl4AIContext(skill, userQuery, isAgentMode);
       } else if (skill.toolName === 'python_sandbox') {
         contextPrompt += await this._buildEnhancedPythonSandboxContext(skill, userQuery, context.sessionId, context);
       } else {
         // 其他工具的标准处理
-        contextPrompt += this._buildStandardSkillContext(skill, userQuery);
+        contextPrompt += this._buildStandardSkillContext(skill, userQuery, isAgentMode);
       }
       contextPrompt += '\n\n';
     }
 
     // 添加通用指导
-    contextPrompt += `## 💡 执行指导\n`;
-    contextPrompt += `请基于以上详细指南来响应用户请求。特别注意复杂工具的特殊调用规范。\n\n`;
+    if (isAgentMode) {
+      contextPrompt += `## 🤖 Agent执行指导\n`;
+      contextPrompt += `请基于以上工具信息来执行任务。注意保持Agent输出格式。\n\n`;
+    } else {
+      contextPrompt += `## 💡 执行指导\n`;
+      contextPrompt += `请基于以上详细指南来响应用户请求。特别注意复杂工具的特殊调用规范。\n\n`;
+    }
+    
     contextPrompt += `---\n\n## 👤 用户原始请求\n${userQuery}`;
 
     return contextPrompt;
   }
 
   /**
-   * 🚀 增强的Python沙盒上下文构建 - 重构版
+   * 🚀 增强的Python沙盒上下文构建 - 修复版
    */
   async _buildEnhancedPythonSandboxContext(skill, userQuery, sessionId, context = {}) {
     try {
       const { skill: skillData, score, name, description } = skill;
+      const isAgentMode = context.isAgentMode;
       
-      console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`);
+      console.log(`🔍 [Python沙盒] 查询: "${userQuery.substring(0, 50)}..."`, {
+        模式: isAgentMode ? 'Agent' : '普通'
+      });
+      
+      // 🎯 Agent模式使用简化知识
+      if (isAgentMode) {
+        return await this.skillManager.generateAgentSkillKnowledge(skillData, userQuery, context);
+      }
+      
       console.log(`📦 [技能文档] 主文档大小: ${skillData.content.length}字符`);
       
-      // 🎯 检查缓存
-      const cachedContent = this.skillManager.cacheCompressor.getFromCache(
-        'python_sandbox', 
-        userQuery, 
-        { sessionId, ...context }
-      );
-      
-      // 构建基础上下文
+      // 🎯 构建基础上下文
       let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
       contextContent += `**核心功能**: ${description}\n\n`;
-      
-      if (cachedContent) {
-        contextContent += cachedContent;
-        console.log(`🎯 [缓存命中] python_sandbox: ${cachedContent.length} 字符`);
-        return contextContent;
-      }
       
       // 🎯 智能内容构建策略
       console.log('🔄 [开始构建智能内容]');
@@ -252,53 +262,58 @@ class SkillContextManager {
       const mergedContent = this._mergeSkillAndQueryContent(skillCore, queryContent, userQuery);
       console.log(`🔗 [合并内容] 总大小: ${mergedContent.length}字符`);
       
-      // 🎯 使用新的压缩器进行智能压缩
-      let compressedContent = '';
-      try {
-        // 为新压缩器传递额外的上下文信息
-        compressedContent = await this.skillManager.cacheCompressor.compressKnowledge(
-          mergedContent,
-          {
-            level: 'smart',
-            maxChars: 15000,  // 增加最大字符数
-            userQuery: userQuery,
-            toolName: 'python_sandbox',
-            preserveSections: [
-              '通用调用结构',
-              '输出规范',
-              '核心工作流模式',
-              '可直接使用的代码模板'
-            ]
-          }
-        );
-      } catch (compressError) {
-        console.error(`🚨 [内容压缩失败]`, compressError);
-        // 压缩失败时使用未压缩的合并内容
-        compressedContent = this._formatContentForPrompt(mergedContent, userQuery);
-      }
-      
-      // 缓存结果
-      this.skillManager.cacheCompressor.setToCache(
-        'python_sandbox', 
-        userQuery, 
-        { 
-          sessionId, 
-          ...context,
-          contentType: 'mixedContent'  // 告知缓存器这是混合内容
-        }, 
-        compressedContent
-      );
+      // 🎯 智能截断（不使用复杂压缩器）
+      const compressedContent = this._smartTruncate(mergedContent, userQuery, 15000);
       
       contextContent += compressedContent;
       return contextContent;
     } catch (error) {
       console.error(`🚨 [Python沙盒上下文构建失败]`, error);
-      return this._buildFallbackContext(skill.skill, userQuery);
+      return this._buildFallbackContext(skill.skill, userQuery, context.isAgentMode);
     }
   }
 
   /**
-   * 🎯 从技能文档提取核心结构 - 修复版
+   * 🎯 智能截断内容
+   */
+  _smartTruncate(content, userQuery, maxChars = 15000) {
+    if (content.length <= maxChars) return content;
+    
+    console.log(`📏 [智能截断] ${content.length} → ${maxChars}字符`);
+    
+    // 保留开头的重要部分
+    let truncated = content.substring(0, maxChars * 0.7);
+    
+    // 查找最后一个完整段落
+    const lastSection = truncated.lastIndexOf('## ');
+    if (lastSection > maxChars * 0.5) {
+      truncated = truncated.substring(0, lastSection);
+    }
+    
+    // 确保有JSON示例
+    if (!truncated.includes('```json')) {
+      const jsonExample = content.match(/```json[\s\S]*?```/);
+      if (jsonExample) {
+        truncated += '\n\n## 🎯 调用示例\n\n' + jsonExample[0];
+      }
+    }
+    
+    // 确保有代码示例
+    if (!truncated.includes('```python')) {
+      const codeExample = content.match(/```python[\s\S]*?```/);
+      if (codeExample) {
+        truncated += '\n\n## 💻 代码示例\n\n' + codeExample[0];
+      }
+    }
+    
+    // 添加截断提示
+    truncated += '\n\n...\n\n**提示**: 内容已截断，如需完整文档请查阅技能文件。';
+    
+    return truncated;
+  }
+
+  /**
+   * 🎯 从技能文档提取核心结构 - 保持原有逻辑
    */
   _extractSkillDocumentCore(skillContent) {
     let core = '';
@@ -306,58 +321,50 @@ class SkillContextManager {
     // 移除Markdown加粗标记以简化匹配
     const normalizedContent = skillContent.replace(/\*\*/g, '');
     
-    // 修正的核心章节优先级顺序 - 基于SKILL.md实际结构
+    // 修正的核心章节优先级顺序
     const coreSections = [
-        // 第1章：核心能力概览
         {
             pattern: /## 🎯 核心能力概览[\s\S]*?(?=\n##\s|$)/i,
             name: '核心能力概览',
             required: true,
             maxLength: 2000
         },
-        // 第2章：文件处理指南
         {
             pattern: /## 📁 文件处理指南 - 两种模式必须分清[\s\S]*?(?=\n##\s|$)/i,
             name: '文件处理指南',
             required: true,
             maxLength: 1500
         },
-        // 第3章：输出规范
         {
             pattern: /## 🚀 输出规范 - 后端实际支持的格式[\s\S]*?(?=\n##\s|$)/i,
             name: '输出规范',
             required: true,
             maxLength: 2500
         },
-        // 第4章：会话持久化
         {
             pattern: /## 💾 会话持久化 - 跨代码执行的文件共享[\s\S]*?(?=\n##\s|$)/i,
             name: '会话持久化',
             required: true,
             maxLength: 1500
         },
-        // 第5章：工作流参考（不是"工作流模式"！）
         {
             pattern: /## 📚 工作流参考 - 按需查阅[\s\S]*?(?=\n##\s|$)/i,
             name: '工作流参考',
             required: true,
             maxLength: 2000
         },
-        // 第6章：性能优化指南
         {
             pattern: /## ⚡ 性能优化指南 \(与后端完全匹配\)[\s\S]*?(?=\n##\s|$)/i,
             name: '性能优化指南',
             required: true,
             maxLength: 2000
         },
-        // 第7章：可用库快速参考
         {
             pattern: /## 📋 可用库快速参考 \(与Dockerfile完全一致\)[\s\S]*?(?=\n##\s|$)/i,
             name: '库参考',
             required: false,
             maxLength: 1500
         },
-        // 第8章：快速开始模板
         {
             pattern: /## 🎯 快速开始模板[\s\S]*?(?=\n##\s|$)/i,
             name: '快速开始',
@@ -401,62 +408,6 @@ class SkillContextManager {
     return core;
   }
 
-  // 添加回退提取方法
-  _extractFallbackSection(content, sectionName) {
-    const lines = content.split('\n');
-    let inSection = false;
-    let sectionContent = [];
-    let sectionFound = false;
-    
-    for (const line of lines) {
-      if (line.startsWith('## ') && line.includes(sectionName)) {
-        inSection = true;
-        sectionFound = true;
-        sectionContent.push(line);
-      } else if (line.startsWith('## ') && inSection) {
-        break;
-      } else if (inSection) {
-        sectionContent.push(line);
-      }
-    }
-    
-    if (sectionFound) {
-      return sectionContent.join('\n');
-    }
-    return null;
-  }
-
-  // 添加基于关键词的内容提取方法
-  _extractByKeywords(content, keywords, maxLength = 2000) {
-    const lines = content.split('\n');
-    let extracted = [];
-    let keywordFound = false;
-    let charCount = 0;
-    
-    for (const line of lines) {
-      if (charCount > maxLength) break;
-      
-      // 检查是否包含关键词
-      const hasKeyword = keywords.some(keyword => 
-        line.toLowerCase().includes(keyword.toLowerCase())
-      );
-      
-      if (hasKeyword || keywordFound) {
-        if (!keywordFound) {
-          // 找到关键词，开始收集
-          keywordFound = true;
-        }
-        
-        if (charCount + line.length <= maxLength) {
-          extracted.push(line);
-          charCount += line.length;
-        }
-      }
-    }
-    
-    return extracted.length > 0 ? extracted.join('\n') : null;
-  }
-
   /**
    * 🎯 根据查询构建特定内容
    */
@@ -466,42 +417,35 @@ class SkillContextManager {
     
     // 检测用户意图
     const chartType = this._extractChartType(userQuery);
-    const relevantRefs = this._findRelevantReferences(userQuery);
     
-    console.log(`🎯 [用户意图] 图表类型: ${chartType || '无'}, 相关参考: ${relevantRefs.length}个`);
+    console.log(`🎯 [用户意图] 图表类型: ${chartType || '无'}`);
     
     // 如果是图表相关查询
-    if (chartType && relevantRefs.includes('matplotlib_cookbook.md')) {
-      const refContent = skillData.resources?.references?.['matplotlib_cookbook.md'];
-      if (refContent) {
-        const chartExamples = this._extractChartExamples(refContent, chartType, userQuery);
-        if (chartExamples) {
-          queryContent += `## 📊 ${chartType}专项代码示例\n\n`;
-          queryContent += `检测到您的查询关于 **${chartType}**，已提取最相关的代码模板：\n\n`;
-          queryContent += chartExamples;
-          
-          // 添加图表使用提示
-          queryContent += this._getChartUsageTips(chartType);
-        }
+    if (chartType) {
+      const chartExamples = this._extractChartExamples(skillData.content, chartType, userQuery);
+      if (chartExamples) {
+        queryContent += `## 📊 ${chartType}专项代码示例\n\n`;
+        queryContent += `检测到您的查询关于 **${chartType}**，已提取最相关的代码模板：\n\n`;
+        queryContent += chartExamples;
+        
+        // 添加图表使用提示
+        queryContent += this._getChartUsageTips(chartType);
       }
     }
     
     // 如果是数据处理相关
     if (queryLower.includes('数据') && queryLower.includes('处理')) {
-      const refContent = skillData.resources?.references?.['pandas_cheatsheet.md'];
-      if (refContent) {
-        const dataExamples = this._extractDataProcessingExamples(refContent, userQuery);
-        if (dataExamples) {
-          queryContent += `## 📈 数据处理代码示例\n\n`;
-          queryContent += dataExamples;
-        }
+      const dataExamples = this._extractDataProcessingExamples(skillData.content, userQuery);
+      if (dataExamples) {
+        queryContent += `## 📈 数据处理代码示例\n\n`;
+        queryContent += dataExamples;
       }
     }
     
     // 基于现有文档结构提取内容
     const skillContent = skillData.content;
     
-    // 如果正则匹配失败，使用关键词回退
+    // 尝试提取核心章节
     const sectionKeywords = {
       '输出规范': ['输出规范', 'json格式', 'plt.show()'],
       '调用结构': ['通用调用结构', '参数', 'parameters'],
@@ -528,15 +472,6 @@ class SkillContextManager {
       }
     }
     
-    // 添加代码示例（直接从skillData.content中提取）
-    const codeBlocks = skillData.content.match(/```python[\s\S]*?```/g) || [];
-    if (codeBlocks.length > 0) {
-      queryContent += `## 💻 相关代码示例\n\n`;
-      codeBlocks.slice(0, 2).forEach((block, idx) => {
-        queryContent += `**示例 ${idx + 1}**:\n\n${block}\n\n`;
-      });
-    }
-    
     console.log(`🎯 [查询内容构建] 大小: ${queryContent.length}字符`);
     return queryContent;
   }
@@ -544,7 +479,7 @@ class SkillContextManager {
   /**
    * 🎯 提取图表示例
    */
-  _extractChartExamples(refContent, chartType, userQuery) {
+  _extractChartExamples(content, chartType, userQuery) {
     const chartPatterns = {
       '折线图': ['plt.plot', 'plot(', '折线图示例', 'line'],
       '饼图': ['plt.pie', 'pie(', '饼图示例'],
@@ -555,7 +490,7 @@ class SkillContextManager {
     };
     
     const keywords = chartPatterns[chartType] || [chartType];
-    const allCodeBlocks = refContent.match(/```python[\s\S]*?```/g) || [];
+    const allCodeBlocks = content.match(/```python[\s\S]*?```/g) || [];
     
     // 优先选择包含关键词的代码块
     const relevantBlocks = [];
@@ -591,9 +526,9 @@ class SkillContextManager {
   /**
    * 🎯 提取数据处理示例
    */
-  _extractDataProcessingExamples(refContent, userQuery) {
+  _extractDataProcessingExamples(content, userQuery) {
     const queryLower = userQuery.toLowerCase();
-    const allCodeBlocks = refContent.match(/```python[\s\S]*?```/g) || [];
+    const allCodeBlocks = content.match(/```python[\s\S]*?```/g) || [];
     
     // 根据查询关键词选择代码块
     const keywords = [];
@@ -667,60 +602,19 @@ class SkillContextManager {
   }
 
   /**
-   * 🎯 格式化内容以供提示使用
-   */
-  _formatContentForPrompt(content, userQuery) {
-    // 确保内容结构清晰
-    let formatted = content;
-    
-    // 如果内容太大，进行基本截断
-    if (formatted.length > 12000) {
-      // 保留开头的重要部分
-      const preserved = formatted.substring(0, 10000);
-      
-      // 查找最后一个完整段落
-      const lastSection = preserved.lastIndexOf('## ');
-      if (lastSection > 8000) {
-        formatted = preserved.substring(0, lastSection);
-      } else {
-        formatted = preserved;
-      }
-      
-      formatted += '\n\n...\n\n**提示**: 内容已截断，如需完整文档请查阅参考文件。';
-    }
-    
-    // 添加执行指导
-    formatted += `\n\n## 🚀 执行步骤\n\n`;
-    formatted += `1. 参考上面的调用结构和代码示例\n`;
-    formatted += `2. 根据您的需求调整代码\n`;
-    formatted += `3. 确保遵循输出规范\n`;
-    formatted += `4. 图表输出使用 \`plt.show()\`\n`;
-    formatted += `5. 文件输出使用JSON格式\n`;
-    
-    return formatted;
-  }
-
-  /**
-   * 🎯 获取图表使用提示
-   */
-  _getChartUsageTips(chartType) {
-    const tips = {
-      '折线图': '\n**💡 折线图要点**:\n• 使用 `plt.plot(x, y)` 绘制折线\n• 添加 `marker` 参数显示数据点\n• 使用 `plt.title()` 和 `plt.xlabel()`/`plt.ylabel()` 添加标签',
-      '饼图': '\n**💡 饼图要点**:\n• 使用 `plt.pie(sizes, labels=labels)` 绘制饼图\n• 添加 `autopct` 参数显示百分比\n• 使用 `explode` 参数突出某部分',
-      '条形图': '\n**💡 条形图要点**:\n• 使用 `plt.bar(x, height)` 绘制条形图\n• 使用 `plt.barh()` 绘制水平条形图\n• 设置 `color` 参数改变颜色',
-      '散点图': '\n**💡 散点图要点**:\n• 使用 `plt.scatter(x, y)` 绘制散点图\n• 使用 `s` 参数设置点的大小\n• 使用 `c` 参数设置点的颜色',
-      '热力图': '\n**💡 热力图要点**:\n• 使用 `plt.imshow(data)` 显示热力图\n• 使用 `cmap` 参数设置颜色映射\n• 添加 `plt.colorbar()` 显示颜色条'
-    };
-    
-    return tips[chartType] || '\n**💡 通用图表提示**:\n• 使用 `plt.figure(figsize=(宽, 高))` 设置画布大小\n• 使用 `plt.tight_layout()` 防止标签重叠\n• 使用 `plt.show()` 显示图表';
-  }
-
-  /**
    * 🎯 降级上下文构建
    */
-  _buildFallbackContext(skillData, userQuery) {
-    console.log('🔄 [使用降级方案构建上下文]');
+  _buildFallbackContext(skillData, userQuery, isAgentMode = false) {
+    console.log('🔄 [使用降级方案构建上下文]', { 模式: isAgentMode ? 'Agent' : '普通' });
     
+    if (isAgentMode) {
+      // Agent模式简化版本
+      return `工具: ${skillData.metadata.name} (${skillData.metadata.tool_name})\n` +
+             `功能: ${skillData.metadata.description}\n` +
+             `使用方式: 参考工具调用规范\n`;
+    }
+    
+    // 普通模式降级版本
     let content = `## 🐍 Python沙盒工具\n\n`;
     
     // 提取最关键的信息
@@ -782,39 +676,33 @@ class SkillContextManager {
   }
 
   /**
-   * 🎯 查找相关参考文件
+   * 🎯 获取图表使用提示
    */
-  _findRelevantReferences(userQuery) {
-    const queryLower = userQuery.toLowerCase();
-    const matchedRefs = new Set();
+  _getChartUsageTips(chartType) {
+    const tips = {
+      '折线图': '\n**💡 折线图要点**:\n• 使用 `plt.plot(x, y)` 绘制折线\n• 添加 `marker` 参数显示数据点\n• 使用 `plt.title()` 和 `plt.xlabel()`/`plt.ylabel()` 添加标签',
+      '饼图': '\n**💡 饼图要点**:\n• 使用 `plt.pie(sizes, labels=labels)` 绘制饼图\n• 添加 `autopct` 参数显示百分比\n• 使用 `explode` 参数突出某部分',
+      '条形图': '\n**💡 条形图要点**:\n• 使用 `plt.bar(x, height)` 绘制条形图\n• 使用 `plt.barh()` 绘制水平条形图\n• 设置 `color` 参数改变颜色',
+      '散点图': '\n**💡 散点图要点**:\n• 使用 `plt.scatter(x, y)` 绘制散点图\n• 使用 `s` 参数设置点的大小\n• 使用 `c` 参数设置点的颜色',
+      '热力图': '\n**💡 热力图要点**:\n• 使用 `plt.imshow(data)` 显示热力图\n• 使用 `cmap` 参数设置颜色映射\n• 添加 `plt.colorbar()` 显示颜色条'
+    };
     
-    // 优先匹配具体图表类型
-    const chartType = this._extractChartType(userQuery);
-    if (chartType) {
-      matchedRefs.add('matplotlib_cookbook.md');
-    }
-    
-    // 关键词匹配
-    for (const [keyword, refFile] of Object.entries(this.pythonReferenceMap)) {
-      if (queryLower.includes(keyword)) {
-        const baseFile = refFile.split(':')[0];
-        matchedRefs.add(baseFile);
-      }
-    }
-    
-    // 默认文件
-    if (matchedRefs.size === 0) {
-      matchedRefs.add('matplotlib_cookbook.md');
-    }
-    
-    return Array.from(matchedRefs);
+    return tips[chartType] || '\n**💡 通用图表提示**:\n• 使用 `plt.figure(figsize=(宽, 高))` 设置画布大小\n• 使用 `plt.tight_layout()` 防止标签重叠\n• 使用 `plt.show()` 显示图表';
   }
 
   /**
-   * 🚀 crawl4ai 专用上下文构建
+   * 🎯 crawl4ai 专用上下文构建
    */
-  async _buildCrawl4AIContext(skill, userQuery) {
+  async _buildCrawl4AIContext(skill, userQuery, isAgentMode = false) {
     const { skill: skillData, score, name, description } = skill;
+    
+    if (isAgentMode) {
+      // Agent模式简化版本
+      return `工具: ${name} (crawl4ai)\n` +
+             `功能: ${description}\n` +
+             `可用模式: extract(结构化提取), scrape(单个网页), deep_crawl(深度爬取)\n` +
+             `参数格式: {"url": "网页地址", "mode": "模式名称", "parameters": {...}}\n`;
+    }
     
     let context = `### 🕷️ 网页抓取工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
     context += `**核心功能**: ${description}\n\n`;
@@ -900,8 +788,13 @@ class SkillContextManager {
   /**
    * 标准技能上下文构建（用于非复杂工具）
    */
-  _buildStandardSkillContext(skill, userQuery) {
+  _buildStandardSkillContext(skill, userQuery, isAgentMode = false) {
     const { name, description, score } = skill;
+    
+    if (isAgentMode) {
+      return `工具: ${name}\n功能: ${description}\n`;
+    }
+    
     const keyHint = this._extractKeyHint(skill.skill.content, userQuery);
     
     let context = `### 🛠️ 工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
@@ -917,21 +810,25 @@ class SkillContextManager {
   /**
    * 标准增强提示词构建
    */
-  async _buildStandardEnhancedPrompt(userQuery, relevantSkills, modelConfig) {
-    let context = `## 🎯 相关工具指南\n\n`;
+  async _buildStandardEnhancedPrompt(userQuery, relevantSkills, context) {
+    const isAgentMode = context.isAgentMode;
+    
+    let contextPrompt = isAgentMode 
+      ? `## 🤖 Agent模式工具列表\n\n`
+      : `## 🎯 相关工具指南\n\n`;
     
     relevantSkills.forEach((skill, index) => {
-      context += this._buildStandardSkillContext(skill, userQuery);
+      contextPrompt += this._buildStandardSkillContext(skill, userQuery, isAgentMode);
       if (index < relevantSkills.length - 1) {
-        context += '\n';
+        contextPrompt += '\n';
       }
     });
 
-    context += `\n\n## 💡 执行指导\n`;
-    context += `请基于以上工具信息来响应用户请求。\n\n`;
-    context += `---\n\n## 👤 用户原始请求\n${userQuery}`;
+    contextPrompt += `\n\n${isAgentMode ? '## 🤖 Agent执行指导' : '## 💡 执行指导'}\n`;
+    contextPrompt += `请基于以上工具信息来响应用户请求。\n\n`;
+    contextPrompt += `---\n\n## 👤 用户原始请求\n${userQuery}`;
 
-    return context;
+    return contextPrompt;
   }
 
   /**
@@ -952,6 +849,67 @@ class SkillContextManager {
     }
     
     return null;
+  }
+
+  /**
+   * 🎯 基于关键词的内容提取方法
+   */
+  _extractByKeywords(content, keywords, maxLength = 2000) {
+    const lines = content.split('\n');
+    let extracted = [];
+    let keywordFound = false;
+    let charCount = 0;
+    
+    for (const line of lines) {
+      if (charCount > maxLength) break;
+      
+      // 检查是否包含关键词
+      const hasKeyword = keywords.some(keyword => 
+        line.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      if (hasKeyword || keywordFound) {
+        if (!keywordFound) {
+          // 找到关键词，开始收集
+          keywordFound = true;
+        }
+        
+        if (charCount + line.length <= maxLength) {
+          extracted.push(line);
+          charCount += line.length;
+        }
+      }
+    }
+    
+    return extracted.length > 0 ? extracted.join('\n') : null;
+  }
+
+  /**
+   * 🎯 简单缓存管理
+   */
+  _getFromCache(key) {
+    if (this.contextCache.has(key)) {
+      const cached = this.contextCache.get(key);
+      // 缓存有效（10分钟内）
+      if (Date.now() - cached.timestamp < 10 * 60 * 1000) {
+        return cached.content;
+      }
+    }
+    return null;
+  }
+
+  _setToCache(key, content) {
+    this.contextCache.set(key, {
+      content,
+      timestamp: Date.now(),
+      size: content.length
+    });
+    
+    // 限制缓存大小
+    if (this.contextCache.size > this.maxCacheSize) {
+      const oldestKey = Array.from(this.contextCache.keys())[0];
+      this.contextCache.delete(oldestKey);
+    }
   }
 }
 

@@ -63,22 +63,30 @@ class EnhancedModelToolManager {
 // 创建全局实例
 export const enhancedModelToolManager = new EnhancedModelToolManager();
 
-// 🎯 获取基础技能管理器的函数
+// 🎯 获取基础技能管理器的函数 - 修复版
 // 这个函数应该在技能系统初始化后调用
 window.getBaseSkillManager = function() {
-  // 🎯 关键修复：返回 skill-manager.js 中导出的 Promise，确保单例
-  const { skillManagerPromise } = window.skillManagerModule || {};
-  if (skillManagerPromise) {
-    return skillManagerPromise;
-  }
-  
-  // 降级方案：返回一个简单的技能管理器
-  return Promise.resolve({
-    findRelevantSkills: (userQuery, context = {}) => {
-      console.log(`[BaseSkillManager] 降级查询: ${userQuery}`);
-      return [];
-    }
-  });
+  // 🎯 关键修复：动态导入 skill-manager.js 并返回 Promise
+  return import('./tool-spec-system/skill-manager.js')
+    .then(module => {
+      console.log('✅ 动态导入 skill-manager.js 成功');
+      // 确保我们使用的是 skillManagerPromise
+      return module.skillManagerPromise || module.skillManager;
+    })
+    .catch(error => {
+      console.error('❌ 动态导入 skill-manager.js 失败:', error);
+      // 降级方案：返回一个简单的技能管理器
+      return Promise.resolve({
+        findRelevantSkills: (userQuery, context = {}) => {
+          console.log(`[BaseSkillManager] 降级查询: ${userQuery}`);
+          return [];
+        },
+        findAgentSkills: (userQuery, context = {}) => {
+          console.log(`[AgentSkillManager] 降级查询: ${userQuery}`);
+          return [];
+        }
+      });
+    });
 };
 
 /**
@@ -692,7 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
    // 🚀 新增：初始化智能代理系统
    initializeEnhancedAgent();
    
-   // 🚀 在DOMContentLoaded中初始化技能系统
+   // 🚀 在DOMContentLoaded中初始化技能系统 - 修复版
   initializeEnhancedSkillSystem();
    
    // 🎯 添加调试状态检查
@@ -1383,19 +1391,20 @@ async function handleWebSocketMessage(messageText, attachedFiles) {
 }
 
 /**
- * 🚀 初始化增强技能系统
+ * 🚀 初始化增强技能系统 - 修复版
  */
 async function initializeEnhancedSkillSystem() {
   try {
     console.log('🚀 正在初始化增强技能系统...');
     
-    // 1. 初始化技能上下文管理器
+    // 1. 直接初始化技能上下文管理器
+    // 注意：skillContextManager 已经在构造函数中初始化了简单缓存
     const contextReady = await skillContextManager.ensureInitialized();
     if (!contextReady) {
       console.warn('❌ 技能上下文管理器初始化失败，使用降级模式');
       return;
     }
-
+    
     // 2. 预加载常用模型的增强定义
     const defaultModel = CONFIG.API.MODEL_NAME;
     await enhancedModelToolManager.getEnhancedToolsForModel(defaultModel);
@@ -1408,7 +1417,7 @@ async function initializeEnhancedSkillSystem() {
 }
 
 /**
- * 🚀 修改核心消息处理函数
+ * 🚀 修改核心消息处理函数 - 普通模式专用
  */
 // =========================================================================
 // 🚀 [最终方案 V2 - 替换] 增强的消息处理函数，仅负责启动 Agent
@@ -1422,103 +1431,192 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
     const modelName = selectedModelConfig.name;
     const isAgentModeEnabled = orchestrator && orchestrator.isEnabled;
     
-    // 如果 Agent 模式未启用，直接回退到标准模式
-    if (!isAgentModeEnabled) {
-        console.log("💬 Agent 模式未启用，使用标准对话");
-        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey);
+    // 如果 Agent 模式启用，使用 Agent 流程
+    if (isAgentModeEnabled && orchestrator._initState === 'initialized') {
+        console.log("🤖 Agent 模式已启用，使用智能代理");
+        try {
+            // 🎯 核心修复：在 Agent 流程开始前，将用户消息推入历史记录
+            const userContent = [];
+            if (messageText) {
+                userContent.push({ type: 'text', text: messageText });
+            }
+            attachedFiles.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+                } else if (file.type === 'application/pdf') {
+                    userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+                } else if (file.type.startsWith('audio/')) {
+                    userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+                }
+            });
+            chatHistory.push({ role: 'user', content: userContent });
+            
+            // 🚀 获取可用工具名称和增强工具定义
+            const availableToolNames = getAvailableToolNames(modelName);
+            const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
+            
+            // 🚀 生成技能上下文 - 修复：传递完整的上下文，包括 isAgentMode: true
+            const contextResult = await skillContextManager.generateRequestContext(
+                messageText,
+                availableToolNames,
+                selectedModelConfig,
+                {
+                    sessionId: currentSessionId || 'default',
+                    mode: 'agent',
+                    isAgentMode: true
+                }
+            );
+
+            console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
+
+            // 2. 准备 Agent 上下文
+            const agentContext = {
+                model: modelName,
+                apiKey: apiKey,
+                messages: chatHistory,
+                apiHandler: chatApiHandler,
+                availableTools: availableToolNames, // 传递原始工具名称列表
+                enhancedTools: enhancedTools, // 传递增强工具定义
+                contextResult: contextResult // 传递技能上下文结果
+            };
+            
+            // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
+            // 我们在这里"发射后不管"，渲染工作将由 'research:end' 事件监听器处理
+            const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
+
+            // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
+            // Orchestrator 返回的 originalUserMessage 包含完整的用户原始指令，用于历史记录持久化
+            if (agentResult && agentResult.enhanced && agentResult.originalUserMessage) {
+                // 找到 chatHistory 中最后一条用户消息（即当前消息）
+                const lastUserMessageIndex = chatHistory.length - 1;
+                if (lastUserMessageIndex >= 0 && chatHistory[lastUserMessageIndex].role === 'user') {
+                    // 替换为 Orchestrator 返回的、包含完整上下文的原始消息
+                    // 确保 content 结构是正确的数组格式
+                    chatHistory[lastUserMessageIndex].content = [{ type: 'text', text: agentResult.originalUserMessage }];
+                    console.log('✅ 历史记录中的用户消息已更新为 Orchestrator 返回的原始消息。');
+                }
+            }
+
+            // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
+            if (agentResult && !agentResult.enhanced) {
+                console.log("💬 Orchestrator 决定不处理，回退到标准对话");
+                // 🎯 确保普通模式也使用缓存压缩
+                await handleStandardChatRequestWithCache(messageText, attachedFiles, modelName, apiKey);
+            }
+            
+            // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
+            // 我们相信 'research:end' 事件会最终触发渲染。
+            // 对于 user_guide 等简单情况，Orchestrator 内部会直接触发事件或返回可直接显示的内容，
+            // 我们可以在这里做一个简单的处理。
+            if (agentResult && agentResult.type === 'user_guide') {
+                 const aiMessage = chatUI.createAIMessageElement();
+                 aiMessage.markdownContainer.innerHTML = marked.parse(agentResult.content);
+                 chatUI.scrollToBottom();
+            }
+
+        } catch (error) {
+            console.error("🤖 Agent 模式执行失败:", error);
+            if (window.agentThinkingDisplay) {
+                window.agentThinkingDisplay.hide();
+            }
+            showSystemMessage(`智能代理执行时发生错误: ${error.message}`);
+            
+            // 🎯 关键修复：如果 Agent 失败，将用户消息从历史记录中移除，并回退到标准模式
+            // 移除刚刚推入的 user 消息
+            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
+                chatHistory.pop();
+            }
+            // 🎯 确保普通模式也使用缓存压缩
+            await handleStandardChatRequestWithCache(messageText, attachedFiles, modelName, apiKey);
+        }
         return;
     }
 
-    try {
-        // 🎯 核心修复：在 Agent 流程开始前，将用户消息推入历史记录
-        const userContent = [];
-        if (messageText) {
-            userContent.push({ type: 'text', text: messageText });
-        }
-        attachedFiles.forEach(file => {
-            if (file.type.startsWith('image/')) {
-                userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
-            } else if (file.type === 'application/pdf') {
-                userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
-            } else if (file.type.startsWith('audio/')) {
-                userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
-            }
-        });
-        chatHistory.push({ role: 'user', content: userContent });
-        
-        // 🚀 获取可用工具名称和增强工具定义
-        const availableToolNames = getAvailableToolNames(modelName);
-        const enhancedTools = await enhancedModelToolManager.getEnhancedToolsForModel(modelName);
-        
-        // 🚀 生成技能上下文
-        const contextResult = await skillContextManager.generateRequestContext(
-            messageText,
-            availableToolNames,
-            selectedModelConfig
-        );
+    // 🎯 普通模式处理（新增缓存压缩支持）
+    await handleStandardChatRequestWithCache(messageText, attachedFiles, modelName, apiKey);
+}
 
-        console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
-
-        // 2. 准备 Agent 上下文
-        const agentContext = {
-            model: modelName,
-            apiKey: apiKey,
-            messages: chatHistory,
-            apiHandler: chatApiHandler,
-            availableTools: availableToolNames, // 传递原始工具名称列表
-            enhancedTools: enhancedTools, // 传递增强工具定义
-            contextResult: contextResult // 传递技能上下文结果
-        };
-        
-        // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
-        // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
-        const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
-
-        // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
-        // Orchestrator 返回的 originalUserMessage 包含完整的用户原始指令，用于历史记录持久化
-        if (agentResult && agentResult.enhanced && agentResult.originalUserMessage) {
-            // 找到 chatHistory 中最后一条用户消息（即当前消息）
-            const lastUserMessageIndex = chatHistory.length - 1;
-            if (lastUserMessageIndex >= 0 && chatHistory[lastUserMessageIndex].role === 'user') {
-                // 替换为 Orchestrator 返回的、包含完整上下文的原始消息
-                // 确保 content 结构是正确的数组格式
-                chatHistory[lastUserMessageIndex].content = [{ type: 'text', text: agentResult.originalUserMessage }];
-                console.log('✅ 历史记录中的用户消息已更新为 Orchestrator 返回的原始消息。');
-            }
-        }
-
-        // 如果 Orchestrator 决定不处理 (e.g., 非研究请求)，则回退
-        if (agentResult && !agentResult.enhanced) {
-            console.log("💬 Orchestrator 决定不处理，回退到标准对话");
-            // 🎯 关键修复：回退时，不重复推入历史记录 (pushToHistory = false)
-            await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, false);
-        }
-        
-        // ‼️ 重要：这里不再有任何创建 AI 消息或渲染 report 的代码。
-        // 我们相信 'research:end' 事件会最终触发渲染。
-        // 对于 user_guide 等简单情况，Orchestrator 内部会直接触发事件或返回可直接显示的内容，
-        // 我们可以在这里做一个简单的处理。
-        if (agentResult && agentResult.type === 'user_guide') {
-             const aiMessage = chatUI.createAIMessageElement();
-             aiMessage.markdownContainer.innerHTML = marked.parse(agentResult.content);
-             chatUI.scrollToBottom();
-        }
-
-    } catch (error) {
-        console.error("🤖 Agent 模式执行失败:", error);
-        if (window.agentThinkingDisplay) {
-            window.agentThinkingDisplay.hide();
-        }
-        showSystemMessage(`智能代理执行时发生错误: ${error.message}`);
-        
-        // 🎯 关键修复：如果 Agent 失败，将用户消息从历史记录中移除，并回退到标准模式
-        // 移除刚刚推入的 user 消息
-        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
-            chatHistory.pop();
-        }
-        // 使用标准模式重新发送，让标准模式自己处理历史记录推入
-        await handleStandardChatRequest(messageText, attachedFiles, modelName, apiKey, true);
+/**
+ * 🎯 新增：带缓存压缩的标准聊天请求处理（修复版）
+ */
+async function handleStandardChatRequestWithCache(messageText, attachedFiles, modelName, apiKey) {
+    const userContent = [];
+    if (messageText) {
+        userContent.push({ type: 'text', text: messageText });
     }
+
+    attachedFiles.forEach(file => {
+        if (file.type.startsWith('image/')) {
+            userContent.push({ type: 'image_url', image_url: { url: file.base64 } });
+        } else if (file.type === 'application/pdf') {
+            userContent.push({ type: 'pdf_url', pdf_url: { url: file.base64 } });
+        } else if (file.type.startsWith('audio/')) {
+            userContent.push({ type: 'audio_url', audio_url: { url: file.base64 } });
+        }
+    });
+
+    // 🎯 推送用户消息到历史
+    chatHistory.push({ role: 'user', content: userContent });
+
+    const requestBody = {
+        model: modelName,
+        messages: chatHistory,
+        generationConfig: { responseModalities: ['text'] },
+        stream: true,
+        sessionId: currentSessionId
+    };
+
+    const modelConfig = CONFIG.API.AVAILABLE_MODELS.find(m => m.name === modelName);
+    
+    // 🎯 智能工具注入：使用缓存压缩系统
+    if (modelConfig && modelConfig.tools) {
+        console.log(`🎯 [普通模式工具注入] 为模型 ${modelName} 注入工具定义`);
+        
+        // 获取相关工具（使用现有的技能匹配）
+        const availableToolNames = getAvailableToolNames(modelName);
+        
+        // 🎯 关键优化：使用技能上下文管理器生成增强提示
+        try {
+            // 确保技能上下文管理器已初始化
+            await skillContextManager.ensureInitialized();
+            
+            // 🎯 修复：传递完整的上下文，包含sessionId和模式标识
+            const contextResult = await skillContextManager.generateRequestContext(
+                messageText,
+                availableToolNames,
+                modelConfig,
+                {
+                    sessionId: currentSessionId || 'default',
+                    mode: 'standard',
+                    isAgentMode: false
+                }
+            );
+            
+            // 🎯 如果生成了增强提示，使用它替换原始用户消息
+            if (contextResult.enhancedPrompt && contextResult.enhancedPrompt !== messageText) {
+                console.log(`🎯 [普通模式上下文增强] 已为查询生成${contextResult.skillCount}个技能上下文`);
+                
+                // 更新请求体中的消息
+                requestBody.messages = [
+                    ...chatHistory.slice(0, -1), // 除了最后一条用户消息
+                    { 
+                        role: 'user', 
+                        content: [{ type: 'text', text: contextResult.enhancedPrompt }]
+                    }
+                ];
+                
+                console.log(`🎯 [消息增强] 原始查询: "${messageText.substring(0, 50)}..."`);
+                console.log(`🎯 [消息增强] 增强后: "${contextResult.enhancedPrompt.substring(0, 100)}..."`);
+            }
+            
+        } catch (error) {
+            console.warn('🎯 [普通模式上下文增强] 失败，使用原始消息:', error);
+        }
+        
+        requestBody.tools = modelConfig.tools;
+    }
+
+    await chatApiHandler.streamChatCompletion(requestBody, apiKey);
 }
 
 /**
@@ -2590,6 +2688,11 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     newChatButton.addEventListener('click', () => {
         if (currentSessionId) {
+            // 🎯 修复：清理旧会话的缓存（使用技能管理器内部缓存）
+            // 注意：新版本中移除了 skillCacheCompressor，改为技能管理器内部管理
+            if (window.skillManager?.cacheCompressor) {
+                window.skillManager.cacheCompressor.clearSession(currentSessionId);
+            }
             cleanupSession(currentSessionId);
         }
         resetFileManagerAuth(); // 🎯 核心修改：重置文件管理器状态（包括关闭模态框）
