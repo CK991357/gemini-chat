@@ -2,11 +2,13 @@
 // 🎯 修复版：移除对skillManager.cacheCompressor的依赖
 
 import { skillManagerPromise } from './skill-manager.js';
+import { skillCacheCompressor } from './skill-cache-compressor.js';
 
 class SkillContextManager {
   constructor() {
     this.skillManager = null;
     this.initialized = false;
+    this.cacheCompressor = skillCacheCompressor;
     
     // 🚀 crawl4ai 专用关键词映射
     this.crawl4aiModeMap = {
@@ -281,13 +283,27 @@ class SkillContextManager {
       const mergedContent = this._mergeSkillAndQueryContent(skillCore, queryContent, userQuery);
       console.log(`🔗 [合并内容] 总大小: ${mergedContent.length}字符`);
       
-      // 🎯 智能截断（不使用复杂压缩器）
-      const compressedContent = this._smartTruncate(mergedContent, userQuery, 15000);
+      // 🎯 使用智能压缩器替换原来的简单截断
+      const compressedContent = await this.cacheCompressor.compressKnowledge(mergedContent, {
+        level: 'smart',
+        maxChars: 15000,
+        userQuery: userQuery,
+        toolName: 'python_sandbox',
+        preserveSections: [
+          '通用调用结构',
+          '输出规范', 
+          '核心工作流模式',
+          '快速开始模板',
+          '``python',
+          '```json'
+        ]
+      });
       
       contextContent += compressedContent;
       return contextContent;
     } catch (error) {
       console.error(`🚨 [Python沙盒上下文构建失败]`, error);
+      // 压缩失败时使用原来的回退方案
       return this._buildFallbackContext(skill.skill, userQuery, context.isAgentMode);
     }
   }
@@ -295,9 +311,30 @@ class SkillContextManager {
   /**
    * 🎯 智能截断内容
    */
-  _smartTruncate(content, userQuery, maxChars = 15000) {
+  async _smartTruncate(content, userQuery, maxChars = 15000) {
+    // 🎯 如果内容不大，直接返回
     if (content.length <= maxChars) return content;
     
+    try {
+      // 🎯 使用智能压缩器
+      return await this.cacheCompressor.compressKnowledge(content, {
+        level: 'smart',
+        maxChars: maxChars,
+        userQuery: userQuery,
+        toolName: 'auto_detect', // 或者从上下文中获取
+        preserveSections: this._getPreserveSectionsForQuery(userQuery)
+      });
+    } catch (error) {
+      console.warn('智能压缩失败，使用简单截断', error);
+      // 回退到原来的简单截断逻辑
+      return this._fallbackTruncate(content, maxChars);
+    }
+  }
+
+  /**
+   * 🎯 回退的简单截断逻辑
+   */
+  _fallbackTruncate(content, maxChars = 15000) {
     console.log(`📏 [智能截断] ${content.length} → ${maxChars}字符`);
     
     // 保留开头的重要部分
@@ -329,6 +366,40 @@ class SkillContextManager {
     truncated += '\n\n...\n\n**提示**: 内容已截断，如需完整文档请查阅技能文件。';
     
     return truncated;
+  }
+
+  /**
+   * 🎯 根据查询获取需要保留的章节
+   */
+  _getPreserveSectionsForQuery(userQuery) {
+    const queryLower = userQuery.toLowerCase();
+    
+    // 默认保留的章节
+    const defaultSections = [
+      '通用调用结构',
+      '输出规范',
+      '核心工作流模式',
+      '快速开始模板',
+      '``python',
+      '```json'
+    ];
+    
+    // 根据查询关键词添加特定章节
+    const additionalSections = [];
+    
+    if (queryLower.includes('爬') || queryLower.includes('crawl')) {
+      additionalSections.push('模式选择', '参数说明');
+    }
+    
+    if (queryLower.includes('图') || queryLower.includes('plot')) {
+      additionalSections.push('图表生成说明', 'plt.');
+    }
+    
+    if (queryLower.includes('数据') || queryLower.includes('data')) {
+      additionalSections.push('数据处理', 'pandas');
+    }
+    
+    return [...defaultSections, ...additionalSections];
   }
 
   /**
@@ -733,7 +804,19 @@ class SkillContextManager {
     }
     
     // 2. 提取关键调用结构
-    const keyInfo = this._extractCrawl4AIKeyInformation(skillData.content, userQuery);
+    let keyInfo = this._extractCrawl4AIKeyInformation(skillData.content, userQuery);
+    
+    // 🎯 使用压缩器优化内容
+    if (keyInfo.length > 5000) {
+      keyInfo = await this.cacheCompressor.compressKnowledge(keyInfo, {
+        level: 'smart',
+        maxChars: 4000,
+        userQuery: userQuery,
+        toolName: 'crawl4ai',
+        preserveSections: ['通用调用结构', '模式选择', '```json']
+      });
+    }
+    
     context += keyInfo;
     
     // 3. 添加专用提醒
