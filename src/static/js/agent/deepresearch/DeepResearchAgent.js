@@ -1964,11 +1964,10 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
     });
 
     // 🎯 【最终优化】排序逻辑：按研究步骤顺序排序
-// 保持研究逻辑连贯性，便于模型对应章节
-evidenceEntries.sort((a, b) => a.stepIndex - b.stepIndex);
-
-// 🎯 可选：在控制台输出排序信息
-console.log(`[EvidenceCollection] 证据已按步骤顺序排序: 步骤 ${evidenceEntries[0]?.stepIndex} → 步骤 ${evidenceEntries[evidenceEntries.length-1]?.stepIndex}`);
+    // 保持研究逻辑连贯性，便于模型对应章节
+    evidenceEntries.sort((a, b) => a.stepIndex - b.stepIndex);
+    // 🎯 可选：在控制台输出排序信息
+    console.log(`[EvidenceCollection] 证据已按步骤顺序排序: 步骤 ${evidenceEntries[0]?.stepIndex} → 步骤 ${evidenceEntries[evidenceEntries.length-1]?.stepIndex}`);
 
     // 🎯 数据利用率统计
     const utilizationRate = dataUtilizationStats.originalChars > 0 ? 
@@ -2404,232 +2403,85 @@ _optimizePresentation(evidence, researchMode) {
     return optimized;
 }
 
-// 🎯 优化版：智能数据策略选择方法
+// 🎯 新增：智能数据策略选择方法
 /**
- * @description 根据数据类型、研究模式等选择最佳数据呈现策略
- * 目标：在"完整呈现"原则下，为不同场景选择最合适的数据呈现形式
- * 修改重点：移除长度限制，增强完整性优先，简化决策逻辑
+ * @description 根据数据类型、长度和研究模式选择最佳数据使用策略
+ * 目标：为最终写作模型选择最合适的数据呈现形式
  */
 _selectDataStrategy(contentType, dataLength, researchMode, toolName, stepSuccess) {
-    // 1. 基础检查：失败步骤使用原始观察结果
-    if (!stepSuccess) return 'step_observation';
+    if (!stepSuccess) return 'step_observation'; // 失败步骤不使用DataBus
 
-    // 2. 🔥 核心修改：根据研究模式调整策略优先级
-    // 目标：在完整呈现基础上，针对不同模式优化数据格式
-    const modeStrategies = {
-        'academic': {
-            description: '学术研究 - 注重数据完整性和准确性',
-            // 学术研究需要完整数据支持论点
-            primary: 'full_enhanced',
-            secondary: 'structured_enhanced',
-            fallback: 'enhanced_summary'
-        },
-        'business': {
-            description: '商业分析 - 注重关键指标和趋势',
-            // 商业分析需要数据+关键洞察
-            primary: 'hybrid',
-            secondary: 'structured_enhanced',
-            fallback: 'enhanced_summary'
-        },
-        'technical': {
-            description: '技术研究 - 注重技术规格和参数',
-            // 技术研究需要完整技术数据
-            primary: 'full_enhanced',
-            secondary: 'structured_enhanced',
-            fallback: 'enhanced_summary'
-        },
-        'deep': {
-            description: '深度研究 - 最大程度完整呈现',
-            // 深度研究必须提供最完整数据
-            primary: 'full_enhanced',
-            secondary: 'structured_enhanced',
-            fallback: 'hybrid'
-        },
-        'standard': {
-            description: '标准研究 - 平衡完整性和可读性',
-            // 标准模式使用混合策略
-            primary: 'hybrid',
-            secondary: 'enhanced_summary',
-            fallback: 'structured_only'
-        },
-        'data_mining': {
-            description: '数据挖掘 - 优先结构化数据提取',
-            // 数据挖掘专注于结构化数据
-            primary: 'structured_enhanced',
-            secondary: 'full_enhanced',
-            fallback: 'enhanced_summary'
-        }
+    // 🔥 根据不同研究模式设置策略权重
+    const modeWeights = {
+        'academic': { full: 0.7, enhanced: 0.9, structured: 0.8, hybrid: 0.6 },
+        'business': { full: 0.4, enhanced: 0.8, structured: 0.7, hybrid: 0.9 },
+        'technical': { full: 0.8, enhanced: 0.7, structured: 0.9, hybrid: 0.5 },
+        'deep': { full: 0.9, enhanced: 0.8, structured: 0.7, hybrid: 0.6 },
+        'standard': { full: 0.3, enhanced: 0.6, structured: 0.5, hybrid: 0.7 },
+        'data_mining': { full: 0.2, enhanced: 0.4, structured: 1.0, hybrid: 0.3 }
     };
 
-    const strategyConfig = modeStrategies[researchMode] || modeStrategies.standard;
+    const weights = modeWeights[researchMode] || modeWeights.standard;
 
-    // 3. 🔥 根据内容类型进行策略调整
-    // 核心原则：结构化数据优先使用结构化增强策略
-    let finalStrategy = strategyConfig.primary;
+    // 🔥 根据工具类型调整策略
+    const toolStrategies = {
+        'tavily_search': { prefer: 'enhanced_summary', avoid: 'full_original' },
+        'crawl4ai': { prefer: 'hybrid', avoid: 'full_original' },
+        'python_sandbox': { prefer: 'structured_only', avoid: null },
+        'code_generator': { prefer: 'structured_only', avoid: null },
+        'firecrawl': { prefer: 'enhanced_summary', avoid: 'full_original' }
+    };
+
+    const toolStrategy = toolStrategies[toolName] || { prefer: 'enhanced_summary', avoid: null };
+
+    // 🔥 根据数据长度决定可行性
+    let viableStrategies = [];
+
+    if (dataLength < 3000) {
+        // 短数据：所有策略都可用
+        viableStrategies = ['full_original', 'enhanced_summary', 'structured_only', 'hybrid'];
+    } else if (dataLength < 10000) {
+        // 中等数据：避免完整原始（除非必要）
+        viableStrategies = ['enhanced_summary', 'structured_only', 'hybrid'];
+    } else {
+        // 长数据：只使用增强摘要或结构化提取
+        viableStrategies = ['enhanced_summary', 'structured_only'];
+    }
+
+    // 🔥 移除工具不建议的策略
+    if (toolStrategy.avoid && viableStrategies.includes(toolStrategy.avoid)) {
+        viableStrategies = viableStrategies.filter(s => s !== toolStrategy.avoid);
+    }
+
+    // 🔥 优先考虑工具偏好的策略
+    if (viableStrategies.includes(toolStrategy.prefer)) {
+        return toolStrategy.prefer;
+    }
+
+    // 🔥 根据研究模式权重选择
+    let bestStrategy = 'enhanced_summary'; // 默认
+    let bestScore = 0;
+
+    viableStrategies.forEach(strategy => {
+        const strategyKey = strategy.split('_')[0]; // 映射到权重键
+        const score = weights[strategyKey] || 0.5;
     
-    if (contentType === 'structured_data') {
-        // 结构化数据：使用增强的结构化呈现
-        // 保留原始JSON，同时提供Markdown表格和智能摘要
-        finalStrategy = 'structured_enhanced';
-        console.log(`[DataStrategy] 结构化数据，选择增强结构化呈现: ${finalStrategy}`);
-        
-    } else if (contentType === 'webpage') {
-        // 网页内容：根据研究模式选择不同策略
-        if (researchMode === 'deep' || researchMode === 'academic') {
-            // 深度/学术研究：使用完整原始数据+增强
-            finalStrategy = 'full_enhanced';
-        } else {
-            // 其他模式：使用混合模式（摘要+关键原始数据）
-            finalStrategy = 'hybrid';
+        // 🔥 根据内容类型微调
+        let typeBonus = 0;
+        if (contentType === 'structured_data' && strategy.includes('structured')) {
+            typeBonus = 0.3;
+        } else if (contentType === 'webpage' && strategy.includes('hybrid')) {
+            typeBonus = 0.2;
         }
-        console.log(`[DataStrategy] 网页内容，模式: ${researchMode}，选择: ${finalStrategy}`);
-        
-    } else if (toolName === 'python_sandbox' || toolName === 'code_generator') {
-        // Python代码生成的数据：优先结构化增强
-        finalStrategy = 'structured_enhanced';
-        console.log(`[DataStrategy] Python生成数据，工具: ${toolName}，选择: ${finalStrategy}`);
-        
-    } else if (toolName === 'tavily_search') {
-        // 搜索结果：已经是摘要形式，直接使用（不做二次摘要）
-        finalStrategy = 'full_original'; // 搜索工具的结果本身就是摘要
-        console.log(`[DataStrategy] 搜索结果，工具: ${toolName}，保持原始输出`);
-        
-    } else if (toolName === 'crawl4ai' || toolName === 'firecrawl') {
-        // 爬虫数据：根据数据长度智能选择
-        if (dataLength > 50000) {
-            // 超长网页内容：使用混合模式（摘要+关键部分）
-            finalStrategy = 'hybrid';
-        } else {
-            // 正常长度网页：使用完整增强
-            finalStrategy = 'full_enhanced';
+    
+        const totalScore = score + typeBonus;
+        if (totalScore > bestScore) {
+            bestScore = totalScore;
+            bestStrategy = strategy;
         }
-        console.log(`[DataStrategy] 爬虫数据，长度: ${dataLength}，选择: ${finalStrategy}`);
-    }
-
-    // 4. 🔥 移除旧的长度限制逻辑，改用智能建议
-    // 仅记录和警告，不强制限制策略选择
-    if (dataLength > 50000) {
-        console.warn(`[DataStrategy] ⚠️ 数据长度较大: ${dataLength}字符，选择的策略: ${finalStrategy}`);
-        // 可在最终呈现时进行优化，但不在这里限制
-    }
-
-    // 5. 🔥 输出决策日志
-    console.log(`[DataStrategy] 最终决策:`, {
-        contentType,
-        dataLength,
-        researchMode,
-        toolName,
-        stepSuccess,
-        finalStrategy,
-        configDescription: strategyConfig.description
     });
 
-    return finalStrategy;
-}
-
-// 🎯 新增：策略执行映射（在 _buildEvidenceCollection 中调用）
-/**
- * @description 根据选择的策略执行相应的数据增强方法
- */
-_executeDataStrategy(strategy, originalData, cleanEvidence, metadata) {
-    const { toolName, contentType } = metadata;
-    
-    switch(strategy) {
-        case 'full_enhanced':
-            // 完整原始数据 + 增强摘要
-            return this._createFullEnhancedEvidence(originalData, cleanEvidence, metadata);
-            
-        case 'structured_enhanced':
-            // 增强的结构化数据呈现
-            return this._createStructuredEnhancedEvidence(originalData, cleanEvidence, metadata);
-            
-        case 'hybrid':
-            // 混合模式：摘要 + 关键原始数据
-            return this._createHybridEvidence(originalData, cleanEvidence, metadata);
-            
-        case 'enhanced_summary':
-            // 增强摘要（保留关键数据）
-            return this._createEnhancedSummary(originalData, cleanEvidence, metadata);
-            
-        case 'full_original':
-            // 完整原始数据（不增强）
-            return originalData;
-            
-        case 'structured_only':
-            // 仅结构化提取
-            return this._extractStructuredOnly(originalData, metadata);
-            
-        case 'step_observation':
-        default:
-            // 使用步骤观察结果
-            return cleanEvidence;
-    }
-}
-
-// 🎯 新增：完整增强证据方法
-_createFullEnhancedEvidence(originalData, cleanEvidence, metadata) {
-    const { toolName, contentType } = metadata;
-    
-    let enhancedEvidence = `## 📋 ${toolName} 完整数据（增强版）\n\n`;
-    
-    // 1. 添加数据统计信息
-    enhancedEvidence += `**数据统计**: 原始长度 ${originalData.length.toLocaleString()} 字符\n\n`;
-    
-    // 2. 如果是结构化数据，添加表格预览
-    if (contentType === 'structured_data') {
-        try {
-            const parsedData = JSON.parse(originalData);
-            if (Array.isArray(parsedData) && parsedData.length > 0) {
-                const table = this._jsonToMarkdownTable(parsedData.slice(0, 5)); // 预览前5行
-                enhancedEvidence += `### 数据表格预览（前5行）\n${table}\n\n`;
-            }
-        } catch (e) {
-            // 非JSON结构化数据，不做处理
-        }
-    }
-    
-    // 3. 保留完整原始数据
-    if (originalData.length < 30000) {
-        // 适中长度：完整显示
-        enhancedEvidence += `### 完整原始数据\n\`\`\`${contentType === 'structured_data' ? 'json' : 'text'}\n${originalData}\n\`\`\``;
-    } else {
-        // 超长数据：智能截取关键部分
-        const keySections = this._extractKeySections(originalData, 3);
-        enhancedEvidence += `### 原始数据关键部分\n${keySections.join('\n\n---\n\n')}`;
-        enhancedEvidence += `\n\n**注**: 完整原始数据共 ${originalData.length.toLocaleString()} 字符，此处显示关键部分。`;
-    }
-    
-    return enhancedEvidence;
-}
-
-// 🎯 新增：增强结构化证据方法
-_createStructuredEnhancedEvidence(originalData, cleanEvidence, metadata) {
-    // 调用现有的 _enhanceStructuredData 方法
-    const enhancedResult = this._enhanceStructuredData(originalData, true);
-    
-    if (enhancedResult) {
-        let evidence = `## 📊 ${metadata.toolName} 结构化数据（增强版）\n\n`;
-        evidence += `**数据类型**: ${enhancedResult.dataType}\n`;
-        if (enhancedResult.itemCount) evidence += `**记录数**: ${enhancedResult.itemCount} 条\n`;
-        if (enhancedResult.fieldCount) evidence += `**字段数**: ${enhancedResult.fieldCount} 个\n`;
-        evidence += `\n${enhancedResult.enhancedEvidence}`;
-        return evidence;
-    }
-    
-    // 降级：使用完整增强
-    return this._createFullEnhancedEvidence(originalData, cleanEvidence, metadata);
-}
-
-// 🎯 新增：仅结构化提取方法
-_extractStructuredOnly(originalData, metadata) {
-    // 仅提取结构化部分，忽略其他内容
-    const extracted = this._extractNonJsonStructuredData(originalData);
-    if (extracted) {
-        return `## 📋 ${metadata.toolName} 结构化数据提取\n\n${extracted}`;
-    }
-    
-    // 没有结构化数据，返回空
-    return `## ${metadata.toolName} 数据\n\n*无结构化数据可提取*`;
+    return bestStrategy;
 }
 
 // 🎯 新增：创建增强摘要
