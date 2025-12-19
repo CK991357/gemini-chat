@@ -1839,9 +1839,21 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
             switch(dataStrategy) {
                 case 'full_original':
                     // 🔥 直接使用完整原始数据（适合中等长度、关键信息）
-                    if (originalData.length < 5000) {
+                    if (originalData.length < 15000) {
                         finalEvidence = this._cleanObservation(originalData);
                         dataSourceType = 'data_bus_full';
+                        
+                        // 🎯 新增：如果是结构化数据，添加智能处理
+                        if (this._isStructuredData(originalData)) {
+                            const enhancedStructure = this._enhanceStructuredData(originalData, true);
+                            if (enhancedStructure) {
+                                structuredData = enhancedStructure.structuredData;
+                                if (enhancedStructure.enhancedEvidence) {
+                                    finalEvidence = enhancedStructure.enhancedEvidence;
+                                }
+                                dataSourceType = 'data_bus_full_enhanced';
+                            }
+                        }
                     } else {
                         // 过长数据使用增强摘要
                         finalEvidence = this._createEnhancedSummary(
@@ -1864,20 +1876,17 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
                     break;
                 
                 case 'structured_only':
-                    // 🔥 只提取结构化数据（表格等）
+                    // 🎯 【核心修改】增强的结构化数据处理
                     if (this._isStructuredData(originalData)) {
-                        try {
-                            const parsedData = JSON.parse(originalData);
-                            if (Array.isArray(parsedData) && parsedData.length > 0) {
-                                // 将JSON数组转换为Markdown表格
-                                structuredData = this._jsonToMarkdownTable(parsedData);
-                                finalEvidence = cleanEvidence + 
-                                `\n\n📊 **已提取 ${parsedData.length} 行结构化数据**`;
-                                dataSourceType = 'data_bus_structured';
-                            }
-                        } catch (e) {
-                            // 解析失败，降级
-                            finalEvidence = cleanEvidence;
+                        const enhancedStructure = this._enhanceStructuredData(originalData, false);
+                        if (enhancedStructure) {
+                            finalEvidence = enhancedStructure.enhancedEvidence || cleanEvidence;
+                            structuredData = enhancedStructure.structuredData;
+                            dataSourceType = 'data_bus_structured_enhanced';
+                        } else {
+                            // 降级处理
+                            finalEvidence = this._cleanObservation(originalData);
+                            dataSourceType = 'data_bus_fallback';
                         }
                     }
                     break;
@@ -2004,6 +2013,332 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
             usagePercentage: (Math.ceil(totalLength / 3) / 128000 * 100).toFixed(2)
         }
     };
+}
+
+// 🎯 新增：增强结构化数据处理（核心方法）
+/**
+ * @description 对结构化数据进行智能增强处理
+ * @param {string} originalData - 原始数据
+ * @param {boolean} isFullOriginal - 是否来自full_original策略
+ * @returns {Object|null} - 增强的结构化数据对象
+ */
+_enhanceStructuredData(originalData, isFullOriginal = false) {
+    try {
+        const parsedData = JSON.parse(originalData);
+        
+        // 🎯 情况1：JSON数组（如数据表）
+        if (Array.isArray(parsedData) && parsedData.length > 0) {
+            // 1. 转换为主表格
+            const table = this._jsonToMarkdownTable(parsedData);
+            
+            // 2. 添加数组元数据
+            const metaInfo = this._generateArrayMetadata(parsedData);
+            
+            // 3. 构建增强的证据
+            let enhancedEvidence = `${metaInfo}\n${table}`;
+            
+            // 4. 添加原始JSON预览
+            if (originalData.length < 5000 || isFullOriginal) {
+                enhancedEvidence += `\n\n🔍 **完整数据结构**:\n\`\`\`json\n${originalData}\n\`\`\``;
+            } else {
+                const jsonPreview = originalData.substring(0, 2000) + 
+                    `\n... (完整数据 ${originalData.length} 字符)`;
+                enhancedEvidence += `\n\n🔍 **数据结构预览**:\n\`\`\`json\n${jsonPreview}\n\`\`\``;
+            }
+            
+            return {
+                structuredData: table,
+                enhancedEvidence: enhancedEvidence,
+                dataType: 'array',
+                itemCount: parsedData.length
+            };
+        } 
+        // 🎯 情况2：复杂JSON对象（如报告、配置）
+        else if (typeof parsedData === 'object' && parsedData !== null) {
+            // 1. 提取关键字段表格
+            const keyFields = this._extractKeyFields(parsedData, 10);
+            const keyValueTable = this._objectToKeyValueTable(parsedData, keyFields);
+            
+            // 2. 生成对象摘要
+            const objectSummary = this._generateObjectSummary(parsedData);
+            
+            // 3. 构建增强的证据
+            let enhancedEvidence = `${objectSummary}\n${keyValueTable}`;
+            
+            // 4. 保留原始JSON
+            if (originalData.length < 8000 || isFullOriginal) {
+                enhancedEvidence += `\n\n🔍 **完整JSON**:\n\`\`\`json\n${originalData}\n\`\`\``;
+            } else {
+                const smartPreview = this._createSmartJsonPreview(originalData, parsedData);
+                enhancedEvidence += `\n\n🔍 **JSON智能预览**:\n\`\`\`json\n${smartPreview}\n\`\`\``;
+            }
+            
+            return {
+                structuredData: keyValueTable,
+                enhancedEvidence: enhancedEvidence,
+                dataType: 'object',
+                fieldCount: Object.keys(parsedData).length
+            };
+        }
+        // 🎯 情况3：简单值
+        else {
+            return {
+                structuredData: null,
+                enhancedEvidence: `📋 **简单数据**: ${JSON.stringify(parsedData, null, 2)}`,
+                dataType: 'simple'
+            };
+        }
+        
+    } catch (e) {
+        console.warn(`[增强结构化] JSON解析失败，尝试非JSON结构化提取:`, e.message);
+        
+        // 🎯 降级：尝试提取非JSON结构化数据
+        const extractedStructure = this._extractNonJsonStructuredData(originalData);
+        if (extractedStructure) {
+            return {
+                structuredData: extractedStructure,
+                enhancedEvidence: `📊 **提取的结构化内容**:\n${extractedStructure}`,
+                dataType: 'non_json'
+            };
+        }
+        
+        return null;
+    }
+}
+
+// 🎯 新增：生成数组元数据
+_generateArrayMetadata(parsedArray) {
+    if (!Array.isArray(parsedArray) || parsedArray.length === 0) {
+        return '';
+    }
+    
+    const itemCount = parsedArray.length;
+    const sampleItem = parsedArray[0];
+    const fieldCount = Object.keys(sampleItem).length;
+    const fieldNames = Object.keys(sampleItem).join(', ');
+    
+    // 计算数值字段统计
+    let numericStats = '';
+    const numericFields = Object.keys(sampleItem).filter(key => {
+        const value = sampleItem[key];
+        return typeof value === 'number' && !isNaN(value);
+    });
+    
+    if (numericFields.length > 0) {
+        numericStats = `\n📈 **数值字段**: ${numericFields.join(', ')}`;
+    }
+    
+    return `📊 **数据统计**：
+• **记录数**: ${itemCount} 条
+• **字段数**: ${fieldCount} 个
+• **字段名**: ${fieldNames}
+${numericStats}`;
+}
+
+// 🎯 新增：提取关键字段
+_extractKeyFields(obj, maxFields = 10) {
+    if (typeof obj !== 'object' || obj === null) return [];
+    
+    const allKeys = Object.keys(obj);
+    
+    // 优先选择重要字段
+    const priorityKeywords = ['name', 'title', 'value', 'data', 'result', 'score', 
+                             'accuracy', 'performance', 'summary', 'conclusion'];
+    
+    // 评分每个字段
+    const scoredKeys = allKeys.map(key => {
+        let score = 0;
+        
+        // 关键词匹配
+        if (priorityKeywords.includes(key.toLowerCase())) score += 3;
+        
+        // 字段值类型
+        const value = obj[key];
+        if (typeof value === 'number') score += 2;
+        if (typeof value === 'string' && value.length > 0) score += 1;
+        if (Array.isArray(value)) score += 1;
+        if (typeof value === 'object' && value !== null) score -= 1; // 嵌套对象降低优先级
+        
+        // 字段名长度（适中最好）
+        if (key.length >= 3 && key.length <= 20) score += 1;
+        
+        return { key, score };
+    });
+    
+    // 按分数排序并选择
+    return scoredKeys
+        .sort((a, b) => b.score - a.score)
+        .slice(0, maxFields)
+        .map(item => item.key);
+}
+
+// 🎯 新增：对象转键值对表格
+_objectToKeyValueTable(obj, fields) {
+    if (!fields || fields.length === 0) {
+        fields = Object.keys(obj).slice(0, 15); // 限制数量
+    }
+    
+    let table = `| 字段 | 值 | 类型 |\n|---|---|---|\n`;
+    
+    fields.forEach(key => {
+        if (obj.hasOwnProperty(key)) {
+            const value = obj[key];
+            let displayValue;
+            let valueType = typeof value;
+            
+            // 智能格式化显示值
+            if (value === null) {
+                displayValue = 'null';
+            } else if (value === undefined) {
+                displayValue = 'undefined';
+            } else if (Array.isArray(value)) {
+                displayValue = `数组[${value.length}]`;
+                valueType = 'array';
+            } else if (typeof value === 'object') {
+                displayValue = `对象{${Object.keys(value).length}个字段}`;
+                valueType = 'object';
+            } else if (typeof value === 'string') {
+                // 字符串截断
+                displayValue = value.length > 50 ? 
+                    value.substring(0, 50) + '...' : value;
+                displayValue = displayValue.replace(/\n/g, ' ');
+            } else if (typeof value === 'number') {
+                // 数字格式化
+                displayValue = value.toLocaleString();
+            } else {
+                displayValue = String(value);
+            }
+            
+            table += `| ${key} | ${displayValue} | ${valueType} |\n`;
+        }
+    });
+    
+    return `\n## 📋 关键字段详情\n\n${table}\n`;
+}
+
+// 🎯 新增：生成对象摘要
+_generateObjectSummary(obj) {
+    if (typeof obj !== 'object' || obj === null) return '';
+    
+    const keys = Object.keys(obj);
+    const totalFields = keys.length;
+    
+    // 统计字段类型
+    const typeStats = {};
+    keys.forEach(key => {
+        const value = obj[key];
+        const type = Array.isArray(value) ? 'array' : typeof value;
+        typeStats[type] = (typeStats[type] || 0) + 1;
+    });
+    
+    // 提取关键信息
+    let summary = `**对象结构分析**:\n`;
+    summary += `• **总字段数**: ${totalFields}\n`;
+    
+    Object.entries(typeStats).forEach(([type, count]) => {
+        summary += `• **${type}类型**: ${count} 个\n`;
+    });
+    
+    // 特别标注重要字段
+    const importantFields = ['type', 'title', 'name', 'result', 'conclusion', 'summary'];
+    const foundImportant = keys.filter(key => 
+        importantFields.includes(key.toLowerCase())
+    );
+    
+    if (foundImportant.length > 0) {
+        summary += `\n**关键字段**: ${foundImportant.join(', ')}\n`;
+        
+        // 显示关键字段的值
+        foundImportant.forEach(key => {
+            const value = obj[key];
+            if (value !== undefined && value !== null) {
+                const displayValue = typeof value === 'string' ? 
+                    (value.length > 100 ? value.substring(0, 100) + '...' : value) :
+                    JSON.stringify(value);
+                summary += `  - **${key}**: ${displayValue}\n`;
+            }
+        });
+    }
+    
+    return summary;
+}
+
+// 🎯 新增：创建智能JSON预览
+_createSmartJsonPreview(jsonString, parsedData) {
+    if (jsonString.length <= 3000) {
+        return jsonString; // 短数据完整显示
+    }
+    
+    // 智能截取策略
+    let preview = '';
+    
+    // 1. 开头部分（前800字符）
+    preview += jsonString.substring(0, 800);
+    
+    // 2. 寻找并添加关键部分
+    if (typeof parsedData === 'object') {
+        // 尝试提取关键字段的内容
+        const keyFields = this._extractKeyFields(parsedData, 5);
+        keyFields.forEach(field => {
+            if (parsedData[field] && typeof parsedData[field] === 'string') {
+                const fieldValue = String(parsedData[field]);
+                const fieldJson = `"${field}": "${fieldValue.substring(0, 100)}"`;
+                if (!preview.includes(fieldJson)) {
+                    preview += `\n  ${fieldJson},`;
+                }
+            }
+        });
+    }
+    
+    // 3. 结尾部分（后500字符）
+    preview += `\n  ...\n`;
+    preview += jsonString.substring(jsonString.length - 500);
+    
+    // 4. 添加统计信息
+    preview += `\n\n// 📊 JSON统计: 总${jsonString.length}字符，已显示${preview.length}字符`;
+    
+    return preview;
+}
+
+// 🎯 新增：提取非JSON结构化数据
+_extractNonJsonStructuredData(text) {
+    if (!text || typeof text !== 'string') return null;
+    
+    const extracted = [];
+    
+    // 1. 提取Markdown表格
+    const mdTables = text.match(/\|[^\n]+\|[^\n]*\|\n\|[-: ]+\|[-: ]+\|\n(\|[^\n]+\|[^\n]*\|\n?)+/g);
+    if (mdTables) {
+        extracted.push(...mdTables.slice(0, 3).map((table, i) => 
+            `### Markdown表格 ${i+1}\n${table}`
+        ));
+    }
+    
+    // 2. 提取列表
+    const lists = text.match(/(?:^|\n)(?:\s*[-*+]\s+.*|\s*\d+\.\s+.*)(?:\n\s*(?:[-*+]|\d+\.)\s+.*)*/gm);
+    if (lists) {
+        const significantLists = lists.filter(list => 
+            list.split('\n').length >= 3 && list.length > 50
+        ).slice(0, 2);
+        
+        if (significantLists.length > 0) {
+            extracted.push(...significantLists.map((list, i) => 
+                `### 列表 ${i+1}\n${list}`
+            ));
+        }
+    }
+    
+    // 3. 提取代码块
+    const codeBlocks = text.match(/```[\s\S]*?```/g);
+    if (codeBlocks) {
+        extracted.push(...codeBlocks.slice(0, 2).map((code, i) => 
+            `### 代码块 ${i+1}\n${code}`
+        ));
+    }
+    
+    if (extracted.length === 0) return null;
+    
+    return `\n## 📋 提取的结构化内容\n\n${extracted.join('\n\n')}\n`;
 }
 
 // 🎯 新增：优化呈现方法（仅格式优化，不压缩内容）
