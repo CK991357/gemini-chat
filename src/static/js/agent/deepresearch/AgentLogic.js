@@ -23,6 +23,7 @@ const universalCrawlPrinciples = `
 2. **动态查询页面**：URL包含 \`?query=\`、\`search=\`、\`database=\`
 3. **用户交互页面**：URL包含 \`login\`、\`signin\`、\`dashboard\`、\`account\`
 4. **侧边栏/导航页**：页面标题模糊（"首页"、"文档"、"目录"）
+5. **Google系网站（网络障碍）**：URL包含 \`blog.google\`、\`developers.google.com\`、\`cloud.google.com\`（由于网络环境限制，crawl4ai无法稳定访问，优先选择第三方媒体报道）
 
 ### 🔄 智能模式选择决策树（通用）
 \`\`\`
@@ -1326,6 +1327,7 @@ const crawlTimeoutProtocol = `
 **💡 关键认知：**
 - **长执行时间 ≠ 失败**！crawl4ai 需要时间加载页面，10-15秒是正常的。
 - **超时警告 ≠ 失败**！工具可能会警告耗时，但只要满足上述成功标准，就**必须视为成功**并分析数据。
+- **Google系网站 ≠ 可访问**！URL 包含 \`blog.google\`、\`developers.google.com\` 的网站**极有可能无法访问**，应主动避免。
 
 ### 🔴 失败判断标准（才需要恢复策略）：
 1.  明确的错误信息："工具调用失败"、"crawl4ai 执行失败"、"500 服务器错误"、"无法访问"。
@@ -1335,8 +1337,9 @@ const crawlTimeoutProtocol = `
 
 #### **第一步：诊断与切换 (Switch Source)**
 1.  **诊断**: 在“思考”中明确承认：“上一步 \`crawl4ai\` 调用失败，原因是超时或服务器错误，这很可能是因为目标网站存在反爬虫机制或服务器不稳定。”
-2.  **切换源**: **立即回顾**你历史记录中**上一次成功**的 \`tavily_search\` 调用的结果列表。
-3.  **行动**: 从该列表中选择一个**不同的、看起来同样权威的 URL** (例如，选择另一个官方网站、知名技术博客或权威百科)，然后使用 \`crawl4ai\` 对这个**新 URL** 进行抓取。
+2.  **规避Google系网站**: **立即检查**当前URL列表，移除所有包含 \`blog.google\`、\`developers.google.com\`、\`cloud.google.com\` 的URL。
+3.  **切换源**: **立即回顾**你历史记录中**上一次成功**的 \`tavily_search\` 调用的结果列表。
+4.  **行动**: 从该列表中选择一个**不同的、看起来同样权威的 URL** (例如，选择另一个官方网站、知名技术博客或权威百科)，然后使用 \`crawl4ai\` 对这个**新 URL** 进行抓取。
 
 #### **第二步：重新探索 (Re-Search)**
 - **触发条件**: 如果上一次 \`tavily_search\` 的结果中没有其他可用的高质量 URL，或者对新 URL 的 \`crawl4ai\` 调用**再次失败**。
@@ -1349,6 +1352,7 @@ const crawlTimeoutProtocol = `
 - **行动**: **放弃**使用 \`crawl4ai\` 完成当前子问题。在思考中总结你**已经**从 \`tavily_search\` 的摘要中获取了哪些信息，然后**继续推进到研究计划的下一个步骤**。
 
 **🚫 绝对禁止**:
+- **尝试抓取已知问题域名**：特别是 \`blog.google\`、\`developers.google.com\`、\`cloud.google.com\`。
 - **在同一个失败的 URL 上连续重试 \`crawl4ai\`超过一次。**
 - 因为 \`crawl4ai\` 失败就卡住不动或提前终止整个研究。你必须灵活地调整策略，利用已有信息继续前进。
 `;
@@ -1693,6 +1697,9 @@ const toolOptimizationProtocol = `
 
 ### 🕷️ crawl4ai 使用禁忌与最佳实践:
 - **避开交互式页面**: 严禁抓取 URL 中包含 \`query\`, \`search\`, \`database\`, \`easyquery\` 等字样的动态查询页面（例如 \`data.stats.gov.cn/easyquery\`）。这些页面通常需要交互才能显示数据，静态抓取无效。
+- **避开Google系网站**: 严禁尝试抓取 URL 中包含 \`blog.google\`、\`developers.google.com\`、\`cloud.google.com\` 的页面。这些网站由于网络限制，crawl4ai 无法稳定访问，会导致超时和连接错误。
+- **Google官方替代方案**: 当搜索到Google官方内容时，立即寻找第三方权威媒体报道（如TechCrunch、The Verge、InfoQ、Ars Technica等）、 独立评测机构、技术博客等权威渠道作为替代来源。
+- **URL健康检查**: 每次选择URL时，先检查是否包含 \`blog.google\` 等已知问题域名，如果是，直接跳过并选择下一个候选URL。
 - **优先选择静态页面**: 优先抓取包含“公报”、“报告”、“文章”、“新闻”字样的 URL。
 - **失败处理**: 如果对某个域名的抓取返回“内容过短”或失败，**不要**再次尝试该域名下的其他链接，直接切换到 \`tavily_search\` 寻找第三方权威汇总（如维基百科、智库报告）。
 
