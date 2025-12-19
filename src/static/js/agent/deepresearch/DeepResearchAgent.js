@@ -299,7 +299,7 @@ ${keyFindings.map((finding, index) => `- ${finding}`).join('\n')}
         try {
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: prompt }],
-                model: this.reportModel || 'models/gemini-2.5-pro', // 🔥 使用用户选择的模型
+                model: this.reportModel || 'deepseek-reasoner', // 🔥 使用用户选择的模型
                 temperature: 0.1, // 较低的温度以确保结构化输出
             });
             const outline = response?.choices?.[0]?.message?.content || '### 错误：未能生成大纲';
@@ -1451,7 +1451,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 try {
                     const reportResponse = await this.chatApiHandler.completeChat({
                         messages: [{ role: 'user', content: dataMiningPrompt }],
-                        model: this.reportModel || 'models/gemini-2.5-pro',
+                        model: this.reportModel || 'deepseek-reasoner',
                         temperature: 0.1, // 低温确保数据准确性
                     });
                     
@@ -1740,7 +1740,7 @@ ${promptFragment}
             try {
                 const reportResponse = await this.chatApiHandler.completeChat({
                     messages: [{ role: 'user', content: finalPrompt }],
-                    model: this.reportModel || 'models/gemini-2.5-pro', // 🔥 使用用户选择的模型
+                    model: this.reportModel || 'deepseek-reasoner', // 🔥 使用用户选择的模型
                     temperature: 0.3,
                 });
                 this._updateTokenUsage(reportResponse.usage);

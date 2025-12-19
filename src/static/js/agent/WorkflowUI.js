@@ -29,9 +29,9 @@ export class ModelSelectionDialog {
                 </div>
                 
                 <div class="model-options">
-                    <div class="model-option" data-model="models/gemini-2.5-pro">
+                    <div class="model-option" data-model="deepseek-reasoner">
                         <div class="model-header">
-                            <span class="model-name">Gemini 2.5 Pro</span>
+                            <span class="model-name">Deepseek-reasoner</span>
                             <span class="model-badge premium">专业版</span>
                         </div>
                         <div class="model-description">
@@ -289,7 +289,7 @@ export class ModelSelectionDialog {
 
     getModelDisplayName(modelId) {
         const modelNames = {
-            'gemini-2.5-pro': 'Gemini 2.5 Pro (专业版)',
+            'deepseek-reasoner': 'Deepseek-reasoner (专业版)',
             'gemini-2.5-flash-preview-09-2025': 'Gemini 2.5 Flash (标准版)'
         };
         return modelNames[modelId] || modelId;
