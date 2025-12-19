@@ -130,22 +130,36 @@ class SkillContextManager {
    * 🚀 核心方法：为模型请求生成智能上下文
    */
   async generateRequestContext(userQuery, availableTools = [], modelConfig = {}, context = {}) {
-    // 🎯 关键修复：多种方式检测 Agent 模式
-    const isAgentMode = context.mode === 'agent' || 
-                        context.isAgentMode || 
-                        (context.agentContext && context.agentContext !== 'none') ||
-                        (modelConfig.category && modelConfig.category.includes('agent')) ||
-                        (context.researchMode && context.researchMode !== 'standard');
+    // 🎯 关键修复：在一切开始前就检测Agent关键词
+    const agentKeywords = [
+      '学术论文模式', '行业分析模式', '技术实现模式', 
+      '深度研究模式', '调试模式', '数据挖掘模式',
+      'academic', 'business', 'technical', 'deep', 'standard', 'data_mining'
+    ];
+    
+    const hasAgentKeyword = agentKeywords.some(keyword => 
+      userQuery.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    // 🎯 多种方式检测Agent模式（提前到最前）
+    const isAgentMode = hasAgentKeyword || 
+      context.mode === 'agent' || 
+      context.isAgentMode || 
+      (context.agentContext && context.agentContext !== 'none') ||
+      (modelConfig.category && modelConfig.category.includes('agent')) ||
+      (context.researchMode && context.researchMode !== 'standard');
     
     if (isAgentMode) {
-      console.log(`🎯 [Agent模式检测] 跳过普通模式上下文增强，由Agent系统专用管道处理`);
-      console.log(`   - 检测依据: mode=${context.mode}, isAgentMode=${context.isAgentMode}, researchMode=${context.researchMode}`);
+      console.log(`🚫 [Agent模式拦截] 检测到Agent关键词，跳过普通技能上下文生成`);
+      console.log(`   关键词: ${agentKeywords.find(k => userQuery.toLowerCase().includes(k.toLowerCase())) || '未知'}`);
+      console.log(`   原始查询: "${userQuery.substring(0, 50)}..."`);
       
       return { 
         enhancedPrompt: userQuery, 
         relevantTools: [],
-        contextLevel: 'agent_mode_skipped',
-        isAgentMode: true  // 明确标记
+        contextLevel: 'agent_mode_intercepted',
+        isAgentMode: true,
+        interceptionReason: hasAgentKeyword ? 'agent_keyword_detected' : 'context_flag_detected'
       };
     }
   
@@ -491,6 +505,14 @@ class SkillContextManager {
       const jsonExample = normalizedContent.match(/```json[\s\S]*?```/);
       if (jsonExample) {
         core += '## 🎯 调用示例\n\n' + jsonExample[0] + '\n\n';
+      }
+    }
+    
+    // 确保有代码示例
+    if (!core.includes('```python')) {
+      const codeExample = normalizedContent.match(/```python[\s\S]*?```/);
+      if (codeExample) {
+        core += '## 💻 代码示例\n\n' + codeExample[0] + '\n\n';
       }
     }
     
