@@ -1769,499 +1769,562 @@ ${promptFragment}
     }
 
     // 🎯 【优化版】构建证据集合方法 - 全面利用DataBus原始数据
-    /**
-     * @description 从中间步骤和DataBus中提取最佳证据数据
-     * @param {Array} intermediateSteps - 原始中间步骤
-     * @param {Object} plan - 研究计划
-     * @param {string} researchMode - 当前研究模式（新增参数）
-     * @returns {Object} - 增强的证据集合
-     */
-    _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
-        const evidenceEntries = [];
-        const keyFindings = [];
-        let totalLength = 0;
-        let dataUtilizationStats = { originalChars: 0, evidenceChars: 0, stepsWithDataBus: 0 };
+/**
+ * @description 从中间步骤和DataBus中提取最佳证据数据，完整呈现给最终写作模型
+ * @param {Array} intermediateSteps - 原始中间步骤
+ * @param {Object} plan - 研究计划
+ * @param {string} researchMode - 当前研究模式（新增参数）
+ * @returns {Object} - 增强的证据集合
+ */
+_buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
+    const evidenceEntries = [];
+    const keyFindings = [];
+    let totalLength = 0;
+    let dataUtilizationStats = { originalChars: 0, evidenceChars: 0, stepsWithDataBus: 0 };
 
-        intermediateSteps.forEach((step, index) => {
-            // 🎯 过滤无效步骤
-            if (!step.observation ||
-                step.observation === '系统执行错误，继续研究' ||
-                step.observation.includes('OutputParser解析失败') ||
-                step.observation.includes('代码预检失败') ||
-                step.observation.length < 10) {
-                return;
-            }
+    intermediateSteps.forEach((step, index) => {
+        // 🎯 过滤无效步骤
+        if (!step.observation ||
+            step.observation === '系统执行错误，继续研究' ||
+            step.observation.includes('OutputParser解析失败') ||
+            step.observation.includes('代码预检失败') ||
+            step.observation.length < 10) {
+            return;
+        }
 
-            // 🎯 清理观察结果中的过程性噪音
-            let cleanEvidence = this._cleanObservation(step.observation);
-            if (!cleanEvidence || cleanEvidence.length < 20) return;
+        // 🎯 清理观察结果中的过程性噪音
+        let cleanEvidence = this._cleanObservation(step.observation);
+        if (!cleanEvidence || cleanEvidence.length < 20) return;
 
-            // 🎯 获取对应的子问题
-            const subQuestion = plan.research_plan?.[index]?.sub_question ||
-                                `研究步骤 ${index + 1}`;
+        // 🎯 获取对应的子问题
+        const subQuestion = plan.research_plan?.[index]?.sub_question ||
+                            `研究步骤 ${index + 1}`;
 
-            // 🎯 【核心优化】智能数据选择策略
-            const dataBusKey = `step_${index + 1}`;
-            const dataBusEntry = this.dataBus.get(dataBusKey);
-            let finalEvidence = cleanEvidence;
-            let structuredData = null;
-            let dataSourceType = 'step_observation'; // 默认使用步骤观察结果
+        // 🎯 【核心优化】智能数据选择策略
+        const dataBusKey = `step_${index + 1}`;
+        const dataBusEntry = this.dataBus.get(dataBusKey);
+        let finalEvidence = cleanEvidence;
+        let structuredData = null;
+        let dataSourceType = 'step_observation'; // 默认使用步骤观察结果
+    
+        console.log(`[EvidenceCollection] 步骤${index+1}: 检查DataBus键 "${dataBusKey}"`);
+    
+        if (dataBusEntry && dataBusEntry.originalData) {
+            const originalData = dataBusEntry.originalData;
+            const contentType = dataBusEntry.metadata?.contentType || 'unknown';
+            const toolName = dataBusEntry.metadata?.toolName || step.action?.tool_name;
         
-            console.log(`[EvidenceCollection] 步骤${index+1}: 检查DataBus键 "${dataBusKey}"`);
+            console.log(`[EvidenceCollection] DataBus条目:`, {
+                hasOriginalData: true,
+                contentType,
+                toolName,
+                originalLength: originalData.length,
+                observationLength: step.observation.length
+            });
         
-            if (dataBusEntry && dataBusEntry.originalData) {
-                const originalData = dataBusEntry.originalData;
-                const contentType = dataBusEntry.metadata?.contentType || 'unknown';
-                const toolName = dataBusEntry.metadata?.toolName || step.action?.tool_name;
-            
-                console.log(`[EvidenceCollection] DataBus条目:`, {
-                    hasOriginalData: true,
-                    contentType,
-                    toolName,
-                    originalLength: originalData.length,
-                    observationLength: step.observation.length
-                });
-            
-                dataUtilizationStats.originalChars += originalData.length;
-                dataUtilizationStats.stepsWithDataBus++;
-            
-                // 🎯 智能数据策略选择
-                const dataStrategy = this._selectDataStrategy(
-                    contentType,
-                    originalData.length,
-                    researchMode,
-                    toolName,
-                    step.success
-                );
-            
-                console.log(`[EvidenceCollection] 数据策略: ${dataStrategy} (${contentType}, ${originalData.length} chars)`);
-            
-                switch(dataStrategy) {
-                    case 'full_original':
-                        // 🔥 直接使用完整原始数据（适合中等长度、关键信息）
-                        if (originalData.length < 5000) {
-                            finalEvidence = this._cleanObservation(originalData);
-                            dataSourceType = 'data_bus_full';
-                        } else {
-                            // 过长数据使用增强摘要
-                            finalEvidence = this._createEnhancedSummary(
-                                originalData,
-                                cleanEvidence,
-                                { toolName, contentType }
-                            );
-                            dataSourceType = 'data_bus_enhanced';
-                        }
-                        break;
-                    
-                    case 'enhanced_summary':
-                        // 🔥 创建增强摘要（添加原始数据关键信息）
+            dataUtilizationStats.originalChars += originalData.length;
+            dataUtilizationStats.stepsWithDataBus++;
+        
+            // 🎯 智能数据策略选择
+            const dataStrategy = this._selectDataStrategy(
+                contentType,
+                originalData.length,
+                researchMode,
+                toolName,
+                step.success
+            );
+        
+            console.log(`[EvidenceCollection] 数据策略: ${dataStrategy} (${contentType}, ${originalData.length} chars)`);
+        
+            switch(dataStrategy) {
+                case 'full_original':
+                    // 🔥 直接使用完整原始数据（适合中等长度、关键信息）
+                    if (originalData.length < 5000) {
+                        finalEvidence = this._cleanObservation(originalData);
+                        dataSourceType = 'data_bus_full';
+                    } else {
+                        // 过长数据使用增强摘要
                         finalEvidence = this._createEnhancedSummary(
                             originalData,
                             cleanEvidence,
                             { toolName, contentType }
                         );
                         dataSourceType = 'data_bus_enhanced';
-                        break;
-                    
-                    case 'structured_only':
-                        // 🔥 只提取结构化数据（表格等）
-                        if (this._isStructuredData(originalData)) {
-                            try {
-                                const parsedData = JSON.parse(originalData);
-                                if (Array.isArray(parsedData) && parsedData.length > 0) {
-                                    // 将JSON数组转换为Markdown表格
-                                    structuredData = this._jsonToMarkdownTable(parsedData);
-                                    finalEvidence = cleanEvidence + 
-                                    `\n\n📊 **已提取 ${parsedData.length} 行结构化数据**`;
-                                    dataSourceType = 'data_bus_structured';
-                                }
-                            } catch (e) {
-                                // 解析失败，降级
-                                finalEvidence = cleanEvidence;
+                    }
+                    break;
+                
+                case 'enhanced_summary':
+                    // 🔥 创建增强摘要（添加原始数据关键信息）
+                    finalEvidence = this._createEnhancedSummary(
+                        originalData,
+                        cleanEvidence,
+                        { toolName, contentType }
+                    );
+                    dataSourceType = 'data_bus_enhanced';
+                    break;
+                
+                case 'structured_only':
+                    // 🔥 只提取结构化数据（表格等）
+                    if (this._isStructuredData(originalData)) {
+                        try {
+                            const parsedData = JSON.parse(originalData);
+                            if (Array.isArray(parsedData) && parsedData.length > 0) {
+                                // 将JSON数组转换为Markdown表格
+                                structuredData = this._jsonToMarkdownTable(parsedData);
+                                finalEvidence = cleanEvidence + 
+                                `\n\n📊 **已提取 ${parsedData.length} 行结构化数据**`;
+                                dataSourceType = 'data_bus_structured';
                             }
+                        } catch (e) {
+                            // 解析失败，降级
+                            finalEvidence = cleanEvidence;
                         }
-                        break;
-                    
-                    case 'hybrid':
-                        // 🔥 混合模式：保留摘要，添加关键数据片段
-                        finalEvidence = this._createHybridEvidence(
-                            originalData,
-                            cleanEvidence,
-                            { toolName, contentType }
-                        );
-                        dataSourceType = 'data_bus_hybrid';
-                        break;
-                    
-                    default:
-                        // 使用原始观察结果
-                        finalEvidence = cleanEvidence;
-                        dataSourceType = 'step_observation';
-                }
-            } else if (dataBusEntry) {
-                console.log(`[EvidenceCollection] DataBus条目无originalData，使用processedData`);
-                // 如果没有originalData，但至少有processedData
-                const processedData = dataBusEntry.rawData;
-                if (processedData && processedData.length > cleanEvidence.length * 1.5) {
-                    // 如果DataBus中的处理数据比摘要长很多，使用它
-                    finalEvidence = this._cleanObservation(processedData);
-                    dataSourceType = 'data_bus_processed';
-                }
+                    }
+                    break;
+                
+                case 'hybrid':
+                    // 🔥 混合模式：保留摘要，添加关键数据片段
+                    finalEvidence = this._createHybridEvidence(
+                        originalData,
+                        cleanEvidence,
+                        { toolName, contentType }
+                    );
+                    dataSourceType = 'data_bus_hybrid';
+                    break;
+                
+                default:
+                    // 使用原始观察结果
+                    finalEvidence = cleanEvidence;
+                    dataSourceType = 'step_observation';
             }
-        
-            // 🎯 如果最终证据还是原始摘要且很短，尝试从DataBus提取关键信息补充
-            if (finalEvidence === cleanEvidence && cleanEvidence.length < 500 && dataBusEntry?.originalData) {
-                const criticalData = this._extractCriticalData(dataBusEntry.originalData, 2);
-                if (criticalData) {
-                    finalEvidence += `\n\n📈 **补充关键信息**：\n${criticalData}`;
-                    dataSourceType = 'data_bus_supplemented';
-                }
-            } 
-        
-            dataUtilizationStats.evidenceChars += finalEvidence.length;
-        
-            // 1. 分析内容的时效性（基于最终证据）
-            const temporalScore = this._analyzeTemporalContent(finalEvidence);
-            const year = this._extractYear(finalEvidence);
-            const isCurrentYear = this._isCurrentYearData(finalEvidence);
-
-            // 🎯 构建增强的证据条目
-            const evidenceEntry = {
-                stepIndex: index + 1,
-                subQuestion: subQuestion,
-                evidence: finalEvidence,
-                structuredData: structuredData,
-                hasStructuredData: !!structuredData,
-                keyFinding: step.key_finding,
-                tool: step.action?.tool_name,
-                originalLength: step.observation.length,
-                enhancedLength: finalEvidence.length,
-                dataSourceType: dataSourceType, // 🆕 新增：数据来源类型
-                dataBusKey: dataBusEntry ? dataBusKey : null,
-                // 🆕 新增：时效性数据
-                temporalPriority: temporalScore,
-                year: year,
-                isCurrentYear: isCurrentYear,
-                // 🆕 新增：数据质量标记
-                dataQuality: this._assessEvidenceQuality(finalEvidence, step.success)
-            };
-
-            evidenceEntries.push(evidenceEntry);
-            totalLength += finalEvidence.length;
-
-            // 🎯 收集关键发现
-            if (step.key_finding &&
-                step.key_finding !== '未能提取关键发现。' &&
-                step.key_finding !== '关键发现提取异常。') {
-                keyFindings.push(step.key_finding);
+        } else if (dataBusEntry) {
+            console.log(`[EvidenceCollection] DataBus条目无originalData，使用processedData`);
+            // 如果没有originalData，但至少有processedData
+            const processedData = dataBusEntry.rawData;
+            if (processedData && processedData.length > cleanEvidence.length * 1.5) {
+                // 如果DataBus中的处理数据比摘要长很多，使用它
+                finalEvidence = this._cleanObservation(processedData);
+                dataSourceType = 'data_bus_processed';
             }
-        });
+        }
     
-        // 3. 按时效性排序：当前年 > 去年 > 更早年份
-        evidenceEntries.sort((a, b) => {
-            // 优先当前年数据
-            if (a.isCurrentYear && !b.isCurrentYear) return -1;
-            if (!a.isCurrentYear && b.isCurrentYear) return 1;
-        
-            // 其次按数据质量
-            if (a.dataQuality !== b.dataQuality) {
-                return b.dataQuality - a.dataQuality;
+        // 🎯 如果最终证据还是原始摘要且很短，尝试从DataBus提取关键信息补充
+        if (finalEvidence === cleanEvidence && cleanEvidence.length < 500 && dataBusEntry?.originalData) {
+            const criticalData = this._extractCriticalData(dataBusEntry.originalData, 2);
+            if (criticalData) {
+                finalEvidence += `\n\n📈 **补充关键信息**：\n${criticalData}`;
+                dataSourceType = 'data_bus_supplemented';
             }
-        
-            // 最后按年份倒序
-            return (b.year || 0) - (a.year || 0);
-        });
-
-        // 🎯 数据利用率统计
-        const utilizationRate = dataUtilizationStats.originalChars > 0 ? 
-            (dataUtilizationStats.evidenceChars / dataUtilizationStats.originalChars) : 0;
+        }
     
-        console.log(`[EvidenceCollection] 数据利用率统计:`, {
+        // 🎯 【修改】移除压缩逻辑，完全信任现代大模型的上下文窗口
+        // 不进行压缩，仅优化格式呈现
+        finalEvidence = this._optimizePresentation(finalEvidence, researchMode);
+    
+        dataUtilizationStats.evidenceChars += finalEvidence.length;
+    
+        // 🎯 提取年份信息（仅用于排序，不用于质量判定）
+        const year = this._extractYear(finalEvidence);
+
+        // 🎯 构建增强的证据条目
+        const evidenceEntry = {
+            stepIndex: index + 1,
+            subQuestion: subQuestion,
+            evidence: finalEvidence,
+            structuredData: structuredData,
+            hasStructuredData: !!structuredData,
+            keyFinding: step.key_finding,
+            tool: step.action?.tool_name,
+            originalLength: step.observation.length,
+            enhancedLength: finalEvidence.length,
+            dataSourceType: dataSourceType,
+            dataBusKey: dataBusEntry ? dataBusKey : null,
+            // 🎯 仅保留年份用于排序
+            year: year
+        };
+
+        evidenceEntries.push(evidenceEntry);
+        totalLength += finalEvidence.length;
+
+        // 🎯 收集关键发现
+        if (step.key_finding &&
+            step.key_finding !== '未能提取关键发现。' &&
+            step.key_finding !== '关键发现提取异常。') {
+            keyFindings.push(step.key_finding);
+        }
+    });
+
+    // 🎯 【修改】简化排序：按年份倒序（最新的在前），然后按步骤索引
+    evidenceEntries.sort((a, b) => {
+        // 优先按年份倒序
+        if (a.year && b.year && a.year !== b.year) {
+            return b.year - a.year;
+        }
+        // 年份相同或都没有年份，按步骤顺序
+        return a.stepIndex - b.stepIndex;
+    });
+
+    // 🎯 数据利用率统计
+    const utilizationRate = dataUtilizationStats.originalChars > 0 ? 
+        (dataUtilizationStats.evidenceChars / dataUtilizationStats.originalChars) : 0;
+
+    console.log(`[EvidenceCollection] 数据利用率统计:`, {
+        stepsWithDataBus: dataUtilizationStats.stepsWithDataBus,
+        originalChars: dataUtilizationStats.originalChars,
+        evidenceChars: dataUtilizationStats.evidenceChars,
+        utilizationRate: `${(utilizationRate * 100).toFixed(1)}%`,
+        avgEnhancement: evidenceEntries.length > 0 ? 
+            (totalLength / evidenceEntries.map(e => e.originalLength).reduce((a, b) => a + b, 1)).toFixed(2) : 'N/A',
+        totalEvidenceChars: totalLength,
+        estimatedTokens: Math.ceil(totalLength / 3), // 粗略估算token数
+        researchMode: researchMode,
+        // 🎯 新增：上下文窗口使用情况
+        contextWindowUsage: `${(Math.ceil(totalLength / 3) / 128000 * 100).toFixed(2)}% of 128K`,
+        recommendation: totalLength < 100000 ? '✅ 内容长度在安全范围内' : '⚠️ 内容较长，但仍在128K窗口内'
+    });
+
+    return {
+        evidenceEntries,
+        keyFindings: [...new Set(keyFindings)],
+        totalLength,
+        totalSteps: intermediateSteps.length,
+        validEvidenceSteps: evidenceEntries.length,
+        hasStructuredData: evidenceEntries.some(e => e.hasStructuredData),
+        // 🆕 新增：数据利用统计
+        dataUtilization: {
             stepsWithDataBus: dataUtilizationStats.stepsWithDataBus,
-            originalChars: dataUtilizationStats.originalChars,
-            evidenceChars: dataUtilizationStats.evidenceChars,
-            utilizationRate: `${(utilizationRate * 100).toFixed(1)}%`,
-            avgEnhancement: evidenceEntries.length > 0 ? 
-                (totalLength / evidenceEntries.map(e => e.originalLength).reduce((a, b) => a + b, 1)).toFixed(2) : 'N/A'
+            utilizationRate,
+            evidenceEnhancementRatio: evidenceEntries.length > 0 ? 
+                totalLength / evidenceEntries.map(e => e.originalLength).reduce((a, b) => a + b, 1) : 1
+        },
+        // 🎯 新增：上下文窗口信息
+        contextWindowInfo: {
+            totalTokens: Math.ceil(totalLength / 3),
+            windowSize: 128000,
+            usagePercentage: (Math.ceil(totalLength / 3) / 128000 * 100).toFixed(2)
+        }
+    };
+}
+
+// 🎯 新增：优化呈现方法（仅格式优化，不压缩内容）
+/**
+ * @description 优化证据呈现格式，不压缩内容，仅进行格式整理
+ * @param {string} evidence - 原始证据文本
+ * @param {string} researchMode - 研究模式
+ * @returns {string} - 优化格式后的证据文本
+ */
+_optimizePresentation(evidence, researchMode) {
+    if (!evidence || typeof evidence !== 'string') {
+        return evidence || '';
+    }
+    
+    let optimized = evidence;
+    
+    // 🎯 1. 标准化格式（不丢失任何信息）
+    const formatOptimizations = [
+        // 标准化空行（3个以上→2个，提高可读性但不丢失信息）
+        [/\n{3,}/g, '\n\n'],
+        [/\r\n{3,}/g, '\n\n'],
+        
+        // 修复常见的Markdown格式问题
+        [/\*\*(.+?)\*\*\s*\*\*(.+?)\*\*/g, '**$1 $2**'], // 合并相邻加粗
+        [/\n\s*\n(\s*[-*+]\s)/g, '\n$1'], // 修复列表前的过多空行
+        [/(#{1,6})\s{2,}(.+)/g, '$1 $2'], // 修复标题后的多余空格
+    ];
+    
+    formatOptimizations.forEach(([pattern, replacement]) => {
+        optimized = optimized.replace(pattern, replacement);
+    });
+    
+    // 🎯 2. 保护结构化数据完整性
+    // 确保表格不被格式优化破坏
+    const tableRegex = /\|[^\n]+\|[^\n]*\|\n\|[-: ]+\|[-: ]+\|\n(\|[^\n]+\|[^\n]*\|\n?)+/g;
+    const tables = optimized.match(tableRegex) || [];
+    
+    // 对每个表格进行检查和修复
+    tables.forEach(table => {
+        const rows = table.split('\n').filter(row => row.trim());
+        if (rows.length >= 3) { // 至少表头、分隔线、一行数据
+            // 确保表格格式正确
+            const fixedTable = rows.join('\n');
+            // 用修复后的表格替换原表格
+            optimized = optimized.replace(table, fixedTable);
+        }
+    });
+    
+    // 🎯 3. 添加信息性标记（仅用于调试和理解，不影响内容）
+    const length = optimized.length;
+    const lineCount = (optimized.match(/\n/g) || []).length + 1;
+    const tableCount = (optimized.match(/\|[^\n]+\|/g) || []).length > 0 ? 
+        (optimized.match(/\|[^\n]+\|\n\|[-: ]+\|/g) || []).length : 0;
+    
+    // 仅对较长内容添加统计信息
+    if (length > 5000) {
+        const statsInfo = `\n\n---\n📊 **本段证据统计**：共${length}字符，${lineCount}行`;
+        if (tableCount > 0) {
+            statsInfo += `，包含${tableCount}个数据表格`;
+        }
+        optimized += statsInfo;
+    }
+    
+    console.log(`[EvidenceOptimize] 格式优化完成: ${evidence.length} → ${optimized.length} 字符 (${researchMode}模式)`);
+    
+    return optimized;
+}
+
+// 🎯 新增：智能数据策略选择方法
+/**
+ * @description 根据数据类型、长度和研究模式选择最佳数据使用策略
+ * 目标：为最终写作模型选择最合适的数据呈现形式
+ */
+_selectDataStrategy(contentType, dataLength, researchMode, toolName, stepSuccess) {
+    if (!stepSuccess) return 'step_observation'; // 失败步骤不使用DataBus
+
+    // 🔥 根据不同研究模式设置策略权重
+    const modeWeights = {
+        'academic': { full: 0.7, enhanced: 0.9, structured: 0.8, hybrid: 0.6 },
+        'business': { full: 0.4, enhanced: 0.8, structured: 0.7, hybrid: 0.9 },
+        'technical': { full: 0.8, enhanced: 0.7, structured: 0.9, hybrid: 0.5 },
+        'deep': { full: 0.9, enhanced: 0.8, structured: 0.7, hybrid: 0.6 },
+        'standard': { full: 0.3, enhanced: 0.6, structured: 0.5, hybrid: 0.7 },
+        'data_mining': { full: 0.2, enhanced: 0.4, structured: 1.0, hybrid: 0.3 }
+    };
+
+    const weights = modeWeights[researchMode] || modeWeights.standard;
+
+    // 🔥 根据工具类型调整策略
+    const toolStrategies = {
+        'tavily_search': { prefer: 'enhanced_summary', avoid: 'full_original' },
+        'crawl4ai': { prefer: 'hybrid', avoid: 'full_original' },
+        'python_sandbox': { prefer: 'structured_only', avoid: null },
+        'code_generator': { prefer: 'structured_only', avoid: null },
+        'firecrawl': { prefer: 'enhanced_summary', avoid: 'full_original' }
+    };
+
+    const toolStrategy = toolStrategies[toolName] || { prefer: 'enhanced_summary', avoid: null };
+
+    // 🔥 根据数据长度决定可行性
+    let viableStrategies = [];
+
+    if (dataLength < 3000) {
+        // 短数据：所有策略都可用
+        viableStrategies = ['full_original', 'enhanced_summary', 'structured_only', 'hybrid'];
+    } else if (dataLength < 10000) {
+        // 中等数据：避免完整原始（除非必要）
+        viableStrategies = ['enhanced_summary', 'structured_only', 'hybrid'];
+    } else {
+        // 长数据：只使用增强摘要或结构化提取
+        viableStrategies = ['enhanced_summary', 'structured_only'];
+    }
+
+    // 🔥 移除工具不建议的策略
+    if (toolStrategy.avoid && viableStrategies.includes(toolStrategy.avoid)) {
+        viableStrategies = viableStrategies.filter(s => s !== toolStrategy.avoid);
+    }
+
+    // 🔥 优先考虑工具偏好的策略
+    if (viableStrategies.includes(toolStrategy.prefer)) {
+        return toolStrategy.prefer;
+    }
+
+    // 🔥 根据研究模式权重选择
+    let bestStrategy = 'enhanced_summary'; // 默认
+    let bestScore = 0;
+
+    viableStrategies.forEach(strategy => {
+        const strategyKey = strategy.split('_')[0]; // 映射到权重键
+        const score = weights[strategyKey] || 0.5;
+    
+        // 🔥 根据内容类型微调
+        let typeBonus = 0;
+        if (contentType === 'structured_data' && strategy.includes('structured')) {
+            typeBonus = 0.3;
+        } else if (contentType === 'webpage' && strategy.includes('hybrid')) {
+            typeBonus = 0.2;
+        }
+    
+        const totalScore = score + typeBonus;
+        if (totalScore > bestScore) {
+            bestScore = totalScore;
+            bestStrategy = strategy;
+        }
+    });
+
+    return bestStrategy;
+}
+
+// 🎯 新增：创建增强摘要
+/**
+ * @description 基于原始数据创建增强版摘要，不压缩内容
+ */
+_createEnhancedSummary(originalData, baseSummary, metadata = {}) {
+    const { toolName, contentType } = metadata;
+
+    // 1. 保留基础摘要的结构
+    let enhanced = baseSummary;
+
+    // 2. 从原始数据提取关键补充信息（最多3点）
+    const criticalPoints = this._extractCriticalData(originalData, 3);
+
+    if (criticalPoints) {
+        enhanced += `\n\n📊 **补充关键数据** (基于${originalData.length.toLocaleString()}字符原始数据):\n${criticalPoints}`;
+    }
+
+    // 3. 添加数据来源和质量标记
+    enhanced += `\n\n📝 **数据来源**: ${toolName || '未知工具'} (${contentType || '原始数据'})`;
+    enhanced += `\n🔍 **数据完整性**: ${this._assessDataCompleteness(originalData)}`;
+
+    // 4. 如果原始数据中有明显的关键信息缺失于摘要，特别标注
+    const missingKeyInfo = this._detectMissingKeyInfo(originalData, baseSummary);
+    if (missingKeyInfo) {
+        enhanced += `\n⚠️ **注意**: 原始数据包含以下关键信息未在上方摘要中体现:\n${missingKeyInfo}`;
+    }
+
+    // 5. 添加原始数据长度信息（供最终模型参考）
+    enhanced += `\n\n📏 **原始数据规模**: ${originalData.length.toLocaleString()} 字符`;
+    
+    return enhanced;
+}
+
+// 🎯 新增：创建混合证据
+/**
+ * @description 创建原始数据和摘要的混合证据，完整呈现
+ */
+_createHybridEvidence(originalData, baseSummary, metadata = {}) {
+    // 1. 先展示摘要
+    let hybrid = `## 📋 摘要总结\n${baseSummary}`;
+
+    // 2. 添加原始数据的关键部分（提取精华）
+    const keySections = this._extractKeySections(originalData, 2); // 提取2个关键部分
+
+    if (keySections.length > 0) {
+        hybrid += `\n\n## 🔍 原始数据关键部分\n`;
+        keySections.forEach((section, idx) => {
+            hybrid += `\n### 关键部分 ${idx + 1}\n${section}\n`;
         });
-
-        return {
-            evidenceEntries,
-            keyFindings: [...new Set(keyFindings)],
-            totalLength,
-            totalSteps: intermediateSteps.length,
-            validEvidenceSteps: evidenceEntries.length,
-            hasStructuredData: evidenceEntries.some(e => e.hasStructuredData),
-            // 🆕 新增：数据利用统计
-            dataUtilization: {
-                stepsWithDataBus: dataUtilizationStats.stepsWithDataBus,
-                utilizationRate,
-                evidenceEnhancementRatio: evidenceEntries.length > 0 ? 
-                    totalLength / evidenceEntries.map(e => e.originalLength).reduce((a, b) => a + b, 1) : 1
-            }
-        };
     }
 
-    // 🎯 新增：智能数据策略选择方法
-    /**
-     * @description 根据数据类型、长度和研究模式选择最佳数据使用策略
-     */
-    _selectDataStrategy(contentType, dataLength, researchMode, toolName, stepSuccess) {
-        if (!stepSuccess) return 'step_observation'; // 失败步骤不使用DataBus
+    // 3. 添加数据统计
+    hybrid += `\n---\n📊 **数据统计**: 原始数据共 ${originalData.length.toLocaleString()} 字符，已提取 ${keySections.reduce((acc, s) => acc + s.length, 0).toLocaleString()} 字符关键内容`;
+
+    return hybrid;
+}
+
+// 🎯 新增：提取关键数据
+/**
+ * @description 从原始数据中提取最关键的信息点，作为补充
+ */
+_extractCriticalData(originalData, maxPoints = 3) {
+    if (!originalData || typeof originalData !== 'string') return null;
+
+    const text = originalData.substring(0, 5000); // 只处理前5000字符提高效率
+
+    // 模式匹配：提取数字、百分比、年份、关键术语
+    const patterns = [
+        // 数字相关
+        /\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b/g, // 大数字
+        /\b\d+\.\d+%/g, // 百分比
+        /\b(?:20|19)\d{2}\b/g, // 年份
     
-        // 🔥 根据不同研究模式设置策略权重
-        const modeWeights = {
-            'academic': { full: 0.7, enhanced: 0.9, structured: 0.8, hybrid: 0.6 },
-            'business': { full: 0.4, enhanced: 0.8, structured: 0.7, hybrid: 0.9 },
-            'technical': { full: 0.8, enhanced: 0.7, structured: 0.9, hybrid: 0.5 },
-            'deep': { full: 0.9, enhanced: 0.8, structured: 0.7, hybrid: 0.6 },
-            'standard': { full: 0.3, enhanced: 0.6, structured: 0.5, hybrid: 0.7 },
-            'data_mining': { full: 0.2, enhanced: 0.4, structured: 1.0, hybrid: 0.3 }
-        };
+        // 关键短语
+        /\b(?:最高|最低|最大|最小|平均|总计|累计|增长|下降|提升|降低)\b[\u4e00-\u9fa5\d\.%]+/g,
+        /\b(?:关键|重要|核心|主要|显著|突出)\b[\u4e00-\u9fa5]+/g,
     
-        const weights = modeWeights[researchMode] || modeWeights.standard;
-    
-        // 🔥 根据工具类型调整策略
-        const toolStrategies = {
-            'tavily_search': { prefer: 'enhanced_summary', avoid: 'full_original' },
-            'crawl4ai': { prefer: 'hybrid', avoid: 'full_original' },
-            'python_sandbox': { prefer: 'structured_only', avoid: null },
-            'code_generator': { prefer: 'structured_only', avoid: null },
-            'firecrawl': { prefer: 'enhanced_summary', avoid: 'full_original' }
-        };
-    
-        const toolStrategy = toolStrategies[toolName] || { prefer: 'enhanced_summary', avoid: null };
-    
-        // 🔥 根据数据长度决定可行性
-        let viableStrategies = [];
-    
-        if (dataLength < 3000) {
-            // 短数据：所有策略都可用
-            viableStrategies = ['full_original', 'enhanced_summary', 'structured_only', 'hybrid'];
-        } else if (dataLength < 10000) {
-            // 中等数据：避免完整原始（除非必要）
-            viableStrategies = ['enhanced_summary', 'structured_only', 'hybrid'];
-        } else {
-            // 长数据：只使用增强摘要或结构化提取
-            viableStrategies = ['enhanced_summary', 'structured_only'];
-        }
-    
-        // 🔥 移除工具不建议的策略
-        if (toolStrategy.avoid && viableStrategies.includes(toolStrategy.avoid)) {
-            viableStrategies = viableStrategies.filter(s => s !== toolStrategy.avoid);
-        }
-    
-        // 🔥 优先考虑工具偏好的策略
-        if (viableStrategies.includes(toolStrategy.prefer)) {
-            return toolStrategy.prefer;
-        }
-    
-        // 🔥 根据研究模式权重选择
-        let bestStrategy = 'enhanced_summary'; // 默认
-        let bestScore = 0;
-    
-        viableStrategies.forEach(strategy => {
-            const strategyKey = strategy.split('_')[0]; // 映射到权重键
-            const score = weights[strategyKey] || 0.5;
-        
-            // 🔥 根据内容类型微调
-            let typeBonus = 0;
-            if (contentType === 'structured_data' && strategy.includes('structured')) {
-                typeBonus = 0.3;
-            } else if (contentType === 'webpage' && strategy.includes('hybrid')) {
-                typeBonus = 0.2;
-            }
-        
-            const totalScore = score + typeBonus;
-            if (totalScore > bestScore) {
-                bestScore = totalScore;
-                bestStrategy = strategy;
+        // 表格数据特征
+        /\|[^\n]+\|[^\n]+\|/g, // 简单表格行
+    ];
+
+    const matches = new Set();
+
+    patterns.forEach(pattern => {
+        const found = text.match(pattern) || [];
+        found.forEach(match => {
+            if (match.length > 5 && match.length < 200) { // 合理长度范围
+                matches.add(match.trim());
             }
         });
-    
-        return bestStrategy;
+    });
+
+    // 转换为数组并限制数量
+    const criticalPoints = Array.from(matches).slice(0, maxPoints);
+
+    if (criticalPoints.length === 0) return null;
+
+    return criticalPoints.map(point => `• ${point}`).join('\n');
+}
+
+// 🎯 新增：评估数据完整性
+_assessDataCompleteness(data) {
+    if (!data || typeof data !== 'string') return '未知';
+
+    const length = data.length;
+
+    if (length > 5000) return '完整';
+    if (length > 2000) return '较完整';
+    if (length > 500) return '基本完整';
+    if (length > 100) return '简要';
+     return '极简';
+}
+
+// 🎯 新增：检测缺失关键信息
+_detectMissingKeyInfo(originalData, summary) {
+    // 简单实现：检查原始数据中的数字是否在摘要中提及
+    const originalNumbers = new Set((originalData.match(/\b\d+(?:\.\d+)?\b/g) || []).slice(0, 10));
+    const summaryNumbers = new Set((summary.match(/\b\d+(?:\.\d+)?\b/g) || []));
+
+    const missingNumbers = Array.from(originalNumbers).filter(num => !summaryNumbers.has(num));
+
+    if (missingNumbers.length > 0) {
+        return `数字数据: ${missingNumbers.slice(0, 3).join(', ')}${missingNumbers.length > 3 ? '...' : ''}`;
     }
 
-    // 🎯 新增：创建增强摘要
-    /**
-     * @description 基于原始数据创建增强版摘要
-     */
-    _createEnhancedSummary(originalData, baseSummary, metadata = {}) {
-        const { toolName, contentType } = metadata;
-    
-        // 1. 保留基础摘要的结构
-        let enhanced = baseSummary;
-    
-        // 2. 从原始数据提取关键补充信息（最多3点）
-        const criticalPoints = this._extractCriticalData(originalData, 3);
-    
-        if (criticalPoints) {
-            enhanced += `\n\n📊 **补充关键数据** (基于${originalData.length.toLocaleString()}字符原始数据):\n${criticalPoints}`;
-        }
-    
-        // 3. 添加数据来源和质量标记
-        enhanced += `\n\n📝 **数据来源**: ${toolName || '未知工具'} (${contentType || '原始数据'})`;
-        enhanced += `\n🔍 **数据完整性**: ${this._assessDataCompleteness(originalData)}`;
-    
-        // 4. 如果原始数据中有明显的关键信息缺失于摘要，特别标注
-        const missingKeyInfo = this._detectMissingKeyInfo(originalData, baseSummary);
-        if (missingKeyInfo) {
-            enhanced += `\n⚠️ **注意**: 原始数据包含以下关键信息未在上方摘要中体现:\n${missingKeyInfo}`;
-        }
-    
-        return enhanced;
-    }
+    return null;
+}
 
-    // 🎯 新增：创建混合证据
-    /**
-     * @description 创建原始数据和摘要的混合证据
-     */
-    _createHybridEvidence(originalData, baseSummary, metadata = {}) {
-        // 1. 先展示摘要
-        let hybrid = `## 📋 摘要总结\n${baseSummary}`;
-    
-        // 2. 添加原始数据的关键部分（提取精华）
-        const keySections = this._extractKeySections(originalData, 2); // 提取2个关键部分
-    
-        if (keySections.length > 0) {
-            hybrid += `\n\n## 🔍 原始数据关键部分\n`;
-            keySections.forEach((section, idx) => {
-                hybrid += `\n### 关键部分 ${idx + 1}\n${section}\n`;
-            });
-        }
-    
-        // 3. 添加数据统计
-        hybrid += `\n---\n📊 **数据统计**: 原始数据共 ${originalData.length.toLocaleString()} 字符，已提取 ${keySections.reduce((acc, s) => acc + s.length, 0).toLocaleString()} 字符关键内容`;
-    
-        return hybrid;
-    }
+// 🎯 新增：提取关键部分
+_extractKeySections(data, maxSections = 2) {
+    const sections = [];
+    const lines = data.split('\n').filter(line => line.trim().length > 0);
 
-    // 🎯 新增：提取关键数据
-    /**
-     * @description 从原始数据中提取最关键的信息点
-     */
-    _extractCriticalData(originalData, maxPoints = 3) {
-        if (!originalData || typeof originalData !== 'string') return null;
-    
-        const text = originalData.substring(0, 5000); // 只处理前5000字符提高效率
-    
-        // 模式匹配：提取数字、百分比、年份、关键术语
-        const patterns = [
-            // 数字相关
-            /\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b/g, // 大数字
-            /\b\d+\.\d+%/g, // 百分比
-            /\b(?:20|19)\d{2}\b/g, // 年份
-        
-            // 关键短语
-            /\b(?:最高|最低|最大|最小|平均|总计|累计|增长|下降|提升|降低)\b[\u4e00-\u9fa5\d\.%]+/g,
-            /\b(?:关键|重要|核心|主要|显著|突出)\b[\u4e00-\u9fa5]+/g,
-        
-            // 表格数据特征
-            /\|[^\n]+\|[^\n]+\|/g, // 简单表格行
-        ];
-    
-        const matches = new Set();
-    
-        patterns.forEach(pattern => {
-            const found = text.match(pattern) || [];
-            found.forEach(match => {
-                if (match.length > 5 && match.length < 200) { // 合理长度范围
-                    matches.add(match.trim());
-                }
-            });
-        });
-    
-        // 转换为数组并限制数量
-        const criticalPoints = Array.from(matches).slice(0, maxPoints);
-    
-        if (criticalPoints.length === 0) return null;
-    
-        return criticalPoints.map(point => `• ${point}`).join('\n');
-    }
+    // 寻找包含关键信息的段落
+    const keyIndicators = ['##', '###', '**', '关键', '重要', '核心', '数据', '结果', '结论', '发现'];
 
-    // 🎯 新增：评估证据质量
-    /**
-     * @description 评估单个证据条目的质量分数
-     */
-    _assessEvidenceQuality(evidence, stepSuccess) {
-        if (!stepSuccess) return 0.1;
+    for (let i = 0; i < lines.length && sections.length < maxSections; i++) {
+        const line = lines[i];
     
-        let score = 0.5; // 基础分
+        // 检查是否包含关键指示词
+        const hasKeyIndicator = keyIndicators.some(indicator => line.includes(indicator));
+        const hasNumbers = /\b\d+(?:\.\d+)?\b/.test(line);
     
-        // 长度分数
-        const lengthScore = Math.min(evidence.length / 1000, 1.0) * 0.3;
-        score += lengthScore;
-    
-        // 结构化程度
-        const hasStructure = evidence.includes('|') || evidence.includes('- ') || evidence.includes('* ');
-        if (hasStructure) score += 0.2;
-    
-        // 数据密度（数字、百分比等）
-        const numberCount = (evidence.match(/\b\d+(?:\.\d+)?\b/g) || []).length;
-        if (numberCount > 3) score += Math.min(numberCount / 10, 0.3);
-    
-        // 来源可靠性（如果包含来源标记）
-        if (evidence.includes('【来源') || evidence.includes('[来源')) {
-            score += 0.1;
-        }
-    
-        return Math.min(score, 1.0);
-    }
-
-    // 🎯 新增：评估数据完整性
-    _assessDataCompleteness(data) {
-        if (!data || typeof data !== 'string') return '未知';
-    
-        const length = data.length;
-    
-        if (length > 5000) return '完整';
-        if (length > 2000) return '较完整';
-        if (length > 500) return '基本完整';
-        if (length > 100) return '简要';
-         return '极简';
-    }
-
-    // 🎯 新增：检测缺失关键信息
-    _detectMissingKeyInfo(originalData, summary) {
-        // 简单实现：检查原始数据中的数字是否在摘要中提及
-        const originalNumbers = new Set((originalData.match(/\b\d+(?:\.\d+)?\b/g) || []).slice(0, 10));
-        const summaryNumbers = new Set((summary.match(/\b\d+(?:\.\d+)?\b/g) || []));
-    
-        const missingNumbers = Array.from(originalNumbers).filter(num => !summaryNumbers.has(num));
-    
-        if (missingNumbers.length > 0) {
-            return `数字数据: ${missingNumbers.slice(0, 3).join(', ')}${missingNumbers.length > 3 ? '...' : ''}`;
-        }
-    
-        return null;
-    }
-
-    // 🎯 新增：提取关键部分
-    _extractKeySections(data, maxSections = 2) {
-        const sections = [];
-        const lines = data.split('\n').filter(line => line.trim().length > 0);
-    
-        // 寻找包含关键信息的段落
-        const keyIndicators = ['##', '###', '**', '关键', '重要', '核心', '数据', '结果', '结论', '发现'];
-    
-        for (let i = 0; i < lines.length && sections.length < maxSections; i++) {
-            const line = lines[i];
-        
-            // 检查是否包含关键指示词
-            const hasKeyIndicator = keyIndicators.some(indicator => line.includes(indicator));
-            const hasNumbers = /\b\d+(?:\.\d+)?\b/.test(line);
-        
-            if ((hasKeyIndicator || hasNumbers) && line.length > 20) {
-                // 提取该段落（当前行+后续2行）
-                const section = lines.slice(i, Math.min(i + 3, lines.length)).join('\n');
-                if (section.length > 50 && section.length < 500) {
-                    sections.push(section);
-                    i += 2; // 跳过已提取的部分
-                }
+        if ((hasKeyIndicator || hasNumbers) && line.length > 20) {
+            // 提取该段落（当前行及后续2行）
+            const section = lines.slice(i, Math.min(i + 3, lines.length)).join('\n');
+            if (section.length > 50 && section.length < 500) {
+                sections.push(section);
+                i += 2; // 跳过已提取的部分
             }
         }
-    
-        return sections;
     }
+
+    return sections;
+}
+
+// 🎯 新增：上下文窗口使用情况检查（仅用于调试）
+_checkContextWindowUsage(evidenceCollection) {
+    const totalTokens = evidenceCollection.contextWindowInfo.totalTokens;
+    const windowSize = evidenceCollection.contextWindowInfo.windowSize;
+    const usagePercentage = evidenceCollection.contextWindowInfo.usagePercentage;
+    
+    console.log(`[ContextWindow] 使用情况: ${totalTokens} tokens / ${windowSize} (${usagePercentage}%)`);
+    
+    if (parseFloat(usagePercentage) > 80) {
+        console.warn(`[ContextWindow] ⚠️ 警告：上下文窗口使用率超过80%，可能影响模型性能`);
+    } else if (parseFloat(usagePercentage) > 60) {
+        console.log(`[ContextWindow] ℹ️ 提示：上下文窗口使用率${usagePercentage}%，在安全范围内`);
+    } else {
+        console.log(`[ContextWindow] ✅ 良好：上下文窗口使用率${usagePercentage}%，完全安全`);
+    }
+}
 
     // 🎯 新增：观察结果清理方法
     /**
