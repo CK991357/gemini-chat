@@ -1445,7 +1445,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     uniqueSources,
                     originalUserInstruction,
                     dataMiningTemplate, // ✅ 传递模板，不是 null
-                    promptFragment
+                    promptFragment,
+                    this.dataBus  // 🔥 新增：传递 dataBus
                 );
                 
                 try {

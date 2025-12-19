@@ -144,7 +144,7 @@ export class DataMiningEngine {
     /**
      * 🔥 构建数据挖掘专用提示词（完全兼容模板）
      */
-    buildDataMiningPrompt(topic, intermediateSteps, plan, sources, userInstruction, template, promptFragment) {
+    buildDataMiningPrompt(topic, intermediateSteps, plan, sources, userInstruction, template, promptFragment, dataBus = null) {
         // 1. 智能场景检测（兼容模板版本）
         const detectedScenario = this.detectUserScenarioCompatible(topic, userInstruction, intermediateSteps, template);
         
@@ -152,7 +152,7 @@ export class DataMiningEngine {
         const detectedPattern = this.detectDataPattern(intermediateSteps);
         
         // 3. 提取所有结构化数据
-        const structuredData = this.extractAllStructuredData(intermediateSteps);
+        const structuredData = this.extractAllStructuredData(intermediateSteps, true, dataBus);
         
         // 4. 数据质量评估（使用模板兼容的评级）
         const dataQuality = this.assessDataQuality(intermediateSteps, sources);
@@ -691,9 +691,54 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     }
     
     /**
-     * 🔥 提取所有结构化数据（保持原样）
+     * 🔥 提取所有结构化数据（增强版）
      */
-    extractAllStructuredData(intermediateSteps, includeSections = true) {
+    extractAllStructuredData(intermediateSteps, includeSections = true, dataBus = null) {
+        console.log('[DataMiningEngine] 提取结构化数据，DataBus大小:', dataBus?.size || 0);
+        
+        // 1. 优先从 DataBus 获取原始结构化数据
+        if (dataBus && dataBus.size > 0) {
+            const structuredData = this._extractFromDataBus(dataBus);
+            if (structuredData.length > 0) {
+                console.log(`[DataMiningEngine] ✅ 从DataBus获取 ${structuredData.length} 个数据块`);
+                return structuredData;
+            }
+        }
+        
+        // 2. 降级到 intermediateSteps 提取
+        console.warn('[DataMiningEngine] ⚠️ DataBus无结构化数据，从摘要中提取');
+        return this._extractFromIntermediateSteps(intermediateSteps, includeSections);
+    }
+
+    _extractFromDataBus(dataBus) {
+        const structuredData = [];
+        
+        dataBus.forEach((value, key) => {
+            const data = value.originalData || value.rawData;
+            const meta = value.metadata;
+            
+            // 只处理结构化数据或网页数据
+            if (meta.contentType === 'structured_data' || meta.contentType === 'webpage') {
+                // 提取表格
+                const tables = this.extractTablesFromText(data);
+                if (tables.length > 0) {
+                    structuredData.push(`## 📊 DataBus: ${key} (${meta.toolName})`);
+                    structuredData.push(...tables);
+                }
+                
+                // 提取列表
+                const lists = this.extractListsFromText(data);
+                if (lists.length > 0) {
+                    structuredData.push(`## 📝 DataBus列表: ${key}`);
+                    structuredData.push(...lists);
+                }
+            }
+        });
+        
+        return structuredData;
+    }
+    
+    _extractFromIntermediateSteps(intermediateSteps, includeSections = true) {
         const dataSections = [];
         let totalTables = 0;
         let totalLists = 0;
@@ -745,7 +790,7 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
 - **有效数据步骤**: ${intermediateSteps.filter(s => s.success).length}/${intermediateSteps.length}
 - **结构化数据比例**: ${((totalTables + totalLists) / intermediateSteps.length).toFixed(2)}`;
 
-            return [summary, ...dataSections].join('\n\n');
+            return [summary, ...dataSections];
         }
         
         return dataSections;
