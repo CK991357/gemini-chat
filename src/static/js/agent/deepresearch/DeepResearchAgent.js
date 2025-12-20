@@ -1531,7 +1531,7 @@ if (this.generatedImages.size > 0) {
 
 // 5. 附加真实来源列表 (Append Verified Sources)
 // 使用第 1 步计算出的精准列表
-cleanedReport += await this._generateSourcesSection(filteredSources, cleanedReport); // 传递 cleanedReport
+cleanedReport += await this._generateSourcesSection(filteredSources, researchPlan);
 
 console.log(`[DeepResearchAgent] 最终报告构建完成。`);
 
@@ -3127,25 +3127,23 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
 /**
  * 🎯 [最终完美版] 自适应参考文献生成器 (Adaptive IEEE Citation Generator)
  */
-async _generateSourcesSection(sources, reportContent) {
+async _generateSourcesSection(sources, plan) {
     if (!sources || sources.length === 0) {
         return '\n\n## 📚 参考文献 (References)\n\n*本次研究未引用外部公开资料。*';
     }
 
-    // 🎯 添加统计信息
-    const totalSources = sources.length;
-        let output = `\n\n## 📚 参考文献 (References)\n\n`;
-        output += `> *注：本报告基于以下 ${totalSources} 个权威数据源生成，引用已通过语义匹配算法验证。*\n\n`;
+    let output = '\n\n## 📚 参考文献 (References)\n\n';
+    output += '> *注：本报告基于以下权威数据源生成，引用已通过语义匹配算法验证。*\n\n';
 
-    // 🎯 智能元数据提取器
+    // 🛠️ 智能元数据提取器
     const extractSmartMeta = (source) => {
         let title = (source.title || 'Untitled Document').trim();
         const url = source.url || '';
-    
+        
         // 1. 尝试提取作者
         let author = source.authors || source.author || '';
         if (Array.isArray(author)) author = author.join(', ');
-    
+        
         // 2. 尝试提取发布者/网站名
         let publisher = 'Unknown Source';
         if (url) {
@@ -3173,28 +3171,16 @@ async _generateSourcesSection(sources, reportContent) {
         } else if (dateStr.length > 4) {
             type = 'news';
         }
-    
+        
         return { title, url, author, publisher, date: dateStr, type };
     };
 
-    // 🎯 设置折叠阈值：超过30个来源时启用折叠
-    const foldThreshold = 30;
-    const hasManySources = totalSources > foldThreshold;
-  
-    if (hasManySources) {
-    // 🎯 前30个正常显示
-    output += '### 📋 主要参考文献 (前30个)\n\n';
-  }
-
-    // 🎯 生成主要参考文献列表
-    const generateReferenceList = (startIdx, endIdx) => {
-    let list = '';
-    for (let idx = startIdx; idx < endIdx; idx++) {
-    const source = sources[idx];
-    const meta = extractSmartMeta(source);
-    const index = idx + 1;
-    const accessDate = new Date().toISOString().split('T')[0];
-    let citation = '';
+    // 📝 列表生成
+    sources.forEach((source, idx) => {
+        const meta = extractSmartMeta(source);
+        const index = idx + 1;
+        const accessDate = new Date().toISOString().split('T')[0];
+        let citation = '';
 
         if (meta.type === 'academic' && meta.author) {
             citation = `**[${index}]** ${meta.author}, "${meta.title}"`;
@@ -3208,102 +3194,138 @@ async _generateSourcesSection(sources, reportContent) {
         }
 
         citation += `. [Online].\n   Available: ${meta.url}`;
-        list += `${citation}\n\n`;
-    }
-    return list;
-  };
+        output += `${citation}\n\n`;
+    });
 
-  // 🎯 根据是否折叠来生成内容
-  if (hasManySources) {
-    // 显示前30个
-    output += generateReferenceList(0, foldThreshold);
-    
-    // 🎯 添加折叠部分
-    output += `<details class="sources-collapsible">
-<summary>📚 查看更多参考文献 (共 ${totalSources} 个，已显示前 ${foldThreshold} 个)</summary>\n\n`;
-    
-    // 生成剩余部分
-    output += `### 剩余参考文献 (${foldThreshold + 1} - ${totalSources})\n\n`;
-    output += generateReferenceList(foldThreshold, totalSources);
-    
-    output += `</details>`;
-    
-    // 🎯 添加使用建议
-    output += `\n\n> 💡 **使用提示**：报告中标注的引用序号与上方序号完全对应。如需查阅第52个来源，请在参考文献部分查找标号为[52]的条目。`;
-  } else {
-    // 显示全部
-    output += generateReferenceList(0, totalSources);
-  }
-
-  // 🎯 添加来源统计信息
-  const citedCount = this._countCitationsInReport(reportContent || '');
-  output += `\n\n---\n📊 **参考文献统计**：共收集 ${totalSources} 个来源，报告中共引用 ${citedCount} 次`;
-  
-  return output;
+    return output;
 }
 
 /**
- * 🎯 统计报告中的引用次数
- */
-_countCitationsInReport(reportContent) {
-  if (!reportContent) return 0;
-  
-  const patterns = [/\[(\d+)\]/g, /\[来源\s*(\d+)\]/g];
-  let count = 0;
-  
-  patterns.forEach(pattern => {
-    const matches = reportContent.match(pattern) || [];
-    count += matches.length;
-  });
-  
-  return count;
-}
-
-/**
- * 🎯 [最终方案] 展示所有来源，保证序号一致性
- * 目标：用户看到的参考文献序号与报告中的引用标号完全一致
+ * 🎯 [最终版] 智能混合来源过滤器
  */
 _filterUsedSources(sources, reportContent) {
   if (!sources || sources.length === 0) return [];
+  if (!reportContent) return sources.slice(0, 8); // 🎯 默认返回前8个
   
-  console.log(`[SourceFilter] 🔗 采用完整来源展示策略，确保序号一致性: ${sources.length} 个来源`);
+  console.log(`[SourceFilter] 启动智能匹配，候选来源: ${sources.length} 个`);
   
-  // 🎯 核心：直接返回所有来源，保持原始顺序
-  // 这是确保序号一致性的唯一可靠方式
+  // 🎯 轨道 0: 基础保留策略 (最少保留6个)
+  const baseKeepCount = 6;
+  const usedSources = new Set();
   
-  // 🎯 检查报告中引用的最大序号，确保完整性
-  const maxCitedIndex = this._getMaxCitationIndex(reportContent);
-  if (maxCitedIndex > sources.length) {
-    console.warn(`[SourceFilter] ⚠️ 警告：报告中引用了第 ${maxCitedIndex} 个来源，但总来源只有 ${sources.length} 个`);
-  }
-  
-  // 🎯 返回完整的、按原始顺序排列的来源列表
-  return sources;
-}
-
-/**
- * 🎯 获取报告中引用的最大序号
- */
-_getMaxCitationIndex(reportContent) {
-  if (!reportContent) return 0;
-  
+  // 轨道 1: 显式引用提取 (放宽匹配规则)
   const citationPatterns = [
-    /\[来源\s*(\d+)\]/g,
+    /【来源\s*(\d+)】/g,
     /\[(\d+)\]/g,
-    /来源\s*(\d+)/g
+    /来源\s*(\d+)/g,
+    /ref\s*(\d+)/gi
   ];
   
-  let maxIndex = 0;
   citationPatterns.forEach(pattern => {
     let match;
     while ((match = pattern.exec(reportContent)) !== null) {
-      const index = parseInt(match[1], 10);
-      if (index > maxIndex) maxIndex = index;
+      const index = parseInt(match[1], 10) - 1;
+      if (index >= 0 && index < sources.length) {
+        usedSources.add(sources[index]);
+      }
     }
   });
+
+  // 轨道 2: 关键词匹配 (降低阈值)
+  const reportLower = reportContent.toLowerCase();
+  sources.forEach(source => {
+    if (usedSources.has(source)) return;
+    
+    const title = (source.title || '').toLowerCase();
+    const url = source.url || '';
+    
+    // 🎯 放宽匹配条件
+    let score = 0;
+    
+    // 检查标题关键词是否在报告中
+    if (title) {
+      const keywords = title.split(/[^\w\u4e00-\u9fa5]+/)
+        .filter(word => word.length >= 3);
+      
+      keywords.forEach(keyword => {
+        if (reportLower.includes(keyword)) score += 0.2;
+      });
+      
+      // 检查完整标题（部分匹配）
+      if (title.length > 10) {
+        const titleFragments = [
+          title.substring(0, 15),
+          title.substring(Math.max(0, title.length - 15))
+        ];
+        
+        titleFragments.forEach(fragment => {
+          if (reportLower.includes(fragment)) score += 0.5;
+        });
+      }
+    }
+    
+    // 🎯 降低阈值从0.35到0.25
+    if (score >= 0.25) {
+      usedSources.add(source);
+    }
+  });
+
+  // 轨道 3: 确保最小数量
+  let finalSources = Array.from(usedSources);
   
-  return maxIndex;
+  if (finalSources.length < baseKeepCount) {
+    console.log(`[SourceFilter] 匹配来源不足(${finalSources.length})，补充至${baseKeepCount}个`);
+    
+    // 按相关性补充来源
+    const remainingSources = sources.filter(s => !usedSources.has(s));
+    const additionalCount = Math.min(
+      baseKeepCount - finalSources.length,
+      remainingSources.length
+    );
+    
+    // 优先补充来源质量高的（如权威域名）
+    const highQualitySources = remainingSources.filter(s => {
+      const url = s.url || '';
+      return url.includes('.gov') || 
+             url.includes('.edu') || 
+             url.includes('reuters') || 
+             url.includes('bloomberg');
+    });
+    
+    const sourcesToAdd = [
+      ...highQualitySources.slice(0, additionalCount),
+      ...remainingSources.slice(0, additionalCount - highQualitySources.length)
+    ];
+    
+    finalSources.push(...sourcesToAdd);
+  }
+
+  // 限制最大数量（避免过多）
+  finalSources = finalSources.slice(0, 20);
+  
+  console.log(`[SourceFilter] 匹配完成: ${sources.length} -> ${finalSources.length} 个有效来源`);
+  return finalSources;
 }
+
+    // ✨ 新增：计划完成度计算
+    _calculatePlanCompletion(plan, history) {
+        if (!plan || !history || history.length === 0) return 0;
+        
+        const completedSteps = plan.research_plan.filter(step => 
+            this._isStepEvidenceInHistory(step, history)
+        ).length;
+        
+        return completedSteps / plan.research_plan.length;
+    }
+
+    _isStepEvidenceInHistory(step, history) {
+        const stepKeywords = step.sub_question.toLowerCase().split(/\s+/);
+        const historyText = history.map(h => `${h.action.thought || ''} ${h.observation || ''}`).join(' ').toLowerCase();
+        
+        return stepKeywords.some(keyword => 
+            historyText.includes(keyword) && keyword.length > 3
+        );
+    }
 
     /**
      * 🎯 智能摘要方法 - 带有工具特定策略和优雅降级
