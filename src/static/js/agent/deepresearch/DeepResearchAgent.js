@@ -2437,10 +2437,10 @@ _selectDataStrategy(contentType, dataLength, researchMode, toolName, stepSuccess
     // 🔥 根据数据长度决定可行性
     let viableStrategies = [];
 
-    if (dataLength < 3000) {
+    if (dataLength < 15000) {
         // 短数据：所有策略都可用
         viableStrategies = ['full_original', 'enhanced_summary', 'structured_only', 'hybrid'];
-    } else if (dataLength < 10000) {
+    } else if (dataLength < 30000) {
         // 中等数据：避免完整原始（除非必要）
         viableStrategies = ['enhanced_summary', 'structured_only', 'hybrid'];
     } else {
