@@ -254,3 +254,106 @@
     font-size: 0.8em;
     font-style: italic;
 }
+
+/* ============================================
+   参考文献可折叠样式 (References Collapsible)
+   ============================================ */
+
+/* 可折叠容器 */
+.sources-collapsible {
+  margin: 1.5em 0;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.sources-collapsible:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* 摘要/标题行 */
+.sources-collapsible summary {
+  display: flex;
+  align-items: center;
+  padding: 1em 1.25em;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+  font-size: 1.05em;
+  cursor: pointer;
+  transition: background 0.3s ease;
+  list-style: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sources-collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.sources-collapsible summary::after {
+  content: '▼';
+  font-size: 0.8em;
+  margin-left: auto;
+  transition: transform 0.3s ease;
+}
+
+.sources-collapsible[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.sources-collapsible summary:hover {
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+}
+
+/* 折叠内容区域 */
+.sources-collapsible > div {
+  padding: 1.5em;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.5s ease, padding 0.3s ease;
+}
+
+.sources-collapsible[open] > div {
+  max-height: 2000px; /* 足够容纳内容 */
+}
+
+/* 移动端适配 */
+@media (max-width: 767px) {
+  .sources-collapsible {
+    margin: 1em 0;
+    border-radius: 6px;
+  }
+  
+  .sources-collapsible summary {
+    padding: 0.875em 1em;
+    font-size: 1em;
+  }
+  
+  .sources-collapsible > div {
+    padding: 1em;
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .sources-collapsible {
+    border: 1px solid #ccc;
+    page-break-inside: avoid;
+  }
+  
+  .sources-collapsible summary {
+    background: #f0f0f0 !important;
+    color: #333 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .sources-collapsible[open] > div {
+    max-height: none !important;
+  }
+}
