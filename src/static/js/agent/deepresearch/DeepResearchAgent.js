@@ -36,6 +36,8 @@ export class DeepResearchAgent {
         this.injectedTools = new Set(); // 本次研究已注入的工具
         this.knowledgeStrategy = 'smart'; // smart, minimal, reference
         this.currentSessionId = `session_${Date.now()}`; // 🎯 新增：会话ID
+        this.citationMap = null;        // 🎯 新增：存储引用映射关系 (index -> {source, citationData})
+        this.citationSources = null;    // 🎯 新增：存储排序后的引用来源数组
         
         // 🎯 新增：智能数据总线
         this.dataBus = new Map(); // step_index -> {rawData, metadata, contentType}
@@ -1533,6 +1535,110 @@ if (this.generatedImages.size > 0) {
 // 使用第 1 步计算出的精准列表
 cleanedReport += await this._generateSourcesSection(filteredSources, researchPlan);
 
+// ===========================================================================
+// 🆕 新增：6. 文中引用映射表 (Citation Mapping Table)
+// 目标：为文中每个引用 [X] 创建对应的来源条目，保持原始序号
+// ===========================================================================
+
+console.log('[DeepResearchAgent] 构建文中引用映射表...');
+
+// 1. 从清理后的报告中提取所有引用标记
+const citationPatterns = [
+    /\[来源\s*(\d+)\]/g,
+    /\[(\d+)\]/g
+];
+
+// 收集所有引用及其位置
+const citations = new Map(); // index -> {count, positions}
+const allMatches = [];
+
+// 提取所有引用并记录位置
+citationPatterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(cleanedReport)) !== null) {
+        const index = parseInt(match[1], 10);
+        if (!isNaN(index) && index >= 1) {
+            allMatches.push({
+                index: index,
+                fullMatch: match[0],
+                position: match.index
+            });
+            
+            if (!citations.has(index)) {
+                citations.set(index, {
+                    count: 1,
+                    positions: [match.index],
+                    originalIndex: index
+                });
+            } else {
+                const existing = citations.get(index);
+                existing.count++;
+                existing.positions.push(match.index);
+            }
+        }
+    }
+});
+
+console.log(`[DeepResearchAgent] 提取到 ${citations.size} 个唯一引用索引，共 ${allMatches.length} 次引用`);
+
+// 2. 为每个引用索引查找对应的来源
+const citationMap = new Map(); // index -> source object
+const processedIndices = new Set();
+const citationSources = [];
+
+// 按索引排序，方便查找
+const sortedIndices = Array.from(citations.keys()).sort((a, b) => a - b);
+
+sortedIndices.forEach(index => {
+    const originalIndex = index - 1; // 转换为0-based
+    
+    // 🔥 核心修正：直接在原始完整来源中查找，保持原始序号对应
+    let source = null;
+    if (originalIndex >= 0 && originalIndex < uniqueSources.length) {
+        source = uniqueSources[originalIndex];
+    }
+    
+    if (source) {
+        citationMap.set(index, {
+            source: source,
+            citationData: citations.get(index),
+            // 标记是否在1-20范围内，供后续使用
+            isInMainRefRange: originalIndex < 20
+        });
+        
+        // 构建引用条目
+        citationSources.push({
+            index: index, // 保持文中的原始序号（1-based）
+            originalListIndex: originalIndex, // 在uniqueSources中的索引（0-based）
+            source: source,
+            citationCount: citations.get(index).count,
+            isInMainRefRange: originalIndex < 20 // 是否在1-20范围内
+        });
+    } else {
+        console.warn(`[DeepResearchAgent] 警告：无法找到引用 [${index}] 对应的来源`);
+    }
+});
+
+console.log(`[DeepResearchAgent] 成功映射 ${citationSources.length} 个引用到具体来源`);
+
+// 统计信息
+const inMainRefCount = citationSources.filter(c => c.isInMainRefRange).length;
+const externalRefCount = citationSources.length - inMainRefCount;
+console.log(`[DeepResearchAgent] 引用分布：${inMainRefCount} 个在主要参考文献(1-20)，${externalRefCount} 个为额外引用`);
+
+// 3. 存储映射数据供后续使用
+this.citationMap = citationMap;
+this.citationSources = citationSources;
+
+// 🆕 新增：7. 附加文中引用映射表
+if (this.citationSources && this.citationSources.length > 0) {
+    const citationSection = await this._generateCitationMappingSection();
+    cleanedReport += citationSection;
+    console.log('[DeepResearchAgent] ✅ 文中引用映射表已附加');
+} else {
+    console.log('[DeepResearchAgent] ℹ️ 未检测到文中引用，跳过映射表生成');
+}
+
 console.log(`[DeepResearchAgent] 最终报告构建完成。`);
 
         // =================================================================
@@ -1573,6 +1679,10 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
             data: result // 🎯 优化：直接传递完整的 result 对象
         });
         
+        // 🎯 新增：清理临时存储的引用映射数据
+        this.citationMap = null;
+        this.citationSources = null;
+
         // 🎯 4.5. 返回最终结果
         return result;
     }
@@ -3198,6 +3308,108 @@ async _generateSourcesSection(sources, plan) {
     });
 
     return output;
+}
+
+/**
+ * 🆕 新增：生成文中引用映射表章节
+ * 按照文中引用的原始序号排列，为每个引用提供完整来源信息
+ * 用户可以根据文中的引用序号 [X] 直接找到对应的链接
+ */
+async _generateCitationMappingSection() {
+    if (!this.citationSources || this.citationSources.length === 0) {
+        return '';
+    }
+
+    console.log(`[DeepResearchAgent] 生成文中引用映射表，共 ${this.citationSources.length} 个引用`);
+
+    let section = '\n\n## 🔗 文中引用对应来源 (Citation-Indexed References)\n\n';
+    section += '> *注：本部分按照文中引用的原始序号排列，每个引用标记对应完整的来源信息。引用序号[1-20]亦见于主要参考文献，[21+]为额外引用。*\n\n';
+    
+    // 智能元数据提取器
+    const extractSmartMeta = (source) => {
+        let title = (source.title || 'Untitled Document').trim();
+        const url = source.url || '';
+        
+        // 尝试提取作者
+        let author = source.authors || source.author || '';
+        if (Array.isArray(author)) author = author.join(', ');
+        
+        // 尝试提取发布者/网站名
+        let publisher = 'Unknown Source';
+        if (url) {
+            try {
+                const hostname = new URL(url).hostname.replace('www.', '');
+                publisher = hostname.charAt(0).toUpperCase() + hostname.slice(1);
+            } catch (_e) {
+                // 保持 Unknown Source
+            }
+        }
+
+        // 尝试提取日期
+        let dateStr = '';
+        if (source.publish_date) {
+            dateStr = source.publish_date.split('T')[0]; 
+        } else {
+            const yearMatch = (title + ' ' + (source.description || '')).match(/(19|20)\d{2}/);
+            if (yearMatch) dateStr = yearMatch[0];
+        }
+
+        // 智能类型判断
+        let type = 'web';
+        if ((url && url.toLowerCase().endsWith('.pdf')) || (author && author.length > 0 && dateStr.length >= 4)) {
+            type = 'academic';
+        } else if (dateStr.length > 4) {
+            type = 'news';
+        }
+        
+        return { title, url, author, publisher, date: dateStr, type };
+    };
+
+    // 按文中引用序号排序
+    const sortedCitations = this.citationSources.sort((a, b) => a.index - b.index);
+    
+    // 为每个引用生成条目
+    sortedCitations.forEach(citation => {
+        const { index, source, citationCount, isInMainRefRange } = citation;
+        const meta = extractSmartMeta(source);
+        
+        let citationEntry = '';
+        const accessDate = new Date().toISOString().split('T')[0];
+        
+        // 根据不同来源类型生成不同格式
+        if (meta.type === 'academic' && meta.author) {
+            citationEntry = `**[${index}]** ${meta.author}, "${meta.title}"`;
+            if (meta.date) citationEntry += `, ${meta.date.substring(0, 4)}`;
+        } else if (meta.type === 'news') {
+            citationEntry = `**[${index}]** "${meta.title}," *${meta.publisher}*`;
+            if (meta.date) citationEntry += `, ${meta.date}`;
+        } else {
+            citationEntry = `**[${index}]** "${meta.title}," *${meta.publisher}*`;
+            if (meta.date) citationEntry += `, ${meta.date}`;
+        }
+        
+        citationEntry += `. [Online].\n   Available: ${meta.url}`;
+        
+        // 添加引用统计信息
+        if (citationCount > 1) {
+            citationEntry += ` *（文中引用 ${citationCount} 次）*`;
+        }
+        
+        // 标记是否在主要参考文献范围内
+        if (isInMainRefRange && index <= 20) {
+            citationEntry += ` *（亦见于主要参考文献 [${index}]）*`;
+        }
+        
+        section += `${citationEntry}\n\n`;
+    });
+    
+    // 添加统计信息
+    const inMainRefCount = sortedCitations.filter(c => c.isInMainRefRange).length;
+    const externalRefCount = sortedCitations.length - inMainRefCount;
+    
+    section += `---\n📊 **引用统计**：文中共引用 ${sortedCitations.length} 个不同来源，其中${inMainRefCount}个在主要参考文献(1-20)中，${externalRefCount}个为额外引用`;
+    
+    return section;
 }
 
 /**
