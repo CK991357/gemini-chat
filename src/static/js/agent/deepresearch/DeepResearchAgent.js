@@ -36,8 +36,8 @@ export class DeepResearchAgent {
         this.injectedTools = new Set(); // 本次研究已注入的工具
         this.knowledgeStrategy = 'smart'; // smart, minimal, reference
         this.currentSessionId = `session_${Date.now()}`; // 🎯 新增：会话ID
-        this.citationMap = new Map();        // index -> {dataBusKey, source, citationCount}
-        this.citationSources = new Map();    // index -> source object（仅包含报告中实际出现的）
+        this.citationMap = null;        // 🎯 新增：存储引用映射关系 (index -> {source, citationData})
+        this.citationSources = null;    // 🎯 新增：存储排序后的引用来源数组
         
         // 🎯 新增：智能数据总线
         this.dataBus = new Map(); // step_index -> {rawData, metadata, contentType}
@@ -1536,13 +1536,13 @@ if (this.generatedImages.size > 0) {
 cleanedReport += await this._generateSourcesSection(filteredSources, researchPlan);
 
 // ===========================================================================
-// 🆕 新增：6. 完全独立的引用映射系统 (Independent Citation Mapping System)
-// 目标：为文中每个引用 [X] 创建对应的DataBus来源条目，保持原始序号，与参考文献完全独立
+// 🆕 新增：6. 文中引用映射表 (Citation Mapping Table)
+// 目标：为文中每个引用 [X] 创建对应的来源条目，保持原始序号
 // ===========================================================================
 
-console.log('[DeepResearchAgent] 构建完全独立的引用映射系统...');
+console.log('[DeepResearchAgent] 构建文中引用映射表...');
 
-// 1. 从清理后的报告中提取所有引用标记（原有逻辑保持不变）
+// 1. 从清理后的报告中提取所有引用标记
 const citationPatterns = [
     /\[来源\s*(\d+)\]/g,
     /\[(\d+)\]/g
@@ -1567,7 +1567,8 @@ citationPatterns.forEach(pattern => {
             if (!citations.has(index)) {
                 citations.set(index, {
                     count: 1,
-                    positions: [match.index]
+                    positions: [match.index],
+                    originalIndex: index
                 });
             } else {
                 const existing = citations.get(index);
@@ -1580,95 +1581,62 @@ citationPatterns.forEach(pattern => {
 
 console.log(`[DeepResearchAgent] 提取到 ${citations.size} 个唯一引用索引，共 ${allMatches.length} 次引用`);
 
-// 2. 🔥 核心重构：优先使用证据集合映射，其次从DataBus中查找真实来源
-const tempCitationSources = new Map();
+// 2. 为每个引用索引查找对应的来源
+const citationMap = new Map(); // index -> source object
+const processedIndices = new Set();
+const citationSources = [];
 
-// 首先，尝试从证据集合映射中查找
-citations.forEach((citationData, index) => {
-    let dataBusKey = null;
-    let source = null;
-    let isDataBusLinked = false;
+// 按索引排序，方便查找
+const sortedIndices = Array.from(citations.keys()).sort((a, b) => a - b);
+
+sortedIndices.forEach(index => {
+    const originalIndex = index - 1; // 转换为0-based
     
-    // 🔥 优先使用证据集合映射（如果存在）
-    if (this.evidenceCitationMap && this.evidenceCitationMap.has(index)) {
-        const evidenceMapEntry = this.evidenceCitationMap.get(index);
-        dataBusKey = evidenceMapEntry.dataBusKey;
-        source = evidenceMapEntry.source;
-        isDataBusLinked = true;
-        console.log(`[DeepResearchAgent] 使用证据集合映射: 引用 [${index}] → ${dataBusKey}`);
-    }
-    // 如果没有找到，尝试通过引用ID直接构建DataBus键
-    else if (index >= 1 && index <= 100) { // 合理范围检查
-        dataBusKey = `step_${index}`;
-        const dataEntry = this.dataBus.get(dataBusKey);
-        if (dataEntry) {
-            source = this._extractSourceFromDataBus(dataEntry, index);
-            isDataBusLinked = true;
-        }
-    }
-    // 否则尝试查找相似的DataBus条目
-    else {
-        // 查找所有可能的DataBus条目
-        const allPossibleKeys = Array.from(this.dataBus.keys())
-            .filter(key => key.startsWith('step_'))
-            .map(key => ({ 
-                key, 
-                entry: this.dataBus.get(key),
-                stepNum: parseInt(key.split('_')[1])
-            }));
-        
-        if (allPossibleKeys.length > 0) {
-            // 策略A：查找最接近的step编号
-            const closestEntry = allPossibleKeys.reduce((closest, current) => {
-                const currentDiff = Math.abs(current.stepNum - index);
-                const closestDiff = Math.abs(closest.stepNum - index);
-                return currentDiff < closestDiff ? current : closest;
-            });
-            
-            // 如果差异不太大（在5以内），使用这个条目
-            if (Math.abs(closestEntry.stepNum - index) <= 5) {
-                dataBusKey = closestEntry.key;
-                source = this._extractSourceFromDataBus(closestEntry.entry, index);
-                console.log(`[DeepResearchAgent] 为引用 [${index}] 找到最接近的DataBus条目: ${dataBusKey} (step_${closestEntry.stepNum})`);
-            }
-        }
+    // 🔥 核心修正：直接在原始完整来源中查找，保持原始序号对应
+    let source = null;
+    if (originalIndex >= 0 && originalIndex < uniqueSources.length) {
+        source = uniqueSources[originalIndex];
     }
     
     if (source) {
-        tempCitationSources.set(index, {
+        citationMap.set(index, {
             source: source,
-            dataBusKey: dataBusKey,
-            citationCount: citationData.count,
-            isDataBusLinked: isDataBusLinked
+            citationData: citations.get(index),
+            // 标记是否在1-20范围内，供后续使用
+            isInMainRefRange: originalIndex < 20
         });
+        
+        // 构建引用条目
+        citationSources.push({
+            index: index, // 保持文中的原始序号（1-based）
+            originalListIndex: originalIndex, // 在uniqueSources中的索引（0-based）
+            source: source,
+            citationCount: citations.get(index).count,
+            isInMainRefRange: originalIndex < 20 // 是否在1-20范围内
+        });
+    } else {
+        console.warn(`[DeepResearchAgent] 警告：无法找到引用 [${index}] 对应的来源`);
     }
 });
 
-// 3. 存储映射数据供后续使用（完全独立的数据结构）
-this.citationMap = citations;
-this.citationSources = tempCitationSources; // 存储到类属性
+console.log(`[DeepResearchAgent] 成功映射 ${citationSources.length} 个引用到具体来源`);
 
-// 详细的统计信息
-const dataBusLinkedCount = Array.from(tempCitationSources.values())
-    .filter(data => data.isDataBusLinked).length;
-console.log(`[DeepResearchAgent] 成功映射 ${tempCitationSources.size} 个引用到DataBus源`);
-console.log(`[DeepResearchAgent] 其中 ${dataBusLinkedCount} 个有明确的DataBus关联`);
+// 统计信息
+const inMainRefCount = citationSources.filter(c => c.isInMainRefRange).length;
+const externalRefCount = citationSources.length - inMainRefCount;
+console.log(`[DeepResearchAgent] 引用分布：${inMainRefCount} 个在主要参考文献(1-20)，${externalRefCount} 个为额外引用`);
 
-// 如果有未映射的引用，输出警告
-if (tempCitationSources.size < citations.size) {
-    const unmapped = Array.from(citations.keys())
-        .filter(index => !tempCitationSources.has(index))
-        .join(', ');
-    console.warn(`[DeepResearchAgent] 警告：${citations.size - tempCitationSources.size} 个引用未找到DataBus对应: [${unmapped}]`);
-}
+// 3. 存储映射数据供后续使用
+this.citationMap = citationMap;
+this.citationSources = citationSources;
 
-// 🆕 新增：7. 附加完全独立的引用映射表
-if (this.citationSources && this.citationSources.size > 0) {
+// 🆕 新增：7. 附加文中引用映射表
+if (this.citationSources && this.citationSources.length > 0) {
     const citationSection = await this._generateCitationMappingSection();
     cleanedReport += citationSection;
-    console.log('[DeepResearchAgent] ✅ 完全独立引用映射表已附加');
+    console.log('[DeepResearchAgent] ✅ 文中引用映射表已附加');
 } else {
-    console.log('[DeepResearchAgent] ℹ️ 未检测到文中引用，跳过独立映射表生成');
+    console.log('[DeepResearchAgent] ℹ️ 未检测到文中引用，跳过映射表生成');
 }
 
 console.log(`[DeepResearchAgent] 最终报告构建完成。`);
@@ -1924,9 +1892,6 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
     let totalLength = 0;
     let dataUtilizationStats = { originalChars: 0, evidenceChars: 0, stepsWithDataBus: 0 };
 
-     // 🔥 新增：在证据集合构建时就建立引用映射
-    const evidenceCitationMap = new Map(); // citationId -> { dataBusKey, sourceInfo, stepIndex }
-
     intermediateSteps.forEach((step, index) => {
         // 🎯 过滤无效步骤
         if (!step.observation ||
@@ -2080,9 +2045,6 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
         // 🎯 提取年份信息（仅用于排序，不用于质量判定）
         const year = this._extractYear(finalEvidence);
 
-        // 🎯 在构建每个证据条目时，分配引用ID并记录映射
-        const citationId = evidenceEntries.length + 1; // 从1开始
-
         // 🎯 构建增强的证据条目
         const evidenceEntry = {
             stepIndex: index + 1,
@@ -2103,20 +2065,6 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
         evidenceEntries.push(evidenceEntry);
         totalLength += finalEvidence.length;
 
-        // 🎯 建立引用映射关系
-        if (dataBusEntry) {
-            const sourceInfo = this._extractSourceFromDataBus(dataBusEntry, citationId);
-            evidenceCitationMap.set(citationId, {
-                citationId: citationId,
-                dataBusKey: dataBusKey,
-                source: sourceInfo,
-                stepIndex: index + 1,
-                tool: step.action?.tool_name || 'unknown'
-            });
-        }
-
-        
-
         // 🎯 收集关键发现
         if (step.key_finding &&
             step.key_finding !== '未能提取关键发现。' &&
@@ -2124,7 +2072,6 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
             keyFindings.push(step.key_finding);
         }
     });
-
 
     // 🎯 【最终优化】排序逻辑：按研究步骤顺序排序
     // 保持研究逻辑连贯性，便于模型对应章节
@@ -2151,9 +2098,6 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
         recommendation: totalLength < 100000 ? '✅ 内容长度在安全范围内' : '⚠️ 内容较长，但仍在128K窗口内'
     });
 
-    // 🔥 存储引用映射关系
-    this.evidenceCitationMap = evidenceCitationMap;
-
     return {
         evidenceEntries,
         keyFindings: [...new Set(keyFindings)],
@@ -2161,7 +2105,6 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode = 'standard') {
         totalSteps: intermediateSteps.length,
         validEvidenceSteps: evidenceEntries.length,
         hasStructuredData: evidenceEntries.some(e => e.hasStructuredData),
-        evidenceCitationMap: evidenceCitationMap, // 也返回用于调试
         // 🆕 新增：数据利用统计
         dataUtilization: {
             stepsWithDataBus: dataUtilizationStats.stepsWithDataBus,
@@ -2333,40 +2276,6 @@ _extractKeyFields(obj, maxFields = 10) {
         .sort((a, b) => b.score - a.score)
         .slice(0, maxFields)
         .map(item => item.key);
-}
-
-// 添加在类的合适位置，比如其他 `_extract` 方法附近
-_extractSourceFromDataBus(dataEntry, citationId) {
-    const metadata = dataEntry.metadata || {};
-    
-    return {
-        title: metadata.dataTitle || `数据源 ${citationId}`,
-        url: metadata.sourceUrl || `databus://step_${citationId}`,
-        description: metadata.description || `DataBus条目: step_${citationId}`,
-        collectedAt: new Date(metadata.timestamp).toISOString(),
-        tool: metadata.toolName || '未知工具',
-        dataType: metadata.dataType || '未知类型',
-        dataBusKey: `step_${citationId}`
-    };
-}
-
-/**
- * 🎯 获取工具分布统计
- */
-_getToolDistribution() {
-    if (!this.citationSources || this.citationSources.size === 0) {
-        return '无工具分布信息';
-    }
-    
-    const toolCounts = {};
-    this.citationSources.forEach((data, index) => {
-        const tool = data.source.tool || '未知工具';
-        toolCounts[tool] = (toolCounts[tool] || 0) + 1;
-    });
-    
-    return Object.entries(toolCounts)
-        .map(([tool, count]) => `${tool}: ${count}次`)
-        .join('; ');
 }
 
 // 🎯 新增：对象转键值对表格
@@ -3402,86 +3311,103 @@ async _generateSourcesSection(sources, plan) {
 }
 
 /**
- * 🔥 完全独立的引用映射表生成
- * 只显示报告中实际出现的引用编号，与"参考文献"部分完全独立
+ * 🆕 新增：生成文中引用映射表章节
+ * 按照文中引用的原始序号排列，为每个引用提供完整来源信息
+ * 用户可以根据文中的引用序号 [X] 直接找到对应的链接
  */
 async _generateCitationMappingSection() {
-    if (!this.citationSources || this.citationSources.size === 0) {
+    if (!this.citationSources || this.citationSources.length === 0) {
         return '';
     }
 
-    console.log(`[DeepResearchAgent] 生成独立引用映射表，共 ${this.citationSources.size} 个引用`);
+    console.log(`[DeepResearchAgent] 生成文中引用映射表，共 ${this.citationSources.length} 个引用`);
 
-    let section = '\n\n## 🔗 文中引用对应来源 (Independent Citation Mapping)\n\n';
-    section += '> *注：本部分按照报告中实际出现的引用标记编号排列，每个引用对应原始数据源（DataBus）。与上文的参考文献列表完全独立。*\n\n';
+    let section = '\n\n## 🔗 文中引用对应来源 (Citation-Indexed References)\n\n';
+    section += '> *注：本部分按照文中引用的原始序号排列，每个引用标记对应完整的来源信息。引用序号[1-20]亦见于主要参考文献，[21+]为额外引用。*\n\n';
     
-    // 按引用编号排序（保持模型原始顺序）
-    const sortedEntries = Array.from(this.citationSources.entries())
-        .sort(([indexA], [indexB]) => indexA - indexB);
+    // 智能元数据提取器
+    const extractSmartMeta = (source) => {
+        let title = (source.title || 'Untitled Document').trim();
+        const url = source.url || '';
+        
+        // 尝试提取作者
+        let author = source.authors || source.author || '';
+        if (Array.isArray(author)) author = author.join(', ');
+        
+        // 尝试提取发布者/网站名
+        let publisher = 'Unknown Source';
+        if (url) {
+            try {
+                const hostname = new URL(url).hostname.replace('www.', '');
+                publisher = hostname.charAt(0).toUpperCase() + hostname.slice(1);
+            } catch (_e) {
+                // 保持 Unknown Source
+            }
+        }
+
+        // 尝试提取日期
+        let dateStr = '';
+        if (source.publish_date) {
+            dateStr = source.publish_date.split('T')[0]; 
+        } else {
+            const yearMatch = (title + ' ' + (source.description || '')).match(/(19|20)\d{2}/);
+            if (yearMatch) dateStr = yearMatch[0];
+        }
+
+        // 智能类型判断
+        let type = 'web';
+        if ((url && url.toLowerCase().endsWith('.pdf')) || (author && author.length > 0 && dateStr.length >= 4)) {
+            type = 'academic';
+        } else if (dateStr.length > 4) {
+            type = 'news';
+        }
+        
+        return { title, url, author, publisher, date: dateStr, type };
+    };
+
+    // 按文中引用序号排序
+    const sortedCitations = this.citationSources.sort((a, b) => a.index - b.index);
     
     // 为每个引用生成条目
-    sortedEntries.forEach(([index, data]) => {
-        const { source, citationCount, dataBusKey, isDataBusLinked } = data;
+    sortedCitations.forEach(citation => {
+        const { index, source, citationCount, isInMainRefRange } = citation;
+        const meta = extractSmartMeta(source);
         
-        let citationEntry = `**[${index}]** `;
+        let citationEntry = '';
+        const accessDate = new Date().toISOString().split('T')[0];
         
-        // 添加标题
-        citationEntry += `**${source.title}**`;
-        
-        // 添加描述
-        if (source.description) {
-            citationEntry += `\n   ${source.description}`;
-        }
-        
-        // 添加数据源链接
-        if (source.url.startsWith('http')) {
-            citationEntry += `\n   🔗 **数据源链接**: ${source.url}`;
+        // 根据不同来源类型生成不同格式
+        if (meta.type === 'academic' && meta.author) {
+            citationEntry = `**[${index}]** ${meta.author}, "${meta.title}"`;
+            if (meta.date) citationEntry += `, ${meta.date.substring(0, 4)}`;
+        } else if (meta.type === 'news') {
+            citationEntry = `**[${index}]** "${meta.title}," *${meta.publisher}*`;
+            if (meta.date) citationEntry += `, ${meta.date}`;
         } else {
-            citationEntry += `\n   📦 **数据源标识**: ${source.url}`;
+            citationEntry = `**[${index}]** "${meta.title}," *${meta.publisher}*`;
+            if (meta.date) citationEntry += `, ${meta.date}`;
         }
         
-        // 添加DataBus关联信息
-        if (isDataBusLinked && dataBusKey) {
-            citationEntry += ` (关联DataBus条目: ${dataBusKey})`;
-        }
+        citationEntry += `. [Online].\n   Available: ${meta.url}`;
         
-        // 添加工具信息
-        if (source.tool && source.tool !== '未知工具') {
-            citationEntry += `\n   🛠️ **数据获取工具**: ${source.tool}`;
-        }
-        
-        // 添加数据类型（如果有）
-        if (source.dataType) {
-            citationEntry += ` | **数据类型**: ${source.dataType}`;
-        }
-        
-        // 添加时间戳（如果有）
-        if (source.collectedAt) {
-            const date = new Date(source.collectedAt);
-            const dateStr = date.toISOString().split('T')[0];
-            citationEntry += ` | **采集时间**: ${dateStr}`;
-        }
-        
-        // 添加引用次数
+        // 添加引用统计信息
         if (citationCount > 1) {
-            citationEntry += `\n   📊 **文中引用次数**: ${citationCount} 次`;
+            citationEntry += ` *（文中引用 ${citationCount} 次）*`;
+        }
+        
+        // 标记是否在主要参考文献范围内
+        if (isInMainRefRange && index <= 20) {
+            citationEntry += ` *（亦见于主要参考文献 [${index}]）*`;
         }
         
         section += `${citationEntry}\n\n`;
     });
     
     // 添加统计信息
-    const totalCitations = Array.from(this.citationSources.values())
-        .reduce((sum, data) => sum + data.citationCount, 0);
+    const inMainRefCount = sortedCitations.filter(c => c.isInMainRefRange).length;
+    const externalRefCount = sortedCitations.length - inMainRefCount;
     
-    const dataBusLinkedCount = sortedEntries.filter(([_, data]) => data.isDataBusLinked).length;
-    
-    section += `---\n📊 **独立引用统计**：\n`;
-    section += `• **引用标记总数**: ${this.citationSources.size} 个不同编号\n`;
-    section += `• **总引用次数**: ${totalCitations} 次\n`;
-    section += `• **DataBus关联**: ${dataBusLinkedCount}/${this.citationSources.size} 个引用有明确数据源链接\n`;
-    section += `• **数据来源工具分布**: ${this._getToolDistribution()}\n`;
-    section += `• **独立性说明**: 此列表与参考文献完全独立，基于DataBus原始数据源`;
+    section += `---\n📊 **引用统计**：文中共引用 ${sortedCitations.length} 个不同来源，其中${inMainRefCount}个在主要参考文献(1-20)中，${externalRefCount}个为额外引用`;
     
     return section;
 }
@@ -4340,7 +4266,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             });
         }
     }
-
+    
     /**
      * 🎯 客户端 Python 导入预检
      */
