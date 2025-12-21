@@ -247,8 +247,10 @@ export function createAIMessageElement() {
     markdownContainer.classList.add('markdown-container');
     contentDiv.appendChild(markdownContainer);
 
+    // 复制按钮 - 复制渲染后的纯文本
     const copyButton = document.createElement('button');
     copyButton.classList.add('copy-button');
+    copyButton.title = '复制渲染文本';
     copyButton.innerHTML = '<i class="fa-solid fa-copy"></i>';
     copyButton.addEventListener('click', async () => {
         try {
@@ -258,26 +260,71 @@ export function createAIMessageElement() {
             const mainText = markdownContainer.innerText;
             await navigator.clipboard.writeText(reasoningText + mainText);
             copyButton.innerHTML = '<i class="fa-solid fa-check"></i>';
-            setTimeout(() => { copyButton.innerHTML = '<i class="fa-solid fa-copy"></i>'; }, 2000);
+            copyButton.title = '已复制！';
+            setTimeout(() => { 
+                copyButton.innerHTML = '<i class="fa-solid fa-copy"></i>';
+                copyButton.title = '复制渲染文本';
+            }, 2000);
         } catch (err) {
             console.error('Failed to copy text: ', err);
         }
     });
 
+    // 🆕 新增：复制原始Markdown按钮
+    const copyRawButton = document.createElement('button');
+    copyRawButton.classList.add('copy-raw-button');
+    copyRawButton.title = '复制原始Markdown';
+    copyRawButton.innerHTML = '<i class="fa-solid fa-code"></i>';
+    copyRawButton.addEventListener('click', async () => {
+        try {
+            // 通过按钮引用获取消息元素
+            const el = copyRawButton._messageEl;
+            let textToCopy = '';
+            
+            // 如果有思维链，先添加思维链
+            if (el.rawReasoningBuffer && el.rawReasoningBuffer.trim() !== '') {
+                textToCopy += `<!-- 思维链开始 -->\n${el.rawReasoningBuffer}\n<!-- 思维链结束 -->\n\n`;
+            }
+            
+            // 添加主要内容的原始Markdown
+            textToCopy += el.rawMarkdownBuffer || '';
+            
+            await navigator.clipboard.writeText(textToCopy);
+            copyRawButton.innerHTML = '<i class="fa-solid fa-check"></i>';
+            copyRawButton.title = '已复制原始Markdown！';
+            setTimeout(() => { 
+                copyRawButton.innerHTML = '<i class="fa-solid fa-code"></i>';
+                copyRawButton.title = '复制原始Markdown';
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy raw markdown: ', err);
+        }
+    });
+
     contentDiv.appendChild(copyButton);
+    contentDiv.appendChild(copyRawButton); // 🆕 添加新按钮
     messageDiv.appendChild(avatarDiv);
     messageDiv.appendChild(contentDiv);
     elements.messageHistory.appendChild(messageDiv);
     scrollToBottom();
 
-    return {
+    // 创建返回对象
+    const el = {
         container: messageDiv,
         markdownContainer,
         reasoningContainer,
         contentDiv,
         rawMarkdownBuffer: '',
-        rawReasoningBuffer: ''
+        rawReasoningBuffer: '',
+        copyButton: copyButton,
+        copyRawButton: copyRawButton // 🆕 存储引用
     };
+
+    // 🆕 为按钮添加对el对象的引用，方便事件处理器访问
+    copyButton._messageEl = el;
+    copyRawButton._messageEl = el;
+
+    return el;
 }
 
 /**
@@ -292,24 +339,37 @@ export function addMessage(msg) {
     if (role === 'assistant') {
         const el = createAIMessageElement();
         if (!el) return;
-        // 使用库解析markdown（如果可用）
+        
+        // 存储原始内容到缓冲区
+        let rawContent = content;
+        
         // 如果 content 是对象，尝试提取友好字段（stdout/output），否则格式化为代码块
         if (typeof content === 'object' && content !== null) {
             if (typeof content.stdout === 'string') {
                 content = content.stdout;
+                rawContent = content; // 使用处理后的字符串作为原始内容
             } else if (typeof content.output === 'string') {
                 content = content.output;
+                rawContent = content; // 使用处理后的字符串作为原始内容
             } else {
                 // 为对象生成可读 JSON
                 const pre = document.createElement('pre');
                 pre.className = 'assistant-json-output';
-                pre.textContent = JSON.stringify(content, null, 2);
+                const jsonString = JSON.stringify(content, null, 2);
+                pre.textContent = jsonString;
                 el.markdownContainer.appendChild(pre);
+                
+                // 🆕 存储原始JSON到缓冲区
+                el.rawMarkdownBuffer = jsonString;
+                
                 scrollToBottom();
                 return;
             }
         }
 
+        // 🆕 存储原始Markdown内容
+        el.rawMarkdownBuffer = String(rawContent);
+        
         if (libraries && libraries.marked) {
             try {
                 el.markdownContainer.innerHTML = libraries.marked.parse(String(content));
