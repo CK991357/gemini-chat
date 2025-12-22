@@ -439,6 +439,7 @@ export class AgentThinkingDisplay {
         // 如果已经有折叠状态，保持现有状态；否则初始化默认状态
         if (Object.keys(this.sectionStates).length === 0) {
             this.sectionStates = {
+                'user-query-content': false, // 研究主题 - 默认展开（新增）
                 'stats-content': false,      // 研究统计 - 默认展开
                 'query-log-content': false,  // 搜索记录 - 默认折叠
                 'execution-log-content': false // 执行日志 - 默认折叠
@@ -507,10 +508,14 @@ export class AgentThinkingDisplay {
                 </div>
                 
                 <div class="session-content">
-                    <!-- 用户研究请求 -->
-                    <div class="user-query-section">
-                        <div class="section-title">🎯 研究主题</div>
-                        <div class="user-query">${this.escapeHtml(userMessage)}</div>
+                    <!-- 🎯 用户研究请求 - 添加可折叠功能 -->
+                    <div class="user-query-section section-content-wrapper ${this.sectionStates['user-query-content'] ? 'minimized' : ''}">
+                        <div class="section-title" data-target="user-query-content">
+                            🎯 研究主题 <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content" id="user-query-content">
+                            <div class="user-query">${this.escapeHtml(userMessage)}</div>
+                        </div>
                     </div>
                     
                     <!-- 研究统计 -->
