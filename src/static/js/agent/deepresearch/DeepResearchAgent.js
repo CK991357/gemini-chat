@@ -1026,6 +1026,15 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             // ✨✨✨ 核心修复：规划时使用完整的 internalTopic (enrichedTopic) ✨✨✨
             const planResult = await this.agentLogic.createInitialPlan(internalTopicWithContext, detectedMode, currentDate);
             researchPlan = planResult;
+            // 🎯 核心修复：确保plan包含研究模式，供完成度计算使用
+            if (!researchPlan.research_mode) {
+                    researchPlan.research_mode = detectedMode;
+}
+            // 同时确保plan.research_plan存在（兼容不同命名）
+            if (!researchPlan.research_plan && researchPlan.researchPlan) {
+                    researchPlan.research_plan = researchPlan.researchPlan;
+            }
+            console.log(`[DeepResearchAgent] ✅ 智能规划完成，已生成${detectedMode}研究计划。`);      
             this._updateTokenUsage(planResult.usage); // 🎯 新增
             
             // 🎯 优化：传递完整的研究计划对象和文本
@@ -3720,8 +3729,12 @@ _filterUsedSources(sources, reportContent) {
   return finalSources;
 }
 
+// ============================================================================
+// 🎯 智能计划完成度计算系统（与主文件完全兼容版本）
+// ============================================================================
+
 /**
- * ✨ 智能计划完成度计算（最终版）
+ * ✨ 智能计划完成度计算（与主文件兼容版）
  * 结合关键词匹配和语义相似度的混合算法
  */
 _calculatePlanCompletion(plan, history) {
@@ -3730,7 +3743,10 @@ _calculatePlanCompletion(plan, history) {
     const totalSteps = plan.research_plan?.length || 0;
     if (totalSteps === 0) return 0;
     
-    console.log(`[PlanCompletion] 开始计算完成度，计划步骤: ${totalSteps}，历史步骤: ${history.length}`);
+    // 🎯 核心修复：从plan中获取研究模式，兼容现有调用
+    const researchMode = plan.research_mode || (plan.researchPlan?.research_mode) || 'standard';
+    
+    console.log(`[PlanCompletion] 开始计算完成度，计划步骤: ${totalSteps}，历史步骤: ${history.length}，模式: ${researchMode}`);
     
     let matchedSteps = 0;
     
@@ -3743,8 +3759,6 @@ _calculatePlanCompletion(plan, history) {
         const finalScore = Math.max(keywordScore, semanticScore);
         
         // 🎯 自适应阈值：根据研究模式调整
-        // 🔥 修改：使用 plan 中存储的研究模式，而不是类属性
-        const researchMode = plan.research_mode || 'standard';
         const threshold = this._getAdaptiveThreshold(researchMode);
         
         if (finalScore >= threshold) {
@@ -3755,9 +3769,9 @@ _calculatePlanCompletion(plan, history) {
         }
         
         // 🎯 调试信息：显示计划步骤内容
-        const stepPreview = planStep.sub_question.length > 40 
+        const stepPreview = planStep.sub_question?.length > 40 
             ? planStep.sub_question.substring(0, 40) + "..."
-            : planStep.sub_question;
+            : planStep.sub_question || '无问题描述';
         console.log(`[PlanCompletion]   步骤内容: "${stepPreview}"`);
     });
     
@@ -3771,10 +3785,10 @@ _calculatePlanCompletion(plan, history) {
 /**
  * 🎯 关键词匹配分数（精准算法）
  * 基于关键词的精确匹配，适合技术术语
- * 🔥 修改：增加 plan 参数，传递给 _getRelevantHistoryForStep
+ * 🔥 核心修复：保持与现有系统的参数兼容性
  */
 _calculateKeywordMatchScore(planStep, history, stepIndex, plan) {
-    if (!planStep.sub_question) return 0;
+    if (!planStep || !planStep.sub_question) return 0;
     
     const questionText = (planStep.sub_question || '').toLowerCase();
     
@@ -3804,9 +3818,10 @@ _calculateKeywordMatchScore(planStep, history, stepIndex, plan) {
 /**
  * 🎯 语义相似度计算（模糊算法）
  * 基于词袋模型的Jaccard相似度，适合语义匹配
+ * 🔥 核心修复：保持参数一致性，支持原系统调用
  */
 _calculateSemanticSimilarity(planStep, history, stepIndex) {
-    if (!planStep.sub_question) return 0;
+    if (!planStep || !planStep.sub_question) return 0;
     
     const questionText = (planStep.sub_question || '').toLowerCase();
     
@@ -3839,6 +3854,7 @@ _calculateSemanticSimilarity(planStep, history, stepIndex) {
 /**
  * 🎯 智能分词（中英文通用）
  * 统一处理中英文混合文本，无需区分语言
+ * 🔥 核心修复：增强健壮性，防止空值错误
  */
 _smartTokenize(text) {
     if (!text || typeof text !== 'string') return [];
@@ -3885,14 +3901,16 @@ _smartTokenize(text) {
 /**
  * 🎯 获取步骤相关历史（智能映射）
  * 将计划步骤映射到对应的历史步骤
- * 🔥 修改：增加 plan 参数，使用传入的 plan 而不是类属性
+ * 🔥 核心修复：保持与现有系统兼容，支持不同的plan结构
  */
 _getRelevantHistoryForStep(history, stepIndex, plan) {
     if (!history || history.length === 0) return [];
     
     // 🎯 策略1：平均分配（每个计划步骤对应2-3个历史步骤）
-    // 🔥 修改：使用传入的 plan 参数
-    const stepsPerPlan = Math.ceil(history.length / (plan?.research_plan?.length || 1));
+    // 兼容不同的plan结构
+    const planSteps = plan?.research_plan?.length || plan?.researchPlan?.length || 1;
+    const stepsPerPlan = Math.ceil(history.length / planSteps);
+    
     const startIndex = Math.max(0, stepIndex * stepsPerPlan);
     const endIndex = Math.min(history.length, startIndex + Math.max(3, stepsPerPlan));
     
@@ -3909,31 +3927,43 @@ _getRelevantHistoryForStep(history, stepIndex, plan) {
 
 /**
  * 🎯 自适应阈值（根据研究模式调整）
- * 🔥 修改：接受 researchMode 参数，而不是使用类属性
+ * 根据不同的研究模式设置不同的匹配阈值
  */
 _getAdaptiveThreshold(researchMode) {
     // 🎯 默认阈值
     let threshold = 0.4; // 40%匹配度
     
     // 🎯 根据研究模式调整
-    if (researchMode === 'deep') {
-        threshold = 0.35; // 深度模式降低要求（允许更深入探索）
-    } else if (researchMode === 'academic') {
-        threshold = 0.45; // 学术模式提高要求
-    } else if (researchMode === 'data_mining') {
-        threshold = 0.3;  // 数据挖掘模式最低要求
-    }
+    const modeThresholds = {
+        'deep': 0.35,       // 深度模式降低要求（允许更深入探索）
+        'academic': 0.45,   // 学术模式提高要求
+        'business': 0.4,    // 商业模式标准要求
+        'technical': 0.4,   // 技术模式标准要求  
+        'data_mining': 0.3, // 数据挖掘模式最低要求
+        'standard': 0.4     // 标准模式标准要求
+    };
     
-    return threshold;
+    return modeThresholds[researchMode] || threshold;
 }
 
 /**
  * 🎯 兼容原系统的 _isStepEvidenceInHistory 方法
- * 注意：原系统在提前终止逻辑中可能使用此方法
- * 🔥 修改：使用传入的 plan 参数获取研究模式
+ * 🔥 核心修复：保持与原系统完全兼容的调用方式
  */
 _isStepEvidenceInHistory(step, history, plan) {
-    // 🎯 使用与主方法一致的逻辑
+    // 🎯 兼容性修复：支持原系统的2参数调用
+    if (arguments.length === 2) {
+        // 原系统调用方式：isStepEvidenceInHistory(step, history)
+        // 使用默认plan结构
+        const defaultPlan = { research_mode: 'standard' };
+        const keywordScore = this._calculateKeywordMatchScore(step, history, 0, defaultPlan);
+        const semanticScore = this._calculateSemanticSimilarity(step, history, 0);
+        const finalScore = Math.max(keywordScore, semanticScore);
+        
+        return finalScore >= this._getAdaptiveThreshold('standard');
+    }
+    
+    // 🎯 新系统调用方式：isStepEvidenceInHistory(step, history, plan)
     const keywordScore = this._calculateKeywordMatchScore(step, history, 0, plan);
     const semanticScore = this._calculateSemanticSimilarity(step, history, 0);
     const finalScore = Math.max(keywordScore, semanticScore);
