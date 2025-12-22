@@ -1255,7 +1255,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, this.intermediateSteps);
                     this.metrics.informationGain.push(currentInfoGain);
                     
-                    if (currentInfoGain < 0.1) { // 信息增益阈值
+                    if (currentInfoGain < 0.07) { // 信息增益阈值
                         consecutiveNoGain++;
                         console.log(`[DeepResearchAgent] 低信息增益 ${currentInfoGain.toFixed(2)}，连续${consecutiveNoGain}次`);
                     } else {
@@ -1305,7 +1305,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     const completionRate = this._calculatePlanCompletion(researchPlan, this.intermediateSteps);
                     this.metrics.planCompletion = completionRate;
                     
-                    if (completionRate > 0.8 && consecutiveNoGain >= 1) {
+                    if (completionRate > 0.9 && consecutiveNoGain >= 1) {
                         console.log(`[DeepResearchAgent] 计划完成度${completionRate}%，提前终止`);
                         break;
                     }
@@ -3043,7 +3043,7 @@ _checkContextWindowUsage(evidenceCollection) {
             useStructure: true,
             useEntity: false,  // 默认关闭，技术研究时手动开启
             useLengthRatio: true,
-            decayFactor: 0.9
+            decayFactor: 0.95 // 默认衰减因子
         };
         
         // 1. 基础参数验证
