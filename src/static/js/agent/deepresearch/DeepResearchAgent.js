@@ -3473,6 +3473,13 @@ _generateCitationSection(processedCitations, uniqueSources) {
             }
         }
         
+        // 简要描述
+        if (source.description && source.description.trim()) {
+            const desc = source.description.trim();
+            const shortDesc = desc.length > 80 ? desc.substring(0, 80) + '...' : desc;
+            entry += `\n   ${shortDesc}`;
+        }
+        
         // 完整链接
         if (source.url && source.url !== '#') {
             entry += `\n   🔗 ${source.url}`;
