@@ -3720,26 +3720,40 @@ _filterUsedSources(sources, reportContent) {
   return finalSources;
 }
 
-    // ✨ 新增：计划完成度计算
+    /**
+     * 🎯 通用计划完成度计算（完全无领域依赖）
+     * 核心思想：基于语义相似度而非关键词匹配
+     */
     _calculatePlanCompletion(plan, history) {
     if (!plan || !history || history.length === 0) return 0;
     
     const totalSteps = plan.research_plan?.length || 0;
     if (totalSteps === 0) return 0;
     
-    // 为每个计划步骤创建一个匹配分数
+    // 1. 提取所有计划步骤的"意图指纹"
+    const planFingerprints = this._extractStepFingerprints(plan.research_plan);
+    
+    // 2. 提取历史步骤的"内容指纹" 
+    const historyFingerprints = this._extractHistoryFingerprints(history);
+    
+    // 3. 计算每个计划步骤与历史内容的匹配度
     let matchedSteps = 0;
     
-    plan.research_plan.forEach((planStep, index) => {
-        const stepScore = this._calculateStepCompletionScore(planStep, history, index);
+    planFingerprints.forEach((planFp, stepIndex) => {
+        let maxSimilarity = 0;
         
-        // 设置匹配阈值（50%以上关键词出现）
-        if (stepScore >= 0.5) {
+        // 查找历史中最相似的内容
+        historyFingerprints.forEach(historyFp => {
+            const similarity = this._calculateFingerprintSimilarity(planFp, historyFp);
+            maxSimilarity = Math.max(maxSimilarity, similarity);
+        });
+        
+        // 通用阈值：30%相似度即认为相关
+        if (maxSimilarity >= 0.3) {
             matchedSteps++;
-            console.log(`[PlanCompletion] 步骤 ${index+1} 匹配成功，分数: ${stepScore.toFixed(2)}`);
-        } else {
-            console.log(`[PlanCompletion] 步骤 ${index+1} 匹配失败，分数: ${stepScore.toFixed(2)}`);
         }
+        
+        console.log(`[PlanCompletion] 步骤 ${stepIndex+1} 相似度: ${(maxSimilarity*100).toFixed(1)}%`);
     });
     
     const completion = matchedSteps / totalSteps;
@@ -3749,83 +3763,111 @@ _filterUsedSources(sources, reportContent) {
 }
 
     /**
-     * 🆕 智能步骤完成度评分
+     * 🎯 提取步骤指纹（领域无关）
      */
-    _calculateStepCompletionScore(planStep, history, stepIndex) {
-    if (!planStep.sub_question) return 0;
+    _extractStepFingerprints(steps) {
+    return steps.map(step => {
+        const text = (step.sub_question || '').toLowerCase();
+        
+        // 1. 移除标点、停用词
+        const cleaned = text
+            .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')  // 保留中文、英文、数字、空格
+            .replace(/\s+/g, ' ')                    // 合并空格
+            .trim();
+        
+        // 2. 分词（中英文混合）
+        const tokens = this._tokenizeMultilingual(cleaned);
+        
+        // 3. 构建特征向量：使用简单的词频
+        const fingerprint = {};
+        tokens.forEach(token => {
+            if (token.length >= 2) { // 只保留长度≥2的token
+                fingerprint[token] = (fingerprint[token] || 0) + 1;
+            }
+        });
+        
+        return {
+            original: step.sub_question,
+            fingerprint: fingerprint,
+            tokenCount: tokens.length
+        };
+    });
+}
+
+    /**
+     * 🎯 提取历史指纹
+     */
+    _extractHistoryFingerprints(history) {
+    return history.map(step => {
+        const texts = [
+            step.action?.thought || '',
+            step.observation || '',
+            step.key_finding || ''
+        ].join(' ').toLowerCase();
+        
+        const cleaned = texts
+            .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        
+        const tokens = this._tokenizeMultilingual(cleaned);
+        
+        const fingerprint = {};
+        tokens.forEach(token => {
+            if (token.length >= 2) {
+                fingerprint[token] = (fingerprint[token] || 0) + 1;
+            }
+        });
+        
+        return {
+            stepType: step.action?.type,
+            fingerprint: fingerprint,
+            tokenCount: tokens.length
+        };
+    });
+}
+
+    /**
+     * 🎯 多语言分词（中英文通用）
+     */
+    _tokenizeMultilingual(text) {
+    if (!text) return [];
     
-    // 1. 从子问题中提取核心关键词（中英文兼容）
-    const questionText = planStep.sub_question.toLowerCase();
+    // 方法1：中文按字符，英文按单词
+    // 更简单的方法：按非字母数字字符分割
+    return text
+        .split(/[^\w\u4e00-\u9fa5]+/)  // 分割非字母数字和非中文
+        .filter(token => token.trim().length > 0)
+        .map(token => token.toLowerCase());
+}
+
+    /**
+     * 🎯 计算指纹相似度（余弦相似度简化版）
+     */
+    _calculateFingerprintSimilarity(fp1, fp2) {
+    const keys1 = Object.keys(fp1);
+    const keys2 = Object.keys(fp2);
     
-    // 更好的中文关键词提取：按标点分割+去除停用词
-    const chineseKeywords = this._extractChineseKeywords(questionText);
-    const englishKeywords = this._extractEnglishKeywords(questionText);
+    if (keys1.length === 0 || keys2.length === 0) return 0;
     
-    const allKeywords = [...chineseKeywords, ...englishKeywords];
-    if (allKeywords.length === 0) return 0;
+    // 计算交集
+    let intersection = 0;
+    let union = 0;
     
-    // 2. 从历史中收集相关证据（优先检查对应步骤附近）
-    let relevantHistory = this._getRelevantHistoryForStep(history, stepIndex);
+    // 计算Jaccard相似度（简单有效）
+    const set1 = new Set(keys1);
+    const set2 = new Set(keys2);
     
-    // 如果没有直接对应的历史，使用全部历史
-    if (relevantHistory.length === 0) {
-        relevantHistory = history;
+    for (const key of set1) {
+        if (set2.has(key)) intersection++;
     }
     
-    // 3. 合并历史文本进行分析
-    const historyText = relevantHistory.map(h => 
-        `${h.action?.thought || ''} ${h.observation || ''} ${h.key_finding || ''}`
-    ).join(' ').toLowerCase();
+    union = set1.size + set2.size - intersection;
     
-    // 4. 计算关键词出现率
-    let foundKeywords = 0;
-    allKeywords.forEach(keyword => {
-        if (historyText.includes(keyword.toLowerCase())) {
-            foundKeywords++;
-        }
-    });
+    // 避免除零
+    if (union === 0) return 0;
     
-    return allKeywords.length > 0 ? foundKeywords / allKeywords.length : 0;
-}
-
-    /**
-     * 🆕 提取中文关键词
-     */
-    _extractChineseKeywords(text) {
-    // 中文关键词提取：去除停用词，保留实词
-    const stopWords = ['的', '了', '在', '和', '与', '或', '如何', '什么', '为什么', '怎样'];
-    
-    // 按中文标点分割
-    const words = text.split(/[，。？；：、\s]+/).filter(word => 
-        word.length >= 2 && !stopWords.includes(word)
-    );
-    
-    return words;
-}
-
-    /**
-     * 🆕 提取英文关键词
-     */
-    _extractEnglishKeywords(text) {
-    const englishWords = text.match(/[a-z]{3,}/gi) || [];
-    
-    // 英文停用词
-    const englishStopWords = ['the', 'and', 'for', 'are', 'with', 'this', 'that', 'how', 'what', 'why'];
-    
-    return englishWords
-        .map(word => word.toLowerCase())
-        .filter(word => word.length >= 3 && !englishStopWords.includes(word));
-}
-
-    /**
-     * 🆕 获取步骤相关历史
-     */
-    _getRelevantHistoryForStep(history, stepIndex) {
-    // 每个步骤大约对应 2-3 个历史记录
-    const startIndex = Math.max(0, stepIndex * 2);
-    const endIndex = Math.min(history.length, startIndex + 3);
-    
-    return history.slice(startIndex, endIndex);
+    return intersection / union;
 }
 
     /**
