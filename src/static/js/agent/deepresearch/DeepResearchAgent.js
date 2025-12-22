@@ -1613,6 +1613,24 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         }
     });
 
+    // 🎯 新增：触发详细的写作开始事件
+    if (this.callbackManager) {
+        this.callbackManager.invokeEvent('on_writing_start', {
+            run_id: this.runId,
+            data: {
+                writing_stage: 'detailed_report_generation',
+                research_mode: researchMode,
+                report_model: this.reportModel || 'deepseek-reasoner',
+                topic: topic,
+                sources_count: sources.length,
+                evidence_steps: intermediateSteps.length,
+                plan_steps: plan.research_plan?.length || 0,
+                estimated_tokens: Math.ceil(topic.length / 4) + 
+                    intermediateSteps.reduce((sum, step) => sum + (step.observation?.length || 0), 0) / 4
+            }
+        });
+    }
+
         // 1. 构建纯净的证据集合
         const evidenceCollection = this._buildEvidenceCollection(intermediateSteps, plan, researchMode);
         
@@ -1620,6 +1638,20 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         console.log(`  • 有效证据: ${evidenceCollection.validEvidenceSteps}个`);
         console.log(`  • 关键发现: ${evidenceCollection.keyFindings.length}个`);
         console.log(`  • 总长度: ${evidenceCollection.totalLength}字符`);
+
+        // 🎯 新增：触发证据构建完成事件
+    if (this.callbackManager) {
+        this.callbackManager.invokeEvent('on_writing_progress', {
+            run_id: this.runId,
+            data: {
+                stage: 'evidence_built',
+                progress: 0.3,
+                evidence_count: evidenceCollection.evidenceEntries.length,
+                total_length: evidenceCollection.totalLength,
+                has_structured_data: evidenceCollection.hasStructuredData
+            }
+        });
+    }
 
         // 2. 构建带编号的来源索引 (Source Index)
         const numberedSourcesText = sources.map((s, i) => {
@@ -1811,6 +1843,18 @@ ${promptFragment}
         console.log(`[DeepResearchAgent] 📏 提示词长度: ${finalPrompt.length}字符 (~${Math.ceil(finalPrompt.length/4)} tokens)`);
         
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
+
+        if (this.callbackManager) {
+        this.callbackManager.invokeEvent('on_writing_progress', {
+            run_id: this.runId,
+            data: {
+                stage: 'calling_model',
+                progress: 0.6,
+                prompt_length: finalPrompt.length,
+                model: this.reportModel || 'deepseek-reasoner'
+            }
+        });
+    }
         
         // 🚀 新增：基础重试机制
         const maxRetries = 2;
@@ -1818,6 +1862,19 @@ ${promptFragment}
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
+                // 🎯 新增：模型调用前事件
+            if (this.callbackManager && attempt === 0) {
+                this.callbackManager.invokeEvent('on_content_synthesis', {
+                    run_id: this.runId,
+                    data: {
+                        synthesis_method: 'llm_generation',
+                        model: this.reportModel || 'deepseek-reasoner',
+                        attempt: attempt + 1,
+                        max_attempts: maxRetries + 1
+                    }
+                });
+            }
+
                 const reportResponse = await this.chatApiHandler.completeChat({
                     messages: [{ role: 'user', content: finalPrompt }],
                     model: this.reportModel || 'deepseek-reasoner', // 🔥 使用用户选择的模型
@@ -1831,10 +1888,25 @@ ${promptFragment}
                     console.log(`  • 上行: ${reportResponse.usage.prompt_tokens}`);
                     console.log(`  • 下行: ${reportResponse.usage.completion_tokens}`);
                 }
+
+                // 🎯 新增：模型响应接收事件
+            if (this.callbackManager) {
+                this.callbackManager.invokeEvent('on_writing_progress', {
+                    run_id: this.runId,
+                    data: {
+                        stage: 'model_response_received',
+                        progress: 0.8,
+                        attempt: attempt + 1,
+                        success: true,
+                        response_length: reportResponse?.choices?.[0]?.message?.content?.length || 0
+                    }
+                });
+            }
                 this._updateTokenUsage(reportResponse.usage);
 
                 let finalReport = reportResponse?.choices?.[0]?.message?.content ||
                     this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+
                 // 🎯 继续分析报告内容
                 console.log(`[DeepResearchAgent] 📄 生成的报告:`);
                 console.log(`  • 长度: ${finalReport.length}字符`);
@@ -1845,10 +1917,49 @@ ${promptFragment}
                 console.log(`  • 章节数: ${sections}`);
                 console.log(`  • 引用数: ${citations}`);
                 console.log(`[DeepResearchAgent] ✅ 报告生成成功 (尝试 ${attempt + 1}/${maxRetries + 1})，模式: ${researchMode}`);
-                return finalReport;
 
+                // 🎯 新增：报告生成完成事件
+            if (this.callbackManager) {
+                this.callbackManager.invokeEvent('on_quality_check', {
+                    run_id: this.runId,
+                    data: {
+                        check_type: 'report_quality',
+                        passed: finalReport && finalReport.length > 100,
+                        report_length: finalReport.length,
+                        sections_count: (finalReport.match(/^#{2,3}\s+.+/gm) || []).length,
+                        citations_count: (finalReport.match(/\[\d+\]/g) || []).length
+                    }
+                });
+                
+                this.callbackManager.invokeEvent('on_writing_progress', {
+                    run_id: this.runId,
+                    data: {
+                        stage: 'report_generated',
+                        progress: 0.9,
+                        report_length: finalReport.length,
+                        attempt: attempt + 1
+                    }
+                });
+            }
+                return finalReport;
+                
             } catch (error) {
+
                 console.error(`[DeepResearchAgent] ❌ 报告生成失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error && error.message ? error.message : error);
+
+                // 🎯 新增：报告生成失败事件
+            if (this.callbackManager) {
+                this.callbackManager.invokeEvent('on_writing_progress', {
+                    run_id: this.runId,
+                    data: {
+                        stage: 'error_retry',
+                        progress: 0.6 - (attempt * 0.1),
+                        attempt: attempt + 1,
+                        error: error.message,
+                        retry_delay: retryDelay
+                    }
+                });
+            }
 
                 // 如果是最后一次尝试，使用降级方案
                 if (attempt === maxRetries) {
@@ -1858,6 +1969,19 @@ ${promptFragment}
 
                 // 等待后重试
                 console.log(`[DeepResearchAgent] ⏳ 等待 ${retryDelay}ms 后重试...`);
+
+                // 🎯 新增：降级报告生成事件
+                if (this.callbackManager) {
+                    this.callbackManager.invokeEvent('on_quality_check', {
+                        run_id: this.runId,
+                        data: {
+                            check_type: 'fallback_activated',
+                            passed: false,
+                            issues_found: ['所有重试尝试均失败，使用降级报告']
+                        }
+                    });
+                }
+                
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
         }
