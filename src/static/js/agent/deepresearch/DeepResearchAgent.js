@@ -3722,23 +3722,111 @@ _filterUsedSources(sources, reportContent) {
 
     // ✨ 新增：计划完成度计算
     _calculatePlanCompletion(plan, history) {
-        if (!plan || !history || history.length === 0) return 0;
+    if (!plan || !history || history.length === 0) return 0;
+    
+    const totalSteps = plan.research_plan?.length || 0;
+    if (totalSteps === 0) return 0;
+    
+    // 为每个计划步骤创建一个匹配分数
+    let matchedSteps = 0;
+    
+    plan.research_plan.forEach((planStep, index) => {
+        const stepScore = this._calculateStepCompletionScore(planStep, history, index);
         
-        const completedSteps = plan.research_plan.filter(step => 
-            this._isStepEvidenceInHistory(step, history)
-        ).length;
-        
-        return completedSteps / plan.research_plan.length;
-    }
+        // 设置匹配阈值（50%以上关键词出现）
+        if (stepScore >= 0.5) {
+            matchedSteps++;
+            console.log(`[PlanCompletion] 步骤 ${index+1} 匹配成功，分数: ${stepScore.toFixed(2)}`);
+        } else {
+            console.log(`[PlanCompletion] 步骤 ${index+1} 匹配失败，分数: ${stepScore.toFixed(2)}`);
+        }
+    });
+    
+    const completion = matchedSteps / totalSteps;
+    console.log(`[PlanCompletion] 总完成度: ${matchedSteps}/${totalSteps} = ${(completion*100).toFixed(1)}%`);
+    
+    return completion;
+}
 
-    _isStepEvidenceInHistory(step, history) {
-        const stepKeywords = step.sub_question.toLowerCase().split(/\s+/);
-        const historyText = history.map(h => `${h.action.thought || ''} ${h.observation || ''}`).join(' ').toLowerCase();
-        
-        return stepKeywords.some(keyword => 
-            historyText.includes(keyword) && keyword.length > 3
-        );
+    /**
+     * 🆕 智能步骤完成度评分
+     */
+    _calculateStepCompletionScore(planStep, history, stepIndex) {
+    if (!planStep.sub_question) return 0;
+    
+    // 1. 从子问题中提取核心关键词（中英文兼容）
+    const questionText = planStep.sub_question.toLowerCase();
+    
+    // 更好的中文关键词提取：按标点分割+去除停用词
+    const chineseKeywords = this._extractChineseKeywords(questionText);
+    const englishKeywords = this._extractEnglishKeywords(questionText);
+    
+    const allKeywords = [...chineseKeywords, ...englishKeywords];
+    if (allKeywords.length === 0) return 0;
+    
+    // 2. 从历史中收集相关证据（优先检查对应步骤附近）
+    let relevantHistory = this._getRelevantHistoryForStep(history, stepIndex);
+    
+    // 如果没有直接对应的历史，使用全部历史
+    if (relevantHistory.length === 0) {
+        relevantHistory = history;
     }
+    
+    // 3. 合并历史文本进行分析
+    const historyText = relevantHistory.map(h => 
+        `${h.action?.thought || ''} ${h.observation || ''} ${h.key_finding || ''}`
+    ).join(' ').toLowerCase();
+    
+    // 4. 计算关键词出现率
+    let foundKeywords = 0;
+    allKeywords.forEach(keyword => {
+        if (historyText.includes(keyword.toLowerCase())) {
+            foundKeywords++;
+        }
+    });
+    
+    return allKeywords.length > 0 ? foundKeywords / allKeywords.length : 0;
+}
+
+    /**
+     * 🆕 提取中文关键词
+     */
+    _extractChineseKeywords(text) {
+    // 中文关键词提取：去除停用词，保留实词
+    const stopWords = ['的', '了', '在', '和', '与', '或', '如何', '什么', '为什么', '怎样'];
+    
+    // 按中文标点分割
+    const words = text.split(/[，。？；：、\s]+/).filter(word => 
+        word.length >= 2 && !stopWords.includes(word)
+    );
+    
+    return words;
+}
+
+    /**
+     * 🆕 提取英文关键词
+     */
+    _extractEnglishKeywords(text) {
+    const englishWords = text.match(/[a-z]{3,}/gi) || [];
+    
+    // 英文停用词
+    const englishStopWords = ['the', 'and', 'for', 'are', 'with', 'this', 'that', 'how', 'what', 'why'];
+    
+    return englishWords
+        .map(word => word.toLowerCase())
+        .filter(word => word.length >= 3 && !englishStopWords.includes(word));
+}
+
+    /**
+     * 🆕 获取步骤相关历史
+     */
+    _getRelevantHistoryForStep(history, stepIndex) {
+    // 每个步骤大约对应 2-3 个历史记录
+    const startIndex = Math.max(0, stepIndex * 2);
+    const endIndex = Math.min(history.length, startIndex + 3);
+    
+    return history.slice(startIndex, endIndex);
+}
 
     /**
      * 🎯 智能摘要方法 - 带有工具特定策略和优雅降级
