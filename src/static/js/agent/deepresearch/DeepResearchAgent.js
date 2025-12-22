@@ -1597,11 +1597,30 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
 
     // ✨ 最终报告生成 - 【学术引用增强版】
     async _generateFinalReport(topic, intermediateSteps, plan, sources, researchMode, originalUserInstruction) {
-        console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
+        console.log('[DeepResearchAgent] ==================== 报告生成阶段开始 ====================');
+        console.log(`[DeepResearchAgent] 🎯 报告生成配置:`);
+        console.log(`  • 主题: ${topic}`);
+        console.log(`  • 研究模式: ${researchMode}`);
+        console.log(`  • 写作模型: ${this.reportModel || 'deepseek-reasoner'}`);
+        console.log(`  • 来源数量: ${sources.length}`);
+        console.log(`  • 证据步骤: ${intermediateSteps.length}`);
+        console.log(`  • 原始指令长度: ${originalUserInstruction?.length || 0}`);
+        console.log(`[DeepResearchAgent] 📊 中间步骤概览:`);
+    
+    intermediateSteps.forEach((step, index) => {
+        if (step.action?.tool_name) {
+            console.log(`  步骤 ${index + 1}: ${step.action.tool_name} - ${step.key_finding?.substring(0, 50) || '无关键发现'}`);
+        }
+    });
 
         // 1. 构建纯净的证据集合
         const evidenceCollection = this._buildEvidenceCollection(intermediateSteps, plan, researchMode);
         
+        console.log('[DeepResearchAgent] 📦 数据准备完成:');
+        console.log(`  • 有效证据: ${evidenceCollection.validEvidenceSteps}个`);
+        console.log(`  • 关键发现: ${evidenceCollection.keyFindings.length}个`);
+        console.log(`  • 总长度: ${evidenceCollection.totalLength}字符`);
+
         // 2. 构建带编号的来源索引 (Source Index)
         const numberedSourcesText = sources.map((s, i) => {
             const dateStr = s.collectedAt ? ` (${s.collectedAt.split('T')[0]})` : '';
@@ -1647,6 +1666,8 @@ console.log(`[DeepResearchAgent] 最终报告构建完成。`);
         // 🔥 动态模板构建逻辑
         if (reportTemplate.config.dynamic_structure) {
             console.log(`[DeepResearchAgent] 检测到动态报告模板 (${researchMode}模式)，构建学术级Prompt...`);
+            console.log(`  • 模板: 动态结构 (${researchMode}模式)`);
+            console.log(`  • 要求: ${reportTemplate.config.requirements.substring(0, 100)}...`);
             
             finalPrompt = `
 # 🚫 绝对禁止开场白协议
@@ -1772,6 +1793,23 @@ ${promptFragment}
 `;
         }
         
+        // 🎯 位置4：在这里插入日志 - 在 finalPrompt 变量已经赋值之后
+        console.log('[DeepResearchAgent] 📤 给写作模型的指令摘要:');
+        const lines = finalPrompt.split('\n');
+        // 只打印重要的指令部分
+        const importantLines = lines.filter(line => 
+            line.includes('# ') || 
+            line.includes('要求') || 
+            line.includes('必须') ||
+            line.includes('禁止')
+        ).slice(0, 10); // 限制数量
+
+        importantLines.forEach(line => {
+            console.log(`  ${line}`);
+        });
+
+        console.log(`[DeepResearchAgent] 📏 提示词长度: ${finalPrompt.length}字符 (~${Math.ceil(finalPrompt.length/4)} tokens)`);
+        
         console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
         
         // 🚀 新增：基础重试机制
@@ -1785,11 +1823,27 @@ ${promptFragment}
                     model: this.reportModel || 'deepseek-reasoner', // 🔥 使用用户选择的模型
                     temperature: 0.3,
                 });
+                // 🎯 位置6：收到响应后 - 在这里插入
+                console.log(`[DeepResearchAgent] 📥 收到写作模型响应 (尝试${attempt + 1}):`);
+        
+                if (reportResponse?.usage) {
+                    console.log(`  • Token消耗: ${reportResponse.usage.total_tokens}`);
+                    console.log(`  • 上行: ${reportResponse.usage.prompt_tokens}`);
+                    console.log(`  • 下行: ${reportResponse.usage.completion_tokens}`);
+                }
                 this._updateTokenUsage(reportResponse.usage);
 
                 let finalReport = reportResponse?.choices?.[0]?.message?.content ||
                     this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
-
+                // 🎯 继续分析报告内容
+                console.log(`[DeepResearchAgent] 📄 生成的报告:`);
+                console.log(`  • 长度: ${finalReport.length}字符`);
+                // 简单分析报告结构
+                const sections = (finalReport.match(/^#{2,3}\s+.+/gm) || []).length;
+                const citations = (finalReport.match(/\[\d+\]/g) || []).length;
+        
+                console.log(`  • 章节数: ${sections}`);
+                console.log(`  • 引用数: ${citations}`);
                 console.log(`[DeepResearchAgent] ✅ 报告生成成功 (尝试 ${attempt + 1}/${maxRetries + 1})，模式: ${researchMode}`);
                 return finalReport;
 
