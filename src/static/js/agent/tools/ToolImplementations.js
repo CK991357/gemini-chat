@@ -2362,40 +2362,6 @@ class ProxiedTool extends BaseTool {
         
         return sanitized;
     }
-
-    /**
-     * 🎯 清理工具输入，避免日志过大
-     */
-    sanitizeToolInput(input) {
-        if (!input || typeof input !== 'object') {
-            return input;
-        }
-        
-        const sanitized = { ...input };
-        
-        if (sanitized.code && sanitized.code.length > 200) {
-            sanitized.code = sanitized.code.substring(0, 200) + '...';
-        }
-        if (sanitized.prompt && sanitized.prompt.length > 100) {
-            sanitized.prompt = sanitized.prompt.substring(0, 100) + '...';
-        }
-        if (sanitized.query && sanitized.query.length > 100) {
-            sanitized.query = sanitized.query.substring(0, 100) + '...';
-        }
-        
-        if (sanitized.url && sanitized.url.length > 150) {
-            sanitized.url = sanitized.url.substring(0, 150) + '...';
-        }
-        if (sanitized.image_url && sanitized.image_url.length > 150) {
-            sanitized.image_url = sanitized.image_url.substring(0, 150) + '...';
-        }
-        
-        if (sanitized.parameters && typeof sanitized.parameters === 'object') {
-            sanitized.parameters = this.sanitizeToolInput(sanitized.parameters);
-        }
-        
-        return sanitized;
-    }
 }
 
 // 🎯 为每个通过MCP代理的工具创建具体实现
