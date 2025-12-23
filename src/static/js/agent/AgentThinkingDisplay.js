@@ -1,4 +1,4 @@
-// src/static/js/agent/AgentThinkingDisplay.js - 完整修复版（含写作阶段捕获）
+// src/static/js/agent/AgentThinkingDisplay.js - 状态同步修复版
 
 export class AgentThinkingDisplay {
     constructor() {
@@ -270,23 +270,6 @@ export class AgentThinkingDisplay {
     border-left: 3px solid #667eea;
 }
 
-/* 🎯 新增：写作阶段日志类型颜色 */
-.log-type-writing_start {
-    border-left: 3px solid #d69e2e;
-}
-
-.log-type-writing_progress {
-    border-left: 3px solid #4299e1;
-}
-
-.log-type-content_synthesis {
-    border-left: 3px solid #805ad5;
-}
-
-.log-type-quality_check {
-    border-left: 3px solid #e53e3e;
-}
-
 /* 会话控制按钮样式 */
 .session-controls {
     display: flex;
@@ -335,7 +318,6 @@ export class AgentThinkingDisplay {
     border-left: 3px solid #667eea;
     font-size: 14px;
     line-height: 1.5;
-    transition: all 0.3s ease-in-out;
 }
 
 .session-title {
@@ -457,9 +439,9 @@ export class AgentThinkingDisplay {
         // 如果已经有折叠状态，保持现有状态；否则初始化默认状态
         if (Object.keys(this.sectionStates).length === 0) {
             this.sectionStates = {
-                'user-query-content': false,  // 研究主题 - 默认展开
-                'stats-content': false,       // 研究统计 - 默认展开
-                'query-log-content': false,   // 搜索记录 - 默认折叠
+                'user-query-content': false, // 研究主题 - 默认展开（新增）
+                'stats-content': false,      // 研究统计 - 默认展开
+                'query-log-content': false,  // 搜索记录 - 默认折叠
                 'execution-log-content': false // 执行日志 - 默认折叠
             };
         }
@@ -673,11 +655,7 @@ export class AgentThinkingDisplay {
             'tool_success': '✅',
             'tool_error': '❌',
             'summary': '📝',
-            'info': 'ℹ️',
-            'writing_start': '✍️',      // 新增：写作开始
-            'writing_progress': '📈',    // 新增：写作进度
-            'content_synthesis': '🔗',   // 新增：内容整合
-            'quality_check': '✅❌'      // 新增：质量检查（包含成功/失败）
+            'info': 'ℹ️'
         };
         return iconMap[type] || '•';
     }
@@ -694,11 +672,7 @@ export class AgentThinkingDisplay {
             'tool_success': '工具成功',
             'tool_error': '工具错误',
             'summary': '研究总结',
-            'info': '信息',
-            'writing_start': '写作开始',     // 新增
-            'writing_progress': '写作进度',   // 新增
-            'content_synthesis': '内容整合',  // 新增
-            'quality_check': '质量检查'      // 新增
+            'info': '信息'
         };
         return textMap[type] || type;
     }
@@ -839,8 +813,7 @@ export class AgentThinkingDisplay {
             'executing': '执行中',
             'summarizing': '总结中',
             'completed': '已完成',
-            'error': '错误',
-            'writing': '写作中' // 新增状态
+            'error': '错误'
         };
         return statusMap[status] || status;
     }
@@ -1021,13 +994,12 @@ export class AgentThinkingDisplay {
     }
 
     /**
-     * 🎯 🆕 新增：设置事件监听器（含写作阶段捕获）
+     * 🎯 设置事件监听器
      */
     setupEventListeners() {
         console.log('🔍 AgentThinkingDisplay 设置事件监听器...');
 
         const handlers = {
-            // ==================== 研究阶段事件 ====================
             'research:start': (event) => {
                 console.log('🔍 research:start 接收:', event.detail.data);
                 const { topic, researchData } = event.detail.data;
@@ -1106,109 +1078,6 @@ export class AgentThinkingDisplay {
             'research:end': (event) => {
                 console.log('🔍 research:end 接收:', event.detail.data);
                 this.completeSession(event.detail.data);
-            },
-
-            // ==================== 🆕 写作阶段事件 ====================
-            'research:writing_start': (event) => {
-                console.log('🔍 research:writing_start 接收:', event.detail.data);
-                const { writing_stage, research_mode, report_model, topic, sources_count, evidence_steps } = event.detail.data;
-                
-                // 🎯 更新会话状态为"写作中"
-                if (this.currentSession) {
-                    this.currentSession.status = 'writing';
-                    this.renderSession();
-                }
-                
-                let logText = `✍️ 开始生成最终报告 (${research_mode}模式)`;
-                
-                if (writing_stage) logText += `\n• 写作阶段: ${writing_stage}`;
-                if (report_model) logText += `\n• 报告模型: ${report_model}`;
-                if (topic) logText += `\n• 研究主题: ${topic.substring(0, 100)}...`;
-                if (sources_count) logText += `\n• 待整合来源: ${sources_count}个`;
-                if (evidence_steps) logText += `\n• 证据步骤: ${evidence_steps}个`;
-                
-                this.addExecutionLog(logText, 'writing_start');
-            },
-            
-            'research:writing_progress': (event) => {
-                console.log('🔍 research:writing_progress 接收:', event.detail.data);
-                const { stage, progress, evidence_count, total_length, has_structured_data, attempt } = event.detail.data;
-                
-                let logText = `📈 报告撰写进度: ${stage}`;
-                
-                if (progress !== undefined) {
-                    logText += `\n• 完成度: ${Math.round(progress * 100)}%`;
-                }
-                
-                if (evidence_count !== undefined) {
-                    logText += `\n• 证据条目: ${evidence_count}个`;
-                }
-                
-                if (total_length !== undefined) {
-                    const kb = Math.round(total_length / 1024);
-                    logText += `\n• 证据总量: ${kb}KB`;
-                }
-                
-                if (has_structured_data !== undefined) {
-                    logText += `\n• 结构化数据: ${has_structured_data ? '有' : '无'}`;
-                }
-                
-                if (attempt !== undefined) {
-                    logText += `\n• 当前尝试: 第${attempt}次`;
-                }
-                
-                this.addExecutionLog(logText, 'writing_progress');
-            },
-            
-            'research:content_synthesis': (event) => {
-                console.log('🔍 research:content_synthesis 接收:', event.detail.data);
-                const { synthesis_method, sources_used, evidence_steps, structured_data_count, model } = event.detail.data;
-                
-                let logText = `🔗 内容整合阶段: ${synthesis_method || '信息整合'}`;
-                
-                if (sources_used !== undefined) {
-                    logText += `\n• 使用来源: ${sources_used}个`;
-                }
-                
-                if (evidence_steps !== undefined) {
-                    logText += `\n• 证据步骤: ${evidence_steps}个`;
-                }
-                
-                if (structured_data_count !== undefined) {
-                    logText += `\n• 结构化数据: ${structured_data_count}个`;
-                }
-                
-                if (model) {
-                    logText += `\n• 整合模型: ${model}`;
-                }
-                
-                this.addExecutionLog(logText, 'content_synthesis');
-            },
-            
-            'research:quality_check': (event) => {
-                console.log('🔍 research:quality_check 接收:', event.detail.data);
-                const { check_type, passed, issues_found, report_length, sections_count, citations_count } = event.detail.data;
-                
-                let logText = `✅❌ 质量检查: ${check_type || '完整性检查'}`;
-                logText += `\n• 检查结果: ${passed ? '✅ 通过' : '❌ 未通过'}`;
-                
-                if (report_length !== undefined) {
-                    logText += `\n• 报告长度: ${report_length}字符`;
-                }
-                
-                if (sections_count !== undefined) {
-                    logText += `\n• 章节数量: ${sections_count}个`;
-                }
-                
-                if (citations_count !== undefined) {
-                    logText += `\n• 引用数量: ${citations_count}个`;
-                }
-                
-                if (issues_found && Array.isArray(issues_found) && issues_found.length > 0) {
-                    logText += `\n• 发现问题: ${issues_found.join('; ')}`;
-                }
-                
-                this.addExecutionLog(logText, 'quality_check');
             }
         };
 
@@ -1217,7 +1086,7 @@ export class AgentThinkingDisplay {
             window.addEventListener(eventName, handler);
         });
 
-        console.log('✅ AgentThinkingDisplay 事件监听器设置完成，包含写作阶段捕获');
+        console.log('✅ AgentThinkingDisplay 事件监听器设置完成');
     }
 
     /**
