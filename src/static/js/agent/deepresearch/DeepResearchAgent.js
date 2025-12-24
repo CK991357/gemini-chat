@@ -3365,30 +3365,50 @@ _extractCitationMarkers(reportContent) {
         }
     }
     
-    // 支持多种格式
+    // 🆕 优化：使用一个主正则 + 几个辅助正则
     const patterns = [
-        { regex: /\[(\d+)\]/g, type: 'single' },
-        { regex: /\[(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
-        { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
-        { regex: /\[来源\s*(\d+)\]/g, type: 'source' },
-        // 🆕 新增以下格式支持
-        { regex: /\[(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号 [4，19]
-        { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号三个数字 [4，19，25]
-        { regex: /\[(\d+),(\d+)\]/g, type: 'multi' },  // 无空格英文逗号 [4,19]
-        { regex: /\[(\d+)[，](\d+)\]/g, type: 'multi' }  // 无空格中文逗号 [4，19]
+        // 1. 主正则：匹配所有方括号内的数字组合（英文方括号）
+        { 
+            regex: /\[(\d+(?:\s*[，,、]\s*\d+)*)\]/g, 
+            type: 'multi',  // 统一处理为multi类型
+            processor: (match) => {
+                const numbers = match[1]
+                    .split(/[，,、\s]+/)
+                    .map(num => parseInt(num.trim(), 10))
+                    .filter(num => !isNaN(num));
+                return numbers;
+            }
+        },
+        
+        // 2. 中文方括号
+        { 
+            regex: /【(\d+(?:[，,、]\s*\d+)*)】/g, 
+            type: 'multi',
+            processor: (match) => {
+                const numbers = match[1]
+                    .split(/[，,、\s]+/)
+                    .map(num => parseInt(num.trim(), 10))
+                    .filter(num => !isNaN(num));
+                return numbers;
+            }
+        },
+        
+        // 3. 来源格式（保持不变）
+        { regex: /\[来源\s*(\d+)\]/g, type: 'source' }
     ];
     
-    patterns.forEach(({ regex, type }) => {
+    patterns.forEach(({ regex, type, processor }) => {
         let match;
         while ((match = regex.exec(mainContent)) !== null) {
             const indices = [];
             
-            if (type === 'single' || type === 'source') {
+            if (type === 'source') {
+                // 来源格式保持原逻辑
                 indices.push(parseInt(match[1], 10));
             } else if (type === 'multi') {
-                for (let i = 1; i < match.length; i++) {
-                    const num = parseInt(match[i], 10);
-                    if (!isNaN(num)) indices.push(num);
+                // 🆕 使用processor统一处理所有数字
+                if (processor) {
+                    indices.push(...processor(match));
                 }
             }
             
@@ -3397,7 +3417,7 @@ _extractCitationMarkers(reportContent) {
                     indices,
                     text: match[0],
                     position: match.index,
-                    type
+                    type: indices.length === 1 ? 'single' : 'multi'
                 });
             }
         }
