@@ -174,28 +174,30 @@ export class DataMiningEngine {
         const scenarioInfo = this.getScenarioMappingInfo(detectedScenario, template);
         
         return `
-# 🚫 绝对禁止开场白协议
-**禁止生成任何形式的"好的，遵命"等确认语句**
+# 🚫🚫🚫 绝对禁止开场白协议 🚫🚫🚫
+**禁止生成任何形式的"好的，遵命"、"作为一名专业的"等确认语句**
 **必须直接从报告标题开始输出纯净内容**
 
 # 🎯 数据挖掘引擎状态报告
-**引擎版本**: 完全兼容模板版 v1.0
+**引擎版本**: 纯数据表格强化版 v3.0
 **场景映射**: ${scenarioInfo}
 **模板配置源**: ${templateConfig.source}
+**DataBus条目**: ${dataBus?.size || 0} 个
+**结构化数据量**: ${structuredData.length > 10000 ? "大量" : "适中"}
 
-# 角色：数据整理专家（${adaptiveTemplate.role}）
+# 角色：数据表格整理专家（${adaptiveTemplate.role}）
 # 场景模式：${detectedScenario.name} → ${detectedScenario.templateKey}
-# 任务：基于收集的原始数据，生成纯数据报告
+# 任务：基于DataBus中收集到的完整原始数据，生成纯数据报告
 
 # 最终研究主题: "${topic}"
 
-# 0. 🎯 原始用户指令 (最高优先级)
-**请严格遵循此指令中包含的任何数据收集要求。**
+# 0. 🎯 原始用户指令（仅用于理解数据收集目的）
+**请严格遵循此指令中的数据收集要求，优先展示用户需要的数据。但不要添加任何描述性语言。**
 \`\`\`
 ${userInstruction}
 \`\`\`
 
-# 1. 📊 数据收集概况
+# 1. 📊 数据收集概况（仅用于信息，不要输出）
 **检测到的场景**: ${detectedScenario.name} → ${detectedScenario.templateKey}
 **场景映射状态**: ${scenarioInfo.includes("直接匹配") ? "✅ 直接匹配" : "🔄 智能映射"}
 **检测到的数据模式**: ${detectedPattern}
@@ -207,75 +209,87 @@ ${userInstruction}
 **注意：以下编号对应你在表格中应引用的 [x] 标记。**
 ${numberedSourcesText}
 
-# 3. 收集到的原始数据
-以下内容是从上述来源中提取的详细信息。请将这些数据整理成规范的表格。
+# 3. 📊 DataBus中的所有原始数据（完整未压缩）
+以下是从DataBus中提取的所有数据。**必须全部使用**，不得遗漏任何数据：
 
 ${structuredData}
 
-# 4. 你的数据整理指令 (输出要求)
-现在，请严格遵循以下元结构和要求，将上述数据整理成最终的数据报告。
+# 4. ⚡ 强制纯数据输出指令（最高优先级）
 
-${promptFragment}
-
-## 🎯 ${detectedScenario.templateKey.toUpperCase()} 模板专用指令
+## 🔥 ${detectedScenario.templateKey.toUpperCase()} 场景专用指令
 ${templateConfig.instructions}
 
-## 📋 数据结构要求
-${templateConfig.structure.map(section => `- ${section}`).join('\n')}
+## 🚫🚫🚫 绝对禁止（必须严格遵守，违反将导致报告失败）
+1. **禁止任何描述性语言**：不要添加概述、分析、总结、评估、说明、结论
+2. **禁止主观内容**：不要使用任何形容词评价数据（如"显著"、"重要"、"优秀"）
+3. **禁止数据解读**：不要解释数据的含义、趋势、重要性或得出结论
+4. **禁止章节说明**：不要写"本章节包含..."、"下表展示了..."、"这部分数据说明..."
+5. **禁止添加分析**：不要进行趋势预测、比较评价或任何形式的解读
+6. **禁止合并修改**：不要合并或修改原始数据值，保持数据原貌
 
-## 📊 数据质量评级标准（完全兼容模板）
+## ✅✅✅ 必须做的事情（违反将导致报告不完整）
+1. **提取所有DataBus数据**：将上面DataBus中的所有数据转换为表格
+2. **质量等级标注**：每个表格必须标注 [质量: X级]
+3. **来源标注**：表格中必须包含"来源"列，使用 [x] 格式
+4. **保持原始格式**：不要修改数据的原始单位、格式和数值
+5. **完整呈现**：不要遗漏任何数据点，尽可能完整呈现
+6. **表格优先**：所有结构化数据必须优先转换为Markdown表格
+7. **自主生成标题**：基于数据内容生成精准的表格标题
+
+## 📋 输出结构（必须严格遵循）
+${templateConfig.structure.join('\n')}  // 🔥 修正：去掉"- "前缀
+
+## 📊 数据质量评级标准（仅用于标注，不要解释）
 1. **A级**: 数据完整，来源可靠，格式统一
 2. **B级**: 数据基本完整，来源一般，格式基本统一  
 3. **C级**: 数据缺失严重，来源单一，格式混乱
 4. **D级**: 数据不可用或无效
 
-**🚫 绝对禁止:**
-- 添加任何分析、观点、解读、总结
-- 使用主观形容词（如"显著"、"重要"）
-- 进行趋势预测或比较评价
-- 合并或修改原始数据值
-
-**✅ 核心要求:**
-- **自主生成标题**: 基于数据主题和场景生成精准标题
-- **表格为主**: 所有数据优先以表格形式呈现
-- **来源标注**: 每行数据必须标注来源编号 [x]
-- **格式规范**: 数值、百分比、日期格式统一
-- **保留原始**: 保持数据原貌，不进行任何计算
-- **纯净内容**: 只呈现数据，不添加任何分析
-- **质量标注**: 每个表格/数据块必须标注质量等级 [质量: X级]
-
-## 📋 表格格式化规范
-1. 使用标准的 Markdown 表格语法
+## 🔧 表格格式化规范（必须遵守）
+1. 使用标准的Markdown表格语法
 2. 表头清晰描述数据维度
 3. 数值右对齐，文本左对齐
-4. 缺失数据标记为 "N/A"
-5. 每个表格不超过 10 列
-6. **必须标注质量等级**，例如：[质量: A级]
+4. 缺失数据标记为"N/A"
+5. 每个表格不超过10列
+6. 必须包含"来源"列
+7. 每行数据必须标注来源编号
+8. 数值、百分比、日期格式必须统一
 
-## 🔄 场景自适应输出示例
+## 🔄 场景自适应输出示例（必须模仿此格式）
 \`\`\`markdown
-## 表1: 智能手机参数对比 [质量: A级]
+# 2025年中国主要开源大语言模型发展回顾数据报告
 
-| 型号 | 发布年份 | 处理器 | 内存(GB) | 价格(美元) | 来源 |
-|------|----------|--------|----------|------------|------|
-| iPhone 16 | 2024 | A18 Pro | 8 | 999 | [1, 3] |
-| Samsung S24 | 2024 | Snapdragon 8 Gen 3 | 12 | 899 | [2, 4] |
+## 表1: 企业模型发布时间线 [质量: A级]
+| 公司/系列 | 主要模型名称 | 发布/更新时间 | 关键特性/定位摘要 | 来源 |
+|-----------|--------------|---------------|-------------------|------|
+| 智谱 (GLM) | GLM-4.5 | 2025年7月28日 | 专为AI Agent设计... | [1], [2] |
+| 月之暗面 (Kimi) | Kimi K2 | 2025年7月 | 采用混合专家（MoE）架构... | [3] |
 
-## 时间序列数据: 季度销量 [质量: B级]
+## 表2: 模型性能对比 [质量: B级]
+| 模型 | MMLU-Pro得分 | GPQA-Diamond得分 | SWE-bench得分 | 来源 |
+|------|--------------|------------------|---------------|------|
+| GLM-4.7 | 84.3% | 85.7% | 73.8% | [4] |
 
-| 季度 | iPhone 销量(百万) | Samsung 销量(百万) |
-|------|-------------------|-------------------|
-| 2024 Q1 | 51.2 | 60.1 |
-| 2024 Q2 | 45.8 | 55.3 |
+## 表3: 时间序列数据 [质量: A级]
+| 时间 | 事件 | 模型 | 来源 |
+|------|------|------|------|
+| 2025-01 | Kimi K1.5发布 | Kimi K1.5 | [5] |
+| 2025-04 | Qwen3系列发布 | Qwen3 | [6] |
 
-## 地理分布数据 [质量: C级]
-
-- 北美市场占有率: iPhone 52%, Samsung 28% [来源 5]
-- 欧洲市场占有率: iPhone 34%, Samsung 41% [来源 6]
-- *注: 亚洲市场数据暂缺*
+## 原始数据片段1: 行业报告摘要
+- 呈现"一超三强"局面："一超"为DeepSeek，"三强"为Qwen、GLM、Kimi [7]
+- 2025年上半年，开源模型性能已整体逼近甚至追平闭源模型 [8]
 \`\`\`
 
-现在，请开始整理这份基于原始数据的数据报告。
+# 🚀 现在开始输出
+**记住以下要点：**
+1. **直接从报告标题开始**，不要任何开场白
+2. **只输出数据表格**，不要添加任何描述性语言
+3. **使用所有DataBus数据**，不要遗漏
+4. **标注质量和来源**，每个表格都要有
+5. **保持数据原貌**，不要修改或解读
+
+**现在，请基于DataBus中的完整数据，直接开始输出数据表格：**
 `;
     }
     
@@ -357,43 +371,45 @@ ${templateConfig.structure.map(section => `- ${section}`).join('\n')}
     /**
      * 🔥 获取最佳模板配置 - 完全兼容模板
      */
+    // 🔥 修改 getBestTemplateConfigCompatible 方法，简化指令
     getBestTemplateConfigCompatible(detectedScenario, template, detectedPattern, dataQuality) {
-        console.log(`[DataMiningEngine] 获取模板配置，场景: ${detectedScenario.name} → ${detectedScenario.templateKey}`);
-        
-        // 1. 优先使用模板中的场景适配器
-        const templateKey = detectedScenario.templateKey;
-        if (template?.config?.scenario_adapters?.[templateKey]) {
-            const templateAdapter = template.config.scenario_adapters[templateKey];
-            console.log(`[DataMiningEngine] ✅ 使用模板场景适配器: ${templateKey}`);
-            
-            return {
-                structure: templateAdapter.structure || [],
-                instructions: templateAdapter.requirements || '使用模板预定义的结构和要求',
-                source: 'template_adapter'
-            };
-        }
-        
-        // 2. 检查模板是否有通用结构
-        if (template?.config?.structure) {
-            console.log(`[DataMiningEngine] 🔄 使用模板通用结构`);
-            
-            return {
-                structure: template.config.structure,
-                instructions: '使用模板通用结构和要求',
-                source: 'template_general'
-            };
-        }
-        
-        // 3. 使用引擎生成的动态结构（兼容模板风格）
-        console.log(`[DataMiningEngine] ⚡ 生成兼容模板的动态结构`);
-        const dynamicStructure = this.generateCompatibleStructure(detectedScenario, detectedPattern, dataQuality, template);
+    console.log(`[DataMiningEngine] 获取模板配置，场景: ${detectedScenario.name} → ${detectedScenario.templateKey}`);
+    
+    // 1. 优先使用模板中的场景适配器
+    const templateKey = detectedScenario.templateKey;
+    if (template?.config?.scenario_adapters?.[templateKey]) {
+        const templateAdapter = template.config.scenario_adapters[templateKey];
+        console.log(`[DataMiningEngine] ✅ 使用模板场景适配器: ${templateKey}`);
         
         return {
-            structure: dynamicStructure,
-            instructions: this.getCompatibleInstructions(detectedScenario, template),
-            source: 'engine_compatible'
+            structure: templateAdapter.structure || [],
+            instructions: `纯数据表格输出要求：
+1. 将DataBus中的所有相关数据转换为表格
+2. 专注于${detectedScenario.name}场景的核心数据维度
+3. 保持数据原始性和完整性`,
+            source: 'template_adapter'
         };
     }
+    
+    // 2. 使用引擎生成的简化指令
+    console.log(`[DataMiningEngine] 🔄 使用引擎生成简化指令`);
+    
+    return {
+        structure: [
+            "# [数据报告标题]",
+            "## 一、核心数据汇总",
+            "## 二、补充数据表格",
+            "## 三、原始数据片段",
+            "## 资料来源"
+        ],
+        instructions: `通用纯数据表格要求：
+1. 将DataBus中的所有结构化数据转换为Markdown表格
+2. 表格标题简明扼要，反映数据内容
+3. 每个表格必须标注质量等级 [质量: X级]
+4. 每行数据必须标注来源编号 [x]`,
+        source: 'engine_simplified'
+    };
+}
     
     /**
      * 🔥 生成兼容模板的动态结构
@@ -952,66 +968,37 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
     /**
      * 🔥 获取自适应模板（保持原样）
      */
+    // 🔥 修改 getAdaptiveTemplate 方法，简化角色
     getAdaptiveTemplate(pattern, dataQuality) {
-        const templates = {
-            comparison_table: {
-                role: "数据对比专家",
-                instructions: `
-1. **对比维度**: 明确列出所有对比维度
-2. **参数对齐**: 确保对比参数名称统一
-3. **性能指标**: 分离性能指标和基本参数
-4. **差异标注**: 使用特殊标记标注显著差异
-5. **数据来源**: 每个对比项单独标注来源`
-            },
-            time_series: {
-                role: "时间序列分析师",
-                instructions: `
-1. **时间排序**: 严格按时间顺序排列数据
-2. **时间格式**: 统一时间格式 (YYYY-MM-DD)
-3. **数据连续性**: 标注数据缺失的时间点
-4. **增长率计算**: 如有需求可计算环比/同比增长
-5. **时间跨度**: 标注数据的时间覆盖范围`
-            },
-            geographic: {
-                role: "地理数据分析师",
-                instructions: `
-1. **地理层级**: 明确地理层级 (国家>省份>城市)
-2. **坐标数据**: 如有坐标数据单独整理
-3. **区域编码**: 使用标准区域编码 (如ISO代码)
-4. **地图兼容**: 确保数据可用于地图可视化
-5. **空间关系**: 标注相邻或相关区域`
-            },
-            categorical: {
-                role: "分类数据专家",
-                instructions: `
-1. **分类体系**: 明确分类标准和层级
-2. **互斥性**: 确保分类之间互不重叠
-3. **覆盖率**: 标注分类体系的覆盖程度
-4. **编码系统**: 如有分类编码系统需说明
-5. **类别定义**: 提供每个类别的明确定义`
-            },
-            statistical: {
-                role: "统计数据分析师",
-                instructions: `
-1. **数据分布**: 描述数据的基本分布特征
-2. **统计量**: 计算并呈现关键统计量
-3. **异常值**: 标注潜在的异常数据点
-4. **置信区间**: 如有需要提供置信区间
-5. **样本信息**: 说明样本大小和抽样方法`
-            },
-            mixed: {
-                role: "数据整理专家",
-                instructions: `
-1. **数据分层**: 按数据类型分层呈现
-2. **格式统一**: 统一不同数据源的格式
-3. **质量分级**: 按数据质量分级呈现
-4. **来源追踪**: 确保每个数据点可追溯
-5. **完整性说明**: 说明数据集的完整程度`
-            }
-        };
-        
-        return templates[pattern] || templates.mixed;
-    }
+    const templates = {
+        comparison_table: {
+            role: "数据对比表格整理专家",
+            focus: "对比表格和数据参数"
+        },
+        time_series: {
+            role: "时间序列数据整理专家", 
+            focus: "时间线表格和趋势数据"
+        },
+        geographic: {
+            role: "地理数据表格整理专家",
+            focus: "地理分布和区域数据"
+        },
+        categorical: {
+            role: "分类数据表格整理专家",
+            focus: "分类对比和层级数据"
+        },
+        statistical: {
+            role: "统计数据表格整理专家",
+            focus: "数值统计和分布数据"
+        },
+        mixed: {
+            role: "数据表格整理专家",
+            focus: "多种数据类型的表格转换"
+        }
+    };
+    
+    return templates[pattern] || templates.mixed;
+}
     
     /**
      * 🔥 评估来源可信度（保持原样）
