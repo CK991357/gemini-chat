@@ -3370,7 +3370,12 @@ _extractCitationMarkers(reportContent) {
         { regex: /\[(\d+)\]/g, type: 'single' },
         { regex: /\[(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
         { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
-        { regex: /\[来源\s*(\d+)\]/g, type: 'source' }
+        { regex: /\[来源\s*(\d+)\]/g, type: 'source' },
+        // 🆕 新增以下格式支持
+        { regex: /\[(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号 [4，19]
+        { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号三个数字 [4，19，25]
+        { regex: /\[(\d+),(\d+)\]/g, type: 'multi' },  // 无空格英文逗号 [4,19]
+        { regex: /\[(\d+)[，](\d+)\]/g, type: 'multi' }  // 无空格中文逗号 [4，19]
     ];
     
     patterns.forEach(({ regex, type }) => {
