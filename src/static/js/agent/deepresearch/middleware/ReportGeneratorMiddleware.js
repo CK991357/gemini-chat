@@ -1570,79 +1570,156 @@ ${numericStats}`;
     // ============================================================
     
     _extractCitationMarkers(reportContent) {
-    const markers = [];
-    let mainContent = reportContent;
-    const refKeywords = ["参考文献", "References", "📚 参考文献"];
+        const markers = [];
+        let mainContent = reportContent;
+        const refKeywords = ["参考文献", "References", "📚 参考文献"];
     
-    for (const keyword of refKeywords) {
-        const refIndex = reportContent.indexOf(keyword);
-        if (refIndex !== -1) {
-            mainContent = reportContent.substring(0, refIndex);
-            console.log(`[CitationMapping] 检测到"${keyword}"，只提取前 ${mainContent.length} 字符的正文`);
-            break;
+        for (const keyword of refKeywords) {
+            const refIndex = reportContent.indexOf(keyword);
+            if (refIndex !== -1) {
+                mainContent = reportContent.substring(0, refIndex);
+                console.log(`[CitationMapping] 检测到"${keyword}"，只提取前 ${mainContent.length} 字符的正文`);
+                break;
+            }
         }
-    }
     
-    const patterns = [
-        // 1. 标准单个引用 [1]
-        { regex: /\[(\d+)\]/g, type: 'single' },
+        const patterns = [
+            // 1. 标准单个引用 [1]
+            { regex: /\[(\d+)\]/g, type: 'single' },
         
-        // 2. 多引用，英文逗号（支持空格）[1, 2] 或 [1,2]
-        { regex: /\[(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
+            // 2. 多引用，英文逗号（支持空格）[1, 2] 或 [1,2]
+            { regex: /\[(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
         
-        // 3. 多引用，英文逗号（最多3个）[1, 2, 3]
-        { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
+            // 3. 多引用，英文逗号（最多3个）[1, 2, 3]
+            { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
         
-        // 4. 中文来源标记 [来源 1] 或 [来源1]
-        { regex: /\[来源\s*(\d+)\]/g, type: 'source' },
+            // 4. 中文来源标记 [来源 1] 或 [来源1]
+            { regex: /\[来源\s*(\d+)\]/g, type: 'source' },
         
-        // 🆕 5. 多引用，中文全角逗号 [4，19] 或 [4， 19]
-        { regex: /\[(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
+            // 🆕 5. 多引用，中文全角逗号 [4，19] 或 [4， 19]
+            { regex: /\[(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
         
-        // 🆕 6. 多个引用（最多5个）[1, 2, 3, 4, 5]
-        { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
+            // 🆕 6. 多个引用（最多5个）[1, 2, 3, 4, 5]
+            { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
         
-        // 🆕 7. 中文逗号多个引用 [4，19，25]
-        { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
+            // 🆕 7. 中文逗号多个引用 [4，19，25]
+            { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
         
-        // 🆕 8. 支持无空格格式 [4,19]
-        { regex: /\[(\d+),(\d+)\]/g, type: 'multi' },
+            // 🆕 8. 支持无空格格式 [4,19]
+            { regex: /\[(\d+),(\d+)\]/g, type: 'multi' },
         
-        // 🆕 9. 支持中文逗号无空格 [4，19]
-        { regex: /\[(\d+)[，](\d+)\]/g, type: 'multi' }
-    ];
+            // 🆕 9. 支持中文逗号无空格 [4，19]
+            { regex: /\[(\d+)[，](\d+)\]/g, type: 'multi' }
+       ];
     
-    patterns.forEach(({ regex, type }) => {
-        let match;
-        while ((match = regex.exec(mainContent)) !== null) {
-            const indices = [];
+        patterns.forEach(({ regex, type }) => {
+            let match;
+            while ((match = regex.exec(mainContent)) !== null) {
+                const indices = [];
             
-            if (type === 'single' || type === 'source') {
-                indices.push(parseInt(match[1], 10));
-            } else if (type === 'multi') {
-                // 提取所有捕获组的数字
-                for (let i = 1; i < match.length; i++) {
-                    if (match[i] !== undefined) {
-                        const num = parseInt(match[i], 10);
-                        if (!isNaN(num)) indices.push(num);
+                if (type === 'single' || type === 'source') {
+                    indices.push(parseInt(match[1], 10));
+                } else if (type === 'multi') {
+                    // 提取所有捕获组的数字
+                    for (let i = 1; i < match.length; i++) {
+                        if (match[i] !== undefined) {
+                            const num = parseInt(match[i], 10);
+                            if (!isNaN(num)) indices.push(num);
+                        }
                     }
+                }
+            
+                if (indices.length > 0) {
+                    markers.push({
+                        indices,
+                        text: match[0],
+                        position: match.index,
+                        type
+                    });
+                }
+            }
+        });
+    
+        markers.sort((a, b) => a.position - b.position);
+        return markers;
+    }
+    _processCitations(citationMarkers, uniqueSources) {
+        const seen = new Set();
+        const result = [];
+        let warningCount = 0;
+        
+        citationMarkers.forEach(marker => {
+            marker.indices.forEach(index => {
+                if (seen.has(index)) return;
+                
+                if (index < 1 || index > uniqueSources.length) {
+                    console.warn(`[CitationMapping] 引用[${index}]超出范围(1-${uniqueSources.length})`);
+                    warningCount++;
+                    return;
+                }
+                
+                const source = uniqueSources[index - 1];
+                if (!source) {
+                    console.warn(`[CitationMapping] 无法找到来源[${index}]`);
+                    return;
+                }
+                
+                seen.add(index);
+                result.push({
+                    index,
+                    source,
+                    position: marker.position
+                });
+            });
+        });
+        
+        if (warningCount > 0) {
+            console.warn(`[CitationMapping] 共发现 ${warningCount} 个超出范围的引用`);
+        }
+        
+        return result;
+    }
+
+    _generateCitationSection(processedCitations, uniqueSources) {
+        if (processedCitations.length === 0) return '';
+        
+        let section = '\n\n## 🔗 文中引用对应来源 (Citation-Indexed References)\n\n';
+        section += '> *注：本部分仅列出报告中实际引用的来源，按照文中出现的顺序排列。*\n';
+        section += '> *与参考文献章节完全独立，不进行任何筛选或交叉引用。*\n\n';
+        
+        processedCitations.forEach(citation => {
+            const { index, source } = citation;
+            
+            let entry = `**[${index}]** `;
+            
+            if (source.title && source.title !== '无标题') {
+                entry += `"${source.title}"`;
+            } else {
+                entry += `来源 ${index}`;
+            }
+            
+            if (source.url && source.url !== '#') {
+                try {
+                    const hostname = new URL(source.url).hostname.replace('www.', '');
+                    entry += ` - ${hostname}`;
+                } catch {
+                    entry += ` - 外部链接`;
                 }
             }
             
-            if (indices.length > 0) {
-                markers.push({
-                    indices,
-                    text: match[0],
-                    position: match.index,
-                    type
-                });
+            if (source.url && source.url !== '#') {
+                entry += `\n   🔗 ${source.url}`;
             }
-        }
-    });
-    
-    markers.sort((a, b) => a.position - b.position);
-    return markers;
-}
+            
+            section += `${entry}\n\n`;
+        });
+        
+        section += `---\n📊 **引用统计**：\n`;
+        section += `• 文中引用 ${processedCitations.length} 个独立来源\n`;
+        section += `• 模型共看到 ${uniqueSources.length} 个去重来源\n`;
+        
+        return section;
+    }
 
     // ============================================================
     // 🎯 状态更新方法
