@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from dotenv import load_dotenv
 import logging
 
@@ -121,51 +121,12 @@ TOOLS_CATALOG = [
       },
       "required": ["mode", "parameters"]
     }
-  },
-  # 🆕 新增 AlphaVantage 工具文档
-  {
-    "name": "alphavantage",
-    "description": "从AlphaVantage获取金融数据的工具。支持股票、外汇、加密货币、大宗商品、国债收益率、新闻情绪等多种数据类型。数据会保存到会话工作区，以便后续使用代码解释器进行分析和可视化。",
-    "endpoint_url": "https://tools.10110531.xyz/api/v1/execute_tool",
-    "input_schema": {
-      "title": "AlphaVantageInput",
-      "type": "object",
-      "properties": {
-        "function": { 
-          "title": "Function", 
-          "type": "string", 
-          "description": "要调用的AlphaVantage功能名称",
-          "enum": [
-            "fetch_weekly_adjusted",
-            "fetch_global_quote", 
-            "fetch_historical_options",
-            "fetch_earnings_transcript",
-            "fetch_insider_transactions",
-            "fetch_etf_profile",
-            "fetch_forex_daily",
-            "fetch_digital_currency_daily",
-            "fetch_wti",
-            "fetch_brent", 
-            "fetch_copper",
-            "fetch_treasury_yield",
-            "fetch_news_sentiment"
-          ]
-        },
-        "parameters": { 
-          "title": "Parameters", 
-          "type": "object", 
-          "description": "功能参数，具体参数取决于选择的function" 
-        }
-      },
-      "required": ["function"]
-    }
   }
 ]
 
 class ToolExecutionRequest(BaseModel):
     tool_name: str
     parameters: Dict[str, Any]
-    session_id: Optional[str] = None  # 🎯 新增：可选会话ID
 
 @app.get("/")
 def read_root():
@@ -189,24 +150,16 @@ async def api_execute_tool(request: ToolExecutionRequest):
     """
     Executes a specified tool with the given parameters.
     This is the main endpoint for the tool server.
-    
-    🎯 新增：支持 session_id 参数，用于会话隔离和数据共享
     """
     try:
-        # 提取 session_id
-        session_id = request.session_id
+        # 调用工具执行器
+        result = await execute_tool(request.tool_name, request.parameters)
         
-        # 记录工具调用
-        logger.info(f"Executing tool: {request.tool_name}, session_id: {session_id or 'none'}")
-        
-        # 调用工具执行器，传递 session_id
-        result = await execute_tool(request.tool_name, request.parameters, session_id)
-        
-        # 如果工具执行失败，返回错误
+        # 如果工具执行本身失败，也可能需要一个特定的HTTP状态码
         if isinstance(result, dict) and result.get("success") == False:
             # 检查是否有验证错误
             if "details" in result:
-                 raise HTTPException(status_code=400, detail=result)  # Bad Request for validation errors
+                 raise HTTPException(status_code=400, detail=result) # Bad Request for validation errors
             # 其他工具执行错误
             raise HTTPException(status_code=500, detail=result)
 
