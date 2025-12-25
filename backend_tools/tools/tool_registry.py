@@ -141,7 +141,7 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any], session_id: s
         logger.info(f"Executing tool: {tool_name} with session_id: {session_id}")
         
         # 🎯 核心：传递 session_id 给工具的 execute 方法
-        result = await tool_instance.execute(validated_parameters)
+        result = await tool_instance.execute(validated_parameters, session_id)
         
         # 如果结果中包含 session_id 信息，记录日志
         if session_id and isinstance(result, dict):

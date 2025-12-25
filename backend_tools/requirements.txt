@@ -1,0 +1,157 @@
+# 创建分类的 requirements.txt 文件
+# ==============================================
+# Python Tool Server - Complete Dependencies
+# Generated: $(date)
+# Python Version: $(python --version)
+# ==============================================
+
+# ============== CORE WEB FRAMEWORK ==============
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+starlette==0.47.3
+python-dotenv==1.0.1
+gunicorn==23.0.0
+
+# ============== DATA VALIDATION & SERIALIZATION ==============
+pydantic==2.10.6
+pydantic_core==2.27.2
+annotated-types==0.7.0
+typing_extensions==4.15.0
+typing-inspection==0.4.1
+
+# ============== HTTP CLIENT & SERVER ==============
+httpx==0.27.2
+httpcore==1.0.9
+requests==2.32.3
+aiohttp==3.11.11
+h11==0.16.0
+httptools==0.6.4
+websockets==15.0.1
+
+# ============== DATA PROCESSING & ANALYSIS ==============
+numpy==2.2.6
+pyarrow==22.0.0
+tenacity==9.1.2
+
+# ============== ALPHAVANTAGE FINANCIAL DATA ==============
+alpha_vantage==3.0.0
+
+# ============== WEB SCRAPING & CRAWLING ==============
+Crawl4AI==0.6.0
+firecrawl-py==4.3.6
+beautifulsoup4==4.12.0
+lxml==5.3.0
+playwright==1.49.0
+soupsieve==2.8
+
+# ============== SEARCH & AI TOOLS ==============
+tavily-python==0.7.11
+litellm==1.78.5
+openai==2.6.0
+tiktoken==0.11.0
+
+# ============== CHESS ENGINE ==============
+stockfish==3.28.0
+
+# ============== ASYNC & CONCURRENCY ==============
+anyio==4.4.0
+aiofiles==25.1.0
+aiosqlite==0.21.0
+aiocache==0.12.2
+nest-asyncio==1.6.0
+uvloop==0.21.0
+async-timeout==5.0.1
+greenlet==3.1.1
+
+# ============== LOGGING & MONITORING ==============
+structlog==24.4.0
+colorlog==6.9.0
+watchfiles==1.1.0
+psutil==7.1.1
+
+# ============== SECURITY & AUTHENTICATION ==============
+cryptography==46.0.3
+pyOpenSSL==25.3.0
+certifi==2025.8.3
+
+# ============== UTILITIES & HELPERS ==============
+click==8.2.1
+rich==14.2.0
+humanize==4.14.0
+pyperclip==1.11.0
+python-multipart==0.0.16
+distro==1.9.0
+filelock==3.20.0
+tqdm==4.67.1
+
+# ============== WEB & NETWORKING ==============
+yarl==1.20.1
+aiohappyeyeballs==2.6.1
+aiosignal==1.4.0
+Brotli==1.1.0
+multidict==6.6.4
+frozenlist==1.7.0
+charset-normalizer==3.4.3
+urllib3==2.2.3
+idna==3.10
+chardet==5.2.0
+
+# ============== NATURAL LANGUAGE PROCESSING ==============
+nltk==3.9.2
+rank-bm25==0.2.2
+snowballstemmer==2.2.0
+tokenizers==0.22.1
+regex==2025.8.29
+
+# ============== TEMPLATING & SERIALIZATION ==============
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+PyYAML==6.0.2
+jsonschema==4.25.1
+jsonschema-specifications==2025.9.1
+referencing==0.37.0
+rpds-py==0.27.1
+markdown-it-py==4.0.0
+mdurl==0.1.2
+
+# ============== IMAGE PROCESSING ==============
+Pillow==10.4.0
+
+# ============== MACHINE LEARNING & AI ==============
+joblib==1.5.2
+huggingface-hub==0.35.3
+
+# ============== DATABASE & STORAGE ==============
+fsspec==2025.9.0
+hf-xet==1.1.10
+
+# ============== CONTAINERIZATION ==============
+docker==7.1.0
+
+# ============== ANTI-DETECTION & STEALTH ==============
+fake-http-header==0.3.5
+fake-useragent==2.2.0
+tf-playwright-stealth==1.2.0
+cssselect==1.3.0
+
+# ============== LOW-LEVEL & BUILD TOOLS ==============
+cffi==2.0.0
+pycparser==2.23
+setuptools==59.6.0
+pip==25.2
+packaging==25.0
+
+# ============== OTHER DEPENDENCIES ==============
+attrs==25.3.0
+cachetools==5.5.0
+colorama==0.4.6
+exceptiongroup==1.3.0
+fastuuid==0.14.0
+importlib_metadata==8.7.0
+jiter==0.11.1
+propcache==0.3.2
+pyee==12.0.0
+Pygments==2.19.2
+sniffio==1.3.1
+xxhash==3.6.0
+zipp==3.23.0
