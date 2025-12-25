@@ -270,6 +270,12 @@ if (crawl4ai_gemini.function.output_schema) {
     delete crawl4ai_gemini.function.output_schema;
 }
 
+// Create a deep copy of alphavantage and remove any output_schema for Gemini compatibility
+const alphavantage_gemini = JSON.parse(JSON.stringify(alphavantage));
+if (alphavantage_gemini.function.output_schema) {
+    delete alphavantage_gemini.function.output_schema;
+}
+
 // Gemini-specific toolset without output_schema
 export const geminiMcpTools = [
     tavily_search,
