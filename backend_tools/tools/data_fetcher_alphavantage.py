@@ -1,4 +1,4 @@
-"""AlphaVantage数据获取专用模块 - 完整版（13个功能）"""
+"""AlphaVantage数据获取专用模块 - 支持会话目录完整版（13个功能）"""
 import os
 import logging
 import json
@@ -31,7 +31,7 @@ class AlphaVantageFetcher:
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def fetch_weekly_adjusted(symbol: str) -> pd.DataFrame:
+    def fetch_weekly_adjusted(symbol: str, session_dir: Path = None) -> pd.DataFrame:
         """获取周调整后数据"""
         try:
             params = {
@@ -72,11 +72,19 @@ class AlphaVantageFetcher:
                 "dividend": float
             })
 
-            # 保存数据
-            file_path = Path("data/raw/us_stock") / f"{symbol}.parquet"
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_parquet(file_path)
-            logger.info(f"数据已保存至：{file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "stock" / f"{symbol}.parquet"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(file_path)
+                logger.info(f"股票数据已保存至会话目录：{file_path}")
+            else:
+                # 后备：保存到临时目录
+                temp_dir = Path("/tmp/alphavantage_data") / "us_stock"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"{symbol}.parquet"
+                df.to_parquet(file_path)
+                logger.info(f"股票数据已保存至临时目录：{file_path}")
 
             return df[["open", "high", "low", "close", "adjusted_close", "volume", "dividend"]]
 
@@ -86,7 +94,7 @@ class AlphaVantageFetcher:
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def fetch_global_quote(symbol: str) -> Dict[str, Union[str, float, int]]:
+    def fetch_global_quote(symbol: str, session_dir: Path = None) -> Dict[str, Union[str, float, int]]:
         """获取实时行情数据"""
         try:
             params = {
@@ -103,7 +111,7 @@ class AlphaVantageFetcher:
             if not quote:
                 raise ValueError("No quote data found in response")
 
-            return {
+            result = {
                 'symbol': quote.get('01. symbol'),
                 'open': float(quote.get('02. open', 0)) if quote.get('02. open', '') != '' else 0.0,
                 'high': float(quote.get('03. high', 0)) if quote.get('03. high', '') != '' else 0.0,
@@ -116,6 +124,16 @@ class AlphaVantageFetcher:
                 'change_percent': quote.get('10. change percent', '0%')
             }
 
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "stock" / f"{symbol}_quote.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, ensure_ascii=False, indent=2)
+                logger.info(f"实时行情已保存至会话目录：{file_path}")
+
+            return result
+
         except Exception as e:
             logger.error(f"获取实时行情失败: {e}")
             raise
@@ -124,7 +142,7 @@ class AlphaVantageFetcher:
     
     @staticmethod
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=4, max=10))  # 减少重试次数
-    def fetch_historical_options(symbol: str, date: str = None) -> List[Dict]:
+    def fetch_historical_options(symbol: str, date: str = None, session_dir: Path = None) -> List[Dict]:
         """获取历史期权数据"""
         try:
             params = {
@@ -169,11 +187,19 @@ class AlphaVantageFetcher:
                     if contract.get(field):
                         contract[field] = int(contract[field])
 
-            # 保存数据
-            file_path = Path("data/raw/options") / f"{symbol}_{date if date else 'latest'}.parquet"
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            pd.DataFrame(data["data"]).to_parquet(file_path)
-            logger.info(f"期权数据已保存至：{file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "options" / f"{symbol}_{date if date else 'latest'}.parquet"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                pd.DataFrame(data["data"]).to_parquet(file_path)
+                logger.info(f"期权数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "options"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"{symbol}_{date if date else 'latest'}.parquet"
+                pd.DataFrame(data["data"]).to_parquet(file_path)
+                logger.info(f"期权数据已保存至临时目录：{file_path}")
 
             return data["data"]
 
@@ -186,7 +212,7 @@ class AlphaVantageFetcher:
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def fetch_earnings_transcript(symbol: str, quarter: str) -> Dict:
+    def fetch_earnings_transcript(symbol: str, quarter: str, session_dir: Path = None) -> Dict:
         """获取财报电话会议记录"""
         try:
             params = {
@@ -200,12 +226,21 @@ class AlphaVantageFetcher:
             response.raise_for_status()
             data = response.json()
 
-            # 保存数据
-            file_path = Path("data/raw/transcripts") / f"{symbol}_{quarter}.json"
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False)
-            logger.info(f"财报会议记录已保存至：{file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "transcripts" / f"{symbol}_{quarter}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+                logger.info(f"财报会议记录已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "transcripts"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"{symbol}_{quarter}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+                logger.info(f"财报会议记录已保存至临时目录：{file_path}")
 
             return data
             
@@ -217,7 +252,7 @@ class AlphaVantageFetcher:
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def fetch_insider_transactions(symbol: str) -> List[Dict]:
+    def fetch_insider_transactions(symbol: str, session_dir: Path = None) -> List[Dict]:
         """获取公司内部人交易数据"""
         try:
             params = {
@@ -246,12 +281,21 @@ class AlphaVantageFetcher:
                     "total_value": float(item.get("shares", 0)) * float(item.get("share_price", 0)) if item.get("shares") and item.get("share_price") else 0
                 })
 
-            # 保存数据
-            file_path = Path("data/raw/insider") / f"{symbol}_insider.json"
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(transactions, f, ensure_ascii=False)
-            logger.info(f"内部人交易数据已保存至：{file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "insider" / f"{symbol}_insider.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(transactions, f, ensure_ascii=False)
+                logger.info(f"内部人交易数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "insider"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"{symbol}_insider.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(transactions, f, ensure_ascii=False)
+                logger.info(f"内部人交易数据已保存至临时目录：{file_path}")
 
             return transactions
             
@@ -263,7 +307,7 @@ class AlphaVantageFetcher:
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def fetch_etf_profile(symbol: str) -> Dict:
+    def fetch_etf_profile(symbol: str, session_dir: Path = None) -> Dict:
         """获取ETF详细信息和持仓数据"""
         try:
             params = {
@@ -312,13 +356,22 @@ class AlphaVantageFetcher:
                             "shares": int(holding.get("shares", 0)) 
                         })
 
-            # 保存数据
-            file_path = Path("data/raw/etf") / f"{symbol}_profile.json"
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(profile, f, ensure_ascii=False, indent=2)
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "etf" / f"{symbol}_profile.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(profile, f, ensure_ascii=False, indent=2)
+                logger.info(f"ETF数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "etf"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"{symbol}_profile.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(profile, f, ensure_ascii=False, indent=2)
+                logger.info(f"ETF数据已保存至临时目录：{file_path}")
             
-            logger.info(f"ETF数据已保存至：{file_path}")
             return profile
             
         except Exception as e:
@@ -332,7 +385,8 @@ class AlphaVantageFetcher:
     def fetch_forex_daily(
         from_symbol: str = "USD",
         to_symbol: str = "JPY",
-        outputsize: str = "full"
+        outputsize: str = "full",
+        session_dir: Path = None
     ) -> pd.DataFrame:
         """获取外汇每日数据"""
         try:
@@ -370,10 +424,19 @@ class AlphaVantageFetcher:
                 "close": float
             })
 
-            file_path = Path("data/raw/forex") / f"{from_symbol}_{to_symbol}_daily.parquet"
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_parquet(file_path)
-            logger.info(f"外汇数据已保存至: {file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "forex" / f"{from_symbol}_{to_symbol}.parquet"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(file_path)
+                logger.info(f"外汇数据已保存至会话目录: {file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "forex"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"{from_symbol}_{to_symbol}_daily.parquet"
+                df.to_parquet(file_path)
+                logger.info(f"外汇数据已保存至临时目录: {file_path}")
 
             return df
 
@@ -388,6 +451,7 @@ class AlphaVantageFetcher:
     def fetch_digital_currency_daily(
         symbol: str,
         market: str,
+        session_dir: Path = None
     ) -> Dict[str, pd.DataFrame]:
         """获取数字货币每日数据"""
         try:
@@ -484,19 +548,35 @@ class AlphaVantageFetcher:
                 "open": float, "high": float, "low": float, "close": float
             })
 
-            # 保存数据
-            dir_path = Path("data/raw/digital_currency")
-            dir_path.mkdir(parents=True, exist_ok=True)
-            
-            # 特殊处理USD市场数据
-            if market == "USD":
-                file_path = dir_path / "USD_market_values.parquet"
-                market_df.to_parquet(file_path)
-                logger.info(f"USD市场数据已保存至: {file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                dir_path = session_dir / "crypto"
+                dir_path.mkdir(parents=True, exist_ok=True)
+                
+                # 特殊处理USD市场数据
+                if market == "USD":
+                    file_path = dir_path / f"{symbol}_USD.parquet"
+                    market_df.to_parquet(file_path)
+                    logger.info(f"USD市场数据已保存至会话目录: {file_path}")
+                else:
+                    market_file = dir_path / f"{symbol}_{market}.parquet"
+                    usd_file = dir_path / f"{symbol}_USD.parquet"
+                    market_df.to_parquet(market_file)
+                    usd_df.to_parquet(usd_file)
+                    logger.info(f"数字货币{symbol}数据已保存至会话目录: {dir_path}")
             else:
-                market_df.to_parquet(dir_path / f"{market}_market_values.parquet")
-                usd_df.to_parquet(dir_path / "usd_market_values.parquet")
-                logger.info(f"数字货币{symbol}数据已保存至: {dir_path}")
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "digital_currency"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                
+                if market == "USD":
+                    file_path = temp_dir / "USD_market_values.parquet"
+                    market_df.to_parquet(file_path)
+                    logger.info(f"USD市场数据已保存至临时目录: {file_path}")
+                else:
+                    market_df.to_parquet(temp_dir / f"{market}_market_values.parquet")
+                    usd_df.to_parquet(temp_dir / "usd_market_values.parquet")
+                    logger.info(f"数字货币{symbol}数据已保存至临时目录: {temp_dir}")
 
             return {
                 "market": market_df,
@@ -512,7 +592,8 @@ class AlphaVantageFetcher:
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_wti(
-        interval: str = "monthly"
+        interval: str = "monthly",
+        session_dir: Path = None
     ) -> pd.DataFrame:
         """获取WTI原油价格数据"""
         try:
@@ -539,12 +620,19 @@ class AlphaVantageFetcher:
             df = df.drop(columns=["value"])
             df = df.set_index("date").sort_index()
 
-            # 保存数据
-            dir_path = Path("data/raw/commodities")
-            dir_path.mkdir(parents=True, exist_ok=True)
-            file_path = dir_path / f"WTI_{interval}.parquet"
-            df.to_parquet(file_path)
-            logger.info(f"WTI原油数据已保存至: {file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "commodities" / f"WTI_{interval}.parquet"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(file_path)
+                logger.info(f"WTI原油数据已保存至会话目录: {file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "commodities"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"WTI_{interval}.parquet"
+                df.to_parquet(file_path)
+                logger.info(f"WTI原油数据已保存至临时目录: {file_path}")
 
             return df
 
@@ -555,7 +643,8 @@ class AlphaVantageFetcher:
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_brent(
-        interval: str = "monthly"
+        interval: str = "monthly",
+        session_dir: Path = None
     ) -> pd.DataFrame:
         """获取Brent原油价格数据"""
         try:
@@ -582,7 +671,7 @@ class AlphaVantageFetcher:
             # 记录并过滤无效数据
             invalid_count = df["price"].isna().sum()
             if invalid_count > 0:
-                logger.warning(f"过滤掉{invalid_count}条无效铜价数据")
+                logger.warning(f"过滤掉{invalid_count}条无效原油数据")
                 df = df.dropna(subset=['price'])
             
             df["price"] = df["price"].astype(float)
@@ -591,14 +680,21 @@ class AlphaVantageFetcher:
             
             # 检查数据完整性
             if len(df) == 0:
-                raise ValueError("没有有效的铜价数据可用")
+                raise ValueError("没有有效的原油数据可用")
 
-            # 保存数据
-            dir_path = Path("data/raw/commodities")
-            dir_path.mkdir(parents=True, exist_ok=True)
-            file_path = dir_path / f"BRENT_{interval}.parquet"
-            df.to_parquet(file_path)
-            logger.info(f"Brent原油数据已保存至: {file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "commodities" / f"BRENT_{interval}.parquet"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(file_path)
+                logger.info(f"Brent原油数据已保存至会话目录: {file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "commodities"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"BRENT_{interval}.parquet"
+                df.to_parquet(file_path)
+                logger.info(f"Brent原油数据已保存至临时目录: {file_path}")
 
             return df
 
@@ -609,7 +705,8 @@ class AlphaVantageFetcher:
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_copper(
-        interval: str = "monthly"  
+        interval: str = "monthly",
+        session_dir: Path = None
     ) -> pd.DataFrame:
         """获取全球铜价数据"""
         try:
@@ -647,12 +744,19 @@ class AlphaVantageFetcher:
             if len(df) == 0:
                 raise ValueError("没有有效的铜价数据可用")
 
-            # 保存数据
-            dir_path = Path("data/raw/commodities")
-            dir_path.mkdir(parents=True, exist_ok=True)
-            file_path = dir_path / f"COPPER_{interval}.parquet"
-            df.to_parquet(file_path)
-            logger.info(f"铜价数据已保存至: {file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "commodities" / f"COPPER_{interval}.parquet"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(file_path)
+                logger.info(f"铜价数据已保存至会话目录: {file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "commodities"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"COPPER_{interval}.parquet"
+                df.to_parquet(file_path)
+                logger.info(f"铜价数据已保存至临时目录: {file_path}")
 
             return df
 
@@ -666,7 +770,8 @@ class AlphaVantageFetcher:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)) 
     def fetch_treasury_yield(
         interval: str = "monthly",
-        maturity: str = "10year"
+        maturity: str = "10year",
+        session_dir: Path = None
     ) -> pd.DataFrame:
         """获取美国国债收益率数据"""
         try:
@@ -692,12 +797,19 @@ class AlphaVantageFetcher:
             # 过滤无效数据
             df = df.dropna(subset=["yield"])
             
-            # 保存数据
-            dir_path = Path("data/raw/treasury")
-            dir_path.mkdir(parents=True, exist_ok=True)
-            file_path = dir_path / f"TREASURY_{maturity}_{interval}.parquet"
-            df.to_parquet(file_path)
-            logger.info(f"国债收益率数据已保存至: {file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "treasury" / f"TREASURY_{maturity}_{interval}.parquet"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(file_path)
+                logger.info(f"国债收益率数据已保存至会话目录: {file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "treasury"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"TREASURY_{maturity}_{interval}.parquet"
+                df.to_parquet(file_path)
+                logger.info(f"国债收益率数据已保存至临时目录: {file_path}")
             
             return df[["date", "yield"]]
             
@@ -715,7 +827,8 @@ class AlphaVantageFetcher:
         time_from: str = None,
         time_to: str = None,
         sort: str = "LATEST",
-        limit: int = 50
+        limit: int = 50,
+        session_dir: Path = None
     ) -> Dict:
         """获取市场新闻和情绪数据"""
         try:
@@ -753,11 +866,21 @@ class AlphaVantageFetcher:
             safe_filename = '_'.join(filename_parts).replace(':', '_').replace('/', '_').replace(' ', '_')
             filename = f"news_{safe_filename}.json"
             
-            file_path = Path("data/raw/news") / filename
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False)
-            logger.info(f"新闻数据已保存至：{file_path}")
+            # 🎯 保存到会话目录
+            if session_dir:
+                file_path = session_dir / "news" / filename
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+                logger.info(f"新闻数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "news"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / filename
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+                logger.info(f"新闻数据已保存至临时目录：{file_path}")
 
             return data
 
