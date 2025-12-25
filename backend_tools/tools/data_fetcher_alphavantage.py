@@ -123,7 +123,7 @@ class AlphaVantageFetcher:
     # ============ 期权数据方法 ============
     
     @staticmethod
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=4, max=10))  # 减少重试次数
     def fetch_historical_options(symbol: str, date: str = None) -> List[Dict]:
         """获取历史期权数据"""
         try:
@@ -139,8 +139,24 @@ class AlphaVantageFetcher:
             response.raise_for_status()
             data = response.json()
 
+            # 检查API返回的错误信息
+            if "Information" in data:
+                # 这是AlphaVantage的典型错误响应，说明需要付费API
+                error_msg = data["Information"]
+                logger.warning(f"AlphaVantage API限制: {error_msg}")
+                raise ValueError(f"需要AlphaVantage付费API套餐才能访问期权数据: {error_msg}")
+            
+            if "Note" in data:
+                # API调用频率限制提示
+                logger.warning(f"API频率限制提示: {data['Note']}")
+            
             if not data.get("data"):
-                raise ValueError("No options data found in response")
+                if "Error Message" in data:
+                    raise ValueError(f"AlphaVantage API错误: {data['Error Message']}")
+                else:
+                    # 返回空列表而不是抛出异常
+                    logger.warning(f"未找到{symbol}在{date}的期权数据")
+                    return []
 
             # 转换数据类型
             for contract in data["data"]:
@@ -163,7 +179,8 @@ class AlphaVantageFetcher:
 
         except Exception as e:
             logger.error(f"获取期权数据失败: {e}")
-            raise
+            # 返回空列表而不是抛出异常，避免中断整个流程
+            return []
     
     # ============ 财报数据方法 ============
     

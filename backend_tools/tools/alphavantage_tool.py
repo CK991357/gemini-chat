@@ -16,7 +16,7 @@ from data_fetcher_alphavantage import AlphaVantageFetcher
 logger = logging.getLogger(__name__)
 
 # ==================== 配置区 ====================
-SESSION_WORKSPACE_ROOT = Path("sandbox_workspaces")  # 使用相对路径
+SESSION_WORKSPACE_ROOT = Path("/srv/sandbox_workspaces")  # 改为绝对路径
 SESSION_TIMEOUT_HOURS = 24
 
 # ==================== Pydantic模型定义 ====================
@@ -83,8 +83,9 @@ class AlphaVantageTool:
         session_dir.mkdir(parents=True, exist_ok=True)
         
         # 创建子目录
-        for subdir in ["alphavantage", "stock", "options", "etf", "forex", 
-                      "crypto", "commodities", "treasury", "news", "raw_data"]:
+        for subdir in ["raw_data", "alphavantage", "stock", "forex", "crypto", 
+                      "commodities", "treasury", "news", "etf", "insider", 
+                      "transcripts", "options", "digital_currency"]:
             (session_dir / subdir).mkdir(exist_ok=True)
         
         return session_dir
@@ -182,13 +183,71 @@ class AlphaVantageTool:
         if result is None:
             return {"message": "未获取到数据"}
         
+        # 特殊处理fetch_digital_currency_daily的返回结构
+        if function_name == "fetch_digital_currency_daily":
+            if isinstance(result, dict) and "market" in result and "usd" in result:
+                processed_result = {}
+                
+                # 处理market DataFrame
+                if hasattr(result["market"], 'to_dict'):
+                    market_df = result["market"]
+                    if hasattr(market_df, 'index'):
+                        market_df = market_df.reset_index()
+                        if 'index' in market_df.columns:
+                            market_df = market_df.rename(columns={'index': 'date'})
+                    
+                    if len(market_df) > 100:
+                        processed_result["market"] = {
+                            "total_records": len(market_df),
+                            "date_range": {
+                                "start": str(market_df['date'].min()) if 'date' in market_df.columns else None,
+                                "end": str(market_df['date'].max()) if 'date' in market_df.columns else None
+                            },
+                            "sample_data": market_df.head(10).to_dict(orient='records'),
+                            "message": f"市场数据过多，显示前10条，共{len(market_df)}条"
+                        }
+                    else:
+                        processed_result["market"] = market_df.to_dict(orient='records')
+                
+                # 处理usd DataFrame
+                if hasattr(result["usd"], 'to_dict'):
+                    usd_df = result["usd"]
+                    if hasattr(usd_df, 'index'):
+                        usd_df = usd_df.reset_index()
+                        if 'index' in usd_df.columns:
+                            usd_df = usd_df.rename(columns={'index': 'date'})
+                    
+                    if len(usd_df) > 100:
+                        processed_result["usd"] = {
+                            "total_records": len(usd_df),
+                            "date_range": {
+                                "start": str(usd_df['date'].min()) if 'date' in usd_df.columns else None,
+                                "end": str(usd_df['date'].max()) if 'date' in usd_df.columns else None
+                            },
+                            "sample_data": usd_df.head(10).to_dict(orient='records'),
+                            "message": f"美元计价数据过多，显示前10条，共{len(usd_df)}条"
+                        }
+                    else:
+                        processed_result["usd"] = usd_df.to_dict(orient='records')
+                
+                return processed_result
+        
+        # 原有的处理逻辑
         # DataFrame转换为列表
         if hasattr(result, 'to_dict'):
             try:
                 if hasattr(result, 'index'):
                     df = result.reset_index()
+                    # 修复列重复的警告
+                    columns_to_rename = {}
                     if 'index' in df.columns:
-                        df = df.rename(columns={'index': 'date'})
+                        columns_to_rename['index'] = 'date'
+                    # 如果有重复的'date'列，重命名索引列
+                    elif 'date' in df.columns and df.index.name == 'date':
+                        df = df.reset_index(drop=True)
+                    
+                    if columns_to_rename:
+                        df = df.rename(columns=columns_to_rename)
                     
                     if len(df) > 100:
                         return {
