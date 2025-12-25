@@ -194,44 +194,6 @@ const crawl4ai = {
     }
 };
 
-// AlphaVantage 工具定义
-const alphavantage = {
-    "type": "function",
-    "function": {
-        "name": "alphavantage",
-        "description": "从AlphaVantage获取金融数据的完整工具。支持股票、期权、财报、内部交易、ETF、外汇、数字货币、大宗商品、国债收益率、新闻情绪等13种数据类型。数据会保存到会话工作区，以便后续使用代码解释器进行分析和可视化。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "function": {
-                    "type": "string",
-                    "description": "要调用的AlphaVantage功能名称",
-                    "enum": [
-                        "fetch_weekly_adjusted",
-                        "fetch_global_quote",
-                        "fetch_historical_options",
-                        "fetch_earnings_transcript",
-                        "fetch_insider_transactions",
-                        "fetch_etf_profile",
-                        "fetch_forex_daily",
-                        "fetch_digital_currency_daily",
-                        "fetch_wti",
-                        "fetch_brent",
-                        "fetch_copper",
-                        "fetch_treasury_yield",
-                        "fetch_news_sentiment"
-                    ]
-                },
-                "parameters": {
-                    "type": "object",
-                    "description": "功能参数，具体参数取决于选择的function。例如，对于fetch_weekly_adjusted，需要提供symbol参数。"
-                }
-            },
-            "required": ["function", "parameters"]
-        }
-    }
-};
-
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
@@ -240,8 +202,8 @@ export const mcpTools = [
     mcp_tool_catalog, // 添加新工具
     firecrawl,
     stockfish_analyzer,
-    crawl4ai,
-    alphavantage // 🆕 新增 AlphaVantage 工具
+    crawl4ai
+    // Future tools can be added here
 ];
 
 // Export a map for easy lookup by name
@@ -252,8 +214,7 @@ export const mcpToolsMap = {
     'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
     'firecrawl': firecrawl,
     'stockfish_analyzer': stockfish_analyzer,
-    'crawl4ai': crawl4ai,
-    'alphavantage': alphavantage // 🆕 新增映射
+    'crawl4ai': crawl4ai
 };
 
 // Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
@@ -270,18 +231,11 @@ if (crawl4ai_gemini.function.output_schema) {
     delete crawl4ai_gemini.function.output_schema;
 }
 
-// Create a deep copy of alphavantage and remove any output_schema for Gemini compatibility
-const alphavantage_gemini = JSON.parse(JSON.stringify(alphavantage));
-if (alphavantage_gemini.function.output_schema) {
-    delete alphavantage_gemini.function.output_schema;
-}
-
 // Gemini-specific toolset without output_schema
 export const geminiMcpTools = [
     tavily_search,
     python_sandbox_gemini,
     firecrawl_gemini,
     stockfish_analyzer,
-    crawl4ai_gemini,
-    alphavantage_gemini // 🆕 添加到 Gemini 工具列表
+    crawl4ai_gemini
 ];
