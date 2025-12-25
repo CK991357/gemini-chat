@@ -69,7 +69,7 @@ export async function handleMcpProxyRequest(request, env) {
         console.log('🔧 [工具调用监控]', JSON.stringify({
             request_id: requestId,
             tool_name: tool_name,
-            parameters: parameters ? JSON.stringify(parameters).substring(0, 200) : 'none',
+            parameters: parameters,
             session_id: session_id || 'none',
             action: 'start',
             timestamp: new Date().toISOString()
