@@ -3353,7 +3353,7 @@ _extractCitationMarkers(reportContent) {
     const markers = [];
     
     // 🎯 先找到参考文献部分的位置，只提取之前的正文
-    let mainContent = reportContent;  // ✅ 这里是 let，没问题
+    let mainContent = reportContent;
     const refKeywords = ["参考文献", "References", "📚 参考文献"];
     
     for (const keyword of refKeywords) {
@@ -3365,62 +3365,30 @@ _extractCitationMarkers(reportContent) {
         }
     }
     
-    // 🆕 修复：使用独立的正则表达式实例
+    // 支持多种格式
     const patterns = [
-        // 1. 主正则：匹配所有方括号内的数字组合（英文方括号）
-        { 
-            regex: /\[(\d+(?:\s*[，,、]\s*\d+)*)\]/g, 
-            type: 'multi',
-            processor: (match) => {
-                const numbers = match[1]
-                    .split(/[，,、\s]+/)
-                    .map(num => parseInt(num.trim(), 10))
-                    .filter(num => !isNaN(num));
-                return numbers;
-            }
-        },
-        
-        // 2. 中文方括号
-        { 
-            regex: /【(\d+(?:[，,、]\s*\d+)*)】/g, 
-            type: 'multi',
-            processor: (match) => {
-                const numbers = match[1]
-                    .split(/[，,、\s]+/)
-                    .map(num => parseInt(num.trim(), 10))
-                    .filter(num => !isNaN(num));
-                return numbers;
-            }
-        },
-        
-        // 3. 来源格式（保持不变）
-        { 
-            regex: /\[来源\s*(\d+)\]/g, 
-            type: 'source',
-            processor: (match) => {
-                const num = parseInt(match[1], 10);
-                return isNaN(num) ? [] : [num];
-            }
-        }
+        { regex: /\[(\d+)\]/g, type: 'single' },
+        { regex: /\[(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
+        { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
+        { regex: /\[来源\s*(\d+)\]/g, type: 'source' },
+        // 🆕 新增以下格式支持
+        { regex: /\[(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号 [4，19]
+        { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号三个数字 [4，19，25]
+        { regex: /\[(\d+),(\d+)\]/g, type: 'multi' },  // 无空格英文逗号 [4,19]
+        { regex: /\[(\d+)[，](\d+)\]/g, type: 'multi' }  // 无空格中文逗号 [4，19]
     ];
     
-    patterns.forEach(({ regex, type, processor }) => {
-        // ✅ 关键修复：创建新的正则实例
-        const pattern = new RegExp(regex.source, regex.flags.replace('g', '') + 'g');
+    patterns.forEach(({ regex, type }) => {
         let match;
-        
-        // ✅ 避免无限循环：重置 lastIndex
-        pattern.lastIndex = 0;
-        
-        while ((match = pattern.exec(mainContent)) !== null) {
-            let indices = [];
+        while ((match = regex.exec(mainContent)) !== null) {
+            const indices = [];
             
-            if (processor) {
-                indices = processor(match);
-            } else if (type === 'source') {
-                const num = parseInt(match[1], 10);
-                if (!isNaN(num)) {
-                    indices.push(num);
+            if (type === 'single' || type === 'source') {
+                indices.push(parseInt(match[1], 10));
+            } else if (type === 'multi') {
+                for (let i = 1; i < match.length; i++) {
+                    const num = parseInt(match[i], 10);
+                    if (!isNaN(num)) indices.push(num);
                 }
             }
             
@@ -3429,7 +3397,7 @@ _extractCitationMarkers(reportContent) {
                     indices,
                     text: match[0],
                     position: match.index,
-                    type: indices.length === 1 ? 'single' : 'multi'
+                    type
                 });
             }
         }
