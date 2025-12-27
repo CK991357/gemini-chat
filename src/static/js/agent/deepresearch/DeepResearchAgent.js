@@ -43,7 +43,7 @@ export class DeepResearchAgent {
         // ============================================================
         this.toolExecutor = new ToolExecutionMiddleware(
             tools,
-            callbackManager,
+            this.callbackManager,  // 🔥 改为 this.callbackManager
             config.skillManager,
             {
                 visitedURLs: this.stateManager.visitedURLs,
@@ -71,13 +71,20 @@ export class DeepResearchAgent {
         this.reportGenerator = new ReportGeneratorMiddleware(
             chatApiHandler,
             config.skillManager,
+            this.callbackManager, // 🔥 新增：传递 callbackManager
             {
                 dataBus: this.stateManager.dataBus,
                 generatedImages: this.stateManager.generatedImages,
-                intermediateSteps: this.stateManager.intermediateSteps
+                intermediateSteps: this.stateManager.intermediateSteps,
+                metrics: this.stateManager.metrics,
+                runId: null
+
             },
             {
-                reportModel: config.reportModel || 'deepseek-reasoner'
+                reportModel: config.reportModel || 'deepseek-reasoner',
+                // 🔥🔥🔥 关键修复：传递模板函数
+                getTemplateByResearchMode: getTemplateByResearchMode, // 从 ReportTemplates.js 导入的
+                getTemplatePromptFragment: getTemplatePromptFragment  // 从 ReportTemplates.js 导入的
             }
         );
         
@@ -165,6 +172,15 @@ export class DeepResearchAgent {
             dataBus: this.dataBus,
             generatedImages: this.generatedImages,
             imageCounter: this.imageCounter // 🔥 添加这个
+        });
+
+        // 🔥 新增：更新报告生成中间件的运行ID
+        this.reportGenerator.updateSharedState({
+            runId: runId,
+            dataBus: this.dataBus,
+            generatedImages: this.generatedImages,
+            intermediateSteps: this.intermediateSteps,
+            metrics: this.metrics // 确保 metrics 也同步
         });
         
         // 🎯 核心新增：重置知识注入状态

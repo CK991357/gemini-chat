@@ -30,12 +30,17 @@ export class ReportGeneratorMiddleware {
         };
         this.runId = sharedState.runId || null; // 🔥 关键：运行ID
         this.reportModel = config.reportModel || 'deepseek-reasoner'; // 🔥 保留报告模型
+
+        // 🎯 关键修复：从配置中获取模板函数
+        this.getTemplateByResearchMode = config.getTemplateByResearchMode;
+        this.getTemplatePromptFragment = config.getTemplatePromptFragment;
         
         console.log('[ReportGeneratorMiddleware] ✅ 初始化完成', {
             reportModel: this.reportModel,
             dataBusSize: this.dataBus.size,
             imagesCount: this.generatedImages.size,
             stepsCount: this.intermediateSteps.length,
+            hasTemplateFunctions: !!(this.getTemplateByResearchMode && this.getTemplatePromptFragment), // 🔥 新增
             hasCallbackManager: !!this.callbackManager // 🔥 关键检查
         });
     }
@@ -90,6 +95,18 @@ export class ReportGeneratorMiddleware {
         // 3. 获取报告模板和提示词片段
         const reportTemplate = this._getTemplateByResearchMode(researchMode);
         let promptFragment = this._getTemplatePromptFragment(researchMode);
+
+        // 🔥 特殊处理：数据挖掘模式
+        if (researchMode === 'data_mining') {
+            console.log(`[ReportGeneratorMiddleware] 🔍 数据挖掘模式，使用专用提示词`);
+    
+            // 检查是否使用真实模板
+            if (reportTemplate?.config?.scenario_adapters) {
+                console.log(`[ReportGeneratorMiddleware] ✅ 使用真实数据挖掘模板，包含 ${Object.keys(reportTemplate.config.scenario_adapters).length} 个场景适配器`);
+            } else {
+                console.warn(`[ReportGeneratorMiddleware] ⚠️ 数据挖掘模式使用降级模板`);
+            }
+        }
         
         // 🎯 【调试模式特别指令注入】- 与主文件完全一致
         if (researchMode === 'standard') {
@@ -2487,7 +2504,19 @@ ${numericStats}`;
      * 注意：实际使用时应从 ReportTemplates.js 导入
      */
     _getTemplateByResearchMode(researchMode) {
-        // 模拟实现，实际应从 ReportTemplates.js 导入
+    // 🔥 优先使用传入的模板函数
+    if (this.getTemplateByResearchMode && typeof this.getTemplateByResearchMode === 'function') {
+        try {
+            const template = this.getTemplateByResearchMode(researchMode);
+            console.log(`[ReportGeneratorMiddleware] ✅ 使用真实模板: ${researchMode} -> ${template?.name || '未知'}`);
+            return template;
+        } catch (error) {
+            console.warn(`[ReportGeneratorMiddleware] ❌ 模板函数调用失败: ${error.message}, 使用降级模板`);
+        }
+    }
+    
+    // 🚨 降级实现（仅在没有模板函数或调用失败时使用）
+    console.warn(`[ReportGeneratorMiddleware] ⚠️ 使用降级模板: ${researchMode}`);
         const templates = {
             academic: {
                 name: '学术研究',
@@ -2546,14 +2575,27 @@ ${numericStats}`;
      * 🎯 获取模板提示词片段（代理方法）
      */
     _getTemplatePromptFragment(researchMode) {
-        const fragments = {
-            academic: '学术报告应包含文献综述、研究方法、数据分析和学术讨论。必须严格按照学术规范进行引用和参考文献标注。',
-            business: '商业报告应聚焦市场分析、竞争格局、商业建议和ROI分析。建议使用清晰的图表和数据支撑结论。',
-            technical: '技术报告应详细描述技术架构、实现细节、性能评估和最佳实践。建议包含代码片段、架构图和性能对比数据。',
-            deep: '深度分析报告应体现多维度、辩证的分析，包含问题解构、多角度论证、解决方案评估和创新性见解。避免表面化分析，要求深度洞察。',
-            standard: '标准报告应结构清晰，逻辑连贯，易于理解。确保信息准确，表达简洁。',
-            data_mining: '数据挖掘报告应侧重于数据收集概况、数据质量评估、结构化数据呈现、数据对比分析和数据可视化建议。必须包含数据表格和统计指标。'
-        };
+    // 🔥 优先使用传入的模板函数
+    if (this.getTemplatePromptFragment && typeof this.getTemplatePromptFragment === 'function') {
+        try {
+            const fragment = this.getTemplatePromptFragment(researchMode);
+            console.log(`[ReportGeneratorMiddleware] ✅ 使用真实提示词片段: ${researchMode}`);
+            return fragment;
+        } catch (error) {
+            console.warn(`[ReportGeneratorMiddleware] ❌ 提示词片段函数调用失败: ${error.message}`);
+        }
+    }
+    
+    // 🚨 降级实现
+    console.warn(`[ReportGeneratorMiddleware] ⚠️ 使用降级提示词片段: ${researchMode}`);
+    const fragments = {
+        academic: '学术报告应包含文献综述、研究方法、数据分析和学术讨论。必须严格按照学术规范进行引用和参考文献标注。',
+        business: '商业报告应聚焦市场分析、竞争格局、商业建议和ROI分析。建议使用清晰的图表和数据支撑结论。',
+        technical: '技术报告应详细描述技术架构、实现细节、性能评估和最佳实践。建议包含代码片段、架构图和性能对比数据。',
+        deep: '深度分析报告应体现多维度、辩证的分析，包含问题解构、多角度论证、解决方案评估和创新性见解。避免表面化分析，要求深度洞察。',
+        standard: '标准报告应结构清晰，逻辑连贯，易于理解。确保信息准确，表达简洁。',
+        data_mining: '数据挖掘报告应侧重于数据收集概况、数据质量评估、结构化数据呈现、数据对比分析和数据可视化建议。必须包含数据表格和统计指标。'
+    };
         return fragments[researchMode] || fragments.standard;
     }
 }
