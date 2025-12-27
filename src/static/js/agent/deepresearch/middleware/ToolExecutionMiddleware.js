@@ -1,5 +1,6 @@
 // src/static/js/agent/deepresearch/middleware/ToolExecutionMiddleware.js
 // 🛠️ 工具执行中间件 - 从 DeepResearchAgent 中分离的核心工具执行逻辑
+// 🔥 完整修复版 - 包含所有原有内容，确保100%一致体验
 
 export class ToolExecutionMiddleware {
     /**
@@ -16,6 +17,22 @@ export class ToolExecutionMiddleware {
         this.callbackManager = callbackManager;
         this.skillManager = skillManager;
         
+        // 🎯 关键修复：必须注入 chatApiHandler
+        if (!config.chatApiHandler) {
+            console.error('[ToolExecutionMiddleware] ❌ 致命错误：缺少 chatApiHandler 依赖！');
+            throw new Error('ToolExecutionMiddleware 必须接收 chatApiHandler 参数');
+        }
+        this.chatApiHandler = config.chatApiHandler;
+        
+        // 🎯 关键修复：注入智能摘要方法
+        this.smartSummarizeMethod = config.smartSummarizeMethod || this._defaultSummarizeMethod;
+        
+        // 🎯 关键修复：注入数据存储方法
+        this.storeRawDataMethod = config.storeRawDataMethod || this._defaultStoreRawData;
+        
+        // 🎯 关键修复：注入Token追踪方法
+        this.updateTokenUsageMethod = config.updateTokenUsageMethod || this._defaultUpdateTokenUsage;
+        
         // 🎯 共享状态（来自主Agent）
         this.visitedURLs = sharedState.visitedURLs || new Map();
         this.generatedImages = sharedState.generatedImages || new Map();
@@ -31,7 +48,7 @@ export class ToolExecutionMiddleware {
         // 🎯 内部状态
         this.currentResearchContext = config.currentResearchContext || "";
         
-        console.log(`[ToolExecutionMiddleware] 初始化完成，可用工具: ${Object.keys(tools).join(', ')}`);
+        console.log(`[ToolExecutionMiddleware] ✅ 初始化完成，可用工具: ${Object.keys(tools).join(', ')}`);
     }
 
     // ============================================================
@@ -40,6 +57,7 @@ export class ToolExecutionMiddleware {
     
     /**
      * 🎯 虚拟专家接管系统 - code_generator 委托流程
+     * 🔥 与主文件完全一致的实现
      */
     async _delegateToCodeExpert(parameters, detectedMode, recordToolCall) {
         console.log('[ToolExecutionMiddleware] 👔 启动代码专家委托流程...');
@@ -48,7 +66,7 @@ export class ToolExecutionMiddleware {
         // 🟢 步骤 A: 从联邦知识库获取 python_sandbox 的完整技能包
         let knowledgeContext = "";
         if (this.skillManager) {
-            console.log('[ToolExecutionMiddleware] 正在从 SkillManager 获取专家知识...');
+            console.log('[ToolExecutionMiddleware] 🧠 正在从 SkillManager 获取专家知识...');
             const knowledgePackage = await this.skillManager.retrieveFederatedKnowledge(
                 'python_sandbox',
                 { userQuery: objective }
@@ -62,7 +80,7 @@ export class ToolExecutionMiddleware {
             console.warn('[ToolExecutionMiddleware] ⚠️ SkillManager 未注入，专家模型将仅依赖通用知识。');
         }
 
-        // 🟢 步骤 B: 构建专家 Prompt (融合知识库)
+        // 🟢 步骤 B: 构建专家 Prompt (融合知识库) - 与主文件完全相同
         const specialistPrompt = `
 # 角色：高级 Python 数据专家
 
@@ -88,14 +106,22 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 `;
 
         try {
-            // 🟢 步骤 C: 呼叫专家模型 (独立上下文)
-            const chatApiHandler = this.tools.python_sandbox?.chatApiHandler || this.chatApiHandler;
-            const response = await chatApiHandler.completeChat({
+            // 🟢 步骤 C: 呼叫专家模型 (独立上下文) - 使用注入的 chatApiHandler
+            const startTime = Date.now();
+            const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: specialistPrompt }],
                 model: 'gemini-2.5-flash-preview-09-2025', 
                 temperature: 0.1
-            }, null);
+            });
 
+            // 🎯 Token追踪
+            if (response?.usage) {
+                this.updateTokenUsageMethod(response.usage);
+            }
+
+            const executionTime = Date.now() - startTime;
+            console.log(`[ToolExecutionMiddleware] ⏱️ 专家模型响应时间: ${executionTime}ms`);
+            
             let generatedCode = response.choices[0].message.content;
             
             // 🔥 增强清理：只提取代码块（如果有的话），或者清理常见标记
@@ -106,7 +132,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 generatedCode = generatedCode.replace(/```/g, '').trim();
             }
 
-            console.log('[ToolExecutionMiddleware] 👨‍💻 专家代码生成完毕，长度:', generatedCode.length);
+            console.log(`[ToolExecutionMiddleware] 👨‍💻 专家代码生成完毕，长度: ${generatedCode.length} 字符`);
             
             // 🟢 步骤 D: 自动转发给沙盒执行 (Auto-Forwarding)
             console.log('[ToolExecutionMiddleware] 🔄 自动转接沙盒执行...');
@@ -119,7 +145,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 recordToolCall
             );
             
-            // 🟢 步骤 E: 包装结果反馈给经理
+            // 🟢 步骤 E: 包装结果反馈给经理 - 与主文件完全一致的逻辑
             let finalObservation;
 
             if (sandboxResult.toolSuccess) {
@@ -129,10 +155,12 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
                     if (outputData.type === 'image' && outputData.image_base64) {
                         // 图像处理逻辑
+                        console.log('[ToolExecutionMiddleware] 🖼️ 检测到图像输出，调用图像处理方法');
                         finalObservation = this._handleGeneratedImage(outputData);
 
                     } else if (['excel', 'word', 'powerpoint', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
                         // 文件处理逻辑
+                        console.log(`[ToolExecutionMiddleware] 📄 检测到Python沙盒生成的文件: ${outputData.type}`);
                         finalObservation = `[✅ 文件生成成功] 类型: "${outputData.type}", 标题: "${outputData.title}". 文件已准备就绪。`;
                         this.callbackManager.invokeEvent('on_file_generated', {
                             run_id: this.runId,
@@ -161,8 +189,17 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                             });
                         }
         
+                        // 🔥 核心修复：保存原始数据到数据总线（与主文件一致）
+                        const stepIndex = this.intermediateSteps.length + 1;
+                        this.storeRawDataMethod(stepIndex, sandboxResult.rawObservation, {
+                            toolName: 'code_generator',
+                            contentType: 'structured_data',
+                            dataType: outputData.type,
+                            hasSpecialFormatting: true
+                        }, sandboxResult.toolSources);
+        
                         // 返回格式化内容
-                        finalObservation = `✅ **数据提取成功**\n\n${formattedData}\n\n**提示**：完整结构化数据已保存到数据总线`;
+                        finalObservation = `✅ **数据提取成功**\n\n${formattedData}\n\n**提示**：完整结构化数据已保存到数据总线 (DataBus:step_${stepIndex})`;
 
                     } else {
                         // 🔥 核心修复：对于所有其他成功的JSON输出，统一视为结构化数据
@@ -172,6 +209,14 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                         const outputType = outputData.type || 'generic_data';
                         const keyCount = Object.keys(outputData).length;
                         
+                        // 🔥 核心修复：保存到数据总线
+                        const stepIndex = this.intermediateSteps.length + 1;
+                        this.storeRawDataMethod(stepIndex, jsonStr, {
+                            toolName: 'code_generator',
+                            contentType: 'structured_data',
+                            dataType: outputType
+                        }, sandboxResult.toolSources);
+                        
                         // 生成 Agent 友好的观察结果
                         let finalObservationContent;
                         if (jsonStr.length > 3000) {
@@ -180,7 +225,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                                 .map(([k, v]) => `${k}: ${typeof v === 'string' ? v.substring(0, 100) : typeof v}`)
                                 .join('\n');
 
-                            finalObservationContent = `✅ **专家任务执行成功 (结构化数据)**\n\n**数据类型**: ${outputType}\n**数据字段**: ${keyCount} 个\n**示例**:\n${sampleData}\n\n⚠️ 完整数据已保存，请在报告生成时引用。`;
+                            finalObservationContent = `✅ **专家任务执行成功 (结构化数据)**\n\n**数据类型**: ${outputType}\n**数据字段**: ${keyCount} 个\n**示例**:\n${sampleData}\n\n⚠️ 完整数据已保存到数据总线 (DataBus:step_${stepIndex})，请在报告生成时引用。`;
                         } else {
                             finalObservationContent = `✅ **专家任务执行成功 (结构化数据)**\n\n**数据类型**: ${outputType}\n\n**提取的数据**:\n\`\`\`json\n${jsonStr}\n\`\`\``;
                         }
@@ -189,7 +234,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     }
                 } catch (e) {
                     // 如果输出不是JSON，或者解析失败
-                    console.log('[ToolExecutionMiddleware] Python输出不是JSON格式，作为纯文本处理');
+                    console.log('[ToolExecutionMiddleware] 🐍 Python输出不是JSON格式，作为纯文本处理');
 
                     // 检查是否已经是成功消息
                     if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') ||
@@ -213,6 +258,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
             } else {
                 // 失败情况
+                console.log('[ToolExecutionMiddleware] ❌ 专家代码执行出错');
                 finalObservation = `❌ **专家代码执行出错**\n\n错误信息: ${sandboxResult.rawObservation}`;
             }
 
@@ -233,11 +279,12 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
     }
 
     // ============================================================
-    // 🛠️ 基础工具执行方法
+    // 🛠️ 基础工具执行方法（与主文件完全一致）
     // ============================================================
     
     /**
      * 🎯 基础工具调用（不含专家系统逻辑）
+     * 🔥 与主文件完全一致的实现
      */
     async _executeBasicToolCall(toolName, parameters, detectedMode, recordToolCall) {
         const tool = this.tools[toolName];
@@ -253,10 +300,10 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         }
 
         try {
-            console.log(`[ToolExecutionMiddleware] 调用工具: ${toolName}...`, parameters);
+            console.log(`[ToolExecutionMiddleware] 🔧 执行工具调用: ${toolName}`, parameters);
 
             // ============================================================
-            // 🎯 URL去重检查（针对crawl4ai）
+            // 🎯 URL去重检查（针对crawl4ai）- 与主文件完全一致
             // ============================================================
             if (toolName === 'crawl4ai' && parameters.url) {
                 const url = parameters.url;
@@ -282,6 +329,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                         lastVisited: Date.now(),
                         stepIndex: this.intermediateSteps.length
                     });
+                    console.log(`[ToolExecutionMiddleware] 📍 记录新URL访问: ${url}`);
                 }
             }
             
@@ -360,6 +408,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             }
 
             // --- 调用工具 ---
+            console.log(`[ToolExecutionMiddleware] 🚀 开始调用工具 ${toolName}...`);
             const toolResult = await tool.invoke(parameters, {
                 mode: 'deep_research',
                 researchMode: detectedMode
@@ -376,7 +425,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             }
 
             // ================================================================
-            // 🚀 智能分发中心
+            // 🚀 智能分发中心（图像/文件处理）- 与主文件完全一致
             // ================================================================
             if (toolName === 'python_sandbox' && toolSuccess) {
                 try {
@@ -400,13 +449,13 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     }
 
                 } catch (e) {
-                    console.log('[ToolExecutionMiddleware] Python输出不是特殊JSON格式，作为纯文本处理。');
+                    console.log('[ToolExecutionMiddleware] 🐍 Python输出不是特殊JSON格式，作为纯文本处理。');
                 }
             }
 
             // --- 错误诊断与来源提取 ---
             if (toolName === 'python_sandbox' && !toolSuccess) {
-                console.log(`[ToolExecutionMiddleware] Python执行失败，启动自动诊断...`);
+                console.log(`[ToolExecutionMiddleware] 🐍 Python执行失败，启动自动诊断...`);
                 const diagnosis = await this._diagnosePythonError(rawObservation, parameters);
                 if (diagnosis.suggestedFix) {
                     rawObservation += `\n\n## 🔧 自动诊断结果\n${diagnosis.analysis}\n\n**建议修复**: ${diagnosis.suggestedFix}`;
@@ -421,6 +470,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                     collectedAt: new Date().toISOString(),
                     used_in_report: false
                 }));
+                console.log(`[ToolExecutionMiddleware] 📚 提取到 ${toolSources.length} 个来源`);
             }
             
             if (toolSuccess) {
@@ -457,38 +507,45 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         }
 
         recordToolCall(toolName, parameters, toolSuccess, rawObservation);
+        console.log(`[ToolExecutionMiddleware] 📊 工具调用记录完成: ${toolName}, 成功: ${toolSuccess}`);
         return { rawObservation, toolSources, toolSuccess };
     }
 
     // ============================================================
-    // 🎯 主入口：执行工具调用
+    // 🎯 主入口：执行工具调用（对外暴露的主方法）
     // ============================================================
     
     /**
      * 🎯 执行工具调用（对外暴露的主方法）
+     * 🔥 与主文件完全一致的接口
      */
     async executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
         // ============================================================
         // 🔥🔥🔥 虚拟专家接管系统 (优先级最高)
         // ============================================================
         if (toolName === 'code_generator') {
+            console.log('[ToolExecutionMiddleware] 👔 检测到code_generator，启动专家接管流程');
             return await this._delegateToCodeExpert(parameters, detectedMode, recordToolCall);
         }
 
         // ============================================================
         // 🎯 正常工具执行流程
         // ============================================================
+        console.log(`[ToolExecutionMiddleware] 🛠️ 执行普通工具调用: ${toolName}`);
         return await this._executeBasicToolCall(toolName, parameters, detectedMode, recordToolCall);
     }
 
     // ============================================================
-    // 🎯 知识感知的工具执行
+    // 🎯 知识感知的工具执行（与主文件完全一致）
     // ============================================================
     
     /**
      * 🎯 知识感知的工具执行
+     * 🔥 与主文件完全一致的实现
      */
     async executeToolWithKnowledge(toolName, parameters, thought, intermediateSteps, detectedMode, recordToolCall) {
+        console.log(`[ToolExecutionMiddleware] 🧠 执行知识感知的工具调用: ${toolName}`);
+        
         // 🎯 检查是否有相关知识缓存
         // 可以在thought中引用知识指导
 
@@ -511,16 +568,27 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         // 正常执行工具调用
         const result = await this.executeToolCall(toolName, parameters, detectedMode, recordToolCall);
         
+        // 🔥 核心修复：在执行工具后存储数据到数据总线
+        if (result.toolSuccess) {
+            const stepIndex = this.intermediateSteps.length + 1;
+            this.storeRawDataMethod(stepIndex, result.rawObservation, {
+                toolName: toolName,
+                contentType: toolName === 'crawl4ai' ? 'webpage' : 'text'
+            }, result.toolSources);
+            console.log(`[ToolExecutionMiddleware] 💾 已存储数据到DataBus: step_${stepIndex}`);
+        }
+        
         // 🎯 返回更新后的 thought
         return { ...result, updatedThought: thought };
     }
 
     // ============================================================
-    // 🔧 辅助工具方法
+    // 🔧 辅助工具方法（与主文件完全一致）
     // ============================================================
     
     /**
      * 🛠️ 自动修复crawl4ai参数格式
+     * 🔥 与主文件完全一致的实现
      */
     _autoFixCrawl4aiParams(originalParams, errorMsg) {
         console.log('[ToolExecutionMiddleware] 🛠️ 执行crawl4ai参数自动修复');
@@ -567,11 +635,14 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
     /**
      * 🎯 图像生成结果处理
+     * 🔥 与主文件完全一致的实现
      */
     _handleGeneratedImage(imageData) {
         this.imageCounter++;
         const imageId = `agent_image_${this.imageCounter}`;
         
+        console.log(`[ToolExecutionMiddleware] 🖼️ 处理生成图像: ${imageId}, 标题: "${imageData.title}"`);
+
         // 1. 存储图像数据
         this.generatedImages.set(imageId, imageData);
 
@@ -591,6 +662,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
     /**
      * 🎯 客户端 Python 导入预检
+     * 🔥 与主文件完全一致的实现
      */
     _validatePythonImports(code) {
         const mandatoryImports = [
@@ -614,6 +686,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
     /**
      * 🚑 代码急诊室：基于 LLM 的自动修复
+     * 🔥 与主文件完全一致的实现
      */
     async _repairCodeWithLLM(brokenCode, errorType) {
         console.log('[ToolExecutionMiddleware] 🚑 启动代码急诊室 (Auto-Repair)...');
@@ -653,12 +726,16 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
 `;
 
             try {
-                const chatApiHandler = this.tools.python_sandbox?.chatApiHandler || this.chatApiHandler;
-                const response = await chatApiHandler.completeChat({
+                const response = await this.chatApiHandler.completeChat({
                     messages: [{ role: 'user', content: prompt }],
                     model: 'gemini-2.5-flash-preview-09-2025',
                     temperature: 0.1
                 });
+
+                // 🎯 Token追踪
+                if (response?.usage) {
+                    this.updateTokenUsageMethod(response.usage);
+                }
 
                 let fixedCode = response.choices[0].message.content;
                 
@@ -671,7 +748,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
                     continue;
                 }
 
-                console.log(`[ToolExecutionMiddleware] ✅ 急诊修复成功 (尝试 ${attempt + 1})，代码长度:`, fixedCode.length);
+                console.log(`[ToolExecutionMiddleware] ✅ 急诊修复成功 (尝试 ${attempt + 1})，代码长度: ${fixedCode.length} 字符`);
                 return fixedCode;
 
             } catch (error) {
@@ -685,8 +762,11 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
 
     /**
      * Python错误智能诊断
+     * 🔥 与主文件完全一致的实现
      */
     async _diagnosePythonError(errorOutput, parameters) {
+        console.log('[ToolExecutionMiddleware] 🔧 启动Python错误诊断...');
+        
         let diagnosis = "Python 执行报错。";
         let suggestion = "请检查代码逻辑，确保变量已定义且库已正确导入。";
 
@@ -716,6 +796,8 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             suggestion = "请检查操作数的数据类型是否兼容（例如，不能直接将字符串和数字相加，除非先转换）。";
         }
 
+        console.log(`[ToolExecutionMiddleware] 🔧 诊断完成: ${diagnosis}`);
+        
         return {
             errorType: 'python_execution_error',
             analysis: diagnosis,
@@ -724,27 +806,33 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
     }
 
     // ============================================================
-    // 🔗 URL 去重系统
+    // 🔗 URL 去重系统（与主文件完全一致）
     // ============================================================
     
     /**
      * 🎯 检查URL重复 (返回相似的已访问URL或 null)
+     * 🔥 与主文件完全一致的实现
      */
     _checkURLDuplicate(url) {
+        console.log(`[ToolExecutionMiddleware] 🔍 检查URL重复: ${url}`);
+        
         for (const [visitedUrl, data] of this.visitedURLs.entries()) {
             const similarity = this._calculateURLSimilarity(url, visitedUrl);
             
             // 相似度超过阈值
             if (similarity >= this.urlSimilarityThreshold) {
+                console.log(`[ToolExecutionMiddleware] ⚠️ 检测到相似URL: ${url} ~ ${visitedUrl} (相似度: ${(similarity*100).toFixed(1)}%)`);
+                
                 // 检查是否超过最大重访次数
                 if (data.count >= this.maxRevisitCount) {
-                    // 达到最大重访次数，返回已访问的 URL
+                    console.log(`[ToolExecutionMiddleware] 🛑 URL ${visitedUrl} 已达到最大重访次数 (${data.count})`);
                     return visitedUrl; 
                 }
                 
                 // 相似但未达到最大重访次数，更新计数并允许本次访问
                 data.count++;
                 data.lastVisited = Date.now();
+                console.log(`[ToolExecutionMiddleware] 🔄 URL ${visitedUrl} 重访计数: ${data.count}`);
                 return null;
             }
         }
@@ -753,20 +841,27 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
 
     /**
      * 🎯 查找缓存的观察结果
+     * 🔥 与主文件完全一致的实现
      */
     _findCachedObservationForURL(url) {
+        console.log(`[ToolExecutionMiddleware] 🔍 查找URL缓存: ${url}`);
+        
         for (let i = this.intermediateSteps.length - 1; i >= 0; i--) {
             const step = this.intermediateSteps[i];
             if (step.action.tool_name === 'crawl4ai' && 
                 step.action.parameters.url === url) {
+                console.log(`[ToolExecutionMiddleware] ✅ 找到缓存步骤: 第${i+1}步`);
                 return step;
             }
         }
+        
+        console.log(`[ToolExecutionMiddleware] ❌ 未找到URL缓存: ${url}`);
         return null;
     }
 
     /**
      * 🎯 Levenshtein距离计算
+     * 🔥 与主文件完全一致的实现
      */
     _levenshteinDistance(str1, str2) {
         const matrix = [];
@@ -794,6 +889,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
 
     /**
      * 🎯 字符串相似度算法
+     * 🔥 与主文件完全一致的实现
      */
     _calculateStringSimilarity(str1, str2) {
         const longer = str1.length > str2.length ? str1 : str2;
@@ -807,6 +903,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
 
     /**
      * 🎯 URL相似度计算
+     * 🔥 与主文件完全一致的实现
      */
     _calculateURLSimilarity(url1, url2) {
         try {
@@ -826,29 +923,101 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             return similarity;
         } catch (e) {
             // URL解析失败，退回到字符串相似度
+            console.warn(`[ToolExecutionMiddleware] ⚠️ URL解析失败，使用字符串相似度: ${url1}, ${url2}`);
             return this._calculateStringSimilarity(url1, url2);
         }
     }
 
     // ============================================================
-    // 🎯 状态更新方法
+    // 🔄 默认方法（当回调未提供时的降级实现）
+    // ============================================================
+    
+    /**
+     * 🎯 默认智能摘要方法（降级实现）
+     */
+    _defaultSummarizeMethod(mainTopic, observation, researchMode, toolName) {
+        console.warn(`[ToolExecutionMiddleware] ⚠️ 使用默认摘要方法: ${toolName}, 长度: ${observation.length}`);
+        
+        // 简单截断
+        const maxLength = 5000;
+        if (observation.length <= maxLength) {
+            return observation;
+        }
+        
+        return observation.substring(0, maxLength) + `\n\n[...内容过长，已截断前${maxLength}字符...]`;
+    }
+    
+    /**
+     * 🎯 默认数据存储方法（降级实现）
+     */
+    _defaultStoreRawData(stepIndex, rawData, metadata, toolSources) {
+        const dataKey = `step_${stepIndex}`;
+        
+        console.log(`[ToolExecutionMiddleware] 💾 默认数据存储: ${dataKey}, 长度: ${rawData.length}, 工具: ${metadata.toolName}`);
+        
+        // 简单存储
+        this.dataBus.set(dataKey, {
+            rawData: rawData,
+            originalData: rawData,
+            metadata: {
+                ...metadata,
+                originalLength: rawData.length,
+                processedLength: rawData.length,
+                timestamp: Date.now(),
+                toolSources: toolSources || [],
+                sourceCount: (toolSources || []).length
+            }
+        });
+    }
+    
+    /**
+     * 🎯 默认Token追踪方法（降级实现）
+     */
+    _defaultUpdateTokenUsage(usage) {
+        console.log(`[ToolExecutionMiddleware] 📊 默认Token追踪:`, usage);
+        // 不做实际处理，仅记录
+    }
+
+    // ============================================================
+    // 🎯 状态更新方法（与主文件交互）
     // ============================================================
     
     /**
      * 更新共享状态
+     * 🔥 确保与主文件状态同步
      */
     updateSharedState(updates) {
-        if (updates.runId) this.runId = updates.runId;
-        if (updates.intermediateSteps) this.intermediateSteps = updates.intermediateSteps;
-        if (updates.currentResearchContext) this.currentResearchContext = updates.currentResearchContext;
-        if (updates.dataBus) this.dataBus = updates.dataBus;
-        if (updates.generatedImages) this.generatedImages = updates.generatedImages;
+        if (updates.runId) {
+            this.runId = updates.runId;
+            console.log(`[ToolExecutionMiddleware] 🔄 更新runId: ${this.runId}`);
+        }
+        if (updates.intermediateSteps) {
+            this.intermediateSteps = updates.intermediateSteps;
+            console.log(`[ToolExecutionMiddleware] 🔄 更新intermediateSteps: ${this.intermediateSteps.length} 步`);
+        }
+        if (updates.currentResearchContext) {
+            this.currentResearchContext = updates.currentResearchContext;
+            console.log(`[ToolExecutionMiddleware] 🔄 更新研究上下文: ${this.currentResearchContext.substring(0, 100)}...`);
+        }
+        if (updates.dataBus) {
+            this.dataBus = updates.dataBus;
+            console.log(`[ToolExecutionMiddleware] 🔄 更新dataBus: ${this.dataBus.size} 条数据`);
+        }
+        if (updates.generatedImages) {
+            this.generatedImages = updates.generatedImages;
+            console.log(`[ToolExecutionMiddleware] 🔄 更新generatedImages: ${this.generatedImages.size} 张图片`);
+        }
+        if (updates.imageCounter !== undefined) {
+            this.imageCounter = updates.imageCounter;
+            console.log(`[ToolExecutionMiddleware] 🔄 更新imageCounter: ${this.imageCounter}`);
+        }
         
-        console.log('[ToolExecutionMiddleware] ✅ 共享状态已更新');
+        console.log('[ToolExecutionMiddleware] ✅ 共享状态已更新完成');
     }
 
     /**
      * 获取共享状态
+     * 🔥 供主文件获取最新状态
      */
     getSharedState() {
         return {
@@ -863,6 +1032,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
 
     /**
      * 重置状态（新研究开始时调用）
+     * 🔥 与主文件保持一致
      */
     resetState() {
         this.visitedURLs.clear();
@@ -871,6 +1041,21 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
         this.runId = null;
         this.currentResearchContext = "";
         
-        console.log('[ToolExecutionMiddleware] 🔄 工具执行状态已重置');
+        console.log('[ToolExecutionMiddleware] 🔄 工具执行状态已重置（新研究开始）');
+    }
+    
+    /**
+     * 🎯 获取图像计数器（供主文件同步使用）
+     */
+    getImageCounter() {
+        return this.imageCounter;
+    }
+    
+    /**
+     * 🎯 设置图像计数器（供主文件同步使用）
+     */
+    setImageCounter(count) {
+        this.imageCounter = count;
+        console.log(`[ToolExecutionMiddleware] 🔄 设置imageCounter: ${this.imageCounter}`);
     }
 }

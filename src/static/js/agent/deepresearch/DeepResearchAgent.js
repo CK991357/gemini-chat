@@ -53,9 +53,15 @@ export class DeepResearchAgent {
                 runId: null
             },
             {
+                chatApiHandler: this.chatApiHandler, // 🔥 必须添加这个！
+                smartSummarizeMethod: this._smartSummarizeObservation.bind(this),
+                storeRawDataMethod: this._storeRawData.bind(this),
+                updateTokenUsageMethod: this._updateTokenUsage.bind(this),
                 urlSimilarityThreshold: 0.85,
                 maxRevisitCount: 2,
-                imageCounter: () => this.imageCounter // 传递getter函数
+                imageCounter: () => this.imageCounter, // 传递getter函数
+                currentResearchContext: "" // 将在研究开始时设置
+                
             }
         );
         
@@ -157,7 +163,8 @@ export class DeepResearchAgent {
             intermediateSteps: this.intermediateSteps,
             currentResearchContext: cleanTopic,
             dataBus: this.dataBus,
-            generatedImages: this.generatedImages
+            generatedImages: this.generatedImages,
+            imageCounter: this.imageCounter // 🔥 添加这个
         });
         
         // 🎯 核心新增：重置知识注入状态
@@ -547,6 +554,9 @@ export class DeepResearchAgent {
                         }
                     });
 
+                    // 🎯 双重保险：在工具执行后立即同步图片计数器
+                    this.imageCounter = this.toolExecutor.getImageCounter();
+                    
                     // ✨ 智能提前终止：基于计划完成度
                     const completionRate = this._calculatePlanCompletion(researchPlan, this.intermediateSteps);
                     this.stateManager.updateMetrics({ planCompletion: completionRate });
@@ -731,6 +741,10 @@ export class DeepResearchAgent {
         // 🚀 最终报告后处理流水线（使用中间件）
         // ============================================================
         console.log('[DeepResearchAgent] 开始报告后处理流水线...');
+        
+        // 🎯 主要同步点：在报告后处理流水线开始时同步图片计数器
+        this.imageCounter = this.toolExecutor.getImageCounter();
+        console.log(`[DeepResearchAgent] 📊 图片统计: ${this.imageCounter} 张生成图片`);
         
         // 更新中间件的共享状态
         this.reportGenerator.updateSharedState({
