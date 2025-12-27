@@ -132,37 +132,6 @@ export class DeepResearchAgent {
 
         console.log(`[DeepResearchAgent] ✅ 重构版本初始化完成，可用研究工具: ${Object.keys(tools).join(', ')}`);
         console.log(`[DeepResearchAgent] 📦 已加载模块: ToolExecutionMiddleware, ReportGeneratorMiddleware, StateManager`);
-
-        // ============================================================
-        // 🎯 新增：在初始化时立即触发 research:start 事件以显示面板
-        // ============================================================
-
-        // 使用 setTimeout 确保在构造函数完全初始化后触发事件
-        setTimeout(() => {
-            if (this.callbackManager) {
-                // 生成一个临时的运行ID
-                const placeholderRunId = `placeholder_${Date.now()}`;
-                
-                // 触发 research:start 事件，使面板立即显示
-                this.callbackManager.invokeEvent('research:start', {
-                    run_id: placeholderRunId,
-                    data: {
-                        topic: 'Agent已就绪，等待研究指令...',
-                        availableTools: Object.keys(this.tools).map(name => ({ name })),
-                        researchMode: 'standard',
-                        researchData: {
-                            keywords: [],
-                            sources: [],
-                            analyzedContent: [],
-                            toolCalls: [],
-                            metrics: this.metrics
-                        }
-                    }
-                });
-                
-                console.log(`[DeepResearchAgent] ✅ 已触发面板显示事件，等待用户输入...`);
-            }
-        }, 100);
     }
 
     // ============================================================

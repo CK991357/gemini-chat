@@ -1129,8 +1129,8 @@ async function initializeEnhancedAgent() {
             if (orchestrator && orchestrator.callbackManager && orchestrator.isEnabled) {
                 try {
                     console.log('[Main.js Debug] 尝试手动触发一个研究开始事件...');
-                    // 使用 Orchestrator.js 中 setupHandlers 映射的事件名称 on_research_start
-                    await orchestrator.callbackManager.invokeEvent('on_research_start', {
+                    // 使用 Orchestrator.js 中 setupHandlers 映射的事件名称 research:start
+                    await orchestrator.callbackManager.invokeEvent('research:start', {
                         run_id: 'debug_run_id',
                         data: {
                             topic: '测试主题',
