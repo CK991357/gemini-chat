@@ -1123,76 +1123,31 @@ async function initializeEnhancedAgent() {
         
         console.log('✅ 智能代理系统准备完成（开关控制初始化模式）');
 
-        // 🎯 智能等待并触发面板显示（替换掉原来的两个setTimeout）
+        // 🎯 临时调试：强行触发一次已知会发出的事件，检查是否能被接收
+        // 延迟执行，确保 Orchestrator 有足够时间完成初始化（如果 isAgentEnabled 为 true）
         setTimeout(async () => {
-        console.log('[Main.js] 开始检查并触发面板显示...');
-    
-        // 🎯 等待函数：等待Orchestrator初始化完成
-        const waitForOrchestrator = async (maxWait = 8000) => {
-        const startTime = Date.now();
-        while (Date.now() - startTime < maxWait) {
-            if (orchestrator && 
-                orchestrator._initState === 'initialized' && 
-                orchestrator.callbackManager) {
-                console.log('[Main.js] Orchestrator 已就绪');
-                return true;
-            }
-            // 等待100ms再次检查
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        console.warn('[Main.js] 等待Orchestrator超时');
-        return false;
-    };
-    
-    try {
-        // 尝试等待Orchestrator初始化
-        const isReady = await waitForOrchestrator();
-        
-        if (isReady) {
-            // 使用callbackManager触发事件
-            await orchestrator.callbackManager.invokeEvent('research:start', {
-                run_id: 'auto_trigger_' + Date.now(),
-                data: {
-                    topic: '智能代理系统已就绪',
-                    availableTools: Object.keys(orchestrator.tools || {}).map(name => ({ name })),
-                    researchMode: 'standard',
-                    researchData: {
-                        keywords: [],
-                        sources: [],
-                        analyzedContent: [],
-                        toolCalls: [],
-                        metrics: {}
-                    }
+            if (orchestrator && orchestrator.callbackManager && orchestrator.isEnabled) {
+                try {
+                    console.log('[Main.js Debug] 尝试手动触发一个研究开始事件...');
+                    // 使用 Orchestrator.js 中 setupHandlers 映射的事件名称 research:start
+                    await orchestrator.callbackManager.invokeEvent('research:start', {
+                        run_id: 'debug_run_id',
+                        data: {
+                            topic: '测试主题',
+                            availableTools: ['tool1'],
+                            researchMode: 'standard',
+                            researchData: { keywords: ['test'], sources: [], toolCalls: [], metrics: {} }
+                        },
+                        agentType: 'deep_research' // 模拟 Agent 传递的类型
+                    });
+                    console.log('[Main.js Debug] 手动触发事件成功。');
+                } catch (eventError) {
+                    console.error('[Main.js Debug] 手动触发事件失败:', eventError);
                 }
-            });
-            console.log('[Main.js] ✅ 面板显示事件触发成功');
-        } else {
-            // 后备方案：直接发送事件
-            console.log('[Main.js] 使用直接事件后备方案');
-            const event = new CustomEvent('research:start', {
-                detail: {
-                    run_id: 'direct_trigger_' + Date.now(),
-                    data: {
-                        topic: '智能代理系统已启动',
-                        availableTools: [],
-                        researchMode: 'standard',
-                        researchData: {
-                            keywords: [],
-                            sources: [],
-                            analyzedContent: [],
-                            toolCalls: [],
-                            metrics: {}
-                        }
-                    }
-                },
-                bubbles: true
-            });
-            window.dispatchEvent(event);
-        }
-    } catch (error) {
-        console.error('[Main.js] 触发面板显示失败:', error);
-    }
-}, 2500); // ⚠️ 注意：改为2500ms，确保之前的初始化有机会完成
+            } else {
+                console.log('[Main.js Debug] Orchestrator 未启用或未初始化，跳过手动触发事件。');
+            }
+        }, 2000); // 给予 2 秒时间确保异步初始化完成
         
     } catch (error) {
         console.error('智能代理系统准备失败:', error);
