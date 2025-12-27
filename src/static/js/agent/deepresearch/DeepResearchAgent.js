@@ -776,7 +776,7 @@ export class DeepResearchAgent {
         const temporalQualityReport = this._generateTemporalQualityReport(
             researchPlan,
             this.intermediateSteps,
-            uiTopic,
+            uiTopic, // 使用干净的 topic
             detectedMode
         );
         
@@ -787,12 +787,12 @@ export class DeepResearchAgent {
             report: cleanedReport, // <--- 使用 cleanedReport
             iterations,
             intermediateSteps: this.intermediateSteps,
-            sources: uniqueSources,
+            sources: filteredSources,
             metrics: this.metrics,
             plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
             research_mode: detectedMode,
             temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
-            model: this.reportGenerator.reportModel // 🎯 修复：添加实际使用的模型名称
+            model: this.reportModel // 🎯 修复：添加实际使用的模型名称
         };
         
         // 🎯 4.3. 调用性能记录方法
