@@ -478,19 +478,7 @@ export class AgentThinkingDisplay {
             return false;
         })?.length || 0;
         
-        // 修改后的 Token 显示处理逻辑
-        let tokenUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
-        if (researchState.metrics?.tokenUsage) {
-            // 确保tokenUsage是对象而不是Promise
-            const usage = researchState.metrics.tokenUsage;
-            if (typeof usage === 'object' && !Array.isArray(usage)) {
-                tokenUsage = {
-                    total_tokens: usage.total_tokens || usage.total || 0,
-                    prompt_tokens: usage.prompt_tokens || usage.prompt || 0,
-                    completion_tokens: usage.completion_tokens || usage.completion || 0
-                };
-            }
-        }
+        const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
 
         // 🎯 修复：计算已用时间
         const elapsedTime = this._calculateElapsedTime();

@@ -2755,76 +2755,34 @@ window.addEventListener('on_file_generated', (event) => {
 });
 
 // =========================================================================
-// 🚀 [最终方案 V3 - 修复版] Agent 专属的最终报告渲染入口
+// 🚀 [最终方案 V2 - 新增] Agent 专属的最终报告渲染入口
 // =========================================================================
-window.addEventListener('research:end', async (e) => {  // 🎯 添加 async
+window.addEventListener('research:end', (e) => {
     console.log("🏁 [Main.js] 接收到 research:end 事件，准备渲染最终报告...");
-    
-    // 🎯 关键调试：检查report的类型
-    console.log('🔍 report类型检查:', {
-        result: e.detail.data,
-        hasReport: !!e.detail.data?.report,
-        reportType: typeof e.detail.data?.report,
-        isPromise: e.detail.data?.report && typeof e.detail.data.report.then === 'function',
-        reportValue: e.detail.data?.report
-    });
-    
     const result = e.detail.data;
 
     // 1. 健壮性检查
-    if (!result) {
-        console.warn("[Main.js] 'research:end' 事件未包含有效数据，跳过渲染。");
+    if (!result || !result.report) {
+        console.warn("[Main.js] 'research:end' 事件未包含有效的报告内容，跳过渲染。");
         showSystemMessage("研究已结束，但未能生成最终报告。");
         return;
     }
 
-    // 🎯 2. 核心修复：确保 report 是字符串，不是 Promise
-    let finalReportMarkdown = result.report;
-    
-    // 如果是 Promise，等待它
-    if (finalReportMarkdown && typeof finalReportMarkdown.then === 'function') {
-        console.log('⏳ report是Promise，等待解析...');
-        try {
-            finalReportMarkdown = await finalReportMarkdown;
-        } catch (error) {
-            console.error('[Main.js] 等待report Promise失败:', error);
-            finalReportMarkdown = '报告生成失败：异步处理错误。';
-        }
-    }
-    
-    // 确保是字符串
-    if (typeof finalReportMarkdown !== 'string') {
-        console.warn('[Main.js] report不是字符串，强制转换:', typeof finalReportMarkdown);
-        finalReportMarkdown = String(finalReportMarkdown) || '报告内容格式异常';
-    }
-
-    if (!finalReportMarkdown || finalReportMarkdown.trim() === '') {
-        console.warn("[Main.js] 报告内容为空，跳过渲染。");
-        showSystemMessage("研究已结束，但报告内容为空。");
-        return;
-    }
-
-    // 3. 隐藏思考动画
+    // 2. 隐藏思考动画
     if (window.agentThinkingDisplay) {
         window.agentThinkingDisplay.hide();
     }
 
-    // 4. 显示摘要卡片 (如果存在 displayAgentSummary 函数)
+    // 3. 显示摘要卡片 (如果存在 displayAgentSummary 函数)
     if (result.success && typeof displayAgentSummary === 'function') {
         displayAgentSummary(result);
     }
     
-    // 5. 渲染Markdown
+    // 4. 获取最终 Markdown 并渲染
+    const finalReportMarkdown = result.report;
     const aiMessage = chatUI.createAIMessageElement();
     aiMessage.rawMarkdownBuffer = finalReportMarkdown;
-    
-    try {
-        // 🎯 使用 marked.parse 而不是 marked()，更安全
-        aiMessage.markdownContainer.innerHTML = marked.parse(finalReportMarkdown);
-    } catch (error) {
-        console.error('[Main.js] marked解析失败，使用纯文本回退:', error);
-        aiMessage.markdownContainer.innerHTML = `<pre>${finalReportMarkdown}</pre>`;
-    }
+    aiMessage.markdownContainer.innerHTML = marked.parse(finalReportMarkdown);
     
     // 应用数学公式和代码高亮
     if (typeof MathJax !== 'undefined' && MathJax.startup) {
@@ -2832,12 +2790,9 @@ window.addEventListener('research:end', async (e) => {  // 🎯 添加 async
             MathJax.typeset([aiMessage.markdownContainer]);
         });
     }
-    
-    if (typeof hljs !== 'undefined') {
-        aiMessage.markdownContainer.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightElement(block);
-        });
-    }
+    aiMessage.markdownContainer.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+    });
     
     chatUI.scrollToBottom();
 
@@ -2854,8 +2809,7 @@ window.addEventListener('research:end', async (e) => {  // 🎯 添加 async
             metadata: {
                 is_agent_report: true,
                 agent_mode: result.research_mode,
-                sources_count: result.sources ? result.sources.length : 0,
-                model: result.model || 'unknown'
+                sources_count: result.sources ? result.sources.length : 0
             }
         });
 
@@ -2868,6 +2822,7 @@ window.addEventListener('research:end', async (e) => {  // 🎯 添加 async
     }
     // 🔥🔥🔥 [修改结束] 🔥🔥🔥
 });
+
 /**
  * 检测当前设备是否为移动设备。
  * @returns {boolean} 如果是移动设备则返回 true，否则返回 false。

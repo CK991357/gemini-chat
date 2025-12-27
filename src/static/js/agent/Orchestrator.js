@@ -416,7 +416,7 @@ ${cleanTopic}
         this.callbackManager.addHandler({
             'on_research_start': forwardEvent('on_research_start', 'research:start'),
             'on_research_plan_generated': forwardEvent('on_research_plan_generated', 'research:plan_generated'),
-            'on_research_progress': forwardEvent('on_research_progress', 'research:progress'),
+            'on_research_progress': forwardEvent('on_research_progress', 'research:progress_update'),
             'on_tool_start': forwardEvent('on_tool_start', 'research:tool_start'),
             'on_tool_end': forwardEvent('on_tool_end', 'research:tool_end'),
             'on_research_end': forwardEvent('on_research_end', 'research:end'),
