@@ -1573,7 +1573,7 @@ ${numericStats}`;
         const markers = [];
         let mainContent = reportContent;
         const refKeywords = ["参考文献", "References", "📚 参考文献"];
-    
+        
         for (const keyword of refKeywords) {
             const refIndex = reportContent.indexOf(keyword);
             if (refIndex !== -1) {
@@ -1582,53 +1582,43 @@ ${numericStats}`;
                 break;
             }
         }
-    
+        
         const patterns = [
-            // 1. 标准单个引用 [1]
             { regex: /\[(\d+)\]/g, type: 'single' },
-        
-            // 2. 多引用，英文逗号（支持空格）[1, 2] 或 [1,2]
             { regex: /\[(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
-        
-            // 3. 多引用，英文逗号（最多3个）[1, 2, 3]
             { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
-        
-            // 4. 中文来源标记 [来源 1] 或 [来源1]
             { regex: /\[来源\s*(\d+)\]/g, type: 'source' },
-        
-            // 🆕 5. 多引用，中文全角逗号 [4，19] 或 [4， 19]
-            { regex: /\[(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
-        
-            // 🆕 6. 多个引用（最多5个）[1, 2, 3, 4, 5]
+            // 🆕 新增以下格式支持
+            { regex: /\[(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号 [4，19]
+            { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },  // 中文逗号三个数字 [4，19，25]
+            { regex: /\[(\d+),(\d+)\]/g, type: 'multi' },  // 无空格英文逗号 [4,19]
+            { regex: /\[(\d+)[，](\d+)\]/g, type: 'multi' },  // 无空格中文逗号 [4，19]
+            // 🆕 新增4个数字的模式
+            { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
+            { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
+            { regex: /\[(\d+),(\d+),(\d+),(\d+)\]/g, type: 'multi' },
+            { regex: /\[(\d+)[，](\d+)[，](\d+)[，](\d+)\]/g, type: 'multi' },
+            // 🆕 新增5个数字的模式
             { regex: /\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\]/g, type: 'multi' },
+            { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
+            { regex: /\[(\d+),(\d+),(\d+),(\d+),(\d+)\]/g, type: 'multi' },
+            { regex: /\[(\d+)[，](\d+)[，](\d+)[，](\d+)[，](\d+)\]/g, type: 'multi' },
+        ];
         
-            // 🆕 7. 中文逗号多个引用 [4，19，25]
-            { regex: /\[(\d+)\s*[，]\s*(\d+)\s*[，]\s*(\d+)\]/g, type: 'multi' },
-        
-            // 🆕 8. 支持无空格格式 [4,19]
-            { regex: /\[(\d+),(\d+)\]/g, type: 'multi' },
-        
-            // 🆕 9. 支持中文逗号无空格 [4，19]
-            { regex: /\[(\d+)[，](\d+)\]/g, type: 'multi' }
-       ];
-    
         patterns.forEach(({ regex, type }) => {
             let match;
             while ((match = regex.exec(mainContent)) !== null) {
                 const indices = [];
-            
+                
                 if (type === 'single' || type === 'source') {
                     indices.push(parseInt(match[1], 10));
                 } else if (type === 'multi') {
-                    // 提取所有捕获组的数字
                     for (let i = 1; i < match.length; i++) {
-                        if (match[i] !== undefined) {
-                            const num = parseInt(match[i], 10);
-                            if (!isNaN(num)) indices.push(num);
-                        }
+                        const num = parseInt(match[i], 10);
+                        if (!isNaN(num)) indices.push(num);
                     }
                 }
-            
+                
                 if (indices.length > 0) {
                     markers.push({
                         indices,
@@ -1639,7 +1629,7 @@ ${numericStats}`;
                 }
             }
         });
-    
+        
         markers.sort((a, b) => a.position - b.position);
         return markers;
     }
