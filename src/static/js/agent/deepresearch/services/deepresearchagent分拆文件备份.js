@@ -395,9 +395,21 @@ export class DeepResearchAgent {
 
                 // 🎯 处理最终答案
                 if (parsedAction.type === 'final_answer') {
-                    console.log('[DeepResearchAgent] ✅ Agent在迭代中决定生成最终答案，保存答案并跳出循环');
-                    finalAnswerFromIteration = parsedAction.answer;
-                    break; // 跳出循环
+                    const completionRate = this._calculatePlanCompletion(researchPlan, this.intermediateSteps);
+                    console.log(`[DeepResearchAgent] 📊 研究完成度评估：${(completionRate * 100).toFixed(1)}%`);
+                    console.log(`[DeepResearchAgent] 📊 DataBus数据量：${this.dataBus.size} 个条目`);
+                    console.log(`[DeepResearchAgent] 🚀 资料已充足，将由 ${this.reportModel} 模型生成最终报告`);
+                    console.log(`[DeepResearchAgent] 🔄 结束研究循环（${iterations}/${this.maxIterations}轮）`);
+    
+                // 🚨 关键修改：不保存 finalAnswerFromIteration，让它保持为 null
+                // 🚨 这样就会自然进入 else 分支，调用 _generateFinalReport
+    
+                // 可选：记录Agent的思考（仅供调试）
+                if (parsedAction.thought) {
+                    console.log(`[DeepResearchAgent] 🤖 Agent思考摘要：${parsedAction.thought.substring(0, 100)}...`);
+                }
+    
+                break; // 跳出循环，进入统一报告流程
                 }
 
                 // 🎯 处理报告大纲生成
