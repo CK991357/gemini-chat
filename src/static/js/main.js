@@ -1126,7 +1126,7 @@ async function initializeEnhancedAgent() {
         // 🎯 临时调试：强行触发一次已知会发出的事件，检查是否能被接收
         // 延迟执行，确保 Orchestrator 有足够时间完成初始化（如果 isAgentEnabled 为 true）
         setTimeout(async () => {
-            if (orchestrator && orchestrator.callbackManager && orchestrator.isEnabled) {
+            if (orchestrator && orchestrator.callbackManager) {
                 try {
                     console.log('[Main.js Debug] 尝试手动触发一个研究开始事件...');
                     // 使用 Orchestrator.js 中 setupHandlers 映射的事件名称 research:start
