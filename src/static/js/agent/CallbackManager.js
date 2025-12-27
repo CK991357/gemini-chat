@@ -3,6 +3,7 @@
 /**
  * @class CallbackManager
  * @description 增强的回调管理器，支持中间件和Agent事件系统
+ * 🎯 重构版：完全兼容新旧事件名称
  */
 export class CallbackManager {
     constructor() {
@@ -13,9 +14,31 @@ export class CallbackManager {
         this.runCounter = 0;
         this._isDisposed = false;
         
-        console.log('[CallbackManager] 初始化完成');
+        // 🎯 新增：事件名称映射（新旧兼容）
+        this.eventNameMapping = {
+            // 新事件名 → 旧事件名（供内部处理）
+            'research:start': 'on_research_start',
+            'research:plan_generated': 'on_research_plan_generated', 
+            'research:progress': 'on_research_progress',
+            'research:tool_start': 'on_tool_start',
+            'research:tool_end': 'on_tool_end',
+            'research:stats_updated': 'on_research_stats_updated',
+            'research:tool_called': 'on_tool_called',
+            'research:end': 'on_research_end',
+            // 反向映射（旧→新，供DOM事件）
+            'on_research_start': 'research:start',
+            'on_research_plan_generated': 'research:plan_generated',
+            'on_research_progress': 'research:progress',
+            'on_tool_start': 'research:tool_start',
+            'on_tool_end': 'research:tool_end',
+            'on_research_stats_updated': 'research:stats_updated',
+            'on_tool_called': 'research:tool_called',
+            'on_research_end': 'research:end'
+        };
         
-        // 内存清理：每 5 分钟清理一次事件历史
+        console.log('[CallbackManager] 初始化完成（兼容新旧事件名）');
+        
+        // 内存清理
         try {
             this.cleanupInterval = setInterval(() => {
                 if (!this._isDisposed) {
@@ -64,6 +87,109 @@ export class CallbackManager {
         return this.currentRunId;
     }
 
+    // 🎯 增强的 invokeEvent 方法 - 完全兼容新旧事件名
+    async invokeEvent(eventName, payload = {}) {
+        if (this._isDisposed) {
+            console.warn('[CallbackManager] 尝试在已销毁的管理器上调用事件');
+            return Promise.resolve(null);
+        }
+        
+        // 🎯 核心修复：处理新旧事件名称
+        const originalEventName = eventName;
+        const mappedEventName = this.eventNameMapping[eventName] || eventName;
+        
+        console.log(`[CallbackManager] 事件: ${originalEventName} → ${mappedEventName} [${payload.run_id || this.currentRunId}]`);
+        
+        // 创建事件对象
+        const event = {
+            event: originalEventName, // 保留原始事件名
+            mapped_event: mappedEventName, // 映射后的事件名
+            name: payload.name || 'unnamed',
+            run_id: payload.run_id || this.currentRunId,
+            timestamp: new Date().toISOString(),
+            data: payload.data || {},
+            metadata: {
+                ...payload.metadata,
+                original_event_name: originalEventName,
+                mapped_event_name: mappedEventName,
+                source: payload.metadata?.source || 'callback_manager'
+            }
+        };
+
+        // 🎯 记录事件历史（限制大小）
+        this.eventHistory.push(event);
+        if (this.eventHistory.length > 1000) {
+            this.eventHistory = this.eventHistory.slice(-500);
+        }
+
+        // 🎯 异步通知所有处理器 - 支持多种事件名格式
+        const promises = this.handlers.map(async (handler) => {
+            try {
+                // 尝试1：映射后的事件名（旧格式）
+                if (typeof handler[mappedEventName] === 'function') {
+                    await handler[mappedEventName](event);
+                }
+                
+                // 尝试2：原始事件名（新格式）
+                if (typeof handler[originalEventName] === 'function') {
+                    await handler[originalEventName](event);
+                }
+                
+                // 尝试3：通用事件处理器
+                if (typeof handler.handleEvent === 'function') {
+                    await handler.handleEvent(event);
+                }
+                
+                // 🎯 新增：如果处理器有 handleCallbackManagerEvent 方法
+                if (typeof handler.handleCallbackManagerEvent === 'function') {
+                    await handler.handleCallbackManagerEvent(event);
+                }
+            } catch (error) {
+                console.error(`[CallbackManager] 处理器执行失败 (${originalEventName}/${mappedEventName}):`, error);
+            }
+        });
+
+        await Promise.allSettled(promises);
+        
+        // 🎯 关键修复：自动触发DOM事件（确保面板能收到）
+        this._triggerDOMEvent(event);
+        
+        return event;
+    }
+
+    // 🎯 新增：自动触发DOM事件
+    _triggerDOMEvent(event) {
+        try {
+            // 确定要触发的DOM事件名
+            let domEventName = event.event; // 原始事件名
+            
+            // 如果原始是旧格式，映射为新格式
+            if (domEventName.startsWith('on_')) {
+                domEventName = this.eventNameMapping[domEventName] || domEventName;
+            }
+            
+            console.log(`[CallbackManager] 触发DOM事件: ${domEventName}`);
+            
+            const domEvent = new CustomEvent(domEventName, {
+                detail: {
+                    run_id: event.run_id,
+                    data: event.data,
+                    metadata: event.metadata,
+                    original_event: event.event
+                },
+                bubbles: true,
+                cancelable: true
+            });
+            
+            // 在window上触发
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(domEvent);
+            }
+        } catch (error) {
+            console.error('[CallbackManager] 触发DOM事件失败:', error);
+        }
+    }
+
     // 🎯 中间件系统
     async wrapToolCall(request, handler) {
         console.log(`[CallbackManager] 包装工具调用: ${request.toolName}`);
@@ -87,7 +213,6 @@ export class CallbackManager {
 
         // 🎯 使用 ObservationUtils 进行统一规范化
         try {
-            // 使用相对路径导入
             const { ObservationUtils } = await import('./utils/ObservationUtils.js');
             const normalizedResult = ObservationUtils.normalizeToolResult(rawResult);
 
@@ -101,7 +226,6 @@ export class CallbackManager {
             return normalizedResult;
         } catch (err) {
             console.error('[CallbackManager] 使用 ObservationUtils 规范化失败:', err);
-            // 🎯 安全的回退方案
             return {
                 success: false,
                 output: `规范化失败: ${err.message}`,
@@ -131,51 +255,7 @@ export class CallbackManager {
         return await currentHandler(currentRequest);
     }
 
-    // 🎯 事件系统
-    async invokeEvent(eventName, payload = {}) {
-        if (this._isDisposed) {
-            console.warn('[CallbackManager] 尝试在已销毁的管理器上调用事件');
-            return Promise.resolve(null);
-        }
-        const event = {
-            event: eventName,
-            name: payload.name || 'unnamed',
-            run_id: payload.run_id || this.currentRunId,
-            timestamp: new Date().toISOString(),
-            data: payload.data || {},
-            metadata: payload.metadata || {}
-        };
-
-        // 🎯 记录事件历史（限制大小）
-        this.eventHistory.push(event);
-        if (this.eventHistory.length > 1000) {
-            this.eventHistory = this.eventHistory.slice(-500);
-        }
-
-        console.log(`[CallbackManager] 事件: ${eventName} [${event.run_id}]`);
-
-        // 🎯 异步通知所有处理器
-        const promises = this.handlers.map(async (handler) => {
-            try {
-                // 🎯 特定事件处理器
-                if (typeof handler[eventName] === 'function') {
-                    await handler[eventName](event);
-                }
-                
-                // 🎯 通用事件处理器
-                if (typeof handler.handleEvent === 'function') {
-                    await handler.handleEvent(event);
-                }
-            } catch (error) {
-                console.error(`[CallbackManager] 处理器执行失败 (${eventName}):`, error);
-            }
-        });
-
-        await Promise.allSettled(promises);
-        return event;
-    }
-
-    // 🎯 Agent特定事件方法
+    // 🎯 Agent特定事件方法 - 兼容新旧调用方式
     async onAgentStart(agent, inputs) {
         return await this.invokeEvent('on_agent_start', {
             name: agent.name || 'unknown_agent',
@@ -318,7 +398,105 @@ export class CallbackManager {
         });
     }
 
-    async onResearchStatsUpdated(stats) {
+    // 🎯 DeepResearchAgent 专用事件方法 - 新增兼容性方法
+    async onResearchStart(data) {
+        return await this.invokeEvent('research:start', {
+            name: 'research_start',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'research_start'
+            }
+        });
+    }
+
+    async onResearchPlanGenerated(data) {
+        return await this.invokeEvent('research:plan_generated', {
+            name: 'research_plan',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'plan_generated'
+            }
+        });
+    }
+
+    async onResearchProgress(data) {
+        return await this.invokeEvent('research:progress', {
+            name: 'research_progress',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'progress'
+            }
+        });
+    }
+
+    async onResearchToolStart(data) {
+        return await this.invokeEvent('research:tool_start', {
+            name: 'research_tool',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'tool_start'
+            }
+        });
+    }
+
+    async onResearchToolEnd(data) {
+        return await this.invokeEvent('research:tool_end', {
+            name: 'research_tool',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'tool_end'
+            }
+        });
+    }
+
+    async onResearchStatsUpdated(data) {
+        return await this.invokeEvent('research:stats_updated', {
+            name: 'research_stats',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'stats_update'
+            }
+        });
+    }
+
+    async onResearchToolCalled(data) {
+        return await this.invokeEvent('research:tool_called', {
+            name: 'research_tool_call',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'tool_called'
+            }
+        });
+    }
+
+    async onResearchEnd(data) {
+        return await this.invokeEvent('research:end', {
+            name: 'research_end',
+            run_id: data.run_id || this.currentRunId,
+            data: data.data || {},
+            metadata: {
+                source: 'deep_research_agent',
+                step_type: 'research_end'
+            }
+        });
+    }
+
+    // 🎯 旧版兼容方法（供现有代码使用）
+    async onResearchStatsUpdatedLegacy(stats) {
         return await this.invokeEvent('on_research_stats_updated', {
             name: 'research_stats',
             run_id: this.currentRunId,
@@ -330,7 +508,7 @@ export class CallbackManager {
         });
     }
 
-    async onToolCalled(toolData) {
+    async onToolCalledLegacy(toolData) {
         return await this.invokeEvent('on_tool_called', {
             name: 'tool_call',
             run_id: this.currentRunId,
@@ -357,13 +535,11 @@ export class CallbackManager {
         try {
             const beforeSize = this.eventHistory.length;
             
-            // 🎯 优化：提高清理阈值，避免过于频繁
-            if (this.eventHistory.length > 200) { // 从100提高到200
-                this.eventHistory = this.eventHistory.slice(-100); // 保留更多历史
+            if (this.eventHistory.length > 200) {
+                this.eventHistory = this.eventHistory.slice(-100);
                 console.log(`[CallbackManager] 内存清理: ${beforeSize} -> ${this.eventHistory.length}`);
             }
             
-            // 清理无效处理器
             this._cleanupInvalidHandlers();
             
         } catch (error) {
