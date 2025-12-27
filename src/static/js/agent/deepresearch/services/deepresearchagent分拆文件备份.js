@@ -1,4 +1,4 @@
-// src/static/js/agent/deepresearch/DeepResearchAgent.js - 重构完整版
+// src/static/js/agent/deepresearch/DeepResearchAgent.js - 重构完整版（事件名称修复版）
 // 🔥 重构说明：此文件已拆分为多个中间件，现在是协调器角色
 
 import { AgentLogic } from './AgentLogic.js';
@@ -191,8 +191,9 @@ export class DeepResearchAgent {
             console.log(`[DeepResearchAgent] ✅ 已注入 ${historyContextStr.length} 字符的历史上下文。`);
         }
         
-        // ✨✨✨ 核心修复：在 on_research_start 事件中使用 uiTopic
-        await this.callbackManager.invokeEvent('on_research_start', {
+        // ✨✨✨ 核心修复：在 research:start 事件中使用 uiTopic
+        // 🎯 修改：将 on_research_start 改为 research:start
+        await this.callbackManager.invokeEvent('research:start', {
             run_id: runId,
             data: {
                 topic: uiTopic, // <--- 使用干净的 topic
@@ -210,7 +211,8 @@ export class DeepResearchAgent {
 
         // 🎯 修复：在研究过程中更新统计数据
         const updateResearchStats = (updates) => {
-            this.callbackManager.invokeEvent('on_research_stats_updated', {
+            // 🎯 修改：将 on_research_stats_updated 改为 research:stats_updated
+            this.callbackManager.invokeEvent('research:stats_updated', {
                 run_id: runId,
                 data: updates
             });
@@ -218,7 +220,8 @@ export class DeepResearchAgent {
 
         // 🎯 修复：记录工具调用
         const recordToolCall = (toolName, parameters, success, result) => {
-            this.callbackManager.invokeEvent('on_tool_called', {
+            // 🎯 修改：将 on_tool_called 改为 research:tool_called
+            this.callbackManager.invokeEvent('research:tool_called', {
                 run_id: runId,
                 data: { toolName, parameters, success, result }
             });
@@ -248,7 +251,8 @@ export class DeepResearchAgent {
             this._updateTokenUsage(planResult.usage);
             
             // 🎯 优化：传递完整的研究计划对象和文本
-            await this.callbackManager.invokeEvent('on_research_plan_generated', {
+            // 🎯 修改：将 on_research_plan_generated 改为 research:plan_generated
+            await this.callbackManager.invokeEvent('research:plan_generated', {
                 run_id: runId,
                 data: {
                     plan: researchPlan.research_plan,
@@ -325,7 +329,8 @@ export class DeepResearchAgent {
                 }
             }
             
-            await this.callbackManager.invokeEvent('on_research_progress', {
+            // 🎯 修改：将 on_research_progress 改为 research:progress
+            await this.callbackManager.invokeEvent('research:progress', {
                 run_id: runId,
                 data: {
                     iteration: iterations, // 统一命名
@@ -443,7 +448,8 @@ export class DeepResearchAgent {
 
                     console.log(`[DeepResearchAgent] 🔧 执行工具调用: ${tool_name}`, parameters);
                     
-                    await this.callbackManager.invokeEvent('on_tool_start', {
+                    // 🎯 修改：将 on_tool_start 改为 research:tool_start
+                    await this.callbackManager.invokeEvent('research:tool_start', {
                         run_id: runId,
                         data: { tool_name, parameters, thought }
                     });
@@ -517,7 +523,8 @@ export class DeepResearchAgent {
                         toolCalls: this.intermediateSteps.filter(step => step.action.type === 'tool_call')
                     });
                     
-                    await this.callbackManager.invokeEvent('on_tool_end', {
+                    // 🎯 修改：将 on_tool_end 改为 research:tool_end
+                    await this.callbackManager.invokeEvent('research:tool_end', {
                         run_id: runId,
                         data: {
                             tool_name,
@@ -756,8 +763,9 @@ export class DeepResearchAgent {
         // 🎯 4.3. 调用性能记录方法
         this._recordTemporalPerformance(temporalQualityReport);
         
-        // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
-        await this.callbackManager.invokeEvent('on_research_end', {
+        // 🎯 4.4. 发送包含完整结果的 research:end 事件
+        // 🎯 修改：将 on_research_end 改为 research:end
+        await this.callbackManager.invokeEvent('research:end', {
             run_id: runId,
             data: result // 🎯 优化：直接传递完整的 result 对象
         });
