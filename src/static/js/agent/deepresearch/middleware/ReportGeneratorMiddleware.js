@@ -1,38 +1,65 @@
 // src/static/js/agent/deepresearch/middleware/ReportGeneratorMiddleware.js
 // 📝 报告生成中间件 - 从 DeepResearchAgent 中分离的报告生成逻辑
+// 🎯 完整版本，包含所有缺失的内容和所有方法实现
 
 export class ReportGeneratorMiddleware {
     /**
-     * 🎯 报告生成中间件构造函数
+     * 🎯 报告生成中间件构造函数（完整版）
      * @param {Object} chatApiHandler - 聊天API处理器
      * @param {Object} skillManager - 技能管理器
+     * @param {Object} callbackManager - 回调管理器（必须！）
      * @param {Object} sharedState - 共享状态（来自主Agent）
      * @param {Object} config - 配置
      */
-    constructor(chatApiHandler, skillManager, sharedState, config = {}) {
-        // 🎯 依赖注入
+    constructor(chatApiHandler, skillManager, callbackManager, sharedState, config = {}) {
+        // 🎯 依赖注入（关键：必须包含 callbackManager）
         this.chatApiHandler = chatApiHandler;
         this.skillManager = skillManager;
+        this.callbackManager = callbackManager; // 🔥 关键修复：添加回调管理器
         
-        // 🎯 共享状态
+        // 🎯 共享状态（必须与主文件完全一致）
         this.dataBus = sharedState.dataBus || new Map();
         this.generatedImages = sharedState.generatedImages || new Map();
         this.intermediateSteps = sharedState.intermediateSteps || [];
+        this.metrics = sharedState.metrics || { // 🔥 关键：添加指标统计
+            toolUsage: { tavily_search: 0, crawl4ai: 0, python_sandbox: 0 },
+            stepProgress: [],
+            informationGain: [],
+            planCompletion: 0,
+            tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        };
+        this.runId = sharedState.runId || null; // 🔥 关键：运行ID
+        this.reportModel = config.reportModel || 'deepseek-reasoner'; // 🔥 保留报告模型
         
-        // 🎯 配置
-        this.reportModel = config.reportModel || 'deepseek-reasoner';
-        
-        console.log('[ReportGeneratorMiddleware] 初始化完成，报告模型:', this.reportModel);
+        console.log('[ReportGeneratorMiddleware] ✅ 初始化完成', {
+            reportModel: this.reportModel,
+            dataBusSize: this.dataBus.size,
+            imagesCount: this.generatedImages.size,
+            stepsCount: this.intermediateSteps.length,
+            hasCallbackManager: !!this.callbackManager // 🔥 关键检查
+        });
     }
 
     // ============================================================
-    // 🎯 核心报告生成方法
+    // 🎯 核心公共API方法 - 供主文件调用
     // ============================================================
     
     /**
-     * ✨ 最终报告生成 - 【学术引用增强版】
+     * ✨ 生成最终报告的公共方法（主文件调用入口）
+     * 🔥 完全模拟主文件的 _generateFinalReport 方法
      */
     async generateFinalReport(topic, intermediateSteps, plan, sources, researchMode, originalUserInstruction) {
+        // 🎯 触发事件：报告生成开始
+        if (this.callbackManager) {
+            await this.callbackManager.invokeEvent('agent:thinking', {
+                detail: {
+                    content: `正在为"${topic}"生成${researchMode}模式的研究报告...`,
+                    type: 'report_generation',
+                    agentType: 'deep_research'
+                }
+            });
+        }
+        
         console.log('[ReportGeneratorMiddleware] ==================== 报告生成阶段开始 ====================');
         console.log(`[ReportGeneratorMiddleware] 🎯 报告生成配置:`);
         console.log(`  • 主题: ${topic}`);
@@ -41,6 +68,12 @@ export class ReportGeneratorMiddleware {
         console.log(`  • 来源数量: ${sources.length}`);
         console.log(`  • 证据步骤: ${intermediateSteps.length}`);
         console.log(`  • 原始指令长度: ${originalUserInstruction?.length || 0}`);
+        console.log(`  • 运行ID: ${this.runId || '未设置'}`);
+        
+        // 更新中间步骤（允许外部传入覆盖）
+        if (intermediateSteps) {
+            this.intermediateSteps = intermediateSteps;
+        }
         
         // 1. 构建纯净的证据集合
         const evidenceCollection = this._buildEvidenceCollection(intermediateSteps, plan, researchMode);
@@ -49,6 +82,7 @@ export class ReportGeneratorMiddleware {
         console.log(`  • 有效证据: ${evidenceCollection.validEvidenceSteps}个`);
         console.log(`  • 关键发现: ${evidenceCollection.keyFindings.length}个`);
         console.log(`  • 总长度: ${evidenceCollection.totalLength}字符`);
+        console.log(`  • 数据总线条目: ${this.dataBus.size}个`);
 
         // 2. 构建带编号的来源索引 (Source Index)
         const numberedSourcesText = this._buildNumberedSources(sources);
@@ -57,7 +91,7 @@ export class ReportGeneratorMiddleware {
         const reportTemplate = this._getTemplateByResearchMode(researchMode);
         let promptFragment = this._getTemplatePromptFragment(researchMode);
         
-        // 🎯 【调试模式特别指令注入】
+        // 🎯 【调试模式特别指令注入】- 与主文件完全一致
         if (researchMode === 'standard') {
             promptFragment += `
 \n\n🕵️‍♂️ **调试/审计模式核心指令 (System Audit Directives)**：
@@ -112,17 +146,42 @@ export class ReportGeneratorMiddleware {
         
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
+                const startTime = Date.now();
+                
+                // 🎯 调用前事件通知
+                if (this.callbackManager && attempt === 0) {
+                    await this.callbackManager.invokeEvent('agent:thinking', {
+                        detail: {
+                            content: `正在使用 ${this.reportModel} 模型生成研究报告...`,
+                            type: 'model_call',
+                            agentType: 'deep_research',
+                            model: this.reportModel
+                        }
+                    });
+                }
+                
                 const reportResponse = await this.chatApiHandler.completeChat({
                     messages: [{ role: 'user', content: finalPrompt }],
                     model: this.reportModel,
                     temperature: 0.3,
                 });
                 
+                const executionTime = Date.now() - startTime;
                 console.log(`[ReportGeneratorMiddleware] 📥 收到写作模型响应 (尝试${attempt + 1}):`);
+                console.log(`  • 耗时: ${executionTime}ms`);
+                
+                // 🎯 更新Token使用统计
                 if (reportResponse?.usage) {
                     console.log(`  • Token消耗: ${reportResponse.usage.total_tokens}`);
                     console.log(`  • 上行: ${reportResponse.usage.prompt_tokens}`);
                     console.log(`  • 下行: ${reportResponse.usage.completion_tokens}`);
+                    
+                    // 更新指标
+                    this.metrics.tokenUsage = {
+                        prompt_tokens: (this.metrics.tokenUsage.prompt_tokens || 0) + (reportResponse.usage.prompt_tokens || 0),
+                        completion_tokens: (this.metrics.tokenUsage.completion_tokens || 0) + (reportResponse.usage.completion_tokens || 0),
+                        total_tokens: (this.metrics.tokenUsage.total_tokens || 0) + (reportResponse.usage.total_tokens || 0)
+                    };
                 }
                 
                 let finalReport = reportResponse?.choices?.[0]?.message?.content ||
@@ -137,14 +196,55 @@ export class ReportGeneratorMiddleware {
                 console.log(`  • 引用数: ${citations}`);
                 
                 console.log(`[ReportGeneratorMiddleware] ✅ 报告生成成功 (尝试 ${attempt + 1}/${maxRetries + 1})，模式: ${researchMode}`);
+                
+                // 🎯 触发成功事件
+                if (this.callbackManager) {
+                    await this.callbackManager.invokeEvent('agent:thinking', {
+                        detail: {
+                            content: `研究报告生成成功！共${sections}个章节，${citations}处引用。`,
+                            type: 'report_success',
+                            agentType: 'deep_research',
+                            reportLength: finalReport.length,
+                            sections: sections,
+                            citations: citations
+                        }
+                    });
+                }
+                
                 return finalReport;
 
             } catch (error) {
                 console.error(`[ReportGeneratorMiddleware] ❌ 报告生成失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error.message);
                 
+                // 🎯 触发错误事件
+                if (this.callbackManager) {
+                    await this.callbackManager.invokeEvent('agent:thinking', {
+                        detail: {
+                            content: `报告生成失败 (${error.message})，正在重试...`,
+                            type: 'report_error',
+                            agentType: 'deep_research',
+                            error: error.message,
+                            attempt: attempt + 1,
+                            maxRetries: maxRetries + 1
+                        }
+                    });
+                }
+                
                 // 如果是最后一次尝试，使用降级方案
                 if (attempt === maxRetries) {
                     console.error('[ReportGeneratorMiddleware] 🚨 所有重试尝试均失败，使用降级报告');
+                    
+                    // 🎯 触发降级事件
+                    if (this.callbackManager) {
+                        await this.callbackManager.invokeEvent('agent:thinking', {
+                            detail: {
+                                content: '所有重试均失败，生成降级报告...',
+                                type: 'report_fallback',
+                                agentType: 'deep_research'
+                            }
+                        });
+                    }
+                    
                     return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
                 }
                 
@@ -153,6 +253,690 @@ export class ReportGeneratorMiddleware {
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
         }
+    }
+
+    /**
+     * ✨ 报告后处理流水线（公共方法）
+     * 🔥 完整包含所有后处理步骤
+     */
+    async processReport(finalReport, sources, plan, researchMode) {
+        console.log('[ReportGeneratorMiddleware] 🚀 开始报告后处理流水线...');
+        
+        if (this.callbackManager) {
+            await this.callbackManager.invokeEvent('agent:thinking', {
+                detail: {
+                    content: '正在对报告进行后处理...',
+                    type: 'post_processing',
+                    agentType: 'deep_research'
+                }
+            });
+        }
+
+        // 1. 智能来源分析
+        console.log('[ReportGeneratorMiddleware] 正在基于完整报告进行来源分析...');
+        const filteredSources = this._filterUsedSources(sources, finalReport);
+        console.log(`[ReportGeneratorMiddleware] 资料来源过滤完成: ${sources.length} → ${filteredSources.length}`);
+
+        // 2. 清理幻觉章节
+        let cleanedReport = this._cleanReportSections(finalReport);
+
+        // 3. 兜底图片渲染
+        if (this.generatedImages.size > 0) {
+            console.log(`[ReportGeneratorMiddleware] 开始检查图片引用完整性，共 ${this.generatedImages.size} 张图片...`);
+            cleanedReport = this._enforceImageRendering(cleanedReport);
+        }
+
+        // 4. Base64 统一替换
+        if (this.generatedImages.size > 0) {
+            console.log(`[ReportGeneratorMiddleware] 开始执行最终渲染 (Base64替换)...`);
+            cleanedReport = this._replaceImagePlaceholders(cleanedReport);
+        }
+
+        // 5. 附加真实来源列表
+        cleanedReport += await this._generateSourcesSection(filteredSources, plan);
+
+        // 6. 完全独立的文中引用映射表
+        console.log('[ReportGeneratorMiddleware] 构建独立文中引用映射表...');
+        const independentCitationSection = await this._generateIndependentCitationMapping(cleanedReport, sources);
+        if (independentCitationSection) {
+            cleanedReport += independentCitationSection;
+            console.log('[ReportGeneratorMiddleware] ✅ 独立文中引用映射表已附加');
+        } else {
+            console.log('[ReportGeneratorMiddleware] ℹ️ 未检测到文中引用，跳过映射表生成');
+        }
+
+        // 7. 🎯 生成时效性质量评估报告（主文件的核心功能）
+        console.log('[ReportGeneratorMiddleware] 生成时效性质量评估报告...');
+        const temporalQualityReport = this._generateTemporalQualityReport(
+            plan,
+            this.intermediateSteps,
+            plan.topic || '未知主题',
+            researchMode
+        );
+        
+        // 8. 🎯 记录性能数据
+        this._recordTemporalPerformance(temporalQualityReport);
+        
+        console.log(`[ReportGeneratorMiddleware] ✅ 报告后处理完成，最终长度: ${cleanedReport.length}字符`);
+        
+        // 🎯 触发完成事件
+        if (this.callbackManager) {
+            await this.callbackManager.invokeEvent('agent:thinking', {
+                detail: {
+                    content: '报告后处理完成！',
+                    type: 'post_processing_complete',
+                    agentType: 'deep_research',
+                    finalLength: cleanedReport.length,
+                    sourcesCount: filteredSources.length,
+                    imagesCount: this.generatedImages.size
+                }
+            });
+        }
+        
+        return {
+            cleanedReport,
+            filteredSources,
+            temporalQualityReport,
+            metrics: this.metrics
+        };
+    }
+
+    /**
+     * ✨ 生成完整的最终结果（供主文件调用的统一接口）
+     * 🔥 模拟主文件的返回结构
+     */
+    async generateCompleteResult(topic, intermediateSteps, plan, sources, researchMode, originalUserInstruction) {
+        console.log('[ReportGeneratorMiddleware] 🎯 生成完整研究结果...');
+        
+        try {
+            // 1. 生成最终报告
+            const rawReport = await this.generateFinalReport(
+                topic, intermediateSteps, plan, sources, researchMode, originalUserInstruction
+            );
+            
+            // 2. 进行后处理
+            const { cleanedReport, filteredSources, temporalQualityReport } = await this.processReport(
+                rawReport, sources, plan, researchMode
+            );
+            
+            // 3. 计算计划完成度
+            const planCompletion = this._calculatePlanCompletion(plan, intermediateSteps);
+            
+            // 4. 构建完整结果对象（与主文件完全一致）
+            const result = {
+                success: true,
+                topic: topic,
+                report: cleanedReport,
+                iterations: intermediateSteps.length,
+                intermediateSteps: intermediateSteps,
+                sources: filteredSources,
+                metrics: this.metrics,
+                plan_completion: planCompletion,
+                research_mode: researchMode,
+                temporal_quality: temporalQualityReport,
+                model: this.reportModel
+            };
+            
+            console.log('[ReportGeneratorMiddleware] ✅ 完整结果生成成功');
+            return result;
+            
+        } catch (error) {
+            console.error('[ReportGeneratorMiddleware] ❌ 生成完整结果失败:', error);
+            
+            // 🎯 降级：返回错误报告
+            return {
+                success: false,
+                topic: topic,
+                report: this._generateFallbackReport(topic, intermediateSteps, sources, researchMode),
+                iterations: intermediateSteps.length,
+                intermediateSteps: intermediateSteps,
+                sources: sources.slice(0, 5),
+                metrics: this.metrics,
+                plan_completion: 0,
+                research_mode: researchMode,
+                temporal_quality: { error: error.message },
+                model: this.reportModel,
+                error: error.message
+            };
+        }
+    }
+
+    // ============================================================
+    // 🎯 时效性质量评估系统（从主文件迁移的完整版本）
+    // ============================================================
+    
+    /**
+     * 🎯 时效性质量评估报告（完整实现）
+     */
+    _generateTemporalQualityReport(researchPlan, intermediateSteps, topic, researchMode) {
+        const currentDate = new Date().toISOString().split('T')[0];
+        
+        // 🎯 唯一事实来源：模型自主评估结果
+        const modelAssessedSensitivity = researchPlan.temporal_awareness?.overall_sensitivity || '未知';
+        
+        // 🎯 系统程序化评估（仅用于对比分析）
+        const systemAssessedSensitivity = this._assessTemporalSensitivity(topic, researchMode);
+        
+        // 分析计划层面的时效性意识
+        const planAnalysis = this._analyzePlanTemporalAwareness(researchPlan);
+        
+        // 分析执行层面的时效性行为  
+        const executionAnalysis = this._analyzeExecutionTemporalBehavior(intermediateSteps, researchPlan);
+        
+        // 综合评估（基于模型自主评估的一致性）
+        const overallScore = this._calculateTemporalScore(planAnalysis, executionAnalysis, modelAssessedSensitivity);
+
+        return {
+            // 元数据
+            assessment_date: currentDate,
+            topic: topic,
+            research_mode: researchMode,
+            
+            // 🎯 核心：模型自主评估结果（唯一事实来源）
+            model_assessment: {
+                overall_sensitivity: modelAssessedSensitivity,
+                step_sensitivities: researchPlan.research_plan?.map(step => ({
+                    step: step.step,
+                    sensitivity: step.temporal_sensitivity,
+                    sub_question: step.sub_question
+                })) || []
+            },
+            
+            // 系统程序化评估（用于对比分析）
+            system_assessment: {
+                overall_sensitivity: systemAssessedSensitivity,
+                is_consistent: modelAssessedSensitivity === systemAssessedSensitivity,
+                consistency_note: this._getConsistencyNote(modelAssessedSensitivity, systemAssessedSensitivity)
+            },
+            
+            // 质量分析
+            quality_metrics: {
+                overall_temporal_score: overallScore,
+                plan_quality: planAnalysis,
+                execution_quality: executionAnalysis,
+                quality_rating: this._getQualityRating(overallScore)
+            },
+            
+            // 改进建议
+            improvement_recommendations: this._getImprovementRecommendations(
+                planAnalysis, 
+                executionAnalysis, 
+                overallScore,
+                modelAssessedSensitivity,
+                systemAssessedSensitivity
+            ),
+            
+            // 执行总结
+            summary: this._generateTemporalSummary(planAnalysis, executionAnalysis, overallScore, modelAssessedSensitivity)
+        };
+    }
+
+    /**
+     * 🎯 系统程序化评估方法
+     */
+    _assessTemporalSensitivity(topic, researchMode) {
+        const currentYear = new Date().getFullYear().toString();
+        const currentYearMinus1 = (new Date().getFullYear() - 1).toString();
+        
+        // 高敏感度关键词
+        const highSensitivityKeywords = [
+            '最新', '当前', '现状', '趋势', '发展', '前景', '202', currentYear, currentYearMinus1,
+            '版本', '更新', '发布', 'AI', '人工智能', '模型', '技术', '市场', '政策', '法规'
+        ];
+        
+        // 低敏感度关键词
+        const lowSensitivityKeywords = [
+            '历史', '起源', '发展史', '经典', '理论', '基础', '概念', '定义', '原理'
+        ];
+        
+        const topicLower = topic.toLowerCase();
+        
+        // 检查高敏感度关键词
+        const hasHighSensitivity = highSensitivityKeywords.some(keyword => 
+            topicLower.includes(keyword.toLowerCase())
+        );
+        
+        // 检查低敏感度关键词
+        const hasLowSensitivity = lowSensitivityKeywords.some(keyword => 
+            topicLower.includes(keyword.toLowerCase())
+        );
+        
+        // 基于研究模式的调整
+        const modeSensitivity = {
+            'deep': '高',
+            'academic': '中', 
+            'business': '高',
+            'technical': '高',
+            'standard': '中',
+            'data_mining': '高'
+        };
+        
+        if (hasHighSensitivity) return '高';
+        if (hasLowSensitivity) return '低';
+        
+        return modeSensitivity[researchMode] || '中';
+    }
+
+    /**
+     * 🎯 分析计划层面的时效性意识
+     */
+    _analyzePlanTemporalAwareness(researchPlan) {
+        const steps = researchPlan.research_plan || [];
+        const totalSteps = steps.length;
+        
+        // 统计敏感度分布
+        const sensitivityCount = { '高': 0, '中': 0, '低': 0 };
+        let stepsWithTemporalQueries = 0;
+        let totalTemporalQueries = 0;
+        
+        steps.forEach(step => {
+            sensitivityCount[step.temporal_sensitivity] = (sensitivityCount[step.temporal_sensitivity] || 0) + 1;
+            
+            // 检查步骤是否包含时效性查询建议
+            const hasTemporalQuery = step.initial_queries?.some(query => 
+                query.includes('最新') || query.includes('202') || query.includes('版本')
+            );
+            
+            if (hasTemporalQuery) {
+                stepsWithTemporalQueries++;
+                totalTemporalQueries += step.initial_queries.filter(q =>
+                    q.includes('最新') || q.includes('202') || q.includes('版本')
+                ).length;
+            }
+        });
+        
+        return {
+            total_steps: totalSteps,
+            sensitivity_distribution: sensitivityCount,
+            high_sensitivity_ratio: totalSteps > 0 ? sensitivityCount['高'] / totalSteps : 0,
+            temporal_coverage: totalSteps > 0 ? stepsWithTemporalQueries / totalSteps : 0,
+            avg_temporal_queries_per_step: stepsWithTemporalQueries > 0 ? 
+                (totalTemporalQueries / stepsWithTemporalQueries) : 0,
+            plan_quality: this._ratePlanQuality(sensitivityCount, stepsWithTemporalQueries, totalSteps)
+        };
+    }
+
+    /**
+     * 🎯 分析执行层面的时效性行为
+     */
+    _analyzeExecutionTemporalBehavior(intermediateSteps, researchPlan) {
+        const currentYear = new Date().getFullYear().toString();
+        const totalActions = intermediateSteps.length;
+        
+        let temporalAwareActions = 0;
+        let temporalKeywordUsage = 0;
+        let versionVerificationAttempts = 0;
+        let officialSourceAccess = 0;
+        
+        // 构建步骤敏感度映射
+        const stepSensitivityMap = {};
+        (researchPlan.research_plan || []).forEach(step => {
+            stepSensitivityMap[step.step] = step.temporal_sensitivity;
+        });
+        
+        intermediateSteps.forEach(step => {
+            const stepSensitivity = stepSensitivityMap[step.step] || '中';
+            let isTemporalAware = false;
+            
+            if (step.action?.tool_name === 'tavily_search') {
+                const query = step.action.parameters?.query || '';
+                
+                // 检查是否使用时序性关键词
+                const usedTemporalKeyword = query.includes('最新') || 
+                                          query.includes(currentYear) || 
+                                          query.includes('版本');
+                
+                if (usedTemporalKeyword) {
+                    temporalKeywordUsage++;
+                    isTemporalAware = true;
+                }
+                
+                // 检查版本验证尝试
+                if (query.includes('版本') || query.includes('v') || query.match(/\d+\.\d+/)) {
+                    versionVerificationAttempts++;
+                    isTemporalAware = true;
+                }
+            }
+            
+            // 检查crawl4ai是否用于获取官方信息
+            if (step.action?.tool_name === 'crawl4ai') {
+                const url = step.action.parameters?.url || '';
+                const isOfficialSource = url.includes('github.com') || 
+                                       url.includes('official') || 
+                                       url.includes('website');
+                
+                if (isOfficialSource) {
+                    officialSourceAccess++;
+                    isTemporalAware = true;
+                }
+            }
+            
+            if (isTemporalAware) {
+                temporalAwareActions++;
+            }
+        });
+        
+        return {
+            total_actions: totalActions,
+            temporal_aware_actions: temporalAwareActions,
+            temporal_action_ratio: totalActions > 0 ? (temporalAwareActions / totalActions) : 0,
+            temporal_keyword_usage: temporalKeywordUsage,
+            version_verification_attempts: versionVerificationAttempts,
+            official_source_access: officialSourceAccess,
+            execution_quality: this._rateExecutionQuality(temporalAwareActions, totalActions, temporalKeywordUsage)
+        };
+    }
+
+    /**
+     * 🎯 综合评分（基于模型自主评估）
+     */
+    _calculateTemporalScore(planAnalysis, executionAnalysis, modelAssessedSensitivity) {
+        // 计划质量权重
+        const planScore = planAnalysis.temporal_coverage * 0.3 + 
+                         planAnalysis.high_sensitivity_ratio * 0.2;
+        
+        // 执行质量权重
+        const executionScore = executionAnalysis.temporal_action_ratio * 0.4 +
+                             (executionAnalysis.temporal_keyword_usage > 0 ? 0.1 : 0);
+        
+        let baseScore = planScore + executionScore;
+        
+        // 🎯 基于模型评估调整分数
+        if (modelAssessedSensitivity === '高' && executionAnalysis.temporal_action_ratio < 0.5) {
+            baseScore *= 0.7; // 高敏感主题但执行不足，严重扣分
+        } else if (modelAssessedSensitivity === '低' && executionAnalysis.temporal_action_ratio > 0.7) {
+            baseScore *= 0.9; // 低敏感主题但过度关注时效性，轻微扣分
+        }
+        
+        return Math.min(baseScore, 1.0);
+    }
+
+    /**
+     * 🎯 计划质量评级
+     */
+    _ratePlanQuality(sensitivityCount, stepsWithTemporalQueries, totalSteps) {
+        const highSensitivityRatio = sensitivityCount['高'] / totalSteps;
+        const temporalCoverage = stepsWithTemporalQueries / totalSteps;
+        
+        if (highSensitivityRatio > 0.5 && temporalCoverage > 0.6) return '优秀';
+        if (highSensitivityRatio > 0.3 && temporalCoverage > 0.4) return '良好';
+        if (highSensitivityRatio > 0.2 && temporalCoverage > 0.2) return '一般';
+        return '待改进';
+    }
+
+    /**
+     * 🎯 执行质量评级
+     */
+    _rateExecutionQuality(temporalAwareActions, totalActions, temporalKeywordUsage) {
+        const temporalActionRatio = totalActions > 0 ? (temporalAwareActions / totalActions) : 0;
+        
+        if (temporalActionRatio > 0.6 && temporalKeywordUsage > 0) return '优秀';
+        if (temporalActionRatio > 0.4 && temporalKeywordUsage > 0) return '良好';
+        if (temporalActionRatio > 0.2) return '一般';
+        return '待改进';
+    }
+
+    /**
+     * 🎯 一致性说明
+     */
+    _getConsistencyNote(modelSensitivity, systemSensitivity) {
+        if (modelSensitivity === systemSensitivity) {
+            return '模型评估与系统评估一致，判断准确';
+        } else if (modelSensitivity === '高' && systemSensitivity === '低') {
+            return '模型评估比系统更严格，可能过度关注时效性';
+        } else if (modelSensitivity === '低' && systemSensitivity === '高') {
+            return '模型评估比系统更宽松，可能低估时效性需求';
+        } else {
+            return '模型与系统评估存在差异，需要人工复核';
+        }
+    }
+
+    /**
+     * 🎯 质量评级
+     */
+    _getQualityRating(score) {
+        if (score >= 0.8) return { level: '优秀', emoji: '✅', description: '时效性管理卓越' };
+        if (score >= 0.6) return { level: '良好', emoji: '⚠️', description: '时效性管理良好' };
+        if (score >= 0.4) return { level: '一般', emoji: '🔶', description: '时效性管理一般' };
+        return { level: '待改进', emoji: '❌', description: '时效性管理需要改进' };
+    }
+
+    /**
+     * 🎯 改进建议
+     */
+    _getImprovementRecommendations(planAnalysis, executionAnalysis, overallScore, modelSensitivity, systemSensitivity) {
+        const recommendations = [];
+        
+        // 基于模型评估的建议
+        if (modelSensitivity === '高' && executionAnalysis.temporal_action_ratio < 0.5) {
+            recommendations.push('对于高敏感度主题，建议在执行中更多关注信息时效性验证');
+        }
+        
+        if (modelSensitivity === '低' && executionAnalysis.temporal_action_ratio > 0.7) {
+            recommendations.push('对于低敏感度主题，当前对时效性的关注可能过度，建议更专注于准确性');
+        }
+        
+        // 基于执行质量的建议
+        if (executionAnalysis.temporal_keyword_usage === 0 && modelSensitivity === '高') {
+            recommendations.push('高敏感度主题中未使用时序性搜索关键词，建议在搜索中更多使用"最新"、"2025"等关键词');
+        }
+        
+        if (executionAnalysis.official_source_access === 0 && modelSensitivity === '高') {
+            recommendations.push('高敏感度主题中未访问官方来源，建议直接访问官网获取准确版本信息');
+        }
+        
+        // 基于计划质量的建议
+        if (planAnalysis.temporal_coverage < 0.3) {
+            recommendations.push('研究计划中对时效性的考虑不足，建议在规划阶段更多关注信息时效性');
+        }
+        
+        if (recommendations.length === 0) {
+            recommendations.push('当前时效性管理策略适当，模型判断与执行一致');
+        }
+        
+        return recommendations;
+    }
+
+    /**
+     * 🎯 生成总结
+     */
+    _generateTemporalSummary(planAnalysis, executionAnalysis, overallScore, modelSensitivity) {
+        const rating = this._getQualityRating(overallScore);
+        const coveragePercent = (planAnalysis.temporal_coverage * 100).toFixed(0);
+        const actionPercent = (executionAnalysis.temporal_action_ratio * 100).toFixed(0);
+        const scorePercent = (overallScore * 100).toFixed(0);
+        
+        return `${rating.emoji} 时效性管理${rating.level} | 模型评估:${modelSensitivity} | 计划覆盖:${coveragePercent}% | 执行验证:${actionPercent}% | 综合得分:${scorePercent}分`;
+    }
+
+    /**
+     * 🎯 记录时效性性能数据
+     */
+    _recordTemporalPerformance(performanceData) {
+        if (!performanceData) return;
+        try {
+            const analyticsData = {
+                timestamp: new Date().toISOString(),
+                topic: performanceData.topic,
+                research_mode: performanceData.research_mode,
+                model_assessed_sensitivity: performanceData.model_assessment.overall_sensitivity,
+                system_assessed_sensitivity: performanceData.system_assessment.overall_sensitivity,
+                consistency: performanceData.system_assessment.is_consistent,
+                overall_score: performanceData.quality_metrics.overall_temporal_score,
+                quality_rating: performanceData.quality_metrics.quality_rating.level,
+                plan_coverage: performanceData.quality_metrics.plan_quality.temporal_coverage,
+                execution_ratio: performanceData.quality_metrics.execution_quality.temporal_action_ratio
+            };
+            console.log('[TemporalAnalytics] 记录时效性性能:', analyticsData);
+        } catch (error) {
+            console.warn('[TemporalAnalytics] 记录性能数据失败:', error);
+        }
+    }
+
+    // ============================================================
+    // 🔧 计划完成度计算系统（从主文件迁移）
+    // ============================================================
+    
+    /**
+     * ✨ 智能计划完成度计算（与主文件兼容版）
+     */
+    _calculatePlanCompletion(plan, history) {
+        if (!plan || !history || history.length === 0) return 0;
+        
+        const totalSteps = plan.research_plan?.length || 0;
+        if (totalSteps === 0) return 0;
+        
+        // 🎯 核心修复：从plan中获取研究模式，兼容现有调用
+        const researchMode = plan.research_mode || (plan.researchPlan?.research_mode) || 'standard';
+        
+        console.log(`[PlanCompletion] 开始计算完成度，计划步骤: ${totalSteps}，历史步骤: ${history.length}，模式: ${researchMode}`);
+        
+        let matchedSteps = 0;
+        
+        plan.research_plan.forEach((planStep, index) => {
+            // 🎯 核心：双引擎匹配策略
+            const keywordScore = this._calculateKeywordMatchScore(planStep, history, index, plan);
+            const semanticScore = this._calculateSemanticSimilarity(planStep, history, index);
+            
+            // 🎯 智能融合：取两者较高值（避免单一算法偏差）
+            const finalScore = Math.max(keywordScore, semanticScore);
+            
+            // 🎯 自适应阈值：根据研究模式调整
+            const threshold = this._getAdaptiveThreshold(researchMode);
+            
+            if (finalScore >= threshold) {
+                matchedSteps++;
+                console.log(`[PlanCompletion] ✅ 步骤 ${index+1} 匹配成功: 关键词=${(keywordScore*100).toFixed(1)}%，语义=${(semanticScore*100).toFixed(1)}%，综合=${(finalScore*100).toFixed(1)}%`);
+            } else {
+                console.log(`[PlanCompletion] ❌ 步骤 ${index+1} 匹配失败: 关键词=${(keywordScore*100).toFixed(1)}%，语义=${(semanticScore*100).toFixed(1)}%，综合=${(finalScore*100).toFixed(1)}% < ${threshold*100}%`);
+            }
+            
+            // 🎯 调试信息：显示计划步骤内容
+            const stepPreview = planStep.sub_question?.length > 40 
+                ? planStep.sub_question.substring(0, 40) + "..."
+                : planStep.sub_question || '无问题描述';
+            console.log(`[PlanCompletion]   步骤内容: "${stepPreview}"`);
+        });
+        
+        const completion = totalSteps > 0 ? matchedSteps / totalSteps : 0;
+        console.log(`[PlanCompletion] 🎯 总完成度: ${matchedSteps}/${totalSteps} = ${(completion*100).toFixed(1)}%`);
+        
+        // 🎯 确保返回值在0-1之间
+        return Math.max(0, Math.min(1, completion));
+    }
+
+    _calculateKeywordMatchScore(planStep, history, stepIndex, plan) {
+        if (!planStep || !planStep.sub_question) return 0;
+        
+        const questionText = (planStep.sub_question || '').toLowerCase();
+        const keywords = this._smartTokenize(questionText);
+        if (keywords.length === 0) return 0;
+        
+        // 🎯 获取相关历史（每个计划步骤对应2-3个历史步骤）
+        const relevantHistory = this._getRelevantHistoryForStep(history, stepIndex, plan);
+        const historyText = relevantHistory.map(h => 
+            `${h.action?.thought || ''} ${h.observation || ''} ${h.key_finding || ''}`
+        ).join(' ').toLowerCase();
+        
+        // 🎯 计算匹配的关键词数量
+        let foundCount = 0;
+        keywords.forEach(keyword => {
+            if (historyText.includes(keyword)) {
+                foundCount++;
+            }
+        });
+        
+        // 🎯 返回匹配比例
+        return keywords.length > 0 ? foundCount / keywords.length : 0;
+    }
+
+    _calculateSemanticSimilarity(planStep, history, stepIndex) {
+        if (!planStep || !planStep.sub_question) return 0;
+        
+        const questionText = (planStep.sub_question || '').toLowerCase();
+        const relevantHistory = history.slice(-3);
+        const historyText = relevantHistory.map(h => 
+            `${h.action?.thought || ''} ${h.observation || ''}`
+        ).join(' ').toLowerCase();
+        
+        const questionWords = this._smartTokenize(questionText);
+        const historyWords = this._smartTokenize(historyText);
+        
+        if (questionWords.length === 0 || historyWords.length === 0) return 0;
+        
+        const questionSet = new Set(questionWords);
+        const historySet = new Set(historyWords);
+        
+        let intersection = 0;
+        for (const word of questionSet) {
+            if (historySet.has(word)) intersection++;
+        }
+        
+        const union = questionSet.size + historySet.size - intersection;
+        return union > 0 ? intersection / union : 0;
+    }
+
+    _smartTokenize(text) {
+        if (!text || typeof text !== 'string') return [];
+        
+        const cleaned = text
+            .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        
+        if (!cleaned) return [];
+        
+        const tokens = cleaned
+            .split(/[^\w\u4e00-\u9fa5]+/)
+            .filter(token => {
+                const trimmed = token.trim();
+                if (trimmed.length < 2) return false;
+                
+                const stopWords = new Set([
+                    '的', '了', '在', '和', '与', '或', '是', '有', '为', '对',
+                    '从', '以', '就', '但', '而', '则', '却', '虽', '既',
+                    '如何', '什么', '为什么', '怎样', '怎么', '哪些',
+                    'the', 'and', 'for', 'are', 'with', 'this', 'that',
+                    'how', 'what', 'why', 'which', 'when', 'where'
+                ]);
+                
+                if (stopWords.has(trimmed.toLowerCase())) return false;
+                return true;
+            })
+            .map(token => token.toLowerCase());
+        
+        return tokens;
+    }
+
+    _getRelevantHistoryForStep(history, stepIndex, plan) {
+        if (!history || history.length === 0) return [];
+        
+        const planSteps = plan?.research_plan?.length || plan?.researchPlan?.length || 1;
+        const stepsPerPlan = Math.ceil(history.length / planSteps);
+        
+        const startIndex = Math.max(0, stepIndex * stepsPerPlan);
+        const endIndex = Math.min(history.length, startIndex + Math.max(3, stepsPerPlan));
+        
+        const recentHistory = history.slice(-3);
+        
+        if (history.length >= 6) {
+            return history.slice(startIndex, endIndex);
+        } else {
+            return recentHistory;
+        }
+    }
+
+    _getAdaptiveThreshold(researchMode) {
+        const modeThresholds = {
+            'deep': 0.35,
+            'academic': 0.45,
+            'business': 0.4,
+            'technical': 0.4,
+            'data_mining': 0.3,
+            'standard': 0.4
+        };
+        
+        return modeThresholds[researchMode] || 0.4;
     }
 
     // ============================================================
@@ -171,7 +955,7 @@ export class ReportGeneratorMiddleware {
     }
 
     /**
-     * 🎯 构建动态报告提示词（用于动态结构模板）
+     * 🎯 构建动态报告提示词
      */
     _buildDynamicReportPrompt(topic, plan, numberedSourcesText, evidenceCollection, originalUserInstruction, promptFragment, researchMode) {
         return `
@@ -259,7 +1043,7 @@ ${promptFragment}
     }
 
     /**
-     * 🎯 构建静态报告提示词（用于静态模板）
+     * 🎯 构建静态报告提示词
      */
     _buildStaticReportPrompt(topic, numberedSourcesText, evidenceCollection, originalUserInstruction, promptFragment, researchMode) {
         const allObservations = evidenceCollection.evidenceEntries
@@ -319,7 +1103,7 @@ ${promptFragment}
     }
 
     // ============================================================
-    // 🎯 证据集合构建系统
+    // 🎯 证据集合构建系统（完整实现）
     // ============================================================
     
     /**
@@ -466,7 +1250,7 @@ ${promptFragment}
                 }
             }
         
-            // 🎯 【修改】移除压缩逻辑，完全信任现代大模型的上下文窗口
+            // 🎯 优化呈现方法（仅格式优化，不压缩内容）
             finalEvidence = this._optimizePresentation(finalEvidence, researchMode);
         
             dataUtilizationStats.evidenceChars += finalEvidence.length;
@@ -545,7 +1329,7 @@ ${promptFragment}
     }
 
     // ============================================================
-    // 🔧 数据处理方法
+    // 🔧 数据处理方法（完整实现）
     // ============================================================
     
     /**
@@ -754,53 +1538,137 @@ ${promptFragment}
         return hybrid;
     }
 
-    // ============================================================
-    // 🔧 报告后处理流水线
-    // ============================================================
-    
     /**
-     * 🎯 报告后处理流水线
+     * 🎯 提取关键数据
      */
-    processReport(finalReport, sources, plan) {
-        console.log('[ReportGeneratorMiddleware] 开始报告后处理流水线...');
+    _extractCriticalData(originalData, maxPoints = 3) {
+        if (!originalData || typeof originalData !== 'string') return null;
+        const text = originalData.substring(0, 5000);
+        
+        const patterns = [
+            /\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b/g,
+            /\b\d+\.\d+%/g,
+            /\b(?:20|19)\d{2}\b/g,
+            /\b(?:最高|最低|最大|最小|平均|总计|累计|增长|下降|提升|降低)\b[\u4e00-\u9fa5\d\.%]+/g,
+            /\b(?:关键|重要|核心|主要|显著|突出)\b[\u4e00-\u9fa5]+/g,
+            /\|[^\n]+\|[^\n]+\|/g
+        ];
 
-        // 1. 智能来源分析
-        console.log('[ReportGeneratorMiddleware] 正在基于完整报告进行来源分析...');
-        const filteredSources = this._filterUsedSources(sources, finalReport);
-        console.log(`[ReportGeneratorMiddleware] 资料来源过滤完成: ${sources.length} → ${filteredSources.length}`);
+        const matches = new Set();
+        patterns.forEach(pattern => {
+            const found = text.match(pattern) || [];
+            found.forEach(match => {
+                if (match.length > 5 && match.length < 200) {
+                    matches.add(match.trim());
+                }
+            });
+        });
 
-        // 2. 清理幻觉章节
-        let cleanedReport = this._cleanReportSections(finalReport);
-
-        // 3. 兜底图片渲染
-        if (this.generatedImages.size > 0) {
-            console.log(`[ReportGeneratorMiddleware] 开始检查图片引用完整性，共 ${this.generatedImages.size} 张图片...`);
-            cleanedReport = this._enforceImageRendering(cleanedReport);
-        }
-
-        // 4. Base64 统一替换
-        if (this.generatedImages.size > 0) {
-            console.log(`[ReportGeneratorMiddleware] 开始执行最终渲染 (Base64替换)...`);
-            cleanedReport = this._replaceImagePlaceholders(cleanedReport);
-        }
-
-        // 5. 附加真实来源列表
-        cleanedReport += this._generateSourcesSection(filteredSources, plan);
-
-        // 6. 完全独立的文中引用映射表
-        console.log('[ReportGeneratorMiddleware] 构建独立文中引用映射表...');
-        const independentCitationSection = this._generateIndependentCitationMapping(cleanedReport, sources);
-        if (independentCitationSection) {
-            cleanedReport += independentCitationSection;
-            console.log('[ReportGeneratorMiddleware] ✅ 独立文中引用映射表已附加');
-        } else {
-            console.log('[ReportGeneratorMiddleware] ℹ️ 未检测到文中引用，跳过映射表生成');
-        }
-
-        console.log(`[ReportGeneratorMiddleware] ✅ 报告后处理完成，最终长度: ${cleanedReport.length}字符`);
-        return cleanedReport;
+        const criticalPoints = Array.from(matches).slice(0, maxPoints);
+        if (criticalPoints.length === 0) return null;
+        return criticalPoints.map(point => `• ${point}`).join('\n');
     }
 
+    /**
+     * 🎯 评估数据完整性
+     */
+    _assessDataCompleteness(data) {
+        if (!data || typeof data !== 'string') return '未知';
+        const length = data.length;
+        if (length > 5000) return '完整';
+        if (length > 2000) return '较完整';
+        if (length > 500) return '基本完整';
+        if (length > 100) return '简要';
+        return '极简';
+    }
+
+    /**
+     * 🎯 检测缺失关键信息
+     */
+    _detectMissingKeyInfo(originalData, summary) {
+        const originalNumbers = new Set((originalData.match(/\b\d+(?:\.\d+)?\b/g) || []).slice(0, 10));
+        const summaryNumbers = new Set((summary.match(/\b\d+(?:\.\d+)?\b/g) || []));
+        const missingNumbers = Array.from(originalNumbers).filter(num => !summaryNumbers.has(num));
+        if (missingNumbers.length > 0) {
+            return `数字数据: ${missingNumbers.slice(0, 3).join(', ')}${missingNumbers.length > 3 ? '...' : ''}`;
+        }
+        return null;
+    }
+
+    /**
+     * 🎯 提取关键部分
+     */
+    _extractKeySections(data, maxSections = 2) {
+        const sections = [];
+        const lines = data.split('\n').filter(line => line.trim().length > 0);
+        const keyIndicators = ['##', '###', '**', '关键', '重要', '核心', '数据', '结果', '结论', '发现'];
+
+        for (let i = 0; i < lines.length && sections.length < maxSections; i++) {
+            const line = lines[i];
+            const hasKeyIndicator = keyIndicators.some(indicator => line.includes(indicator));
+            const hasNumbers = /\b\d+(?:\.\d+)?\b/.test(line);
+        
+            if ((hasKeyIndicator || hasNumbers) && line.length > 20) {
+                const section = lines.slice(i, Math.min(i + 3, lines.length)).join('\n');
+                if (section.length > 50 && section.length < 500) {
+                    sections.push(section);
+                    i += 2;
+                }
+            }
+        }
+        return sections;
+    }
+
+    /**
+     * 🎯 优化呈现方法（仅格式优化，不压缩内容）
+     */
+    _optimizePresentation(evidence, researchMode) {
+        if (!evidence || typeof evidence !== 'string') return evidence || '';
+        
+        let optimized = evidence;
+        const formatOptimizations = [
+            [/\n{3,}/g, '\n\n'],
+            [/\r\n{3,}/g, '\n\n'],
+            [/\*\*(.+?)\*\*\s*\*\*(.+?)\*\*/g, '**$1 $2**'],
+            [/\n\s*\n(\s*[-*+]\s)/g, '\n$1'],
+            [/(#{1,6})\s{2,}(.+)/g, '$1 $2'],
+        ];
+        
+        formatOptimizations.forEach(([pattern, replacement]) => {
+            optimized = optimized.replace(pattern, replacement);
+        });
+        
+        const tableRegex = /\|[^\n]+\|[^\n]*\|\n\|[-: ]+\|[-: ]+\|\n(\|[^\n]+\|[^\n]*\|\n?)+/g;
+        const tables = optimized.match(tableRegex) || [];
+        tables.forEach(table => {
+            const rows = table.split('\n').filter(row => row.trim());
+            if (rows.length >= 3) {
+                const fixedTable = rows.join('\n');
+                optimized = optimized.replace(table, fixedTable);
+            }
+        });
+        
+        const length = optimized.length;
+        const lineCount = (optimized.match(/\n/g) || []).length + 1;
+        const tableCount = (optimized.match(/\|[^\n]+\|/g) || []).length > 0 ? 
+            (optimized.match(/\|[^\n]+\|\n\|[-: ]+\|/g) || []).length : 0;
+        
+        if (length > 5000) {
+            const statsInfo = `\n\n---\n📊 **本段证据统计**：共${length}字符，${lineCount}行`;
+            if (tableCount > 0) {
+                statsInfo += `，包含${tableCount}个数据表格`;
+            }
+            optimized += statsInfo;
+        }
+        
+        console.log(`[EvidenceOptimize] 格式优化完成: ${evidence.length} → ${optimized.length} 字符 (${researchMode}模式)`);
+        return optimized;
+    }
+
+    // ============================================================
+    // 🔧 报告后处理方法
+    // ============================================================
+    
     /**
      * 🎯 清理报告中的幻觉章节
      */
@@ -828,7 +1696,7 @@ ${promptFragment}
         
         this.generatedImages.forEach((imageData, imageId) => {
             const placeholder = `placeholder:${imageId}`;
-            const base64Snippet = imageData.image_base64.substring(0, 50);
+            const base64Snippet = imageData.image_base64?.substring(0, 50) || '';
             
             if (!enhancedReport.includes(placeholder) && !enhancedReport.includes(base64Snippet)) {
                 console.warn(`[ReportGeneratorMiddleware] ⚠️ 发现"遗失"的图片 ${imageId}，强制追加占位符。`);
@@ -847,7 +1715,7 @@ ${promptFragment}
             /!\[(.*?)\]\(placeholder:(.*?)\)/g,
             (match, altText, imageId) => {
                 const imageData = this.generatedImages.get(imageId.trim());
-                if (imageData) {
+                if (imageData && imageData.image_base64) {
                     return `![${altText}](data:image/png;base64,${imageData.image_base64})`;
                 }
                 return `*[图像 "${altText}" 加载失败]*`;
@@ -858,7 +1726,7 @@ ${promptFragment}
     /**
      * 🎯 [最终完美版] 自适应参考文献生成器
      */
-    _generateSourcesSection(sources, plan) {
+    async _generateSourcesSection(sources, plan) {
         if (!sources || sources.length === 0) {
             return '\n\n## 📚 参考文献 (References)\n\n*本次研究未引用外部公开资料。*';
         }
@@ -930,7 +1798,7 @@ ${promptFragment}
     /**
      * 🆕 完全独立的文中引用提取系统
      */
-    _generateIndependentCitationMapping(reportContent, uniqueSources) {
+    async _generateIndependentCitationMapping(reportContent, uniqueSources) {
         if (!reportContent || !uniqueSources || uniqueSources.length === 0) {
             console.log('[CitationMapping] 报告内容或来源为空，跳过引用映射');
             return '';
@@ -1165,7 +2033,7 @@ ${promptFragment}
     }
 
     /**
-     * 🆕 JSON对象转Markdown表格
+     * 🆕 JSON对象转键值对表格
      */
     _objectToKeyValueTable(obj, fields) {
         if (!fields || fields.length === 0) {
@@ -1207,213 +2075,9 @@ ${promptFragment}
         return `\n## 📋 关键字段详情\n\n${table}\n`;
     }
 
-    // ============================================================
-    // 🔧 降级报告生成
-    // ============================================================
-    
     /**
-     * 🎯 降级报告生成
+     * 🎯 数组元数据生成
      */
-    _generateFallbackReport(topic, intermediateSteps, sources, researchMode) {
-        const observations = intermediateSteps
-            .filter(step => step.success !== false && (step.observation && step.observation.length > 50 || step.key_finding))
-            .map(step => {
-                const title = step.key_finding && step.key_finding !== '未能提取关键发现。' ?
-                    `### ✅ 关键发现: ${step.key_finding}` :
-                    `### 🔍 来自步骤 ${step.action.tool_name} 的发现`;
-                
-                const content = step.observation ?
-                    step.observation.substring(0, 500) + (step.observation.length > 500 ? '...' : '') :
-                    '无详细观察结果。';
-                
-                return `${title}\n\n${content}`;
-            })
-            .join('\n\n---\n\n');
-            
-        return `# ${topic}\n\n## ❗ 报告生成失败通知\n\n**研究模式**: ${researchMode}\n\n由于系统在最后一步整合报告时遇到问题，未能生成完整的结构化报告。以下是研究过程中收集到的关键信息摘要，供您参考。\n\n---\n\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
-    }
-
-    // ============================================================
-    // 🔧 工具方法（需要从主文件迁移或重新实现）
-    // ============================================================
-    
-    /**
-     * 🎯 提取年份信息
-     */
-    _extractYear(observation) {
-        const yearMatches = observation.match(/(20\d{2})/g);
-        if (!yearMatches) return null;
-        return Math.max(...yearMatches.map(y => parseInt(y, 10)));
-    }
-
-    /**
-     * 🎯 提取关键数据
-     */
-    _extractCriticalData(originalData, maxPoints = 3) {
-        if (!originalData || typeof originalData !== 'string') return null;
-        const text = originalData.substring(0, 5000);
-        
-        const patterns = [
-            /\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b/g,
-            /\b\d+\.\d+%/g,
-            /\b(?:20|19)\d{2}\b/g,
-            /\b(?:最高|最低|最大|最小|平均|总计|累计|增长|下降|提升|降低)\b[\u4e00-\u9fa5\d\.%]+/g,
-            /\b(?:关键|重要|核心|主要|显著|突出)\b[\u4e00-\u9fa5]+/g,
-            /\|[^\n]+\|[^\n]+\|/g
-        ];
-
-        const matches = new Set();
-        patterns.forEach(pattern => {
-            const found = text.match(pattern) || [];
-            found.forEach(match => {
-                if (match.length > 5 && match.length < 200) {
-                    matches.add(match.trim());
-                }
-            });
-        });
-
-        const criticalPoints = Array.from(matches).slice(0, maxPoints);
-        if (criticalPoints.length === 0) return null;
-        return criticalPoints.map(point => `• ${point}`).join('\n');
-    }
-
-    /**
-     * 🎯 评估数据完整性
-     */
-    _assessDataCompleteness(data) {
-        if (!data || typeof data !== 'string') return '未知';
-        const length = data.length;
-        if (length > 5000) return '完整';
-        if (length > 2000) return '较完整';
-        if (length > 500) return '基本完整';
-        if (length > 100) return '简要';
-        return '极简';
-    }
-
-    /**
-     * 🎯 检测缺失关键信息
-     */
-    _detectMissingKeyInfo(originalData, summary) {
-        const originalNumbers = new Set((originalData.match(/\b\d+(?:\.\d+)?\b/g) || []).slice(0, 10));
-        const summaryNumbers = new Set((summary.match(/\b\d+(?:\.\d+)?\b/g) || []));
-        const missingNumbers = Array.from(originalNumbers).filter(num => !summaryNumbers.has(num));
-        if (missingNumbers.length > 0) {
-            return `数字数据: ${missingNumbers.slice(0, 3).join(', ')}${missingNumbers.length > 3 ? '...' : ''}`;
-        }
-        return null;
-    }
-
-    /**
-     * 🎯 提取关键部分
-     */
-    _extractKeySections(data, maxSections = 2) {
-        const sections = [];
-        const lines = data.split('\n').filter(line => line.trim().length > 0);
-        const keyIndicators = ['##', '###', '**', '关键', '重要', '核心', '数据', '结果', '结论', '发现'];
-
-        for (let i = 0; i < lines.length && sections.length < maxSections; i++) {
-            const line = lines[i];
-            const hasKeyIndicator = keyIndicators.some(indicator => line.includes(indicator));
-            const hasNumbers = /\b\d+(?:\.\d+)?\b/.test(line);
-        
-            if ((hasKeyIndicator || hasNumbers) && line.length > 20) {
-                const section = lines.slice(i, Math.min(i + 3, lines.length)).join('\n');
-                if (section.length > 50 && section.length < 500) {
-                    sections.push(section);
-                    i += 2;
-                }
-            }
-        }
-        return sections;
-    }
-
-    /**
-     * 🎯 优化呈现方法（仅格式优化，不压缩内容）
-     */
-    _optimizePresentation(evidence, researchMode) {
-        if (!evidence || typeof evidence !== 'string') return evidence || '';
-        
-        let optimized = evidence;
-        const formatOptimizations = [
-            [/\n{3,}/g, '\n\n'],
-            [/\r\n{3,}/g, '\n\n'],
-            [/\*\*(.+?)\*\*\s*\*\*(.+?)\*\*/g, '**$1 $2**'],
-            [/\n\s*\n(\s*[-*+]\s)/g, '\n$1'],
-            [/(#{1,6})\s{2,}(.+)/g, '$1 $2'],
-        ];
-        
-        formatOptimizations.forEach(([pattern, replacement]) => {
-            optimized = optimized.replace(pattern, replacement);
-        });
-        
-        const tableRegex = /\|[^\n]+\|[^\n]*\|\n\|[-: ]+\|[-: ]+\|\n(\|[^\n]+\|[^\n]*\|\n?)+/g;
-        const tables = optimized.match(tableRegex) || [];
-        tables.forEach(table => {
-            const rows = table.split('\n').filter(row => row.trim());
-            if (rows.length >= 3) {
-                const fixedTable = rows.join('\n');
-                optimized = optimized.replace(table, fixedTable);
-            }
-        });
-        
-        const length = optimized.length;
-        const lineCount = (optimized.match(/\n/g) || []).length + 1;
-        const tableCount = (optimized.match(/\|[^\n]+\|/g) || []).length > 0 ? 
-            (optimized.match(/\|[^\n]+\|\n\|[-: ]+\|/g) || []).length : 0;
-        
-        if (length > 5000) {
-            const statsInfo = `\n\n---\n📊 **本段证据统计**：共${length}字符，${lineCount}行`;
-            if (tableCount > 0) {
-                statsInfo += `，包含${tableCount}个数据表格`;
-            }
-            optimized += statsInfo;
-        }
-        
-        console.log(`[EvidenceOptimize] 格式优化完成: ${evidence.length} → ${optimized.length} 字符 (${researchMode}模式)`);
-        return optimized;
-    }
-
-    // ============================================================
-    // 🔧 模板方法（需要从 ReportTemplates.js 导入，这里提供代理方法）
-    // ============================================================
-    
-    /**
-     * 🎯 获取研究模式模板（代理方法，实际应从 ReportTemplates.js 导入）
-     */
-    _getTemplateByResearchMode(researchMode) {
-        // 这里应该导入实际的 getTemplateByResearchMode 函数
-        // 为了完整性，这里返回一个模拟模板
-        return {
-            name: researchMode,
-            config: {
-                dynamic_structure: researchMode !== 'standard',
-                requirements: `生成${researchMode}模式的研究报告`,
-                structure: ['引言', '正文', '结论']
-            }
-        };
-    }
-
-    /**
-     * 🎯 获取模板提示词片段（代理方法）
-     */
-    _getTemplatePromptFragment(researchMode) {
-        // 这里应该导入实际的 getTemplatePromptFragment 函数
-        // 为了完整性，这里返回模拟内容
-        const fragments = {
-            academic: '学术报告应包含文献综述、研究方法、数据分析和学术讨论。',
-            business: '商业报告应聚焦市场分析、竞争格局、商业建议和ROI分析。',
-            technical: '技术报告应详细描述技术架构、实现细节、性能评估和最佳实践。',
-            deep: '深度分析报告应体现多维度、辩证的分析，包含问题解构、多角度论证、解决方案评估和创新性见解。',
-            standard: '标准报告应结构清晰，逻辑连贯，易于理解。',
-            data_mining: '数据挖掘报告应侧重于数据收集概况、数据质量评估、结构化数据呈现、数据对比分析和数据可视化建议。'
-        };
-        return fragments[researchMode] || fragments.standard;
-    }
-
-    // ============================================================
-    // 🔧 数组元数据生成（从主文件迁移）
-    // ============================================================
-    
     _generateArrayMetadata(parsedArray) {
         if (!Array.isArray(parsedArray) || parsedArray.length === 0) return '';
         
@@ -1439,6 +2103,9 @@ ${promptFragment}
 ${numericStats}`;
     }
 
+    /**
+     * 🎯 提取关键字段
+     */
     _extractKeyFields(obj, maxFields = 10) {
         if (typeof obj !== 'object' || obj === null) return [];
         
@@ -1464,6 +2131,9 @@ ${numericStats}`;
             .map(item => item.key);
     }
 
+    /**
+     * 🎯 生成对象摘要
+     */
     _generateObjectSummary(obj) {
         if (typeof obj !== 'object' || obj === null) return '';
         
@@ -1504,6 +2174,9 @@ ${numericStats}`;
         return summary;
     }
 
+    /**
+     * 🎯 创建智能JSON预览
+     */
     _createSmartJsonPreview(jsonString, parsedData) {
         if (jsonString.length <= 3000) return jsonString;
         
@@ -1529,6 +2202,9 @@ ${numericStats}`;
         return preview;
     }
 
+    /**
+     * 🎯 提取非JSON结构化数据
+     */
     _extractNonJsonStructuredData(text) {
         if (!text || typeof text !== 'string') return null;
         
@@ -1565,8 +2241,43 @@ ${numericStats}`;
         return `\n## 📋 提取的结构化内容\n\n${extracted.join('\n\n')}\n`;
     }
 
+    /**
+     * 🎯 提取年份信息
+     */
+    _extractYear(observation) {
+        const yearMatches = observation.match(/(20\d{2})/g);
+        if (!yearMatches) return null;
+        return Math.max(...yearMatches.map(y => parseInt(y, 10)));
+    }
+
     // ============================================================
-    // 🔧 引用映射系统（从主文件迁移）
+    // 🔧 降级报告生成
+    // ============================================================
+    
+    /**
+     * 🎯 降级报告生成
+     */
+    _generateFallbackReport(topic, intermediateSteps, sources, researchMode) {
+        const observations = intermediateSteps
+            .filter(step => step.success !== false && (step.observation && step.observation.length > 50 || step.key_finding))
+            .map(step => {
+                const title = step.key_finding && step.key_finding !== '未能提取关键发现。' ?
+                    `### ✅ 关键发现: ${step.key_finding}` :
+                    `### 🔍 来自步骤 ${step.action?.tool_name || '未知工具'} 的发现`;
+                
+                const content = step.observation ?
+                    step.observation.substring(0, 500) + (step.observation.length > 500 ? '...' : '') :
+                    '无详细观察结果。';
+                
+                return `${title}\n\n${content}`;
+            })
+            .join('\n\n---\n\n');
+            
+        return `# ${topic}\n\n## ❗ 报告生成失败通知\n\n**研究模式**: ${researchMode}\n\n由于系统在最后一步整合报告时遇到问题，未能生成完整的结构化报告。以下是研究过程中收集到的关键信息摘要，供您参考。\n\n---\n\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
+    }
+
+    // ============================================================
+    // 🔧 引用映射系统（完整实现）
     // ============================================================
     
     _extractCitationMarkers(reportContent) {
@@ -1633,6 +2344,7 @@ ${numericStats}`;
         markers.sort((a, b) => a.position - b.position);
         return markers;
     }
+
     _processCitations(citationMarkers, uniqueSources) {
         const seen = new Set();
         const result = [];
@@ -1712,7 +2424,7 @@ ${numericStats}`;
     }
 
     // ============================================================
-    // 🎯 状态更新方法
+    // 🎯 状态管理方法
     // ============================================================
     
     /**
@@ -1722,6 +2434,8 @@ ${numericStats}`;
         if (updates.dataBus) this.dataBus = updates.dataBus;
         if (updates.generatedImages) this.generatedImages = updates.generatedImages;
         if (updates.intermediateSteps) this.intermediateSteps = updates.intermediateSteps;
+        if (updates.metrics) this.metrics = updates.metrics;
+        if (updates.runId) this.runId = updates.runId;
         console.log('[ReportGeneratorMiddleware] ✅ 共享状态已更新');
     }
 
@@ -1732,7 +2446,9 @@ ${numericStats}`;
         return {
             dataBus: this.dataBus,
             generatedImages: this.generatedImages,
-            intermediateSteps: this.intermediateSteps
+            intermediateSteps: this.intermediateSteps,
+            metrics: this.metrics,
+            runId: this.runId
         };
     }
 
@@ -1742,6 +2458,102 @@ ${numericStats}`;
     resetState() {
         this.dataBus.clear();
         this.generatedImages.clear();
+        this.intermediateSteps = [];
+        this.metrics = {
+            toolUsage: { tavily_search: 0, crawl4ai: 0, python_sandbox: 0 },
+            stepProgress: [],
+            informationGain: [],
+            planCompletion: 0,
+            tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        };
+        this.runId = null;
         console.log('[ReportGeneratorMiddleware] 🔄 报告生成状态已重置');
+    }
+
+    /**
+     * 🎯 设置回调管理器（允许动态设置）
+     */
+    setCallbackManager(callbackManager) {
+        this.callbackManager = callbackManager;
+        console.log('[ReportGeneratorMiddleware] ✅ 回调管理器已设置');
+    }
+
+    // ============================================================
+    // 🔧 模板方法（需要从 ReportTemplates.js 导入，这里提供代理方法）
+    // ============================================================
+    
+    /**
+     * 🎯 获取研究模式模板（代理方法）
+     * 注意：实际使用时应从 ReportTemplates.js 导入
+     */
+    _getTemplateByResearchMode(researchMode) {
+        // 模拟实现，实际应从 ReportTemplates.js 导入
+        const templates = {
+            academic: {
+                name: '学术研究',
+                config: {
+                    dynamic_structure: true,
+                    requirements: '学术报告应包含文献综述、研究方法、数据分析和学术讨论。',
+                    structure: ['引言与背景', '文献综述', '研究方法', '数据分析', '结论与展望']
+                }
+            },
+            business: {
+                name: '商业分析',
+                config: {
+                    dynamic_structure: true,
+                    requirements: '商业报告应聚焦市场分析、竞争格局、商业建议和ROI分析。',
+                    structure: ['执行摘要', '市场分析', '竞争格局', '商业建议', '风险与机会']
+                }
+            },
+            technical: {
+                name: '技术评估',
+                config: {
+                    dynamic_structure: true,
+                    requirements: '技术报告应详细描述技术架构、实现细节、性能评估和最佳实践。',
+                    structure: ['技术背景', '架构设计', '实现细节', '性能评估', '最佳实践']
+                }
+            },
+            deep: {
+                name: '深度分析',
+                config: {
+                    dynamic_structure: true,
+                    requirements: '深度分析报告应体现多维度、辩证的分析，包含问题解构、多角度论证、解决方案评估和创新性见解。',
+                    structure: ['问题解构', '多角度论证', '解决方案评估', '创新性见解', '综合结论']
+                }
+            },
+            standard: {
+                name: '标准报告',
+                config: {
+                    dynamic_structure: false,
+                    requirements: '标准报告应结构清晰，逻辑连贯，易于理解。',
+                    structure: ['引言', '正文', '结论']
+                }
+            },
+            data_mining: {
+                name: '数据挖掘',
+                config: {
+                    dynamic_structure: true,
+                    requirements: '数据挖掘报告应侧重于数据收集概况、数据质量评估、结构化数据呈现、数据对比分析和数据可视化建议。',
+                    structure: ['数据概况', '数据质量', '数据分析', '数据可视化', '数据洞察']
+                }
+            }
+        };
+        
+        return templates[researchMode] || templates.standard;
+    }
+
+    /**
+     * 🎯 获取模板提示词片段（代理方法）
+     */
+    _getTemplatePromptFragment(researchMode) {
+        const fragments = {
+            academic: '学术报告应包含文献综述、研究方法、数据分析和学术讨论。必须严格按照学术规范进行引用和参考文献标注。',
+            business: '商业报告应聚焦市场分析、竞争格局、商业建议和ROI分析。建议使用清晰的图表和数据支撑结论。',
+            technical: '技术报告应详细描述技术架构、实现细节、性能评估和最佳实践。建议包含代码片段、架构图和性能对比数据。',
+            deep: '深度分析报告应体现多维度、辩证的分析，包含问题解构、多角度论证、解决方案评估和创新性见解。避免表面化分析，要求深度洞察。',
+            standard: '标准报告应结构清晰，逻辑连贯，易于理解。确保信息准确，表达简洁。',
+            data_mining: '数据挖掘报告应侧重于数据收集概况、数据质量评估、结构化数据呈现、数据对比分析和数据可视化建议。必须包含数据表格和统计指标。'
+        };
+        return fragments[researchMode] || fragments.standard;
     }
 }
