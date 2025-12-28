@@ -1319,95 +1319,319 @@ _updateTokenUsage(usage) {
     }
 
     // ============================================================
-    // 🔧 数据处理方法（完整实现）
-    // ============================================================
+// 🔧 数据处理方法（完整实现）
+// ============================================================
+
+/**
+ * 🎯 增强结构化数据处理（核心方法 - 优化版）
+ * 🔥 新增：智能JSON格式检测，避免不必要的异常
+ */
+_enhanceStructuredData(originalData, isFullOriginal = false) {
+    // 🎯 【优化1】智能JSON格式预检测
+    const trimmedData = originalData.trim();
     
-    /**
-     * 🎯 增强结构化数据处理（核心方法）
-     */
-    _enhanceStructuredData(originalData, isFullOriginal = false) {
-        try {
-            const parsedData = JSON.parse(originalData);
+    // 1. 检测是否为明显的JSON格式（通过首尾字符）
+    const isLikelyJson = (trimmedData.startsWith('{') && trimmedData.endsWith('}')) || 
+                         (trimmedData.startsWith('[') && trimmedData.endsWith(']'));
+    
+    // 2. 如果明显不是JSON，直接进入非JSON结构化提取
+    if (!isLikelyJson) {
+        // 🎯 【优化2】增强的非JSON结构化提取
+        const extractedStructure = this._extractNonJsonStructuredData(originalData);
+        if (extractedStructure) {
+            console.log(`[增强结构化] 非JSON数据，已提取结构化内容: ${extractedStructure.length}字符`);
+            return {
+                structuredData: extractedStructure,
+                enhancedEvidence: `📊 **提取的结构化内容**:\n${extractedStructure}`,
+                dataType: 'non_json'
+            };
+        }
+        
+        // 🎯 【优化3】即使不是JSON，也尝试提取混合格式的结构化数据
+        const mixedExtraction = this._extractMixedFormatStructuredData(originalData);
+        if (mixedExtraction) {
+            return mixedExtraction;
+        }
+        
+        console.log(`[增强结构化] 数据非JSON格式，直接返回原始数据片段`);
+        return {
+            structuredData: null,
+            enhancedEvidence: originalData.length > 1000 ? 
+                `📝 **原始数据片段** (前1000字符):\n${originalData.substring(0, 1000)}...` :
+                `📝 **原始数据**:\n${originalData}`,
+            dataType: 'text'
+        };
+    }
+    
+    // 🎯 【优化4】尝试解析JSON，但有更好的错误处理
+    try {
+        const parsedData = JSON.parse(originalData);
+        
+        // 🎯 情况1：JSON数组（如数据表）
+        if (Array.isArray(parsedData) && parsedData.length > 0) {
+            // 1. 转换为主表格
+            const table = this._jsonToMarkdownTable(parsedData);
             
-            // 🎯 情况1：JSON数组（如数据表）
-            if (Array.isArray(parsedData) && parsedData.length > 0) {
-                // 1. 转换为主表格
-                const table = this._jsonToMarkdownTable(parsedData);
-                
-                // 2. 添加数组元数据
-                const metaInfo = this._generateArrayMetadata(parsedData);
-                
-                // 3. 构建增强的证据
-                let enhancedEvidence = `${metaInfo}\n${table}`;
-                
-                // 4. 添加原始JSON预览
-                if (originalData.length < 5000 || isFullOriginal) {
-                    enhancedEvidence += `\n\n🔍 **完整数据结构**:\n\`\`\`json\n${originalData}\n\`\`\``;
-                } else {
-                    const jsonPreview = originalData.substring(0, 2000) + 
-                        `\n... (完整数据 ${originalData.length} 字符)`;
-                    enhancedEvidence += `\n\n🔍 **数据结构预览**:\n\`\`\`json\n${jsonPreview}\n\`\`\``;
+            // 2. 添加数组元数据
+            const metaInfo = this._generateArrayMetadata(parsedData);
+            
+            // 3. 构建增强的证据
+            let enhancedEvidence = `${metaInfo}\n${table}`;
+            
+            // 4. 添加原始JSON预览
+            if (originalData.length < 5000 || isFullOriginal) {
+                enhancedEvidence += `\n\n🔍 **完整数据结构**:\n\`\`\`json\n${originalData}\n\`\`\``;
+            } else {
+                const jsonPreview = originalData.substring(0, 2000) + 
+                    `\n... (完整数据 ${originalData.length} 字符)`;
+                enhancedEvidence += `\n\n🔍 **数据结构预览**:\n\`\`\`json\n${jsonPreview}\n\`\`\``;
+            }
+            
+            console.log(`[增强结构化] JSON数组处理完成: ${parsedData.length}条记录`);
+            return {
+                structuredData: table,
+                enhancedEvidence: enhancedEvidence,
+                dataType: 'array',
+                itemCount: parsedData.length
+            };
+        } 
+        // 🎯 情况2：复杂JSON对象（如报告、配置）
+        else if (typeof parsedData === 'object' && parsedData !== null) {
+            // 1. 提取关键字段表格
+            const keyFields = this._extractKeyFields(parsedData, 10);
+            const keyValueTable = this._objectToKeyValueTable(parsedData, keyFields);
+            
+            // 2. 生成对象摘要
+            const objectSummary = this._generateObjectSummary(parsedData);
+            
+            // 3. 构建增强的证据
+            let enhancedEvidence = `${objectSummary}\n${keyValueTable}`;
+            
+            // 4. 保留原始JSON
+            if (originalData.length < 8000 || isFullOriginal) {
+                enhancedEvidence += `\n\n🔍 **完整JSON**:\n\`\`\`json\n${originalData}\n\`\`\``;
+            } else {
+                const smartPreview = this._createSmartJsonPreview(originalData, parsedData);
+                enhancedEvidence += `\n\n🔍 **JSON智能预览**:\n\`\`\`json\n${smartPreview}\n\`\`\``;
+            }
+            
+            console.log(`[增强结构化] JSON对象处理完成: ${Object.keys(parsedData).length}个字段`);
+            return {
+                structuredData: keyValueTable,
+                enhancedEvidence: enhancedEvidence,
+                dataType: 'object',
+                fieldCount: Object.keys(parsedData).length
+            };
+        }
+        // 🎯 情况3：简单值
+        else {
+            console.log(`[增强结构化] 简单JSON值处理完成: ${typeof parsedData}`);
+            return {
+                structuredData: null,
+                enhancedEvidence: `📋 **简单数据**: ${JSON.stringify(parsedData, null, 2)}`,
+                dataType: 'simple'
+            };
+        }
+        
+    } catch (e) {
+        // 🎯 【优化5】JSON解析失败，但有智能降级
+        console.warn(`[增强结构化] JSON解析失败，尝试智能降级处理:`, e.message);
+        
+        // 1. 尝试提取可能的JSON片段
+        const jsonFragments = this._extractJsonFragments(originalData);
+        if (jsonFragments && jsonFragments.length > 0) {
+            console.log(`[增强结构化] 发现 ${jsonFragments.length} 个JSON片段，尝试处理`);
+            const fragmentResult = this._processJsonFragments(jsonFragments, originalData);
+            if (fragmentResult) return fragmentResult;
+        }
+        
+        // 2. 降级到非JSON结构化提取
+        const extractedStructure = this._extractNonJsonStructuredData(originalData);
+        if (extractedStructure) {
+            console.log(`[增强结构化] 降级到非JSON结构化提取成功: ${extractedStructure.length}字符`);
+            return {
+                structuredData: extractedStructure,
+                enhancedEvidence: `📊 **提取的结构化内容**:\n${extractedStructure}`,
+                dataType: 'non_json'
+            };
+        }
+        
+        // 3. 最终降级：返回原始数据片段
+        console.log(`[增强结构化] 所有降级处理失败，返回原始数据片段`);
+        return {
+            structuredData: null,
+            enhancedEvidence: originalData.length > 1000 ? 
+                `⚠️ **原始数据（无法解析为JSON）**:\n${originalData.substring(0, 1000)}...` :
+                `⚠️ **原始数据（无法解析为JSON）**:\n${originalData}`,
+            dataType: 'text_fallback'
+        };
+    }
+}
+
+/**
+ * 🎯 【新增】提取混合格式的结构化数据
+ * 处理包含JSON片段和其他文本的混合数据
+ */
+_extractMixedFormatStructuredData(originalData) {
+    if (!originalData || typeof originalData !== 'string') return null;
+    
+    console.log(`[混合格式提取] 开始处理混合格式数据，长度: ${originalData.length}`);
+    
+    // 1. 尝试提取JSON片段
+    const jsonFragments = this._extractJsonFragments(originalData);
+    if (jsonFragments.length > 0) {
+        console.log(`[混合格式提取] 发现 ${jsonFragments.length} 个JSON片段`);
+        
+        let structuredParts = [];
+        let evidenceParts = [];
+        
+        jsonFragments.forEach((fragment, index) => {
+            try {
+                const parsed = JSON.parse(fragment);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const table = this._jsonToMarkdownTable(parsed.slice(0, 5)); // 限制前5行
+                    structuredParts.push(`### JSON片段${index + 1} (${parsed.length}条记录)\n${table}`);
+                    evidenceParts.push(`**JSON片段${index + 1}**: ${parsed.length}条记录`);
+                } else if (typeof parsed === 'object') {
+                    const keyFields = this._extractKeyFields(parsed, 5);
+                    const keyValueTable = this._objectToKeyValueTable(parsed, keyFields);
+                    structuredParts.push(`### JSON片段${index + 1} (${Object.keys(parsed).length}个字段)\n${keyValueTable}`);
+                    evidenceParts.push(`**JSON片段${index + 1}**: ${Object.keys(parsed).length}个字段`);
                 }
-                
-                return {
-                    structuredData: table,
-                    enhancedEvidence: enhancedEvidence,
-                    dataType: 'array',
-                    itemCount: parsedData.length
-                };
-            } 
-            // 🎯 情况2：复杂JSON对象（如报告、配置）
-            else if (typeof parsedData === 'object' && parsedData !== null) {
-                // 1. 提取关键字段表格
-                const keyFields = this._extractKeyFields(parsedData, 10);
-                const keyValueTable = this._objectToKeyValueTable(parsedData, keyFields);
-                
-                // 2. 生成对象摘要
-                const objectSummary = this._generateObjectSummary(parsedData);
-                
-                // 3. 构建增强的证据
-                let enhancedEvidence = `${objectSummary}\n${keyValueTable}`;
-                
-                // 4. 保留原始JSON
-                if (originalData.length < 8000 || isFullOriginal) {
-                    enhancedEvidence += `\n\n🔍 **完整JSON**:\n\`\`\`json\n${originalData}\n\`\`\``;
-                } else {
-                    const smartPreview = this._createSmartJsonPreview(originalData, parsedData);
-                    enhancedEvidence += `\n\n🔍 **JSON智能预览**:\n\`\`\`json\n${smartPreview}\n\`\`\``;
-                }
-                
-                return {
-                    structuredData: keyValueTable,
-                    enhancedEvidence: enhancedEvidence,
-                    dataType: 'object',
-                    fieldCount: Object.keys(parsedData).length
-                };
+            } catch (e) {
+                // 忽略解析失败的片段
             }
-            // 🎯 情况3：简单值
-            else {
-                return {
-                    structuredData: null,
-                    enhancedEvidence: `📋 **简单数据**: ${JSON.stringify(parsedData, null, 2)}`,
-                    dataType: 'simple'
-                };
-            }
-            
-        } catch (e) {
-            console.warn(`[增强结构化] JSON解析失败，尝试非JSON结构化提取:`, e.message);
-            
-            // 🎯 降级：尝试提取非JSON结构化数据
-            const extractedStructure = this._extractNonJsonStructuredData(originalData);
-            if (extractedStructure) {
-                return {
-                    structuredData: extractedStructure,
-                    enhancedEvidence: `📊 **提取的结构化内容**:\n${extractedStructure}`,
-                    dataType: 'non_json'
-                };
-            }
-            
-            return null;
+        });
+        
+        if (structuredParts.length > 0) {
+            return {
+                structuredData: structuredParts.join('\n\n'),
+                enhancedEvidence: `📊 **混合格式数据（包含${jsonFragments.length}个JSON片段）**:\n\n${evidenceParts.join('\n')}`,
+                dataType: 'mixed_json'
+            };
         }
     }
+    
+    // 2. 提取Markdown表格
+    const tables = originalData.match(/\|[^\n]+\|[^\n]*\|\n\|[-: ]+\|[-: ]+\|\n(\|[^\n]+\|[^\n]*\|\n?)+/g);
+    if (tables && tables.length > 0) {
+        console.log(`[混合格式提取] 发现 ${tables.length} 个Markdown表格`);
+        
+        const tableList = tables.slice(0, 3).map((table, idx) => 
+            `### 表格${idx + 1}\n${table.substring(0, 1000)}${table.length > 1000 ? '...' : ''}`
+        ).join('\n\n');
+        
+        return {
+            structuredData: tableList,
+            enhancedEvidence: `📋 **混合格式数据（包含${tables.length}个表格）**`,
+            dataType: 'mixed_markdown'
+        };
+    }
+    
+    return null;
+}
+
+/**
+ * 🎯 【新增】提取JSON片段
+ * 从文本中提取可能的JSON片段
+ */
+_extractJsonFragments(text) {
+    if (!text || typeof text !== 'string') return [];
+    
+    const fragments = [];
+    let depth = 0;
+    let startIndex = -1;
+    let inString = false;
+    let escapeNext = false;
+    let quoteChar = null;
+    
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        
+        // 处理字符串中的转义
+        if (inString) {
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            if (char === quoteChar) {
+                inString = false;
+                quoteChar = null;
+            }
+            continue;
+        }
+        
+        // 处理字符串开始
+        if (char === '"' || char === "'") {
+            inString = true;
+            quoteChar = char;
+            continue;
+        }
+        
+        // 处理JSON结构
+        if (char === '{' || char === '[') {
+            if (depth === 0) {
+                startIndex = i;
+            }
+            depth++;
+        } else if (char === '}' || char === ']') {
+            depth--;
+            if (depth === 0 && startIndex !== -1) {
+                const fragment = text.substring(startIndex, i + 1);
+                // 验证片段长度和基本格式
+                if (fragment.length >= 4 && fragment.length <= 100000) {
+                    fragments.push(fragment);
+                }
+                startIndex = -1;
+            }
+        }
+    }
+    
+    // 按长度排序，最长的优先
+    return fragments.sort((a, b) => b.length - a.length);
+}
+
+/**
+ * 🎯 【新增】处理JSON片段
+ * 处理提取出的JSON片段
+ */
+_processJsonFragments(fragments, originalData) {
+    if (!fragments || fragments.length === 0) return null;
+    
+    console.log(`[JSON片段处理] 处理 ${fragments.length} 个JSON片段`);
+    
+    // 取最大的片段尝试处理
+    const largestFragment = fragments[0];
+    
+    try {
+        const parsed = JSON.parse(largestFragment);
+        
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            const table = this._jsonToMarkdownTable(parsed.slice(0, 3)); // 只显示前3行
+            return {
+                structuredData: table,
+                enhancedEvidence: `📊 **从文本中提取的JSON数组** (${parsed.length}条记录):\n${table}`,
+                dataType: 'json_fragment_array'
+            };
+        } else if (typeof parsed === 'object' && parsed !== null) {
+            const keyFields = this._extractKeyFields(parsed, 3);
+            const keyValueTable = this._objectToKeyValueTable(parsed, keyFields);
+            return {
+                structuredData: keyValueTable,
+                enhancedEvidence: `📊 **从文本中提取的JSON对象**:\n${keyValueTable}`,
+                dataType: 'json_fragment_object'
+            };
+        }
+    } catch (e) {
+        console.log(`[JSON片段处理] 最大片段解析失败: ${e.message}`);
+    }
+    
+    return null;
+}
 
     /**
      * 🎯 智能数据策略选择方法
