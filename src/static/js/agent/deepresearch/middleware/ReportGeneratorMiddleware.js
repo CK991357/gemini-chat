@@ -2242,13 +2242,16 @@ ${numericStats}`;
      * 🎯 降级报告生成
      */
     _generateFallbackReport(topic, intermediateSteps, sources, researchMode) {
+        // 降级报告生成逻辑
         const observations = intermediateSteps
-            .filter(step => step.success !== false && (step.observation && step.observation.length > 50 || step.key_finding))
+            .filter(step => step.success !== false && (step.observation && step.observation.length > 50 || step.key_finding)) // 只保留成功的、有意义的观察或关键发现
             .map(step => {
+                // 优先使用关键发现作为标题，否则使用工具名称
                 const title = step.key_finding && step.key_finding !== '未能提取关键发现。' ?
                     `### ✅ 关键发现: ${step.key_finding}` :
-                    `### 🔍 来自步骤 ${step.action?.tool_name || '未知工具'} 的发现`;
+                    `### 🔍 来自步骤 ${step.action.tool_name} 的发现`;
                 
+                // 截断详细观察结果
                 const content = step.observation ?
                     step.observation.substring(0, 500) + (step.observation.length > 500 ? '...' : '') :
                     '无详细观察结果。';
@@ -2257,7 +2260,9 @@ ${numericStats}`;
             })
             .join('\n\n---\n\n');
             
-        return `# ${topic}\n\n## ❗ 报告生成失败通知\n\n**研究模式**: ${researchMode}\n\n由于系统在最后一步整合报告时遇到问题，未能生成完整的结构化报告。以下是研究过程中收集到的关键信息摘要，供您参考。\n\n---\n\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
+        let report = `# ${topic}\n\n## ❗ 报告生成失败通知\n\n**研究模式**: ${researchMode}\n\n由于系统在最后一步整合报告时遇到问题，未能生成完整的结构化报告。以下是研究过程中收集到的关键信息摘要，供您参考。\n\n---\n\n${observations}\n\n## 总结\n基于收集的信息整理完成。`;
+            
+        return report;
     }
 
     // ============================================================

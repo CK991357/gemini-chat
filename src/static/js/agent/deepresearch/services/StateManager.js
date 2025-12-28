@@ -67,13 +67,14 @@ export class StateManager {
             url: source.url || '#',
             description: source.description || '',
             collectedAt: new Date().toISOString(),
-            stepIndex: stepIndex,
-            sourceIndex: null
+            stepIndex: stepIndex, // 标记属于哪个步骤
+            sourceIndex: null // 后续会分配唯一索引
         }));
         
         // 特别处理结构化数据
         if (metadata.contentType === 'structured_data') {
             try {
+                // 如果是JSON字符串，尝试解析并提取关键信息
                 const parsedData = JSON.parse(rawData);
                 const summary = {
                     dataType: metadata.dataType || 'unknown',
@@ -82,6 +83,7 @@ export class StateManager {
                     size: rawData.length
                 };
                 
+                // 提取前3个字段作为示例
                 Object.entries(parsedData)
                     .slice(0, 3)
                     .forEach(([key, value]) => {
@@ -91,6 +93,7 @@ export class StateManager {
                     });
                 
                 processedData = JSON.stringify(summary, null, 2);
+                console.log(`[DataBus] 📊 存储结构化数据摘要: ${summary.dataType}, ${summary.fieldCount} 字段`);
                 
             } catch (e) {
                 // 如果不是JSON，使用原有逻辑
@@ -99,6 +102,7 @@ export class StateManager {
                 }
             }
         } else {
+            // 原有逻辑
             if (rawData.length > 10000) {
                 processedData = this._extractStructuredData(rawData, metadata);
             }
@@ -106,50 +110,54 @@ export class StateManager {
         
         this.dataBus.set(dataKey, {
             rawData: processedData,
-            originalData: rawData,
+            originalData: rawData, // 🔥 新增：保存原始数据
             metadata: {
                 ...metadata,
                 originalLength: rawData.length,
                 processedLength: processedData.length,
                 timestamp: Date.now(),
-                toolSources: sourcesInfo,
+                toolSources: sourcesInfo, // 🆕 存储原始来源
                 sourceCount: sourcesInfo.length
             }
         });
         
         this._cleanupDataBus();
-        console.log(`[StateManager] 📦 存储数据到 ${dataKey}: ${rawData.length} -> ${processedData.length} 字符`);
+        console.log(`[DataBus] 存储数据 ${dataKey}: ${rawData.length} -> ${processedData.length} 字符，包含 ${sourcesInfo.length} 个来源`);
     }
     
     /**
      * 🎯 从数据总线检索数据
      */
     retrieveFromDataBus() {
-        if (this.dataBus.size === 0) return '';
-        
+        if (this.dataBus.size === 0) {
+            return '';
+        }
+
         let summary = `\n\n## 🚌 智能数据总线 (Data Bus) 缓存\n\n`;
-        summary += `**系统提示**: 你在历史步骤中收集到的完整、未截断的原始数据已缓存于此。请在需要时引用。\n\n`;
-        
+        summary += `**系统提示**: 你在历史步骤中收集到的完整、未截断的原始数据（如长网页内容、大JSON）已缓存于此。请在需要时引用。\n\n`;
+
+        // 按照时间戳降序排序，确保 Agent 看到最新的数据
         const sortedData = Array.from(this.dataBus.entries())
             .map(([key, data]) => ({ key, data }))
             .sort((a, b) => new Date(b.data.metadata.timestamp).getTime() - new Date(a.data.metadata.timestamp).getTime());
-        
+
         for (const { key, data } of sortedData) {
             const { rawData, metadata } = data;
-            const stepIndex = key.split('_');
+            const stepNum = key.split('_')[1] || '?';
             const contentType = metadata.contentType || '未知';
             const toolName = metadata.toolName || '未知工具';
             const dataType = metadata.dataType || '文本';
             
+            // 提取前 200 字符作为预览
             const preview = rawData.substring(0, 200).replace(/\n/g, ' ').trim();
-            
+
             summary += `### 📦 ${key} (步骤 ${stepIndex} - ${toolName})\n`;
             summary += `- **类型**: ${dataType} (${contentType})\n`;
             summary += `- **大小**: ${metadata.size} 字符\n`;
             summary += `- **预览**: \`${preview}...\`\n`;
             summary += `- **引用方式**: 在你的思考中，你可以引用 \`DataBus:${key}\` 来表明你正在使用这份完整数据进行分析。\n\n`;
         }
-        
+
         summary += `--- Data Bus 结束 ---\n\n`;
         return summary;
     }
@@ -158,21 +166,26 @@ export class StateManager {
      * 🎯 清理数据总线
      */
     _cleanupDataBus() {
+        // 1. 获取所有 'step_X' 格式的键
         const stepKeys = Array.from(this.dataBus.keys())
                               .filter(key => key.startsWith('step_'));
-        
+
+        // 2. 如果需要清理
         if (stepKeys.length > this.dataRetentionPolicy.retentionSteps) {
+            // 3. 按照数字大小对键进行排序（'step_1', 'step_10', 'step_2' -> 'step_1', 'step_2', 'step_10'）
             stepKeys.sort((a, b) => {
                 const numA = parseInt(a.split('_')[1], 10);
                 const numB = parseInt(b.split('_')[1], 10);
                 return numA - numB;
             });
-            
+
+            // 4. 确定要删除的旧键
             const keysToDelete = stepKeys.slice(0, stepKeys.length - this.dataRetentionPolicy.retentionSteps);
             
+            // 5. 执行删除
             keysToDelete.forEach(key => {
                 this.dataBus.delete(key);
-                console.log(`[StateManager] 🧹 清理过期数据: ${key}`);
+                console.log(`[DataBus] 🧹 清理过期数据: ${key}`);
             });
         }
     }
@@ -181,7 +194,9 @@ export class StateManager {
      * 🎯 提取结构化数据
      */
     _extractStructuredData(rawData, metadata) {
+        // 针对网页内容特别优化
         if (metadata.contentType === 'webpage') {
+            // 提取表格、列表等结构化数据
             const tables = this._extractTablesFromText(rawData);
             const lists = this._extractListsFromText(rawData);
             
@@ -190,6 +205,7 @@ export class StateManager {
             }
         }
         
+        // 通用情况：保留前8000字符 + 后2000字符
         if (rawData.length > 10000) {
             return rawData.substring(0, 8000) +
                    '\n\n[...内容截断...]\n\n' +
@@ -203,6 +219,7 @@ export class StateManager {
      * 🎯 从文本中提取表格
      */
     _extractTablesFromText(text) {
+        // 简单的Markdown表格提取逻辑占位符
         const tableMatches = text.match(/\|.*\|.*\n\|[-: ]+\|[-: ]+\|.*\n(\|.*\|.*)+/g) || [];
         return tableMatches.map(t => `### 提取表格\n${t}`);
     }
@@ -211,6 +228,7 @@ export class StateManager {
      * 🎯 从文本中提取列表
      */
     _extractListsFromText(text) {
+        // 简单的Markdown列表提取逻辑占位符
         const listMatches = text.match(/(\n\s*[-*+]\s+.*)+/g) || [];
         return listMatches.map(l => `### 提取列表\n${l.trim()}`);
     }

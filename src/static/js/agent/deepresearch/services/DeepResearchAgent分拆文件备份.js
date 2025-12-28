@@ -515,7 +515,7 @@ export class DeepResearchAgent {
                     const currentInfoGain = this._calculateInformationGain(summarizedObservation, this.intermediateSteps);
                     this.stateManager.updateMetrics({ informationGain: currentInfoGain });
                     
-                    if (currentInfoGain < 0.07) {
+                    if (currentInfoGain < 0.07) { // 信息增益阈值
                         consecutiveNoGain++;
                         console.log(`[DeepResearchAgent] 低信息增益 ${currentInfoGain.toFixed(2)}，连续${consecutiveNoGain}次`);
                     } else {
@@ -1196,24 +1196,29 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
      */
     _intelligentTruncate(text, maxLength) {
         if (text.length <= maxLength) return text;
+        
         // 在maxLength附近寻找段落边界
         const searchWindow = Math.min(500, text.length - maxLength);
         const searchArea = text.substring(maxLength - 100, maxLength + searchWindow);
+        
         // 优先在段落边界截断
         const lastParagraph = searchArea.lastIndexOf('\n\n');
         if (lastParagraph !== -1) {
             return text.substring(0, maxLength - 100 + lastParagraph) + "\n\n[...]";
         }
+        
         // 其次在句子边界截断
         const lastSentence = searchArea.lastIndexOf('. ');
         if (lastSentence !== -1 && lastSentence > 50) {
             return text.substring(0, maxLength - 100 + lastSentence + 1) + ".. [...]";
         }
+        
         // 最后在单词边界截断
         const lastSpace = searchArea.lastIndexOf(' ');
         if (lastSpace !== -1) {
             return text.substring(0, maxLength - 100 + lastSpace) + " [...]";
         }
+        
         // 实在找不到合适的边界，直接截断
         return text.substring(0, maxLength) + "...";
     }
@@ -1223,10 +1228,10 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
      */
     _containsStructuredData(text) {
         const structuredPatterns = [
-            /\|.*\|.*\|/,
-            /<table[^>]*>.*?<\/table>/is,
-            /\b(模型|名称|定位|特点|上下文|输出)\b.*\n.*-{3,}/,
-            /\b(Model|Name|Positioning|Features|Context|Output)\b.*\n.*-{3,}/
+            /\|.*\|.*\|/, // Markdown表格
+            /<table[^>]*>.*?<\/table>/is, // HTML表格
+            /\b(模型|名称|定位|特点|上下文|输出)\b.*\n.*-{3,}/, // 中文表格特征
+            /\b(Model|Name|Positioning|Features|Context|Output)\b.*\n.*-{3,}/ // 英文表格特征
         ];
         
         return structuredPatterns.some(pattern => pattern.test(text));
@@ -1265,13 +1270,19 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
     // 核心：时效性质量评估系统
     _generateTemporalQualityReport(researchPlan, intermediateSteps, topic, researchMode) {
         const currentDate = new Date().toISOString().split('T')[0];
+        
         // 🎯 唯一事实来源：模型自主评估结果
         const modelAssessedSensitivity = researchPlan.temporal_awareness?.overall_sensitivity || '未知';
+        
+        // 🎯 系统程序化评估（仅用于对比分析）
         const systemAssessedSensitivity = this._assessTemporalSensitivity(topic, researchMode);
+        
         // 分析计划层面的时效性意识
         const planAnalysis = this._analyzePlanTemporalAwareness(researchPlan);
-        // 分析执行层面的时效性行为 
+        
+        // 分析执行层面的时效性行为  
         const executionAnalysis = this._analyzeExecutionTemporalBehavior(intermediateSteps, researchPlan);
+        
         // 综合评估（基于模型自主评估的一致性）
         const overallScore = this._calculateTemporalScore(planAnalysis, executionAnalysis, modelAssessedSensitivity);
 
@@ -1280,7 +1291,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             assessment_date: currentDate,
             topic: topic,
             research_mode: researchMode,
-
+            
             // 🎯 核心：模型自主评估结果（唯一事实来源）
             model_assessment: {
                 overall_sensitivity: modelAssessedSensitivity,
@@ -1290,14 +1301,14 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
                     sub_question: step.sub_question
                 }))
             },
-
+            
             // 系统程序化评估（用于对比分析）
             system_assessment: {
                 overall_sensitivity: systemAssessedSensitivity,
                 is_consistent: modelAssessedSensitivity === systemAssessedSensitivity,
                 consistency_note: this._getConsistencyNote(modelAssessedSensitivity, systemAssessedSensitivity)
             },
-
+            
             // 质量分析
             quality_metrics: {
                 overall_temporal_score: overallScore,
@@ -1305,7 +1316,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
                 execution_quality: executionAnalysis,
                 quality_rating: this._getQualityRating(overallScore)
             },
-
+            
             // 改进建议
             improvement_recommendations: this._getImprovementRecommendations(
                 planAnalysis, 
@@ -1319,15 +1330,18 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             summary: this._generateTemporalSummary(planAnalysis, executionAnalysis, overallScore, modelAssessedSensitivity)
         };
     }
+
     // 系统程序化评估方法
     _assessTemporalSensitivity(topic, researchMode) {
         const currentYear = new Date().getFullYear().toString();
         const currentYearMinus1 = (new Date().getFullYear() - 1).toString();
+        
         // 高敏感度关键词
         const highSensitivityKeywords = [
             '最新', '当前', '现状', '趋势', '发展', '前景', '202', currentYear, currentYearMinus1,
             '版本', '更新', '发布', 'AI', '人工智能', '模型', '技术', '市场', '政策', '法规'
         ];
+        
         // 低敏感度关键词
         const lowSensitivityKeywords = [
             '历史', '起源', '发展史', '经典', '理论', '基础', '概念', '定义', '原理'
@@ -1335,13 +1349,16 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         
         const topicLower = topic.toLowerCase();
         
+        // 检查高敏感度关键词
         const hasHighSensitivity = highSensitivityKeywords.some(keyword => 
             topicLower.includes(keyword.toLowerCase())
         );
         
+        // 检查低敏感度关键词
         const hasLowSensitivity = lowSensitivityKeywords.some(keyword => 
             topicLower.includes(keyword.toLowerCase())
         );
+        
         // 基于研究模式的调整
         const modeSensitivity = {
             'deep': '高',
@@ -1357,10 +1374,12 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         
         return modeSensitivity[researchMode] || '中';
     }
+
     // 分析计划层面的时效性意识
     _analyzePlanTemporalAwareness(researchPlan) {
         const steps = researchPlan.research_plan;
         const totalSteps = steps.length;
+        
         // 统计敏感度分布
         const sensitivityCount = { '高': 0, '中': 0, '低': 0 };
         let stepsWithTemporalQueries = 0;
@@ -1368,6 +1387,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         
         steps.forEach(step => {
             sensitivityCount[step.temporal_sensitivity] = (sensitivityCount[step.temporal_sensitivity] || 0) + 1;
+            
             // 检查步骤是否包含时效性查询建议
             const hasTemporalQuery = step.initial_queries?.some(query => 
                 query.includes('最新') || query.includes('202') || query.includes('版本')
@@ -1391,6 +1411,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             plan_quality: this._ratePlanQuality(sensitivityCount, stepsWithTemporalQueries, totalSteps)
         };
     }
+
     // 分析执行层面的时效性行为
     _analyzeExecutionTemporalBehavior(intermediateSteps, researchPlan) {
         const currentYear = new Date().getFullYear().toString();
@@ -1400,6 +1421,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         let temporalKeywordUsage = 0;
         let versionVerificationAttempts = 0;
         let officialSourceAccess = 0;
+        
         // 构建步骤敏感度映射
         const stepSensitivityMap = {};
         researchPlan.research_plan.forEach(step => {
@@ -1409,10 +1431,11 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         intermediateSteps.forEach(step => {
             const stepSensitivity = stepSensitivityMap[step.step] || '中';
             let isTemporalAware = false;
-            // 检查版本验证尝试
+            
             if (step.action?.tool_name === 'tavily_search') {
                 const query = step.action.parameters?.query || '';
                 
+                // 检查是否使用时序性关键词
                 const usedTemporalKeyword = query.includes('最新') || 
                                           query.includes(currentYear) || 
                                           query.includes('版本');
@@ -1422,11 +1445,13 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
                     isTemporalAware = true;
                 }
                 
+                // 检查版本验证尝试
                 if (query.includes('版本') || query.includes('v') || query.match(/\d+\.\d+/)) {
                     versionVerificationAttempts++;
                     isTemporalAware = true;
                 }
             }
+            
             // 检查crawl4ai是否用于获取官方信息
             if (step.action?.tool_name === 'crawl4ai') {
                 const url = step.action.parameters?.url || '';
@@ -1455,16 +1480,19 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             execution_quality: this._rateExecutionQuality(temporalAwareActions, totalActions, temporalKeywordUsage)
         };
     }
+
     // 综合评分（基于模型自主评估）
     _calculateTemporalScore(planAnalysis, executionAnalysis, modelAssessedSensitivity) {
         // 计划质量权重
         const planScore = planAnalysis.temporal_coverage * 0.3 + 
                          planAnalysis.high_sensitivity_ratio * 0.2;
+        
         // 执行质量权重
         const executionScore = executionAnalysis.temporal_action_ratio * 0.4 +
                              (executionAnalysis.temporal_keyword_usage > 0 ? 0.1 : 0);
         
         let baseScore = planScore + executionScore;
+        
         // 🎯 基于模型评估调整分数
         if (modelAssessedSensitivity === '高' && executionAnalysis.temporal_action_ratio < 0.5) {
             baseScore *= 0.7; // 高敏感主题但执行不足，严重扣分
@@ -1474,6 +1502,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         
         return Math.min(baseScore, 1.0);
     }
+
     // 计划质量评级
     _ratePlanQuality(sensitivityCount, stepsWithTemporalQueries, totalSteps) {
         const highSensitivityRatio = sensitivityCount['高'] / totalSteps;
@@ -1484,6 +1513,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         if (highSensitivityRatio > 0.2 && temporalCoverage > 0.2) return '一般';
         return '待改进';
     }
+
     // 执行质量评级
     _rateExecutionQuality(temporalAwareActions, totalActions, temporalKeywordUsage) {
         const temporalActionRatio = totalActions > 0 ? (temporalAwareActions / totalActions) : 0;
@@ -1494,6 +1524,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         return '待改进';
     }
 
+    // 一致性说明
     _getConsistencyNote(modelSensitivity, systemSensitivity) {
         if (modelSensitivity === systemSensitivity) {
             return '模型评估与系统评估一致，判断准确';
@@ -1506,6 +1537,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         }
     }
 
+    // 质量评级
     _getQualityRating(score) {
         if (score >= 0.8) return { level: '优秀', emoji: '✅', description: '时效性管理卓越' };
         if (score >= 0.6) return { level: '良好', emoji: '⚠️', description: '时效性管理良好' };
@@ -1513,9 +1545,11 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         return { level: '待改进', emoji: '❌', description: '时效性管理需要改进' };
     }
 
+    // 改进建议
     _getImprovementRecommendations(planAnalysis, executionAnalysis, overallScore, modelSensitivity, systemSensitivity) {
         const recommendations = [];
         
+        // 基于模型评估的建议
         if (modelSensitivity === '高' && executionAnalysis.temporal_action_ratio < 0.5) {
             recommendations.push('对于高敏感度主题，建议在执行中更多关注信息时效性验证');
         }
@@ -1524,6 +1558,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             recommendations.push('对于低敏感度主题，当前对时效性的关注可能过度，建议更专注于准确性');
         }
         
+        // 基于执行质量的建议
         if (executionAnalysis.temporal_keyword_usage === 0 && modelSensitivity === '高') {
             recommendations.push('高敏感度主题中未使用时序性搜索关键词，建议在搜索中更多使用"最新"、"2025"等关键词');
         }
@@ -1532,6 +1567,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             recommendations.push('高敏感度主题中未访问官方来源，建议直接访问官网获取准确版本信息');
         }
         
+        // 基于计划质量的建议
         if (planAnalysis.temporal_coverage < 0.3) {
             recommendations.push('研究计划中对时效性的考虑不足，建议在规划阶段更多关注信息时效性');
         }
@@ -1543,6 +1579,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         return recommendations;
     }
 
+    // 生成总结
     _generateTemporalSummary(planAnalysis, executionAnalysis, overallScore, modelSensitivity) {
         const rating = this._getQualityRating(overallScore);
         const coveragePercent = (planAnalysis.temporal_coverage * 100).toFixed(0);
@@ -1551,7 +1588,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         
         return `${rating.emoji} 时效性管理${rating.level} | 模型评估:${modelSensitivity} | 计划覆盖:${coveragePercent}% | 执行验证:${actionPercent}% | 综合得分:${scorePercent}分`;
     }
-    
+    // 确保 _recordTemporalPerformance 方法存在于 DeepResearchAgent.js 中
     _recordTemporalPerformance(performanceData) {
         if (!performanceData) return;
         try {
@@ -1578,62 +1615,75 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
     // ============================================================
     
     _calculateInformationGain(newObservation, history, config) {
+        // 🎯 参数兼容处理
         const useConfig = typeof config === 'object' ? config : {
             useNovelty: true,
             useStructure: true,
-            useEntity: false,
+            useEntity: false,  // 默认关闭，技术研究时手动开启
             useLengthRatio: true,
-            decayFactor: 0.95
+            decayFactor: 0.95 // 默认衰减因子
         };
         
+        // 1. 基础参数验证
         const previousText = history.map(h => h.observation || '').join(' ');
         const newText = newObservation || '';
         
+        // 短文本保护
         if (!newText || newText.length < 50) {
-            return 0.1;
+            return 0.1; // 基础增益，鼓励继续探索
         }
         
         let totalScore = 0;
         let activeDimensions = 0;
         
+        // 2. 词汇新颖性（核心维度，权重40%）
         if (useConfig.useNovelty !== false) {
             const noveltyScore = this._calculateNoveltyScore(newText, previousText);
             totalScore += noveltyScore * 0.4;
             activeDimensions++;
         }
         
+        // 3. 结构多样性（权重30%）
         if (useConfig.useStructure !== false) {
             const structureScore = this._calculateStructureScore(newText);
             totalScore += structureScore * 0.3;
             activeDimensions++;
         }
         
+        // 4. 长度比率（权重20%）
         if (useConfig.useLengthRatio !== false) {
             const lengthScore = this._calculateLengthScore(newText, previousText);
             totalScore += lengthScore * 0.2;
             activeDimensions++;
         }
         
+        // 5. 技术实体（可选，权重10%）
         if (useConfig.useEntity === true) {
             const entityScore = this._calculateEntityScore(newText, previousText);
             totalScore += entityScore * 0.1;
             activeDimensions++;
         }
         
+        // 避免除零
         if (activeDimensions === 0) {
             return 0.1;
         }
         
+        // 6. 加权平均
         const rawScore = totalScore / activeDimensions;
         
+        // 7. 历史衰减（防止无限迭代）
         const decayFactor = useConfig.decayFactor || 0.9;
-        const decay = Math.pow(decayFactor, Math.max(0, history.length - 3));
+        const decay = Math.pow(decayFactor, Math.max(0, history.length - 3)); // 从第4步开始衰减
         const finalScore = rawScore * decay;
         
+        // 8. 返回[0,1]范围内的值
         return Math.max(0.05, Math.min(0.95, finalScore));
     }
 
+    // ✨ 新增：词汇新颖性计算（私有方法）
     _calculateNoveltyScore(newText, previousText) {
+        // 简化的分词和过滤
         const tokenize = (text) => {
             return text
                 .toLowerCase()
@@ -1642,6 +1692,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
                 .filter(word => {
                     if (word.length < 2) return false;
                     if (/^\d+$/.test(word)) return false;
+                    // 常见停用词（可根据需求扩展）
                     const stopWords = ['the', 'and', 'for', 'are', 'with', 'this', 'that', 
                                       '是', '的', '了', '在', '和', '与', '或'];
                     return !stopWords.includes(word);
@@ -1653,39 +1704,46 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         
         if (newWords.length === 0) return 0.1;
         
+        // 新词比例
         const novelWords = newWords.filter(word => !previousWords.has(word));
         const basicNovelty = novelWords.length / newWords.length;
         
         return Math.max(0.1, Math.min(0.9, basicNovelty));
     }
 
+    // ✨ 新增：结构多样性计算
     _calculateStructureScore(newText) {
+        // 检测结构化内容
         let features = 0;
         const maxFeatures = 6;
         
-        if (/\`\`\`[\s\S]*?\`\`\`/.test(newText)) features++;
-        if (/\|[\s\S]*?\|/.test(newText)) features++;
-        if (/^\s*[\-\*\+]\s|\d+\.\s/.test(newText)) features++;
-        if (/^>\s/.test(newText)) features++;
-        if (/^#{1,3}\s/.test(newText)) features++;
-        if ((newText.match(/\n\s*\n/g) || []).length >= 3) features++;
+        if (/\`\`\`[\s\S]*?\`\`\`/.test(newText)) features++; // 代码块
+        if (/\|[\s\S]*?\|/.test(newText)) features++;         // 表格
+        if (/^\s*[\-\*\+]\s|\d+\.\s/.test(newText)) features++; // 列表
+        if (/^>\s/.test(newText)) features++;                 // 引用块
+        if (/^#{1,3}\s/.test(newText)) features++;            // 标题
+        if ((newText.match(/\n\s*\n/g) || []).length >= 3) features++; // 多段落
         
         return Math.min(features / maxFeatures, 1);
     }
 
+    // ✨ 新增：长度比率计算
     _calculateLengthScore(newText, previousText) {
-        if (previousText.length === 0) return 0.5;
+        if (previousText.length === 0) return 0.5; // 没有历史时中等增益
         
         const ratio = newText.length / previousText.length;
+        // 归一化：ratio=1得0.5分，ratio=2得1分，ratio=0.5得0分
         const normalized = Math.max(0, Math.min(1, (ratio - 0.5) * 1.0));
         return normalized;
     }
 
+    // ✨ 新增：技术实体检测（技术研究场景优化）
     _calculateEntityScore(newText, previousText) {
+        // 技术术语模式
         const patterns = [
-            /\b[A-Z]{2,}\b/g,
-            /\b[\w\-]+(?:\.\d+)+\b/g,
-            /\b(?:SDK|IDE|IR|SIMD|TPU|HPC)\b/gi
+            /\b[A-Z]{2,}\b/g,           // 大写缩写（CUDA, GPU, API）
+            /\b[\w\-]+(?:\.\d+)+\b/g,   // 版本号（13.1, TensorFlow-2.0）
+            /\b(?:SDK|IDE|IR|SIMD|TPU|HPC)\b/gi // 技术缩写
         ];
         
         const extractEntities = (text) => {
@@ -1711,10 +1769,11 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
     // ============================================================
     
     _extractSourcesFromIntermediateSteps(intermediateSteps) {
-        const sources = new Map();
+        const sources = new Map(); // 使用Map避免重复来源
         
         intermediateSteps.forEach(step => {
             if (step.observation && typeof step.observation === 'string') {
+                // 从tavily_search结果中提取来源
                 if (step.action.tool_name === 'tavily_search' && step.observation.includes('【来源')) {
                     const sourceMatches = step.observation.match(/【来源\s*\d+】[^】]*?https?:\/\/[^\s)]+/g);
                     if (sourceMatches) {
@@ -1737,6 +1796,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
                     }
                 }
                 
+                // 从crawl4ai结果中提取来源
                 if (step.action.tool_name === 'crawl4ai' && step.action.parameters && step.action.parameters.url) {
                     const url = step.action.parameters.url;
                     if (!sources.has(url)) {
@@ -1753,6 +1813,7 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         return Array.from(sources.values());
     }
 
+    // ✨ 新增：来源去重
     _deduplicateSources(sources) {
         const seen = new Set();
         return sources.filter(source => {
@@ -1765,7 +1826,9 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         });
     }
 
+    // ✨ 新增：关键词提取
     _extractKeywords(topic, observations) {
+        // 简单的关键词提取逻辑
         const words = (topic + ' ' + observations).split(/\s+/)
             .filter(word => word.length > 2)
             .map(word => word.toLowerCase());
@@ -1781,15 +1844,18 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
             .map(([term, count]) => ({ term, count }));
     }
 
-    _buildReportPrompt(topic, plan, observations, researchMode) {
-        const template = getTemplateByResearchMode(researchMode);
-        
-        if (!template) {
-            console.warn(`[DeepResearchAgent] 未能为 researchMode "${researchMode}" 找到报告模板，将使用标准降级报告。`);
-            return this._generateFallbackReport(topic, [{observation: observations}], [], researchMode);
-        }
-        
-        const config = template.config;
+    // 🎯 核心重构：构建报告提示词 - 使用单一来源原则
+        _buildReportPrompt(topic, plan, observations, researchMode) {
+            // 🎯 DRY原则优化：从 ReportTemplates.js 动态获取配置
+            const template = getTemplateByResearchMode(researchMode);
+            
+            // 如果找不到模板，提供安全的回退
+            if (!template) {
+                console.warn(`[DeepResearchAgent] 未能为 researchMode "${researchMode}" 找到报告模板，将使用标准降级报告。`);
+                return this._generateFallbackReport(topic, [{observation: observations}], [], researchMode);
+            }
+            
+            const config = template.config;
 
         return `
 你是一个专业的报告撰写专家。请基于以下收集到的信息，生成一份专业、结构完整的研究报告。
@@ -1845,136 +1911,185 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
     
     _calculatePlanCompletion(plan, history) {
         if (!plan || !history || history.length === 0) return 0;
-        
+    
         const totalSteps = plan.research_plan?.length || 0;
         if (totalSteps === 0) return 0;
-        
+    
+        // 🎯 核心修复：从plan中获取研究模式，兼容现有调用
         const researchMode = plan.research_mode || (plan.researchPlan?.research_mode) || 'standard';
-        
+    
         console.log(`[PlanCompletion] 开始计算完成度，计划步骤: ${totalSteps}，历史步骤: ${history.length}，模式: ${researchMode}`);
-        
+    
         let matchedSteps = 0;
-        
+    
         plan.research_plan.forEach((planStep, index) => {
+        // 🎯 核心：双引擎匹配策略
             const keywordScore = this._calculateKeywordMatchScore(planStep, history, index, plan);
             const semanticScore = this._calculateSemanticSimilarity(planStep, history, index);
-            
+        
+        // 🎯 智能融合：取两者较高值（避免单一算法偏差）
             const finalScore = Math.max(keywordScore, semanticScore);
-            
+        
+        // 🎯 自适应阈值：根据研究模式调整
             const threshold = this._getAdaptiveThreshold(researchMode);
-            
+        
             if (finalScore >= threshold) {
                 matchedSteps++;
                 console.log(`[PlanCompletion] ✅ 步骤 ${index+1} 匹配成功: 关键词=${(keywordScore*100).toFixed(1)}%，语义=${(semanticScore*100).toFixed(1)}%，综合=${(finalScore*100).toFixed(1)}%`);
             } else {
                 console.log(`[PlanCompletion] ❌ 步骤 ${index+1} 匹配失败: 关键词=${(keywordScore*100).toFixed(1)}%，语义=${(semanticScore*100).toFixed(1)}%，综合=${(finalScore*100).toFixed(1)}% < ${threshold*100}%`);
             }
-            
+        
+        // 🎯 调试信息：显示计划步骤内容
             const stepPreview = planStep.sub_question?.length > 40 
                 ? planStep.sub_question.substring(0, 40) + "..."
                 : planStep.sub_question || '无问题描述';
             console.log(`[PlanCompletion]   步骤内容: "${stepPreview}"`);
         });
-        
+    
         const completion = totalSteps > 0 ? matchedSteps / totalSteps : 0;
         console.log(`[PlanCompletion] 🎯 总完成度: ${matchedSteps}/${totalSteps} = ${(completion*100).toFixed(1)}%`);
-        
+    
+        // 🎯 确保返回值在0-1之间
         return Math.max(0, Math.min(1, completion));
     }
 
+/**
+ * 🎯 关键词匹配分数（精准算法）
+ * 基于关键词的精确匹配，适合技术术语
+ * 🔥 核心修复：保持与现有系统的参数兼容性
+ */
     _calculateKeywordMatchScore(planStep, history, stepIndex, plan) {
         if (!planStep || !planStep.sub_question) return 0;
-        
+    
         const questionText = (planStep.sub_question || '').toLowerCase();
+    
+        // 🎯 智能分词：同时处理中英文混合文本
         const keywords = this._smartTokenize(questionText);
         if (keywords.length === 0) return 0;
-        
+    
+        // 🎯 获取相关历史（每个计划步骤对应2-3个历史步骤）
         const relevantHistory = this._getRelevantHistoryForStep(history, stepIndex, plan);
         const historyText = relevantHistory.map(h => 
             `${h.action?.thought || ''} ${h.observation || ''} ${h.key_finding || ''}`
         ).join(' ').toLowerCase();
-        
+    
+        // 🎯 计算匹配的关键词数量
         let foundCount = 0;
         keywords.forEach(keyword => {
+        // 使用包含匹配（允许部分匹配，更灵活）
             if (historyText.includes(keyword)) {
                 foundCount++;
             }
         });
-        
+    
+        // 🎯 返回匹配比例
         return keywords.length > 0 ? foundCount / keywords.length : 0;
     }
 
+/**
+ * 🎯 语义相似度计算（模糊算法）
+ * 基于词袋模型的Jaccard相似度，适合语义匹配
+ * 🔥 核心修复：保持参数一致性，支持原系统调用
+ */
     _calculateSemanticSimilarity(planStep, history, stepIndex) {
         if (!planStep || !planStep.sub_question) return 0;
-        
+    
         const questionText = (planStep.sub_question || '').toLowerCase();
+    
+        // 🎯 获取相关历史（最近3步）
         const relevantHistory = history.slice(-3);
         const historyText = relevantHistory.map(h => 
             `${h.action?.thought || ''} ${h.observation || ''}`
         ).join(' ').toLowerCase();
-        
+    
+        // 🎯 智能分词
         const questionWords = this._smartTokenize(questionText);
         const historyWords = this._smartTokenize(historyText);
-        
+    
         if (questionWords.length === 0 || historyWords.length === 0) return 0;
-        
+    
+        // 🎯 计算Jaccard相似度（交集/并集）
         const questionSet = new Set(questionWords);
         const historySet = new Set(historyWords);
-        
+    
         let intersection = 0;
         for (const word of questionSet) {
             if (historySet.has(word)) intersection++;
         }
-        
+    
         const union = questionSet.size + historySet.size - intersection;
-        
+    
         return union > 0 ? intersection / union : 0;
     }
 
+/**
+ * 🎯 智能分词（中英文通用）
+ * 统一处理中英文混合文本，无需区分语言
+ * 🔥 核心修复：增强健壮性，防止空值错误
+ */
     _smartTokenize(text) {
         if (!text || typeof text !== 'string') return [];
-        
+    
+        // 🎯 清理文本：保留中文字符、英文字母、数字
         const cleaned = text
-            .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')
-            .replace(/\s+/g, ' ')
+            .replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')  // 移除非中英文字符
+            .replace(/\s+/g, ' ')                    // 合并多个空格
             .trim();
-        
+    
         if (!cleaned) return [];
-        
+    
+        // 🎯 按非字母数字和非中文分割（统一分词）
         const tokens = cleaned
             .split(/[^\w\u4e00-\u9fa5]+/)
             .filter(token => {
+            // 过滤条件
                 const trimmed = token.trim();
+            
+            // 1. 长度至少为2
                 if (trimmed.length < 2) return false;
-                
+            
+            // 2. 过滤常见停用词（最小集合）
                 const stopWords = new Set([
+                // 中文停用词
                     '的', '了', '在', '和', '与', '或', '是', '有', '为', '对',
                     '从', '以', '就', '但', '而', '则', '却', '虽', '既',
                     '如何', '什么', '为什么', '怎样', '怎么', '哪些',
+                
+                // 英文停用词
                     'the', 'and', 'for', 'are', 'with', 'this', 'that',
                     'how', 'what', 'why', 'which', 'when', 'where'
                 ]);
-                
+            
                 if (stopWords.has(trimmed.toLowerCase())) return false;
-                
+            
                 return true;
             })
             .map(token => token.toLowerCase());
-        
+    
         return tokens;
     }
 
+/**
+ * 🎯 获取步骤相关历史（智能映射）
+ * 将计划步骤映射到对应的历史步骤
+ * 🔥 核心修复：保持与现有系统兼容，支持不同的plan结构
+ */
     _getRelevantHistoryForStep(history, stepIndex, plan) {
         if (!history || history.length === 0) return [];
-        
+    
+    // 🎯 策略1：平均分配（每个计划步骤对应2-3个历史步骤）
+    // 兼容不同的plan结构
         const planSteps = plan?.research_plan?.length || plan?.researchPlan?.length || 1;
         const stepsPerPlan = Math.ceil(history.length / planSteps);
-        
+    
         const startIndex = Math.max(0, stepIndex * stepsPerPlan);
         const endIndex = Math.min(history.length, startIndex + Math.max(3, stepsPerPlan));
-        
+    
+    // 🎯 策略2：最近优先（取最近3步）
         const recentHistory = history.slice(-3);
-        
+    
+    // 🎯 智能选择：如果历史步骤多，使用平均分配；否则使用最近优先
         if (history.length >= 6) {
             return history.slice(startIndex, endIndex);
         } else {
@@ -1982,35 +2097,50 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         }
     }
 
+/**
+ * 🎯 自适应阈值（根据研究模式调整）
+ * 根据不同的研究模式设置不同的匹配阈值
+ */
     _getAdaptiveThreshold(researchMode) {
-        let threshold = 0.4;
-        
+    // 🎯 默认阈值
+        let threshold = 0.4; // 40%匹配度
+    
+    // 🎯 根据研究模式调整
         const modeThresholds = {
-            'deep': 0.35,
-            'academic': 0.45,
-            'business': 0.4,
-            'technical': 0.4,
-            'data_mining': 0.3,
-            'standard': 0.4
+            'deep': 0.35,       // 深度模式降低要求（允许更深入探索）
+            'academic': 0.45,   // 学术模式提高要求
+            'business': 0.4,    // 商业模式标准要求
+            'technical': 0.4,   // 技术模式标准要求  
+            'data_mining': 0.3, // 数据挖掘模式最低要求
+            'standard': 0.4     // 标准模式标准要求
         };
-        
+    
         return modeThresholds[researchMode] || threshold;
     }
 
+/**
+ * 🎯 兼容原系统的 _isStepEvidenceInHistory 方法
+ * 🔥 核心修复：保持与原系统完全兼容的调用方式
+ */
     _isStepEvidenceInHistory(step, history, plan) {
+    // 🎯 兼容性修复：支持原系统的2参数调用
         if (arguments.length === 2) {
+        // 原系统调用方式：isStepEvidenceInHistory(step, history)
+        // 使用默认plan结构
             const defaultPlan = { research_mode: 'standard' };
             const keywordScore = this._calculateKeywordMatchScore(step, history, 0, defaultPlan);
             const semanticScore = this._calculateSemanticSimilarity(step, history, 0);
             const finalScore = Math.max(keywordScore, semanticScore);
-            
+        
             return finalScore >= this._getAdaptiveThreshold('standard');
         }
-        
+    
+    // 🎯 新系统调用方式：isStepEvidenceInHistory(step, history, plan)
         const keywordScore = this._calculateKeywordMatchScore(step, history, 0, plan);
         const semanticScore = this._calculateSemanticSimilarity(step, history, 0);
         const finalScore = Math.max(keywordScore, semanticScore);
-        
+    
+    // 🎯 使用自适应阈值
         const researchMode = plan?.research_mode || 'standard';
         return finalScore >= this._getAdaptiveThreshold(researchMode);
     }
@@ -2019,26 +2149,34 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
     // 🎯 知识注入系统（保持不变）
     // ============================================================
     
+    /**
+     * 🎯 【核心优化】按需知识注入
+     */
     async injectKnowledgeAsNeeded(toolName, context, step) {
         const { mode = 'deep' } = context;
         
         console.log(`[DeepResearchAgent] 🔍 检查知识注入: ${toolName}, 步骤: ${step}, 模式: ${mode}`);
         
+        // 🎯 1. 检查是否已经注入过
         if (this.injectedTools.has(toolName)) {
             console.log(`[DeepResearchAgent] 🔄 工具 ${toolName} 已注入过，使用引用模式`);
             return this.getKnowledgeReference(toolName, context);
         }
         
+        // 🎯 2. 根据步骤和模式决定压缩级别
         let compression = 'smart';
         let maxChars = 15000;
         
         if (step === 0) {
+            // 第一步：完整（压缩后）指南
             compression = 'smart';
             maxChars = 20000;
         } else if (step <= 2) {
+            // 前几步：摘要版
             compression = 'smart';
             maxChars = 8000;
         } else {
+            // 后续步骤：最小化或引用
             if (mode === 'deep') {
                 compression = 'minimal';
                 maxChars = 5000;
@@ -2048,6 +2186,7 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             }
         }
         
+        // 🎯 3. 从EnhancedSkillManager获取知识（带压缩）
         const knowledge = await this.skillManager.retrieveFederatedKnowledge(
             toolName,
             context,
@@ -2059,6 +2198,7 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             }
         );
         
+        // 🎯 4. 记录已注入的工具
         if (knowledge && knowledge.content) {
             this.injectedTools.add(toolName);
             console.log(`[DeepResearchAgent] ✅ 注入知识: ${toolName} (${knowledge.content.length} chars)`);
@@ -2067,24 +2207,35 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         return knowledge ? knowledge.content : '';
     }
 
+
+    /**
+     * 🎯 获取知识引用（已注入过的情况）
+     */
     getKnowledgeReference(toolName, context) {
+        // 🎯 关键：调用 EnhancedSkillManager 的 getKnowledgeReference 方法
         const knowledgePackage = this.skillManager.getKnowledgeReference(toolName, context);
         
         if (knowledgePackage && knowledgePackage.content) {
             return knowledgePackage.content;
         }
         
+        // 降级到本地生成引用
         return `## 工具提示: ${toolName}\n\n` +
                `**注意**: 该工具的详细操作指南已在之前步骤中提供。\n` +
                `**当前步骤关键点**: 请根据任务需求合理使用 ${toolName} 工具。\n\n` +
                `*如需查看完整指南，请参考之前步骤的详细说明。*`;
     }
 
+    /**
+     * 🎯 判断是否需要注入知识
+     */
     shouldInjectKnowledge(toolName, step) {
+        // 简单策略：每个工具只在第一次使用时注入详细知识
         if (!this.injectedTools.has(toolName)) {
             return true;
         }
         
+        // 如果是复杂工具（如python_sandbox）且在关键步骤，可以再次提示
         if (toolName === 'python_sandbox' && (step === 3 || step === 5)) {
             return true;
         }
@@ -2097,14 +2248,14 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         this.currentSessionId = `session_${Date.now()}`;
         console.log(`[DeepResearchAgent] 🔄 知识注入状态已重置，新会话ID: ${this.currentSessionId}`);
     }
-
-    // ============================================================
-    // 🎯 辅助方法：判断是否为致命解析错误
-    // ============================================================
-    
+ 
+    /**
+     * 🎯 辅助方法：判断是否为致命解析错误
+     */
     _isParserError(error) {
         if (!error || !error.message) return false;
         
+        // 🎯 关键字列表：涵盖 OutputParser 抛出的自定义错误和 JSON.parse 抛出的标准错误
         const parserKeywords = [
             '无法解析出有效的行动或最终答案',
             'Expected \',\' or \'}\' after property value',
@@ -2113,7 +2264,7 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
             '解析失败',
             'Invalid JSON',
             'SyntaxError',
-            '[DUPLICATE_URL_ERROR]'
+            '[DUPLICATE_URL_ERROR]' // 🎯 新增：识别重复URL错误
         ];
         
         const message = error.message || '';
