@@ -1070,6 +1070,28 @@ ${promptFragment}
         console.log(`[ReportGeneratorMiddleware] 📏 提示词长度: ${finalPrompt.length}字符 (~${Math.ceil(finalPrompt.length/4)} tokens)`);
     }
 
+    /**
+ * 🎯 Token 追踪方法
+ */
+_updateTokenUsage(usage) {
+    if (!usage) return;
+    
+    if (this.metrics && this.metrics.tokenUsage) {
+        this.metrics.tokenUsage.prompt_tokens += usage.prompt_tokens || 0;
+        this.metrics.tokenUsage.completion_tokens += usage.completion_tokens || 0;
+        this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
+        
+        console.log(`[ReportGeneratorMiddleware] Token 使用更新:`, this.metrics.tokenUsage);
+    }
+    
+    if (this.callbackManager) {
+        this.callbackManager.invokeEvent('on_token_usage_updated', {
+            run_id: this.runId,
+            data: usage
+        }).catch(err => console.warn('触发token更新事件失败:', err));
+    }
+}
+
     // ============================================================
     // 🎯 证据集合构建系统（完整实现）
     // ============================================================
