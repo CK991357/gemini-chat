@@ -332,18 +332,18 @@ export class ReportGeneratorMiddleware {
             
             // 4. 构建完整结果对象（与主文件完全一致）
             const result = {
-                success: true,
-                topic: topic,
-                report: cleanedReport,
-                iterations: intermediateSteps.length,
-                intermediateSteps: intermediateSteps,
-                sources: filteredSources,
-                metrics: this.metrics,
-                plan_completion: planCompletion,
-                research_mode: researchMode,
-                temporal_quality: temporalQualityReport,
-                model: this.reportModel
-            };
+            success: true,
+            topic: topic, // ✅ 使用参数 topic
+            report: cleanedReport, // <--- 使用 cleanedReport
+            iterations,
+            intermediateSteps: this.intermediateSteps,
+            sources: filteredSources,
+            metrics: this.metrics,
+            plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
+            research_mode: detectedMode,
+            temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
+            model: this.reportModel // 🎯 修复：添加实际使用的模型名称
+        };
             
             console.log('[ReportGeneratorMiddleware] ✅ 完整结果生成成功');
             return result;

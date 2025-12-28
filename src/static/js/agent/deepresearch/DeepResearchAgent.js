@@ -762,8 +762,15 @@ export class DeepResearchAgent {
             intermediateSteps: this.intermediateSteps
         });
         
-        // 🔥 核心修改：使用 ReportGeneratorMiddleware 处理后处理流程
-        const cleanedReport = this.reportGenerator.processReport(finalReport, uniqueSources, researchPlan);
+        // 🔥 核心修改：直接使用 generateCompleteResult 生成完整结果
+        const result = await this.reportGenerator.generateCompleteResult(
+            uiTopic,
+            this.intermediateSteps,
+            researchPlan,
+            uniqueSources,
+            detectedMode,
+            originalUserInstruction
+        );
         
         console.log(`[DeepResearchAgent] 最终报告构建完成。`);
 
@@ -772,31 +779,11 @@ export class DeepResearchAgent {
         // ============================================================
         console.log('[DeepResearchAgent] 阶段4：生成时效性质量评估报告...');
 
-        // 🎯 4.1. 调用质量评估方法
-        const temporalQualityReport = this._generateTemporalQualityReport(
-            researchPlan,
-            this.intermediateSteps,
-            uiTopic, // 使用干净的 topic
-            detectedMode
-        );
+        // 🎯 4.1. 不再重复生成 temporalQualityReport，使用 processReport 返回的
         
         // 🎯 4.2. 构建最终的、包含质量报告的 result 对象
-        const result = {
-            success: true,
-            topic: uiTopic,
-            report: cleanedReport, // <--- 使用 cleanedReport
-            iterations,
-            intermediateSteps: this.intermediateSteps,
-            sources: filteredSources,
-            metrics: this.metrics,
-            plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
-            research_mode: detectedMode,
-            temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
-            model: this.reportModel // 🎯 修复：添加实际使用的模型名称
-        };
         
         // 🎯 4.3. 调用性能记录方法
-        this._recordTemporalPerformance(temporalQualityReport);
         
         // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
         await this.callbackManager.invokeEvent('on_research_end', {
