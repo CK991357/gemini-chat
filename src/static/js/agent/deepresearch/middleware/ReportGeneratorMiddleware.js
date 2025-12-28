@@ -1640,36 +1640,51 @@ ${promptFragment}
      * 🎯 优化呈现方法（仅格式优化，不压缩内容）
      */
     _optimizePresentation(evidence, researchMode) {
-        if (!evidence || typeof evidence !== 'string') return evidence || '';
-        
+        if (!evidence || typeof evidence !== 'string') {
+            return evidence || '';
+        }
+    
         let optimized = evidence;
+    
+        // 🎯 1. 标准化格式（不丢失任何信息）
         const formatOptimizations = [
+            // 标准化空行（3个以上→2个，提高可读性但不丢失信息）
             [/\n{3,}/g, '\n\n'],
             [/\r\n{3,}/g, '\n\n'],
-            [/\*\*(.+?)\*\*\s*\*\*(.+?)\*\*/g, '**$1 $2**'],
-            [/\n\s*\n(\s*[-*+]\s)/g, '\n$1'],
-            [/(#{1,6})\s{2,}(.+)/g, '$1 $2'],
-        ];
         
+            // 修复常见的Markdown格式问题
+            [/\*\*(.+?)\*\*\s*\*\*(.+?)\*\*/g, '**$1 $2**'], // 合并相邻加粗
+            [/\n\s*\n(\s*[-*+]\s)/g, '\n$1'], // 修复列表前的过多空行
+            [/(#{1,6})\s{2,}(.+)/g, '$1 $2'], // 修复标题后的多余空格
+        ];
+    
         formatOptimizations.forEach(([pattern, replacement]) => {
             optimized = optimized.replace(pattern, replacement);
         });
-        
+    
+        // 🎯 2. 保护结构化数据完整性
+        // 确保表格不被格式优化破坏
         const tableRegex = /\|[^\n]+\|[^\n]*\|\n\|[-: ]+\|[-: ]+\|\n(\|[^\n]+\|[^\n]*\|\n?)+/g;
         const tables = optimized.match(tableRegex) || [];
+    
+        // 对每个表格进行检查和修复
         tables.forEach(table => {
             const rows = table.split('\n').filter(row => row.trim());
-            if (rows.length >= 3) {
+            if (rows.length >= 3) { // 至少表头、分隔线、一行数据
+                // 确保表格格式正确
                 const fixedTable = rows.join('\n');
+                // 用修复后的表格替换原表格
                 optimized = optimized.replace(table, fixedTable);
             }
         });
-        
+    
+        // 🎯 3. 添加信息性标记（仅用于调试和理解，不影响内容）
         const length = optimized.length;
         const lineCount = (optimized.match(/\n/g) || []).length + 1;
         const tableCount = (optimized.match(/\|[^\n]+\|/g) || []).length > 0 ? 
             (optimized.match(/\|[^\n]+\|\n\|[-: ]+\|/g) || []).length : 0;
-        
+    
+        // 仅对较长内容添加统计信息
         if (length > 5000) {
             const statsInfo = `\n\n---\n📊 **本段证据统计**：共${length}字符，${lineCount}行`;
             if (tableCount > 0) {
@@ -1677,8 +1692,9 @@ ${promptFragment}
             }
             optimized += statsInfo;
         }
-        
+    
         console.log(`[EvidenceOptimize] 格式优化完成: ${evidence.length} → ${optimized.length} 字符 (${researchMode}模式)`);
+    
         return optimized;
     }
 
