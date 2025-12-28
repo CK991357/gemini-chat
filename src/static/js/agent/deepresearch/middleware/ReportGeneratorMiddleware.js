@@ -184,89 +184,40 @@ export class ReportGeneratorMiddleware {
                 });
                 
                 const executionTime = Date.now() - startTime;
-                console.log(`[ReportGeneratorMiddleware] 📥 收到写作模型响应 (尝试${attempt + 1}):`);
-                console.log(`  • 耗时: ${executionTime}ms`);
-                
-                // 🎯 更新Token使用统计
+                console.log(`[DeepResearchAgent] 📥 收到写作模型响应 (尝试${attempt + 1}):`);
+        
                 if (reportResponse?.usage) {
                     console.log(`  • Token消耗: ${reportResponse.usage.total_tokens}`);
                     console.log(`  • 上行: ${reportResponse.usage.prompt_tokens}`);
                     console.log(`  • 下行: ${reportResponse.usage.completion_tokens}`);
-                    
-                    // 更新指标
-                    this.metrics.tokenUsage = {
-                        prompt_tokens: (this.metrics.tokenUsage.prompt_tokens || 0) + (reportResponse.usage.prompt_tokens || 0),
-                        completion_tokens: (this.metrics.tokenUsage.completion_tokens || 0) + (reportResponse.usage.completion_tokens || 0),
-                        total_tokens: (this.metrics.tokenUsage.total_tokens || 0) + (reportResponse.usage.total_tokens || 0)
-                    };
                 }
-                
+                this._updateTokenUsage(reportResponse.usage);
+
                 let finalReport = reportResponse?.choices?.[0]?.message?.content ||
                     this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
-                
-                // 分析报告结构
-                console.log(`[ReportGeneratorMiddleware] 📄 生成的报告:`);
+                // 🎯 继续分析报告内容
+                console.log(`[DeepResearchAgent] 📄 生成的报告:`);
                 console.log(`  • 长度: ${finalReport.length}字符`);
+                // 简单分析报告结构
                 const sections = (finalReport.match(/^#{2,3}\s+.+/gm) || []).length;
                 const citations = (finalReport.match(/\[\d+\]/g) || []).length;
+        
                 console.log(`  • 章节数: ${sections}`);
                 console.log(`  • 引用数: ${citations}`);
-                
-                console.log(`[ReportGeneratorMiddleware] ✅ 报告生成成功 (尝试 ${attempt + 1}/${maxRetries + 1})，模式: ${researchMode}`);
-                
-                // 🎯 触发成功事件
-                if (this.callbackManager) {
-                    await this.callbackManager.invokeEvent('agent:thinking', {
-                        detail: {
-                            content: `研究报告生成成功！共${sections}个章节，${citations}处引用。`,
-                            type: 'report_success',
-                            agentType: 'deep_research',
-                            reportLength: finalReport.length,
-                            sections: sections,
-                            citations: citations
-                        }
-                    });
-                }
-                
+                console.log(`[DeepResearchAgent] ✅ 报告生成成功 (尝试 ${attempt + 1}/${maxRetries + 1})，模式: ${researchMode}`);
                 return finalReport;
 
             } catch (error) {
-                console.error(`[ReportGeneratorMiddleware] ❌ 报告生成失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error.message);
-                
-                // 🎯 触发错误事件
-                if (this.callbackManager) {
-                    await this.callbackManager.invokeEvent('agent:thinking', {
-                        detail: {
-                            content: `报告生成失败 (${error.message})，正在重试...`,
-                            type: 'report_error',
-                            agentType: 'deep_research',
-                            error: error.message,
-                            attempt: attempt + 1,
-                            maxRetries: maxRetries + 1
-                        }
-                    });
-                }
-                
+                console.error(`[DeepResearchAgent] ❌ 报告生成失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error && error.message ? error.message : error);
+
                 // 如果是最后一次尝试，使用降级方案
                 if (attempt === maxRetries) {
-                    console.error('[ReportGeneratorMiddleware] 🚨 所有重试尝试均失败，使用降级报告');
-                    
-                    // 🎯 触发降级事件
-                    if (this.callbackManager) {
-                        await this.callbackManager.invokeEvent('agent:thinking', {
-                            detail: {
-                                content: '所有重试均失败，生成降级报告...',
-                                type: 'report_fallback',
-                                agentType: 'deep_research'
-                            }
-                        });
-                    }
-                    
+                    console.error('[DeepResearchAgent] 🚨 所有重试尝试均失败，使用降级报告');
                     return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
                 }
-                
+
                 // 等待后重试
-                console.log(`[ReportGeneratorMiddleware] ⏳ 等待 ${retryDelay}ms 后重试...`);
+                console.log(`[DeepResearchAgent] ⏳ 等待 ${retryDelay}ms 后重试...`);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
         }
@@ -2416,23 +2367,28 @@ ${numericStats}`;
     }
 
     _generateCitationSection(processedCitations, uniqueSources) {
-        if (processedCitations.length === 0) return '';
-        
+        if (processedCitations.length === 0) {
+        return '';
+    }
+    
         let section = '\n\n## 🔗 文中引用对应来源 (Citation-Indexed References)\n\n';
         section += '> *注：本部分仅列出报告中实际引用的来源，按照文中出现的顺序排列。*\n';
         section += '> *与参考文献章节完全独立，不进行任何筛选或交叉引用。*\n\n';
-        
+    
+        // 生成引用条目
         processedCitations.forEach(citation => {
             const { index, source } = citation;
-            
+        
             let entry = `**[${index}]** `;
-            
+        
+        // 标题
             if (source.title && source.title !== '无标题') {
                 entry += `"${source.title}"`;
             } else {
                 entry += `来源 ${index}`;
             }
-            
+        
+        // URL信息
             if (source.url && source.url !== '#') {
                 try {
                     const hostname = new URL(source.url).hostname.replace('www.', '');
@@ -2441,18 +2397,20 @@ ${numericStats}`;
                     entry += ` - 外部链接`;
                 }
             }
-            
+        
+        // 完整链接
             if (source.url && source.url !== '#') {
                 entry += `\n   🔗 ${source.url}`;
             }
-            
+        
             section += `${entry}\n\n`;
         });
-        
+    
+        // 统计信息
         section += `---\n📊 **引用统计**：\n`;
         section += `• 文中引用 ${processedCitations.length} 个独立来源\n`;
         section += `• 模型共看到 ${uniqueSources.length} 个去重来源\n`;
-        
+    
         return section;
     }
 
