@@ -1830,23 +1830,101 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
 
     // ✨ 新增：关键词提取
     _extractKeywords(topic, observations) {
-        // 简单的关键词提取逻辑
-        const words = (topic + ' ' + observations).split(/\s+/)
-            .filter(word => word.length > 2)
-            .map(word => word.toLowerCase());
+    if (!topic && !observations) return [];
+    
+    const text = (topic + ' ' + observations);
+    const lowerText = text.toLowerCase();
+    
+    // 专有名词
+    const properNouns = (text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b|\b[A-Z]{2,}\b/g) || [])
+        .map(word => word.toLowerCase());
+
+    // 数字
+    const numbers = lowerText.match(/\b(20\d{2}|v?\d+\.\d+(?:\.\d+)?|[一二三四五六七八九十\d]+年|[一二三四五六七八九十\d]+月)\b/g) || [];
+
+    // 中文短语（过滤虚词）
+    const chinesePhrases = lowerText.match(/[\u4e00-\u9fa5]{2,}/g) || []
+        .filter(phrase => {
+            const virtualWords = ['的', '了', '在', '是', '和', '就', '不', '都'];
+            return !virtualWords.some(vw => phrase.includes(vw));
+        });
+
+    // 技术术语
+    const techTerms = lowerText.match(/\b(?:[a-z]+\d+|\d+[a-z]+|[a-z]+-\d+|[a-z]+_\d+|[a-z]+\.\d+(?:\.\d+)?)\b/g) || [];
+
+    // 英文单词
+    const englishStopWords = new Set([
+        'this', 'that', 'with', 'from', 'have', 'has', 'been', 'were', 
+        'what', 'when', 'where', 'which', 'who', 'will', 'would', 'about',
+        'above', 'below', 'under', 'over', 'after', 'before', 'during',
+        'between', 'among', 'should', 'could', 'might', 'must', 'some',
+        'any', 'each', 'every', 'other', 'such', 'than', 'then', 'more',
+        'most', 'less', 'also', 'just', 'only', 'very', 'really'
+    ]);
+    
+    const englishWords = lowerText
+        .replace(/[^a-z\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => word.length >= 4 && !englishStopWords.has(word) && word.trim() !== '');
+
+    // 组合并过滤
+    const allKeywords = [
+        ...properNouns,
+        ...numbers,
+        ...chinesePhrases,
+        ...techTerms,
+        ...englishWords
+    ];
+    
+    const filteredKeywords = [...new Set(allKeywords)]
+        .filter(keyword => {
+            if (!keyword || keyword.length < 2) return false;
+            if (/^\d+$/.test(keyword)) return false;
+            
+            const meaninglessWords = new Set([
+                '可以通过', '进行分析', '为我们', '也可以', '还可以',
+                '可以通过', '我们需要', '我们可以', '你们可以'
+            ]);
+            return !meaninglessWords.has(keyword);
+        });
+
+    // 频率统计
+    const keywordCounts = filteredKeywords.reduce((acc, word) => {
+        let count = 0;
+        const exactRegex = new RegExp(`\\b${word}\\b`, 'gi');
+        const exactMatches = text.match(exactRegex);
+        count += (exactMatches ? exactMatches.length : 0);
         
-        const keywordCounts = words.reduce((acc, word) => {
-            acc[word] = (acc[word] || 0) + 1;
-            return acc;
-        }, {});
+        if (word.length >= 4) {
+            const partialRegex = new RegExp(word, 'gi');
+            const partialMatches = text.match(partialRegex);
+            if (partialMatches && partialMatches.length > (exactMatches ? exactMatches.length : 0)) {
+                count = Math.max(count, partialMatches.length);
+            }
+        }
         
-        return Object.entries(keywordCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10)
-            .map(([term, count]) => ({ term, count }));
-    }
+        if (count > 0) {
+            acc[word] = count;
+        }
+        return acc;
+    }, {});
+    
+    // 加权排序 - 🔥 修正后的关键部分
+    const weightedResults = Object.entries(keywordCounts)
+        .map(([term, count]) => {
+            const lengthWeight = Math.min(term.length / 10, 1.5);
+            const weight = count * lengthWeight;
+            return { term, count, weight };
+        })
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, 15)
+        .map(({ term, count }) => ({ term, count }));
+    
+    return weightedResults;
+}
 
     // 🎯 核心重构：构建报告提示词 - 使用单一来源原则
+
         _buildReportPrompt(topic, plan, observations, researchMode) {
             // 🎯 DRY原则优化：从 ReportTemplates.js 动态获取配置
             const template = getTemplateByResearchMode(researchMode);

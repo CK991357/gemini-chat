@@ -2675,8 +2675,8 @@ ${plan.research_plan.map(item =>
     _isStepCompleted(step, history) {
         if (!history || history.length === 0) return false;
         
-        // 🔥 优化1：只看最近3步，避免历史噪声干扰
-        const recentSteps = history.slice(-3);
+        // 🔥 优化1：只看最近4步，避免历史噪声干扰
+        const recentSteps = history.slice(-4);
         const historyText = recentSteps.map(h => 
             `${h.action?.thought || ''} ${h.observation || ''}`
         ).join(' ').toLowerCase();
@@ -3004,18 +3004,63 @@ ${actionJson}
     // --- 1.3 相似数据检测与复用机制辅助方法 ---
 
     _extractKeywords(text) {
-        if (!text) return [];
-        
-        // 中文分词简化版（实际应使用更复杂的分词）
-        const words = text.toLowerCase()
-            .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ' ') // 保留中文、英文、数字
-            .split(/\s+/)
-            .filter(word => word.length > 1); // 过滤单字
-        
-        // 过滤停用词
-        const stopWords = ['的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '将', '进行', '使用', '来', '以', '并', '或', '为', '对', '从', '中', '等', '个', '种', '些', '那', '这'];
-        return words.filter(word => !stopWords.includes(word));
-    }
+    if (!text) return [];
+    
+    const lowerText = text.toLowerCase(); // 🔥 先统一转小写
+    
+    // 1. 专有名词提取（先匹配原文本，再转小写）
+    const properNouns = (text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b|\b[A-Z]{2,}\b/g) || [])
+        .map(word => word.toLowerCase());
+    
+    // 2. 数字提取（在转小写文本中匹配）
+    const numbers = lowerText.match(/\b(20\d{2}|v?\d+\.\d+\.\d+|v?\d+\.\d+)\b/g) || [];
+    
+    // 3. 中文实体提取
+    const chineseEntities = lowerText.match(/[\u4e00-\u9fa5]{2,}(?:·[\u4e00-\u9fa5]+)*/g) || [];
+    
+    // 4. 技术术语
+    const techTerms = lowerText.match(/\b[a-zA-Z]+[\d\.]+[a-zA-Z\d\.]*\b|\b[a-zA-Z]+\d+\b/g) || [];
+    
+    // 5. 英文单词（已转小写）
+    const englishWords = lowerText
+        .replace(/[^a-z\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => {
+            if (word.length <= 3) return false;
+            
+            const commonWords = new Set([
+                'this', 'that', 'with', 'from', 'have', 'has', 'been', 'were', 
+                'what', 'when', 'where', 'which', 'who', 'whom', 'will', 'would',
+                'should', 'could', 'might', 'must', 'about', 'above', 'below',
+                'under', 'over', 'after', 'before', 'during', 'between', 'among',
+                'also', 'just', 'only', 'very', 'really', 'some', 'any', 'each', 
+                'every', 'other', 'such', 'than', 'then', 'more', 'most', 'less'
+            ]);
+            return !commonWords.has(word);
+        });
+    
+    // 组合并去重
+    const allKeywords = [...properNouns, ...numbers, ...chineseEntities, ...techTerms, ...englishWords];
+    
+    const filteredKeywords = [...new Set(allKeywords)]
+        .filter(keyword => {
+            if (!keyword || keyword.length < 2) return false;
+            if (/^\d+$/.test(keyword)) return false;
+            
+            // 更全面的中文停用词
+            const stopWords = new Set([
+                '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', 
+                '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', 
+                '没有', '看', '好', '自己', '这', '将', '进行', '使用', '来', '以', 
+                '并', '或', '为', '对', '从', '中', '等', '个', '种', '些', '那', 
+                '这', '而', '且', '但', '却', '虽', '然', '如果', '那么', '因为', 
+                '所以', '虽然', '但是', '而且', '然后', '可以', '能够', '应该', '可能'
+            ]);
+            return !stopWords.has(keyword);
+        });
+    
+    return filteredKeywords;
+}
 
     _calculateSimilarity(keywords1, keywords2) {
         if (keywords1.length === 0 || keywords2.length === 0) return 0;
