@@ -743,7 +743,9 @@ export class DeepResearchAgent {
                     rawReport,
                     uniqueSources,
                     researchPlan,
-                    detectedMode
+                    detectedMode,
+                    uiTopic,  // ✅ 添加 topic 参数
+                    this.intermediateSteps  // ✅ 必须添加 intermediateSteps 参数！
                 );
                 
                 // 构建最终结果

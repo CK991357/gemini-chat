@@ -227,7 +227,7 @@ export class ReportGeneratorMiddleware {
      * ✨ 报告后处理流水线（公共方法）
      * 🔥 完整包含所有后处理步骤
      */
-    async processReport(finalReport, sources, plan, researchMode) {
+    async processReport(finalReport, sources, plan, researchMode, topic, intermediateSteps) {
         console.log('[ReportGeneratorMiddleware] 🚀 开始报告后处理流水线...');
         
         if (this.callbackManager) {
@@ -277,8 +277,8 @@ export class ReportGeneratorMiddleware {
         console.log('[ReportGeneratorMiddleware] 生成时效性质量评估报告...');
         const temporalQualityReport = this._generateTemporalQualityReport(
             plan,
-            this.intermediateSteps,
-            plan.topic || '未知主题',
+            intermediateSteps,  // ✅ 使用传入的 intermediateSteps 参数！
+            topic || plan.topic || '未知主题',  // ✅ 使用传入的 topic
             researchMode
         );
         
@@ -324,7 +324,7 @@ export class ReportGeneratorMiddleware {
             
             // 2. 进行后处理
             const { cleanedReport, filteredSources, temporalQualityReport } = await this.processReport(
-                rawReport, sources, plan, researchMode
+                rawReport, sources, plan, researchMode, topic, intermediateSteps  // ✅ 添加 topic 参数和 intermediateSteps 参数
             );
             
             // 3. 计算计划完成度
@@ -335,12 +335,12 @@ export class ReportGeneratorMiddleware {
             success: true,
             topic: topic, // ✅ 使用参数 topic
             report: cleanedReport, // <--- 使用 cleanedReport
-            iterations,
-            intermediateSteps: this.intermediateSteps,
+            iterations: intermediateSteps.length, // ✅ 修复：使用中间步骤长度
+            intermediateSteps: intermediateSteps, // ✅ 使用传入的中间步骤
             sources: filteredSources,
             metrics: this.metrics,
-            plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
-            research_mode: detectedMode,
+            plan_completion: planCompletion, // ✅ 修复：使用计算出的完成度
+            research_mode: researchMode, // ✅ 修复：使用传入的研究模式
             temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
             model: this.reportModel // 🎯 修复：添加实际使用的模型名称
         };
