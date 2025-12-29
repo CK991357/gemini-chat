@@ -416,7 +416,7 @@ export class DeepResearchAgent {
                     const completionRate = this._calculatePlanCompletion(researchPlan, this.intermediateSteps);
                     console.log(`[DeepResearchAgent] 📊 研究完成度评估：${(completionRate * 100).toFixed(1)}%`);
                     console.log(`[DeepResearchAgent] 📊 DataBus数据量：${this.dataBus.size} 个条目`);
-                    console.log(`[DeepResearchAgent] 🚀 资料已充足，将由 ${this.reportModel} 模型生成最终报告`);
+                    console.log(`[DeepResearchAgent] 🚀 资料已充足，将由 ${this.reportGenerator.reportModel} 模型生成最终报告`);
                     console.log(`[DeepResearchAgent] 🔄 结束研究循环（${iterations}/${this.maxIterations}轮）`);
     
                 // 🚨 关键修改：不保存 finalAnswerFromIteration，让它保持为 null
@@ -658,7 +658,7 @@ export class DeepResearchAgent {
         });
         
         // ============================================================
-        // ✨ 阶段3：统一的报告生成（使用中间件）
+        // ✨ 阶段3：使用 ReportGeneratorMiddleware 生成完整结果
         // ============================================================
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
 
@@ -669,8 +669,7 @@ export class DeepResearchAgent {
         // 更新关键词统计
         updateResearchStats({ keywords });
         
-        // 在循环结束后，报告生成前，确保所有来源都被正确传递：
-        // 🎯 关键修复：确保所有来源都被收集和传递
+        // 收集所有来源
         const allSourcesFromSteps = this.intermediateSteps.flatMap(step => step.sources || []);
         const combinedSources = [...allSources, ...allSourcesFromSteps];
         const uniqueSources = this._deduplicateSources(combinedSources);
@@ -682,19 +681,29 @@ export class DeepResearchAgent {
             uniqueCount: uniqueSources.length
         });
 
-        // 🎯 关键修复：无论是否有最终答案，都调用报告生成以确保信息整合
-        let finalReport;
-        if (finalAnswerFromIteration) {
-            console.log('[DeepResearchAgent] 使用迭代中生成的答案作为报告基础，但会整合所有来源');
-            // 仍然使用Agent生成的答案，但确保来源正确附加
-            finalReport = finalAnswerFromIteration;
-        } else {
-            console.log('[DeepResearchAgent] 调用报告生成模型进行最终整合');
+        // 🔥 核心修改：同步图片计数器
+        this.imageCounter = this.toolExecutor.getImageCounter();
+        console.log(`[DeepResearchAgent] 📊 图片统计: ${this.imageCounter} 张生成图片`);
+        
+        // 🔥 核心修改：更新中间件的共享状态
+        this.reportGenerator.updateSharedState({
+            dataBus: this.dataBus,
+            generatedImages: this.generatedImages,
+            intermediateSteps: this.intermediateSteps,
+            metrics: this.metrics,
+            runId: runId
+        });
+
+        // ============================================================
+        // 🔥 核心修改：使用 ReportGeneratorMiddleware 生成完整结果
+        // ============================================================
+        let finalResult;
+        
+        // 🎯 数据挖掘模式：使用 DataMiningEngine 生成报告
+        if (isDataMiningMode && this.dataMiningEngine) {
+            console.log('[DeepResearchAgent] 数据挖掘模式，使用 DataMiningEngine 生成报告...');
             
-            // 🎯 数据挖掘模式：使用专用报告生成
-            if (isDataMiningMode && this.dataMiningEngine) {
-                console.log('[DeepResearchAgent] 使用DataMiningEngine生成数据挖掘报告');
-                
+            try {
                 // 获取数据挖掘提示词片段
                 const dataMiningTemplate = getTemplateByResearchMode('data_mining');
                 const promptFragment = getTemplatePromptFragment('data_mining');
@@ -717,65 +726,70 @@ export class DeepResearchAgent {
                     this.dataBus // 🔥 新增：传递 dataBus
                 );
                 
-                try {
-                    const reportResponse = await this.chatApiHandler.completeChat({
-                        messages: [{ role: 'user', content: dataMiningPrompt }],
-                        model: this.reportGenerator.reportModel || 'deepseek-reasoner',
-                        temperature: 0.1, // 低温确保数据准确性
-                    });
-                    
-                    finalReport = reportResponse?.choices?.[0]?.message?.content ||
-                        this.dataMiningEngine.generateDataTablesFallback(this.intermediateSteps, uniqueSources);
-                    
-                    console.log('[DeepResearchAgent] ✅ 数据挖掘报告生成成功');
-                } catch (error) {
-                    console.error('[DeepResearchAgent] ❌ 数据挖掘报告生成失败:', error);
-                    finalReport = this.dataMiningEngine.generateDataTablesFallback(this.intermediateSteps, uniqueSources);
-                }
-            } else {
-                // 🔥 核心修改：使用 ReportGeneratorMiddleware 生成报告
-                console.log('[DeepResearchAgent] 使用ReportGeneratorMiddleware生成报告');
-                finalReport = await this.reportGenerator.generateFinalReport(
-                    uiTopic, 
-                    this.intermediateSteps, 
-                    researchPlan, 
-                    uniqueSources, 
-                    detectedMode, 
+                // 生成数据挖掘报告
+                const reportResponse = await this.chatApiHandler.completeChat({
+                    messages: [{ role: 'user', content: dataMiningPrompt }],
+                    model: this.reportGenerator.reportModel || 'deepseek-reasoner',
+                    temperature: 0.1,
+                });
+                
+                const rawReport = reportResponse?.choices?.[0]?.message?.content ||
+                    this.dataMiningEngine.generateDataTablesFallback(this.intermediateSteps, uniqueSources);
+                
+                console.log('[DeepResearchAgent] ✅ 数据挖掘报告生成成功');
+                
+                // 使用中间件进行后处理
+                const processedResult = await this.reportGenerator.processReport(
+                    rawReport,
+                    uniqueSources,
+                    researchPlan,
+                    detectedMode
+                );
+                
+                // 构建最终结果
+                finalResult = {
+                    success: true,
+                    topic: uiTopic,
+                    report: processedResult.cleanedReport,
+                    iterations: iterations,
+                    intermediateSteps: this.intermediateSteps,
+                    sources: processedResult.filteredSources,
+                    metrics: this.metrics,
+                    plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
+                    research_mode: detectedMode,
+                    temporal_quality: processedResult.temporalQualityReport,
+                    model: this.reportGenerator.reportModel
+                };
+                
+            } catch (error) {
+                console.error('[DeepResearchAgent] ❌ 数据挖掘报告生成失败:', error);
+                // 降级：使用中间件生成标准报告
+                finalResult = await this.reportGenerator.generateCompleteResult(
+                    uiTopic,
+                    this.intermediateSteps,
+                    researchPlan,
+                    uniqueSources,
+                    detectedMode,
                     originalUserInstruction
                 );
             }
+        } else {
+            // 🔥 核心修改：其他模式直接使用中间件生成完整结果
+            console.log('[DeepResearchAgent] 使用 ReportGeneratorMiddleware 生成完整结果...');
+            finalResult = await this.reportGenerator.generateCompleteResult(
+                uiTopic,
+                this.intermediateSteps,
+                researchPlan,
+                uniqueSources,
+                detectedMode,
+                originalUserInstruction
+            );
         }
 
-        // ============================================================
-        // 🚀 最终报告后处理流水线（使用中间件）
-        // ============================================================
-        console.log('[DeepResearchAgent] 开始报告后处理流水线...');
-        
-        // 🎯 主要同步点：在报告后处理流水线开始时同步图片计数器
-        this.imageCounter = this.toolExecutor.getImageCounter();
-        console.log(`[DeepResearchAgent] 📊 图片统计: ${this.imageCounter} 张生成图片`);
-        
-        // 更新中间件的共享状态
-        this.reportGenerator.updateSharedState({
-            dataBus: this.dataBus,
-            generatedImages: this.generatedImages,
-            intermediateSteps: this.intermediateSteps
-        });
-        
-        // 🔥 核心修改：直接使用 generateCompleteResult 生成完整结果
-        const result = await this.reportGenerator.generateCompleteResult(
-            uiTopic,
-            this.intermediateSteps,
-            researchPlan,
-            uniqueSources,
-            detectedMode,
-            originalUserInstruction
-        );
-        
-        console.log(`[DeepResearchAgent] 最终报告构建完成。`);
+        console.log('[DeepResearchAgent] ✅ 最终结果构建完成');
 
         // ============================================================
-        // 🎯 阶段4：生成时效性质量评估报告
+        // 🎯 阶段4：发送完成事件并返回结果
         // ============================================================
         console.log('[DeepResearchAgent] 阶段4：生成时效性质量评估报告...');
 
@@ -788,11 +802,10 @@ export class DeepResearchAgent {
         // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
         await this.callbackManager.invokeEvent('on_research_end', {
             run_id: runId,
-            data: result // 🎯 优化：直接传递完整的 result 对象
+            data: finalResult
         });
 
-        // 🎯 4.5. 返回最终结果
-        return result;
+        return finalResult;
     }
 
     // ============================================================
@@ -802,7 +815,6 @@ export class DeepResearchAgent {
     /**
      * 🎯 Token 追踪方法
      */
-    // 🎯 新增：Token 追踪方法
     _updateTokenUsage(usage) {
         if (!usage) return;
         
