@@ -1835,39 +1835,43 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
     const text = (topic + ' ' + observations);
     const lowerText = text.toLowerCase();
     
-    // 专有名词
+    // 1. 专有名词（优化正则，避免匹配单个词）
     const properNouns = (text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b|\b[A-Z]{2,}\b/g) || [])
         .map(word => word.toLowerCase());
 
-    // 数字
-    const numbers = lowerText.match(/\b(20\d{2}|v?\d+\.\d+(?:\.\d+)?|[一二三四五六七八九十\d]+年|[一二三四五六七八九十\d]+月)\b/g) || [];
+    // 2. 关键数字和版本
+    const numbers = lowerText.match(/\b(20\d{2}|v?\d+\.\d+(?:\.\d+)?)\b/g) || [];
 
-    // 中文短语（过滤虚词）
+    // 3. 中文实体（改进虚词过滤）
     const chinesePhrases = lowerText.match(/[\u4e00-\u9fa5]{2,}/g) || []
         .filter(phrase => {
-            const virtualWords = ['的', '了', '在', '是', '和', '就', '不', '都'];
-            return !virtualWords.some(vw => phrase.includes(vw));
+            // 过滤包含停用词的短语
+            const stopChars = ['的', '了', '在', '是', '和', '就', '不', '都', '也', '很'];
+            return !stopChars.some(char => phrase.includes(char));
         });
 
-    // 技术术语
-    const techTerms = lowerText.match(/\b(?:[a-z]+\d+|\d+[a-z]+|[a-z]+-\d+|[a-z]+_\d+|[a-z]+\.\d+(?:\.\d+)?)\b/g) || [];
+    // 4. 技术术语（优化识别）
+    const techTerms = lowerText.match(/\b(?:[a-z]+\d[\d\.]*[a-z]*|\d+[a-z]+[a-z\d]*|[a-z]+[\.\-_]\d+)\b/g) || [];
 
-    // 英文单词
-    const englishStopWords = new Set([
-        'this', 'that', 'with', 'from', 'have', 'has', 'been', 'were', 
-        'what', 'when', 'where', 'which', 'who', 'will', 'would', 'about',
-        'above', 'below', 'under', 'over', 'after', 'before', 'during',
-        'between', 'among', 'should', 'could', 'might', 'must', 'some',
-        'any', 'each', 'every', 'other', 'such', 'than', 'then', 'more',
-        'most', 'less', 'also', 'just', 'only', 'very', 'really'
-    ]);
-    
+    // 5. 英文单词（优化过滤）
     const englishWords = lowerText
         .replace(/[^a-z\s]/g, ' ')
         .split(/\s+/)
-        .filter(word => word.length >= 4 && !englishStopWords.has(word) && word.trim() !== '');
+        .filter(word => {
+            if (word.length < 4) return false;
+            
+            const stopWords = new Set([
+                'this', 'that', 'with', 'from', 'have', 'has', 'been', 'were',
+                'what', 'when', 'where', 'which', 'who', 'will', 'would', 'about',
+                'above', 'below', 'under', 'over', 'after', 'before', 'during',
+                'between', 'among', 'should', 'could', 'might', 'must', 'some',
+                'any', 'each', 'every', 'other', 'such', 'than', 'then', 'more',
+                'most', 'less', 'also', 'just', 'only', 'very', 'really'
+            ]);
+            return !stopWords.has(word);
+        });
 
-    // 组合并过滤
+    // 6. 组合所有关键词
     const allKeywords = [
         ...properNouns,
         ...numbers,
@@ -1875,52 +1879,25 @@ ${observation.length > 15000 ? `\n[... 原始内容共 ${observation.length} 字
         ...techTerms,
         ...englishWords
     ];
-    
-    const filteredKeywords = [...new Set(allKeywords)]
-        .filter(keyword => {
-            if (!keyword || keyword.length < 2) return false;
-            if (/^\d+$/.test(keyword)) return false;
-            
-            const meaninglessWords = new Set([
-                '可以通过', '进行分析', '为我们', '也可以', '还可以',
-                '可以通过', '我们需要', '我们可以', '你们可以'
-            ]);
-            return !meaninglessWords.has(keyword);
-        });
 
-    // 频率统计
-    const keywordCounts = filteredKeywords.reduce((acc, word) => {
-        let count = 0;
-        const exactRegex = new RegExp(`\\b${word}\\b`, 'gi');
-        const exactMatches = text.match(exactRegex);
-        count += (exactMatches ? exactMatches.length : 0);
-        
-        if (word.length >= 4) {
-            const partialRegex = new RegExp(word, 'gi');
-            const partialMatches = text.match(partialRegex);
-            if (partialMatches && partialMatches.length > (exactMatches ? exactMatches.length : 0)) {
-                count = Math.max(count, partialMatches.length);
-            }
-        }
-        
-        if (count > 0) {
-            acc[word] = count;
-        }
-        return acc;
-    }, {});
+    // 7. 频率统计（精确匹配）
+    const keywordCounts = {};
+    const uniqueKeywords = [...new Set(allKeywords.filter(kw => kw && kw.length >= 2))];
     
-    // 加权排序 - 🔥 修正后的关键部分
-    const weightedResults = Object.entries(keywordCounts)
-        .map(([term, count]) => {
-            const lengthWeight = Math.min(term.length / 10, 1.5);
-            const weight = count * lengthWeight;
-            return { term, count, weight };
-        })
-        .sort((a, b) => b.weight - a.weight)
+    uniqueKeywords.forEach(keyword => {
+        // 精确匹配，避免部分匹配问题
+        const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+        const matches = text.match(regex);
+        if (matches && matches.length > 0) {
+            keywordCounts[keyword] = matches.length;
+        }
+    });
+
+    // 8. 排序返回（纯词频，稳定可靠）
+    return Object.entries(keywordCounts)
+        .sort((a, b) => b[1] - a[1])
         .slice(0, 15)
-        .map(({ term, count }) => ({ term, count }));
-    
-    return weightedResults;
+        .map(([term, count]) => ({ term, count }));
 }
 
     // 🎯 核心重构：构建报告提示词 - 使用单一来源原则
