@@ -34,6 +34,9 @@ export class ReportGeneratorMiddleware {
         // 🎯 关键修复：从配置中获取模板函数
         this.getTemplateByResearchMode = config.getTemplateByResearchMode;
         this.getTemplatePromptFragment = config.getTemplatePromptFragment;
+
+        // 🎯 新增：数据挖掘引擎支持
+        this.dataMiningEngine = config.dataMiningEngine || null;
         
         console.log('[ReportGeneratorMiddleware] ✅ 初始化完成', {
             reportModel: this.reportModel,
@@ -80,7 +83,7 @@ export class ReportGeneratorMiddleware {
             this.intermediateSteps = intermediateSteps;
         }
         
-        // 1. 构建纯净的证据集合
+        // 1. 构建纯净的证据集合（所有模式都需要）
         const evidenceCollection = this._buildEvidenceCollection(intermediateSteps, plan, researchMode);
         
         console.log('[ReportGeneratorMiddleware] 📦 数据准备完成:');
@@ -89,11 +92,11 @@ export class ReportGeneratorMiddleware {
         console.log(`  • 总长度: ${evidenceCollection.totalLength}字符`);
         console.log(`  • 数据总线条目: ${this.dataBus.size}个`);
 
-        // 2. 构建带编号的来源索引 (Source Index)
+        // 2. 构建带编号的来源索引 (Source Index)（所有模式都需要）
         const numberedSourcesText = this._buildNumberedSources(sources);
 
-        // 3. 获取报告模板和提示词片段
-        const reportTemplate = this._getTemplateByResearchMode(researchMode);
+        // 3. 获取报告模板和提示词片段（所有模式都需要）
+        const reportTemplate = this._getTemplateByResearchMode(researchMode);  // 🎯 修复：使用统一的变量名
         let promptFragment = this._getTemplatePromptFragment(researchMode);
 
         // 🔥 特殊处理：数据挖掘模式
@@ -138,7 +141,33 @@ export class ReportGeneratorMiddleware {
 
         // 4. 构建最终提示词
         let finalPrompt;
-        if (reportTemplate.config?.dynamic_structure) {
+
+        // 🔥 数据挖掘模式使用 DataMiningEngine
+        if (researchMode === 'data_mining' && this.dataMiningEngine) {
+            console.log(`[ReportGeneratorMiddleware] 🔍 数据挖掘模式，使用 DataMiningEngine 构建提示词...`);
+            
+            console.log(`[ReportGeneratorMiddleware] 数据挖掘模板信息:`, {
+                templateName: reportTemplate?.name || '未知',  // 🎯 修复：使用 reportTemplate
+                hasScenarioAdapters: !!reportTemplate?.config?.scenario_adapters,
+                evidenceCollectionSize: evidenceCollection.totalLength,
+                dataBusSize: this.dataBus.size
+            });
+            
+            // 使用 DataMiningEngine 构建专用提示词
+            finalPrompt = this.dataMiningEngine.buildDataMiningPrompt(
+                topic,
+                intermediateSteps,
+                plan,
+                sources,
+                originalUserInstruction,
+                reportTemplate,  // 🎯 修复：传递 reportTemplate，不是 dataMiningTemplate
+                promptFragment,
+                this.dataBus // 传递 dataBus
+            );
+            
+            console.log(`[ReportGeneratorMiddleware] ✅ 数据挖掘提示词构建完成，长度: ${finalPrompt.length}字符`);
+        } 
+        else if (reportTemplate.config?.dynamic_structure) {
             console.log(`[ReportGeneratorMiddleware] 检测到动态报告模板 (${researchMode}模式)，构建学术级Prompt...`);
             finalPrompt = this._buildDynamicReportPrompt(
                 topic, plan, numberedSourcesText, evidenceCollection, 

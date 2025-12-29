@@ -84,7 +84,8 @@ export class DeepResearchAgent {
                 reportModel: config.reportModel || 'deepseek-reasoner',
                 // 🔥🔥🔥 关键修复：传递模板函数
                 getTemplateByResearchMode: getTemplateByResearchMode, // 从 ReportTemplates.js 导入的
-                getTemplatePromptFragment: getTemplatePromptFragment  // 从 ReportTemplates.js 导入的
+                getTemplatePromptFragment: getTemplatePromptFragment,  // 从 ReportTemplates.js 导入的
+                dataMiningEngine: this.dataMiningEngine // 🎯 新增
             }
         );
         
