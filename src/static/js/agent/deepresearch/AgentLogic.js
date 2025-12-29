@@ -2673,20 +2673,24 @@ ${plan.research_plan.map(item =>
     }
 
     _isStepCompleted(step, history) {
-        // 将历史记录中的关键文本字段连接成一个大的、可搜索的字符串
-        const historyText = history.map(h => `${h.action?.thought || ''} ${h.observation || ''}`).join(' ').toLowerCase();
+        if (!history || history.length === 0) return false;
         
-        // 检查历史文本中是否包含表示“完成”的关键词
-        const hasCompletionKeywords = historyText.includes('最终答案') || historyText.includes('足够信息');
-
-        if (!hasCompletionKeywords) {
-            return false;
-        }
-
-        // 检查与当前步骤相关的关键词是否也出现在历史中
-        const stepKeywords = step.sub_question.toLowerCase().split(/\s+/).filter(k => k.length > 2);
+        // 🔥 优化1：只看最近3步，避免历史噪声干扰
+        const recentSteps = history.slice(-3);
+        const historyText = recentSteps.map(h => 
+            `${h.action?.thought || ''} ${h.observation || ''}`
+        ).join(' ').toLowerCase();
         
-        return stepKeywords.some(keyword => historyText.includes(keyword));
+        // 🔥 优化2：更好的关键词提取
+        const stepKeywords = step.sub_question.toLowerCase()
+            .split(/\s+/)
+            .filter(k => k.length > 2);
+        
+        // 🔥 优化3：双重条件判断
+        const hasKeywords = stepKeywords.some(kw => historyText.includes(kw));
+        const hasToolCalls = recentSteps.some(step => step.action?.tool_name);
+        
+        return hasKeywords && hasToolCalls; // 两个条件都满足才算完成
     }
 
     // 🎯 格式化历史记录 - 核心修复：简化旧历史记录以降低干扰
