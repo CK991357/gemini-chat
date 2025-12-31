@@ -212,8 +212,7 @@ ${cleanTopic}
      */
     _detectUserGuideRequest(userMessage) {
         const guideKeywords = [
-            '使用指南', '帮助', '怎么用', '使用方法', '使用说明',
-            'user guide', 'help', 'usage guide', 'how to use'
+            '使用指南'
         ];
 
         const lowerMessage = userMessage.trim().toLowerCase();
