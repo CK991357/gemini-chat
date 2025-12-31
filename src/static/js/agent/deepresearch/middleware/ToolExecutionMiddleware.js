@@ -479,22 +479,6 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 console.warn(`[ToolExecutionMiddleware] ⚠️ 工具执行失败`);
             }
             
-            // 🔥 构建丰富的元数据对象
-            const metadata = {
-                toolName: toolName,
-                timestamp: new Date().toISOString(),
-                contentType: toolName === 'crawl4ai' ? 'webpage' : 'text'
-            };
-
-            // 🔥 针对特定工具的专门字段
-            if (toolName === 'tavily_search') {
-                metadata.searchQuery = parameters.query;
-                metadata.searchEngine = 'tavily';
-            } else if (toolName === 'crawl4ai') {
-                metadata.url = parameters.url;
-                metadata.domain = new URL(parameters.url).hostname;
-            }
-
         } catch (error) {
             rawObservation = `错误: 工具 "${toolName}" 执行失败: ${error.message}`;
             console.error(`[ToolExecutionMiddleware] ❌ 工具执行失败: ${toolName}`, error);
@@ -524,9 +508,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
         recordToolCall(toolName, parameters, toolSuccess, rawObservation);
         console.log(`[ToolExecutionMiddleware] 📊 工具调用记录完成: ${toolName}, 成功: ${toolSuccess}`);
-
-        // 🔥 返回包含 metadata 的结果
-        return { rawObservation, toolSources, toolSuccess, metadata };
+        return { rawObservation, toolSources, toolSuccess };
     }
 
     // ============================================================
@@ -589,16 +571,11 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         // 🔥 核心修复：在执行工具后存储数据到数据总线
         if (result.toolSuccess) {
             const stepIndex = this.intermediateSteps.length + 1;
-            
-            // 🔥 使用完整的 metadata（从 result 中获取）
-            this.storeRawDataMethod(
-                stepIndex, 
-                result.rawObservation, 
-                result.metadata, // 🔥 使用工具调用返回的 metadata
-                result.toolSources
-            );
-            
-            console.log(`[ToolExecutionMiddleware] 💾 已存储数据到DataBus: step_${stepIndex}, 工具: ${toolName}`);
+            this.storeRawDataMethod(stepIndex, result.rawObservation, {
+                toolName: toolName,
+                contentType: toolName === 'crawl4ai' ? 'webpage' : 'text'
+            }, result.toolSources);
+            console.log(`[ToolExecutionMiddleware] 💾 已存储数据到DataBus: step_${stepIndex}`);
         }
         
         // 🎯 返回更新后的 thought
@@ -863,31 +840,6 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
     }
 
     /**
-     * 🎯 提取搜索结果的预览信息
-     * 🔥 新增：用于构建搜索历史记录
-     */
-    _extractSearchPreview(searchResult) {
-        if (!searchResult || typeof searchResult !== 'string') {
-            return '无预览';
-        }
-        
-        try {
-            // 尝试查找第一个搜索结果
-            const firstResultMatch = searchResult.match(/【来源\s*\d+】([^【]+)/);
-            if (firstResultMatch) {
-                const title = firstResultMatch[1].trim();
-                return title.substring(0, 100) + (title.length > 100 ? '...' : '');
-            }
-            
-            // 如果没有格式化结果，直接截取
-            return searchResult.substring(0, 150) + '...';
-        } catch (error) {
-            console.warn('[ToolExecutionMiddleware] 提取搜索预览失败:', error);
-            return '预览提取失败';
-        }
-    }
-    
-    /**
      * 🎯 查找缓存的观察结果
      * 🔥 与主文件完全一致的实现
      */
@@ -977,73 +929,6 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
     }
 
     // ============================================================
-    // 🎯 数据总线摘要和搜索历史展示
-    // ============================================================
-    
-    /**
-     * 生成数据总线摘要（包含搜索历史）
-     */
-    _generateDataBusSummary(dataBus, currentStep) {
-        if (!dataBus || dataBus.size === 0) {
-            return "📭 数据总线当前为空，这是研究的第一步。";
-        }
-        
-        let summaryText = `📊 数据总线中有 ${dataBus.size} 项数据\n`;
-        for (const [key, value] of dataBus) {
-            summaryText += `- ${key}: 工具 ${value.metadata?.toolName || 'unknown'} (${value.metadata?.contentType || 'text'})\n`;
-        }
-        
-        // 🔥 新增：在摘要末尾添加搜索历史部分
-        const searchHistorySection = this._addSearchHistoryToSummary(dataBus, currentStep);
-        if (searchHistorySection) {
-            summaryText += `\n${searchHistorySection}`;
-        }
-        
-        return summaryText;
-    }
-
-    /**
-     * 🔥 新增：搜索历史分析（精简实用版）
-     */
-    _addSearchHistoryToSummary(dataBus) {
-        const searchEntries = [];
-        
-        // 收集所有搜索记录
-        dataBus.forEach((data, key) => {
-            if (data.metadata?.toolName === 'tavily_search') {
-                const stepMatch = key.match(/step_(\d+)/);
-                searchEntries.push({
-                    step: stepMatch ? stepMatch[1] : '?',
-                    query: data.metadata?.searchQuery || '未知查询',
-                    time: data.metadata?.timestamp?.substring(11, 16) || '未知'
-                });
-            }
-        });
-        
-        if (searchEntries.length === 0) return '';
-        
-        // 按步骤排序
-        searchEntries.sort((a, b) => parseInt(a.step) - parseInt(b.step));
-        
-        // 构建简单摘要
-        let historyText = `## 🔍 搜索历史（${searchEntries.length}次）\n\n`;
-        
-        searchEntries.forEach(entry => {
-            historyText += `- **步骤${entry.step}** (${entry.time}): "${entry.query}"\n`;
-        });
-        
-        // 简单重复检测
-        const queries = searchEntries.map(e => e.query).filter(q => q && q !== '未知查询');
-        const uniqueQueries = [...new Set(queries)];
-        
-        if (queries.length > uniqueQueries.length) {
-            historyText += `\n⚠️ **注意**: 发现 ${queries.length - uniqueQueries.length} 次重复搜索\n`;
-        }
-        
-        return historyText;
-    }
-
-    // ============================================================
     // 🔄 默认方法（当回调未提供时的降级实现）
     // ============================================================
     
@@ -1068,51 +953,21 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
     _defaultStoreRawData(stepIndex, rawData, metadata, toolSources) {
         const dataKey = `step_${stepIndex}`;
         
-        console.log(`[ToolExecutionMiddleware] 💾 默认数据存储: ${dataKey}, 工具: ${metadata.toolName}, 长度: ${rawData.length}`);
+        console.log(`[ToolExecutionMiddleware] 💾 默认数据存储: ${dataKey}, 长度: ${rawData.length}, 工具: ${metadata.toolName}`);
         
-        // 🔥 增强：确保 metadata 包含所有必要字段
-        const enhancedMetadata = {
-            ...metadata,
-            originalLength: rawData.length,
-            processedLength: rawData.length,
-            timestamp: new Date().toISOString(),
-            toolSources: toolSources || [],
-            sourceCount: (toolSources || []).length,
-            
-            // 🔥 新增：智能数据预览（针对不同工具类型）
-            processedData: this._generateDataPreview(rawData, metadata.toolName)
-        };
-        
-        // 存储到 dataBus
+        // 简单存储
         this.dataBus.set(dataKey, {
             rawData: rawData,
             originalData: rawData,
-            metadata: enhancedMetadata
-        });
-    }
-    
-    /**
-     * 🔥 新增：生成数据预览
-     */
-    _generateDataPreview(data, toolName) {
-        if (!data || typeof data !== 'string') return '';
-        
-        if (toolName === 'tavily_search') {
-            // 搜索结果的预览：提取前 3 个来源
-            const sourceMatches = data.match(/【来源\s*\d+】[^【]+/g);
-            if (sourceMatches && sourceMatches.length > 0) {
-                return sourceMatches.slice(0, 3).join('\n');
+            metadata: {
+                ...metadata,
+                originalLength: rawData.length,
+                processedLength: rawData.length,
+                timestamp: Date.now(),
+                toolSources: toolSources || [],
+                sourceCount: (toolSources || []).length
             }
-            return data.substring(0, 500);
-        } else if (toolName === 'crawl4ai') {
-            // 网页内容的预览：提取标题和开头
-            const titleMatch = data.match(/<title[^>]*>([^<]+)<\/title>/i) || 
-                              data.match(/#{1,3}\s*([^\n]+)/);
-            const title = titleMatch ? titleMatch[1] : '无标题';
-            return `标题: ${title}\n\n内容预览: ${data.substring(0, 300)}...`;
-        } else {
-            return data.substring(0, 500);
-        }
+        });
     }
     
     /**
