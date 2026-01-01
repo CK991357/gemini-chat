@@ -3626,4 +3626,67 @@ _generateSystemInsight(recommendations, currentKeywordsCount) {
         return null;
     }
 
+
+/**
+ * 🔍 搜索历史分析（精简实用版）- 与附件版本完全一致
+ */
+_getSearchHistoryFromDataBus(dataBus) {
+    const searchEntries = [];
+    
+    // 收集所有搜索记录
+    dataBus.forEach((data, key) => {
+        if (data.metadata?.toolName === 'tavily_search') {
+            const stepMatch = key.match(/step_(\d+)/);
+            searchEntries.push({
+                step: stepMatch ? stepMatch[1] : '?',
+                query: data.metadata?.searchQuery || '未知查询',
+                time: data.metadata?.timestamp?.substring(11, 16) || '未知'
+            });
+        }
+    });
+    
+    // 按步骤排序
+    return searchEntries.sort((a, b) => parseInt(a.step) - parseInt(b.step));
+}
+
+/**
+ * 📊 显示搜索历史（与附件版本输出格式一致）
+ */
+_displaySearchHistory(dataBus) {
+    const searchEntries = this._getSearchHistoryFromDataBus(dataBus);
+    
+    if (searchEntries.length === 0) return '';
+    
+    // 构建简单摘要
+    let historyText = `## 🔍 搜索历史（${searchEntries.length}次）\n\n`;
+    
+    searchEntries.forEach(entry => {
+        historyText += `- **步骤${entry.step}** (${entry.time}): "${entry.query}"\n`;
+    });
+    
+    // 简单重复检测
+    const queries = searchEntries.map(e => e.query).filter(q => q && q !== '未知查询');
+    const uniqueQueries = [...new Set(queries)];
+    
+    if (queries.length > uniqueQueries.length) {
+        historyText += `\n⚠️ **注意**: 发现 ${queries.length - uniqueQueries.length} 次重复搜索\n`;
+    }
+    
+    return historyText;
+}
+
+// 🎯 在Agent的思考生成中调用（示例）：
+_generateThoughtWithSearchHistory() {
+    let thought = "当前思考...";
+    
+    if (this.dataBus && this.dataBus.size > 0) {
+        const searchHistory = this._displaySearchHistory(this.dataBus);
+        if (searchHistory) {
+            thought += `\n\n${searchHistory}`;
+        }
+    }
+    
+    return thought;
+}
+
 }

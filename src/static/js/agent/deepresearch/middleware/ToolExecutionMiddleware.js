@@ -1,6 +1,6 @@
 // src/static/js/agent/deepresearch/middleware/ToolExecutionMiddleware.js
 // 🛠️ 工具执行中间件 - 从 DeepResearchAgent 中分离的核心工具执行逻辑
-// 🔥 完整修复版 - 包含所有原有内容，确保100%一致体验
+// 🔥 修复版 - 解决与主文件的兼容性问题
 
 export class ToolExecutionMiddleware {
     /**
@@ -284,7 +284,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
     
     /**
      * 🎯 基础工具调用（不含专家系统逻辑）
-     * 🔥 与主文件完全一致的实现
+     * 🔥 修复：保持与附件版相同的返回结构
      */
     async _executeBasicToolCall(toolName, parameters, detectedMode, recordToolCall) {
         const tool = this.tools[toolName];
@@ -414,6 +414,8 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 researchMode: detectedMode
             });
             
+            // 🎯 关键修复：保持与附件版完全一致的处理方式
+            // 直接使用 toolResult.output 或 JSON.stringify(toolResult)
             rawObservation = toolResult.output || JSON.stringify(toolResult);
             toolSuccess = toolResult.success !== false;
 
@@ -508,6 +510,9 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
         recordToolCall(toolName, parameters, toolSuccess, rawObservation);
         console.log(`[ToolExecutionMiddleware] 📊 工具调用记录完成: ${toolName}, 成功: ${toolSuccess}`);
+        
+        // 🔥 核心修复：保持与附件版完全一致的返回结构
+        // 不包含 metadata 字段，确保与主文件兼容
         return { rawObservation, toolSources, toolSuccess };
     }
 
@@ -517,7 +522,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
     
     /**
      * 🎯 执行工具调用（对外暴露的主方法）
-     * 🔥 与主文件完全一致的接口
+     * 🔥 保持与附件版完全一致的接口
      */
     async executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
         // ============================================================
@@ -536,12 +541,12 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
     }
 
     // ============================================================
-    // 🎯 知识感知的工具执行（与主文件完全一致）
+    // 🎯 知识感知的工具执行（修复版）
     // ============================================================
     
     /**
      * 🎯 知识感知的工具执行
-     * 🔥 与主文件完全一致的实现
+     * 🔥 修复：不依赖 result.metadata，自己构建 metadata
      */
     async executeToolWithKnowledge(toolName, parameters, thought, intermediateSteps, detectedMode, recordToolCall) {
         console.log(`[ToolExecutionMiddleware] 🧠 执行知识感知的工具调用: ${toolName}`);
@@ -571,11 +576,36 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         // 🔥 核心修复：在执行工具后存储数据到数据总线
         if (result.toolSuccess) {
             const stepIndex = this.intermediateSteps.length + 1;
-            this.storeRawDataMethod(stepIndex, result.rawObservation, {
+            
+            // 🔥 修复：自己构建 metadata，不依赖 result.metadata
+            const metadata = {
                 toolName: toolName,
-                contentType: toolName === 'crawl4ai' ? 'webpage' : 'text'
-            }, result.toolSources);
-            console.log(`[ToolExecutionMiddleware] 💾 已存储数据到DataBus: step_${stepIndex}`);
+                contentType: toolName === 'crawl4ai' ? 'webpage' : 
+                           toolName === 'tavily_search' ? 'search_results' : 'text',
+                timestamp: new Date().toISOString()
+            };
+            
+            // 针对特定工具的专门字段
+            if (toolName === 'tavily_search') {
+                metadata.searchQuery = parameters.query;
+                metadata.searchEngine = 'tavily';
+            } else if (toolName === 'crawl4ai' && parameters.url) {
+                metadata.url = parameters.url;
+                try {
+                    metadata.domain = new URL(parameters.url).hostname;
+                } catch (e) {
+                    metadata.domain = 'unknown';
+                }
+            }
+            
+            this.storeRawDataMethod(
+                stepIndex, 
+                result.rawObservation, 
+                metadata,
+                result.toolSources
+            );
+            
+            console.log(`[ToolExecutionMiddleware] 💾 已存储数据到DataBus: step_${stepIndex}, 工具: ${toolName}`);
         }
         
         // 🎯 返回更新后的 thought
@@ -869,7 +899,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             matrix[i] = [i];
         }
         for (let j = 0; j <= str1.length; j++) {
-            matrix[j] = j;
+            matrix[0][j] = j;
         }
         for (let i = 1; i <= str2.length; i++) {
             for (let j = 1; j <= str1.length; j++) {
@@ -963,7 +993,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
                 ...metadata,
                 originalLength: rawData.length,
                 processedLength: rawData.length,
-                timestamp: Date.now(),
+                timestamp: new Date().toISOString(),
                 toolSources: toolSources || [],
                 sourceCount: (toolSources || []).length
             }
