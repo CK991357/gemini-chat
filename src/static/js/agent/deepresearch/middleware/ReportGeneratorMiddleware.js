@@ -1892,17 +1892,21 @@ _processJsonFragments(fragments, originalData) {
         // 确保表格不被格式优化破坏
         const tableRegex = /\|[^\n]+\|[^\n]*\|\n\|[-: ]+\|[-: ]+\|\n(\|[^\n]+\|[^\n]*\|\n?)+/g;
         const tables = optimized.match(tableRegex) || [];
-    
+
+        let finalOptimized = optimized;
         // 对每个表格进行检查和修复
+
         tables.forEach(table => {
             const rows = table.split('\n').filter(row => row.trim());
             if (rows.length >= 3) { // 至少表头、分隔线、一行数据
                 // 确保表格格式正确
                 const fixedTable = rows.join('\n');
-                // 用修复后的表格替换原表格
-                optimized = optimized.replace(table, fixedTable);
+                // 用修复后的表格替换原表格（在最终结果中替换）
+                finalOptimized = finalOptimized.replace(table, fixedTable);
             }
         });
+
+        optimized = finalOptimized;  // 最后统一赋值
     
         // 🎯 3. 添加信息性标记（仅用于调试和理解，不影响内容）
         const length = optimized.length;
