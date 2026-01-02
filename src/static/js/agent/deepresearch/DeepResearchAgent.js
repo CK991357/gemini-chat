@@ -509,6 +509,18 @@ export class DeepResearchAgent {
                         );
                     }
 
+                    // 🔧【修复2】在工具执行后立即同步图片状态
+                    if (tool_name === 'code_generator' || tool_name === 'python_sandbox') {
+                        // 获取最新的图片计数器和图片数据
+                        const toolState = this.toolExecutor.getSharedState();
+                        this.imageCounter = toolState.imageCounter;
+                        
+                        // 确保generatedImages是同一个引用
+                        this.generatedImages = toolState.generatedImages;
+                        
+                        console.log(`[DeepResearchAgent] 📸 同步图片状态: ${this.imageCounter} 张图片`);
+                    }
+
                     // ✅✅✅ 使用智能摘要
                     const summarizedObservation = await this._smartSummarizeObservation(internalTopic, rawObservation, detectedMode, tool_name);
                     
