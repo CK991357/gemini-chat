@@ -8,11 +8,6 @@ import { EnhancedSkillManager } from './EnhancedSkillManager.js';
 import { ToolFactory } from './tools/ToolImplementations.js';
 import { promptModelSelection } from './WorkflowUI.js';
 
-// 🔥 新增：导入 DeepResearchAgent 所需的依赖
-import { AgentLogic } from './deepresearch/AgentLogic.js';
-import { DataMiningEngine } from './deepresearch/DataMiningEngine.js';
-import { OutputParser } from './deepresearch/OutputParser.js';
-
 export class Orchestrator {
     constructor(chatApiHandler, config = {}) {
         this.chatApiHandler = chatApiHandler;
@@ -27,11 +22,6 @@ export class Orchestrator {
         this.researchToolsSet = {};
         this.researchTools = ['tavily_search', 'crawl4ai', 'python_sandbox'];
 
-        // 🔥 新增：初始化 DeepResearchAgent 所需的核心依赖
-        this.agentLogic = null;
-        this.outputParser = null;
-        this.dataMiningEngine = null;
-        
         this.callbackManager = new CallbackManager();
         this.skillManager = null;
         this.tools = {};
@@ -55,9 +45,6 @@ export class Orchestrator {
             this.skillManager = new EnhancedSkillManager();
             await this.skillManager.waitUntilReady();
             
-            // 🔥 新增：初始化 DeepResearchAgent 所需的核心依赖
-            this._initializeDependencies();
-            
             this.tools = await this._initializeTools();
             this.researchToolsSet = this._initializeResearchTools();
             this.deepResearchAgent = this._initializeDeepResearchAgent();
@@ -75,157 +62,6 @@ export class Orchestrator {
             this._initializationPromise = Promise.resolve(false);
             return false;
         }
-    }
-
-    /**
-     * 🔥 新增：初始化 DeepResearchAgent 所需的核心依赖
-     */
-    _initializeDependencies() {
-        try {
-            console.log('[Orchestrator] 正在初始化 DeepResearchAgent 依赖...');
-            
-            // 初始化 AgentLogic
-            this.agentLogic = new AgentLogic(this.chatApiHandler, {
-                model: 'deepseek-reasoner',
-                temperature: 0.1
-            });
-            console.log('[Orchestrator] ✅ AgentLogic 初始化完成');
-            
-            // 初始化 OutputParser
-            this.outputParser = new OutputParser();
-            console.log('[Orchestrator] ✅ OutputParser 初始化完成');
-            
-            // 初始化 DataMiningEngine
-            this.dataMiningEngine = new DataMiningEngine({
-                minDataTables: 2,
-                maxIterations: 8,
-                dataQualityThreshold: 0.7,
-                noGainThreshold: 1
-            });
-            console.log('[Orchestrator] ✅ DataMiningEngine 初始化完成');
-            
-        } catch (error) {
-            console.error('[Orchestrator] ❌ 初始化依赖失败:', error);
-            // 创建降级依赖
-            this._createFallbackDependencies();
-        }
-    }
-
-    /**
-     * 🔥 新增：创建降级依赖（当正式依赖初始化失败时使用）
-     */
-    _createFallbackDependencies() {
-        console.log('[Orchestrator] 🟡 使用降级依赖...');
-        
-        // 降级 AgentLogic
-        this.agentLogic = {
-            createInitialPlan: async (topic, researchMode, currentDate) => {
-                console.log('[Orchestrator] 🔧 使用降级计划生成');
-                return {
-                    research_plan: [
-                        { 
-                            step: 1, 
-                            sub_question: '初步了解主题背景', 
-                            initial_queries: [`${topic} 简介`],
-                            temporal_sensitivity: '高'
-                        },
-                        { 
-                            step: 2, 
-                            sub_question: '深入分析核心问题', 
-                            initial_queries: [`${topic} 详细分析`],
-                            temporal_sensitivity: '高'
-                        },
-                    ],
-                    estimated_iterations: 3,
-                    risk_assessment: '中等',
-                    research_mode: researchMode,
-                    temporal_awareness: { overall_sensitivity: '高' }
-                };
-            },
-            plan: async (input, options) => {
-                console.log('[Orchestrator] 🔧 使用降级决策');
-                const { topic } = input;
-                return {
-                    responseText: `{"thought": "开始研究主题: ${topic}", "action": {"type": "tool_call", "tool_name": "tavily_search", "parameters": {"query": "${topic}"}}}`,
-                    usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
-                };
-            },
-            _createFallbackPlan: (topic, researchMode, currentDate) => {
-                return {
-                    research_plan: [
-                        { 
-                            step: 1, 
-                            sub_question: '收集基本信息', 
-                            initial_queries: [`${topic} 基础`],
-                            temporal_sensitivity: '中'
-                        },
-                        { 
-                            step: 2, 
-                            sub_question: '分析关键差异', 
-                            initial_queries: [`${topic} 对比分析`],
-                            temporal_sensitivity: '中'
-                        },
-                    ],
-                    estimated_iterations: 2,
-                    risk_assessment: '高',
-                    research_mode: researchMode,
-                    temporal_awareness: { overall_sensitivity: '中' }
-                };
-            }
-        };
-        
-        // 降级 OutputParser
-        this.outputParser = {
-            parse: (text) => {
-                try {
-                    const jsonMatch = text.match(/\{[\s\S]*\}/);
-                    if (!jsonMatch) {
-                        throw new Error('未找到JSON内容');
-                    }
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    if (parsed.action) return parsed.action;
-                    if (parsed.type) return parsed;
-                    throw new Error('无法解析出有效的行动或最终答案');
-                } catch (error) {
-                    console.error('[Orchestrator] 🔧 降级解析器失败:', error);
-                    // 返回一个默认的搜索行动
-                    return {
-                        type: 'tool_call',
-                        tool_name: 'tavily_search',
-                        parameters: { query: 'default search' },
-                        thought: '解析失败，执行默认搜索'
-                    };
-                }
-            }
-        };
-        
-        // 降级 DataMiningEngine
-        this.dataMiningEngine = {
-            config: {
-                minDataTables: 2,
-                maxIterations: 8,
-                dataQualityThreshold: 0.7,
-                noGainThreshold: 1
-            },
-            checkDataMiningCompletion: (intermediateSteps, allSources, iterations) => {
-                const dataTables = intermediateSteps.filter(step => 
-                    step.observation && step.observation.includes('|')
-                ).length;
-                return dataTables >= 2 || iterations >= 8;
-            },
-            buildDataMiningPrompt: (topic, intermediateSteps, researchPlan, uniqueSources, originalUserInstruction, dataMiningTemplate, promptFragment, dataBus) => {
-                return `请基于收集的数据，生成数据挖掘报告：
-主题：${topic}
-数据量：${intermediateSteps.length} 个步骤
-要求：提取结构化数据，生成对比表格`;
-            },
-            generateDataTablesFallback: (intermediateSteps, uniqueSources) => {
-                return `# 数据挖掘报告（降级版）
-收集了 ${intermediateSteps.length} 个数据点，${uniqueSources.length} 个来源。`;
-            }
-        };
-        
-        console.log('[Orchestrator] ✅ 降级依赖创建完成');
     }
 
     /**
@@ -319,7 +155,7 @@ ${cleanTopic}
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
 
-            // 🔥 [最终方案] 占位符替换的"魔法"在这里发生
+            // 🔥 [最终方案] 占位符替换的“魔法”在这里发生
             if (researchResult.report && this.deepResearchAgent.generatedImages.size > 0) {
                 const imageMap = this.deepResearchAgent.generatedImages;
                 console.log(`[Orchestrator] 检测到 ${imageMap.size} 张图片，开始替换报告占位符...`);
@@ -540,18 +376,15 @@ ${cleanTopic}
         console.log('[Orchestrator] 正在初始化 DeepResearchAgent 并注入依赖...');
 
         return new DeepResearchAgent(
-            this.chatApiHandler,
-            this.researchToolsSet,
-            this.callbackManager,
-            {
-                maxIterations: 8,
-                // 🎯 关键：注入所有必需的依赖
-                skillManager: this.skillManager,
-                agentLogic: this.agentLogic, // 🔥 新增
-                outputParser: this.outputParser, // 🔥 新增
-                dataMiningEngine: this.dataMiningEngine, // 🔥 新增
-                reportModel: 'deepseek-reasoner' // 默认报告模型
-            }
+          this.chatApiHandler,
+          this.researchToolsSet,
+          this.callbackManager,
+          {
+            maxIterations: 8,
+            // 🎯 关键：将 Orchestrator 持有的 skillManager 实例
+            // 🎯 通过构造函数的 config 对象传递给 DeepResearchAgent。
+            skillManager: this.skillManager
+          }
         );
     }
 
