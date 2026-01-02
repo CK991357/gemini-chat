@@ -1,4 +1,3 @@
-ToolExecutionMiddleware.js
 // src/static/js/agent/deepresearch/middleware/ToolExecutionMiddleware.js
 // 🛠️ 工具执行中间件 - 从 DeepResearchAgent 中分离的核心工具执行逻辑
 // 🔥 修复版 - 解决与主文件的兼容性问题
