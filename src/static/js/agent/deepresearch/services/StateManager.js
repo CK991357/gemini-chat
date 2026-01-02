@@ -23,10 +23,6 @@ export class StateManager {
         this.imageCounter = 0;
         this.currentSessionId = `session_${Date.now()}`;
         this.currentResearchContext = "";
-
-        // 🔥 新增：清空 dataBus 和组件状态
-        this.dataBus.clear();
-        this.componentStates.clear();
         
         // 🎯 性能指标
         this.metrics = {
@@ -44,8 +40,6 @@ export class StateManager {
                 total_tokens: 0 
             }
         };
-        
-        console.log(`[StateManager] 🚀 开始新研究运行: ${runId}, 主题: ${topic.substring(0, 100)}...`);
         
         // 🎯 配置
         this.dataRetentionPolicy = {
