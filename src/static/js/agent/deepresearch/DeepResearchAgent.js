@@ -16,6 +16,12 @@ export class DeepResearchAgent {
         this.callbackManager = callbackManager;
         this.maxIterations = config.maxIterations || 8;
         
+        // 🎯 依赖注入（确保外部传入）
+        this.agentLogic = config.agentLogic;
+        this.outputParser = config.outputParser;
+        this.skillManager = config.skillManager;
+        this.dataMiningEngine = config.dataMiningEngine;
+        
         // ============================================================
         // 🔥 核心修改：使用 StateManager 统一管理所有共享状态
         // ============================================================
@@ -55,8 +61,13 @@ export class DeepResearchAgent {
         this.intermediateSteps = this.stateManager.intermediateSteps;
         this.dataBus = this.stateManager.dataBus;
         this.metrics = this.stateManager.metrics;
-        // 🔥 修复：直接从 stateManager 获取 imageCounter
-        this.imageCounter = () => this.stateManager.imageCounter;
+        
+        // 🔥 修复：定义 imageCounter 为 getter 方法
+        Object.defineProperty(this, 'imageCounter', {
+            get: () => this.stateManager.imageCounter,
+            enumerable: true,
+            configurable: true
+        });
         
         // ============================================================
         // 🔥 核心修改：初始化工具执行中间件
@@ -82,7 +93,6 @@ export class DeepResearchAgent {
                 maxRevisitCount: 2,
                 imageCounter: () => this.stateManager.imageCounter, // 🔥 修复：使用 stateManager 的 imageCounter
                 currentResearchContext: "" // 将在研究开始时设置
-                
             }
         );
         
@@ -100,7 +110,6 @@ export class DeepResearchAgent {
                 intermediateSteps: this.stateManager.intermediateSteps,
                 metrics: this.stateManager.metrics,
                 runId: null
-
             },
             {
                 reportModel: config.reportModel || 'deepseek-reasoner',
@@ -111,6 +120,10 @@ export class DeepResearchAgent {
             }
         );
 
+        // 🎯 知识注入状态管理
+        this.injectedTools = new Set();
+        this.currentSessionId = `session_${Date.now()}`;
+        
         console.log(`[DeepResearchAgent] ✅ 重构版本初始化完成，已启用统一状态管理`);
     }
 
@@ -559,11 +572,8 @@ export class DeepResearchAgent {
                     });
 
                     // 🔥 核心修改：同步图片计数器
-                    this.imageCounter = this.toolExecutor.getImageCounter();
+                    // 使用 getter 属性，无需手动同步
                     
-                    // 🎯 双重保险：在工具执行后立即同步图片计数器
-                    this.imageCounter = this.toolExecutor.getImageCounter();
-
                     // ✨ 智能提前终止：基于计划完成度
                     const completionRate = this._calculatePlanCompletion(researchPlan, this.intermediateSteps);
                     this.stateManager.updateMetrics({ planCompletion: completionRate });
@@ -679,8 +689,7 @@ export class DeepResearchAgent {
             uniqueCount: uniqueSources.length
         });
 
-        // 🔥 核心修改：同步图片计数器
-        this.imageCounter = this.toolExecutor.getImageCounter();
+        // 🔥 核心修改：同步图片计数器（使用 getter，无需手动同步）
         console.log(`[DeepResearchAgent] 📊 图片统计: ${this.imageCounter} 张生成图片`);
         
         // 🔥 核心修改：更新中间件的共享状态

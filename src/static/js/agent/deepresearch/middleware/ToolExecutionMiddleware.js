@@ -41,13 +41,19 @@ export class ToolExecutionMiddleware {
             throw new Error('ToolExecutionMiddleware 必须接收 stateManager 参数');
         }
         
-        // 🎯 使用 stateManager 的状态（作为后备）
-        this.visitedURLs = sharedState.visitedURLs || this.stateManager.getVisitedURLs();
-        this.generatedImages = sharedState.generatedImages || this.stateManager.getGeneratedImages();
-        this.intermediateSteps = sharedState.intermediateSteps || this.stateManager.getIntermediateSteps();
-        this.dataBus = sharedState.dataBus || this.stateManager.getDataBus();
-        this.runId = sharedState.runId || this.stateManager.getRunId();
-        this.imageCounter = sharedState.imageCounter || this.stateManager.getImageCounter() || 0;
+        // 🔥 修复：先注册组件到状态管理器
+        this.stateManager.registerComponent('ToolExecutionMiddleware', {
+            tools: Object.keys(tools),
+            config: config
+        });
+        
+        // 🔥 修复：使用 stateManager 的属性（直接访问，不调用不存在的方法）
+        this.visitedURLs = sharedState.visitedURLs || this.stateManager.visitedURLs;
+        this.generatedImages = sharedState.generatedImages || this.stateManager.generatedImages;
+        this.intermediateSteps = sharedState.intermediateSteps || this.stateManager.intermediateSteps;
+        this.dataBus = sharedState.dataBus || this.stateManager.dataBus;
+        this.runId = sharedState.runId || this.stateManager.runId;
+        this.imageCounter = sharedState.imageCounter || this.stateManager.imageCounter || 0;
         
         // 🎯 配置参数
         this.urlSimilarityThreshold = config.urlSimilarityThreshold || 0.85;
@@ -55,12 +61,6 @@ export class ToolExecutionMiddleware {
         
         // 🎯 内部状态
         this.currentResearchContext = config.currentResearchContext || "";
-        
-        // 🎯 注册组件到状态管理器
-        this.stateManager.registerComponent('ToolExecutionMiddleware', {
-            tools: Object.keys(tools),
-            config: config
-        });
         
         console.log(`[ToolExecutionMiddleware] ✅ 初始化完成，已注册到统一状态管理，可用工具: ${Object.keys(tools).join(', ')}`);
     }
@@ -682,7 +682,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
      * 🔥 适配统一状态管理架构的实现
      */
     _handleGeneratedImage(imageData) {
-        const imageId = `agent_image_${this.stateManager.getImageCounter() + 1}`;
+        const imageId = `agent_image_${this.stateManager.imageCounter + 1}`;
         
         console.log(`[ToolExecutionMiddleware] 🖼️ 处理生成图像: ${imageId}, 标题: "${imageData.title}"`);
 
@@ -1036,7 +1036,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
         
         if (updates.runId) {
             this.runId = updates.runId;
-            this.stateManager.setRunId(updates.runId);
+            this.stateManager.runId = updates.runId;
         }
         if (updates.intermediateSteps) {
             this.intermediateSteps = updates.intermediateSteps;
@@ -1077,7 +1077,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
         return {
             visitedURLs: this.visitedURLs,
             generatedImages: this.generatedImages,
-            imageCounter: this.stateManager ? this.stateManager.getImageCounter() : this.imageCounter,
+            imageCounter: this.stateManager ? this.stateManager.imageCounter : this.imageCounter,
             intermediateSteps: this.intermediateSteps,
             dataBus: this.dataBus,
             runId: this.runId,
@@ -1103,7 +1103,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
      * 🎯 获取图像计数器（供主文件同步使用）
      */
     getImageCounter() {
-        return this.stateManager ? this.stateManager.getImageCounter() : this.imageCounter;
+        return this.stateManager ? this.stateManager.imageCounter : this.imageCounter;
     }
     
     /**
@@ -1111,7 +1111,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
      */
     setImageCounter(count) {
         if (this.stateManager) {
-            this.stateManager.setImageCounter(count);
+            this.stateManager.imageCounter = count;
         } else {
             this.imageCounter = count;
         }

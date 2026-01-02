@@ -24,12 +24,12 @@ export class ReportGeneratorMiddleware {
             throw new Error('ReportGeneratorMiddleware 必须接收 stateManager 参数');
         }
         
-        // 🎯 使用 stateManager 的状态
-        this.dataBus = sharedState.dataBus || this.stateManager.dataBus;
-        this.generatedImages = sharedState.generatedImages || this.stateManager.generatedImages;
-        this.intermediateSteps = sharedState.intermediateSteps || this.stateManager.intermediateSteps;
-        this.metrics = sharedState.metrics || this.stateManager.metrics;
-        this.runId = sharedState.runId || this.stateManager.runId;
+        // 🎯 【修复1】直接使用 stateManager 的状态作为单一事实来源
+        this.dataBus = this.stateManager.dataBus;
+        this.generatedImages = this.stateManager.generatedImages;
+        this.intermediateSteps = this.stateManager.intermediateSteps;
+        this.metrics = this.stateManager.metrics;
+        this.runId = this.stateManager.runId;
         this.reportModel = config.reportModel || 'deepseek-reasoner'; // 🔥 保留报告模型
 
         // 🎯 关键修复：从配置中获取模板函数
@@ -87,13 +87,10 @@ export class ReportGeneratorMiddleware {
         console.log(`  • 原始指令长度: ${originalUserInstruction?.length || 0}`);
         console.log(`  • 运行ID: ${this.runId || '未设置'}`);
         
-        // 更新中间步骤（允许外部传入覆盖）
-        if (intermediateSteps) {
-            this.intermediateSteps = intermediateSteps;
-        }
-        
+        // 【修复2】优先使用 stateManager 的中间步骤
+        const stepsToUse = intermediateSteps || this.stateManager.intermediateSteps;
         // 1. 构建纯净的证据集合（所有模式都需要）
-        const evidenceCollection = this._buildEvidenceCollection(intermediateSteps, plan, researchMode);
+        const evidenceCollection = this._buildEvidenceCollection(stepsToUse, plan, researchMode);
         
         console.log('[ReportGeneratorMiddleware] 📦 数据准备完成:');
         console.log(`  • 有效证据: ${evidenceCollection.validEvidenceSteps}个`);
@@ -165,7 +162,7 @@ export class ReportGeneratorMiddleware {
             // 使用 DataMiningEngine 构建专用提示词
             finalPrompt = this.dataMiningEngine.buildDataMiningPrompt(
                 topic,
-                intermediateSteps,
+                stepsToUse,
                 plan,
                 sources,
                 originalUserInstruction,
@@ -232,7 +229,7 @@ export class ReportGeneratorMiddleware {
                 this._updateTokenUsage(reportResponse.usage);
 
                 let finalReport = reportResponse?.choices?.[0]?.message?.content ||
-                    this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+                    this._generateFallbackReport(topic, stepsToUse, sources, researchMode);
                 // 🎯 关键：如果有生成的图片，将图片嵌入报告
                 const unifiedState = this.stateManager.getUnifiedState();
                 if (unifiedState.imageCounter > 0) {
@@ -257,7 +254,7 @@ export class ReportGeneratorMiddleware {
                 // 如果是最后一次尝试，使用降级方案
                 if (attempt === maxRetries) {
                     console.error('[DeepResearchAgent] 🚨 所有重试尝试均失败，使用降级报告');
-                    return this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+                    return this._generateFallbackReport(topic, stepsToUse, sources, researchMode);
                 }
 
                 // 等待后重试
@@ -321,8 +318,8 @@ export class ReportGeneratorMiddleware {
         console.log('[ReportGeneratorMiddleware] 生成时效性质量评估报告...');
         const temporalQualityReport = this._generateTemporalQualityReport(
             plan,
-            intermediateSteps,  // ✅ 使用传入的 intermediateSteps 参数！
-            topic || plan.topic || '未知主题',  // ✅ 使用传入的 topic
+            this.stateManager.intermediateSteps,  // ✅ 【修复3】使用 stateManager 的中间步骤
+            topic || this.stateManager.currentResearchContext,  // ✅ 【修复4】使用 stateManager 的研究主题
             researchMode
         );
         
@@ -380,26 +377,26 @@ export class ReportGeneratorMiddleware {
             
             // 2. 进行后处理
             const { cleanedReport, filteredSources, temporalQualityReport } = await this.processReport(
-                rawReport, sources, plan, researchMode, topic, intermediateSteps  // ✅ 添加 topic 参数和 intermediateSteps 参数
+                rawReport, sources, plan, researchMode, topic, intermediateSteps
             );
             
             // 3. 计算计划完成度
-            const planCompletion = this._calculatePlanCompletion(plan, intermediateSteps);
+            const planCompletion = this._calculatePlanCompletion(plan, this.stateManager.intermediateSteps); // ✅ 【修复5】使用 stateManager 的中间步骤
             
             // 4. 构建完整结果对象（与主文件完全一致）
             const result = {
-            success: true,
-            topic: topic, // ✅ 使用参数 topic
-            report: cleanedReport, // <--- 使用 cleanedReport
-            iterations: intermediateSteps.length, // ✅ 修复：使用中间步骤长度
-            intermediateSteps: intermediateSteps, // ✅ 使用传入的中间步骤
-            sources: filteredSources,
-            metrics: this.metrics,
-            plan_completion: planCompletion, // ✅ 修复：使用计算出的完成度
-            research_mode: researchMode, // ✅ 修复：使用传入的研究模式
-            temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
-            model: this.reportModel // 🎯 修复：添加实际使用的模型名称
-        };
+                success: true,
+                topic: topic,
+                report: cleanedReport, // <--- 使用 cleanedReport
+                iterations: this.stateManager.intermediateSteps.length, // ✅ 【修复6】使用 stateManager 的步骤长度
+                intermediateSteps: this.stateManager.intermediateSteps, // ✅ 【修复7】使用 stateManager 的中间步骤
+                sources: filteredSources,
+                metrics: this.metrics,
+                plan_completion: planCompletion, // ✅ 修复：使用计算出的完成度
+                research_mode: researchMode, // ✅ 修复：使用传入的研究模式
+                temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
+                model: this.reportModel // 🎯 修复：添加实际使用的模型名称
+            };
             
             console.log('[ReportGeneratorMiddleware] ✅ 完整结果生成成功');
             return result;
@@ -433,19 +430,23 @@ export class ReportGeneratorMiddleware {
      * 🎯 时效性质量评估报告（完整实现）
      */
     _generateTemporalQualityReport(researchPlan, intermediateSteps, topic, researchMode) {
+        // 🎯 【修复8】优先使用 stateManager 的状态
+        const stepsToUse = intermediateSteps || this.stateManager.intermediateSteps;
+        const topicToUse = topic || this.stateManager.currentResearchContext;
+        
         const currentDate = new Date().toISOString().split('T')[0];
         
         // 🎯 唯一事实来源：模型自主评估结果
         const modelAssessedSensitivity = researchPlan.temporal_awareness?.overall_sensitivity || '未知';
         
         // 🎯 系统程序化评估（仅用于对比分析）
-        const systemAssessedSensitivity = this._assessTemporalSensitivity(topic, researchMode);
+        const systemAssessedSensitivity = this._assessTemporalSensitivity(topicToUse, researchMode);
         
         // 分析计划层面的时效性意识
         const planAnalysis = this._analyzePlanTemporalAwareness(researchPlan);
         
         // 分析执行层面的时效性行为  
-        const executionAnalysis = this._analyzeExecutionTemporalBehavior(intermediateSteps, researchPlan);
+        const executionAnalysis = this._analyzeExecutionTemporalBehavior(stepsToUse, researchPlan);
         
         // 综合评估（基于模型自主评估的一致性）
         const overallScore = this._calculateTemporalScore(planAnalysis, executionAnalysis, modelAssessedSensitivity);
@@ -453,7 +454,7 @@ export class ReportGeneratorMiddleware {
         return {
             // 元数据
             assessment_date: currentDate,
-            topic: topic,
+            topic: topicToUse,
             research_mode: researchMode,
             
             // 🎯 核心：模型自主评估结果（唯一事实来源）
@@ -2742,6 +2743,52 @@ ${numericStats}`;
     // 🎯 状态管理方法
     // ============================================================
     
+    /**
+     * 🎯 【新增】验证状态一致性
+     */
+    _validateStateConsistency() {
+        const unifiedState = this.stateManager.getUnifiedState();
+        
+        const issues = [];
+        
+        // 检查数据一致性
+        if (this.dataBus !== unifiedState.dataBus) {
+            issues.push('dataBus 引用不一致');
+        }
+        
+        if (this.generatedImages !== unifiedState.generatedImages) {
+            issues.push('generatedImages 引用不一致');
+        }
+        
+        if (this.intermediateSteps !== unifiedState.intermediateSteps) {
+            issues.push('intermediateSteps 引用不一致');
+        }
+        
+        if (issues.length > 0) {
+            console.warn('[ReportGeneratorMiddleware] ⚠️ 状态不一致问题:', issues);
+            return false;
+        }
+        
+        console.log('[ReportGeneratorMiddleware] ✅ 状态一致性验证通过');
+        return true;
+    }
+    
+    /**
+     * 🎯 【新增】统一状态更新入口
+     */
+    async updateFromStateManager() {
+        const unifiedState = this.stateManager.getUnifiedState();
+        
+        // 更新所有引用
+        this.dataBus = unifiedState.dataBus;
+        this.generatedImages = unifiedState.generatedImages;
+        this.intermediateSteps = unifiedState.intermediateSteps;
+        this.metrics = unifiedState.metrics;
+        this.runId = unifiedState.runId;
+        
+        console.log('[ReportGeneratorMiddleware] 🔄 状态已从 StateManager 同步');
+    }
+
     /**
      * 更新共享状态
      */
