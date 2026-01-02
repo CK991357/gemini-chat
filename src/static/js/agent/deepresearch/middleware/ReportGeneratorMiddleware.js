@@ -1912,7 +1912,7 @@ _processJsonFragments(fragments, originalData) {
     
         // 仅对较长内容添加统计信息
         if (length > 5000) {
-            const statsInfo = `\n\n---\n📊 **本段证据统计**：共${length}字符，${lineCount}行`;
+            let statsInfo = `\n\n---\n📊 **本段证据统计**：共${length}字符，${lineCount}行`;
             if (tableCount > 0) {
                 statsInfo += `，包含${tableCount}个数据表格`;
             }
