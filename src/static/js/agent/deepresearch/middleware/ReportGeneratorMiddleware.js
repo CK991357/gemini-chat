@@ -17,18 +17,19 @@ export class ReportGeneratorMiddleware {
         this.skillManager = skillManager;
         this.callbackManager = callbackManager; // 🔥 关键修复：添加回调管理器
         
-        // 🎯 共享状态（必须与主文件完全一致）
-        this.dataBus = sharedState.dataBus || new Map();
-        this.generatedImages = sharedState.generatedImages || new Map();
-        this.intermediateSteps = sharedState.intermediateSteps || [];
-        this.metrics = sharedState.metrics || { // 🔥 关键：添加指标统计
-            toolUsage: { tavily_search: 0, crawl4ai: 0, python_sandbox: 0 },
-            stepProgress: [],
-            informationGain: [],
-            planCompletion: 0,
-            tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
-        };
-        this.runId = sharedState.runId || null; // 🔥 关键：运行ID
+        // 🎯 关键修复：注入 stateManager
+        this.stateManager = sharedState.stateManager;
+        if (!this.stateManager) {
+            console.error('[ReportGeneratorMiddleware] ❌ 缺少 stateManager 依赖！');
+            throw new Error('ReportGeneratorMiddleware 必须接收 stateManager 参数');
+        }
+        
+        // 🎯 使用 stateManager 的状态
+        this.dataBus = sharedState.dataBus || this.stateManager.dataBus;
+        this.generatedImages = sharedState.generatedImages || this.stateManager.generatedImages;
+        this.intermediateSteps = sharedState.intermediateSteps || this.stateManager.intermediateSteps;
+        this.metrics = sharedState.metrics || this.stateManager.metrics;
+        this.runId = sharedState.runId || this.stateManager.runId;
         this.reportModel = config.reportModel || 'deepseek-reasoner'; // 🔥 保留报告模型
 
         // 🎯 关键修复：从配置中获取模板函数
@@ -38,14 +39,22 @@ export class ReportGeneratorMiddleware {
         // 🎯 新增：数据挖掘引擎支持
         this.dataMiningEngine = config.dataMiningEngine || null;
         
+        // 🎯 注册组件到状态管理器
+        this.stateManager.registerComponent('ReportGeneratorMiddleware', {
+            reportModel: config.reportModel || 'deepseek-reasoner',
+            config: config
+        });
+        
         console.log('[ReportGeneratorMiddleware] ✅ 初始化完成', {
             reportModel: this.reportModel,
             dataBusSize: this.dataBus.size,
             imagesCount: this.generatedImages.size,
             stepsCount: this.intermediateSteps.length,
             hasTemplateFunctions: !!(this.getTemplateByResearchMode && this.getTemplatePromptFragment), // 🔥 新增
-            hasCallbackManager: !!this.callbackManager // 🔥 关键检查
+            hasCallbackManager: !!this.callbackManager, // 🔥 关键检查
+            hasStateManager: !!this.stateManager
         });
+        console.log(`[ReportGeneratorMiddleware] ✅ 初始化完成，已注册到统一状态管理`);
     }
 
     // ============================================================
@@ -224,6 +233,12 @@ export class ReportGeneratorMiddleware {
 
                 let finalReport = reportResponse?.choices?.[0]?.message?.content ||
                     this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
+                // 🎯 关键：如果有生成的图片，将图片嵌入报告
+                const unifiedState = this.stateManager.getUnifiedState();
+                if (unifiedState.imageCounter > 0) {
+                    console.log(`[ReportGeneratorMiddleware] 🖼️ 检测到 ${unifiedState.imageCounter} 张生成图片，正在嵌入报告...`);
+                    finalReport = await this._generateReportWithImages(finalReport, unifiedState.generatedImages);
+                }
                 // 🎯 继续分析报告内容
                 console.log(`[DeepResearchAgent] 📄 生成的报告:`);
                 console.log(`  • 长度: ${finalReport.length}字符`);
@@ -344,6 +359,18 @@ export class ReportGeneratorMiddleware {
      */
     async generateCompleteResult(topic, intermediateSteps, plan, sources, researchMode, originalUserInstruction) {
         console.log('[ReportGeneratorMiddleware] 🎯 生成完整研究结果...');
+        
+        // 🎯 从 stateManager 获取统一状态
+        const unifiedState = this.stateManager.getUnifiedState();
+        
+        console.log(`[ReportGeneratorMiddleware] 🎯 报告生成配置:`);
+        console.log(`  • 主题: ${topic.substring(0, 100)}...`);
+        console.log(`  • 研究模式: ${researchMode}`);
+        console.log(`  • 写作模型: ${this.reportModel}`);
+        console.log(`  • 来源数量: ${sources.length}`);
+        console.log(`  • 证据步骤: ${unifiedState.intermediateSteps.length}`);
+        console.log(`  • 生成图片: ${unifiedState.imageCounter}`);
+        console.log(`  • 运行ID: ${unifiedState.runId}`);
         
         try {
             // 1. 生成最终报告
@@ -1975,6 +2002,31 @@ _processJsonFragments(fragments, originalData) {
     }
 
     /**
+     * 🎯 将图片嵌入报告
+     */
+    async _generateReportWithImages(finalReport, generatedImages) {
+        console.log(`[ReportGeneratorMiddleware] 🖼️ 开始将图片嵌入报告，共 ${generatedImages.size} 张图片`);
+        
+        let reportWithImages = finalReport;
+        
+        generatedImages.forEach((imageData, imageId) => {
+            const placeholder = `placeholder:${imageId}`;
+            const base64Snippet = imageData.image_base64?.substring(0, 50) || '';
+            
+            if (reportWithImages.includes(placeholder)) {
+                console.log(`[ReportGeneratorMiddleware] ✅ 图片 ${imageId} 已正确嵌入报告`);
+            } else if (reportWithImages.includes(base64Snippet)) {
+                console.log(`[ReportGeneratorMiddleware] ✅ 图片 ${imageId} 已通过Base64嵌入报告`);
+            } else {
+                console.log(`[ReportGeneratorMiddleware] 🔄 添加图片 ${imageId} 到报告末尾`);
+                reportWithImages += `\n\n### 📊 附图：${imageData.title}\n![${imageData.title}](${placeholder})`;
+            }
+        });
+        
+        return reportWithImages;
+    }
+
+    /**
      * 🎯 [最终完美版] 自适应参考文献生成器
      */
     async _generateSourcesSection(sources, plan) {
@@ -2694,12 +2746,18 @@ ${numericStats}`;
      * 更新共享状态
      */
     updateSharedState(updates) {
-        if (updates.dataBus) this.dataBus = updates.dataBus;
-        if (updates.generatedImages) this.generatedImages = updates.generatedImages;
-        if (updates.intermediateSteps) this.intermediateSteps = updates.intermediateSteps;
-        if (updates.metrics) this.metrics = updates.metrics;
-        if (updates.runId) this.runId = updates.runId;
-        console.log('[ReportGeneratorMiddleware] ✅ 共享状态已更新');
+        if (updates.stateManager) {
+            this.stateManager = updates.stateManager;
+        }
+        
+        // 🎯 更新组件状态
+        this.stateManager.updateComponentState('ReportGeneratorMiddleware', {
+            lastUpdate: Date.now(),
+            reportModel: this.reportModel,
+            imagesCount: updates.generatedImages?.size || this.generatedImages.size
+        });
+        
+        console.log('[ReportGeneratorMiddleware] ✅ 共享状态已更新，已同步到 stateManager');
     }
 
     /**

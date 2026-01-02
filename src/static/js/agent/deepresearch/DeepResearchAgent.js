@@ -1,12 +1,9 @@
 // src/static/js/agent/deepresearch/DeepResearchAgent.js - 重构完整版（事件名称修复版）
 // 🔥 重构说明：此文件已拆分为多个中间件，现在是协调器角色
 
-import { AgentLogic } from './AgentLogic.js';
-import { AgentOutputParser } from './OutputParser.js';
 // 🎯 核心修改：从 ReportTemplates.js 导入工具函数
 import { getTemplateByResearchMode, getTemplatePromptFragment } from './ReportTemplates.js';
 // 🎯 新增：导入 DataMiningEngine
-import { DataMiningEngine } from './DataMiningEngine.js';
 // 🔥 新增：导入中间件模块
 import { ReportGeneratorMiddleware } from './middleware/ReportGeneratorMiddleware.js';
 import { ToolExecutionMiddleware } from './middleware/ToolExecutionMiddleware.js';
@@ -30,13 +27,36 @@ export class DeepResearchAgent {
             maxIterations: this.maxIterations
         });
         
+        // 🔥 向后兼容：通过代理保持原有API
+        this.visitedURLs = new Proxy(this.stateManager.visitedURLs, {
+            get: (target, prop) => {
+                if (prop === 'set' || prop === 'get' || prop === 'has') {
+                    console.warn(`[DeepResearchAgent] ⚠️ 直接访问已弃用的 visitedURLs.${prop}，请通过 stateManager 访问`);
+                }
+                return target[prop];
+            }
+        });
+        
+        this.generatedImages = new Proxy(this.stateManager.generatedImages, {
+            get: (target, prop) => {
+                if (prop === 'set') {
+                    return (imageId, imageData) => {
+                        console.warn(`[DeepResearchAgent] ⚠️ 禁止直接设置 generatedImages，请使用 stateManager.storeGeneratedImage()`);
+                        // 自动代理到stateManager
+                        this.stateManager.storeGeneratedImage(imageId, imageData, 'DeepResearchAgent');
+                        return true;
+                    };
+                }
+                return target[prop];
+            }
+        });
+
         // 🔥 向后兼容：保留原始引用以便现有代码平滑过渡
-        this.visitedURLs = this.stateManager.visitedURLs;
-        this.generatedImages = this.stateManager.generatedImages;
         this.intermediateSteps = this.stateManager.intermediateSteps;
         this.dataBus = this.stateManager.dataBus;
         this.metrics = this.stateManager.metrics;
-        this.imageCounter = 0; // 仍然由主文件管理，因为ToolExecutionMiddleware需要更新它
+        // 🔥 修复：直接从 stateManager 获取 imageCounter
+        this.imageCounter = () => this.stateManager.imageCounter;
         
         // ============================================================
         // 🔥 核心修改：初始化工具执行中间件
@@ -46,6 +66,7 @@ export class DeepResearchAgent {
             this.callbackManager,  // 🔥 改为 this.callbackManager
             config.skillManager,
             {
+                stateManager: this.stateManager, // 🔥 新增：传递stateManager
                 visitedURLs: this.stateManager.visitedURLs,
                 generatedImages: this.stateManager.generatedImages,
                 intermediateSteps: this.stateManager.intermediateSteps,
@@ -59,7 +80,7 @@ export class DeepResearchAgent {
                 updateTokenUsageMethod: this._updateTokenUsage.bind(this),
                 urlSimilarityThreshold: 0.85,
                 maxRevisitCount: 2,
-                imageCounter: () => this.imageCounter, // 传递getter函数
+                imageCounter: () => this.stateManager.imageCounter, // 🔥 修复：使用 stateManager 的 imageCounter
                 currentResearchContext: "" // 将在研究开始时设置
                 
             }
@@ -73,6 +94,7 @@ export class DeepResearchAgent {
             config.skillManager,
             this.callbackManager, // 🔥 新增：传递 callbackManager
             {
+                stateManager: this.stateManager, // 🔥 新增：传递stateManager
                 dataBus: this.stateManager.dataBus,
                 generatedImages: this.stateManager.generatedImages,
                 intermediateSteps: this.stateManager.intermediateSteps,
@@ -88,51 +110,8 @@ export class DeepResearchAgent {
                 dataMiningEngine: this.dataMiningEngine // 🎯 新增
             }
         );
-        
-        // ============================================================
-        // 🆕 原有状态变量（现在通过StateManager管理，但保留引用）
-        // ============================================================
-        
-        // 🆕 新增：解析错误重试追踪
-        this.parserRetryAttempt = 0; // 追踪解析重试次数（最大为 1）
-        this.lastParserError = null; // 存储上次解析失败的错误对象
-        this.lastDecisionText = null; // 存储上次模型输出的原始文本
-        
-        // 🎯 图像生成追踪（现在由StateManager管理）
-        this.runId = null; // 用于隔离不同研究任务的图片
-        
-        // ✅ 接收来自 Orchestrator 的 skillManager 实例
-        this.skillManager = config.skillManager;
-        
-        // 🎯 新增：注入状态跟踪
-        this.injectedTools = new Set(); // 本次研究已注入的工具
-        this.knowledgeStrategy = 'smart'; // smart, minimal, reference
-        this.currentSessionId = `session_${Date.now()}`; // 🎯 新增：会话ID
-        
-        // 🎯 联邦知识系统
-        this.knowledgeSystem = {
-            enabled: config.knowledgeRetrievalEnabled !== false,
-            skillManager: config.skillManager,
-            knowledgeCache: new Map(), // tool_name -> {content, timestamp}
-            retrievalHistory: [] // 追踪知识使用情况
-        };
 
-        this.agentLogic = new AgentLogic(chatApiHandler);
-        this.outputParser = new AgentOutputParser();
-
-        // ✨ 性能追踪（现在由StateManager管理）
-
-        // ============================================================
-        // 🎯 初始化 DataMiningEngine
-        // ============================================================
-        this.dataMiningEngine = null;
-        if (config.dataMiningConfig !== undefined) {
-            this.dataMiningEngine = new DataMiningEngine(config.dataMiningConfig);
-            console.log('[DeepResearchAgent] DataMiningEngine 初始化完成');
-        }
-
-        console.log(`[DeepResearchAgent] ✅ 重构版本初始化完成，可用研究工具: ${Object.keys(tools).join(', ')}`);
-        console.log(`[DeepResearchAgent] 📦 已加载模块: ToolExecutionMiddleware, ReportGeneratorMiddleware, StateManager`);
+        console.log(`[DeepResearchAgent] ✅ 重构版本初始化完成，已启用统一状态管理`);
     }
 
     // ============================================================
@@ -163,25 +142,40 @@ export class DeepResearchAgent {
         
         // 🎯 核心新增：使用StateManager开始新的研究运行
         this.stateManager.startNewRun(runId, cleanTopic);
-        this.stateManager.clearImages(); // 关键：每次新研究开始时清空图片缓存
+
+        // 🎯 注册组件到状态管理器（在研究开始后注册）
+        this.stateManager.registerComponent('DeepResearchAgent', {
+            version: 1,
+            maxIterations: this.maxIterations,
+            researchMode: researchMode || 'standard'
+        });
+        
+        // 🎯 更新组件状态
+        this.stateManager.updateComponentState('DeepResearchAgent', {
+            runId: runId,
+            researchMode: researchMode,
+            topic: cleanTopic,
+            startTime: Date.now()
+        });
         
         // 🎯 更新工具执行中间件的运行ID
         this.toolExecutor.updateSharedState({
+            stateManager: this.stateManager, // 🔥 传递最新的stateManager
             runId: runId,
-            intermediateSteps: this.intermediateSteps,
+            intermediateSteps: this.stateManager.intermediateSteps,
             currentResearchContext: cleanTopic,
-            dataBus: this.dataBus,
-            generatedImages: this.generatedImages,
-            imageCounter: this.imageCounter // 🔥 添加这个
+            dataBus: this.stateManager.dataBus,
+            generatedImages: this.stateManager.generatedImages,
+            imageCounter: this.stateManager.imageCounter // 🔥 添加这个
         });
 
         // 🔥 新增：更新报告生成中间件的运行ID
         this.reportGenerator.updateSharedState({
-            runId: runId,
-            dataBus: this.dataBus,
-            generatedImages: this.generatedImages,
-            intermediateSteps: this.intermediateSteps,
-            metrics: this.metrics // 确保 metrics 也同步
+            stateManager: this.stateManager, // 🔥 传递最新的stateManager
+            dataBus: this.stateManager.dataBus,
+            generatedImages: this.stateManager.generatedImages,
+            intermediateSteps: this.stateManager.intermediateSteps,
+            runId: runId
         });
         
         // 🎯 核心新增：重置知识注入状态
@@ -564,9 +558,12 @@ export class DeepResearchAgent {
                         }
                     });
 
-                    // 🎯 双重保险：在工具执行后立即同步图片计数器
+                    // 🔥 核心修改：同步图片计数器
                     this.imageCounter = this.toolExecutor.getImageCounter();
                     
+                    // 🎯 双重保险：在工具执行后立即同步图片计数器
+                    this.imageCounter = this.toolExecutor.getImageCounter();
+
                     // ✨ 智能提前终止：基于计划完成度
                     const completionRate = this._calculatePlanCompletion(researchPlan, this.intermediateSteps);
                     this.stateManager.updateMetrics({ planCompletion: completionRate });
@@ -688,10 +685,45 @@ export class DeepResearchAgent {
         
         // 🔥 核心修改：更新中间件的共享状态
         this.reportGenerator.updateSharedState({
-            dataBus: this.dataBus,
-            generatedImages: this.generatedImages,
-            intermediateSteps: this.intermediateSteps,
+            stateManager: this.stateManager, // 🔥 传递最新的stateManager
+            dataBus: this.stateManager.dataBus,
+            generatedImages: this.stateManager.generatedImages,
+            intermediateSteps: this.stateManager.intermediateSteps,
             metrics: this.metrics,
+            runId: runId
+        });
+
+        // 🎯 更新组件状态
+        this.stateManager.updateComponentState('DeepResearchAgent', {
+            endTime: Date.now()
+        });
+
+        // 🔥 新增：验证状态一致性
+        console.log('[DeepResearchAgent] 🔍 验证最终状态一致性...');
+        const stateValid = this.stateManager.validateStateConsistency();
+        
+        if (!stateValid) {
+            console.warn('[DeepResearchAgent] ⚠️ 状态一致性验证失败，尝试修复...');
+            this._fixStateInconsistency();
+        }
+        
+        // 🎯 在生成报告前，获取统一状态
+        const unifiedState = this.stateManager.getUnifiedState();
+        console.log(`[DeepResearchAgent] 📊 统一状态快照:`, {
+            images: unifiedState.imageCounter,
+            steps: unifiedState.intermediateSteps.length,
+            dataBus: unifiedState.dataBus.size
+        });
+
+        // 生成最终报告
+        const finalReport = await this.reportGenerator.generateFinalReport({
+            topic: uiTopic,
+            researchMode: detectedMode,
+            keywords: keywords,
+            sources: uniqueSources,
+            dataBus: this.stateManager.dataBus,
+            intermediateSteps: this.stateManager.intermediateSteps,
+            metrics: this.stateManager.metrics,
             runId: runId
         });
 
@@ -2326,6 +2358,24 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         
         const message = error.message || '';
         return parserKeywords.some(keyword => message.includes(keyword));
+    }
+
+    /**
+     * 🎯 修复状态不一致问题
+     */
+    _fixStateInconsistency() {
+        // 强制同步图片计数
+        const actualImages = this.stateManager.generatedImages.size;
+        if (this.stateManager.imageCounter !== actualImages) {
+            console.log(`[DeepResearchAgent] 🔄 修复图片计数: ${this.stateManager.imageCounter} -> ${actualImages}`);
+            this.stateManager.imageCounter = actualImages;
+        }
+        
+        // 更新组件状态
+        this.stateManager.updateComponentState('DeepResearchAgent', {
+            lastStateFix: Date.now(),
+            fixedImageCount: actualImages
+        });
     }
 
     // ============================================================

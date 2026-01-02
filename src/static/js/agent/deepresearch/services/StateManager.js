@@ -1,7 +1,11 @@
 // src/static/js/agent/deepresearch/services/StateManager.js
 // 🎯 共享状态管理器 - 统一管理各模块间的共享状态
 
+// 🎯 共享状态管理器 - 统一管理各模块间的共享状态
 export class StateManager {
+    // 单例实例
+    static _instance = null;
+
     /**
      * 🎯 状态管理器构造函数
      * @param {Object} config - 配置参数
@@ -12,6 +16,7 @@ export class StateManager {
         this.generatedImages = new Map(); // imageId -> imageData
         this.intermediateSteps = []; // 研究步骤历史
         this.visitedURLs = new Map(); // url -> {count, lastVisited, stepIndex}
+        this.componentStates = new Map(); // 组件状态注册表
         
         // 🎯 运行状态
         this.runId = null;
@@ -47,6 +52,161 @@ export class StateManager {
         this.maxIterations = config.maxIterations || 8;
         
         console.log('[StateManager] ✅ 状态管理器初始化完成');
+    }
+
+    /**
+     * 🎯 获取状态管理器实例（单例模式）
+     * @returns {StateManager} 状态管理器实例
+     */
+    static getInstance(config) {
+        if (!StateManager._instance) {
+            StateManager._instance = new StateManager(config);
+        }
+        return StateManager._instance;
+    }
+    
+    // ============================================================
+    // 🎯 新增：统一状态同步API
+    // ============================================================
+    
+    /**
+     * 🎯 注册组件状态同步（主入口）
+     * @param {string} componentName - 组件名称
+     * @param {Object} initialState - 初始状态
+     */
+    registerComponent(componentName, initialState = {}) {
+        this.componentStates.set(componentName, {
+            ...initialState,
+            lastSync: Date.now(),
+            version: 0
+        });
+        console.log(`[StateManager] 📝 注册组件: ${componentName}`);
+    }
+    
+    /**
+     * 🎯 更新组件状态（带版本控制）
+     * @param {string} componentName - 组件名称
+     * @param {Object} updates - 状态更新
+     */
+    updateComponentState(componentName, updates) {
+        if (!this.componentStates.has(componentName)) {
+            this.registerComponent(componentName, updates);
+            return;
+        }
+        
+        const currentState = this.componentStates.get(componentName);
+        this.componentStates.set(componentName, {
+            ...currentState,
+            ...updates,
+            version: (currentState.version || 0) + 1,
+            lastSync: Date.now()
+        });
+        
+        // 如果更新了图片相关状态，同步到主状态
+        if (updates.generatedImages) {
+            this._syncImagesFromComponent(componentName, updates.generatedImages);
+        }
+        
+        console.log(`[StateManager] 🔄 更新组件状态: ${componentName} v${this.componentStates.get(componentName).version}`);
+    }
+    
+    /**
+     * 🎯 同步图片数据（从组件到主状态）
+     * @param {string} componentName - 来源组件
+     * @param {Map} componentImages - 组件图片数据
+     */
+    _syncImagesFromComponent(componentName, componentImages) {
+        if (!componentImages || !(componentImages instanceof Map)) {
+            return;
+        }
+        
+        let changed = false;
+        for (const [imageId, imageData] of componentImages) {
+            if (!this.generatedImages.has(imageId)) {
+                this.generatedImages.set(imageId, imageData);
+                changed = true;
+                console.log(`[StateManager] 🖼️ 同步图片: ${imageId} <- ${componentName}`);
+            }
+        }
+        
+        if (changed) {
+            this.imageCounter = this.generatedImages.size;
+            console.log(`[StateManager] 📊 图片计数更新: ${this.imageCounter}`);
+        }
+    }
+    
+    /**
+     * 🎯 获取统一状态快照（供报告生成使用）
+     * @returns {Object} 统一状态快照
+     */
+    getUnifiedState() {
+        return {
+            // 核心状态
+            dataBus: this.dataBus,
+            generatedImages: this.generatedImages,
+            intermediateSteps: this.intermediateSteps,
+            visitedURLs: this.visitedURLs,
+            
+            // 运行状态
+            runId: this.runId,
+            imageCounter: this.imageCounter,
+            currentResearchContext: this.currentResearchContext,
+            
+            // 性能指标
+            metrics: this.metrics,
+            
+            // 组件状态版本（调试用）
+            componentVersions: Array.from(this.componentStates.entries()).map(([name, state]) => ({
+                name,
+                version: state.version || 0,
+                lastSync: state.lastSync
+            }))
+        };
+    }
+    
+    /**
+     * 🎯 验证状态一致性
+     * @returns {boolean} 状态是否一致
+     */
+    validateStateConsistency() {
+        const issues = [];
+        
+        // 检查图片计数一致性
+        const actualImageCount = this.generatedImages.size;
+        if (this.imageCounter !== actualImageCount) {
+            issues.push(`图片计数不一致: counter=${this.imageCounter}, actual=${actualImageCount}`);
+        }
+        
+        // 检查组件状态同步
+        const staleComponents = Array.from(this.componentStates.entries())
+            .filter(([name, state]) => Date.now() - state.lastSync > 300000) // 5分钟未同步
+            .map(([name]) => name);
+        
+        if (staleComponents.length > 0) {
+            issues.push(`组件状态过时: ${staleComponents.join(', ')}`);
+        }
+        
+        if (issues.length === 0) {
+            console.log('[StateManager] ✅ 状态一致性验证通过');
+            return true;
+        } else {
+            console.warn('[StateManager] ⚠️ 状态一致性问题:', issues);
+            return false;
+        }
+    }
+    
+    // ============================================================
+    // 🎯 增强现有方法
+    // ============================================================
+    
+    /**
+     * 🎯 通知组件图片更新
+     * @param {string} imageId - 图像ID
+     * @param {string} sourceComponent - 来源组件
+     */
+    _notifyImageUpdate(imageId, sourceComponent) {
+        // 可以扩展为事件系统，目前只记录日志
+        console.log(`[StateManager] 📢 图片更新通知: ${imageId} 由 ${sourceComponent} 添加`);
     }
     
     // ============================================================
@@ -147,13 +307,14 @@ export class StateManager {
             const contentType = metadata.contentType || '未知';
             const toolName = metadata.toolName || '未知工具';
             const dataType = metadata.dataType || '文本';
+            const size = metadata.originalLength || rawData.length;
             
             // 提取前 200 字符作为预览
             const preview = rawData.substring(0, 200).replace(/\n/g, ' ').trim();
 
-            summary += `### 📦 ${key} (步骤 ${stepIndex} - ${toolName})\n`;
+            summary += `### 📦 ${key} (步骤 ${stepNum} - ${toolName})\n`;
             summary += `- **类型**: ${dataType} (${contentType})\n`;
-            summary += `- **大小**: ${metadata.size} 字符\n`;
+            summary += `- **大小**: ${size} 字符\n`;
             summary += `- **预览**: \`${preview}...\`\n`;
             summary += `- **引用方式**: 在你的思考中，你可以引用 \`DataBus:${key}\` 来表明你正在使用这份完整数据进行分析。\n\n`;
         }
@@ -238,11 +399,27 @@ export class StateManager {
     // ============================================================
     
     /**
-     * 🎯 存储生成的图像
+     * 🎯 增强：存储生成的图像（统一入口）
+     * @param {string} imageId - 图像ID
+     * @param {Object} imageData - 图像数据
+     * @param {string} sourceComponent - 来源组件
      */
-    storeGeneratedImage(imageId, imageData) {
-        this.generatedImages.set(imageId, imageData);
-        console.log(`[StateManager] 🖼️ 存储图像: ${imageId}`);
+    storeGeneratedImage(imageId, imageData, sourceComponent = 'unknown') {
+        this.generatedImages.set(imageId, {
+            ...imageData,
+            metadata: {
+                ...(imageData.metadata || {}),
+                sourceComponent,
+                storedAt: Date.now(),
+                storedInStateManager: true
+            }
+        });
+        this.imageCounter = this.generatedImages.size;
+        
+        // 通知所有已注册的组件
+        this._notifyImageUpdate(imageId, sourceComponent);
+        
+        console.log(`[StateManager] 🖼️ 统一存储图像: ${imageId} (来自 ${sourceComponent}), 总计: ${this.imageCounter}`);
     }
     
     /**
@@ -305,7 +482,9 @@ export class StateManager {
     // ============================================================
     
     /**
-     * 🎯 开始新的研究运行
+     * 🎯 增强：开始新的研究运行
+     * @param {string} runId - 运行ID
+     * @param {string} topic - 研究主题
      */
     startNewRun(runId, topic) {
         this.runId = runId;
@@ -321,7 +500,10 @@ export class StateManager {
             tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
         };
         
-        console.log(`[StateManager] 🚀 开始新研究运行: ${runId}, 主题: ${topic}`);
+        // 重置组件状态
+        this.componentStates.clear();
+        
+        console.log(`[StateManager] 🚀 开始新研究运行: ${runId}, 主题: ${topic.substring(0, 100)}...`);
     }
     
     /**
@@ -369,9 +551,11 @@ export class StateManager {
     }
     
     /**
-     * 🎯 获取完整状态快照
+     * 🎯 获取完整状态快照（兼容旧接口）
+     * @deprecated 使用 getUnifiedState() 替代
      */
     getStateSnapshot() {
+        const unified = this.getUnifiedState();
         return {
             runId: this.runId,
             dataBusSize: this.dataBus.size,
@@ -380,7 +564,9 @@ export class StateManager {
             visitedURLsCount: this.visitedURLs.size,
             metrics: this.metrics,
             currentResearchContext: this.currentResearchContext,
-            currentSessionId: this.currentSessionId
+            currentSessionId: this.currentSessionId,
+            // 添加组件状态信息到旧接口
+            componentCount: this.componentStates.size
         };
     }
     
@@ -392,6 +578,7 @@ export class StateManager {
         this.generatedImages.clear();
         this.intermediateSteps = [];
         this.visitedURLs.clear();
+        this.componentStates.clear();
         this.runId = null;
         this.imageCounter = 0;
         this.currentSessionId = `session_${Date.now()}`;

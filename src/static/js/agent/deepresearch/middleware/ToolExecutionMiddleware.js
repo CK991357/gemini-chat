@@ -1,3 +1,4 @@
+ToolExecutionMiddleware.js
 // src/static/js/agent/deepresearch/middleware/ToolExecutionMiddleware.js
 // 🛠️ 工具执行中间件 - 从 DeepResearchAgent 中分离的核心工具执行逻辑
 // 🔥 修复版 - 解决与主文件的兼容性问题
@@ -33,13 +34,20 @@ export class ToolExecutionMiddleware {
         // 🎯 关键修复：注入Token追踪方法
         this.updateTokenUsageMethod = config.updateTokenUsageMethod || this._defaultUpdateTokenUsage;
         
-        // 🎯 共享状态（来自主Agent）
-        this.visitedURLs = sharedState.visitedURLs || new Map();
-        this.generatedImages = sharedState.generatedImages || new Map();
-        this.intermediateSteps = sharedState.intermediateSteps || [];
-        this.dataBus = sharedState.dataBus || new Map();
-        this.runId = sharedState.runId || null;
-        this.imageCounter = sharedState.imageCounter || 0;
+        // 🎯 关键修复：注入 stateManager
+        this.stateManager = sharedState.stateManager;
+        if (!this.stateManager) {
+            console.error('[ToolExecutionMiddleware] ❌ 缺少 stateManager 依赖！');
+            throw new Error('ToolExecutionMiddleware 必须接收 stateManager 参数');
+        }
+        
+        // 🎯 使用 stateManager 的状态（作为后备）
+        this.visitedURLs = sharedState.visitedURLs || this.stateManager.getVisitedURLs();
+        this.generatedImages = sharedState.generatedImages || this.stateManager.getGeneratedImages();
+        this.intermediateSteps = sharedState.intermediateSteps || this.stateManager.getIntermediateSteps();
+        this.dataBus = sharedState.dataBus || this.stateManager.getDataBus();
+        this.runId = sharedState.runId || this.stateManager.getRunId();
+        this.imageCounter = sharedState.imageCounter || this.stateManager.getImageCounter() || 0;
         
         // 🎯 配置参数
         this.urlSimilarityThreshold = config.urlSimilarityThreshold || 0.85;
@@ -48,7 +56,13 @@ export class ToolExecutionMiddleware {
         // 🎯 内部状态
         this.currentResearchContext = config.currentResearchContext || "";
         
-        console.log(`[ToolExecutionMiddleware] ✅ 初始化完成，可用工具: ${Object.keys(tools).join(', ')}`);
+        // 🎯 注册组件到状态管理器
+        this.stateManager.registerComponent('ToolExecutionMiddleware', {
+            tools: Object.keys(tools),
+            config: config
+        });
+        
+        console.log(`[ToolExecutionMiddleware] ✅ 初始化完成，已注册到统一状态管理，可用工具: ${Object.keys(tools).join(', ')}`);
     }
 
     // ============================================================
@@ -665,18 +679,17 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
 
     /**
      * 🎯 图像生成结果处理
-     * 🔥 与主文件完全一致的实现
+     * 🔥 适配统一状态管理架构的实现
      */
     _handleGeneratedImage(imageData) {
-        this.imageCounter++;
-        const imageId = `agent_image_${this.imageCounter}`;
+        const imageId = `agent_image_${this.stateManager.getImageCounter() + 1}`;
         
         console.log(`[ToolExecutionMiddleware] 🖼️ 处理生成图像: ${imageId}, 标题: "${imageData.title}"`);
 
-        // 1. 存储图像数据
-        this.generatedImages.set(imageId, imageData);
+        // 🔥 统一存储到 stateManager
+        this.stateManager.storeGeneratedImage(imageId, imageData, 'ToolExecutionMiddleware');
 
-        // 2. 触发事件，让UI可以立即显示图片
+        // 触发事件，让UI可以立即显示图片
         this.callbackManager.invokeEvent('on_image_generated', {
             run_id: this.runId,
             data: {
@@ -686,7 +699,7 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
             }
         });
 
-        // 3. 返回简洁确认信息
+        // 返回简洁确认信息
         return `[✅ 图像生成成功] 标题: "${imageData.title}". 在最终报告中，你可以使用占位符 ![${imageData.title}](placeholder:${imageId}) 来引用这张图片。`;
     }
 
@@ -1014,12 +1027,16 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
     
     /**
      * 更新共享状态
-     * 🔥 确保与主文件状态同步
+     * 🔥 适配统一状态管理架构
      */
     updateSharedState(updates) {
+        if (updates.stateManager) {
+            this.stateManager = updates.stateManager;
+        }
+        
         if (updates.runId) {
             this.runId = updates.runId;
-            console.log(`[ToolExecutionMiddleware] 🔄 更新runId: ${this.runId}`);
+            this.stateManager.setRunId(updates.runId);
         }
         if (updates.intermediateSteps) {
             this.intermediateSteps = updates.intermediateSteps;
@@ -1038,11 +1055,18 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
             console.log(`[ToolExecutionMiddleware] 🔄 更新generatedImages: ${this.generatedImages.size} 张图片`);
         }
         if (updates.imageCounter !== undefined) {
-            this.imageCounter = updates.imageCounter;
-            console.log(`[ToolExecutionMiddleware] 🔄 更新imageCounter: ${this.imageCounter}`);
+            this.setImageCounter(updates.imageCounter);
+            console.log(`[ToolExecutionMiddleware] 🔄 更新imageCounter: ${updates.imageCounter}`);
         }
         
-        console.log('[ToolExecutionMiddleware] ✅ 共享状态已更新完成');
+        // 🎯 更新组件状态
+        this.stateManager.updateComponentState('ToolExecutionMiddleware', {
+            runId: this.runId,
+            lastUpdate: Date.now(),
+            steps: updates.intermediateSteps?.length || this.intermediateSteps.length
+        });
+        
+        console.log('[ToolExecutionMiddleware] ✅ 共享状态已更新，已同步到 stateManager');
     }
 
     /**
@@ -1053,10 +1077,11 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
         return {
             visitedURLs: this.visitedURLs,
             generatedImages: this.generatedImages,
-            imageCounter: this.imageCounter,
+            imageCounter: this.stateManager ? this.stateManager.getImageCounter() : this.imageCounter,
             intermediateSteps: this.intermediateSteps,
             dataBus: this.dataBus,
-            runId: this.runId
+            runId: this.runId,
+            stateManager: this.stateManager
         };
     }
 
@@ -1067,7 +1092,7 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
     resetState() {
         this.visitedURLs.clear();
         this.generatedImages.clear();
-        this.imageCounter = 0;
+        this.setImageCounter(0);
         this.runId = null;
         this.currentResearchContext = "";
         
@@ -1078,14 +1103,25 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
      * 🎯 获取图像计数器（供主文件同步使用）
      */
     getImageCounter() {
-        return this.imageCounter;
+        return this.stateManager ? this.stateManager.getImageCounter() : this.imageCounter;
     }
     
     /**
      * 🎯 设置图像计数器（供主文件同步使用）
      */
     setImageCounter(count) {
-        this.imageCounter = count;
-        console.log(`[ToolExecutionMiddleware] 🔄 设置imageCounter: ${this.imageCounter}`);
+        if (this.stateManager) {
+            this.stateManager.setImageCounter(count);
+        } else {
+            this.imageCounter = count;
+        }
+        console.log(`[ToolExecutionMiddleware] 🔄 设置imageCounter: ${count}`);
+    }
+    
+    /**
+     * 🎯 新增：获取状态管理器引用
+     */
+    getStateManager() {
+        return this.stateManager;
     }
 }
