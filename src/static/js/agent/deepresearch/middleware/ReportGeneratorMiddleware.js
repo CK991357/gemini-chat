@@ -1127,20 +1127,25 @@ ${promptFragment}
         console.log(`[ReportGeneratorMiddleware] 📏 提示词长度: ${finalPrompt.length}字符 (~${Math.ceil(finalPrompt.length/4)} tokens)`);
     }
 
-    /**
+/**
  * 🎯 Token 追踪方法
  */
 _updateTokenUsage(usage) {
     if (!usage) return;
     
-    if (this.metrics && this.metrics.tokenUsage) {
-        this.metrics.tokenUsage.prompt_tokens += usage.prompt_tokens || 0;
-        this.metrics.tokenUsage.completion_tokens += usage.completion_tokens || 0;
-        this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
-        
-        console.log(`[ReportGeneratorMiddleware] Token 使用更新:`, this.metrics.tokenUsage);
-    }
+    // 🎯 通过 StateManager 的 API 统一更新（兼容版本）
+    this.stateManager.updateMetrics({
+        tokenUsage: {
+            prompt_tokens: usage.prompt_tokens || 0,
+            completion_tokens: usage.completion_tokens || 0,
+            total_tokens: usage.total_tokens || 0
+        }
+        // 如果 updateMetrics 不支持额外参数，就不要传 source 和 context
+    });
     
+    console.log(`[ReportGeneratorMiddleware] Token 使用已提交到 StateManager`);
+    
+    // 保持原有事件触发
     if (this.callbackManager) {
         this.callbackManager.invokeEvent('on_token_usage_updated', {
             run_id: this.runId,
