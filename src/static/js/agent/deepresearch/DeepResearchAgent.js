@@ -493,7 +493,8 @@ export class DeepResearchAgent {
                         thought,
                         this.intermediateSteps,
                         detectedMode,
-                        recordToolCall
+                        recordToolCall,
+                        iterations // 🔥 新增：传递当前迭代次数
                     );
                     
                     // 🎯 新增：将原始数据存储到数据总线（使用StateManager）
@@ -537,7 +538,7 @@ export class DeepResearchAgent {
 
                     // 🎯 新增：生成关键发现摘要
                     const keyFinding = await this._generateKeyFinding(summarizedObservation);
-                    
+
                     // 保存完整的步骤信息
                     const stepData = {
                         action: {
@@ -549,12 +550,23 @@ export class DeepResearchAgent {
                         observation: summarizedObservation,
                         key_finding: keyFinding, // 🎯 新增：存储关键发现
                         sources: toolSources,
-                        success: toolSuccess // ✅ 新增：记录工具执行状态
+                        success: toolSuccess, // ✅ 新增：记录工具执行状态
+                        iteration: iterations // 🆕 新增：记录当前迭代次数
                     };
                     
                     this.intermediateSteps.push(stepData);
                     this.stateManager.recordIntermediateStep(stepData);
-                    
+
+                    // 🔥 新增：同步更新ToolExecutionMiddleware的状态
+                    this.toolExecutor.updateSharedState({
+                        intermediateSteps: this.intermediateSteps,
+                        dataBus: this.dataBus,
+                        imageCounter: this.imageCounter,
+                        currentIteration: iterations // 🆕 新增：同步当前迭代
+                    });
+
+                    console.log(`[DeepResearchAgent] 🔄 已同步状态到ToolExecutionMiddleware，迭代: ${iterations}, 步骤数: ${this.intermediateSteps.length}`);
+
                     // 🎯 合并到总来源列表
                     allSources = [...allSources, ...toolSources];
                     

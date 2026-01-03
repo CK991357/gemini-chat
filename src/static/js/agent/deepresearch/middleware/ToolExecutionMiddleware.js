@@ -546,10 +546,20 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
     
     /**
      * 🎯 知识感知的工具执行
-     * 🔥 修复：不依赖 result.metadata，自己构建 metadata
+     * 🔥 修复：使用迭代次数作为stepIndex
      */
-    async executeToolWithKnowledge(toolName, parameters, thought, intermediateSteps, detectedMode, recordToolCall) {
-        console.log(`[ToolExecutionMiddleware] 🧠 执行知识感知的工具调用: ${toolName}`);
+    async executeToolWithKnowledge(toolName, parameters, thought, intermediateSteps, detectedMode, recordToolCall, iteration) {
+        console.log(`[ToolExecutionMiddleware] 🧠 执行知识感知的工具调用: ${toolName}, 迭代: ${iteration}`);
+        
+        // 🔥🔥🔥 关键修复：使用传入的迭代次数作为stepIndex
+        // iteration应该从1开始计数，对应第一次迭代
+        const stepIndex = iteration;
+        
+        console.log(`[ToolExecutionMiddleware] 🔢 stepIndex = 迭代 ${iteration}`);
+        console.log(`[ToolExecutionMiddleware] 📋 intermediateSteps长度: ${intermediateSteps.length} (历史步骤数)`);
+        
+        // 更新本地缓存的状态（如果需要）
+        this.intermediateSteps = intermediateSteps;
         
         // 🎯 检查是否有相关知识缓存
         // 可以在thought中引用知识指导
@@ -575,17 +585,20 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
         
         // 🔥 核心修复：在执行工具后存储数据到数据总线
         if (result.toolSuccess) {
-            const stepIndex = this.intermediateSteps.length + 1;
+            // 🔥🔥🔥 使用迭代次数作为stepIndex，确保每次工具调用都有唯一的存储位置
+            console.log(`[ToolExecutionMiddleware] 💾 存储到 step_${stepIndex}, 对应第 ${iteration} 次迭代`);
             
             // 🔥 修复：自己构建 metadata，不依赖 result.metadata
             const metadata = {
                 toolName: toolName,
                 contentType: toolName === 'crawl4ai' ? 'webpage' : 
                            toolName === 'tavily_search' ? 'search_results' : 'text',
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                iteration: iteration, // 🆕 新增：记录迭代次数
+                planStep: this._detectPlanStep(thought, intermediateSteps) // 🆕 新增：尝试推断计划步骤
             };
             
-            // 针对特定工具的专门字段
+            // 🆕 针对特定工具的专门字段
             if (toolName === 'tavily_search') {
                 metadata.searchQuery = parameters.query;
                 metadata.searchEngine = 'tavily';
@@ -605,11 +618,37 @@ ${knowledgeContext ? knowledgeContext : "未加载知识库，请遵循通用 Py
                 result.toolSources
             );
             
-            console.log(`[ToolExecutionMiddleware] 💾 已存储数据到DataBus: step_${stepIndex}, 工具: ${toolName}`);
+            console.log(`[ToolExecutionMiddleware] 💾 已存储数据到DataBus: step_${stepIndex}, 工具: ${toolName}, 迭代: ${iteration}`);
         }
         
         // 🎯 返回更新后的 thought
         return { ...result, updatedThought: thought };
+    }
+
+    /**
+     * 🆕 辅助方法：尝试从thought推断当前计划步骤
+     */
+    _detectPlanStep(thought, intermediateSteps) {
+        // 简单的关键词匹配来推断当前处于计划中的哪个步骤
+        const planStepKeywords = [
+            { keyword: '第一步', step: 1 },
+            { keyword: '第二步', step: 2 },
+            { keyword: '第三步', step: 3 },
+            { keyword: '验证', step: 1 },
+            { keyword: '方法论', step: 2 },
+            { keyword: '实验', step: 3 },
+            { keyword: '架构', step: 4 },
+            { keyword: '解释', step: 5 }
+        ];
+        
+        for (const { keyword, step } of planStepKeywords) {
+            if (thought && thought.includes(keyword)) {
+                return step;
+            }
+        }
+        
+        // 默认根据历史步骤推断
+        return intermediateSteps.length % 5 + 1; // 假设最多5个计划步骤
     }
 
     // ============================================================
