@@ -3134,399 +3134,833 @@ ${actionJson}
     }
 }
 
-    // --- 1.2 数据总线摘要生成系统核心方法 ---
+    // --- 1.2 数据总线摘要生成系统核心方法（通用优化版）---
 
-    _generateDataBusSummary(dataBus, currentStep) {
-        if (!dataBus || dataBus.size === 0) {
-            return "📭 数据总线当前为空，这是研究的第一步。";
-        }
-        
-        const summaries = [];
-        let totalDataPoints = 0;
-        let structuredDataCount = 0;
-        
-        // 按步骤组织数据
-        const stepEntries = Array.from(dataBus.entries())
-            .map(([key, data]) => {
-                const stepMatch = key.match(/step_(\d+)/);
-                return {
-                    step: stepMatch ? parseInt(stepMatch) : 0,
-                    key,
-                    data
-                };
-            })
-            .sort((a, b) => a.step - b.step);
-        
-        // 生成按步骤的摘要
-        stepEntries.forEach(entry => {
-            const { step, data } = entry;
-            
-            // 计算相关性评分（基于当前步骤）
-            let relevance = '🟡 中等';
-            const stepDiff = Math.abs(currentStep - (step + 1)); // step是从0开始的，所以要+1
-            if (stepDiff <= 1) relevance = '🟢 高';
-            if (stepDiff >= 3) relevance = '🔴 低';
-            
-            // 提取关键信息
-            let contentPreview = '';
-            if (typeof data.processedData === 'string') {
-                contentPreview = data.processedData.substring(0, 150);
-                if (data.processedData.length > 150) contentPreview += '...';
-            }
-            
-            // 检测数据类型
-            let dataType = '文本';
-            if (data.metadata?.contentType === 'structured_data') {
-                dataType = '📊 结构化数据';
-                structuredDataCount++;
-            }
-            if (data.metadata?.toolName === 'crawl4ai') {
-                dataType = '🌐 网页内容';
-            }
-            
-            summaries.push({
-                step: step + 1,
-                relevance,
-                dataType,
-                length: data.processedData?.length || 0,
-                preview: contentPreview,
-                tool: data.metadata?.toolName || 'unknown',
-                keyPoints: this._extractKeyPointsFromData(data)
-            });
-            
-            totalDataPoints++;
-        });
-        
-        // 生成摘要文本
-        let summaryText = `## 📚 数据总线状态报告\n\n`;
-        summaryText += `**总数据点**: ${totalDataPoints} 个 | **结构化数据**: ${structuredDataCount} 个\n\n`;
-        
-        summaryText += `### 🔍 与你当前任务（步骤${currentStep}）最相关的数据：\n\n`;
-        
-        // 显示高相关性数据
-        const highRelevance = summaries.filter(s => s.relevance.includes('高'));
-        if (highRelevance.length > 0) {
-            highRelevance.forEach(data => {
-                summaryText += `#### 步骤 ${data.step} (${data.relevance})\n`;
-                summaryText += `- **类型**: ${data.dataType} | **工具**: ${data.tool}\n`;
-                summaryText += `- **关键信息**: ${data.keyPoints.join('; ')}\n`;
-                summaryText += `- **预览**: ${data.preview}\n\n`;
-            });
-        } else {
-            summaryText += `暂无高相关性数据，所有历史数据都可能有用。\n\n`;
-        }
-        
-        summaryText += `### 📈 数据趋势分析\n`;
-        
-        // 分析信息演进
-        const infoEvolution = this._analyzeInformationEvolution(summaries);
-        summaryText += infoEvolution;
-        
-        // 建议复用策略
-        summaryText += `\n### 💡 智能复用建议\n`;
-        summaryText += this._generateReuseRecommendations(summaries, currentStep);
-        
-        return summaryText;
+/**
+ * 🚀 通用优化版数据总线摘要生成系统
+ * 目标：为各类研究任务提供结构化、可操作的摘要，帮助Agent避免重复搜索
+ */
+_generateDataBusSummary(dataBus, currentStep) {
+    if (!dataBus || dataBus.size === 0) {
+        return "📭 数据总线当前为空，这是研究的第一步。";
     }
 
-    // --- 1.3 相似数据检测与复用机制核心方法 ---
+    console.log(`[AgentLogic] 生成通用数据总线摘要，当前步骤: ${currentStep}, 数据条目: ${dataBus.size}`);
 
-    _buildSimilarityDetectionSystem(researchPlan, intermediateSteps, currentStep) {
-    if (!intermediateSteps || intermediateSteps.length === 0) {
-        return { 
-            hasSimilarData: false, 
-            recommendations: [],
-            metadata: { totalSteps: 0, currentStep }
-        };
-    }
-    
-    const currentStepPlan = researchPlan.research_plan.find(
-        step => step.step === currentStep
-    );
-    
-    if (!currentStepPlan) {
-        return { 
-            hasSimilarData: false, 
-            recommendations: [],
-            metadata: { totalSteps: intermediateSteps.length, currentStep }
-        };
-    }
-    
-    // 🔥 提取当前任务关键词
-    const currentKeywords = this._extractKeywords(currentStepPlan.sub_question);
-    if (currentKeywords.length === 0) {
-        return { 
-            hasSimilarData: false, 
-            recommendations: [],
-            metadata: { 
-                totalSteps: intermediateSteps.length, 
-                currentStep,
-                reason: '当前任务无有效关键词'
-            }
-        };
-    }
-    
-    const recommendations = [];
-    
-    // 🔥 遍历所有历史步骤，但跳过当前步骤自身
-    intermediateSteps.forEach((step, index) => {
-        // 跳过当前步骤（如果已经存在）
-        if (index + 1 === currentStep) return;
-        
-        const stepNum = index + 1;
-        
-        // 🎯 方案1：优先检查思考部分（质量最高）
-        if (step.action?.thought && typeof step.action.thought === 'string') {
-            this._processStepSimilarity(
-                step, 
-                stepNum, 
-                step.action.thought, 
-                'thought',
-                currentKeywords, 
-                recommendations,
-                false // 不是观察结果
-            );
-        }
-        
-        // 🎯 方案2：其次检查观察结果（如果思考部分不够或未达到阈值）
-        if (step.observation && typeof step.observation === 'string') {
-            // 检查是否已经有这个步骤的推荐（从思考部分）
-            const hasExistingRecommendation = recommendations.some(r => r.step === stepNum);
-            
-            // 如果没有已有推荐，或者观察结果可能更相关
-            if (!hasExistingRecommendation) {
-                this._processStepSimilarity(
-                    step,
-                    stepNum,
-                    step.observation,
-                    'observation',
-                    currentKeywords,
-                    recommendations,
-                    true // 是观察结果
-                );
-            }
-        }
-    });
-    
-    // 🔥 动态确定最大推荐数量
-    const maxRecommendations = this._determineMaxRecommendations(
-        intermediateSteps.length,
-        currentStep,
-        recommendations.length
-    );
-    
-    // 🔥 智能排序：先按相似度，再按匹配关键词数量
-    const sortedRecommendations = recommendations
-        .sort((a, b) => {
-            // 主要按相似度降序
-            if (b.similarity !== a.similarity) {
-                return b.similarity - a.similarity;
-            }
-            // 相似度相同时，按匹配关键词数量降序
-            return b.matchedCount - a.matchedCount;
-        })
-        .slice(0, maxRecommendations);
-    
-    // 🔥 生成系统洞察
-    const systemInsight = this._generateSystemInsight(sortedRecommendations, currentKeywords.length);
-    
-    return {
-        hasSimilarData: sortedRecommendations.length > 0,
-        recommendations: sortedRecommendations,
-        systemInsight: systemInsight,
-        metadata: {
-            totalSteps: intermediateSteps.length,
-            currentStep: currentStep,
-            currentKeywordsCount: currentKeywords.length,
-            analyzedSteps: intermediateSteps.length - 1, // 排除当前步骤
-            recommendationsFound: recommendations.length,
-            recommendationsShown: sortedRecommendations.length,
-            maxRecommendations: maxRecommendations,
-            thresholdStrategy: 'dynamic'
-        }
+    // 📊 1. 基础数据统计
+    const dataStats = {
+        totalEntries: dataBus.size,
+        byTool: {},
+        byStep: {},
+        quantifiedData: [], // 存储所有量化数据
+        structuredData: [], // 存储所有结构化数据
+        concepts: new Set(), // 收集出现的关键概念
+        entities: new Set(), // 收集出现的实体（人名、地名、产品名等）
+        temporalData: [] // 收集时间相关数据
     };
-}
 
-// 🔥 新增：处理步骤相似度分析的辅助方法
-_processStepSimilarity(step, stepNum, text, sourceType, currentKeywords, recommendations, isObservation = false) {
-    const stepKeywords = this._extractKeywords(text);
-    if (stepKeywords.length === 0) return;
-    
-    const similarity = this._calculateSimilarity(currentKeywords, stepKeywords);
-    
-    // 🔥 计算具体匹配的关键词
-    const matchedKeywords = currentKeywords.filter(kw1 => 
-        stepKeywords.some(kw2 => {
-            // 双向部分匹配，但要求至少3个字符以避免误匹配
-            if (kw1.length < 3 && kw2.length < 3) return false;
-            return kw1.includes(kw2) || kw2.includes(kw1);
+    // 📋 2. 按步骤组织数据
+    const stepEntries = Array.from(dataBus.entries())
+        .map(([key, data]) => {
+            const stepMatch = key.match(/step_(\d+)/);
+            const stepNum = stepMatch ? parseInt(stepMatch[1]) : 0;
+            return {
+                step: stepNum + 1,
+                rawStep: stepNum,
+                key,
+                data
+            };
         })
-    );
-    
-    // 🔥 动态阈值决策
-    const shouldInclude = this._shouldIncludeRecommendation(
-        similarity,
-        matchedKeywords.length,
-        currentKeywords.length,
-        isObservation
-    );
-    
-    if (!shouldInclude) return;
-    
-    const toolName = step.action?.tool_name || '未知工具';
-    const sourceText = isObservation ? '观察结果' : '思考过程';
-    
-    // 🔥 智能提取摘要
-    const summary = this._extractRelevantSummary(text, currentKeywords, 60);
-    
-    recommendations.push({
-        step: stepNum,
-        similarity: Math.round(similarity * 100),
-        tool: toolName,
-        source: sourceText,
-        summary: summary,
-        matchedKeywords: matchedKeywords.slice(0, 4), // 最多显示4个
-        matchedCount: matchedKeywords.length,
-        exactMatches: this._countExactMatches(currentKeywords, stepKeywords),
-        suggestion: this._generateSimilaritySuggestion(similarity, toolName),
-        rawSimilarity: similarity // 保留原始值用于排序
+        .sort((a, b) => a.step - b.step);
+
+    // 🔍 3. 智能数据提取与分析
+    const detailedEntries = stepEntries.map(entry => {
+        const { step, rawStep, data } = entry;
+        
+        // 基础信息
+        const toolName = data.metadata?.toolName || 'unknown';
+        const dataContent = data.processedData || '';
+        
+        // 更新基础统计
+        if (!dataStats.byTool[toolName]) dataStats.byTool[toolName] = 0;
+        if (!dataStats.byStep[step]) dataStats.byStep[step] = 0;
+        dataStats.byTool[toolName]++;
+        dataStats.byStep[step]++;
+        
+        // 🎯 3.1 智能提取数据
+        const analysisResult = this._analyzeDataContent(dataContent, toolName);
+        
+        // 收集全局概念和实体
+        analysisResult.concepts.forEach(concept => dataStats.concepts.add(concept));
+        analysisResult.entities.forEach(entity => dataStats.entities.add(entity));
+        
+        if (analysisResult.quantifiedData.length > 0) {
+            dataStats.quantifiedData.push(...analysisResult.quantifiedData.map(q => ({
+                ...q,
+                sourceStep: step
+            })));
+        }
+        
+        if (analysisResult.structuredData) {
+            dataStats.structuredData.push({
+                ...analysisResult.structuredData,
+                sourceStep: step
+            });
+        }
+        
+        if (analysisResult.temporalData) {
+            dataStats.temporalData.push(...analysisResult.temporalData.map(t => ({
+                ...t,
+                sourceStep: step
+            })));
+        }
+        
+        // 📈 3.2 计算相关性
+        let relevance = '🟡 中等';
+        const stepDiff = Math.abs(currentStep - step);
+        if (stepDiff <= 1) relevance = '🟢 高';
+        if (stepDiff >= 3) relevance = '🔴 低';
+        
+        // 🔑 3.3 提取关键发现
+        const keyFinding = data.metadata?.keyFinding || analysisResult.keyFinding;
+        
+        return {
+            step,
+            relevance,
+            toolName,
+            keyFinding,
+            keyPoints: analysisResult.keyPoints || [],
+            hasQuantifiedData: analysisResult.quantifiedData.length > 0,
+            quantifiedValues: analysisResult.quantifiedData.slice(0, 3),
+            structuredInfo: analysisResult.structuredData,
+            contentLength: dataContent.length,
+            concepts: Array.from(analysisResult.concepts).slice(0, 5),
+            dataQuality: analysisResult.dataQuality || '中等'
+        };
     });
-}
 
-// 🔥 新增：动态阈值决策
-_shouldIncludeRecommendation(similarity, matchedCount, totalKeywords, isObservation) {
-    // 基础阈值
-    const baseThreshold = isObservation ? 0.55 : 0.5; // 观察结果要求更高
+    // 📊 4. 通用数据分析
+    const coverageAnalysis = this._analyzeUniversalCoverage(detailedEntries, currentStep);
+    const gapAnalysis = this._generateUniversalGapAnalysis(detailedEntries, currentStep);
+    const reuseSuggestions = this._generateUniversalSuggestions(detailedEntries, currentStep, gapAnalysis, dataStats);
     
-    // 🎯 方案1：高相似度直接通过
-    if (similarity > 0.65) return true;
+    // 📋 5. 构建通用摘要
+    let summaryText = `## 📊 数据总线智能分析报告（通用版）\n\n`;
     
-    // 🎯 方案2：中等相似度但有多个具体匹配
-    if (similarity > baseThreshold && matchedCount >= 2) return true;
+    // 5.1 总体概览
+    summaryText += `### 📈 数据概览\n`;
+    summaryText += `**总数据点**: ${dataStats.totalEntries} 个 | **量化数据**: ${dataStats.quantifiedData.length} 个\n`;
+    summaryText += `**工具使用**: ${Object.entries(dataStats.byTool).map(([tool, count]) => `${tool}(${count})`).join(', ')}\n`;
+    summaryText += `**概念覆盖**: ${Math.min(20, dataStats.concepts.size)} 个关键概念\n`;
+    summaryText += `**实体识别**: ${Math.min(15, dataStats.entities.size)} 个重要实体\n\n`;
     
-    // 🎯 方案3：较低相似度但有很强的关键词匹配
-    if (similarity > 0.4 && matchedCount >= Math.min(3, totalKeywords * 0.5)) {
-        return true;
-    }
-    
-    return false;
-}
-
-// 🔥 新增：动态确定最大推荐数量
-_determineMaxRecommendations(totalSteps, currentStep, foundRecommendations) {
-    // 方案1：基于总步骤数
-    if (totalSteps <= 3) return 2;  // 早期，步骤少
-    if (totalSteps <= 8) return 4;  // 中期
-    if (totalSteps <= 15) return 6; // 中后期
-    if (totalSteps <= 25) return 8; // 长期研究
-    
-    // 方案2：基于当前步骤位置
-    const stepPositionRatio = currentStep / totalSteps;
-    if (stepPositionRatio < 0.3) return 3; // 早期阶段，聚焦
-    if (stepPositionRatio < 0.7) return 5; // 中期阶段，适中
-    return 4; // 后期阶段，回归聚焦
-    
-    // 方案3：基于实际找到的数量（但不超过上限）
-    // return Math.min(Math.max(3, Math.floor(foundRecommendations * 0.7)), 8);
-}
-
-// 🔥 新增：智能提取相关摘要
-_extractRelevantSummary(text, targetKeywords, maxLength = 60) {
-    if (typeof text !== 'string' || text.length === 0) return '';
-    
-    // 如果文本很短，直接返回
-    if (text.length <= maxLength) return text;
-    
-    // 寻找包含最多目标关键词的句子
-    const sentences = text.split(/[。.!?]/).filter(s => s.trim().length > 10);
-    
-    if (sentences.length === 0) {
-        return text.substring(0, maxLength) + '...';
-    }
-    
-    let bestSentence = '';
-    let bestScore = -1;
-    
-    sentences.forEach(sentence => {
-        let score = 0;
-        targetKeywords.forEach(keyword => {
-            if (sentence.includes(keyword)) {
-                score += 3; // 精确匹配权重高
-            } else if (keyword.length > 3) {
-                // 部分匹配（前缀匹配）
-                const prefix = keyword.substring(0, Math.floor(keyword.length * 0.7));
-                if (sentence.includes(prefix)) {
-                    score += 1;
+    // 5.2 量化数据墙（如果存在量化数据）
+    if (dataStats.quantifiedData.length > 0) {
+        summaryText += `### 🔢 已收集的量化数据\n`;
+        summaryText += `**发现 ${dataStats.quantifiedData.length} 个量化数据点**，避免重复搜索这些数值：\n\n`;
+        
+        // 按类别分组显示
+        const categories = ['时间', '数值', '百分比', '货币', '性能', '其他'];
+        categories.forEach(category => {
+            const items = dataStats.quantifiedData.filter(item => 
+                item.category === category || 
+                (category === '其他' && !categories.slice(0, -1).includes(item.category))
+            );
+            
+            if (items.length > 0) {
+                summaryText += `**${category}** (${items.length}个):\n`;
+                const uniqueItems = this._deduplicateQuantitativeData(items);
+                uniqueItems.slice(0, 3).forEach(item => {
+                    summaryText += `  • ${item.value} - ${item.description} (步骤${item.sourceStep})\n`;
+                });
+                if (items.length > 3) {
+                    summaryText += `   ... 还有${items.length - 3}个数据点\n`;
                 }
             }
         });
+        summaryText += `\n`;
+    }
+    
+    // 5.3 结构化数据展示
+    if (dataStats.structuredData.length > 0) {
+        summaryText += `### 📋 结构化数据摘要\n`;
+        dataStats.structuredData.slice(0, 2).forEach(item => {
+            summaryText += `**${item.type}数据** (步骤${item.sourceStep}): ${item.preview}\n`;
+        });
+        if (dataStats.structuredData.length > 2) {
+            summaryText += `还有 ${dataStats.structuredData.length - 2} 个结构化数据点\n`;
+        }
+        summaryText += `\n`;
+    }
+    
+    // 5.4 时间线数据（如果有时序性）
+    if (dataStats.temporalData.length > 0) {
+        summaryText += `### 📅 时序数据趋势\n`;
+        const sortedTemporal = [...dataStats.temporalData].sort((a, b) => {
+            // 按时间排序
+            const timeA = a.time || 0;
+            const timeB = b.time || 0;
+            return timeA - timeB;
+        });
         
-        if (score > bestScore) {
-            bestScore = score;
-            bestSentence = sentence.trim();
+        sortedTemporal.slice(0, 5).forEach(item => {
+            summaryText += `• ${item.description}: ${item.value} (步骤${item.sourceStep})\n`;
+        });
+        summaryText += `\n`;
+    }
+    
+    // 5.5 关键概念演进
+    if (dataStats.concepts.size > 0) {
+        summaryText += `### 🔑 关键概念演进\n`;
+        const recentConcepts = Array.from(dataStats.concepts).slice(0, 10);
+        summaryText += `已识别概念: ${recentConcepts.join(', ')}\n`;
+        
+        // 显示概念在步骤中的出现情况
+        const conceptSteps = {};
+        detailedEntries.forEach(entry => {
+            entry.concepts.forEach(concept => {
+                if (!conceptSteps[concept]) conceptSteps[concept] = [];
+                conceptSteps[concept].push(entry.step);
+            });
+        });
+        
+        // 显示几个关键概念的分布
+        Object.entries(conceptSteps).slice(0, 5).forEach(([concept, steps]) => {
+            summaryText += `• "${concept}" 在步骤 ${steps.join(', ')} 中出现\n`;
+        });
+        summaryText += `\n`;
+    }
+    
+    // 5.6 数据覆盖度分析
+    summaryText += `### 🎯 数据覆盖度分析\n`;
+    summaryText += coverageAnalysis;
+    summaryText += `\n`;
+    
+    // 5.7 智能信息缺口识别（核心）
+    summaryText += `### ⚠️ 智能信息缺口识别\n`;
+    if (gapAnalysis.hasGaps) {
+        summaryText += `**基于当前研究进度和已有数据，建议优先补充以下信息：**\n\n`;
+        gapAnalysis.gaps.forEach((gap, index) => {
+            summaryText += `**${index + 1}. ${gap.category}缺口**\n`;
+            summaryText += `   📝 描述: ${gap.description}\n`;
+            if (gap.reason) {
+                summaryText += `   🤔 原因: ${gap.reason}\n`;
+            }
+            if (gap.searchSuggestion) {
+                summaryText += `   🔍 搜索建议: "${gap.searchSuggestion}"\n`;
+            }
+            summaryText += `\n`;
+        });
+    } else {
+        summaryText += `✅ 当前研究阶段的数据收集相对完整。建议：\n`;
+        summaryText += `   • 对已有数据进行深度分析\n`;
+        summaryText += `   • 寻找不同数据点之间的关联\n`;
+        summaryText += `   • 验证关键结论的可靠性\n`;
+    }
+    summaryText += `\n`;
+    
+    // 5.8 智能行动建议（基于研究阶段）
+    summaryText += `### 💡 智能行动建议\n`;
+    summaryText += reuseSuggestions;
+    summaryText += `\n`;
+    
+    // 5.9 数据复用检查清单（通用版）
+    summaryText += `### ✅ 数据复用检查清单（每次搜索前确认）\n`;
+    summaryText += `在发起新搜索前，请完成以下检查：\n`;
+    summaryText += `- [ ] 是否已检查"量化数据"部分的相关数值？\n`;
+    summaryText += `- [ ] 是否已在"关键概念"中找到相关信息？\n`;
+    summaryText += `- [ ] 是否需要的信息在"信息缺口"列表中已识别？\n`;
+    summaryText += `- [ ] 是否已有类似主题的历史数据可以复用？\n`;
+    summaryText += `- [ ] 新搜索是否与前3次搜索有明显差异？\n`;
+    
+    console.log(`[AgentLogic] 通用数据总线摘要生成完成，长度: ${summaryText.length} 字符`);
+    return summaryText;
+}
+
+/**
+ * 🔍 通用数据内容分析
+ */
+_analyzeDataContent(content, toolName) {
+    const result = {
+        concepts: new Set(),
+        entities: new Set(),
+        quantifiedData: [],
+        structuredData: null,
+        temporalData: [],
+        keyFinding: '',
+        keyPoints: [],
+        dataQuality: '中等'
+    };
+
+    if (!content || typeof content !== 'string') {
+        return result;
+    }
+
+    // 1. 提取关键概念和实体
+    const extractedConcepts = this._extractConcepts(content);
+    extractedConcepts.forEach(concept => result.concepts.add(concept));
+    
+    // 2. 提取实体（专有名词）
+    const extractedEntities = this._extractEntities(content);
+    extractedEntities.forEach(entity => result.entities.add(entity));
+    
+    // 3. 提取量化数据
+    result.quantifiedData = this._extractUniversalQuantitativeData(content);
+    
+    // 4. 提取结构化数据
+    result.structuredData = this._detectUniversalStructuredData(content);
+    
+    // 5. 提取时间数据
+    result.temporalData = this._extractTemporalData(content);
+    
+    // 6. 生成关键发现
+    result.keyFinding = this._generateKeyFinding(content, toolName);
+    
+    // 7. 提取关键点
+    result.keyPoints = this._extractKeyPoints(content);
+    
+    // 8. 评估数据质量
+    result.dataQuality = this._assessDataQuality(content, result.quantifiedData.length);
+    
+    return result;
+}
+
+/**
+ * 📈 提取通用量化数据
+ */
+_extractUniversalQuantitativeData(text) {
+    if (!text || typeof text !== 'string') return [];
+    
+    const quantitativeData = [];
+    
+    // 1. 通用数字模式（带单位的数值）
+    const unitPatterns = [
+        { regex: /\b(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(kW|MW|GW|瓦|千瓦|兆瓦)\b/gi, category: '功率' },
+        { regex: /\b(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(GB|TB|PB|MB)\/s\b/gi, category: '带宽' },
+        { regex: /\b(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(GHz|MHz|Hz)\b/gi, category: '频率' },
+        { regex: /\b(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(ms|秒|分钟|小时|天)\b/gi, category: '时间' },
+        { regex: /\b(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(℃|°C|华氏度)\b/gi, category: '温度' },
+        { regex: /\$(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\b|\b(\d+)\s*(美元|欧元|英镑|日元|人民币|元)\b/gi, category: '货币' },
+        { regex: /\b(\d+(?:\.\d+)?)%\b/g, category: '百分比' },
+        { regex: /\b(\d{1,4})x\b/g, category: '倍数' }
+    ];
+    
+    unitPatterns.forEach(pattern => {
+        const matches = text.match(pattern.regex);
+        if (matches) {
+            matches.forEach(match => {
+                quantitativeData.push({
+                    category: pattern.category,
+                    value: match,
+                    description: this._inferDataDescription(match, pattern.category)
+                });
+            });
         }
     });
     
-    // 如果找到高得分的句子，使用它
-    if (bestScore > 0 && bestSentence) {
-        return bestSentence.substring(0, Math.min(maxLength, bestSentence.length)) + 
-               (bestSentence.length > maxLength ? '...' : '');
+    // 2. 通用大数字（超过3位）
+    const largeNumbers = text.match(/\b\d{4,}\b/g);
+    if (largeNumbers) {
+        largeNumbers.slice(0, 5).forEach(num => {
+            const n = parseInt(num);
+            if (n < 2100 && n > 100) { // 过滤年份和小数字
+                quantitativeData.push({
+                    category: '数值',
+                    value: num,
+                    description: '具体数值'
+                });
+            }
+        });
     }
     
-    // 否则返回开头部分
-    return text.substring(0, maxLength) + '...';
+    // 3. 范围数据（如 100-200, 50~60）
+    const rangeMatches = text.match(/\b(\d+(?:\.\d+)?)\s*[-~]\s*(\d+(?:\.\d+)?)\b/g);
+    if (rangeMatches) {
+        rangeMatches.forEach(match => {
+            quantitativeData.push({
+                category: '范围',
+                value: match,
+                description: '数值范围'
+            });
+        });
+    }
+    
+    // 4. 比较数据（如 比A快30%, 提高了50%）
+    const comparisonMatches = text.match(/(?:提高|提升|增加|减少|降低|快了|慢了)\s*(\d+(?:\.\d+)?)%/g);
+    if (comparisonMatches) {
+        comparisonMatches.forEach(match => {
+            quantitativeData.push({
+                category: '比较',
+                value: match,
+                description: '性能变化'
+            });
+        });
+    }
+    
+    return quantitativeData.slice(0, 10); // 限制数量
 }
 
-// 🔥 新增：计算精确匹配数量
-_countExactMatches(keywords1, keywords2) {
-    const set1 = new Set(keywords1.map(k => k.toLowerCase()));
-    const set2 = new Set(keywords2.map(k => k.toLowerCase()));
-    return [...set1].filter(x => set2.has(x)).length;
+/**
+ * 🔑 提取关键概念
+ */
+_extractConcepts(text) {
+    if (!text) return new Set();
+    
+    // 简单的概念提取：长度2-4的中文词汇，排除常见词
+    const chineseWords = text.match(/[\u4e00-\u9fa5]{2,4}/g) || [];
+    
+    const stopWords = new Set([
+        '可以', '可能', '应该', '一些', '一种', '这个', '那个', '这些',
+        '那些', '然后', '而且', '但是', '所以', '因为', '如果', '那么',
+        '进行', '使用', '通过', '包括', '需要', '重要', '主要', '不同'
+    ]);
+    
+    const filtered = chineseWords.filter(word => 
+        !stopWords.has(word) && 
+        !/^[的得了吗呢吧啊]$/.test(word)
+    );
+    
+    // 也提取英文技术术语
+    const englishTerms = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b|\b[A-Z]{2,}\b/g) || [];
+    
+    return new Set([...filtered.slice(0, 15), ...englishTerms.slice(0, 10)]);
 }
 
-// 🔥 新增：生成系统级洞察
-_generateSystemInsight(recommendations, currentKeywordsCount) {
-    if (recommendations.length === 0) {
-        return "📭 未发现高度相似的历史步骤，建议执行全新搜索。";
+/**
+ * 🏢 提取实体
+ */
+_extractEntities(text) {
+    if (!text) return new Set();
+    
+    const entities = new Set();
+    
+    // 公司/组织名
+    const companyMatches = text.match(/\b(?:公司|集团|企业|机构|实验室|大学|学院)\s*[:：]?\s*[\u4e00-\u9fa5A-Za-z0-9&]+\b/g);
+    if (companyMatches) {
+        companyMatches.forEach(match => entities.add(match));
     }
     
-    const avgSimilarity = recommendations.reduce((sum, r) => sum + r.similarity, 0) / recommendations.length;
-    const hasHighSimilarity = recommendations.some(r => r.similarity >= 80);
-    const totalMatches = recommendations.reduce((sum, r) => sum + r.matchedCount, 0);
-    
-    let insight = "## 🔍 相似性分析洞察\n\n";
-    
-    if (avgSimilarity >= 65) {
-        insight += `✅ **高度相关集群**（平均相似度${Math.round(avgSimilarity)}%）\n`;
-        insight += `发现${recommendations.length}个高度相似步骤，强烈建议复用历史数据，补充新视角。\n`;
-    } else if (avgSimilarity >= 50) {
-        insight += `⚠️ **中度相关集群**（平均相似度${Math.round(avgSimilarity)}%）\n`;
-        insight += `发现${recommendations.length}个相关步骤，可参考历史方法，但需要验证和新信息。\n`;
-    } else {
-        insight += `🔍 **轻度相关参考**（平均相似度${Math.round(avgSimilarity)}%）\n`;
-        insight += `发现${recommendations.length}个略有相似步骤，可快速浏览，主要依赖新搜索。\n`;
+    // 产品/技术名（带版本号）
+    const productMatches = text.match(/\b(?:v|version|版本)?\s*\d+\.\d+(?:\.\d+)?\b|\b[A-Z][a-z]+\s*\d+\b/gi);
+    if (productMatches) {
+        productMatches.forEach(match => entities.add(match));
     }
     
-    // 关键词覆盖分析
-    const uniqueMatchedKeywords = new Set();
-    recommendations.forEach(r => {
-        r.matchedKeywords.forEach(kw => uniqueMatchedKeywords.add(kw));
+    // 人名（简单的模式）
+    const nameMatches = text.match(/\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/g);
+    if (nameMatches) {
+        nameMatches.forEach(match => entities.add(match));
+    }
+    
+    return entities;
+}
+
+/**
+ * 📅 提取时间数据
+ */
+_extractTemporalData(text) {
+    const temporalData = [];
+    
+    // 年份
+    const yearMatches = text.match(/\b(?:20|19)\d{2}\b/g);
+    if (yearMatches) {
+        yearMatches.forEach(year => {
+            temporalData.push({
+                time: parseInt(year),
+                value: year,
+                description: '年份'
+            });
+        });
+    }
+    
+    // 日期
+    const dateMatches = text.match(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g);
+    if (dateMatches) {
+        dateMatches.forEach(date => {
+            temporalData.push({
+                time: new Date(date).getTime() || 0,
+                value: date,
+                description: '日期'
+            });
+        });
+    }
+    
+    // 时间相关词汇
+    const timeWords = ['近期', '最新', '最近', '过去', '未来', '明年', '今年', '去年'];
+    timeWords.forEach(word => {
+        if (text.includes(word)) {
+            temporalData.push({
+                time: 0, // 无法量化
+                value: word,
+                description: '时间描述'
+            });
+        }
     });
     
-    const coverageRate = currentKeywordsCount > 0 ? 
-        Math.round((uniqueMatchedKeywords.size / currentKeywordsCount) * 100) : 0;
+    return temporalData;
+}
+
+/**
+ * 📋 检测通用结构化数据
+ */
+_detectUniversalStructuredData(text) {
+    if (!text) return null;
     
-    insight += `\n**关键词覆盖**: ${uniqueMatchedKeywords.size}/${currentKeywordsCount}个（${coverageRate}%）\n`;
-    
-    if (coverageRate >= 70) {
-        insight += `📊 历史数据覆盖了大部分关键概念，复用价值高。\n`;
-    } else if (coverageRate >= 40) {
-        insight += `📊 历史数据覆盖了部分关键概念，可选择性复用。\n`;
-    } else {
-        insight += `📊 历史数据覆盖有限，需要新搜索补充。\n`;
+    // 检测表格
+    if (text.includes('|') && text.includes('-|-')) {
+        const tableMatch = text.match(/\|.*\|.*\|[\s\S]*?\|.*\|/);
+        if (tableMatch) {
+            return {
+                type: '表格',
+                preview: tableMatch[0].substring(0, 150) + '...'
+            };
+        }
     }
     
-    return insight;
+    // 检测JSON
+    if (text.includes('{') && text.includes('}')) {
+        const jsonMatch = text.match(/\{[^{}]*\}/);
+        if (jsonMatch) {
+            try {
+                JSON.parse(jsonMatch[0]);
+                return {
+                    type: 'JSON数据',
+                    preview: jsonMatch[0].substring(0, 150) + '...'
+                };
+            } catch (e) {
+                // 不是有效的JSON
+            }
+        }
+    }
+    
+    // 检测列表
+    const listItems = text.match(/^[\s]*[-•*]\s+.*$/gm);
+    if (listItems && listItems.length >= 3) {
+        return {
+            type: '列表',
+            preview: listItems.slice(0, 3).join('; ') + '...'
+        };
+    }
+    
+    // 检测代码块
+    if (text.includes('```')) {
+        const codeMatch = text.match(/```[\s\S]*?```/);
+        if (codeMatch) {
+            return {
+                type: '代码',
+                preview: codeMatch[0].substring(0, 150) + '...'
+            };
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * 🎯 生成关键发现
+ */
+_generateKeyFinding(content, toolName) {
+    if (!content) return '无关键发现';
+    
+    // 如果是搜索结果，提取第一个结果的摘要
+    if (toolName === 'tavily_search') {
+        const firstResultMatch = content.match(/\[深度来源 \d+\]:\s*(.*?)(?=\n|$)/);
+        if (firstResultMatch && firstResultMatch[1]) {
+            const summary = firstResultMatch[1].substring(0, 120);
+            return summary + (summary.length >= 120 ? '...' : '');
+        }
+    }
+    
+    // 如果是抓取结果，提取第一段有意义的文本
+    const lines = content.split('\n').filter(line => line.trim().length > 30);
+    if (lines.length > 0) {
+        for (const line of lines) {
+            if (line.length > 30 && !line.startsWith('#') && !line.startsWith('---')) {
+                return line.substring(0, 100) + (line.length > 100 ? '...' : '');
+            }
+        }
+    }
+    
+    // 默认返回前100字符
+    return content.substring(0, 100) + (content.length > 100 ? '...' : '');
+}
+
+/**
+ * 📝 提取关键点
+ */
+_extractKeyPoints(content) {
+    if (!content) return [];
+    
+    const keyPoints = [];
+    
+    // 提取带数字的要点
+    const numberedPoints = content.match(/\d+\.\s+.*?(?=\n\d+\.|\n\n|$)/g);
+    if (numberedPoints) {
+        numberedPoints.slice(0, 3).forEach(point => {
+            keyPoints.push(point.substring(0, 80));
+        });
+    }
+    
+    // 提取结论性语句
+    const conclusionWords = ['因此', '所以', '总之', '综上所述', '结果表明', '研究发现'];
+    conclusionWords.forEach(word => {
+        if (content.includes(word)) {
+            const startIndex = content.indexOf(word);
+            const sentence = content.substring(startIndex, Math.min(startIndex + 100, content.length));
+            keyPoints.push(sentence);
+        }
+    });
+    
+    return keyPoints.slice(0, 3);
+}
+
+/**
+ * 📊 评估数据质量
+ */
+_assessDataQuality(content, quantifiedCount) {
+    if (!content || content.length < 100) return '低';
+    
+    const hasStructure = content.includes('|') || content.includes('- ') || content.includes('•');
+    const hasNumbers = quantifiedCount > 0;
+    const hasReferences = content.includes('来源') || content.includes('参考') || content.includes('引用');
+    
+    let score = 0;
+    if (content.length > 500) score += 1;
+    if (hasStructure) score += 1;
+    if (hasNumbers) score += 1;
+    if (hasReferences) score += 1;
+    if (content.includes('数据') || content.includes('统计')) score += 1;
+    
+    if (score >= 4) return '高';
+    if (score >= 2) return '中等';
+    return '低';
+}
+
+/**
+ * 🔄 去重量化数据
+ */
+_deduplicateQuantitativeData(items) {
+    const seen = new Set();
+    const uniqueItems = [];
+    
+    items.forEach(item => {
+        const key = `${item.category}:${item.value}`;
+        if (!seen.has(key)) {
+            seen.add(key);
+            uniqueItems.push(item);
+        }
+    });
+    
+    return uniqueItems;
+}
+
+/**
+ * 📈 推断数据描述
+ */
+_inferDataDescription(value, category) {
+    const descriptions = {
+        '功率': '功率数值',
+        '带宽': '数据传输速率',
+        '频率': '处理频率',
+        '时间': '时间指标',
+        '温度': '温度数值',
+        '货币': '成本或价格',
+        '百分比': '比例或增长',
+        '倍数': '性能倍数',
+        '数值': '具体数值',
+        '范围': '数值范围',
+        '比较': '性能对比'
+    };
+    
+    return descriptions[category] || '量化数据';
+}
+
+/**
+ * 🌐 分析通用数据覆盖度
+ */
+_analyzeUniversalCoverage(entries, currentStep) {
+    if (entries.length === 0) return "暂无数据覆盖度分析。\n";
+    
+    let analysis = '';
+    
+    // 计算数据多样性
+    const uniqueTools = new Set(entries.map(e => e.toolName));
+    const stepsWithData = entries.length;
+    const stepsWithQuantified = entries.filter(e => e.hasQuantifiedData).length;
+    
+    analysis += `**数据多样性分析**:\n`;
+    analysis += `• 使用工具: ${Array.from(uniqueTools).join(', ')}\n`;
+    analysis += `• 数据步骤: ${stepsWithData} 个步骤收集了数据\n`;
+    analysis += `• 量化数据: ${stepsWithQuantified} 个步骤包含量化数据\n`;
+    
+    // 数据质量分布
+    const qualityCounts = { 高: 0, 中等: 0, 低: 0 };
+    entries.forEach(entry => {
+        qualityCounts[entry.dataQuality] = (qualityCounts[entry.dataQuality] || 0) + 1;
+    });
+    
+    analysis += `• 数据质量: 高(${qualityCounts.高}) | 中(${qualityCounts.中等}) | 低(${qualityCounts.低})\n`;
+    
+    // 相关性分析
+    const highRelevance = entries.filter(e => e.relevance.includes('高')).length;
+    const mediumRelevance = entries.filter(e => e.relevance.includes('中')).length;
+    const lowRelevance = entries.filter(e => e.relevance.includes('低')).length;
+    
+    analysis += `\n**相关性分析** (相对于当前步骤${currentStep}):\n`;
+    analysis += `• 高相关: ${highRelevance} 个步骤\n`;
+    analysis += `• 中等相关: ${mediumRelevance} 个步骤\n`;
+    analysis += `• 低相关: ${lowRelevance} 个步骤\n`;
+    
+    return analysis;
+}
+
+/**
+ * ⚠️ 生成通用信息缺口分析
+ */
+_generateUniversalGapAnalysis(entries, currentStep) {
+    const gaps = [];
+    
+    // 1. 基于研究阶段的分析
+    const researchStage = this._determineResearchStage(currentStep, entries.length);
+    
+    if (researchStage === 'early' && entries.length >= 2) {
+        // 早期阶段：检查是否有足够的量化数据
+        const quantifiedCount = entries.reduce((sum, entry) => 
+            sum + (entry.hasQuantifiedData ? 1 : 0), 0);
+        
+        if (quantifiedCount < Math.min(2, entries.length * 0.5)) {
+            gaps.push({
+                category: '量化数据',
+                description: '早期研究缺乏足够的量化数据支持',
+                reason: `${entries.length}个步骤中只有${quantifiedCount}个包含量化数据`,
+                searchSuggestion: '具体数值 数据统计 量化分析'
+            });
+        }
+    }
+    
+    if (researchStage === 'mid') {
+        // 中期阶段：检查是否有对比分析
+        const hasComparison = entries.some(entry => 
+            entry.keyFinding.includes('对比') || 
+            entry.keyFinding.includes('比较') ||
+            entry.keyFinding.includes('vs')
+        );
+        
+        if (!hasComparison) {
+            gaps.push({
+                category: '对比分析',
+                description: '中期研究缺乏对比分析维度',
+                reason: '未发现明显的对比分析内容',
+                searchSuggestion: '对比分析 优缺点比较 差异对比'
+            });
+        }
+    }
+    
+    if (researchStage === 'late') {
+        // 后期阶段：检查是否有结论性数据
+        const hasConclusion = entries.some(entry => 
+            entry.keyFinding.includes('结论') || 
+            entry.keyFinding.includes('总结') ||
+            entry.keyFinding.includes('因此')
+        );
+        
+        if (!hasConclusion) {
+            gaps.push({
+                category: '研究结论',
+                description: '后期研究缺乏明确的结论和总结',
+                reason: '未发现结论性内容',
+                searchSuggestion: '研究结论 最终总结 主要发现'
+            });
+        }
+    }
+    
+    // 2. 检测重复模式
+    const recentFindings = entries.slice(-3).map(e => e.keyFinding);
+    if (recentFindings.length >= 3) {
+        // 简单相似度检测
+        const firstWords = recentFindings.map(f => f.split(' ')[0]);
+        if (new Set(firstWords).size <= 2) {
+            gaps.push({
+                category: '研究广度',
+                description: '最近几次研究主题相似，可能需要拓展研究范围',
+                reason: '最近3次关键发现起始词汇相似',
+                searchSuggestion: '不同角度 新视角 相关领域'
+            });
+        }
+    }
+    
+    // 3. 检查数据完整性
+    const lastEntry = entries[entries.length - 1];
+    if (lastEntry && lastEntry.dataQuality === '低') {
+        gaps.push({
+            category: '数据质量',
+            description: '最近一次数据质量较低，可能需要重新验证',
+            reason: `步骤${lastEntry.step}的数据质量评估为"低"`,
+            searchSuggestion: '权威来源 官方数据 验证信息'
+        });
+    }
+    
+    return {
+        hasGaps: gaps.length > 0,
+        gaps: gaps.slice(0, 4) // 最多4个缺口
+    };
+}
+
+/**
+ * 📅 确定研究阶段
+ */
+_determineResearchStage(currentStep, totalSteps) {
+    if (totalSteps <= 3) return 'early';
+    if (currentStep <= Math.floor(totalSteps * 0.6)) return 'mid';
+    return 'late';
+}
+
+/**
+ * 💡 生成通用建议
+ */
+_generateUniversalSuggestions(entries, currentStep, gapAnalysis, dataStats) {
+    let suggestions = '';
+    const researchStage = this._determineResearchStage(currentStep, entries.length);
+    
+    // 阶段建议
+    const stageSuggestions = {
+        early: `**早期研究建议**:\n• 聚焦基础概念和关键数据的收集\n• 建立研究框架和主要维度\n• 优先收集权威来源的量化数据\n`,
+        mid: `**中期研究建议**:\n• 进行多角度对比和深度分析\n• 寻找数据之间的关联和模式\n• 验证关键假设和初步结论\n`,
+        late: `**后期研究建议**:\n• 整合发现，形成完整结论\n• 识别研究的局限性和未来方向\n• 准备高质量的报告和展示\n`
+    };
+    
+    suggestions += stageSuggestions[researchStage] || stageSuggestions.mid;
+    
+    // 基于数据统计的建议
+    if (dataStats.quantifiedData.length < 3 && entries.length >= 3) {
+        suggestions += `\n**📊 数据建议**: 量化数据不足，建议搜索具体数值而非定性描述。\n`;
+    }
+    
+    if (dataStats.concepts.size < 5 && entries.length >= 2) {
+        suggestions += `\n**🔍 概念建议**: 关键概念覆盖有限，建议扩展相关术语的搜索。\n`;
+    }
+    
+    // 基于缺口的建议
+    if (gapAnalysis.hasGaps) {
+        suggestions += `\n**🎯 优先事项**: 根据缺口分析，建议优先补充${gapAnalysis.gaps.map(g => g.category).join('、')}。\n`;
+    }
+    
+    // 避免重复的建议
+    if (entries.length >= 4) {
+        const recentTools = entries.slice(-3).map(e => e.toolName);
+        if (new Set(recentTools).size === 1 && recentTools[0] === 'tavily_search') {
+            suggestions += `\n**🔄 工具建议**: 连续使用同一工具，建议尝试不同工具（如 crawl4ai 获取深度内容）。\n`;
+        }
+    }
+    
+    // 通用最佳实践
+    suggestions += `\n**💡 通用最佳实践**:\n`;
+    suggestions += `• 每次搜索前检查数据总线，避免重复\n`;
+    suggestions += `• 优先收集可验证的量化数据\n`;
+    suggestions += `• 保持研究主题的适当广度与深度平衡\n`;
+    suggestions += `• 及时总结关键发现，建立知识关联\n`;
+    
+    return suggestions;
 }
 
     // 🎯 新增：判断 crawl4ai 是否成功的方法
