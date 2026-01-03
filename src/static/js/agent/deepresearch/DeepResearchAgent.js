@@ -496,19 +496,6 @@ export class DeepResearchAgent {
                         recordToolCall,
                         iterations // 🔥 新增：传递当前迭代次数
                     );
-                    
-                    // 🎯 新增：将原始数据存储到数据总线（使用StateManager）
-                    if (toolSuccess) {
-                        this.stateManager.storeInDataBus(
-                            this.intermediateSteps.length + 1,
-                            rawObservation,
-                            {
-                                toolName: tool_name,
-                                contentType: tool_name === 'crawl4ai' ? 'webpage' : 'text'
-                            },
-                            toolSources
-                        );
-                    }
 
                     // 🔧【修复2】在工具执行后立即同步图片状态
                     if (tool_name === 'code_generator' || tool_name === 'python_sandbox') {
@@ -599,7 +586,15 @@ export class DeepResearchAgent {
                         console.log(`[DeepResearchAgent] 计划完成度${completionRate}%，提前终止`);
                         break;
                     }
-                
+                    
+                    // 在工具执行后添加验证
+                    console.log(`[DeepResearchAgent] 🔍 存储验证:`);
+                    console.log(`  • 迭代: ${iterations}`);
+                    console.log(`  • 工具: ${tool_name}`);
+                    console.log(`  • 成功: ${toolSuccess}`);
+                    console.log(`  • 数据长度: ${rawObservation.length}`);
+                    console.log(`  • 存储应该由ToolExecutionMiddleware处理`);
+
                 }
 
             } catch (error) {

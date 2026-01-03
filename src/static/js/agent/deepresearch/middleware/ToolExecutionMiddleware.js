@@ -1127,4 +1127,26 @@ ${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查
         this.imageCounter = count;
         console.log(`[ToolExecutionMiddleware] 🔄 设置imageCounter: ${this.imageCounter}`);
     }
+    
+    /**
+     * 🆕 调试方法：打印当前DataBus状态
+     */
+    printDataBusStatus() {
+        console.log(`[ToolExecutionMiddleware] 🚌 DataBus 状态报告:`);
+        console.log(`  • 总条目数: ${this.dataBus.size}`);
+        
+        // 按step_1, step_2...顺序打印
+        const stepKeys = Array.from(this.dataBus.keys())
+            .filter(key => key.startsWith('step_'))
+            .sort((a, b) => {
+                const numA = parseInt(a.replace('step_', ''), 10);
+                const numB = parseInt(b.replace('step_', ''), 10);
+                return numA - numB;
+            });
+        
+        stepKeys.forEach(key => {
+            const data = this.dataBus.get(key);
+            console.log(`  • ${key}: ${data.rawData.length} 字符, 工具: ${data.metadata.toolName}, 迭代: ${data.metadata.iteration || '未知'}`);
+        });
+    }
 }
