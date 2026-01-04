@@ -3963,6 +3963,306 @@ _generateUniversalSuggestions(entries, currentStep, gapAnalysis, dataStats) {
     return suggestions;
 }
 
+    // --- 1.3 相似数据检测与复用机制核心方法 ---
+
+    _buildSimilarityDetectionSystem(researchPlan, intermediateSteps, currentStep) {
+    if (!intermediateSteps || intermediateSteps.length === 0) {
+        return { 
+            hasSimilarData: false, 
+            recommendations: [],
+            metadata: { totalSteps: 0, currentStep }
+        };
+    }
+    
+    const currentStepPlan = researchPlan.research_plan.find(
+        step => step.step === currentStep
+    );
+    
+    if (!currentStepPlan) {
+        return { 
+            hasSimilarData: false, 
+            recommendations: [],
+            metadata: { totalSteps: intermediateSteps.length, currentStep }
+        };
+    }
+    
+    // 🔥 提取当前任务关键词
+    const currentKeywords = this._extractKeywords(currentStepPlan.sub_question);
+    if (currentKeywords.length === 0) {
+        return { 
+            hasSimilarData: false, 
+            recommendations: [],
+            metadata: { 
+                totalSteps: intermediateSteps.length, 
+                currentStep,
+                reason: '当前任务无有效关键词'
+            }
+        };
+    }
+    
+    const recommendations = [];
+    
+    // 🔥 遍历所有历史步骤，但跳过当前步骤自身
+    intermediateSteps.forEach((step, index) => {
+        // 跳过当前步骤（如果已经存在）
+        if (index + 1 === currentStep) return;
+        
+        const stepNum = index + 1;
+        
+        // 🎯 方案1：优先检查思考部分（质量最高）
+        if (step.action?.thought && typeof step.action.thought === 'string') {
+            this._processStepSimilarity(
+                step, 
+                stepNum, 
+                step.action.thought, 
+                'thought',
+                currentKeywords, 
+                recommendations,
+                false // 不是观察结果
+            );
+        }
+        
+        // 🎯 方案2：其次检查观察结果（如果思考部分不够或未达到阈值）
+        if (step.observation && typeof step.observation === 'string') {
+            // 检查是否已经有这个步骤的推荐（从思考部分）
+            const hasExistingRecommendation = recommendations.some(r => r.step === stepNum);
+            
+            // 如果没有已有推荐，或者观察结果可能更相关
+            if (!hasExistingRecommendation) {
+                this._processStepSimilarity(
+                    step,
+                    stepNum,
+                    step.observation,
+                    'observation',
+                    currentKeywords,
+                    recommendations,
+                    true // 是观察结果
+                );
+            }
+        }
+    });
+    
+    // 🔥 动态确定最大推荐数量
+    const maxRecommendations = this._determineMaxRecommendations(
+        intermediateSteps.length,
+        currentStep,
+        recommendations.length
+    );
+    
+    // 🔥 智能排序：先按相似度，再按匹配关键词数量
+    const sortedRecommendations = recommendations
+        .sort((a, b) => {
+            // 主要按相似度降序
+            if (b.similarity !== a.similarity) {
+                return b.similarity - a.similarity;
+            }
+            // 相似度相同时，按匹配关键词数量降序
+            return b.matchedCount - a.matchedCount;
+        })
+        .slice(0, maxRecommendations);
+    
+    // 🔥 生成系统洞察
+    const systemInsight = this._generateSystemInsight(sortedRecommendations, currentKeywords.length);
+    
+    return {
+        hasSimilarData: sortedRecommendations.length > 0,
+        recommendations: sortedRecommendations,
+        systemInsight: systemInsight,
+        metadata: {
+            totalSteps: intermediateSteps.length,
+            currentStep: currentStep,
+            currentKeywordsCount: currentKeywords.length,
+            analyzedSteps: intermediateSteps.length - 1, // 排除当前步骤
+            recommendationsFound: recommendations.length,
+            recommendationsShown: sortedRecommendations.length,
+            maxRecommendations: maxRecommendations,
+            thresholdStrategy: 'dynamic'
+        }
+    };
+}
+
+// 🔥 新增：处理步骤相似度分析的辅助方法
+_processStepSimilarity(step, stepNum, text, sourceType, currentKeywords, recommendations, isObservation = false) {
+    const stepKeywords = this._extractKeywords(text);
+    if (stepKeywords.length === 0) return;
+    
+    const similarity = this._calculateSimilarity(currentKeywords, stepKeywords);
+    
+    // 🔥 计算具体匹配的关键词
+    const matchedKeywords = currentKeywords.filter(kw1 => 
+        stepKeywords.some(kw2 => {
+            // 双向部分匹配，但要求至少3个字符以避免误匹配
+            if (kw1.length < 3 && kw2.length < 3) return false;
+            return kw1.includes(kw2) || kw2.includes(kw1);
+        })
+    );
+    
+    // 🔥 动态阈值决策
+    const shouldInclude = this._shouldIncludeRecommendation(
+        similarity,
+        matchedKeywords.length,
+        currentKeywords.length,
+        isObservation
+    );
+    
+    if (!shouldInclude) return;
+    
+    const toolName = step.action?.tool_name || '未知工具';
+    const sourceText = isObservation ? '观察结果' : '思考过程';
+    
+    // 🔥 智能提取摘要
+    const summary = this._extractRelevantSummary(text, currentKeywords, 60);
+    
+    recommendations.push({
+        step: stepNum,
+        similarity: Math.round(similarity * 100),
+        tool: toolName,
+        source: sourceText,
+        summary: summary,
+        matchedKeywords: matchedKeywords.slice(0, 4), // 最多显示4个
+        matchedCount: matchedKeywords.length,
+        exactMatches: this._countExactMatches(currentKeywords, stepKeywords),
+        suggestion: this._generateSimilaritySuggestion(similarity, toolName),
+        rawSimilarity: similarity // 保留原始值用于排序
+    });
+}
+
+// 🔥 新增：动态阈值决策
+_shouldIncludeRecommendation(similarity, matchedCount, totalKeywords, isObservation) {
+    // 基础阈值
+    const baseThreshold = isObservation ? 0.55 : 0.5; // 观察结果要求更高
+    
+    // 🎯 方案1：高相似度直接通过
+    if (similarity > 0.65) return true;
+    
+    // 🎯 方案2：中等相似度但有多个具体匹配
+    if (similarity > baseThreshold && matchedCount >= 2) return true;
+    
+    // 🎯 方案3：较低相似度但有很强的关键词匹配
+    if (similarity > 0.4 && matchedCount >= Math.min(3, totalKeywords * 0.5)) {
+        return true;
+    }
+    
+    return false;
+}
+
+// 🔥 新增：动态确定最大推荐数量
+_determineMaxRecommendations(totalSteps, currentStep, foundRecommendations) {
+    // 方案1：基于总步骤数
+    if (totalSteps <= 3) return 2;  // 早期，步骤少
+    if (totalSteps <= 8) return 4;  // 中期
+    if (totalSteps <= 15) return 6; // 中后期
+    if (totalSteps <= 25) return 8; // 长期研究
+    
+    // 方案2：基于当前步骤位置
+    const stepPositionRatio = currentStep / totalSteps;
+    if (stepPositionRatio < 0.3) return 3; // 早期阶段，聚焦
+    if (stepPositionRatio < 0.7) return 5; // 中期阶段，适中
+    return 4; // 后期阶段，回归聚焦
+    
+    // 方案3：基于实际找到的数量（但不超过上限）
+    // return Math.min(Math.max(3, Math.floor(foundRecommendations * 0.7)), 8);
+}
+
+// 🔥 新增：智能提取相关摘要
+_extractRelevantSummary(text, targetKeywords, maxLength = 60) {
+    if (typeof text !== 'string' || text.length === 0) return '';
+    
+    // 如果文本很短，直接返回
+    if (text.length <= maxLength) return text;
+    
+    // 寻找包含最多目标关键词的句子
+    const sentences = text.split(/[。.!?]/).filter(s => s.trim().length > 10);
+    
+    if (sentences.length === 0) {
+        return text.substring(0, maxLength) + '...';
+    }
+    
+    let bestSentence = '';
+    let bestScore = -1;
+    
+    sentences.forEach(sentence => {
+        let score = 0;
+        targetKeywords.forEach(keyword => {
+            if (sentence.includes(keyword)) {
+                score += 3; // 精确匹配权重高
+            } else if (keyword.length > 3) {
+                // 部分匹配（前缀匹配）
+                const prefix = keyword.substring(0, Math.floor(keyword.length * 0.7));
+                if (sentence.includes(prefix)) {
+                    score += 1;
+                }
+            }
+        });
+        
+        if (score > bestScore) {
+            bestScore = score;
+            bestSentence = sentence.trim();
+        }
+    });
+    
+    // 如果找到高得分的句子，使用它
+    if (bestScore > 0 && bestSentence) {
+        return bestSentence.substring(0, Math.min(maxLength, bestSentence.length)) + 
+               (bestSentence.length > maxLength ? '...' : '');
+    }
+    
+    // 否则返回开头部分
+    return text.substring(0, maxLength) + '...';
+}
+
+// 🔥 新增：计算精确匹配数量
+_countExactMatches(keywords1, keywords2) {
+    const set1 = new Set(keywords1.map(k => k.toLowerCase()));
+    const set2 = new Set(keywords2.map(k => k.toLowerCase()));
+    return [...set1].filter(x => set2.has(x)).length;
+}
+
+// 🔥 新增：生成系统级洞察
+_generateSystemInsight(recommendations, currentKeywordsCount) {
+    if (recommendations.length === 0) {
+        return "📭 未发现高度相似的历史步骤，建议执行全新搜索。";
+    }
+    
+    const avgSimilarity = recommendations.reduce((sum, r) => sum + r.similarity, 0) / recommendations.length;
+    const hasHighSimilarity = recommendations.some(r => r.similarity >= 80);
+    const totalMatches = recommendations.reduce((sum, r) => sum + r.matchedCount, 0);
+    
+    let insight = "## 🔍 相似性分析洞察\n\n";
+    
+    if (avgSimilarity >= 65) {
+        insight += `✅ **高度相关集群**（平均相似度${Math.round(avgSimilarity)}%）\n`;
+        insight += `发现${recommendations.length}个高度相似步骤，强烈建议复用历史数据，补充新视角。\n`;
+    } else if (avgSimilarity >= 50) {
+        insight += `⚠️ **中度相关集群**（平均相似度${Math.round(avgSimilarity)}%）\n`;
+        insight += `发现${recommendations.length}个相关步骤，可参考历史方法，但需要验证和新信息。\n`;
+    } else {
+        insight += `🔍 **轻度相关参考**（平均相似度${Math.round(avgSimilarity)}%）\n`;
+        insight += `发现${recommendations.length}个略有相似步骤，可快速浏览，主要依赖新搜索。\n`;
+    }
+    
+    // 关键词覆盖分析
+    const uniqueMatchedKeywords = new Set();
+    recommendations.forEach(r => {
+        r.matchedKeywords.forEach(kw => uniqueMatchedKeywords.add(kw));
+    });
+    
+    const coverageRate = currentKeywordsCount > 0 ? 
+        Math.round((uniqueMatchedKeywords.size / currentKeywordsCount) * 100) : 0;
+    
+    insight += `\n**关键词覆盖**: ${uniqueMatchedKeywords.size}/${currentKeywordsCount}个（${coverageRate}%）\n`;
+    
+    if (coverageRate >= 70) {
+        insight += `📊 历史数据覆盖了大部分关键概念，复用价值高。\n`;
+    } else if (coverageRate >= 40) {
+        insight += `📊 历史数据覆盖了部分关键概念，可选择性复用。\n`;
+    } else {
+        insight += `📊 历史数据覆盖有限，需要新搜索补充。\n`;
+    }
+    
+    return insight;
+}
+
     // 🎯 新增：判断 crawl4ai 是否成功的方法
     _isCrawl4aiSuccessful(observation) {
         if (!observation) return false;
