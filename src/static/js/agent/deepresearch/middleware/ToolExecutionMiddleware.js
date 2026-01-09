@@ -41,7 +41,16 @@ export class ToolExecutionMiddleware {
         this.intermediateSteps = sharedState.intermediateSteps || [];
         this.dataBus = sharedState.dataBus || new Map();
         this.runId = sharedState.runId || null;
-        this.imageCounter = sharedState.imageCounter || 0;
+        
+        // 🎯 修复 imageCounter 传递方式不匹配问题
+        if (config.imageCounter && typeof config.imageCounter === 'function') {
+            this.getImageCounterExternal = config.imageCounter;
+            this.imageCounter = config.imageCounter(); // 初始化时获取当前值
+        } else if (config.imageCounter !== undefined) {
+            this.imageCounter = config.imageCounter;
+        } else {
+            this.imageCounter = sharedState.imageCounter || 0;
+        }
         
         // 🎯 配置参数
         this.urlSimilarityThreshold = config.urlSimilarityThreshold || 0.85;
