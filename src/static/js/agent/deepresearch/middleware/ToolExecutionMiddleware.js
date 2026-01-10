@@ -196,7 +196,7 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
             const startTime = Date.now();
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: specialistPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025', 
+                model: 'models/gemini-2.5-flash', 
                 temperature: 0.1
             });
 
@@ -1557,7 +1557,7 @@ ${brokenCode}
                 messages: [{ role: 'user', content: prompt }],
                 model: 'deepseek-chat',
                 temperature: 0.1,
-                max_tokens: 4000  // 🔥 确保足够长度
+                max_tokens: 15000  // 🔥 确保足够长度
             });
 
             // 🎯 Token追踪
@@ -1583,13 +1583,6 @@ ${brokenCode}
         } catch (error) {
             console.error(`[ToolExecutionMiddleware] 🚑 修复尝试 ${attempt + 1} 发生异常:`, error);
             
-            // 🔥 关键修复4：智能降级机制
-            if (attempt === 0) {
-                if (error.message.includes('model not found') || error.message.includes('unavailable')) {
-                    console.log('[ToolExecutionMiddleware] 🔄 deepseek-chat不可用，降级到gemini-2.5-flash');
-                    // 继续循环，下次使用原模型
-                }
-            }
         }
     }
 
@@ -1655,6 +1648,17 @@ _extractLatestRelevantData() {
         
         // 寻找最近的相关数据
         if (rawData && rawData.length > 200) {
+            // 🔥 新增：过滤错误数据（修改部分）
+            const errorIndicators = ['错误:', 'Error:', '失败:', 'Failed:', '无法访问'];
+            const isError = errorIndicators.some(indicator => 
+                rawData.toLowerCase().includes(indicator.toLowerCase())
+            );
+            
+            if (isError) {
+                console.log(`[ToolExecutionMiddleware] ⚠️ 跳过 ${key}: 包含错误信息`);
+                continue;
+            }
+            
             // 数据源优先级
             if (metadata.toolName === 'code_generator' || 
                 metadata.contentType === 'structured_data') {
@@ -1862,9 +1866,52 @@ _validateRepairedCode(code) {
         return false;
     }
     
-    // 检查占位符
-    if (code.includes('...') && !code.includes('...')) { // 简单检查
-        console.warn('[ToolExecutionMiddleware] ❌ 仍有占位符');
+    // 🔥 修复：正确检查占位符（修改部分）
+    // 检查不在字符串内的 ... 作为占位符
+    const hasPlaceholder = (codeStr) => {
+        let inString = false;
+        let stringChar = null;
+        let escaped = false;
+        
+        for (let i = 0; i < codeStr.length; i++) {
+            const char = codeStr[i];
+            
+            // 处理转义字符
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (char === '\\') {
+                escaped = true;
+                continue;
+            }
+            
+            // 处理字符串边界
+            if (!inString && (char === '"' || char === "'")) {
+                inString = true;
+                stringChar = char;
+            } else if (inString && char === stringChar) {
+                inString = false;
+                stringChar = null;
+            }
+            
+            // 检查不在字符串内的 ...
+            if (!inString && i + 2 < codeStr.length) {
+                if (codeStr.substring(i, i + 3) === '...') {
+                    // 检查前后字符，确保不是 .... 或 .. 的一部分
+                    const prevChar = i > 0 ? codeStr[i - 1] : '';
+                    const nextChar = i + 3 < codeStr.length ? codeStr[i + 3] : '';
+                    if (prevChar !== '.' && nextChar !== '.') {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+    
+    if (hasPlaceholder(code)) {
+        console.warn('[ToolExecutionMiddleware] ❌ 仍有占位符 "..."');
         return false;
     }
     
