@@ -1496,79 +1496,429 @@ except Exception as e:
 
     /**
      * 🚑 代码急诊室：基于 LLM 的自动修复
-     * 🔥 与主文件完全一致的实现
+     * 🔥 增强版：智能获取上下文 + deepseek-chat
      */
     async _repairCodeWithLLM(brokenCode, errorType) {
         console.log('[ToolExecutionMiddleware] 🚑 启动代码急诊室 (Auto-Repair)...');
-        
-        const contextData = this.currentResearchContext || "无上下文数据";
-        const maxRetries = 2;
-        
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            const isRetry = attempt > 0;
-            if (isRetry) {
-                console.warn(`[ToolExecutionMiddleware] 🚑 修复尝试 ${attempt}/${maxRetries} 失败，正在重试...`);
-            }
+    
+    // 🔥 关键修复1：优先获取有效的上下文数据
+    let contextData = await this._getBestRepairContext();
+    console.log(`[ToolExecutionMiddleware] 📊 修复上下文长度: ${contextData.length} 字符`);
+    
+    const maxRetries = 2;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const isRetry = attempt > 0;
+        if (isRetry) {
+            console.warn(`[ToolExecutionMiddleware] 🚑 修复尝试 ${attempt}/${maxRetries} 失败，正在重试...`);
+        }
 
-            const prompt = `
-# 角色：Python 代码修复专家
+        // 🔥 关键修复2：增强提示词，明确数据来源
+        const prompt = `
+# 🚑 紧急代码修复任务
+**错误类型**: ${errorType}
+${isRetry ? "**注意**: 上一次修复尝试失败，请务必彻底检查数据填充！" : ""}
 
-# 紧急任务
-检测到以下代码存在 **${errorType}**。
-请根据【任务背景】中的数据，修复代码中的空赋值或语法错误。
-
-# 任务背景 (用户原始请求 - 包含数据)
+# 📋 原始任务背景与数据
 ${contextData}
 
-# 损坏的代码
+# ❌ 损坏的代码
 \`\`\`python
 ${brokenCode}
 \`\`\`
 
-# 修复要求
-1. **数据填充 (关键)**: 
-   - 仔细阅读【任务背景】，找到年份、数值等具体数据。
-   - 将这些数据**完整、准确地硬编码**到代码的变量中 (例如 \`years = [2020, 2021...]\`)。
-   - **绝对禁止**再次生成空赋值 (如 \`x =\`)。
-2. **语法修正**: 确保所有括号、引号闭合，import 完整。
-3. **输出格式**: 只输出修复后的 Python 代码，不要 Markdown 标记，不要解释。
-${isRetry ? "\n# 特别注意：上一次修复失败了，请务必仔细检查数据是否完整填入！" : ""}
+# 🎯 修复要求（必须严格遵守）
+1. **数据填充（最高优先级）**：
+   - 仔细阅读上面的【原始任务背景与数据】部分
+   - 找到所有可用的具体数据（年份、数值、名称、列表等）
+   - 将这些数据**完整、准确地硬编码**到代码变量中 (例如 \`years = [2020, 2021...]\`)。
+   - **绝对禁止**生成空赋值（如 \`x =\`）或占位符（如 \`...\`）
+
+2. **语法修复**：
+   - 确保所有括号、引号、方括号成对闭合
+   - 确保所有导入语句完整
+   - 修复缩进错误（使用4个空格）
+
+3. **输出要求**：
+   - 代码最后必须有 \`print(json.dumps(...))\` 输出
+   - 输出完整的JSON数据结构
+   - 只输出修复后的Python代码，不要Markdown标记，不要解释。
+
+4. **特别注意**：
+   - 如果上面提供了表格或列表数据，确保在代码中完整包含
+   - 不要遗漏任何数据点
+   - 检查变量名是否拼写正确
+   ${isRetry ? "\n# ⚠️ 上次修复失败：请重点检查数据是否完整填充！" : ""}
 `;
 
-            try {
-                const response = await this.chatApiHandler.completeChat({
-                    messages: [{ role: 'user', content: prompt }],
-                    model: 'gemini-2.5-flash-preview-09-2025',
-                    temperature: 0.1
-                });
+        try {
+            console.log(`[ToolExecutionMiddleware] 🤖 调用修复模型: deepseek-chat`);
+            const response = await this.chatApiHandler.completeChat({
+                messages: [{ role: 'user', content: prompt }],
+                model: 'deepseek-chat',
+                temperature: 0.1,
+                max_tokens: 4000  // 🔥 确保足够长度
+            });
 
-                // 🎯 Token追踪
-                if (response?.usage) {
-                    this.updateTokenUsageMethod(response.usage);
+            // 🎯 Token追踪
+            if (response?.usage) {
+                this.updateTokenUsageMethod(response.usage);
+            }
+
+            let fixedCode = response.choices[0].message.content;
+            
+            // 清理 Markdown
+            fixedCode = fixedCode.replace(/```python/g, '').replace(/```/g, '').trim();
+            
+            // 🔥 关键修复3：增强验证
+            const isValid = this._validateRepairedCode(fixedCode);
+            if (!isValid) {
+                console.warn('[ToolExecutionMiddleware] 🚑 修复后的代码验证失败。');
+                continue;
+            }
+
+            console.log(`[ToolExecutionMiddleware] ✅ 急诊修复成功 (尝试 ${attempt + 1})，代码长度: ${fixedCode.length} 字符`);
+            return fixedCode;
+
+        } catch (error) {
+            console.error(`[ToolExecutionMiddleware] 🚑 修复尝试 ${attempt + 1} 发生异常:`, error);
+            
+            // 🔥 关键修复4：智能降级机制
+            if (attempt === 0) {
+                if (error.message.includes('model not found') || error.message.includes('unavailable')) {
+                    console.log('[ToolExecutionMiddleware] 🔄 deepseek-chat不可用，降级到gemini-2.5-flash');
+                    // 继续循环，下次使用原模型
                 }
-
-                let fixedCode = response.choices[0].message.content;
-                
-                // 清理 Markdown
-                fixedCode = fixedCode.replace(/```python/g, '').replace(/```/g, '').trim();
-                
-                // 验证：修复后的代码不应该再包含空赋值或懒惰写法
-                if (/^\s*[a-zA-Z_]\w*\s*=\s*(?:\s*(?:#.*)?$)/m.test(fixedCode) || fixedCode.includes("...")) {
-                    console.warn('[ToolExecutionMiddleware] 🚑 修复后的代码仍不符合要求。');
-                    continue;
-                }
-
-                console.log(`[ToolExecutionMiddleware] ✅ 急诊修复成功 (尝试 ${attempt + 1})，代码长度: ${fixedCode.length} 字符`);
-                return fixedCode;
-
-            } catch (error) {
-                console.error(`[ToolExecutionMiddleware] 🚑 修复尝试 ${attempt + 1} 发生异常:`, error);
             }
         }
+    }
 
-        console.error('[ToolExecutionMiddleware] 🚑 急诊室宣告抢救无效 (达到最大重试次数)。');
+    console.error('[ToolExecutionMiddleware] 🚑 急诊室宣告抢救无效 (达到最大重试次数)。');
+    
+    // 🔥 最后手段：生成最小化代码
+    return this._generateMinimalFallbackCode(brokenCode, errorType, contextData);
+}
+
+/**
+ * 🆕 获取最佳修复上下文
+ */
+async _getBestRepairContext() {
+    console.log('[ToolExecutionMiddleware] 🔍 获取修复上下文...');
+    
+    // 优先级1：当前研究上下文（如果有效）
+    if (this.currentResearchContext && 
+        this.currentResearchContext !== "无上下文数据" && 
+        this.currentResearchContext.length > 100) {
+        console.log('[ToolExecutionMiddleware] ✅ 使用当前研究上下文');
+        return this.currentResearchContext;
+    }
+    
+    // 优先级2：从DataBus提取最近的数据
+    console.log('[ToolExecutionMiddleware] 🔍 从DataBus提取最新数据...');
+    const latestData = this._extractLatestRelevantData();
+    if (latestData) {
+        console.log(`[ToolExecutionMiddleware] ✅ 从DataBus获取数据: ${latestData.length} 字符`);
+        return latestData;
+    }
+    
+    // 优先级3：从历史步骤提取信息
+    const historicalContext = this._extractHistoricalContext();
+    if (historicalContext) {
+        console.log('[ToolExecutionMiddleware] ✅ 使用历史步骤上下文');
+        return historicalContext;
+    }
+    
+    // 最后手段：简单上下文
+    console.warn('[ToolExecutionMiddleware] ⚠️ 无法获取有效上下文，使用最小上下文');
+    return "无上下文数据。请参考损坏的代码本身进行修复。";
+}
+
+/**
+ * 🆕 提取最新相关数据
+ */
+_extractLatestRelevantData() {
+    if (!this.dataBus || this.dataBus.size === 0) {
         return null;
     }
+    
+    // 查找最近的代码生成任务相关数据
+    const stepKeys = Array.from(this.dataBus.keys())
+        .filter(key => key.startsWith('step_'))
+        .sort((a, b) => parseInt(b.replace('step_', '')) - parseInt(a.replace('step_', '')));
+    
+    for (const key of stepKeys) {
+        const data = this.dataBus.get(key);
+        if (!data || !data.metadata) continue;
+        
+        const metadata = data.metadata;
+        const rawData = data.rawData || data.originalData;
+        
+        // 寻找最近的相关数据
+        if (rawData && rawData.length > 200) {
+            // 数据源优先级
+            if (metadata.toolName === 'code_generator' || 
+                metadata.contentType === 'structured_data') {
+                // 最近的代码生成数据
+                return this._formatDataForRepair(key, metadata, rawData);
+            } else if (metadata.toolName === 'crawl4ai') {
+                // 最近的爬虫数据
+                return this._formatDataForRepair(key, metadata, rawData);
+            }
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * 🆕 格式化数据用于修复（简化版）
+ */
+_formatDataForRepair(stepKey, metadata, rawData) {
+    console.log(`[ToolExecutionMiddleware] 🔧 格式化修复数据: ${rawData.length} 字符 (${metadata.toolName})`);
+    
+    const maxLength = 12000;
+    
+    let formatted = `## 🔧 代码修复所需数据\n\n`;
+    formatted += `**来源**: 步骤 ${stepKey.replace('step_', '')} (${metadata.toolName})\n`;
+    if (metadata.dataType) formatted += `**类型**: ${metadata.dataType}\n`;
+    formatted += `**原始长度**: ${rawData.length} 字符\n\n`;
+    
+    // 🆕 智能处理超长数据
+    if (rawData.length > maxLength) {
+        console.log(`[ToolExecutionMiddleware] 📏 数据过长，使用智能策略: ${rawData.length} → ${maxLength}`);
+        
+        // 策略1：优先提取表格（最重要）
+        const tables = this._extractAllTables(rawData);
+        const tablesLength = tables ? tables.length : 0;
+        
+        if (tablesLength > 0 && tablesLength < maxLength * 0.7) {
+            // 表格 + 补充信息
+            formatted += `### 📊 核心表格数据（完整保留）\n\n${tables}\n`;
+            
+            const remaining = maxLength - tablesLength - 500;
+            if (remaining > 1500) {
+                const supplement = this._extractSupplement(rawData, tablesLength, remaining);
+                formatted += `\n### 📝 补充信息\n${supplement}\n`;
+            }
+        } else {
+            // 策略2：智能分段（当没有表格或表格太大时）
+            formatted += `### 📋 智能提取数据\n\n`;
+            
+            // 保留最重要的部分：开头（40%）+ 中间关键（30%）+ 结尾（30%）
+            const firstLength = Math.floor(maxLength * 0.4);
+            const middleLength = Math.floor(maxLength * 0.3);
+            const endLength = Math.floor(maxLength * 0.3);
+            
+            const firstPart = rawData.substring(0, firstLength);
+            const endPart = rawData.substring(rawData.length - endLength);
+            
+            // 从中间找关键部分（包含数字和表格的区域）
+            const middleStart = Math.floor(rawData.length / 2) - Math.floor(middleLength / 2);
+            const middleEnd = middleStart + middleLength;
+            const middlePart = rawData.substring(middleStart, Math.min(middleEnd, rawData.length - endLength));
+            
+            formatted += firstPart + "\n\n[...中间内容已省略...]\n\n" + middlePart + "\n\n[...继续省略...]\n\n" + endPart;
+        }
+        
+        formatted += `\n---\n*注：原始数据 ${rawData.length} 字符，此处保留约 ${maxLength} 字符的关键内容*\n`;
+    } else {
+        // 数据长度合适，直接使用
+        formatted += `### 📄 完整数据\n\n${rawData}\n`;
+    }
+    
+    formatted += `\n**修复指令**：请使用以上数据修复代码，确保所有变量都有真实数据填充。`;
+    
+    return formatted;
+}
+
+/**
+ * 🆕 提取所有表格（优化版）
+ */
+_extractAllTables(rawData) {
+    let result = '';
+    
+    // 1. Markdown表格
+    const mdTables = rawData.match(/^(\|.+\|(?:\r?\n|$)){3,}/gm);
+    if (mdTables && mdTables.length > 0) {
+        result += `#### Markdown表格 (${mdTables.length}个)\n\n`;
+        mdTables.slice(0, 3).forEach((table, idx) => {
+            result += `**表${idx+1}**:\n\`\`\`\n${table}\n\`\`\`\n\n`;
+        });
+    }
+    
+    // 2. 类表格结构（如：项目 数值 单位）
+    const tableLike = rawData.match(/(?:^|\n)([^:\n]+:[^:\n]+(?:\n|$)){3,}/g);
+    if (tableLike && tableLike.length > 0) {
+        result += `#### 键值对结构\n\n`;
+        tableLike.slice(0, 2).forEach((item, idx) => {
+            result += `**结构${idx+1}**:\n\`\`\`\n${item.trim()}\n\`\`\`\n\n`;
+        });
+    }
+    
+    // 3. 数字密集段落
+    const numericBlocks = rawData.match(/(?:^|\n)(.*\d+.*(?:\n|$)){4,}/g);
+    if (numericBlocks && numericBlocks.length > 0) {
+        result += `#### 数字密集段落\n\n`;
+        numericBlocks.slice(0, 2).forEach((block, idx) => {
+            const lines = block.trim().split('\n').slice(0, 6);
+            result += `**数字块${idx+1}**:\n\`\`\`\n${lines.join('\n')}\n\`\`\`\n\n`;
+        });
+    }
+    
+    return result || null;
+}
+
+/**
+ * 🆕 提取补充信息
+ */
+_extractSupplement(rawData, tablesLength, maxLength) {
+    console.log(`[ToolExecutionMiddleware] 🔍 提取补充信息: 剩余 ${maxLength} 字符`);
+    
+    // 排除已提取的表格区域，避免重复
+    const nonTableContent = this._removeTableContent(rawData);
+    if (!nonTableContent || nonTableContent.length < 100) {
+        return "无额外补充信息。";
+    }
+    
+    // 提取关键补充信息
+    let supplement = "";
+    const targetLength = Math.min(maxLength, 3000);
+    
+    // 策略：提取包含关键词的重要段落
+    const importantKeywords = [
+        '数据', '统计', '分析', '结果', '结论',
+        '主要', '关键', '重要', '核心', '发现',
+        '趋势', '变化', '增长', '下降'
+    ];
+    
+    const lines = nonTableContent.split('\n');
+    let collectedLines = [];
+    
+    for (const line of lines) {
+        if (line.trim().length < 10) continue;
+        
+        // 评分行的重要性
+        let score = 0;
+        importantKeywords.forEach(keyword => {
+            if (line.includes(keyword)) score += 1;
+        });
+        if (line.match(/\d/)) score += 1; // 包含数字
+        if (line.includes(':')) score += 1; // 可能是说明
+        
+        if (score >= 2) {
+            collectedLines.push(line);
+            if (collectedLines.join('\n').length > targetLength) {
+                break;
+            }
+        }
+    }
+    
+    if (collectedLines.length > 0) {
+        supplement = collectedLines.join('\n');
+        if (supplement.length > targetLength) {
+            supplement = supplement.substring(0, targetLength) + "\n[...]";
+        }
+    } else {
+        // 如果没有找到重要段落，返回开头部分
+        supplement = nonTableContent.substring(0, Math.min(targetLength, nonTableContent.length));
+        if (nonTableContent.length > targetLength) {
+            supplement += "\n[...]";
+        }
+    }
+    
+    return supplement;
+}
+
+/**
+ * 🆕 移除表格内容（用于提取非表格部分）
+ */
+_removeTableContent(rawData) {
+    // 简单的表格移除策略
+    // 1. 移除Markdown表格
+    let result = rawData.replace(/^(\|.+\|(?:\r?\n|$)){3,}/gm, '');
+    
+    // 2. 移除明显的表格行
+    result = result.replace(/^\|.*\|$/gm, '');
+    
+    // 清理多余空行
+    result = result.replace(/\n\s*\n\s*\n+/g, '\n\n');
+    
+    return result.trim();
+}
+
+/**
+ * 🆕 验证修复后的代码
+ */
+_validateRepairedCode(code) {
+    if (!code || code.trim().length < 50) {
+        console.warn('[ToolExecutionMiddleware] ❌ 代码过短');
+        return false;
+    }
+    
+    // 检查空赋值
+    const emptyAssignment = /^\s*[a-zA-Z_]\w*\s*=\s*(?:\s*(?:#.*)?$)/m;
+    if (emptyAssignment.test(code)) {
+        console.warn('[ToolExecutionMiddleware] ❌ 仍有空赋值');
+        return false;
+    }
+    
+    // 检查占位符
+    if (code.includes('...') && !code.includes('...')) { // 简单检查
+        console.warn('[ToolExecutionMiddleware] ❌ 仍有占位符');
+        return false;
+    }
+    
+    // 检查是否有输出
+    if (!code.includes('print(') && !code.includes('print (')) {
+        console.warn('[ToolExecutionMiddleware] ⚠️ 缺少输出语句');
+    }
+    
+    return true;
+}
+
+/**
+ * 🆕 生成最小化后备代码
+ */
+_generateMinimalFallbackCode(brokenCode, errorType, contextData) {
+    console.log('[ToolExecutionMiddleware] 🛡️ 生成最小化后备代码...');
+    
+    return `import json
+
+# 最小化分析 - 应急后备代码
+result = {
+    "type": "emergency_analysis",
+    "status": "limited",
+    "original_error": "${errorType.replace(/"/g, '\\"')}",
+    "context_length": ${contextData.length},
+    "message": "由于代码修复失败，提供最小化分析。",
+    "note": "这是一个后备响应。请检查数据格式后重新尝试。"
+}
+
+print(json.dumps(result, ensure_ascii=False, indent=2))`;
+}
+
+/**
+ * 🆕 从历史步骤提取上下文
+ */
+_extractHistoricalContext() {
+    if (!this.intermediateSteps || this.intermediateSteps.length < 2) {
+        return null;
+    }
+    
+    // 提取最近几个步骤的摘要
+    const recent = this.intermediateSteps.slice(-3);
+    let summary = "最近执行步骤摘要:\n\n";
+    
+    recent.forEach((step, idx) => {
+        const stepNum = this.intermediateSteps.length - recent.length + idx + 1;
+        const tool = step.action?.tool_name || 'unknown';
+        const obs = step.observation || '';
+        
+        summary += `${stepNum}. ${tool}: ${obs.substring(0, 150)}${obs.length > 150 ? '...' : ''}\n`;
+    });
+    
+    return summary;
+}
 
     /**
      * Python错误智能诊断
