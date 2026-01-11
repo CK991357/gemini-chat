@@ -1,4 +1,4 @@
-# CLAUDE.md - 深度研究代理中间件架构升级版
+# CLAUDE.md - 深度研究代理中间件架构升级版（V2.0）
 
 该文件为 Claude Code (claude.ai/code) 在处理此仓库代码时提供指导。
 
@@ -83,14 +83,14 @@
                 -   [`vol-meter.js`](src/static/js/audio/worklets/vol-meter.js): 计算音频流实时音量级别 (RMS) 的 AudioWorkletProcessor，用于在录制或播放期间提供视觉反馈。
         -   `src/static/js/main.js`: 主要的客户端应用程序逻辑。
         -   **代理模块 (`src/static/js/agent/`)**: 包含集成 AI 代理和代理其工具调用的逻辑。
-            -   **深度研究代理 (`src/static/js/agent/deepresearch/`)**: **新增模块** - 专注于深度研究任务的代理系统。
+            -   **深度研究代理 (`src/static/js/agent/deepresearch/`)**: **核心升级模块** - 专注于深度研究任务的代理系统，已升级为包含数据总线、相似性检测和模式感知策略的智能系统。
+                -   [`AgentLogic.js`](src/static/js/agent/deepresearch/AgentLogic.js): **核心升级** - 深度研究代理的思考核心，新增了数据总线集成、相似性检测、模式感知爬取策略、PDF智能规避、严格JSON格式纪律等功能。
                 -   [`DeepResearchAgent.js`](src/static/js/agent/deepresearch/DeepResearchAgent.js): **核心更新** - 深度研究代理的核心执行器，已重构为协调器角色，集成了多个中间件和服务模块。
                 -   **中间件系统 (核心架构升级)**:
                     -   `middleware/ToolExecutionMiddleware.js`: **新架构** - 工具执行中间件，处理所有工具调用逻辑，包括虚拟专家接管系统和代码急诊室
                     -   `middleware/ReportGeneratorMiddleware.js`: **新架构** - 报告生成中间件，处理报告生成、后处理和时效性质量评估
                 -   **服务模块**:
                     -   `services/StateManager.js`: **新增模块** - 统一状态管理器，管理所有共享状态和数据总线
-                -   [`AgentLogic.js`](src/static/js/agent/deepresearch/AgentLogic.js): 深度研究代理的思考核心，负责生成研究计划和每一步的决策。
                 -   [`OutputParser.js`](src/static/js/agent/deepresearch/OutputParser.js): 解析 LLM 响应，决定下一步行动（ReAct 格式），支持最终答案和工具调用解析。
                 -   [`ReportTemplates.js`](src/static/js/agent/deepresearch/ReportTemplates.js): 提供不同研究模式的报告模板，包括深度研究、学术论文、商业分析、技术文档、标准报告和数据挖掘模式。
                 -   [`DataMiningEngine.js`](src/static/js/agent/deepresearch/DataMiningEngine.js): **新增模块** - 数据挖掘引擎，专门处理数据挖掘模式的研究任务。
@@ -711,9 +711,159 @@ skills/python-sandbox/
 - **并行处理潜力**: 中间件架构支持未来的并行处理优化
 - **错误隔离**: 一个中间件的错误不会影响其他中间件的运行
 
-### 10.2 ToolExecutionMiddleware 详细功能
+### 10.2 AgentLogic 智能升级
 
-#### 10.2.1 虚拟专家接管系统
+#### 10.2.1 数据总线集成系统
+
+`AgentLogic.js` 新增了强大的数据总线集成系统，为Agent提供智能记忆库：
+
+```javascript
+// 数据总线智能激活协议
+const dataBusIntelligenceProtocol = `
+## 🧠 数据总线智能激活协议 (Data Bus Intelligence Protocol)
+
+### 📊 你有一个隐藏的"记忆库"：数据总线 (Data Bus)
+**重要发现**：系统已经为你存储了先前步骤的关键数据！这些数据可以：
+- ✅ 避免重复搜索相同信息
+- ✅ 快速回顾历史发现
+- ✅ 建立信息之间的关联
+- ✅ 提升研究效率30%以上
+
+### 🎯 智能数据复用策略
+
+#### 策略A：关键词匹配复用
+**当你计划搜索时，先检查数据总线：**
+1. **提取搜索关键词**：从查询中提取核心名词
+2. **扫描数据总线**：查找包含相同关键词的历史数据
+3. **复用决策**：
+   - 如果历史数据相关度>80%，直接复用并补充新角度
+   - 如果相关度50-80%，快速浏览后决定是否需要新搜索
+   - 如果相关度<50%，执行新搜索
+`;
+
+// 相似性检测系统
+_buildSimilarityDetectionSystem(researchPlan, intermediateSteps, currentStep) {
+    // 智能检测历史步骤的相似性，避免重复工作
+}
+```
+
+#### 10.2.2 PDF 智能规避系统
+
+新增PDF智能处理协议，解决crawl4ai无法处理PDF文件的问题：
+
+```javascript
+const pdfIntelligentBypassProtocol = `
+## 📄 PDF 智能规避与曲线救国协议 (PDF Bypass Protocol)
+
+### 🚨 核心认知：你无法直接抓取PDF文件
+**重要事实**：crawl4ai 工具**无法处理PDF文件**。PDF是二进制文件，不是HTML网页。
+
+### 🧠 智能决策框架：三层次处理策略
+
+#### 第一层：学术论文专用策略（针对arXiv、学术会议）
+**场景**：https://arxiv.org/pdf/2501.12345.pdf
+**方案**：提取论文ID，访问摘要页 (https://arxiv.org/abs/2501.12345)
+
+#### 第二层：技术报告与文档
+**场景**：https://company.com/reports/2025-whitepaper.pdf
+**方案**：搜索"公司名 2025 技术报告 摘要"或"whitepaper key findings"
+
+#### 第三层：统计数据与政府报告
+**场景**：https://data.gov/statistics/2025-report.pdf
+**方案**：搜索"数据名 在线表格"或"交互式数据"
+`;
+```
+
+#### 10.2.3 模式感知爬取策略
+
+针对不同研究模式提供专门的爬取策略：
+
+```javascript
+// 通用爬取核心原则
+const universalCrawlPrinciples = `
+## 🌐 通用网页抓取核心原则（所有模式共享）
+
+### 🎯 核心目标：质量 > 数量
+- **研究目的**：获取**深度信息**，不是收集大量页面
+- **成功标准**：抓取到**有实质内容的页面**，不是简单的页面加载成功
+
+### 📊 URL 质量评估体系（通用）
+**高质量URL特征（优先选择）：**
+1. **新闻报道/深度文章**：URL包含 \`/news/\`、\`/article/\`、\`/blog/\`、\`/posts/\`
+2. **静态HTML页面**：URL以 \`.html\` 结尾，参数简单
+3. **权威媒体**：知名媒体（OSCHINA、InfoQ、36kr、CSDN、知乎专栏）
+4. **发布时间近**：包含 \`2024\`、\`2025\` 等年份，或 \`latest\`、\`recently\`
+
+**低质量URL特征（避免选择）：**
+1. **文档模板页面**：URL包含 \`docs.\`、\`api-docs.\`、\`/docs/\`、\`/guide/\`
+2. **动态查询页面**：URL包含 \`?query=\`、\`search=\`、\`database=\`
+3. **用户交互页面**：URL包含 \`login\`、\`signin\`、\`dashboard\`、\`account\`
+4. **侧边栏/导航页**：页面标题模糊（"首页"、"文档"、"目录"）
+5. **Google系网站（网络障碍）**：URL包含 \`blog.google\`、\`developers.google.com\`、\`cloud.google.com\`
+`;
+```
+
+#### 10.2.4 严格格式纪律
+
+新增严格的输出格式纪律，确保Agent响应能被正确解析：
+
+```javascript
+const strictFormatProtocol = `
+## 🚨【最高优先级】输出格式绝对纪律 (Absolute Format Discipline)
+
+### 你的响应必须且只能是以下三种格式之一：
+
+### 格式A：继续研究（工具调用）
+思考: [你的详细推理过程...]
+行动: tool_name_here
+行动输入: {"parameter1": "value1", "parameter2": "value2"}
+
+### 格式B：生成报告大纲
+思考: [判断信息已足够...]
+行动: generate_outline
+行动输入: {"topic": "报告主题", "key_findings": ["要点1", "要点2"]}
+
+### 格式C：最终答案
+思考: [确认研究已完成...]
+最终答案:
+# 报告标题
+## 章节一
+内容...
+`;
+```
+
+#### 10.2.5 工具优化策略
+
+新增工具使用优化策略，特别是针对crawl4ai的限制：
+
+```javascript
+const toolOptimizationProtocol = `
+## 🛠️ 工具使用策略优化 (Agent Optimization Protocol)
+
+### 🕷️ crawl4ai 使用禁忌与最佳实践:
+- **避开交互式页面**: 严禁抓取 URL 中包含 \`query\`, \`search\`, \`database\`, \`easyquery\` 等字样的动态查询页面
+- **避开Google系网站**: 严禁尝试抓取 URL 中包含 \`blog.google\`、\`developers.google.com\`、\`cloud.google.com\` 的页面
+- **Google官方替代方案**: 当搜索到Google官方内容时，立即寻找第三方权威媒体报道
+- **URL健康检查**: 每次选择URL时，先检查是否包含已知问题域名
+- **优先选择静态页面**: 优先抓取包含"公报"、"报告"、"文章"、"新闻"字样的 URL
+`;
+
+const crawl4aiExtractProtocol = `
+## 🚨 【强制约束】crawl4ai Extract 模式使用禁令
+ 
+### 核心限制：
+- **Extract 模式** 仅适用于**静态、结构简单**的网页，且必须依赖**精确的 CSS 选择器**
+- **Extract 模式** 无法处理复杂的 JavaScript 动态加载内容（如产品详情页）
+ 
+### 🚫 绝对禁止：
+- **严禁**对**奢侈品官网、电商平台、复杂新闻网站**的产品详情页使用 \`extract\` 模式
+- **严禁**在 \`scrape\` 模式失败后，立即尝试 \`extract\` 模式
+`;
+```
+
+### 10.3 ToolExecutionMiddleware 详细功能
+
+#### 10.3.1 虚拟专家接管系统
 
 `ToolExecutionMiddleware` 的核心创新是虚拟专家接管系统，专门处理 `code_generator` 工具：
 
@@ -735,7 +885,7 @@ async _delegateToCodeExpert(parameters, detectedMode, recordToolCall) {
 - **代码质量保证**: 激进移除中文标点，增强语法验证
 - **自动修复机制**: 代码急诊室自动修复常见错误
 
-#### 10.2.2 代码急诊室
+#### 10.3.2 代码急诊室
 
 增强的代码急诊室提供多层修复机制：
 
@@ -755,7 +905,7 @@ async _repairCodeWithLLM(brokenCode, errorType) {
 - **智能截断**: 对超长数据使用智能分段策略
 - **格式保留**: 保持数据的结构和格式完整性
 
-#### 10.2.3 URL去重系统
+#### 10.3.3 URL去重系统
 
 智能URL去重防止重复研究：
 
@@ -774,9 +924,9 @@ _checkURLDuplicate(url) {
 - **重访计数**: 允许有限次数的重访，避免无限循环
 - **缓存优化**: 快速查找已访问URL的缓存结果
 
-### 10.3 ReportGeneratorMiddleware 详细功能
+### 10.4 ReportGeneratorMiddleware 详细功能
 
-#### 10.3.1 证据集合构建系统
+#### 10.4.1 证据集合构建系统
 
 智能证据收集和优化：
 
@@ -797,7 +947,7 @@ _buildEvidenceCollection(intermediateSteps, plan, researchMode) {
 - **hybrid**: 混合模式（摘要+关键部分）
 - **step_observation**: 降级到步骤观察
 
-#### 10.3.2 时效性质量评估系统
+#### 10.4.2 时效性质量评估系统
 
 全面的时效性质量分析：
 
@@ -817,7 +967,7 @@ _generateTemporalQualityReport(researchPlan, intermediateSteps, topic, researchM
 - **执行验证率**: 实际工具调用中的时效性验证行为
 - **关键词使用**: 时序性关键词（最新、2024、版本）的使用频率
 
-#### 10.3.3 引用映射系统
+#### 10.4.3 引用映射系统
 
 智能引用管理和映射：
 
@@ -836,9 +986,9 @@ _generateIndependentCitationMapping(reportContent, uniqueSources) {
 - **中文格式**: [来源1]、[来源2]
 - **混合格式**: [1，2]、[1,2，3]
 
-### 10.4 核心研究流程
+### 10.5 核心研究流程
 
-#### 10.4.1 研究执行流程
+#### 10.5.1 研究执行流程
 
 ```javascript
 async conductResearch(researchRequest) {
@@ -865,7 +1015,7 @@ async conductResearch(researchRequest) {
 }
 ```
 
-#### 10.4.2 工具执行流程
+#### 10.5.2 工具执行流程
 
 ```javascript
 // 工具执行由ToolExecutionMiddleware处理
@@ -889,9 +1039,9 @@ const summarizedObservation = await this._smartSummarizeObservation(
 );
 ```
 
-### 10.5 智能特性
+### 10.6 智能特性
 
-#### 10.5.1 信息增益计算
+#### 10.6.1 信息增益计算
 
 系统实时计算信息增益，用于智能终止决策：
 
@@ -903,7 +1053,7 @@ _calculateInformationGain(newObservation, history, config) {
 }
 ```
 
-#### 10.5.2 智能摘要系统
+#### 10.6.2 智能摘要系统
 
 针对不同工具采用不同的摘要策略：
 
@@ -916,9 +1066,9 @@ async _smartSummarizeObservation(mainTopic, observation, researchMode, toolName)
 }
 ```
 
-### 10.6 多模式研究支持
+### 10.7 多模式研究支持
 
-#### 10.6.1 研究模式
+#### 10.7.1 研究模式
 
 系统支持六种研究模式，每种有特定的配置和要求：
 
@@ -929,7 +1079,7 @@ async _smartSummarizeObservation(mainTopic, observation, researchMode, toolName)
 5. **标准报告模式 (standard)**: 清晰的结构，易于理解的报告
 6. **数据挖掘模式 (data_mining)**: 结构化数据收集，表格化呈现
 
-#### 10.6.2 数据挖掘引擎
+#### 10.7.2 数据挖掘引擎
 
 专门的数据挖掘模式处理：
 
@@ -945,9 +1095,9 @@ checkDataMiningCompletion(intermediateSteps, allSources, iterations) {
 buildDataMiningPrompt(topic, intermediateSteps, researchPlan, sources, instruction, template, promptFragment, dataBus)
 ```
 
-### 10.7 错误处理和恢复
+### 10.8 错误处理和恢复
 
-#### 10.7.1 解析错误重试
+#### 10.8.1 解析错误重试
 
 智能处理LLM输出解析错误：
 
@@ -965,7 +1115,7 @@ if (this._isParserError(error)) {
 }
 ```
 
-#### 10.7.2 重复URL检测
+#### 10.8.2 重复URL检测
 
 防止重复访问相同或相似的URL：
 
@@ -977,7 +1127,7 @@ if (error.message.includes('[DUPLICATE_URL_ERROR]')) {
 }
 ```
 
-#### 10.7.3 速率限制处理
+#### 10.8.3 速率限制处理
 
 智能处理API速率限制：
 
@@ -990,9 +1140,9 @@ if (error.message.includes('429') || error.message.includes('rate limit')) {
 }
 ```
 
-### 10.8 性能优化
+### 10.9 性能优化
 
-#### 10.8.1 Token使用追踪
+#### 10.9.1 Token使用追踪
 
 实时追踪和优化Token消耗：
 
@@ -1004,7 +1154,7 @@ _updateTokenUsage(usage) {
 }
 ```
 
-#### 10.8.2 内存管理
+#### 10.9.2 内存管理
 
 通过中间件进行智能内存管理：
 
@@ -1016,7 +1166,7 @@ _cleanupDataBus() {
 }
 ```
 
-#### 10.8.3 延迟优化
+#### 10.9.3 延迟优化
 
 根据研究模式添加智能延迟：
 
@@ -1027,7 +1177,7 @@ if (researchMode && researchMode !== 'standard') {
 }
 ```
 
-### 10.9 向后兼容性
+### 10.10 向后兼容性
 
 系统提供完整的向后兼容代理方法：
 
@@ -1044,7 +1194,7 @@ async _generateFinalReport(...) {
 }
 ```
 
-### 10.10 使用指南
+### 10.11 使用指南
 
 用户可以通过关键词触发不同的研究模式：
 
@@ -1068,22 +1218,22 @@ const keywords = {
 // "股票价格数据分析 数据挖掘"
 ```
 
-### 10.11 架构优势
+### 10.12 架构优势
 
-#### 10.11.1 模块化优势
+#### 10.12.1 模块化优势
 
 - **职责分离**: 每个中间件专注于单一职责
 - **可测试性**: 独立的模块便于单元测试
 - **可维护性**: 修改一个模块不影响其他模块
 - **可扩展性**: 容易添加新的中间件或服务
 
-#### 10.11.2 性能优势
+#### 10.12.2 性能优势
 
 - **状态统一管理**: 避免状态不一致和内存泄漏
 - **智能资源管理**: 按需加载和清理资源
 - **并行处理潜力**: 中间件架构支持未来的并行处理
 
-#### 10.11.3 开发体验
+#### 10.12.3 开发体验
 
 - **清晰的事件流**: 通过CallbackManager提供结构化事件
 - **完善的日志**: 详细的执行日志便于调试
