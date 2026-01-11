@@ -196,7 +196,7 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
             const startTime = Date.now();
             const response = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: specialistPrompt }],
-                model: 'models/gemini-2.5-flash', 
+                model: 'gemini-2.5-flash-preview-09-2025', 
                 temperature: 0.1
             });
 
