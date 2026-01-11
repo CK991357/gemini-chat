@@ -2744,7 +2744,7 @@ ${plan.research_plan.map(item =>
         if (!history || history.length === 0) return false;
         
         // 🔥 优化1：只看最近4步，避免历史噪声干扰
-        const recentSteps = history.slice(-8);
+        const recentSteps = history.slice(-12);
         const historyText = recentSteps.map(h => 
             `${h.action?.thought || ''} ${h.observation || ''}`
         ).join(' ').toLowerCase();
