@@ -17,7 +17,7 @@ export class DeepResearchAgent {
         this.chatApiHandler = chatApiHandler;
         this.tools = tools;
         this.callbackManager = callbackManager;
-        this.maxIterations = config.maxIterations || 8;
+        this.maxIterations = config.maxIterations || 12;
         
         // ============================================================
         // 🔥 核心修改：使用 StateManager 统一管理所有共享状态
