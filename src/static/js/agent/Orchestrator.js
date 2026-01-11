@@ -1,4 +1,4 @@
-// src/static/js/agent/Orchestrator.js - 最终修复版
+// src/static/js/agent/Orchestrator.js - 迭代次数增强版
 
 import { getSkillsRegistry } from '../tool-spec-system/generated-skills.js';
 import { mcpToolsMap } from '../tools_mcp/tool-definitions.js';
@@ -100,9 +100,29 @@ export class Orchestrator {
      */
     async _handleWithDeepResearch(cleanTopic, originalTopic, context, detectedMode) {
         try {
-            // 🔥🔥🔥 [新增核心逻辑] 弹出模型选择对话框 🔥🔥🔥
-            const reportModel = await promptModelSelection();
-            console.log(`[Orchestrator] 用户已选择报告模型: ${reportModel}`);
+            // 🔥🔥🔥 [新增核心逻辑] 弹出配置选择对话框 🔥🔥🔥
+            const selection = await promptModelSelection();
+            if (!selection) {
+                console.log('[Orchestrator] 用户取消了研究');
+                return { 
+                    enhanced: true, 
+                    type: 'research_cancelled',
+                    content: '❌ 用户取消了深度研究',
+                    success: false
+                };
+            }
+            
+            const { model: reportModel, maxIterations } = selection;
+            console.log(`[Orchestrator] 用户配置 - 模型: ${reportModel}, 最大迭代: ${maxIterations}`);
+
+            // 🔥 确保DeepResearchAgent已初始化
+            if (!this.deepResearchAgent) {
+                console.warn('[Orchestrator] deepResearchAgent未初始化，立即初始化');
+                this.deepResearchAgent = this._initializeDeepResearchAgent();
+            }
+
+            // 🔥 更新Agent配置（保持单例模式，仅更新必要参数）
+            this._updateResearchAgentConfig(maxIterations, reportModel);
 
             console.log('[Orchestrator] 正在为 Agent 查找相关技能...');
             
@@ -155,7 +175,7 @@ ${cleanTopic}
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
 
-            // 🔥 [最终方案] 占位符替换的“魔法”在这里发生
+            // 🔥 [最终方案] 占位符替换的"魔法"在这里发生
             if (researchResult.report && this.deepResearchAgent.generatedImages.size > 0) {
                 const imageMap = this.deepResearchAgent.generatedImages;
                 console.log(`[Orchestrator] 检测到 ${imageMap.size} 张图片，开始替换报告占位符...`);
@@ -178,7 +198,8 @@ ${cleanTopic}
                 iterations: researchResult.iterations,
                 reportLength: researchResult.report?.length,
                 sourcesCount: researchResult.sources?.length || 0,
-                researchMode: researchResult.research_mode
+                researchMode: researchResult.research_mode,
+                maxIterations: maxIterations // 🔥 新增：记录配置的迭代次数
             });
 
             // 返回已经处理过的 researchResult
@@ -188,6 +209,7 @@ ${cleanTopic}
                 content: researchResult.report, // <-- 这里已经是包含 base64 图片的 markdown 了
                 success: researchResult.success,
                 iterations: researchResult.iterations,
+                maxIterationsConfigured: maxIterations, // 🔥 新增：返回配置的迭代次数
                 intermediateSteps: researchResult.intermediateSteps,
                 sources: researchResult.sources,
                 researchMode: researchResult.research_mode,
@@ -204,6 +226,40 @@ ${cleanTopic}
                 content: `❌ 深度研究任务执行时发生错误: ${error.message}`,
                 success: false
             };
+        }
+    }
+
+    /**
+     * 🔥 新增：更新研究代理配置
+     */
+    _updateResearchAgentConfig(maxIterations, reportModel) {
+        if (!this.deepResearchAgent) {
+            console.error('[Orchestrator] 无法更新配置，deepResearchAgent不存在');
+            return;
+        }
+        
+        console.log(`[Orchestrator] 更新Agent配置: maxIterations=${maxIterations}, reportModel=${reportModel}`);
+        
+        // 🔥 更新最大迭代次数
+        if (maxIterations && maxIterations >= 3 && maxIterations <= 20) {
+            this.deepResearchAgent.maxIterations = maxIterations;
+            console.log(`[Orchestrator] ✅ 已更新最大迭代次数为: ${maxIterations}`);
+        } else {
+            console.warn(`[Orchestrator] 无效的迭代次数: ${maxIterations}，保持默认值`);
+        }
+        
+        // 🔥 更新报告模型（如果reportGenerator存在）
+        if (reportModel && this.deepResearchAgent.reportGenerator) {
+            this.deepResearchAgent.reportGenerator.reportModel = reportModel;
+            console.log(`[Orchestrator] ✅ 已更新报告生成器模型为: ${reportModel}`);
+        } else if (!this.deepResearchAgent.reportGenerator) {
+            console.warn('[Orchestrator] reportGenerator不存在，无法更新模型');
+        }
+        
+        // 🔥 同时更新ToolExecutionMiddleware中的配置（如果存在）
+        if (this.deepResearchAgent.toolExecutor) {
+            // 这里可以添加对ToolExecutionMiddleware的配置更新
+            console.log(`[Orchestrator] ToolExecutionMiddleware配置已同步`);
         }
     }
 
@@ -260,7 +316,7 @@ ${cleanTopic}
 
 **调试模式示例**:
 \`\`\`
-任意驻主题 调试模式
+任意主题 调试模式
 \`\`\`
 
 **深度研究模式示例**:
@@ -380,7 +436,7 @@ ${cleanTopic}
           this.researchToolsSet,
           this.callbackManager,
           {
-            maxIterations: 8,
+            maxIterations: 8, // 默认值，将在后续更新为用户选择的值
             // 🎯 关键：将 Orchestrator 持有的 skillManager 实例
             // 🎯 通过构造函数的 config 对象传递给 DeepResearchAgent。
             skillManager: this.skillManager

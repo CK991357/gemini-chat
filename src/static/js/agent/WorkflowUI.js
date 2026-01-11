@@ -24,8 +24,8 @@ export class ModelSelectionDialog {
         this.dialog.innerHTML = `
             <div class="model-selection-dialog">
                 <div class="dialog-header">
-                    <h3>🎯 选择报告生成模型</h3>
-                    <p>请选择用于生成研究提纲和最终报告的模型</p>
+                    <h3>🎯 深度研究配置</h3>
+                    <p>请选择报告模型并设置研究参数</p>
                 </div>
                 
                 <div class="model-options">
@@ -59,6 +59,46 @@ export class ModelSelectionDialog {
                                 <li>💡 平衡速度与质量</li>
                             </ul>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 🆕 新增：迭代次数设置 -->
+                <div class="iteration-settings">
+                    <div class="setting-header">
+                        <h4>⚙️ 研究参数设置</h4>
+                    </div>
+                    <div class="setting-row">
+                        <label for="iteration-input">
+                            <span class="setting-label">最大迭代次数：</span>
+                            <span class="setting-description">控制研究的深入程度 (范围: 3-20)</span>
+                        </label>
+                        <div class="iteration-control">
+                            <input 
+                                type="number" 
+                                id="iteration-input"
+                                min="3" 
+                                max="20" 
+                                value="8"
+                                class="iteration-input"
+                            >
+                            <div class="iteration-hints">
+                                <div class="hint-item">
+                                    <span class="hint-icon">🔍</span>
+                                    <span class="hint-text">快速探索: 3-5次</span>
+                                </div>
+                                <div class="hint-item">
+                                    <span class="hint-icon">🎯</span>
+                                    <span class="hint-text">标准研究: 8次 (默认)</span>
+                                </div>
+                                <div class="hint-item">
+                                    <span class="hint-icon">🧠</span>
+                                    <span class="hint-text">深度研究: 12-20次</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="iteration-note">
+                        💡 迭代次数越多，研究越深入，但耗时也更长
                     </div>
                 </div>
 
@@ -280,6 +320,96 @@ export class ModelSelectionDialog {
                 color: #666;
                 font-size: 0.9em;
             }
+            
+            /* 🆕 新增：迭代次数设置样式 */
+            .iteration-settings {
+                margin: 20px 0;
+                padding: 16px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border: 1px solid #e9ecef;
+            }
+            
+            .setting-header {
+                margin-bottom: 12px;
+            }
+            
+            .setting-header h4 {
+                margin: 0;
+                color: #343a40;
+                font-size: 1.1em;
+            }
+            
+            .setting-row {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            
+            .setting-label {
+                font-weight: 600;
+                color: #495057;
+            }
+            
+            .setting-description {
+                font-size: 0.85em;
+                color: #6c757d;
+                margin-left: 8px;
+            }
+            
+            .iteration-control {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+            }
+            
+            .iteration-input {
+                width: 80px;
+                padding: 8px 12px;
+                border: 2px solid #ced4da;
+                border-radius: 6px;
+                font-size: 1em;
+                text-align: center;
+                transition: border-color 0.2s;
+            }
+            
+            .iteration-input:focus {
+                outline: none;
+                border-color: #1976d2;
+            }
+            
+            .iteration-hints {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            
+            .hint-item {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 0.85em;
+                color: #6c757d;
+            }
+            
+            .hint-icon {
+                font-size: 0.9em;
+            }
+            
+            .hint-text {
+                flex: 1;
+            }
+            
+            .iteration-note {
+                margin-top: 12px;
+                padding: 8px 12px;
+                background: #fff3cd;
+                border: 1px solid #ffeaa7;
+                border-radius: 4px;
+                color: #856404;
+                font-size: 0.9em;
+            }
         `;
 
         const styleSheet = document.createElement('style');
@@ -296,20 +426,42 @@ export class ModelSelectionDialog {
     }
 
     close(selectedModel) {
+        if (!this.dialog) return;
+        
+        let selectedIterations = 8; // 默认值
+        
+        if (selectedModel) {
+            // 获取用户设置的迭代次数
+            const iterationInput = this.dialog.querySelector('#iteration-input');
+            if (iterationInput) {
+                const value = parseInt(iterationInput.value);
+                // 验证输入范围
+                if (!isNaN(value) && value >= 3 && value <= 20) {
+                    selectedIterations = value;
+                }
+            }
+        }
+        
         if (this.dialog && this.dialog.parentNode) {
             this.dialog.parentNode.removeChild(this.dialog);
         }
+        
         if (this.resolvePromise) {
-            this.resolvePromise(selectedModel);
+            // 返回包含模型和迭代次数的对象
+            this.resolvePromise(selectedModel ? {
+                model: selectedModel,
+                maxIterations: selectedIterations
+            } : null);
         }
     }
 }
 
 /**
  * 辅助函数：显示模型选择对话框并返回用户的选择。
- * @returns {Promise<string|null>} 用户选择的模型名称，如果取消则返回 null。
+ * @returns {Promise<Object|null>} 用户选择的模型和迭代次数对象，如果取消则返回 null。
  */
 export async function promptModelSelection() {
     const dialog = new ModelSelectionDialog();
-    return dialog.show();
+    const result = await dialog.show();
+    return result; // 返回 {model, maxIterations} 或 null
 }

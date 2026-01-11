@@ -17,7 +17,9 @@ export class DeepResearchAgent {
         this.chatApiHandler = chatApiHandler;
         this.tools = tools;
         this.callbackManager = callbackManager;
-        this.maxIterations = config.maxIterations || 12;
+        this.maxIterations = config.maxIterations || 8;
+
+        console.log(`[DeepResearchAgent] 最大迭代次数设置为: ${this.maxIterations}`);
         
         // ============================================================
         // 🔥 核心修改：使用 StateManager 统一管理所有共享状态
