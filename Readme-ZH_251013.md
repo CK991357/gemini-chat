@@ -84,18 +84,23 @@
         -   `src/static/js/main.js`: 主要的客户端应用程序逻辑。
         -   **代理模块 (`src/static/js/agent/`)**: 包含集成 AI 代理和代理其工具调用的逻辑。
             -   **深度研究代理 (`src/static/js/agent/deepresearch/`)**: **新增模块** - 专注于深度研究任务的代理系统。
-                -   [`DeepResearchAgent.js`](src/static/js/agent/deepresearch/DeepResearchAgent.js): **新增模块** - 深度研究代理的核心执行器，负责管理整个研究过程，包括规划、执行和生成报告。
-                -   [`AgentLogic.js`](src/static/js/agent/deepresearch/AgentLogic.js): **新增模块** - 深度研究代理的思考核心，负责生成研究计划和每一步的决策。
-                -   [`OutputParser.js`](src/static/js/agent/deepresearch/OutputParser.js): **新增模块** - 解析 LLM 响应，决定下一步行动（ReAct 格式），支持最终答案和工具调用解析。
-                -   [`ReportTemplates.js`](src/static/js/agent/deepresearch/ReportTemplates.js): **新增模块** - 提供不同研究模式的报告模板，包括深度研究、学术论文、商业分析、技术文档和标准报告。
-            -   [`CallbackManager.js`](src/static/js/agent/CallbackManager.js): **新增模块** - 增强的回调管理器，支持中间件和 Agent 事件系统，提供结构化事件流管理。
-            -   [`Orchestrator.js`](src/static/js/agent/Orchestrator.js): **新增模块** - 智能代理协调器，负责分析用户请求并决定使用标准模式还是深度研究模式。
-            -   [`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js): **新增模块** - 增强技能管理器，基于工具执行历史提供智能的技能匹配和优化。
-            -   [`AgentThinkingDisplay.js`](src/static/js/agent/AgentThinkingDisplay.js): **新增模块** - 代理思考过程显示组件，实时展示深度研究代理的思考过程、研究进度和工具调用状态。
-            -   **工具模块 (`src/static/js/agent/tools/`)**: **新增模块** - Agent 工具系统。
+                -   [`DeepResearchAgent.js`](src/static/js/agent/deepresearch/DeepResearchAgent.js): **核心更新** - 深度研究代理的核心执行器，已重构为协调器角色，集成了多个中间件和服务模块。
+                -   **中间件系统**:
+                    -   `middleware/ToolExecutionMiddleware.js`: 工具执行中间件，处理所有工具调用逻辑
+                    -   `middleware/ReportGeneratorMiddleware.js`: 报告生成中间件，处理报告生成和格式化
+                -   **服务模块**:
+                    -   `services/StateManager.js`: **新增模块** - 统一状态管理器，管理所有共享状态和数据总线
+                -   [`AgentLogic.js`](src/static/js/agent/deepresearch/AgentLogic.js): 深度研究代理的思考核心，负责生成研究计划和每一步的决策。
+                -   [`OutputParser.js`](src/static/js/agent/deepresearch/OutputParser.js): 解析 LLM 响应，决定下一步行动（ReAct 格式），支持最终答案和工具调用解析。
+                -   [`ReportTemplates.js`](src/static/js/agent/deepresearch/ReportTemplates.js): 提供不同研究模式的报告模板，包括深度研究、学术论文、商业分析、技术文档、标准报告和数据挖掘模式。
+                -   [`DataMiningEngine.js`](src/static/js/agent/deepresearch/DataMiningEngine.js): **新增模块** - 数据挖掘引擎，专门处理数据挖掘模式的研究任务。
+            -   [`CallbackManager.js`](src/static/js/agent/CallbackManager.js): 增强的回调管理器，支持中间件和 Agent 事件系统，提供结构化事件流管理。
+            -   [`Orchestrator.js`](src/static/js/agent/Orchestrator.js): 智能代理协调器，负责分析用户请求并决定使用标准模式还是深度研究模式。
+            -   [`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js): 增强技能管理器，基于工具执行历史提供智能的技能匹配和优化。
+            -   [`AgentThinkingDisplay.js`](src/static/js/agent/AgentThinkingDisplay.js): 代理思考过程显示组件，实时展示深度研究代理的思考过程、研究进度和工具调用状态。
+            -   **工具模块 (`src/static/js/agent/tools/`)**: Agent 工具系统。
                 -   [`BaseTool.js`](src/static/js/agent/tools/BaseTool.js): 所有工具的抽象基类，确保接口一致性
                 -   [`ToolImplementations.js`](src/static/js/agent/tools/ToolImplementations.js): 通用代理工具实现，处理所有通过 MCP 代理的工具，支持标准模式和深度研究模式。
-            -   [`qwen-agent-adapter.js`](src/static/js/agent/qwen-agent-adapter.js): 充当由 Qwen 模型发起的多云平台 (MCP) 工具调用的客户端适配器。它从 `chat-api-handler.js` 接收工具调用请求（包含 `tool_name` 和 `parameters`），并将它们代理到后端的 `/api/mcp-proxy` 端点。这对于在应用程序内启用灵活的 AI 代理功能至关重要。
         -   `src/static/js/attachments/`: 处理文件附件功能，如 `file-attachment.js`。
             -   [`file-attachment.js`](src/static/js/attachments/file-attachment.js): 定义 `AttachmentManager` 类，该类管理文件附件的所有逻辑（选择、验证、Base64 转换和 UI 预览显示），适用于单文件（"chat" 模式）和多文件（"vision" 模式）场景。**增强**: 现在与 `ImageCompressor` 集成，自动压缩所有模式下大于 1MB 的图像，提供压缩反馈并保持文件类型一致性。具有 `toggleCompression()` 方法用于运行时控制。
         -   **聊天模块 (`src/static/js/chat/`)**: 包含管理聊天 UI、API 交互和处理 AI 响应（包括工具调用）的核心逻辑。
@@ -434,7 +439,7 @@ export function clearVisionHistory() {
 
 #### 7.2.2 AI 分析功能
 
--   **多模型分析**: 支持使用不同 AI 模型进行局面分析
+-   **多模型分析**: 支持使用不同的 AI 模型进行局面分析
 -   **走法推荐**: 智能走法提取和验证
 -   **用户选择**: 提供多个候选走法供用户选择
 -   **执行验证**: 走法执行前的完整合法性检查
@@ -652,219 +657,337 @@ skills/python-sandbox/
 
 ## 10. 深度研究代理系统 (Deep Research Agent System)
 
-本次架构升级引入了一个专注于深度研究任务的代理系统，能够自动分析用户请求，并根据关键词触发不同的研究模式，生成高质量的研究报告。
+### 10.1 系统概述与架构重构
 
-### 10.1 系统概述
+深度研究代理系统已经过重大重构，从单体架构演进为**模块化中间件架构**。新的架构将核心功能拆分为独立的中间件和服务模块，由 `DeepResearchAgent` 作为协调器进行统一管理。
 
-深度研究代理系统是一个模块化的、事件驱动的架构，旨在：
+#### 10.1.1 重构后的核心组件
 
-- **多模式研究**: 支持深度研究、学术论文、商业分析、技术文档和标准报告五种研究模式
-- **关键词触发**: 通过用户消息中的关键词自动识别和切换研究模式
-- **智能规划**: 自动生成详细的研究计划，包括多个研究步骤和搜索关键词
-- **自适应执行**: 根据研究进展动态调整研究策略和工具使用
-- **结构化报告**: 根据不同研究模式生成符合专业标准的报告
+1. **DeepResearchAgent (协调器)**: 
+   - 负责整体研究流程的协调和控制
+   - 管理迭代循环和终止条件
+   - 处理错误恢复和重试逻辑
+   - 提供向后兼容的代理方法
 
-### 10.2 核心组件架构
+2. **StateManager (状态服务)**:
+   - **统一状态管理**: 集中管理所有共享状态（数据总线、访问URL、生成图像等）
+   - **数据总线系统**: 提供智能数据存储和检索，支持结构化数据处理
+   - **运行状态跟踪**: 管理研究运行的元数据和性能指标
+   - **状态持久化和清理**: 自动清理过期数据，防止内存泄漏
 
-#### 10.2.1 DeepResearchAgent - 深度研究执行器
+3. **ToolExecutionMiddleware (工具执行中间件)**:
+   - **统一工具调用接口**: 处理所有工具调用的执行和错误处理
+   - **知识集成**: 与联邦知识系统集成，提供工具使用指南
+   - **智能摘要**: 对工具输出进行智能摘要，优化信息密度
+   - **状态同步**: 实时同步工具执行状态到StateManager
 
-[`DeepResearchAgent.js`](src/static/js/agent/deepresearch/DeepResearchAgent.js) 是深度研究代理的核心执行器：
+4. **ReportGeneratorMiddleware (报告生成中间件)**:
+   - **多模式报告生成**: 支持深度研究、学术论文、商业分析、技术文档、标准报告和数据挖掘模式
+   - **模板系统集成**: 动态加载报告模板，提供专业化的报告结构
+   - **数据后处理**: 对AI生成的报告进行清理和格式化
+   - **质量评估**: 生成时效性质量评估报告
 
-- **研究流程管理**: 管理整个研究过程，包括规划、执行和报告生成
-- **迭代控制**: 智能控制研究迭代次数，避免无限循环
-- **工具调用协调**: 协调多个工具（如tavily_search、crawl4ai、python_sandbox）进行信息收集
-- **进度追踪**: 实时追踪研究进度和收集的信息
-- **Token 追踪**: 实时追踪 Token 使用情况，优化成本
+5. **DataMiningEngine (数据挖掘引擎)**:
+   - **专门的数据挖掘模式**: 处理需要结构化数据收集和呈现的研究任务
+   - **数据质量评估**: 自动评估收集数据的完整性和质量
+   - **结构化报告生成**: 生成包含数据表格的标准化报告
+   - **完成条件检查**: 智能判断数据挖掘任务的完成度
 
-```javascript
-// 核心研究流程
-async conductResearch(researchRequest) {
-    // 阶段1：智能规划
-    // 阶段2：自适应执行  
-    // 阶段3：报告生成
-}
-```
+#### 10.1.2 状态管理架构
 
-#### 10.2.2 AgentLogic - 研究逻辑核心
-
-[`AgentLogic.js`](src/static/js/agent/deepresearch/AgentLogic.js) 负责深度研究代理的思考规划：
-
-- **研究计划生成**: 根据主题和研究模式生成详细的研究计划
-- **步骤决策**: 在每一步决定下一步行动（继续研究或生成最终答案）
-- **多模式支持**: 为不同研究模式提供定制化的提示词和规划逻辑
-- **关键词检测**: 自动检测用户消息中的研究模式关键词
+新的 `StateManager` 服务提供统一的状态管理：
 
 ```javascript
-// 多模式研究计划生成
-_getPlannerPrompt(topic, researchMode) {
-    const modeConfigs = {
-        deep: { ... },      // 深度研究模式
-        academic: { ... },  // 学术论文模式
-        business: { ... },  // 商业分析模式
-        technical: { ... }, // 技术文档模式
-        standard: { ... }   // 标准报告模式
-    };
-}
-```
-
-#### 10.2.3 OutputParser - 输出解析器
-
-[`OutputParser.js`](src/static/js/agent/deepresearch/OutputParser.js) 解析 LLM 响应：
-
-- **ReAct 格式解析**: 识别最终答案和工具调用
-- **严格格式验证**: 确保 LLM 响应符合预期的行动格式
-- **错误恢复**: 解析失败时提供清晰的错误信息和降级方案
-- **宽松解析**: 在严格解析失败时尝试宽松解析
-
-#### 10.2.4 ReportTemplates - 报告模板系统
-
-[`ReportTemplates.js`](src/static/js/agent/deepresearch/ReportTemplates.js) 提供多模式报告模板：
-
-- **模板化报告结构**: 为每种研究模式提供专业的报告结构
-- **可配置输出**: 支持字数、风格、结构等配置
-- **质量要求**: 定义每种模式的质量标准和引用要求
-
-```javascript
-// 报告模板配置
-export const ReportTemplates = {
-    deep: {
-        name: "深度研究模式",
-        description: "全面的深度分析报告，适合复杂问题研究",
-        config: {
-            structure: [ ... ],
-            wordCount: "2500-3500字",
-            style: "专业、深度、辩证",
-            requirements: "所有关键数据必须验证并标注来源，包含反对观点"
-        }
-    },
-    // ... 其他模式
+// StateManager 核心状态
+this.dataBus = new Map();           // 数据总线：step_index -> {rawData, metadata}
+this.generatedImages = new Map();   // 生成图像：imageId -> imageData
+this.intermediateSteps = [];        // 研究步骤历史
+this.visitedURLs = new Map();       // 访问URL记录：url -> {count, lastVisited}
+this.metrics = {                    // 性能指标
+    toolUsage: {},                  // 工具使用统计
+    tokenUsage: {},                 // Token消耗统计
+    informationGain: [],            // 信息增益历史
+    planCompletion: 0               // 计划完成度
 };
 ```
 
-#### 10.2.5 Orchestrator - 智能协调器
+#### 10.1.3 数据总线系统
 
-[`Orchestrator.js`](src/static/js/agent/Orchestrator.js) 是整个系统的协调器：
+数据总线系统提供智能的数据管理：
 
-- **请求分析**: 分析用户请求，检测研究模式关键词
-- **模式路由**: 决定使用标准模式还是深度研究模式
-- **资源管理**: 按需初始化深度研究代理组件
-- **事件转发**: 将深度研究代理的事件转发到 UI 系统
-- **使用指南**: 提供用户指南，帮助用户了解不同研究模式的使用方法
+- **结构化数据存储**: 自动检测和优化存储结构化数据（JSON、表格等）
+- **智能摘要生成**: 对大型数据集自动生成摘要
+- **来源信息关联**: 将数据与来源URL和信息关联
+- **内存优化**: 自动清理旧数据，保持内存使用可控
+
+### 10.2 核心研究流程
+
+#### 10.2.1 研究执行流程
 
 ```javascript
-// 关键词检测和路由
-_detectAndExtractTopic(userMessage) {
-    const keywords = {
-        '学术论文': 'academic', 
-        '商业分析': 'business',
-        '技术文档': 'technical',
-        '深度研究': 'deep',
-        '标准报告': 'standard'
-    };
-    // 检测逻辑...
+async conductResearch(researchRequest) {
+    // 阶段1：研究初始化
+    // - 创建运行ID，初始化状态管理器
+    // - 设置中间件运行上下文
+    // - 重置知识注入状态
+    
+    // 阶段2：智能规划
+    // - 使用AgentLogic生成研究计划
+    // - 传递历史上下文和用户原始指令
+    // - 计算研究模式和完成度评估
+    
+    // 阶段3：自适应执行
+    // - 迭代执行研究计划（最多maxIterations次）
+    // - 在每一步：思考->解析->执行工具->存储结果
+    // - 智能终止条件：信息增益阈值、计划完成度、数据挖掘完成条件
+    
+    // 阶段4：报告生成
+    // - 使用ReportGeneratorMiddleware生成最终报告
+    // - 数据挖掘模式使用DataMiningEngine
+    // - 生成时效性质量评估
+    // - 发送完成事件并返回结果
 }
 ```
 
-#### 10.2.6 EnhancedSkillManager - 增强技能管理器
+#### 10.2.2 工具执行流程
 
-[`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js) 在基础技能管理系统之上提供智能优化：
+```javascript
+// 工具执行由ToolExecutionMiddleware处理
+const { rawObservation, toolSources, toolSuccess } = 
+    await this.toolExecutor.executeToolWithKnowledge(
+        tool_name,
+        parameters,
+        thought,
+        this.intermediateSteps,
+        detectedMode,
+        recordToolCall,
+        iterations
+    );
 
-- **执行历史学习**: 基于工具执行成功率动态调整技能匹配权重
-- **研究模式优化**: 为深度研究模式优先选择研究相关工具
-- **性能分析**: 提供工具使用统计和成功率分析
+// 智能摘要处理
+const summarizedObservation = await this._smartSummarizeObservation(
+    internalTopic, 
+    rawObservation, 
+    detectedMode, 
+    tool_name
+);
+```
 
-#### 10.2.7 CallbackManager - 回调管理器
+### 10.3 智能特性
 
-[`CallbackManager.js`](src/static/js/agent/CallbackManager.js) 是整个代理系统的事件中枢：
+#### 10.3.1 信息增益计算
 
-- **结构化事件流**: 提供标准化的研究事件流
-- **中间件系统**: 支持性能监控、智能重试等中间件
-- **UI 集成**: 将研究进度和状态实时转发到 UI 组件
-- **内存管理**: 自动清理事件历史，防止内存泄漏
+系统实时计算信息增益，用于智能终止决策：
 
-#### 10.2.8 AgentThinkingDisplay - 思考过程显示
+```javascript
+_calculateInformationGain(newObservation, history, config) {
+    // 多维度评估：词汇新颖性、结构多样性、长度比率、技术实体
+    // 历史衰减机制：防止无限迭代
+    // 自适应阈值：根据研究模式调整
+}
+```
 
-[`AgentThinkingDisplay.js`](src/static/js/agent/AgentThinkingDisplay.js) 实时展示深度研究代理的思考过程：
+#### 10.3.2 智能摘要系统
 
-- **研究进度可视化**: 显示当前迭代、完成度、收集的来源数量等
-- **工具调用记录**: 记录和展示所有工具调用的状态和结果
-- **执行日志**: 提供详细的研究执行日志
-- **实时统计**: 显示搜索次数、来源数量、Token 消耗等统计信息
+针对不同工具采用不同的摘要策略：
 
-#### 10.2.9 工具系统
+```javascript
+async _smartSummarizeObservation(mainTopic, observation, researchMode, toolName) {
+    // 搜索工具：跳过摘要，直接返回原始结果
+    // 爬虫工具：智能摘要，保留结构化数据
+    // 代码工具：提取关键输出和错误信息
+    // 优雅降级：摘要失败时使用智能截断
+}
+```
 
-**BaseTool** ([`BaseTool.js`](src/static/js/agent/tools/BaseTool.js)):
-- 所有工具的抽象基类，确保接口一致性
-- 统一的工具声明和调用接口
+#### 10.3.3 时效性质量评估
 
-**ToolImplementations** ([`ToolImplementations.js`](src/static/js/agent/tools/ToolImplementations.js)):
-- 通用代理工具实现，处理所有通过 MCP 代理的工具
-- 支持标准模式和深度研究模式的参数适配
-- 智能超时策略和错误处理
+自动评估研究的时效性质量：
 
-### 10.3 工作流程
+```javascript
+_generateTemporalQualityReport(researchPlan, intermediateSteps, topic, researchMode) {
+    // 模型自主评估 vs 系统程序化评估
+    // 计划质量分析：敏感度分布、时序查询覆盖率
+    // 执行质量分析：时序关键词使用、版本验证尝试
+    // 综合评分和改进建议
+}
+```
 
-#### 10.3.1 深度研究流程
+### 10.4 多模式研究支持
 
-1. **请求接收**: Orchestrator 接收用户请求并检测研究模式关键词
-2. **模式识别**: 根据关键词识别研究模式（深度研究、学术论文等）
-3. **研究规划**: AgentLogic 生成详细的研究计划，包括多个研究步骤
-4. **迭代执行**: DeepResearchAgent 执行研究计划，在每一步：
-   - 思考下一步行动（使用工具或生成报告）
-   - 执行工具调用（搜索、网页抓取等）
-   - 收集和整理信息
-5. **报告生成**: 根据收集的信息和研究模式生成结构化报告
-6. **结果返回**: 将最终报告返回给用户
+#### 10.4.1 研究模式
 
-#### 10.3.2 关键词触发流程
+系统支持六种研究模式，每种有特定的配置和要求：
 
-1. **用户输入**: 用户发送包含研究模式关键词的消息
-2. **关键词检测**: Orchestrator 检测消息中的关键词并确定研究模式
-3. **话题清理**: 从用户消息中移除关键词，得到纯净的研究主题
-4. **代理启动**: 启动深度研究代理并传递研究模式和研究主题
-5. **研究执行**: 深度研究代理按照指定模式执行研究任务
+1. **深度研究模式 (deep)**: 全面深入的分析，多角度辩证思考
+2. **学术论文模式 (academic)**: 严谨的学术结构，文献综述和引用
+3. **商业分析模式 (business)**: 市场洞察，商业影响和战略建议
+4. **技术文档模式 (technical)**: 技术架构，实现细节和性能评估
+5. **标准报告模式 (standard)**: 清晰的结构，易于理解的报告
+6. **数据挖掘模式 (data_mining)**: 结构化数据收集，表格化呈现
 
-#### 10.3.3 多模式研究流程
+#### 10.4.2 数据挖掘引擎
 
-1. **模式配置**: 每种研究模式有特定的配置（步骤数、深度要求、工具偏好）
-2. **定制化规划**: 根据研究模式生成定制化的研究计划
-3. **专用提示词**: 使用模式专用的提示词和思考框架
-4. **模板化报告**: 按照模式专用的模板生成最终报告
+专门的数据挖掘模式处理：
 
-### 10.4 集成优势
+```javascript
+// 数据挖掘完成条件检查
+checkDataMiningCompletion(intermediateSteps, allSources, iterations) {
+    // 检查是否收集到足够的数据表格
+    // 检查数据质量是否达到阈值
+    // 检查是否达到最大迭代次数
+}
 
-#### 10.4.1 与现有架构的深度集成
+// 数据挖掘报告生成
+buildDataMiningPrompt(topic, intermediateSteps, researchPlan, sources, instruction, template, promptFragment, dataBus)
+```
 
-- **统一工具调用**: 复用现有的 MCP 工具调用基础设施
-- **共享配置系统**: 使用统一的模型配置和 API 密钥管理
-- **兼容现有UI**: 与现有的聊天界面无缝集成，通过事件系统更新研究状态
-- **统一错误处理**: 复用现有的错误处理机制
+### 10.5 错误处理和恢复
 
-#### 10.4.2 性能优化特性
+#### 10.5.1 解析错误重试
 
-- **智能迭代控制**: 基于信息增益和计划完成度的提前终止
-- **自适应摘要**: 对过长内容进行智能摘要，节省 Token 消耗
-- **资源优化**: 按需加载研究组件，减少内存占用
-- **Token 追踪**: 实时追踪 Token 使用情况，优化成本
+智能处理LLM输出解析错误：
 
-#### 10.4.3 用户体验提升
+```javascript
+// L1智能重试机制
+if (this._isParserError(error)) {
+    if (this.parserRetryAttempt < 1) {
+        // 生成修正提示词，注入到下一次思考中
+        const correctionPrompt = this._generateCorrectionPrompt(
+            this.lastDecisionText,
+            this.lastParserError.message
+        );
+        // 重新尝试解析
+    }
+}
+```
 
-- **实时进度展示**: 通过 AgentThinkingDisplay 实时展示研究进度
-- **透明化过程**: 用户可以看到完整的研究过程和工具调用
-- **多模式选择**: 用户可以通过关键词选择不同的研究深度和风格
-- **高质量输出**: 生成结构完整、引用准确的专业报告
+#### 10.5.2 重复URL检测
 
-### 10.5 使用指南
+防止重复访问相同或相似的URL：
 
-用户可以通过在消息中添加关键词来触发不同的研究模式：
+```javascript
+// 重复URL错误修正
+if (error.message.includes('[DUPLICATE_URL_ERROR]')) {
+    // 强制更换为新URL
+    // 或转向研究计划中的下一个子问题
+}
+```
 
-- **深度研究**: "人工智能对未来教育行业的影响 深度研究"
-- **学术论文**: "机器学习在医疗诊断中的应用 学术论文"  
-- **商业分析**: "2025年电动汽车市场趋势 商业分析"
-- **技术文档**: "微服务架构最佳实践 技术文档"
-- **标准报告**: "摇滚红与黑的故事和主创 标准报告"
+#### 10.5.3 速率限制处理
 
-深度研究代理系统显著提升了应用程序处理复杂研究任务的能力，通过智能的研究规划、多模式支持和专业的报告生成，为用户提供了更加深入和结构化的信息获取体验。
+智能处理API速率限制：
+
+```javascript
+// 遭遇速率限制时
+if (error.message.includes('429') || error.message.includes('rate limit')) {
+    // 暂停当前操作，调整策略
+    // 强制增加"无增益"计数，加速跳出无效循环
+    consecutiveNoGain++;
+}
+```
+
+### 10.6 性能优化
+
+#### 10.6.1 Token使用追踪
+
+实时追踪和优化Token消耗：
+
+```javascript
+_updateTokenUsage(usage) {
+    this.metrics.tokenUsage.prompt_tokens += usage.prompt_tokens || 0;
+    this.metrics.tokenUsage.completion_tokens += usage.completion_tokens || 0;
+    this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
+}
+```
+
+#### 10.6.2 内存管理
+
+通过StateManager进行智能内存管理：
+
+```javascript
+// 数据总线自动清理
+_cleanupDataBus() {
+    // 保留最近N个步骤的数据
+    // 清理过期数据，释放内存
+}
+```
+
+#### 10.6.3 延迟优化
+
+根据研究模式添加智能延迟：
+
+```javascript
+// 非标准模式添加延迟，降低请求频率
+if (researchMode && researchMode !== 'standard') {
+    await new Promise(resolve => setTimeout(resolve, 500));
+}
+```
+
+### 10.7 向后兼容性
+
+系统提供完整的向后兼容代理方法：
+
+```javascript
+// 代理方法确保现有代码继续工作
+async _executeToolCall(toolName, parameters, detectedMode, recordToolCall) {
+    console.warn(`使用已弃用的方法，请更新为使用toolExecutor`);
+    return await this.toolExecutor.executeToolCall(...);
+}
+
+async _generateFinalReport(...) {
+    console.warn(`使用已弃用的方法，请更新为使用reportGenerator`);
+    return await this.reportGenerator.generateFinalReport(...);
+}
+```
+
+### 10.8 使用指南
+
+用户可以通过关键词触发不同的研究模式：
+
+```javascript
+// 关键词映射
+const keywords = {
+    '学术论文': 'academic', 
+    '商业分析': 'business',
+    '技术文档': 'technical',
+    '深度研究': 'deep',
+    '标准报告': 'standard',
+    '数据挖掘': 'data_mining'
+};
+
+// 使用示例
+// "人工智能伦理问题 深度研究"
+// "机器学习算法比较 学术论文"
+// "电动汽车市场分析 商业分析"
+// "微服务架构设计 技术文档"
+// "莎士比亚生平介绍 标准报告"
+// "股票价格数据分析 数据挖掘"
+```
+
+### 10.9 架构优势
+
+#### 10.9.1 模块化优势
+
+- **职责分离**: 每个中间件专注于单一职责
+- **可测试性**: 独立的模块便于单元测试
+- **可维护性**: 修改一个模块不影响其他模块
+- **可扩展性**: 容易添加新的中间件或服务
+
+#### 10.9.2 性能优势
+
+- **状态统一管理**: 避免状态不一致和内存泄漏
+- **智能资源管理**: 按需加载和清理资源
+- **并行处理潜力**: 中间件架构支持未来的并行处理
+
+#### 10.9.3 开发体验
+
+- **清晰的事件流**: 通过CallbackManager提供结构化事件
+- **完善的日志**: 详细的执行日志便于调试
+- **向后兼容**: 确保现有代码继续工作
+- **配置灵活**: 支持动态配置和运行时调整
+
+深度研究代理系统的重构显著提升了系统的可维护性、性能和扩展性，同时保持了与现有系统的完全兼容性，为用户提供更加稳定和高效的研究体验。
 
 ---
 
@@ -993,27 +1116,3 @@ let handlers = {}; // 保存 handlers 对象
 -   **调试友好**: 统一的日志系统和错误处理
 -   **配置灵活**: 支持模型和提示词的动态配置
 
----
-
-*文档更新完成：整合了深度研究代理系统的完整架构说明，包括新增的深度研究代理组件、多模式研究支持、关键词触发机制和实时进度监控系统。*
-```
-
-主要更新内容：
-
-1. **完全替换第10节**：将原来的"智能代理系统"替换为新的"深度研究代理系统"
-2. **更新代理模块文件列表**：在2.2节中添加了新的深度研究代理相关文件
-3. **新增组件描述**：
-   - DeepResearchAgent.js - 深度研究执行器
-   - AgentLogic.js - 研究逻辑核心  
-   - OutputParser.js - 输出解析器
-   - ReportTemplates.js - 报告模板系统
-   - AgentThinkingDisplay.js - 思考过程显示组件
-4. **移除旧组件**：移除了WorkflowEngine、WorkflowUI等旧的工作流相关组件
-5. **新增功能描述**：
-   - 多模式研究支持（深度研究、学术论文、商业分析、技术文档、标准报告）
-   - 关键词触发机制
-   - 实时进度监控
-   - Token使用追踪
-   - 使用指南功能
-
-这个更新后的文档准确反映了最新的深度研究代理系统架构，保持了与现有系统的兼容性，同时提供了完整的系统说明。
