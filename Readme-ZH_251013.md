@@ -1,6 +1,4 @@
-# CLAUDE.md - 深度研究代理中间件架构升级版（V2.0）
-
-该文件为 Claude Code (claude.ai/code) 在处理此仓库代码时提供指导。
+# CLAUDE.md - 深度研究代理中间件架构升级版（V2.1）
 
 ## 1. 项目概述
 
@@ -94,10 +92,10 @@
                 -   [`OutputParser.js`](src/static/js/agent/deepresearch/OutputParser.js): 解析 LLM 响应，决定下一步行动（ReAct 格式），支持最终答案和工具调用解析。
                 -   [`ReportTemplates.js`](src/static/js/agent/deepresearch/ReportTemplates.js): 提供不同研究模式的报告模板，包括深度研究、学术论文、商业分析、技术文档、标准报告和数据挖掘模式。
                 -   [`DataMiningEngine.js`](src/static/js/agent/deepresearch/DataMiningEngine.js): **新增模块** - 数据挖掘引擎，专门处理数据挖掘模式的研究任务。
+                -   [`AgentThinkingDisplay.js`](src/static/js/agent/AgentThinkingDisplay.js): **新增模块** - 代理思考过程显示组件，实时展示深度研究代理的思考过程、研究进度和工具调用状态。
             -   [`CallbackManager.js`](src/static/js/agent/CallbackManager.js): 增强的回调管理器，支持中间件和 Agent 事件系统，提供结构化事件流管理。
             -   [`Orchestrator.js`](src/static/js/agent/Orchestrator.js): 智能代理协调器，负责分析用户请求并决定使用标准模式还是深度研究模式。
             -   [`EnhancedSkillManager.js`](src/static/js/agent/EnhancedSkillManager.js): 增强技能管理器，基于工具执行历史提供智能的技能匹配和优化。
-            -   [`AgentThinkingDisplay.js`](src/static/js/agent/AgentThinkingDisplay.js): 代理思考过程显示组件，实时展示深度研究代理的思考过程、研究进度和工具调用状态。
             -   **工具模块 (`src/static/js/agent/tools/`)**: Agent 工具系统。
                 -   [`BaseTool.js`](src/static/js/agent/tools/BaseTool.js): 所有工具的抽象基类，确保接口一致性
                 -   [`ToolImplementations.js`](src/static/js/agent/tools/ToolImplementations.js): 通用代理工具实现，处理所有通过 MCP 代理的工具，支持标准模式和深度研究模式。
@@ -657,7 +655,7 @@ skills/python-sandbox/
     *   **修改工具声明或执行逻辑**: 调整相应工具类（例如 `src/static/js/tools/google-search.js` 或在 `src/static/js/tools_mcp/tool-definitions.js` 中定义的工具）中的 `getDeclaration()` 或 `execute()` 方法。
     *   **修改前端工具合并逻辑**: 如果需要调整 HTTP 连接下工具声明的合并策略，请修改 [`src/static/js/chat/chat-api-handler.js`](src/static/js/chat/chat-api-handler.js) 中的相关逻辑。
 
-## 10. 深度研究代理系统 (Deep Research Agent System) - 中间件架构升级版
+## 10. 深度研究代理系统 (Deep Research Agent System) - 中间件架构升级版（V2.1）
 
 ### 10.1 系统概述与架构重构
 
@@ -700,8 +698,66 @@ skills/python-sandbox/
    - **数据质量评估**: 自动评估收集数据的完整性和质量
    - **结构化报告生成**: 生成包含数据表格的标准化报告
    - **完成条件检查**: 智能判断数据挖掘任务的完成度
+   - **模板兼容性**: 完全兼容ReportTemplates.js中的数据挖掘模板
+   - **实时监控**: 支持AgentThinkingDisplay的实时数据展示
 
-#### 10.1.2 中间件架构优势
+6. **AgentThinkingDisplay (代理思考过程显示器)**:
+   - **实时监控面板**: 提供可视化界面展示深度研究代理的思考过程
+   - **研究状态可视化**: 显示研究统计、搜索记录和执行日志
+   - **工具调用跟踪**: 实时跟踪工具调用状态和成功率
+   - **事件系统集成**: 与CallbackManager深度集成，支持结构化事件流
+   - **折叠状态管理**: 智能的界面折叠状态管理，提升用户体验
+   - **性能指标展示**: 显示Token消耗、执行时间等关键性能指标
+
+#### 10.1.2 AgentThinkingDisplay 核心功能
+
+AgentThinkingDisplay 提供了以下关键功能：
+
+1. **研究监控面板**:
+   - 实时显示研究进度和状态
+   - 展示搜索记录和工具调用统计
+   - 提供执行日志查看功能
+
+2. **状态同步修复**:
+   - 修复工具调用状态同步问题
+   - 确保成功率统计的准确性
+   - 优化折叠状态管理，避免状态丢失
+
+3. **事件监听系统**:
+   - 监听深度研究代理的所有关键事件
+   - 实时更新界面状态
+   - 提供详细的研究完成总结
+
+4. **用户友好的界面**:
+   - 可折叠的界面设计，节省屏幕空间
+   - 响应式布局，支持移动端
+   - 直观的数据可视化展示
+
+#### 10.1.3 DataMiningEngine 核心功能
+
+DataMiningEngine 提供了以下关键功能：
+
+1. **数据挖掘模式支持**:
+   - 专门处理数据密集型研究任务
+   - 智能检测用户场景（科技产品对比、金融数据、商业市场分析等）
+   - 完全兼容ReportTemplates中的数据挖掘模板
+
+2. **结构化数据收集**:
+   - 智能表格数据提取和整理
+   - 数据质量评估和分级
+   - 来源标注和引用管理
+
+3. **完成条件智能判断**:
+   - 基于数据质量、表格数量和来源多样性的终止条件
+   - 自适应迭代控制
+   - 信息增益检测
+
+4. **纯数据报告生成**:
+   - 生成无描述性语言的纯数据报告
+   - 支持质量等级标注
+   - 保持数据原始性和完整性
+
+#### 10.1.4 中间件架构优势
 
 新的中间件架构提供了以下关键优势：
 
@@ -710,6 +766,8 @@ skills/python-sandbox/
 - **可扩展性**: 容易添加新的中间件或修改现有功能
 - **并行处理潜力**: 中间件架构支持未来的并行处理优化
 - **错误隔离**: 一个中间件的错误不会影响其他中间件的运行
+- **实时监控**: AgentThinkingDisplay提供全面的实时监控能力
+- **数据驱动**: DataMiningEngine增强了对数据密集型任务的支持
 
 ### 10.2 AgentLogic 智能升级
 
@@ -986,9 +1044,224 @@ _generateIndependentCitationMapping(reportContent, uniqueSources) {
 - **中文格式**: [来源1]、[来源2]
 - **混合格式**: [1，2]、[1,2，3]
 
-### 10.5 核心研究流程
+### 10.5 DataMiningEngine 详细功能
 
-#### 10.5.1 研究执行流程
+#### 10.5.1 智能场景检测系统
+
+DataMiningEngine提供智能的场景检测功能：
+
+```javascript
+// 🔥 完全与模板匹配的场景检测器
+this.scenarioDetector = {
+    scenarios: {
+        // 1. 科技产品对比 - 与模板完全一致
+        tech_comparison: {
+            triggers: ['对比', '比较', 'vs', '哪个好', '参数对比', '规格', '测评', '评测', '对比分析'],
+            keywords: ['手机', '电脑', '处理器', 'GPU', '显卡', '相机', '电池', '续航', '价格'],
+            priority: 10,
+            templateKey: 'tech_comparison' // 与模板中的key完全一致
+        },
+        // 2. 金融数据 - 与模板完全一致
+        financial: {
+            triggers: ['股票', '股价', '财报', '财务', '收益', '利润率', '估值', '市盈率', '市净率'],
+            keywords: ['营业收入', '净利润', '毛利率', '净资产收益率', '市盈率', '市净率'],
+            priority: 9,
+            templateKey: 'financial' // 与模板中的key完全一致
+        },
+        // 3. 商业市场分析 - 与模板完全一致
+        business_data: {
+            triggers: ['市场', '规模', '份额', '增长率', '竞争格局', '产业链', '行业分析', '投资分析'],
+            keywords: ['市场规模', '市场份额', '企业排名', '产业链', '上下游', '财务数据'],
+            priority: 8,
+            templateKey: 'business_data' // 与模板中的key完全一致
+        },
+        // 4. 学术研究 - 与模板完全一致
+        academic_data: {
+            triggers: ['论文', '研究', '实验', '方法', '引用', '学术', '期刊', '会议', '参考文献'],
+            keywords: ['实验数据', '研究方法', '引用次数', '作者', '发表时间', '期刊影响因子'],
+            priority: 7,
+            templateKey: 'academic_data' // 与模板中的key完全一致
+        },
+        // 5. 通用数据（默认） - 与模板完全一致
+        generic: {
+            triggers: [],
+            keywords: [],
+            priority: 0,
+            templateKey: 'generic' // 与模板中的key完全一致
+        }
+    },
+    detectionCache: new Map()
+};
+```
+
+#### 10.5.2 数据挖掘完成条件检查
+
+智能判断数据挖掘任务何时完成：
+
+```javascript
+checkDataMiningCompletion(intermediateSteps, allSources, iterations) {
+    // 检查是否达到最小表格要求
+    const totalTables = this.extractAllStructuredData(intermediateSteps, false).length;
+    const hasEnoughTables = totalTables >= this.config.minDataTables;
+    
+    // 检查是否达到最小来源要求
+    const hasEnoughSources = allSources.length >= this.config.minSources;
+    
+    // 检查数据质量（使用模板兼容的评级）
+    const dataQuality = this.assessDataQuality(intermediateSteps, allSources);
+    const hasGoodQuality = dataQuality.overall_score >= this.config.dataQualityThreshold;
+    
+    // 决策矩阵
+    const shouldTerminate = (
+        (hasEnoughTables && hasEnoughSources && hasGoodQuality) ||
+        (hasReachedMaxIterations && hasEnoughSources) ||
+        (!hasRecentGain && iterations >= 3)
+    );
+    
+    return shouldTerminate;
+}
+```
+
+#### 10.5.3 纯数据报告生成
+
+生成无描述性语言的纯数据报告：
+
+```javascript
+buildDataMiningPrompt(topic, intermediateSteps, plan, sources, userInstruction, template, promptFragment, dataBus = null) {
+    // 1. 智能场景检测（兼容模板版本）
+    const detectedScenario = this.detectUserScenarioCompatible(topic, userInstruction, intermediateSteps, template);
+    
+    // 2. 数据模式检测
+    const detectedPattern = this.detectDataPattern(intermediateSteps);
+    
+    // 3. 提取所有结构化数据
+    const structuredData = this.extractAllStructuredData(intermediateSteps, true, dataBus);
+    
+    // 4. 数据质量评估（使用模板兼容的评级）
+    const dataQuality = this.assessDataQuality(intermediateSteps, sources);
+    
+    // 5. 构建数据挖掘专用提示词
+    // ...
+}
+```
+
+### 10.6 AgentThinkingDisplay 详细功能
+
+#### 10.6.1 状态同步修复
+
+AgentThinkingDisplay 解决了关键的状态同步问题：
+
+```javascript
+// ✨✨✨ 核心修复1：每次渲染时即时计算成功调用次数 ✨✨✨
+renderSession() {
+    // 🎯 修复：正确计算工具调用统计数据
+    const queryCount = researchState.queryLog?.length || 0;
+    const sourcesCount = researchState.collectedSources?.length || 0;
+    const toolCallsCount = researchState.toolCalls?.length || 0;
+    
+    // ✨✨✨ 核心修复1：每次渲染时即时计算成功调用次数 ✨✨✨
+    const successfulTools = researchState.toolCalls?.filter(t => {
+        // 多种方式确保成功状态的正确识别
+        if (t.success === true) return true;
+        if (t.success === 'true') return true;
+        if (String(t.success).toLowerCase() === 'true') return true;
+        return false;
+    })?.length || 0;
+    
+    // ... 渲染界面
+}
+```
+
+#### 10.6.2 折叠状态管理
+
+智能的折叠状态管理系统：
+
+```javascript
+// 🎯 修复：折叠状态管理 - 只在会话开始时初始化
+startSession(userMessage, maxIterations = 6, researchData = {}) {
+    // 🎯 修复：只在会话开始时初始化折叠状态
+    // 如果已经有折叠状态，保持现有状态；否则初始化默认状态
+    if (Object.keys(this.sectionStates).length === 0) {
+        this.sectionStates = {
+            'user-query-content': false, // 研究主题 - 默认展开（新增）
+            'stats-content': false,      // 研究统计 - 默认展开
+            'query-log-content': false,  // 搜索记录 - 默认折叠
+            'execution-log-content': false // 执行日志 - 默认折叠
+        };
+    }
+    
+    // 🎯 修复：只在启动时自动折叠整个面板
+    this.container.classList.add('minimized');
+}
+```
+
+#### 10.6.3 事件监听系统
+
+完整的深度研究事件监听：
+
+```javascript
+setupEventListeners() {
+    const handlers = {
+        'research:start': (event) => {
+            // 开始研究会话
+        },
+        'research:plan_generated': (event) => {
+            // 研究计划生成
+        },
+        'research:progress': (event) => {
+            // 研究进度更新
+        },
+        'research:tool_start': (event) => {
+            // 工具开始执行
+        },
+        'research:tool_end': (event) => {
+            // 工具执行结束
+        },
+        'research:stats_updated': (event) => {
+            // 统计信息更新
+        },
+        'research:tool_called': (event) => {
+            // 工具调用记录
+        },
+        'research:end': (event) => {
+            // 研究结束
+        }
+    };
+}
+```
+
+#### 10.6.4 研究完成总结
+
+提供详细的研究完成总结：
+
+```javascript
+addDeepResearchSummary(finalResult = {}) {
+    const { researchState, startTime, endTime } = this.currentSession;
+    const totalTime = ((endTime - startTime) / 1000).toFixed(1);
+    
+    const queryCount = researchState.queryLog?.length || 0;
+    const sourcesCount = researchState.collectedSources?.length || 0;
+    const toolCallsCount = researchState.toolCalls?.length || 0;
+    const successfulTools = researchState.toolCalls?.filter(t => t.success === true)?.length || 0;
+    const tokenUsage = researchState.metrics?.tokenUsage || { total_tokens: 0 };
+    
+    const summary = `
+🔍 DeepResearch 执行完成！
+• 研究主题: ${this.currentSession.userMessage}
+• 搜索次数: ${queryCount}次
+• 收集来源: ${sourcesCount}个
+• 工具调用: ${toolCallsCount}次 (成功: ${successfulTools}次)
+• Token消耗: ${tokenUsage.total_tokens.toLocaleString()}
+• 总用时: ${totalTime}秒
+• 完成时间: ${new Date().toLocaleTimeString()}`;
+    
+    this.addExecutionLog(summary, 'summary');
+}
+```
+
+### 10.7 核心研究流程
+
+#### 10.7.1 研究执行流程
 
 ```javascript
 async conductResearch(researchRequest) {
@@ -996,6 +1269,7 @@ async conductResearch(researchRequest) {
     // - 创建运行ID，初始化状态管理器
     // - 设置中间件运行上下文
     // - 重置知识注入状态
+    // - 初始化AgentThinkingDisplay会话
     
     // 阶段2：智能规划
     // - 使用AgentLogic生成研究计划
@@ -1005,23 +1279,25 @@ async conductResearch(researchRequest) {
     // 阶段3：自适应执行
     // - 迭代执行研究计划（最多maxIterations次）
     // - 在每一步：思考->解析->执行工具->存储结果
+    // - 实时更新AgentThinkingDisplay状态
     // - 智能终止条件：信息增益阈值、计划完成度、数据挖掘完成条件
     
     // 阶段4：报告生成
-    // - 使用ReportGeneratorMiddleware生成最终报告
-    // - 数据挖掘模式使用DataMiningEngine
+    // - 数据挖掘模式使用DataMiningEngine生成纯数据报告
+    // - 其他模式使用ReportGeneratorMiddleware生成标准报告
     // - 生成时效性质量评估
     // - 发送完成事件并返回结果
+    // - 更新AgentThinkingDisplay完成状态
 }
 ```
 
-#### 10.5.2 工具执行流程
+#### 10.7.2 工具执行流程
 
 ```javascript
-// 工具执行由ToolExecutionMiddleware处理
+// 工具执行由ToolExecutionMiddleware处理，同时更新监控面板
 const { rawObservation, toolSources, toolSuccess } = 
     await this.toolExecutor.executeToolWithKnowledge(
-        tool_name,
+        toolName,
         parameters,
         thought,
         this.intermediateSteps,
@@ -1030,45 +1306,26 @@ const { rawObservation, toolSources, toolSuccess } =
         iterations
     );
 
+// 发送工具调用事件到监控面板
+this.callbackManager.emitEvent('research:tool_called', {
+    toolName: toolName,
+    parameters: parameters,
+    success: toolSuccess,
+    result: rawObservation
+});
+
 // 智能摘要处理
 const summarizedObservation = await this._smartSummarizeObservation(
     internalTopic, 
     rawObservation, 
     detectedMode, 
-    tool_name
+    toolName
 );
 ```
 
-### 10.6 智能特性
+### 10.8 多模式研究支持
 
-#### 10.6.1 信息增益计算
-
-系统实时计算信息增益，用于智能终止决策：
-
-```javascript
-_calculateInformationGain(newObservation, history, config) {
-    // 多维度评估：词汇新颖性、结构多样性、长度比率、技术实体
-    // 历史衰减机制：防止无限迭代
-    // 自适应阈值：根据研究模式调整
-}
-```
-
-#### 10.6.2 智能摘要系统
-
-针对不同工具采用不同的摘要策略：
-
-```javascript
-async _smartSummarizeObservation(mainTopic, observation, researchMode, toolName) {
-    // 搜索工具：跳过摘要，直接返回原始结果
-    // 爬虫工具：智能摘要，保留结构化数据
-    // 代码工具：提取关键输出和错误信息
-    // 优雅降级：摘要失败时使用智能截断
-}
-```
-
-### 10.7 多模式研究支持
-
-#### 10.7.1 研究模式
+#### 10.8.1 研究模式
 
 系统支持六种研究模式，每种有特定的配置和要求：
 
@@ -1077,9 +1334,9 @@ async _smartSummarizeObservation(mainTopic, observation, researchMode, toolName)
 3. **商业分析模式 (business)**: 市场洞察，商业影响和战略建议
 4. **技术文档模式 (technical)**: 技术架构，实现细节和性能评估
 5. **标准报告模式 (standard)**: 清晰的结构，易于理解的报告
-6. **数据挖掘模式 (data_mining)**: 结构化数据收集，表格化呈现
+6. **数据挖掘模式 (data_mining)**: 结构化数据收集，表格化呈现（DataMiningEngine专用）
 
-#### 10.7.2 数据挖掘引擎
+#### 10.8.2 数据挖掘引擎
 
 专门的数据挖掘模式处理：
 
@@ -1092,12 +1349,16 @@ checkDataMiningCompletion(intermediateSteps, allSources, iterations) {
 }
 
 // 数据挖掘报告生成
-buildDataMiningPrompt(topic, intermediateSteps, researchPlan, sources, instruction, template, promptFragment, dataBus)
+buildDataMiningPrompt(topic, intermediateSteps, researchPlan, sources, instruction, template, promptFragment, dataBus) {
+    // 生成纯数据报告的专用提示词
+    // 支持数据质量评估和来源标注
+    // 完全兼容ReportTemplates模板
+}
 ```
 
-### 10.8 错误处理和恢复
+### 10.9 错误处理和恢复
 
-#### 10.8.1 解析错误重试
+#### 10.9.1 解析错误重试
 
 智能处理LLM输出解析错误：
 
@@ -1115,7 +1376,7 @@ if (this._isParserError(error)) {
 }
 ```
 
-#### 10.8.2 重复URL检测
+#### 10.9.2 重复URL检测
 
 防止重复访问相同或相似的URL：
 
@@ -1127,7 +1388,7 @@ if (error.message.includes('[DUPLICATE_URL_ERROR]')) {
 }
 ```
 
-#### 10.8.3 速率限制处理
+#### 10.9.3 速率限制处理
 
 智能处理API速率限制：
 
@@ -1140,9 +1401,9 @@ if (error.message.includes('429') || error.message.includes('rate limit')) {
 }
 ```
 
-### 10.9 性能优化
+### 10.10 性能优化
 
-#### 10.9.1 Token使用追踪
+#### 10.10.1 Token使用追踪
 
 实时追踪和优化Token消耗：
 
@@ -1151,10 +1412,15 @@ _updateTokenUsage(usage) {
     this.metrics.tokenUsage.prompt_tokens += usage.prompt_tokens || 0;
     this.metrics.tokenUsage.completion_tokens += usage.completion_tokens || 0;
     this.metrics.tokenUsage.total_tokens += usage.total_tokens || 0;
+    
+    // 更新监控面板的Token统计
+    this.callbackManager.emitEvent('research:stats_updated', {
+        metrics: { tokenUsage: this.metrics.tokenUsage }
+    });
 }
 ```
 
-#### 10.9.2 内存管理
+#### 10.10.2 内存管理
 
 通过中间件进行智能内存管理：
 
@@ -1166,7 +1432,7 @@ _cleanupDataBus() {
 }
 ```
 
-#### 10.9.3 延迟优化
+#### 10.10.3 延迟优化
 
 根据研究模式添加智能延迟：
 
@@ -1177,7 +1443,7 @@ if (researchMode && researchMode !== 'standard') {
 }
 ```
 
-### 10.10 向后兼容性
+### 10.11 向后兼容性
 
 系统提供完整的向后兼容代理方法：
 
@@ -1194,7 +1460,7 @@ async _generateFinalReport(...) {
 }
 ```
 
-### 10.11 使用指南
+### 10.12 使用指南
 
 用户可以通过关键词触发不同的研究模式：
 
@@ -1218,29 +1484,38 @@ const keywords = {
 // "股票价格数据分析 数据挖掘"
 ```
 
-### 10.12 架构优势
+### 10.13 架构优势
 
-#### 10.12.1 模块化优势
+#### 10.13.1 模块化优势
 
 - **职责分离**: 每个中间件专注于单一职责
 - **可测试性**: 独立的模块便于单元测试
 - **可维护性**: 修改一个模块不影响其他模块
 - **可扩展性**: 容易添加新的中间件或服务
 
-#### 10.12.2 性能优势
+#### 10.13.2 性能优势
 
 - **状态统一管理**: 避免状态不一致和内存泄漏
 - **智能资源管理**: 按需加载和清理资源
 - **并行处理潜力**: 中间件架构支持未来的并行处理
+- **实时监控**: AgentThinkingDisplay提供全面的性能监控
 
-#### 10.12.3 开发体验
+#### 10.13.3 数据驱动优势
+
+- **专业数据挖掘**: DataMiningEngine提供专业的数据挖掘能力
+- **结构化数据处理**: 智能表格提取和质量评估
+- **模板兼容性**: 完全兼容现有报告模板系统
+- **纯数据输出**: 支持无描述性语言的纯数据报告
+
+#### 10.13.4 开发体验
 
 - **清晰的事件流**: 通过CallbackManager提供结构化事件
 - **完善的日志**: 详细的执行日志便于调试
 - **向后兼容**: 确保现有代码继续工作
 - **配置灵活**: 支持动态配置和运行时调整
+- **实时监控**: AgentThinkingDisplay提供可视化调试界面
 
-深度研究代理系统的中间件架构重构显著提升了系统的可维护性、性能和扩展性，同时保持了与现有系统的完全兼容性，为用户提供更加稳定和高效的研究体验。
+深度研究代理系统的中间件架构重构显著提升了系统的可维护性、性能和扩展性。新增的AgentThinkingDisplay和DataMiningEngine模块分别提供了实时监控和专业数据挖掘能力，同时保持了与现有系统的完全兼容性，为用户提供更加稳定和高效的研究体验。
 
 ---
 
