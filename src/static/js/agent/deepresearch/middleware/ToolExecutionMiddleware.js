@@ -140,36 +140,7 @@ export class ToolExecutionMiddleware {
                 }
             }
         }
-        
-        // 🔥 新增：验证数据上下文是否包含实际内容
-        console.log('[ToolExecutionMiddleware] 🔍 验证数据上下文有效性...');
-        
-        // 检查actualDataContext是否只是描述而不是实际数据
-        if (typeof actualDataContext === 'string' && actualDataContext.length < 200) {
-            console.warn('[ToolExecutionMiddleware] ⚠️ 数据上下文可能只是描述而非实际数据');
-            
-            // 尝试从intermediateSteps中查找实际数据
-            const latestCrawlStep = this.intermediateSteps
-                .slice()
-                .reverse()
-                .find(step => step.action?.tool_name === 'crawl4ai');
-            
-            if (latestCrawlStep?.observation) {
-                console.log('[ToolExecutionMiddleware] 🔄 从最近crawl4ai步骤提取实际数据');
-                actualDataContext = latestCrawlStep.observation.substring(0, 15000);
-            }
-        }
-        
-        // 确保数据至少有一定长度
-        if (typeof actualDataContext !== 'string' || actualDataContext.length < 100) {
-            console.error('[ToolExecutionMiddleware] ❌ 数据上下文无效，生成降级代码');
-            return {
-                rawObservation: '❌ **数据提取失败** - 无法获取有效的文章内容进行文本分析',
-                toolSources: [],
-                toolSuccess: false
-            };
-        }
-        
+              
         // 🟢 构建专家 Prompt (融合知识库) - 增强数据传递
         // 🔥 关键修复：确保数据上下文包含实际数据
         const specialistPrompt = `
@@ -1558,6 +1529,54 @@ except Exception as e:
     let contextData = await this._getBestRepairContext();
     console.log(`[ToolExecutionMiddleware] 📊 修复上下文长度: ${contextData.length} 字符`);
     
+    // 🔥🔥🔥 核心修复：验证急诊室上下文是否包含实际内容
+    console.log('[ToolExecutionMiddleware] 🔍 验证急诊室数据上下文有效性...');
+    
+    // 检查contextData是否只是描述而不是实际数据
+    if (typeof contextData === 'string' && contextData.length < 200) {
+        console.warn('[ToolExecutionMiddleware] ⚠️ 急诊室数据上下文可能只是描述而非实际数据');
+        
+        // 尝试从intermediateSteps中查找实际数据
+        const latestCrawlStep = this.intermediateSteps
+            .slice()
+            .reverse()
+            .find(step => step.action?.tool_name === 'crawl4ai');
+        
+        if (latestCrawlStep?.observation) {
+            console.log('[ToolExecutionMiddleware] 🔄 从最近crawl4ai步骤提取实际数据给急诊室');
+            // 安全截断，防止提示词过长
+            const maxDataLength = 8000;
+            if (latestCrawlStep.observation.length > maxDataLength) {
+                // 智能截断：保留开头和重要部分
+                const firstPart = latestCrawlStep.observation.substring(0, 5000);
+                const middlePart = latestCrawlStep.observation.substring(
+                    Math.floor(latestCrawlStep.observation.length / 2) - 1000,
+                    Math.floor(latestCrawlStep.observation.length / 2) + 1000
+                );
+                contextData = firstPart + "\n[...中间内容已省略...]\n" + middlePart + "\n[...]";
+            } else {
+                contextData = latestCrawlStep.observation;
+            }
+        }
+    }
+    
+    // 🔥 确保急诊室数据至少有一定长度
+    if (typeof contextData !== 'string' || contextData.length < 100) {
+        console.error('[ToolExecutionMiddleware] ❌ 急诊室数据上下文无效，尝试其他来源');
+        
+        // 尝试从数据总线获取
+        const busData = this._extractBestDataFromDataBus();
+        if (busData && busData.length > 100) {
+            contextData = busData;
+            console.log(`[ToolExecutionMiddleware] 🔄 从DataBus获取急诊室数据: ${contextData.length} 字符`);
+        } else {
+            console.error('[ToolExecutionMiddleware] ❌ 所有急诊室数据源都无效');
+            contextData = "急诊室无法获取有效数据上下文。请参考损坏的代码本身进行修复。";
+        }
+    }
+    
+    console.log(`[ToolExecutionMiddleware] ✅ 急诊室最终上下文长度: ${contextData.length} 字符`);
+    
     const maxRetries = 2;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -1643,6 +1662,59 @@ ${brokenCode}
     
     // 🔥 最后手段：生成最小化代码
     return this._generateMinimalFallbackCode(brokenCode, errorType, contextData);
+}
+
+/**
+ * 🆕 从数据总线提取最佳数据（用于急诊室备用）
+ */
+_extractBestDataFromDataBus() {
+    if (!this.dataBus || this.dataBus.size === 0) {
+        return null;
+    }
+    
+    // 尝试所有可能的键，从最近的开始
+    const possibleKeys = [
+        ...Array.from(this.dataBus.keys()).filter(k => k.startsWith('step_')),
+        ...Array.from(this.dataBus.keys()).filter(k => !k.startsWith('step_'))
+    ].sort((a, b) => {
+        // 按时间倒序（假设step_数字越大越新）
+        if (a.startsWith('step_') && b.startsWith('step_')) {
+            return parseInt(b.replace('step_', '')) - parseInt(a.replace('step_', ''));
+        }
+        return 0;
+    });
+    
+    for (const key of possibleKeys) {
+        const data = this.dataBus.get(key);
+        if (!data) continue;
+        
+        const rawData = data.rawData || data.originalData;
+        if (rawData && rawData.length > 500) {
+            console.log(`[ToolExecutionMiddleware] 🔍 从DataBus找到数据: ${key}, 长度: ${rawData.length}`);
+            return this._formatSimpleDataForEmergency(key, data.metadata, rawData);
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * 🆕 为急诊室简单格式化数据
+ */
+_formatSimpleDataForEmergency(key, metadata, rawData) {
+    const maxLength = 6000;
+    
+    let formatted = `## 📊 急诊室数据 (来自: ${key})\n`;
+    if (metadata.toolName) formatted += `**工具**: ${metadata.toolName}\n`;
+    formatted += `**长度**: ${rawData.length} 字符\n\n`;
+    
+    if (rawData.length > maxLength) {
+        formatted += rawData.substring(0, maxLength) + "\n[...数据过长，已截断...]";
+    } else {
+        formatted += rawData;
+    }
+    
+    return formatted;
 }
 
 /**
