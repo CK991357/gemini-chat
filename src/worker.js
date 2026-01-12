@@ -439,10 +439,16 @@ async function handleWebSocket(request, env) {
 }
 
 async function handleAPIRequest(request, env) {
-    const clonedRequest = request.clone();
-    
-    // 生成请求ID
+    const requestStartTime = Date.now();
     const requestId = crypto.randomUUID();
+    
+    console.log(`🌐 [API请求开始] ID: ${requestId}`, {
+        method: request.method,
+        url: request.url,
+        timestamp: new Date().toISOString()
+    });
+    
+    const clonedRequest = request.clone();
     
     try {
         // 仅当请求是 POST 且包含 JSON 体时才尝试解析
@@ -629,47 +635,85 @@ async function handleAPIRequest(request, env) {
                 });
             
             // ================================================================
-            // 🎯 新增：DeepSeek-V3.2 模型路由
+            // 🎯 新增：DeepSeek-V3.2 模型路由（添加智能检测）
             // ================================================================
             } else if (model === 'deepseek-chat' || model === 'deepseek-reasoner') {
                 console.log(`DEBUG: Routing to DeepSeek chat proxy for model: ${model}`);
                 
-                // 根据 DeepSeek API 文档，base_url 为 https://api.deepseek.com
-                const targetUrl = 'https://api.deepseek.com/v1/chat/completions';
-                const apiKey = env.DEEPSEEK_API_KEY; // 需要添加环境变量
-
-                if (!apiKey) {
-                    throw new Error('DEEPSEEK_API_KEY is not configured in environment variables.');
-                }
-
-                // 处理思考模式：如果模型是 deepseek-reasoner，确保开启思考模式
-                if (model === 'deepseek-reasoner') {
-                    // 确保请求体包含 thinking 参数
-                    if (!body.thinking) {
-                        body.thinking = { type: "enabled" };
+                // 🎯【核心优化】智能检测大型写作请求
+                const requestClone = request.clone();
+                try {
+                    const body = await requestClone.json();
+                    
+                    // 检测是否是研究报告生成请求
+                    const isResearchReport = body.messages && 
+                                            body.messages.length > 0 && 
+                                            body.messages.some(msg => 
+                                                msg.content && 
+                                                typeof msg.content === 'string' &&
+                                                (msg.content.includes('基于以下收集到的信息') ||
+                                                 msg.content.includes('生成报告') ||
+                                                 msg.content.includes('研究报告') ||
+                                                 msg.content.includes('# 研究主题'))
+                                            );
+                    
+                    if (isResearchReport) {
+                        console.log(`🎯 [快速通道] 检测到研究报告请求，启用优化路径`);
+                        return await handleResearchReportRequest(request, env, body);
                     }
-                    console.log(`[Worker] DeepSeek 思考模式已启用`);
-                }
-
-                // 直接将请求体转发到 DeepSeek API
-                const proxyResponse = await fetch(targetUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
-                    },
-                    body: JSON.stringify(body)
-                });
-
-                // 将 DeepSeek API 的响应直接返回给客户端
-                return new Response(proxyResponse.body, {
-                    status: proxyResponse.status,
-                    statusText: proxyResponse.statusText,
-                    headers: {
-                        'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
-                        'Access-Control-Allow-Origin': '*' // 确保CORS头部
+                    
+                    // 检测大型请求（超过20k字符）
+                    const totalContentLength = body.messages?.reduce((sum, msg) => 
+                        sum + (msg.content?.length || 0), 0) || 0;
+                    
+                    if (totalContentLength > 20000 && model === 'deepseek-reasoner') {
+                        console.log(`🎯 [快速通道] 检测到大型写作请求 (${totalContentLength} 字符)`);
+                        return await forwardToDeepSeekDirectly(request, env, { 
+                            isLargeRequest: true,
+                            totalLength: totalContentLength 
+                        });
                     }
-                });
+                    
+                    // 标准逻辑（保持原有）
+                    const targetUrl = 'https://api.deepseek.com/v1/chat/completions';
+                    const apiKey = env.DEEPSEEK_API_KEY;
+                    
+                    if (!apiKey) {
+                        throw new Error('DEEPSEEK_API_KEY is not configured in environment variables.');
+                    }
+                    
+                    // 处理思考模式
+                    if (model === 'deepseek-reasoner') {
+                        if (!body.thinking) {
+                            body.thinking = { type: "enabled" };
+                        }
+                        console.log(`[Worker] DeepSeek 思考模式已启用`);
+                    }
+                    
+                    // 直接转发
+                    const proxyResponse = await fetch(targetUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    
+                    return new Response(proxyResponse.body, {
+                        status: proxyResponse.status,
+                        statusText: proxyResponse.statusText,
+                        headers: {
+                            'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        }
+                    });
+                    
+                } catch (parseError) {
+                    console.error('解析请求失败，使用标准转发:', parseError);
+                    // 降级到标准转发
+                    return await forwardToDeepSeekDirectly(request, env, { fallback: true });
+                }
             // ================================================================
             // 🎯 DeepSeek 模型路由结束
             // ================================================================
@@ -798,7 +842,7 @@ async function handleAPIRequest(request, env) {
         });
 
     } catch (error) {
-        console.error(`❌ [API请求] 请求 ${requestId} 处理失败:`, error);
+        console.error(`❌ [API请求失败] ID: ${requestId}, 耗时: ${Date.now() - requestStartTime}ms`, error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         const errorStatus = error.status || 500;
         return new Response(JSON.stringify({ error: errorMessage }), {
@@ -808,6 +852,11 @@ async function handleAPIRequest(request, env) {
                 'Access-Control-Allow-Origin': '*'
             }
         });
+    } finally {
+        const processingTime = Date.now() - requestStartTime;
+        if (processingTime > 10000) { // 10秒以上记录警告
+            console.warn(`⚠️ [长时请求] ID: ${requestId}, 耗时: ${processingTime}ms`);
+        }
     }
 }
 
@@ -829,9 +878,33 @@ async function handleSkillsStatus(request) {
   });
 }
 
-// ✅ 独立的技能注入函数 - 更新版本
+// ✅ 独立的技能注入函数 - 更新版本（添加CPU保护）
 async function injectSkillsIntoRequest(body, requestId) {
     try {
+        // 🎯【新增】跳过过大请求的技能注入 - 保护 CPU
+        if (body.messages && body.messages.length > 0) {
+            // 计算总请求大小
+            const requestSize = JSON.stringify(body.messages).length;
+            const isResearchReportRequest = body.model === 'deepseek-reasoner' && 
+                                          body.messages.some(msg => 
+                                              msg.content && 
+                                              (msg.content.includes('研究报告') || 
+                                               msg.content.includes('生成报告'))
+                                          );
+            
+            // 双重保护：大型请求或研究报告请求都跳过技能注入
+            if (requestSize > 50000 || isResearchReportRequest) {
+                console.log(`[CPU保护] 跳过技能注入:`, {
+                    requestId,
+                    model: body.model,
+                    size: `${(requestSize/1024).toFixed(1)}KB`,
+                    isResearch: isResearchReportRequest,
+                    reason: requestSize > 50000 ? '请求过大' : '研究报告请求'
+                });
+                return;
+            }
+        }
+        
         const userMessages = body.messages.filter(m => m.role === 'user');
         const latestUserMessage = userMessages[userMessages.length - 1]?.content;
 
@@ -1517,4 +1590,189 @@ async function handleChessRequest(request, env) {
     status: 404,
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   });
+}
+
+// ========================================================
+// 🔥 新增：研究报告专用处理函数
+// ========================================================
+
+/**
+ * 处理研究报告请求 - 跳过所有不必要的处理，直接转发
+ */
+async function handleResearchReportRequest(request, env, body) {
+    const startTime = Date.now();
+    const requestId = `research_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log(`📊 [研究报告处理] 开始处理 ID: ${requestId}`);
+    
+    // 确保请求是 non-streaming（避免流处理增加CPU负担）
+    body.stream = false;
+    
+    // 确保使用正确的思考模式
+    if (!body.thinking) {
+        body.thinking = { type: "enabled" };
+    }
+    
+    // 设置超时保护
+    const timeoutMs = 180000; // 3分钟（研究报告可能需要更长时间）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+        const apiKey = env.DEEPSEEK_API_KEY;
+        if (!apiKey) {
+            throw new Error('DEEPSEEK_API_KEY is not configured in environment variables.');
+        }
+        
+        // 🎯 核心优化：直接转发原始请求，不进行任何额外处理
+        const proxyResponse = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'X-Request-ID': requestId,
+                'X-Request-Type': 'research_report'
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!proxyResponse.ok) {
+            const errorText = await proxyResponse.text();
+            console.error(`研究报告请求失败 ${proxyResponse.status}:`, errorText);
+            throw new Error(`DeepSeek API 错误: ${proxyResponse.status}`);
+        }
+        
+        const processingTime = Date.now() - startTime;
+        console.log(`✅ [研究报告处理] 完成 ID: ${requestId}, 耗时: ${processingTime}ms`);
+        
+        // 🎯 关键：直接返回原始响应，不进行任何解析/转换
+        return new Response(proxyResponse.body, {
+            status: proxyResponse.status,
+            headers: {
+                'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'X-Research-Request-ID': requestId,
+                'X-Processing-Time': `${processingTime}ms`,
+                'X-Optimized-Path': 'research_report'
+            }
+        });
+        
+    } catch (error) {
+        clearTimeout(timeoutId);
+        
+        const processingTime = Date.now() - startTime;
+        console.error(`❌ [研究报告处理] 失败 ID: ${requestId}, 耗时: ${processingTime}ms`, error);
+        
+        if (error.name === 'AbortError') {
+            return new Response(JSON.stringify({
+                error: '研究报告生成超时',
+                message: '生成报告用时过长，已自动取消',
+                requestId,
+                processingTime: `${processingTime}ms`
+            }), {
+                status: 504,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'X-Research-Request-ID': requestId
+                }
+            });
+        }
+        
+        // 返回错误但不崩溃
+        return new Response(JSON.stringify({
+            error: '研究报告生成失败',
+            message: error.message,
+            requestId,
+            processingTime: `${processingTime}ms`
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'X-Research-Request-ID': requestId
+            }
+        });
+    }
+}
+
+/**
+ * 快速转发到 DeepSeek（通用大型请求）
+ */
+async function forwardToDeepSeekDirectly(request, env, options = {}) {
+    const { isLargeRequest = false, totalLength = 0, fallback = false } = options;
+    const requestId = `fast_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log(`⚡ [快速转发] 请求 ID: ${requestId}`, {
+        isLargeRequest,
+        totalLength: `${(totalLength/1024).toFixed(1)}KB`,
+        fallback
+    });
+    
+    try {
+        const apiKey = env.DEEPSEEK_API_KEY;
+        if (!apiKey) {
+            throw new Error('DEEPSEEK_API_KEY is not configured in environment variables.');
+        }
+        
+        // 对于大型请求，使用 stream: false 避免流处理负担
+        let requestBody = request.body;
+        if (isLargeRequest && !fallback) {
+            try {
+                const cloned = request.clone();
+                const body = await cloned.json();
+                body.stream = false; // 强制非流式
+                requestBody = JSON.stringify(body);
+            } catch (e) {
+                // 如果解析失败，使用原始 body
+                console.warn('无法优化请求体，使用原始请求:', e.message);
+            }
+        }
+        
+        const proxyResponse = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'X-Request-ID': requestId,
+                'X-Request-Size': `${totalLength}`,
+                'X-Optimization': isLargeRequest ? 'large_request' : 'standard'
+            },
+            body: requestBody
+        });
+        
+        console.log(`✅ [快速转发] 完成 ID: ${requestId}, 状态: ${proxyResponse.status}`);
+        
+        return new Response(proxyResponse.body, {
+            status: proxyResponse.status,
+            headers: {
+                'Content-Type': proxyResponse.headers.get('Content-Type') || 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'X-Request-ID': requestId,
+                'X-Optimization': isLargeRequest ? 'large_request' : 'standard'
+            }
+        });
+        
+    } catch (error) {
+        console.error(`❌ [快速转发] 失败 ID: ${requestId}:`, error);
+        
+        // 优雅降级：返回可读的错误信息
+        return new Response(JSON.stringify({
+            error: '请求处理失败',
+            message: error.message,
+            requestId,
+            timestamp: new Date().toISOString(),
+            suggestion: '请检查网络连接或稍后重试'
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'X-Request-ID': requestId
+            }
+        });
+    }
 }
