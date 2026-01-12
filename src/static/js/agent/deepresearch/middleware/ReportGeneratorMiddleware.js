@@ -1194,7 +1194,7 @@ _updateTokenUsage(usage) {
             
                 switch(dataStrategy) {
                     case 'full_original':
-                        if (originalData.length < 50000) {
+                        if (originalData.length < 80000) {
                             finalEvidence = this._cleanObservation(originalData);
                             dataSourceType = 'data_bus_full';
                             
@@ -1698,9 +1698,9 @@ _processJsonFragments(fragments, originalData) {
         // 🔥 根据数据长度决定可行性
         let viableStrategies = [];
 
-        if (dataLength < 15000) {
+        if (dataLength < 50000) {
             viableStrategies = ['full_original', 'enhanced_summary', 'structured_only', 'hybrid'];
-        } else if (dataLength < 30000) {
+        } else if (dataLength < 80000) {
             viableStrategies = ['enhanced_summary', 'structured_only', 'hybrid'];
         } else {
             viableStrategies = ['enhanced_summary', 'structured_only'];
