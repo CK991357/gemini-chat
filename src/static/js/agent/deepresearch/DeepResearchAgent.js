@@ -509,7 +509,9 @@ export class DeepResearchAgent {
                     if (tool_name === 'code_generator' || tool_name === 'python_sandbox') {
                         // 获取最新的图片计数器和图片数据
                         const toolState = this.toolExecutor.getSharedState();
-                        this.imageCounter = toolState.imageCounter;
+                        
+                        // 🔥 关键修复：强制更新 imageCounter（使用工具执行器的值）
+                        this.imageCounter = toolState.imageCounter || 0;
                         
                         // 确保generatedImages是同一个引用
                         this.generatedImages = toolState.generatedImages;
