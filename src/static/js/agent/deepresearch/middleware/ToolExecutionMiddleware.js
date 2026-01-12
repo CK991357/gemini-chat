@@ -267,23 +267,117 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
             let finalObservation;
 
             if (sandboxResult.toolSuccess) {
-                // 检查输出类型并相应处理
+                // 🔥🔥🔥 核心修复：正确处理双重JSON嵌套
+                console.log('[ToolExecutionMiddleware] 🔍 开始处理python_sandbox输出，长度:', sandboxResult.rawObservation?.length);
+                
                 try {
-                    const outputData = JSON.parse(sandboxResult.rawObservation);
+                    // 🎯 尝试1：直接解析rawObservation
+                    let outputData = null;
+                    const rawObservation = sandboxResult.rawObservation || '';
+                    
+                    try {
+                        const parsed = JSON.parse(rawObservation);
+                        
+                        // 检查是否是双重嵌套 {"stdout": "..."}
+                        if (parsed.stdout && typeof parsed.stdout === 'string') {
+                            console.log('[ToolExecutionMiddleware] ✅ 检测到stdout字段，尝试解析内层JSON');
+                            
+                            try {
+                                // 解析内层JSON
+                                outputData = JSON.parse(parsed.stdout);
+                                console.log('[ToolExecutionMiddleware] ✅ 成功解析内层JSON，类型:', outputData.type || 'unknown');
+                            } catch (innerError) {
+                                console.warn('[ToolExecutionMiddleware] ⚠️ 内层JSON解析失败:', innerError.message);
+                                
+                                // 尝试直接从stdout字符串中提取JSON
+                                const jsonMatch = parsed.stdout.match(/\{"type":\s*"image".*?\}/);
+                                if (jsonMatch) {
+                                    try {
+                                        outputData = JSON.parse(jsonMatch[0]);
+                                        console.log('[ToolExecutionMiddleware] ✅ 从stdout字符串中提取图像JSON成功');
+                                    } catch (matchError) {
+                                        console.warn('[ToolExecutionMiddleware] ⚠️ 提取的JSON解析失败:', matchError.message);
+                                    }
+                                }
+                            }
+                        } else {
+                            // 如果没有stdout字段，直接使用解析结果
+                            outputData = parsed;
+                            console.log('[ToolExecutionMiddleware] ✅ 直接解析成功，类型:', outputData.type || 'unknown');
+                        }
+                    } catch (outerError) {
+                        console.log('[ToolExecutionMiddleware] 🔍 外层JSON解析失败，尝试其他方法:', outerError.message);
+                        
+                        // 🎯 尝试2：从原始字符串中直接匹配JSON
+                        const jsonMatch = rawObservation.match(/\{"type":\s*"image".*?\}/);
+                        if (jsonMatch) {
+                            try {
+                                outputData = JSON.parse(jsonMatch[0]);
+                                console.log('[ToolExecutionMiddleware] ✅ 直接匹配图像JSON成功');
+                            } catch (matchError) {
+                                console.warn('[ToolExecutionMiddleware] ⚠️ 直接匹配JSON解析失败:', matchError.message);
+                            }
+                        }
+                        
+                        // 🎯 尝试3：如果仍然失败，检查是否是转义的JSON字符串
+                        if (!outputData && rawObservation.includes('\\"type\\":\\"image\\"')) {
+                            console.log('[ToolExecutionMiddleware] 🔍 检测到转义JSON，尝试清理');
+                            const unescaped = rawObservation.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                            const cleanedMatch = unescaped.match(/\{"type":\s*"image".*?\}/);
+                            if (cleanedMatch) {
+                                try {
+                                    outputData = JSON.parse(cleanedMatch[0]);
+                                    console.log('[ToolExecutionMiddleware] ✅ 清理后解析转义JSON成功');
+                                } catch (e) {
+                                    console.warn('[ToolExecutionMiddleware] ⚠️ 清理后JSON解析失败:', e.message);
+                                }
+                            }
+                        }
+                    }
 
-                    if (outputData.type === 'image' && outputData.image_base64) {
+                    // 🎯 处理图像数据
+                    if (outputData && outputData.type === 'image' && outputData.image_base64) {
                         // 🚀 增强图像处理：验证base64数据有效性
-                        if (outputData.image_base64.length > 100 && 
-                            (outputData.image_base64.startsWith('iVBOR') || 
-                             outputData.image_base64.includes('/9j/'))) {
+                        if (outputData.image_base64.length > 100) {
                             console.log('[ToolExecutionMiddleware] 🖼️ 检测到有效图像输出，调用图像处理方法');
+                            console.log('[ToolExecutionMiddleware] 📊 图像数据长度:', outputData.image_base64.length, '字符');
+                            console.log('[ToolExecutionMiddleware] 📝 图像标题:', outputData.title);
+                            
                             finalObservation = this._handleGeneratedImage(outputData);
                         } else {
                             console.warn('[ToolExecutionMiddleware] ⚠️ 图像数据格式无效或太短');
                             finalObservation = `⚠️ **图像生成失败** - 数据格式无效\n\n错误信息: 图像数据长度不足或格式错误`;
                         }
-
-                    } else if (['excel', 'word', 'powerpoint', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
+                    } 
+                    // 🔥 新增：直接处理stdout中的图像数据（当outputData为null时）
+                    else if (!outputData && rawObservation.includes('"type": "image"') && rawObservation.includes('"image_base64":')) {
+                        console.log('[ToolExecutionMiddleware] 🔍 在原始输出中检测到图像JSON模式，尝试提取');
+                        
+                        // 使用更精确的正则表达式匹配
+                        const imagePattern = /\{"type":\s*"image".*?"image_base64":\s*"[^"]+".*?\}/s;
+                        const imageMatch = rawObservation.match(imagePattern);
+                        
+                        if (imageMatch) {
+                            try {
+                                // 先尝试直接解析
+                                const imageData = JSON.parse(imageMatch[0]);
+                                finalObservation = this._handleGeneratedImage(imageData);
+                            } catch (parseError) {
+                                console.warn('[ToolExecutionMiddleware] ⚠️ 图像JSON解析失败，尝试清理:', parseError.message);
+                                
+                                // 尝试清理转义字符后解析
+                                const cleaned = imageMatch[0].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                                try {
+                                    const imageData = JSON.parse(cleaned);
+                                    finalObservation = this._handleGeneratedImage(imageData);
+                                } catch (e) {
+                                    console.warn('[ToolExecutionMiddleware] ⚠️ 清理后解析也失败:', e.message);
+                                }
+                            }
+                        }
+                    }
+                    // 原有其他类型的处理逻辑保持不变
+                    else if (outputData && ['excel', 'word', 'powerpoint', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
                         // 文件处理逻辑
                         console.log(`[ToolExecutionMiddleware] 📄 检测到Python沙盒生成的文件: ${outputData.type}`);
                         finalObservation = `[✅ 文件生成成功] 类型: "${outputData.type}", 标题: "${outputData.title}". 文件已准备就绪。`;
@@ -291,11 +385,10 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
                             run_id: this.runId,
                             data: outputData
                         });
-
-                    } else if (outputData.type === 'ml_report' || outputData.type === 'data_extraction') {
+                    } else if (outputData && (outputData.type === 'ml_report' || outputData.type === 'data_extraction')) {
                         // 🎯 保留原有特殊类型的处理逻辑
                         console.log(`[ToolExecutionMiddleware] 📊 检测到${outputData.type}类型输出，保留完整数据`);
-        
+
                         // 格式化输出以便Agent理解
                         let formattedData = '';
                         if (outputData.title) formattedData += `## ${outputData.title}\n\n`;
@@ -313,7 +406,7 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
                                 formattedData += `- ${key}: ${value}\n`;
                             });
                         }
-        
+
                         // 🔥 核心修复：保存原始数据到数据总线（与主文件一致）
                         const stepIndex = this.intermediateSteps.length + 1;
                         this.storeRawDataMethod(stepIndex, sandboxResult.rawObservation, {
@@ -322,11 +415,10 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
                             dataType: outputData.type,
                             hasSpecialFormatting: true
                         }, sandboxResult.toolSources);
-        
+
                         // 返回格式化内容
                         finalObservation = `✅ **数据提取成功**\n\n${formattedData}\n\n**提示**：完整结构化数据已保存到数据总线 (DataBus:step_${stepIndex})`;
-
-                    } else {
+                    } else if (outputData) {
                         // 🔥 核心修复：对于所有其他成功的JSON输出，统一视为结构化数据
                         console.log(`[ToolExecutionMiddleware] 📦 检测到结构化数据输出，类型: ${outputData.type || 'generic_data'}`);
 
@@ -356,75 +448,15 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
                         }
                         
                         finalObservation = finalObservationContent;
+                    } else {
+                        // 如果没有解析出outputData，使用降级处理
+                        console.log('[ToolExecutionMiddleware] 🔄 未解析出有效数据，使用降级处理');
+                        finalObservation = this._handleNonJsonOutput(sandboxResult.rawObservation);
                     }
                 } catch (e) {
-                    // 🚀 增强错误处理：尝试检测图像数据即使不是JSON格式
-                    const rawOutput = sandboxResult.rawObservation;
-                    if ((rawOutput.includes('iVBOR') || rawOutput.includes('/9j/')) && 
-                        rawOutput.length > 500) {
-                        console.log('[ToolExecutionMiddleware] 🖼️ 在纯文本输出中检测到图像数据，尝试提取');
-                        
-                        // 尝试从文本中提取图像数据
-                        const imageMatch = rawOutput.match(/"image_base64"\s*:\s*"([^"]+)"/) || 
-                                          rawOutput.match(/image_base64\s*=\s*'([^']+)'/);
-                        
-                        if (imageMatch && imageMatch[1]) {
-                            const titleMatch = rawOutput.match(/"title"\s*:\s*"([^"]+)"/) || 
-                                              rawOutput.match(/title\s*=\s*'([^']+)'/);
-                            
-                            const imageData = {
-                                type: 'image',
-                                title: titleMatch ? titleMatch[1] : '提取的图像',
-                                image_base64: imageMatch[1]
-                            };
-                            
-                            finalObservation = this._handleGeneratedImage(imageData);
-                        } else {
-                            // 如果输出不是JSON，或者解析失败
-                            console.log('[ToolExecutionMiddleware] 🐍 Python输出不是JSON格式，作为纯文本处理');
-
-                            // 检查是否已经是成功消息
-                            if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') ||
-                                sandboxResult.rawObservation.includes('[✅ 文件生成成功]')) {
-                                finalObservation = sandboxResult.rawObservation;
-                            } else {
-                                // 对于纯文本输出，如果包含结构化信息，尝试格式化
-                                const textOutput = sandboxResult.rawObservation;
-                                const hasTable = textOutput.includes('|') && textOutput.includes('---');
-                                const hasJsonStructure = textOutput.includes('{') && textOutput.includes('}');
-
-                                if (hasTable || hasJsonStructure) {
-                                    finalObservation = `✅ **专家任务执行成功 (包含结构化数据)**\n\n${textOutput}`;
-                                } else if (textOutput.length > 500) {
-                                    finalObservation = `✅ **专家任务执行成功**\n\n输出 (已截断):\n${textOutput.substring(0, 500)}...\n\n*完整输出: ${textOutput.length} 字符*`;
-                                } else {
-                                    finalObservation = `✅ **专家任务执行成功**\n\n输出:\n${textOutput}`;
-                                }
-                            }
-                        }
-                    } else {
-                        // 原有处理逻辑
-                        console.log('[ToolExecutionMiddleware] 🐍 Python输出不是JSON格式，作为纯文本处理');
-
-                        // 检查是否已经是成功消息
-                        if (sandboxResult.rawObservation.includes('[✅ 图像生成成功]') ||
-                            sandboxResult.rawObservation.includes('[✅ 文件生成成功]')) {
-                            finalObservation = sandboxResult.rawObservation;
-                        } else {
-                            // 对于纯文本输出，如果包含结构化信息，尝试格式化
-                            const textOutput = sandboxResult.rawObservation;
-                            const hasTable = textOutput.includes('|') && textOutput.includes('---');
-                            const hasJsonStructure = textOutput.includes('{') && textOutput.includes('}');
-
-                            if (hasTable || hasJsonStructure) {
-                                finalObservation = `✅ **专家任务执行成功 (包含结构化数据)**\n\n${textOutput}`;
-                            } else if (textOutput.length > 500) {
-                                finalObservation = `✅ **专家任务执行成功**\n\n输出 (已截断):\n${textOutput.substring(0, 500)}...\n\n*完整输出: ${textOutput.length} 字符*`;
-                            } else {
-                                finalObservation = `✅ **专家任务执行成功**\n\n输出:\n${textOutput}`;
-                            }
-                        }
-                    }
+                    console.error('[ToolExecutionMiddleware] ❌ 图像处理过程异常:', e);
+                    // 降级处理
+                    finalObservation = this._handleNonJsonOutput(sandboxResult.rawObservation);
                 }
 
             } else {
@@ -470,6 +502,57 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
             console.error('[ToolExecutionMiddleware] ❌ 专家系统故障:', error);
             recordToolCall('code_generator', parameters, false, `专家系统故障: ${error.message}`);
             return { rawObservation: `专家系统故障: ${error.message}`, toolSources: [], toolSuccess: false };
+        }
+    }
+
+    // ============================================================
+    // 🎯 处理非JSON输出（降级处理）- 新增方法
+    // ============================================================
+    
+    /**
+     * 🎯 处理非JSON输出（降级处理）
+     */
+    _handleNonJsonOutput(rawOutput) {
+        console.log('[ToolExecutionMiddleware] 🔄 执行非JSON输出处理');
+        
+        // 检查是否已经是成功消息
+        if (rawOutput.includes('[✅ 图像生成成功]') ||
+            rawOutput.includes('[✅ 文件生成成功]')) {
+            return rawOutput;
+        }
+        
+        // 尝试检测图像数据
+        if ((rawOutput.includes('iVBOR') || rawOutput.includes('/9j/')) && 
+            rawOutput.length > 500) {
+            console.log('[ToolExecutionMiddleware] 🖼️ 在纯文本中检测到图像数据标记');
+            
+            // 尝试提取base64数据
+            const base64Pattern = /image_base64["']?\s*[:=]\s*["']([^"']+)["']/;
+            const base64Match = rawOutput.match(base64Pattern);
+            
+            if (base64Match && base64Match[1]) {
+                const titleMatch = rawOutput.match(/title["']?\s*[:=]\s*["']([^"']+)["']/);
+                
+                const imageData = {
+                    type: 'image',
+                    title: titleMatch ? titleMatch[1] : '提取的图像',
+                    image_base64: base64Match[1]
+                };
+                
+                return this._handleGeneratedImage(imageData);
+            }
+        }
+        
+        // 对于纯文本输出，如果包含结构化信息，尝试格式化
+        const hasTable = rawOutput.includes('|') && rawOutput.includes('---');
+        const hasJsonStructure = rawOutput.includes('{') && rawOutput.includes('}');
+
+        if (hasTable || hasJsonStructure) {
+            return `✅ **专家任务执行成功 (包含结构化数据)**\n\n${rawOutput.substring(0, 2000)}${rawOutput.length > 2000 ? '...' : ''}`;
+        } else if (rawOutput.length > 500) {
+            return `✅ **专家任务执行成功**\n\n输出 (已截断):\n${rawOutput.substring(0, 500)}...\n\n*完整输出: ${rawOutput.length} 字符*`;
+        } else {
+            return `✅ **专家任务执行成功**\n\n输出:\n${rawOutput}`;
         }
     }
 
@@ -772,8 +855,8 @@ except Exception as e:
             '—': '-',    // 破折号/长横
             '～': '~',    // 波浪号
             '·': '.',    // 间隔号
-            '“': '"',    // 左双引号（中文）
-            '”': '"',    // 右双引号（中文）
+            '「': '"',    // 左双引号（中文）
+            '」': '"',    // 右双引号（中文）
             '‘': "'",    // 左单引号（中文）
             '’': "'"     // 右单引号（中文）
         };
