@@ -306,9 +306,6 @@ export class DeepResearchAgent {
         this.lastParserError = null;
         this.lastDecisionText = null;
         
-        // 🔥 新增：添加 API 错误终止标志
-        let apiErrorTermination = false;
-        
         // 🔥 核心修改：在数据挖掘模式下，使用DataMiningEngine的完成条件检查
         const isDataMiningMode = detectedMode === 'data_mining';
         let noGainThreshold;
@@ -328,10 +325,7 @@ export class DeepResearchAgent {
         
         const totalSteps = researchPlan.research_plan.length; // 新增：总计划步骤数
 
-        while (iterations < this.maxIterations && 
-               consecutiveNoGain < noGainThreshold && 
-               !finalAnswerFromIteration &&
-               !apiErrorTermination) {  // 🔥 新增：检查 API 错误终止标志
+        while (iterations < this.maxIterations && consecutiveNoGain < noGainThreshold && !finalAnswerFromIteration) {
             
             if (!parserErrorOccurred) { // 只有在没有解析错误时才增加迭代计数
                 iterations++;
@@ -509,9 +503,7 @@ export class DeepResearchAgent {
                     if (tool_name === 'code_generator' || tool_name === 'python_sandbox') {
                         // 获取最新的图片计数器和图片数据
                         const toolState = this.toolExecutor.getSharedState();
-                        
-                        // 🔥 关键修复：强制更新 imageCounter（使用工具执行器的值）
-                        this.imageCounter = toolState.imageCounter || 0;
+                        this.imageCounter = toolState.imageCounter;
                         
                         // 确保generatedImages是同一个引用
                         this.generatedImages = toolState.generatedImages;
@@ -608,29 +600,6 @@ export class DeepResearchAgent {
                 }
 
             } catch (error) {
-                // 🔥🔥🔥 核心修复：优先检查API服务错误（503/429）
-                const apiError = this._isApiServiceError(error);
-                if (apiError && apiError.shouldTerminate) {
-                    console.warn(`[DeepResearchAgent] ⚠️ 检测到API ${apiError.type} 错误，立即终止研究并生成报告`);
-                    console.warn(`[DeepResearchAgent] 📊 当前已收集：${this.intermediateSteps.length}个步骤，${this.dataBus.size}条数据`);
-                    
-                    // 🎯 设置终止标记
-                    finalAnswerFromIteration = `api_error_${apiError.type}`;
-                    apiErrorTermination = true; // 🔥 关键：设置终止标志，让 while 循环结束
-                    
-                    // 🎯 记录错误信息到metrics
-                    this.stateManager.updateMetrics({
-                        apiErrorOccurred: true,
-                        apiErrorType: apiError.type,
-                        apiErrorIteration: iterations,
-                        dataCollectedBeforeError: this.intermediateSteps.length,
-                        terminationReason: 'api_service_limit'
-                    });
-                    
-                    // 🔥 关键：直接跳出整个 while 循环
-                    break; // 现在这个 break 会跳出 while 循环，因为 apiErrorTermination=true
-                }
-                
                 // 🎯 捕获解析错误 (OutputParser.parse 抛出的错误)
                 if (this._isParserError(error)) {
                     this.lastParserError = error; // 🆕 保存错误对象
@@ -714,30 +683,6 @@ export class DeepResearchAgent {
         // ✨ 阶段3：使用 ReportGeneratorMiddleware 生成完整结果
         // ============================================================
         console.log('[DeepResearchAgent] 研究完成，进入统一报告生成阶段...');
-
-        // 🔥 优化：统一检查终止条件（包含 API 错误）
-        const isApiErrorTermination = apiErrorTermination || 
-                                     (finalAnswerFromIteration && 
-                                      finalAnswerFromIteration.startsWith('api_error_')) ||
-                                     this.stateManager.metrics.apiErrorOccurred;
-
-        if (isApiErrorTermination) {
-            const apiErrorType = this.stateManager.metrics.apiErrorType || 'unknown';
-            console.warn(`[DeepResearchAgent] 🚨 因API ${apiErrorType} 错误提前终止，使用已收集数据生成最终报告`);
-            
-            // 发送研究终止事件
-            await this.callbackManager.invokeEvent('on_research_termination', {
-                run_id: runId,
-                data: {
-                    reason: 'api_service_limit',
-                    error_type: apiErrorType,
-                    iteration: iterations,
-                    steps_collected: this.intermediateSteps.length,
-                    sources_collected: allSources.length,
-                    message: `因API服务限制(${apiErrorType})，研究提前终止并生成最终报告`
-                }
-            });
-        }
 
         // 提取所有观察结果用于关键词分析
         const allObservationsForKeywords = this.intermediateSteps.map(s => s.observation).join(' ');
@@ -872,17 +817,12 @@ export class DeepResearchAgent {
         // ============================================================
         console.log('[DeepResearchAgent] 阶段4：生成时效性质量评估报告...');
 
-        // 🎯 可选：在最终结果中添加API错误上下文信息（仅用于调试）
-        if (isApiErrorTermination) {
-            finalResult.api_error_context = {
-                occurred: true,
-                type: this.stateManager.metrics.apiErrorType,
-                iteration: this.stateManager.metrics.apiErrorIteration,
-                steps_before_error: this.stateManager.metrics.dataCollectedBeforeError,
-                note: '报告基于API错误发生前已收集的完整数据生成'
-            };
-        }
-
+        // 🎯 4.1. 不再重复生成 temporalQualityReport，使用 processReport 返回的
+        
+        // 🎯 4.2. 构建最终的、包含质量报告的 result 对象
+        
+        // 🎯 4.3. 调用性能记录方法
+        
         // 🎯 4.4. 发送包含完整结果的 on_research_end 事件
         await this.callbackManager.invokeEvent('on_research_end', {
             run_id: runId,
@@ -2702,32 +2642,6 @@ ${config.structure.map(section => `    - ${section}`).join('\n')}
         const message = error.message || '';
         return parserKeywords.some(keyword => message.includes(keyword));
     }
-
-/**
- * 🎯 新增：判断是否为API服务错误（503/429）
- */
-_isApiServiceError(error) {
-    if (!error || !error.message) return false;
-    
-    const errorMessage = error.message.toLowerCase();
-    
-    // 检测503错误（服务不可用）
-    if (errorMessage.includes('503') || 
-        errorMessage.includes('service unavailable') ||
-        (errorMessage.includes('worker exceeded resource limits') && 
-         errorMessage.includes('cloudflare'))) {
-        return { type: '503', severity: 'high', shouldTerminate: true };
-    }
-    
-    // 检测429错误（速率限制）
-    if (errorMessage.includes('429') || 
-        errorMessage.includes('rate limit') ||
-        errorMessage.includes('too many requests')) {
-        return { type: '429', severity: 'medium', shouldTerminate: true };
-    }
-    
-    return false;
-}
 
     // ============================================================
     // 🎯 向后兼容的代理方法（确保现有代码正常运行）
