@@ -241,7 +241,7 @@ ${cleanTopic}
         console.log(`[Orchestrator] 更新Agent配置: maxIterations=${maxIterations}, reportModel=${reportModel}`);
         
         // 🔥 更新最大迭代次数
-        if (maxIterations && maxIterations >= 3 && maxIterations <= 20) {
+        if (maxIterations && maxIterations >= 3 && maxIterations <= 12) {
             this.deepResearchAgent.maxIterations = maxIterations;
             console.log(`[Orchestrator] ✅ 已更新最大迭代次数为: ${maxIterations}`);
         } else {

@@ -77,7 +77,7 @@ export class ModelSelectionDialog {
                                 type="number" 
                                 id="iteration-input"
                                 min="3" 
-                                max="20" 
+                                max="12" 
                                 value="8"
                                 class="iteration-input"
                             >
@@ -88,11 +88,11 @@ export class ModelSelectionDialog {
                                 </div>
                                 <div class="hint-item">
                                     <span class="hint-icon">🎯</span>
-                                    <span class="hint-text">标准研究: 8次 (默认)</span>
+                                    <span class="hint-text">标准研究: 5-8次 (默认)</span>
                                 </div>
                                 <div class="hint-item">
                                     <span class="hint-icon">🧠</span>
-                                    <span class="hint-text">深度研究: 12-20次</span>
+                                    <span class="hint-text">深度研究: 8-12次</span>
                                 </div>
                             </div>
                         </div>
@@ -157,6 +157,40 @@ export class ModelSelectionDialog {
                 this.close(null);
             }
         });
+        
+        // 🔥 新增：迭代次数输入实时验证
+        const iterationInput = this.dialog.querySelector('#iteration-input');
+        if (iterationInput) {
+            iterationInput.addEventListener('input', (e) => {
+                let value = parseInt(e.target.value, 10);
+                
+                if (isNaN(value)) {
+                    // 恢复为默认值
+                    e.target.value = 8;
+                    return;
+                }
+                
+                // 限制在3-20范围内
+                if (value < 3) value = 3;
+                if (value > 20) value = 20;
+                
+                // 更新显示值
+                if (value !== parseInt(e.target.value, 10)) {
+                    e.target.value = value;
+                }
+                
+                // 视觉反馈
+                this._updateIterationVisualFeedback(value);
+            });
+            
+            iterationInput.addEventListener('blur', (e) => {
+                const value = parseInt(e.target.value, 10);
+                if (isNaN(value) || value < 3 || value > 20) {
+                    e.target.value = 8; // 重置为默认值
+                    this._updateIterationVisualFeedback(8);
+                }
+            });
+        }
     }
 
     addStyles() {
@@ -378,6 +412,16 @@ export class ModelSelectionDialog {
                 border-color: #1976d2;
             }
             
+            .iteration-input.valid {
+                border-color: #28a745;
+                background-color: #f8fff9;
+            }
+            
+            .iteration-input.invalid {
+                border-color: #dc3545;
+                background-color: #fff8f8;
+            }
+            
             .iteration-hints {
                 flex: 1;
                 display: flex;
@@ -410,6 +454,18 @@ export class ModelSelectionDialog {
                 color: #856404;
                 font-size: 0.9em;
             }
+            
+            /* 添加加载动画 */
+            @keyframes pulse {
+                0% { opacity: 0.6; }
+                50% { opacity: 1; }
+                100% { opacity: 0.6; }
+            }
+            
+            .loading-hint {
+                animation: pulse 1.5s infinite;
+                color: #1976d2;
+            }
         `;
 
         const styleSheet = document.createElement('style');
@@ -431,14 +487,28 @@ export class ModelSelectionDialog {
         let selectedIterations = 8; // 默认值
         
         if (selectedModel) {
-            // 获取用户设置的迭代次数
+            // 获取用户设置的迭代次数（增强验证）
             const iterationInput = this.dialog.querySelector('#iteration-input');
             if (iterationInput) {
-                const value = parseInt(iterationInput.value);
-                // 验证输入范围
-                if (!isNaN(value) && value >= 3 && value <= 20) {
-                    selectedIterations = value;
+                let value = parseInt(iterationInput.value, 10);
+                
+                // 🔥 增强验证：处理无效输入
+                if (isNaN(value)) {
+                    console.warn(`[ModelSelectionDialog] 无效的迭代次数输入: "${iterationInput.value}"，使用默认值8`);
+                    value = 8;
                 }
+                
+                // 验证输入范围
+                if (value < 3) {
+                    console.warn(`[ModelSelectionDialog] 迭代次数 ${value} 小于最小值3，调整为3`);
+                    value = 3;
+                } else if (value > 20) {
+                    console.warn(`[ModelSelectionDialog] 迭代次数 ${value} 大于最大值20，调整为20`);
+                    value = 20;
+                }
+                
+                selectedIterations = value;
+                console.log(`[ModelSelectionDialog] 最终迭代次数: ${selectedIterations}`);
             }
         }
         
@@ -453,6 +523,21 @@ export class ModelSelectionDialog {
                 maxIterations: selectedIterations
             } : null);
         }
+    }
+    
+    /**
+     * 🔥 新增：更新迭代次数的视觉反馈
+     */
+    _updateIterationVisualFeedback(value) {
+        const hintItem = this.dialog.querySelector('.selection-hint');
+        if (!hintItem) return;
+        
+        let level = '';
+        if (value <= 5) level = '快速探索';
+        else if (value <= 10) level = '标准研究';
+        else level = '深度研究';
+        
+        hintItem.innerHTML = `✅ 已选择: <strong>${this.getModelDisplayName(this.selectedModel)}</strong> | ⚙️ 迭代次数: <strong>${value}</strong> (${level})`;
     }
 }
 
