@@ -232,6 +232,30 @@ export class AgentLogic {
             throw new Error("AgentLogic requires a valid chatApiHandler instance.");
         }
         this.chatApiHandler = chatApiHandler;
+        
+         // 🔥 核心压缩配置 - 基于Cloudflare 60k阈值
+        this.compressionConfig = {
+        hardLimit: 60000,      // 硬性上限（触发强制压缩）
+        warningThreshold: 58000, // 警告阈值（开始压缩）
+        targetLength: 58000,   // 压缩目标长度
+        minHistorySteps: 3,    // 最少保留历史步骤
+        maxHistorySteps: 8     // 最多保留历史步骤
+    };
+    
+        // 统计信息
+        this.compressionStats = {
+        totalCalls: 0,
+        compressedCalls: 0,
+        totalOriginalLength: 0,
+        totalCompressedLength: 0
+    };
+    
+        // CPU监控
+        this.cpuStats = {
+        lastCpuTime: 0,
+        timeoutCount: 0
+    };
+
     }
     // 🎯 新增：模式专用的质量检查清单
     _getModeQualityChecklist(researchMode) {
@@ -249,6 +273,7 @@ export class AgentLogic {
 ### 商业分析质量检查：
 - [ ] 数据是否是最新的？
 - [ ] 是否有量化分析？
+
 - [ ] 竞争分析是否充分？
 - [ ] 风险识别是否全面？
 - [ ] 投资建议是否具体？
@@ -860,74 +885,113 @@ ${this._getModeQualityChecklist(researchMode)}
         
         console.log(`[AgentLogic] 检测到模式: ${detectedMode}, 提示词长度:`, prompt.length);
         
+        // ====================================================================
+        // 🔥 简化压缩逻辑 - 基于60k阈值
+        // ====================================================================
+        
+        const { hardLimit, warningThreshold, targetLength } = this.compressionConfig;
+        
+        let finalPrompt = prompt;
+        let compressionApplied = false;
+        let compressionReason = '';
+        
+        if (prompt.length > hardLimit) {
+            // 🚨 情况1：超过硬性上限，必须强制压缩
+            compressionReason = `严重超过硬性上限 (${prompt.length} > ${hardLimit})`;
+            console.warn(`[AgentLogic] 🚨 强制压缩: ${compressionReason}`);
+            finalPrompt = this._intelligentCompress(prompt, targetLength);
+            compressionApplied = true;
+            
+        } else if (prompt.length > warningThreshold) {
+            // ⚠️ 情况2：超过警告阈值，轻度压缩
+            compressionReason = `超过警告阈值 (${prompt.length} > ${warningThreshold})`;
+            console.warn(`[AgentLogic] ⚠️ 轻度压缩: ${compressionReason}`);
+            finalPrompt = this._intelligentCompress(prompt, targetLength);
+            compressionApplied = true;
+            
+        } else if (prompt.length > 55000) {
+            // ℹ️ 情况3：接近阈值，记录但不压缩
+            console.log(`[AgentLogic] ℹ️ 接近阈值: ${prompt.length}字符 (安全范围内)`);
+        }
+        
+        // 更新统计
+        if (compressionApplied) {
+            this.compressionStats.totalCalls++;
+            this.compressionStats.compressedCalls++;
+            this.compressionStats.totalOriginalLength += prompt.length;
+            this.compressionStats.totalCompressedLength += finalPrompt.length;
+            
+            const compressionRate = ((1 - finalPrompt.length / prompt.length) * 100).toFixed(1);
+            console.log(`[AgentLogic] 压缩完成: ${prompt.length} → ${finalPrompt.length}字符 (压缩率: ${compressionRate}%)`);
+        } else {
+            this.compressionStats.totalCalls++;
+        }
+        
+        // 发送事件
         await runManager?.callbackManager.invokeEvent('on_agent_think_start', { 
             run_id: runManager.runId,
             data: { 
-                prompt_length: prompt.length,
+                prompt_length: finalPrompt.length,
+                original_prompt_length: prompt.length,
                 current_step: currentStep,
-                total_steps: researchPlan?.research_plan?.length || '未知',
-                research_mode: detectedMode
+                research_mode: researchMode,
+                compression_applied: compressionApplied,
+                compression_reason: compressionReason || '无需压缩'
             }
         });
         
-        try {
-            const llmResponse = await this.chatApiHandler.completeChat({
-                messages: [{ role: 'user', content: prompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
-                temperature: 0.0,
-            });
+        // 调用LLM
+        const llmResponse = await this.chatApiHandler.completeChat({
+            messages: [{ role: 'user', content: finalPrompt }],
+            model: 'gemini-2.5-flash-preview-09-2025',
+            temperature: 0.0,
+        });
 
-            const choice = llmResponse && llmResponse.choices && llmResponse.choices[0];
-            let responseText = choice && choice.message && choice.message.content ? 
-                choice.message.content : '';
-
-            if (!responseText) {
-                throw new Error("LLM返回了空的或无效的响应。");
-            }
-            
-            // 🎯 新增：格式验证与修复
-            responseText = this._validateAndFixFormat(responseText, runManager?.runId);
-
-            await runManager?.callbackManager.invokeEvent('on_agent_think_end', { 
-                run_id: runManager.runId, 
-                data: { 
-                    response_length: responseText.length,
-                    response_preview: responseText.substring(0, 200),
-                    current_step: currentStep,
-                    research_mode: detectedMode
-                } 
-            });
-            
-            return {
-                responseText: responseText,
-                usage: llmResponse.usage // 🎯 新增：返回 token usage
-            };
-
-        } catch (error) {
-            // 🎯 修复：确保 error 对象存在
-            const errorMessage = error?.message || '未知错误';
-            console.error("[AgentLogic] LLM 思考失败:", errorMessage);
-            
-            await runManager?.callbackManager.invokeEvent('on_agent_think_error', {
-                run_id: runManager.runId,
-                data: { error: errorMessage }
-            });
-            
-            // ✨ 修改：返回兼容的结构，即使在出错时
-            return {
-                responseText: `思考: 发生内部错误，无法继续规划。错误信息: ${errorMessage}\n最终答案: 研究因内部错误终止。`,
-                usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } // 提供一个空的usage对象
-            };
+        const responseText = llmResponse?.choices?.[0]?.message?.content || '';
+        
+        if (!responseText) {
+            throw new Error("LLM返回了空的响应");
         }
+        
+        // 格式验证与修复
+        const validatedText = this._validateAndFixFormat(responseText, runManager?.runId);
+
+        // 🔥 可选：添加调试信息
+        console.log(`[AgentLogic] 格式修复: ${responseText.length} → ${validatedText.length}字符`);
+
+        await runManager?.callbackManager.invokeEvent('on_agent_think_end', { 
+            run_id: runManager.runId, 
+            data: { 
+                response_length: validatedText.length,
+                response_preview: validatedText.substring(0, 200), // 🔥 可保留预览，便于调试
+                current_step: currentStep,
+                research_mode: researchMode, // 🔥 可添加研究模式
+                compression_applied: compressionApplied || false // 🔥 添加压缩信息
+            } 
+        });
+
+        return {
+            responseText: validatedText,
+            usage: llmResponse.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        };
+        
     } catch (error) {
-        // 🔥 新增：捕获步骤计算过程中的错误
         console.error("[AgentLogic] 规划过程错误:", error?.message || error);
         
-        // 降级方案：使用默认的第一步
-        const fallbackResponse = `思考: 系统在处理历史数据时发生错误，将继续执行研究计划的第一步。\n行动: tavily_search\n行动输入: {"query": "${topic} 最新信息", "max_results": 10}`;
+        // CPU超时特殊处理
+        if (error.message.includes('CPU time limit') || error.message.includes('503')) {
+            this.cpuStats.timeoutCount++;
+            console.error(`[AgentLogic] CPU超时计数: ${this.cpuStats.timeoutCount}`);
+            
+            // 如果是CPU超时，下次提前压缩
+            if (this.compressionConfig.warningThreshold > 55000) {
+                this.compressionConfig.warningThreshold -= 2000;
+                console.warn(`[AgentLogic] 降低警告阈值到: ${this.compressionConfig.warningThreshold}`);
+            }
+        }
         
         return {
-            responseText: fallbackResponse,
+            responseText: `思考: 系统在处理时发生错误，将继续执行研究计划。\n行动: tavily_search\n行动输入: {"query": "${topic} 最新信息", "max_results": 10}`,
             usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
         };
     }
@@ -2694,7 +2758,7 @@ ${plan.research_plan.map(item =>
         if (!history || history.length === 0) return false;
         
         // 🔥 优化1：只看最近4步，避免历史噪声干扰
-        const recentSteps = history.slice(-12);
+        const recentSteps = history.slice(-9);
         const historyText = recentSteps.map(h => 
             `${h.action?.thought || ''} ${h.observation || ''}`
         ).join(' ').toLowerCase();
@@ -2923,6 +2987,689 @@ ${actionJson}
     return text;
     }
     
+/**
+ * 🎯 智能压缩：按重要性移除最不重要的部分
+ * 重要性排序：1.角色和任务 > 2.最终指令 > 3.工具 > 4.数据总线 > 5.相似性检测 > 6.历史记录 > 7.详细协议
+ */
+_intelligentCompress(prompt, targetLength) {
+    console.log(`[AgentLogic] 智能压缩: ${prompt.length} → ${targetLength}`);
+    
+    // 按重要性提取各部分
+    const sections = this._extractSectionsByImportance(prompt);
+    
+    // 构建压缩后的提示词
+    let compressed = '';
+    let remainingLength = targetLength;
+    
+    // 按重要性顺序处理
+    const importanceOrder = [1, 2, 3, 4, 5, 6, 7];
+    
+    for (const importance of importanceOrder) {
+        const section = sections.find(s => s.importance === importance);
+        if (!section) continue;
+        
+        // 计算分配给此部分的最大长度
+        const allocation = this._calculateAllocation(importance, remainingLength, sections.length);
+        
+        // 压缩此部分
+        const compressedSection = this._compressSection(section, allocation);
+        
+        // 如果分配的长度足够，添加此部分
+        if (compressedSection.length <= remainingLength) {
+            compressed += compressedSection + '\n\n';
+            remainingLength -= compressedSection.length + 2;
+        } else {
+            // 长度不足，跳过最低重要性的部分
+            if (importance === 7) { // 详细协议最不重要
+                console.log(`[AgentLogic] 跳过详细协议部分`);
+                continue;
+            }
+            // 对于其他部分，尽量保留
+            const trimmedSection = compressedSection.substring(0, remainingLength - 100);
+            compressed += trimmedSection + '...\n\n';
+            remainingLength = 0;
+            break;
+        }
+    }
+    
+    // 如果仍然过长，进行安全截断
+    if (compressed.length > targetLength) {
+        console.warn(`[AgentLogic] 压缩后仍过长: ${compressed.length}, 进行安全截断`);
+        return this._safeTruncate(compressed, targetLength);
+    }
+    
+    return compressed;
+}
+
+/**
+ * 📊 智能提取各部分（整合改进版）
+ * 改进1：多模式匹配，提高容错性
+ * 改进2：动态协议检测，不再依赖硬编码列表
+ */
+_extractSectionsByImportance(prompt) {
+    console.log(`[AgentLogic] 开始智能提取，总长度: ${prompt.length}`);
+    
+    const sections = [];
+    
+    // 记录提取统计
+    const extractionStats = {
+        totalSections: 0,
+        successSections: 0,
+        failedSections: [],
+        protocolsFound: 0
+    };
+    
+    try {
+        // ================== 改进1：多模式匹配各核心部分 ==================
+        
+        // 1. 角色和格式部分（重要性：1）
+        const roleSection = this._extractWithMultiplePatterns(prompt, {
+            name: '角色和格式',
+            patterns: [
+                // 模式1：标准格式，后面是"## 📊"
+                /#\s*角色\s*[:：]\s*[\s\S]*?(?=\n##\s*📊)/,
+                // 模式2：宽松格式，后面是任意二级标题
+                /#\s*角色\s*[:：]\s*[\s\S]*?(?=\n##\s*)/,
+                // 模式3：更宽松，后面是一级标题
+                /#\s*角色\s*[:：]\s*[\s\S]*?(?=\n#\s*[^#])/,
+                // 模式4：保底，提取到结尾
+                /#\s*角色\s*[:：]\s*[\s\S]*/
+            ],
+            importance: 1,
+            minLength: 100
+        });
+        if (roleSection) {
+            sections.push(roleSection);
+            extractionStats.successSections++;
+        } else {
+            extractionStats.failedSections.push('角色和格式');
+        }
+        
+        // 2. 当前任务部分（重要性：2）
+        const taskSection = this._extractWithMultiplePatterns(prompt, {
+            name: '当前任务',
+            patterns: [
+                // 模式1：标准格式，后面是"# 研究目标"
+                /#\s*🎯\s*当前任务\s*[\s\S]*?(?=\n#\s*研究目标)/,
+                // 模式2：宽松格式，后面是一级标题
+                /#\s*🎯\s*当前任务\s*[\s\S]*?(?=\n#\s*[^#])/,
+                // 模式3：后面是二级标题
+                /#\s*🎯\s*当前任务\s*[\s\S]*?(?=\n##\s*)/,
+                // 模式4：保底
+                /#\s*🎯\s*当前任务\s*[\s\S]*/
+            ],
+            importance: 2,
+            minLength: 50
+        });
+        if (taskSection) {
+            sections.push(taskSection);
+            extractionStats.successSections++;
+        } else {
+            extractionStats.failedSections.push('当前任务');
+        }
+        
+        // 3. 最终指令部分（重要性：2）
+        const finalInstructionSection = this._extractWithMultiplePatterns(prompt, {
+            name: '最终指令',
+            patterns: [
+                // 模式1：标准格式，后面是"现在开始决策："
+                /#\s*⚡\s*最终指令\s*[\s\S]*?(?=\n现在开始决策：)/,
+                // 模式2：宽松格式
+                /#\s*⚡\s*最终指令\s*[\s\S]*?(?=\n#|\n##)/,
+                // 模式3：保底
+                /#\s*⚡\s*最终指令\s*[\s\S]*/
+            ],
+            importance: 2,
+            minLength: 30
+        });
+        if (finalInstructionSection) {
+            sections.push(finalInstructionSection);
+            extractionStats.successSections++;
+        } else {
+            extractionStats.failedSections.push('最终指令');
+        }
+        
+        // 4. 可用工具部分（重要性：3）
+        const toolsSection = this._extractWithMultiplePatterns(prompt, {
+            name: '可用工具',
+            patterns: [
+                // 模式1：标准格式，后面是"## 3. 研究状态评估"
+                /#\s*可用工具\s*[\s\S]*?(?=\n##\s*3\.\s*研究状态评估)/,
+                // 模式2：宽松格式
+                /#\s*可用工具\s*[\s\S]*?(?=\n##\s*)/,
+                // 模式3：保底
+                /#\s*可用工具\s*[\s\S]*/
+            ],
+            importance: 3,
+            minLength: 100
+        });
+        if (toolsSection) {
+            sections.push(toolsSection);
+            extractionStats.successSections++;
+        } else {
+            extractionStats.failedSections.push('可用工具');
+        }
+        
+        // 5. 数据总线部分（重要性：4）
+        const dataBusSection = this._extractWithMultiplePatterns(prompt, {
+            name: '数据总线',
+            patterns: [
+                // 模式1：标准格式，后面是"## 🔍"
+                /##\s*📊\s*数据总线智能分析报告[\s\S]*?(?=\n##\s*🔍)/,
+                // 模式2：宽松格式
+                /##\s*📊\s*数据总线[\s\S]*?(?=\n##\s*)/,
+                // 模式3：保底
+                /##\s*📊\s*数据总线[\s\S]*/
+            ],
+            importance: 4,
+            minLength: 50
+        });
+        if (dataBusSection) {
+            sections.push(dataBusSection);
+            extractionStats.successSections++;
+        } else {
+            extractionStats.failedSections.push('数据总线');
+        }
+        
+        // 6. 相似性检测部分（重要性：5）
+        const similaritySection = this._extractWithMultiplePatterns(prompt, {
+            name: '相似性检测',
+            patterns: [
+                // 模式1：标准格式，后面是"## 🎯"
+                /##\s*🔍\s*相似性检测结果[\s\S]*?(?=\n##\s*🎯)/,
+                // 模式2：宽松格式
+                /##\s*🔍\s*相似性检测[\s\S]*?(?=\n##\s*)/,
+                // 模式3：保底
+                /##\s*🔍\s*相似性检测[\s\S]*/
+            ],
+            importance: 5,
+            minLength: 50
+        });
+        if (similaritySection) {
+            sections.push(similaritySection);
+            extractionStats.successSections++;
+        } else {
+            extractionStats.failedSections.push('相似性检测');
+        }
+        
+        // 7. 研究历史部分（重要性：6）
+        const historySection = this._extractWithMultiplePatterns(prompt, {
+            name: '研究历史',
+            patterns: [
+                // 模式1：标准格式，后面是"# 动态调整权限"
+                /#\s*研究历史与观察\s*[\s\S]*?(?=\n#\s*动态调整权限)/,
+                // 模式2：宽松格式
+                /#\s*研究历史与观察\s*[\s\S]*?(?=\n#|\n##)/,
+                // 模式3：保底
+                /#\s*研究历史与观察\s*[\s\S]*/
+            ],
+            importance: 6,
+            minLength: 100
+        });
+        if (historySection) {
+            sections.push(historySection);
+            extractionStats.successSections++;
+        } else {
+            extractionStats.failedSections.push('研究历史');
+        }
+        
+        // ================== 改进2：动态协议检测 ==================
+        
+        const protocolSections = this._extractProtocolSections(prompt);
+        if (protocolSections.length > 0) {
+            sections.push(...protocolSections);
+            extractionStats.protocolsFound = protocolSections.length;
+            extractionStats.successSections += protocolSections.length;
+        }
+        
+        // 统计总部分数
+        extractionStats.totalSections = sections.length;
+        
+        // 验证和日志
+        this._validateExtraction(sections, extractionStats);
+        
+    } catch (error) {
+        console.error(`[AgentLogic] 提取过程异常:`, error?.message || error);
+        // 降级：使用原有的硬编码方式作为后备
+        return this._fallbackExtractSections(prompt);
+    }
+    
+    // 按重要性排序
+    return sections.sort((a, b) => a.importance - b.importance);
+}
+
+/**
+ * 🔧 多模式匹配提取（辅助方法）
+ */
+_extractWithMultiplePatterns(prompt, config) {
+    const { name, patterns, importance, minLength = 30 } = config;
+    
+    for (let i = 0; i < patterns.length; i++) {
+        const pattern = patterns[i];
+        try {
+            const match = prompt.match(pattern);
+            if (match && match[0]) {
+                const content = match[0].trim();
+                
+                // 验证内容长度
+                if (content.length >= minLength) {
+                    console.log(`[AgentLogic] ${name}提取成功，使用模式${i+1}，长度:${content.length}`);
+                    return {
+                        name: name,
+                        content: content,
+                        importance: importance,
+                        marker: content.split('\n')[0] || name
+                    };
+                } else if (i === patterns.length - 1) {
+                    // 最后一个模式，即使短也返回
+                    console.warn(`[AgentLogic] ${name}内容过短，但使用最后模式: ${content.length}字符`);
+                    return {
+                        name: name,
+                        content: content,
+                        importance: importance,
+                        marker: content.split('\n')[0] || name
+                    };
+                }
+            }
+        } catch (error) {
+            console.warn(`[AgentLogic] ${name}模式${i+1}匹配异常:`, error?.message);
+        }
+    }
+    
+    console.warn(`[AgentLogic] ${name}提取失败，所有模式均未匹配到有效内容`);
+    return null;
+}
+
+/**
+ * 🔍 动态协议检测（改进2的核心）
+ */
+_extractProtocolSections(prompt) {
+    const protocolSections = [];
+    
+    // 定义协议特征（按优先级）
+    const protocolFeatures = [
+        // 特征1：包含强制标记🚨
+        { regex: /##\s*🚨[^\n]*/g, keywords: ['🚨'] },
+        // 特征2：包含特殊表情符号的标题
+        { regex: /##\s*[📊🛠️🔍📄🔄🕷️🔴🟡✅🚫][^\n]*/g, keywords: [] },
+        // 特征3：包含协议关键词
+        { regex: /##\s*[^\n]*?(?:协议|准则|框架|策略|指南|流程|纪律|检查|决策)[^\n]*/g, keywords: [] },
+        // 特征4：包含强制行为词
+        { regex: /##\s*[^\n]*?(?:强制|必须|禁止|避免|绝对|要求|注意|警告)[^\n]*/g, keywords: [] },
+        // 特征5：包含行动准则
+        { regex: /##\s*[^\n]*?(?:行动准则|质量标准|驱动决策|核心决策)[^\n]*/g, keywords: [] },
+        // 特征6：包含"规范"或"标准"
+        { regex: /##\s*[^\n]*?(?:规范|标准|原则)[^\n]*/g, keywords: [] }
+    ];
+    
+    // 记录已匹配的位置，避免重复
+    const matchedPositions = new Set();
+    
+    // 按特征顺序进行匹配
+    for (const feature of protocolFeatures) {
+        const matches = prompt.matchAll(feature.regex);
+        
+        for (const match of matches) {
+            const startIndex = match.index;
+            const title = match[0];
+            
+            // 跳过已经匹配过的位置
+            if (matchedPositions.has(startIndex)) continue;
+            
+            // 跳过已知的非协议部分
+            if (this._isNonProtocolSection(title)) {
+                continue;
+            }
+            
+            // 找到该协议的完整内容（从标题到下一个##标题或结束）
+            const remaining = prompt.substring(startIndex);
+            const nextSectionMatch = remaining.match(/\n##\s*[^\n]|\n#\s*[^\n]|$/);
+            const endIndex = nextSectionMatch ? 
+                startIndex + nextSectionMatch.index : 
+                prompt.length;
+            
+            const content = prompt.substring(startIndex, endIndex).trim();
+            
+            // 验证内容长度
+            if (content.length >= 30) {
+                // 生成协议名称
+                const protocolName = this._extractProtocolName(title);
+                
+                protocolSections.push({
+                    name: protocolName,
+                    content: content,
+                    importance: 7,
+                    marker: title
+                });
+                
+                matchedPositions.add(startIndex);
+                console.log(`[AgentLogic] 发现协议: "${protocolName}", 长度: ${content.length}`);
+            }
+        }
+    }
+    
+    // 去重：按内容相似度去重
+    const uniqueSections = this._deduplicateProtocolSections(protocolSections);
+    
+    console.log(`[AgentLogic] 动态检测发现 ${uniqueSections.length} 个协议部分`);
+    return uniqueSections;
+}
+
+/**
+ * 🚫 判断是否是非协议部分
+ */
+_isNonProtocolSection(title) {
+    const nonProtocolKeywords = [
+        '角色',
+        '当前任务',
+        '可用工具',
+        '数据总线',
+        '相似性检测',
+        '研究历史',
+        '研究目标',
+        '动态调整权限',
+        '输出格式',
+        '最终指令'
+    ];
+    
+    const lowerTitle = title.toLowerCase();
+    return nonProtocolKeywords.some(keyword => 
+        lowerTitle.includes(keyword.toLowerCase())
+    );
+}
+
+/**
+ * 📝 提取协议名称
+ */
+_extractProtocolName(title) {
+    // 移除"## "前缀
+    let name = title.replace(/^##\s*/, '');
+    
+    // 截断到合理长度
+    if (name.length > 40) {
+        name = name.substring(0, 37) + '...';
+    }
+    
+    return name;
+}
+
+/**
+ * 🔄 协议去重（基于内容相似度）
+ */
+_deduplicateProtocolSections(sections) {
+    if (sections.length <= 1) return sections;
+    
+    const uniqueSections = [];
+    const seenContents = new Set();
+    
+    for (const section of sections) {
+        // 生成内容签名（取前100字符的哈希）
+        const contentSig = this._generateContentSignature(section.content);
+        
+        if (!seenContents.has(contentSig)) {
+            seenContents.add(contentSig);
+            uniqueSections.push(section);
+        } else {
+            console.log(`[AgentLogic] 跳过重复协议: "${section.name}"`);
+        }
+    }
+    
+    return uniqueSections;
+}
+
+/**
+ * 🔢 生成内容签名
+ */
+_generateContentSignature(content) {
+    // 简单签名：取前200字符的哈希
+    const preview = content.substring(0, Math.min(200, content.length));
+    return preview.replace(/\s+/g, '').toLowerCase();
+}
+
+/**
+ * ✅ 提取结果验证
+ */
+_validateExtraction(sections, stats) {
+    console.log(`[AgentLogic] 提取统计: ${stats.successSections}个成功, ${stats.failedSections.length}个失败`);
+    
+    if (stats.failedSections.length > 0) {
+        console.warn(`[AgentLogic] 提取失败的部分: ${stats.failedSections.join(', ')}`);
+    }
+    
+    if (sections.length === 0) {
+        console.error('[AgentLogic] 警告: 未提取到任何部分！');
+    } else {
+        console.log(`[AgentLogic] 成功提取 ${sections.length} 个部分`);
+        
+        // 检查是否有协议部分
+        const protocolCount = sections.filter(s => s.importance === 7).length;
+        if (protocolCount > 0) {
+            console.log(`[AgentLogic] 包含 ${protocolCount} 个协议部分`);
+        }
+    }
+    
+    // 验证重要性分布
+    const importanceCounts = {};
+    sections.forEach(s => {
+        importanceCounts[s.importance] = (importanceCounts[s.importance] || 0) + 1;
+    });
+    console.log('[AgentLogic] 重要性分布:', importanceCounts);
+}
+
+/**
+ * 🆘 降级提取方案（后备）
+ */
+_fallbackExtractSections(prompt) {
+    console.warn('[AgentLogic] 使用降级提取方案');
+    
+    // 简单的基于标题的提取
+    const sections = [];
+    const lines = prompt.split('\n');
+    let currentSection = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        if (line.startsWith('# ') || line.startsWith('## ')) {
+            // 保存上一个部分
+            if (currentSection) {
+                sections.push(currentSection);
+            }
+            
+            // 开始新部分
+            const importance = this._determineImportance(line);
+            currentSection = {
+                name: line.replace(/^[#\s]+/, ''),
+                content: line,
+                importance: importance
+            };
+        } else if (currentSection) {
+            // 累积内容
+            currentSection.content += '\n' + line;
+        }
+    }
+    
+    // 添加最后一个部分
+    if (currentSection) {
+        sections.push(currentSection);
+    }
+    
+    return sections.sort((a, b) => a.importance - b.importance);
+}
+
+/**
+ * 🎯 确定部分重要性（降级方案用）
+ */
+_determineImportance(titleLine) {
+    if (titleLine.includes('角色') || titleLine.includes('Role')) return 1;
+    if (titleLine.includes('🎯') || titleLine.includes('当前任务')) return 2;
+    if (titleLine.includes('⚡') || titleLine.includes('最终指令')) return 2;
+    if (titleLine.includes('可用工具')) return 3;
+    if (titleLine.includes('📊') || titleLine.includes('数据总线')) return 4;
+    if (titleLine.includes('🔍') || titleLine.includes('相似性检测')) return 5;
+    if (titleLine.includes('研究历史')) return 6;
+    
+    // 协议特征
+    if (titleLine.includes('🚨') || 
+        titleLine.includes('协议') || 
+        titleLine.includes('准则') || 
+        titleLine.includes('框架') || 
+        titleLine.includes('策略')) {
+        return 7;
+    }
+    
+    return 8; // 其他部分最低优先级
+}
+
+/**
+ * 📚 压缩历史记录
+ */
+_compressHistory(historyText, maxLength) {
+    // 统计历史步骤数
+    const stepCount = (historyText.match(/## 步骤/g) || []).length;
+    
+    // 动态计算应该保留多少步骤
+    const stepsToKeep = Math.max(
+        this.compressionConfig.minHistorySteps,
+        Math.min(this.compressionConfig.maxHistorySteps, Math.floor(maxLength / 800))
+    );
+    
+    console.log(`[AgentLogic] 历史记录压缩: ${stepCount}步 → 保留${stepsToKeep}步`);
+    
+    // 如果步骤不多，直接返回
+    if (stepCount <= stepsToKeep) {
+        return historyText.length > maxLength 
+            ? historyText.substring(0, maxLength - 50) + '...'
+            : historyText;
+    }
+    
+    // 只保留最近 stepsToKeep 步
+    const lines = historyText.split('\n');
+    let compressed = '';
+    let stepNum = 0;
+    let inKeepStep = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        if (line.includes('## 步骤')) {
+            stepNum++;
+            if (stepNum > stepCount - stepsToKeep) {
+                compressed += line + '\n';
+                inKeepStep = true;
+            } else {
+                inKeepStep = false;
+            }
+        } else if (inKeepStep) {
+            // 压缩观察内容
+            if (line.includes('观察:')) {
+                const match = line.match(/观察:\s*(.*)/);
+                if (match && match[1]) {
+                    const obs = match[1];
+                    compressed += `观察: ${obs.substring(0, 200)}${obs.length > 200 ? '...' : ''}\n`;
+                }
+            } else {
+                compressed += line + '\n';
+            }
+        }
+    }
+    
+    // 添加折叠提示
+    if (stepCount > stepsToKeep) {
+        compressed += `\n[... 还有 ${stepCount - stepsToKeep} 个历史步骤已折叠 ...]\n`;
+    }
+    
+    // 确保不超过最大长度
+    if (compressed.length > maxLength) {
+        return compressed.substring(0, maxLength - 50) + '...';
+    }
+    
+    return compressed;
+}
+
+/**
+ * 📊 压缩数据总线
+ */
+_compressDataBus(dataBusText, maxLength) {
+    // 只保留摘要部分
+    const lines = dataBusText.split('\n');
+    let compressed = [];
+    let inSummary = false;
+    
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+        const line = lines[i];
+        if (line.includes('数据概览') || line.includes('关键概念') || line.startsWith('##')) {
+            compressed.push(line);
+            inSummary = true;
+        } else if (inSummary && line.trim() && compressed.length < 8) {
+            compressed.push(line);
+        }
+    }
+    
+    const result = compressed.join('\n') + '\n[... 详细数据分析已折叠 ...]';
+    
+    return result.length > maxLength 
+        ? result.substring(0, maxLength - 50) + '...'
+        : result;
+}
+
+/**
+ * 📄 压缩协议
+ */
+_compressProtocol(protocolText, maxLength) {
+    // 提取协议标题和核心规则
+    const lines = protocolText.split('\n');
+    let compressed = [];
+    
+    // 保留前3行（通常是标题）
+    for (let i = 0; i < Math.min(3, lines.length); i++) {
+        compressed.push(lines[i]);
+    }
+    
+    // 保留核心规则（✅/🚫 开头的行）
+    for (let i = 3; i < Math.min(15, lines.length); i++) {
+        if (lines[i].includes('✅') || lines[i].includes('🚫') || lines[i].includes('**')) {
+            compressed.push(lines[i]);
+        }
+        if (compressed.length > 10) break;
+    }
+    
+    const result = compressed.join('\n') + '\n[... 协议细节已折叠 ...]';
+    
+    return result.length > maxLength 
+        ? result.substring(0, maxLength - 50) + '...'
+        : result;
+}
+
+/**
+ * 🔧 安全截断（最后手段）
+ */
+_safeTruncate(text, maxLength) {
+    // 保留开头70%和结尾30%
+    const keepStart = Math.floor(maxLength * 0.7);
+    const keepEnd = Math.floor(maxLength * 0.3);
+    
+    const start = text.substring(0, keepStart);
+    const end = text.substring(text.length - keepEnd);
+    
+    return start + '\n\n--- [系统保护：中间内容已折叠] ---\n\n' + end;
+}
+
+/**
+ * 📄 提取指定部分（通用方法）
+ */
+_extractSection(text, startMarker, endMarker) {
+    if (!text || !startMarker) return '';
+    
+    const startIndex = text.indexOf(startMarker);
+    if (startIndex === -1) return '';
+    
+    let endIndex = text.indexOf(endMarker, startIndex + startMarker.length);
+    if (endIndex === -1) endIndex = text.length;
+    
+    return text.substring(startIndex, endIndex).trim();
+}
+
     // --- 1.2 数据总线摘要生成系统辅助方法 ---
     
     _extractKeyPointsFromData(data) {
