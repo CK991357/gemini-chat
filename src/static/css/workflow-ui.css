@@ -254,3 +254,141 @@
     font-size: 0.8em;
     font-style: italic;
 }
+
+/* ============================================================
+ * DataBus研究过程导出功能 - CSS样式
+ * ============================================================ */
+
+/* 导出通知动画 */
+@keyframes databusNotificationSlideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes databusNotificationSlideOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+}
+
+/* 导出按钮样式 */
+.summary-actions {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.export-databus-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.export-databus-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.export-databus-btn:active {
+    transform: translateY(0);
+}
+
+.export-databus-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.export-databus-btn .export-icon {
+    font-size: 16px;
+}
+
+/* Agent摘要卡片增强样式 */
+.agent-execution-summary {
+    border-left: 4px solid #667eea;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+    margin: 16px 0;
+    border-radius: 0 8px 8px 0;
+}
+
+.agent-execution-summary .content {
+    padding: 16px;
+}
+
+.summary-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.summary-icon {
+    font-size: 20px;
+}
+
+.summary-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.summary-details span {
+    display: inline-flex;
+    align-items: center;
+}
+
+.summary-note {
+    color: #888;
+    font-size: 13px;
+    font-style: italic;
+}
+
+/* DataBus导出通知样式 */
+.databus-export-notification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    max-width: 350px;
+    animation: databusNotificationSlideIn 0.3s ease;
+}
+
+.databus-export-notification .notification-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.databus-export-notification .notification-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    margin-left: auto;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
