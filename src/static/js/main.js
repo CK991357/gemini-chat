@@ -3443,6 +3443,44 @@ function exportResearchProcessData(agentResult) {
             markdown += `3. DataBus尚未被激活或初始化\n\n`;
         }
         
+        // 🎯 新增：写作模型实际输入信息（如果存在）
+        markdown += `## 🖋️ 写作模型实际输入信息\n\n`;
+        markdown += `> 🔍 这部分展示了 **最终写作模型实际接收到的输入信息**。\n\n`;
+        
+        if (agentResult.final_writing_info) {
+            const writingInfo = agentResult.final_writing_info;
+            
+            console.log('✅ 已找到保存的写作模型信息');
+            
+            markdown += `### ✅ 写作模型配置\n\n`;
+            markdown += `| 参数 | 值 |\n|------|-----|\n`;
+            markdown += `| **模型** | ${writingInfo.model || 'N/A'} |\n`;
+            markdown += `| **温度** | ${writingInfo.temperature || 'N/A'} |\n`;
+            markdown += `| **调用时间** | ${writingInfo.timestamp || 'N/A'} |\n`;
+            
+            if (writingInfo.token_info) {
+                markdown += `| **总Token** | ${writingInfo.token_info.total_tokens || 'N/A'} |\n`;
+                markdown += `| **提示Token** | ${writingInfo.token_info.prompt_tokens || 'N/A'} |\n`;
+                markdown += `| **补全Token** | ${writingInfo.token_info.completion_tokens || 'N/A'} |\n`;
+            }
+            markdown += `\n`;
+            
+            // 完整提示词（模型实际看到的全部内容）
+            if (writingInfo.prompt) {
+                markdown += `### 📝 完整提示词（${writingInfo.prompt.length} 字符）\n\n`;
+                markdown += `这是写作模型 **实际接收到的完整提示词**，包含所有指令和上下文：\n\n`;
+                markdown += `\`\`\`markdown\n${writingInfo.prompt}\n\`\`\`\n\n`;
+                
+                // 简单的统计信息
+                const lineCount = writingInfo.prompt.split('\n').length;
+                const wordCount = writingInfo.prompt.split(/\s+/).length;
+                markdown += `**统计**: ${lineCount} 行，${wordCount} 单词\n\n`;
+            } else {
+                markdown += `### 📝 完整提示词\n\n`;
+                markdown += `*无提示词数据*\n\n`;
+            }
+        }
+        
         // 1.4 研究来源汇总
         if (agentResult.sources?.length > 0) {
             markdown += `## 📚 研究来源汇总\n\n`;
