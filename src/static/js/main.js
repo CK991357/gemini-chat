@@ -3291,6 +3291,7 @@ function exportResearchProcessData(agentResult) {
         // 1. 构建Markdown内容
         let markdown = `# DeepResearch Agent 研究过程导出\n\n`;
         markdown += `**导出说明**: 本文件包含Agent在研究过程中实际看到和处理的智能摘要信息\n\n`;
+        markdown += `**调试用途**: 本导出包含完整未截断数据，用于调试和验证数据完整性\n\n`;
         
         // 1.1 研究摘要
         markdown += `## 📊 研究摘要\n\n`;
@@ -3357,22 +3358,10 @@ function exportResearchProcessData(agentResult) {
                 
                 if (observation) {
                     markdown += `#### 📝 观察结果（模型看到的处理后的数据）\n\n`;
+                    markdown += `**字符数**: ${observation.length}\n\n`;
                     
-                    let displayObservation = observation;
-                    const maxLength = 15000;
-                    
-                    if (observation.length > maxLength) {
-                        const paragraphEnd = observation.lastIndexOf('\n\n', maxLength);
-                        const sentenceEnd = observation.lastIndexOf('. ', maxLength);
-                        
-                        const truncatePoint = paragraphEnd > maxLength * 0.8 ? paragraphEnd : 
-                                             sentenceEnd > maxLength * 0.8 ? sentenceEnd + 2 : maxLength;
-                        
-                        displayObservation = observation.substring(0, truncatePoint) + 
-                            `\n\n[... 内容过长，已截断前${truncatePoint}字符，完整内容共${observation.length}字符 ...]\n`;
-                    }
-                    
-                    markdown += `${displayObservation}\n\n`;
+                    // 🎯 关键修改：完全取消截断，显示完整内容
+                    markdown += `${observation}\n\n`;
                 }
                 
                 if (step.sources && step.sources.length > 0) {
@@ -3388,6 +3377,70 @@ function exportResearchProcessData(agentResult) {
             });
         } else {
             markdown += `*无研究步骤数据*\n\n`;
+        }
+        
+        // 🎯 新增：DataBus完整信息（写作模型看到的原始数据）
+        markdown += `## 📦 DataBus完整信息（写作模型看到的原始数据）\n\n`;
+        markdown += `> 🔍 这部分展示了写作模型实际看到的 **原始数据收集**。DataBus是Agent研究过程中的内部数据总线，存储了所有未处理的原始信息。\n\n`;
+        
+        if (agentResult.dataBus && typeof agentResult.dataBus === 'object') {
+            const dataBus = agentResult.dataBus;
+            const entries = Object.entries(dataBus);
+            
+            console.log(`📦 DataBus中发现了 ${entries.length} 个原始数据条目`);
+            
+            // 按类型统计
+            const typeStats = {};
+            
+            entries.forEach(([key, data]) => {
+                const dataType = data.type || 'unknown';
+                typeStats[dataType] = (typeStats[dataType] || 0) + 1;
+            });
+            
+            // 总体统计
+            markdown += `### 📊 DataBus总体统计\n\n`;
+            markdown += `| 统计项 | 数值 |\n|--------|------|\n`;
+            markdown += `| **总条目数** | ${entries.length} |\n`;
+            
+            if (Object.keys(typeStats).length > 0) {
+                markdown += `| **数据类型分布** | ${Object.entries(typeStats).map(([type, count]) => `${type}: ${count}`).join(', ')} |\n`;
+            }
+            markdown += `\n`;
+            
+            // 显示所有DataBus条目
+            markdown += `### 🔍 DataBus完整条目列表\n\n`;
+            markdown += `> ℹ️ 以下是DataBus中存储的所有原始数据条目，完整未截断。\n\n`;
+            
+            entries.forEach(([key, data], index) => {
+                markdown += `#### 条目 ${index + 1}: ${key}\n\n`;
+                markdown += `**类型**: ${data.type || 'unknown'}\n`;
+                markdown += `**时间戳**: ${data.timestamp || '未知'}\n`;
+                
+                if (data.content) {
+                    const contentStr = typeof data.content === 'string' 
+                        ? data.content 
+                        : JSON.stringify(data.content, null, 2);
+                    
+                    markdown += `**内容大小**: ${contentStr.length} 字符\n\n`;
+                    markdown += `**完整内容**:\n\n\`\`\`\n${contentStr}\n\`\`\`\n\n`;
+                } else {
+                    markdown += `**内容**: 空\n\n`;
+                }
+                
+                if (data.metadata) {
+                    markdown += `**元数据**:\n\n\`\`\`json\n${JSON.stringify(data.metadata, null, 2)}\n\`\`\`\n\n`;
+                }
+                
+                markdown += `---\n\n`;
+            });
+            
+            console.log(`📊 DataBus统计:`, typeStats);
+        } else {
+            markdown += `### ⚠️ 未找到DataBus信息\n\n`;
+            markdown += `当前Agent结果中没有包含DataBus数据。可能的原因：\n`;
+            markdown += `1. 使用的Agent版本不支持DataBus功能\n`;
+            markdown += `2. 数据在传输过程中丢失\n`;
+            markdown += `3. DataBus尚未被激活或初始化\n\n`;
         }
         
         // 1.4 研究来源汇总
@@ -3436,7 +3489,8 @@ function exportResearchProcessData(agentResult) {
         console.log('✅ 研究过程数据导出完成', {
             文件: fileName,
             大小: (blob.size / 1024).toFixed(2) + 'KB',
-            步骤数: agentResult.intermediateSteps?.length || 0
+            步骤数: agentResult.intermediateSteps?.length || 0,
+            DataBus条目数: agentResult.dataBus ? Object.keys(agentResult.dataBus).length : 0
         });
         
         // 3. 显示成功通知
