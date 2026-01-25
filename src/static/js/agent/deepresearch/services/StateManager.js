@@ -406,4 +406,52 @@ export class StateManager {
         
         console.log('[StateManager] 🔄 所有状态已重置');
     }
+
+        /**
+     * 🎯 获取可序列化的 DataBus 数据（用于导出）
+     */
+    getSerializableDataBus() {
+        const result = {};
+        
+        for (const [key, value] of this.dataBus.entries()) {
+            // 确保每个值都是可序列化的对象
+            result[key] = {
+                rawData: value.rawData || '',
+                originalData: value.originalData || value.rawData || '',
+                metadata: value.metadata || {}
+            };
+            
+            // 确保 metadata 是可序列化的
+            if (result[key].metadata.timestamp) {
+                result[key].metadata.timestamp = new Date(result[key].metadata.timestamp).toISOString();
+            }
+        }
+        
+        console.log(`[StateManager] 📊 可序列化DataBus: ${Object.keys(result).length} 个条目`);
+        return result;
+    }
+    
+    /**
+     * 🎯 获取 DataBus 统计信息
+     */
+    getDataBusStats() {
+        const stats = {
+            totalEntries: this.dataBus.size,
+            entryTypes: {},
+            totalSize: 0
+        };
+        
+        for (const [key, value] of this.dataBus.entries()) {
+            const type = value.metadata?.contentType || 'unknown';
+            stats.entryTypes[type] = (stats.entryTypes[type] || 0) + 1;
+            
+            if (value.originalData) {
+                stats.totalSize += value.originalData.length;
+            } else if (value.rawData) {
+                stats.totalSize += value.rawData.length;
+            }
+        }
+        
+        return stats;
+    }
 }
