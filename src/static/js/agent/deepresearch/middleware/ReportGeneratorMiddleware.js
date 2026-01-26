@@ -188,24 +188,6 @@ export class ReportGeneratorMiddleware {
         this._logPromptSummary(finalPrompt);
 
         console.log('[ReportGeneratorMiddleware] 调用报告生成模型进行最终整合');
-
-        // ============================================================
-        // 🎯 【新增】记录写作模型实际接收的提示词（用于调试）
-        // ============================================================
-
-        // 构建写作模型信息对象
-        const writingModelInfo = {
-            model: this.reportModel,
-            temperature: 0.3,
-            timestamp: new Date().toISOString(),
-            research_mode: researchMode,
-            topic: topic,
-        // 🎯 核心：保存完整的提示词（模型实际接收的内容）
-            prompt: finalPrompt,
-            prompt_length: finalPrompt.length,
-            sources_count: sources.length,
-            steps_count: intermediateSteps.length
-        };
         
         // 6. 调用模型生成报告（带重试机制）
         const maxRetries = 2;
@@ -235,32 +217,16 @@ export class ReportGeneratorMiddleware {
                 
                 const executionTime = Date.now() - startTime;
                 console.log(`[DeepResearchAgent] 📥 收到写作模型响应 (尝试${attempt + 1}):`);
-
-                // 🎯 【更新】添加更多信息到写作模型记录
-                writingModelInfo.execution_time = executionTime;
-                writingModelInfo.attempt = attempt + 1;
-                writingModelInfo.success = true;
         
                 if (reportResponse?.usage) {
                     console.log(`  • Token消耗: ${reportResponse.usage.total_tokens}`);
                     console.log(`  • 上行: ${reportResponse.usage.prompt_tokens}`);
                     console.log(`  • 下行: ${reportResponse.usage.completion_tokens}`);
-
-                    // 🎯 【新增】记录Token使用信息
-                    writingModelInfo.token_usage = {
-                        prompt_tokens: reportResponse.usage.prompt_tokens,
-                        completion_tokens: reportResponse.usage.completion_tokens,
-                        total_tokens: reportResponse.usage.total_tokens
-                    };
                 }
                 this._updateTokenUsage(reportResponse.usage);
 
                 let finalReport = reportResponse?.choices?.[0]?.message?.content ||
                     this._generateFallbackReport(topic, intermediateSteps, sources, researchMode);
-
-                // 🎯 【新增】保存写作模型信息到metrics
-                    this._storeWritingModelInfo(writingModelInfo);
-
                 // 🎯 继续分析报告内容
                 console.log(`[DeepResearchAgent] 📄 生成的报告:`);
                 console.log(`  • 长度: ${finalReport.length}字符`);
@@ -275,14 +241,6 @@ export class ReportGeneratorMiddleware {
 
             } catch (error) {
                 console.error(`[DeepResearchAgent] ❌ 报告生成失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error && error.message ? error.message : error);
-
-                // 🎯 【新增】记录错误信息到写作模型记录
-                if (attempt === maxRetries) {
-                    writingModelInfo.error = error.message;
-                    writingModelInfo.success = false;
-                    writingModelInfo.is_fallback = true;
-                    this._storeWritingModelInfo(writingModelInfo);
-                }
 
                 // 如果是最后一次尝试，使用降级方案
                 if (attempt === maxRetries) {
@@ -440,9 +398,7 @@ export class ReportGeneratorMiddleware {
             plan_completion: planCompletion, // ✅ 修复：使用计算出的完成度
             research_mode: researchMode, // ✅ 修复：使用传入的研究模式
             temporal_quality: temporalQualityReport, // 包含完整时效性质量报告
-            model: this.reportModel, // 🎯 修复：添加实际使用的模型名称
-            // 🎯 【关键修改】传递写作模型信息，使用主文件期望的字段名
-            final_writing_info: this.metrics?.final_writing_info || null
+            model: this.reportModel // 🎯 修复：添加实际使用的模型名称
         };
             
             console.log('[ReportGeneratorMiddleware] ✅ 完整结果生成成功');
@@ -1174,7 +1130,7 @@ ${promptFragment}
         console.log(`[ReportGeneratorMiddleware] 📏 提示词长度: ${finalPrompt.length}字符 (~${Math.ceil(finalPrompt.length/4)} tokens)`);
     }
 
-/**
+    /**
  * 🎯 Token 追踪方法
  */
 _updateTokenUsage(usage) {
@@ -1193,43 +1149,6 @@ _updateTokenUsage(usage) {
             run_id: this.runId,
             data: usage
         }).catch(err => console.warn('触发token更新事件失败:', err));
-    }
-}
-
-// ============================================================
-// 🔧 写作模型信息存储方法
-// ============================================================
-
-/**
- * 🎯 存储写作模型信息到共享状态
- * @param {Object} writingInfo - 写作模型信息
- */
-_storeWritingModelInfo(writingInfo) {
-    try {
-        // 确保 metrics 存在
-        if (!this.metrics) {
-            this.metrics = {
-                tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-                stepProgress: [],
-                informationGain: [],
-                planCompletion: 0
-            };
-        }
-        
-        // 在 metrics 中存储写作模型信息
-        // 🎯 使用主文件期望的字段名：final_writing_info
-        this.metrics.final_writing_info = writingInfo;
-        
-        console.log('[ReportGeneratorMiddleware] ✅ 写作模型信息已保存:', {
-            model: writingInfo.model,
-            prompt_length: writingInfo.prompt_length,
-            research_mode: writingInfo.research_mode,
-            has_prompt: !!writingInfo.prompt,
-            execution_time: writingInfo.execution_time || 'N/A'
-        });
-        
-    } catch (error) {
-        console.error('[ReportGeneratorMiddleware] ❌ 存储写作模型信息失败:', error);
     }
 }
 
@@ -2842,11 +2761,6 @@ ${numericStats}`;
             tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
         };
         this.runId = null;
-        
-        // 🎯 【可选但建议】清理写作模型信息
-        if (this.metrics && this.metrics.final_writing_info) {
-            delete this.metrics.final_writing_info;
-        }
         console.log('[ReportGeneratorMiddleware] 🔄 报告生成状态已重置');
     }
 
