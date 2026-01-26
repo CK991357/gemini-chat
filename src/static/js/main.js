@@ -3382,55 +3382,58 @@ function exportResearchProcessData(agentResult) {
         // 🎯 新增：DataBus完整信息（写作模型看到的原始数据）
         markdown += `## 📦 DataBus完整信息（写作模型看到的原始数据）\n\n`;
         markdown += `> 🔍 这部分展示了写作模型实际看到的 **原始数据收集**。DataBus是Agent研究过程中的内部数据总线，存储了所有未处理的原始信息。\n\n`;
-
+        
         if (agentResult.dataBus && typeof agentResult.dataBus === 'object') {
             const dataBus = agentResult.dataBus;
             const entries = Object.entries(dataBus);
-    
+            
             console.log(`📦 DataBus中发现了 ${entries.length} 个原始数据条目`);
-    
+            
             // 按类型统计
             const typeStats = {};
-    
+            
             entries.forEach(([key, data]) => {
-                const dataType = data.metadata?.contentType || 'unknown'; // ✅ 修改这里
+                const dataType = data.type || 'unknown';
                 typeStats[dataType] = (typeStats[dataType] || 0) + 1;
             });
-    
+            
             // 总体统计
             markdown += `### 📊 DataBus总体统计\n\n`;
             markdown += `| 统计项 | 数值 |\n|--------|------|\n`;
             markdown += `| **总条目数** | ${entries.length} |\n`;
-    
+            
             if (Object.keys(typeStats).length > 0) {
                 markdown += `| **数据类型分布** | ${Object.entries(typeStats).map(([type, count]) => `${type}: ${count}`).join(', ')} |\n`;
             }
             markdown += `\n`;
-    
+            
             // 显示所有DataBus条目
             markdown += `### 🔍 DataBus完整条目列表\n\n`;
             markdown += `> ℹ️ 以下是DataBus中存储的所有原始数据条目，完整未截断。\n\n`;
-    
+            
             entries.forEach(([key, data], index) => {
                 markdown += `#### 条目 ${index + 1}: ${key}\n\n`;
-                markdown += `**类型**: ${data.metadata?.contentType || 'unknown'}\n`; // ✅ 修改这里
-                markdown += `**时间戳**: ${data.metadata?.timestamp || '未知'}\n`; // ✅ 修改这里
-        
-                if (data.originalData || data.rawData) {
-                    const contentStr = data.originalData || data.rawData;
+                markdown += `**类型**: ${data.type || 'unknown'}\n`;
+                markdown += `**时间戳**: ${data.timestamp || '未知'}\n`;
+                
+                if (data.content) {
+                    const contentStr = typeof data.content === 'string' 
+                        ? data.content 
+                        : JSON.stringify(data.content, null, 2);
+                    
                     markdown += `**内容大小**: ${contentStr.length} 字符\n\n`;
                     markdown += `**完整内容**:\n\n\`\`\`\n${contentStr}\n\`\`\`\n\n`;
                 } else {
                     markdown += `**内容**: 空\n\n`;
                 }
-        
+                
                 if (data.metadata) {
                     markdown += `**元数据**:\n\n\`\`\`json\n${JSON.stringify(data.metadata, null, 2)}\n\`\`\`\n\n`;
                 }
-        
+                
                 markdown += `---\n\n`;
             });
-    
+            
             console.log(`📊 DataBus统计:`, typeStats);
         } else {
             markdown += `### ⚠️ 未找到DataBus信息\n\n`;

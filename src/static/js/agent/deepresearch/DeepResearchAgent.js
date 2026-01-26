@@ -839,7 +839,7 @@ export class DeepResearchAgent {
                     temporal_quality: processedResult.temporalQualityReport,
                     model: this.reportGenerator.reportModel,
                     // 🎯 新增：添加DataBus数据
-                    dataBus: this.stateManager.getSerializableDataBus(),
+                    dataBus: this.dataBus,
                     // 🎯 新增：添加运行ID
                     runId: runId
                 };
@@ -857,7 +857,7 @@ export class DeepResearchAgent {
                 );
                 // 🎯 新增：确保降级结果也包含DataBus
                 if (!finalResult.dataBus) {
-                    finalResult.dataBus = this.stateManager.getSerializableDataBus();
+                    finalResult.dataBus = this.dataBus;
                 }
                 if (!finalResult.runId) {
                     finalResult.runId = runId;
@@ -877,7 +877,7 @@ export class DeepResearchAgent {
             
             // 🎯 新增：确保finalResult包含DataBus数据
             if (!finalResult.dataBus) {
-                finalResult.dataBus = this.stateManager.getSerializableDataBus();
+                finalResult.dataBus = this.dataBus;
             }
             // 🎯 新增：确保包含运行ID
             if (!finalResult.runId) {
@@ -886,6 +886,11 @@ export class DeepResearchAgent {
         }
 
         console.log('[DeepResearchAgent] ✅ 最终结果构建完成');
+        // 🎯 新增：输出DataBus统计信息
+        console.log(`[DeepResearchAgent] 📊 DataBus统计:`, {
+            条目数: Object.keys(this.dataBus).length,
+            类型分布: this._analyzeDataBusTypes(this.dataBus)
+        });
 
         // ============================================================
         // 🎯 阶段4：发送完成事件并返回结果
