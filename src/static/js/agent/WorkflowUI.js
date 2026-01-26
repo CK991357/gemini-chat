@@ -70,7 +70,7 @@ export class ModelSelectionDialog {
                     <div class="setting-row">
                         <label for="iteration-input">
                             <span class="setting-label">最大迭代次数：</span>
-                            <span class="setting-description">控制研究的深入程度 (范围: 3-20)</span>
+                            <span class="setting-description">控制研究的深入程度 (范围: 3-12)</span>
                         </label>
                         <div class="iteration-control">
                             <input 
@@ -170,9 +170,9 @@ export class ModelSelectionDialog {
                     return;
                 }
                 
-                // 限制在3-20范围内
+                // 限制在3-12范围内
                 if (value < 3) value = 3;
-                if (value > 20) value = 20;
+                if (value > 12) value = 12;
                 
                 // 更新显示值
                 if (value !== parseInt(e.target.value, 10)) {
@@ -185,7 +185,7 @@ export class ModelSelectionDialog {
             
             iterationInput.addEventListener('blur', (e) => {
                 const value = parseInt(e.target.value, 10);
-                if (isNaN(value) || value < 3 || value > 20) {
+                if (isNaN(value) || value < 3 || value > 12) {
                     e.target.value = 8; // 重置为默认值
                     this._updateIterationVisualFeedback(8);
                 }
@@ -502,9 +502,9 @@ export class ModelSelectionDialog {
                 if (value < 3) {
                     console.warn(`[ModelSelectionDialog] 迭代次数 ${value} 小于最小值3，调整为3`);
                     value = 3;
-                } else if (value > 20) {
-                    console.warn(`[ModelSelectionDialog] 迭代次数 ${value} 大于最大值20，调整为20`);
-                    value = 20;
+                } else if (value > 12) {
+                    console.warn(`[ModelSelectionDialog] 迭代次数 ${value} 大于最大值12，调整为12`);
+                    value = 12;
                 }
                 
                 selectedIterations = value;
