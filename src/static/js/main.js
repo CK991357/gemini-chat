@@ -3533,6 +3533,37 @@ function exportResearchProcessData(agentResult) {
             }
             markdown += `\n`;
         }
+
+        // 🔥 1.6：计划完成度详情
+        markdown += `### 🎯 计划完成度详情\n\n`;
+
+        // 最终计划完成度
+       const finalCompletion = agentResult.plan_completion || 0;
+       markdown += `**最终计划完成度**: ${(finalCompletion * 100).toFixed(1)}%\n\n`;
+
+       // 分步完成度历史（如果存在）
+       if (agentResult.plan_completion_history && agentResult.plan_completion_history.length > 0) {
+            markdown += `**分步完成度历史**:\n\n`;
+            markdown += `| 迭代 | 完成度 | 步骤数 | 时间 |\n|------|--------|--------|------|\n`;
+    
+            agentResult.plan_completion_history.forEach(item => {
+                const completionPercent = (item.completion * 100).toFixed(1);
+                const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'N/A';
+                markdown += `| ${item.iteration || 'N/A'} | ${completionPercent}% | ${item.steps_count || 0} | ${time} |\n`;
+            });
+            markdown += `\n`;
+        } else if (agentResult.metrics && agentResult.metrics.planCompletion) {
+        // 如果只有最终完成度，没有历史
+        markdown += `**计划完成度**: ${(agentResult.metrics.planCompletion * 100).toFixed(1)}%\n\n`;
+        }
+
+        // 其他性能指标
+        if (agentResult.iterations) {
+        markdown += `**迭代次数**: ${agentResult.iterations}/${agentResult.maxIterations || 8}\n`;
+        }
+        if (agentResult.intermediateSteps) {
+        markdown += `**研究步骤数**: ${agentResult.intermediateSteps.length}\n`;
+        }
         
         // 2. 创建并下载文件
         const blob = new Blob([markdown], { 
