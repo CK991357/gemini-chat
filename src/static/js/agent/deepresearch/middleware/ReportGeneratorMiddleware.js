@@ -2,6 +2,9 @@
 // 📝 报告生成中间件 - 从 DeepResearchAgent 中分离的报告生成逻辑
 // 🎯 完整版本，包含所有缺失的内容和所有方法实现
 
+// 🎯 【新增】导入增强评估器
+import { EnhancedDebugEvaluator } from './EnhancedDebugEvaluator.js';
+
 export class ReportGeneratorMiddleware {
     /**
      * 🎯 报告生成中间件构造函数（完整版）
@@ -314,6 +317,30 @@ export class ReportGeneratorMiddleware {
         // 8. 🎯 记录性能数据
         this._recordTemporalPerformance(temporalQualityReport);
         
+        // ============================================================
+        // 🎯 【新增】调试模式增强评估
+        // ============================================================
+        if (researchMode === 'standard') {
+            console.log('[ReportGeneratorMiddleware] 调试模式，执行增强评估...');
+    
+            try {
+                // 执行增强评估
+                const enhancedReport = await this._enhanceDebugReport(
+                cleanedReport, 
+                intermediateSteps, 
+                plan, 
+                this.metrics
+            );
+        
+            // 更新清理后的报告
+            cleanedReport = enhancedReport;
+        
+            console.log('[ReportGeneratorMiddleware] ✅ 调试报告增强完成');
+        } catch (error) {
+            console.error('[ReportGeneratorMiddleware] ❌ 增强评估失败，使用原始报告:', error);
+        }
+    }
+
         console.log(`[ReportGeneratorMiddleware] ✅ 报告后处理完成，最终长度: ${cleanedReport.length}字符`);
         
         // 🎯 触发完成事件
@@ -375,15 +402,6 @@ export class ReportGeneratorMiddleware {
         };
             
             console.log('[ReportGeneratorMiddleware] ✅ 完整结果生成成功');
-
-            // 🔥🔥🔥 [核心修复：在这里触发真正的完成事件] 🔥🔥🔥
-            if (this.callbackManager) {
-            // 触发一个新的事件，表示报告生成真正完成
-            await this.callbackManager.invokeEvent('research:report_complete', {
-                data: result,
-                run_id: this.runId
-            });
-        }
             return result;
             
         } catch (error) {
@@ -2752,6 +2770,159 @@ ${numericStats}`;
     setCallbackManager(callbackManager) {
         this.callbackManager = callbackManager;
         console.log('[ReportGeneratorMiddleware] ✅ 回调管理器已设置');
+    }
+
+    // ============================================================
+    // 🎯 增强评估功能
+    // ============================================================
+
+    /**
+     * 🎯 增强的调试报告处理
+     */
+    async _enhanceDebugReport(originalReport, intermediateSteps, plan, metrics) {
+        console.log('[ReportGeneratorMiddleware] 开始增强调试报告...');
+        
+        try {
+            // 1. 初始化增强评估器
+            const enhancedEvaluator = new EnhancedDebugEvaluator(metrics, intermediateSteps, plan);
+            
+            // 2. 执行全方位评估
+            const evaluationResults = await enhancedEvaluator.evaluate();
+            
+            // 3. 替换评估章节占位符
+            let enhancedReport = originalReport;
+            
+            // 找到评估章节位置
+            const evaluationSectionStart = enhancedReport.indexOf('## 6. Anthropic方法智能评估');
+            if (evaluationSectionStart !== -1) {
+                // 找到章节结束位置（下一个##开始）
+                const remainingReport = enhancedReport.substring(evaluationSectionStart);
+                const nextSectionIndex = remainingReport.indexOf('\n## ', 1);
+                const sectionEnd = nextSectionIndex !== -1 ? 
+                    evaluationSectionStart + nextSectionIndex : enhancedReport.length;
+                
+                // 构建增强的评估内容
+                const enhancedEvaluationContent = `## 6. Anthropic方法智能评估 (Intelligent Evaluation)\n\n${evaluationResults.report}`;
+                
+                // 替换章节
+                enhancedReport = enhancedReport.substring(0, evaluationSectionStart) + 
+                                enhancedEvaluationContent + 
+                                enhancedReport.substring(sectionEnd);
+                
+                console.log('[ReportGeneratorMiddleware] ✅ 已替换评估章节');
+            } else {
+                // 如果找不到评估章节，在性能评估后追加
+                const perfSectionEnd = enhancedReport.lastIndexOf('## 5. 性能与成本评估');
+                if (perfSectionEnd !== -1) {
+                    const perfSection = enhancedReport.substring(perfSectionEnd);
+                    const nextSectionStart = perfSection.indexOf('\n## ', 1);
+                    const insertPosition = nextSectionStart !== -1 ? 
+                        perfSectionEnd + nextSectionStart : enhancedReport.length;
+                    
+                    const evaluationContent = `\n\n## 6. Anthropic方法智能评估 (Intelligent Evaluation)\n\n${evaluationResults.report}`;
+                    enhancedReport = enhancedReport.substring(0, insertPosition) + 
+                                    evaluationContent + 
+                                    enhancedReport.substring(insertPosition);
+                    
+                    console.log('[ReportGeneratorMiddleware] ✅ 已追加评估章节');
+                }
+            }
+            
+            // 4. 添加优化建议章节（如果不存在）
+            if (!enhancedReport.includes('## 7. 优化建议与改进路线')) {
+                const optimizationContent = this._generateOptimizationSection(evaluationResults);
+                enhancedReport += `\n\n## 7. 优化建议与改进路线 (Optimization Roadmap)\n\n${optimizationContent}`;
+            }
+            
+            // 5. 更新摘要信息
+            enhancedReport = this._updateReportSummary(enhancedReport, evaluationResults);
+            
+            console.log('[ReportGeneratorMiddleware] ✅ 调试报告增强完成');
+            return enhancedReport;
+            
+        } catch (error) {
+            console.error('[ReportGeneratorMiddleware] ❌ 增强评估失败:', error);
+            return originalReport; // 返回原始报告作为降级
+        }
+    }
+
+    /**
+     * 🎯 生成优化建议章节
+     */
+    _generateOptimizationSection(evaluationResults) {
+        const { recommendations, summary } = evaluationResults;
+        
+        return `
+### 🚀 立即行动项 (Immediate Actions)
+
+基于评估结果，建议立即实施以下优化：
+
+1. **决策流程优化**
+   - 强化思考步骤的逻辑完整性检查
+   - 建立工具选择决策矩阵
+   - 实施参数有效性预检
+
+2. **工具链调优**
+   - 优化低效工具的参数配置
+   - 建立工具使用最佳实践文档
+   - 实施工具调用熔断机制
+
+3. **成本控制措施**
+   - 设置Token消耗预警阈值
+   - 实施阶段性成本评估
+   - 建立高成本操作审批流程
+
+### 📈 短期改进计划 (1-2周)
+
+| 优先级 | 改进项 | 预期效果 | 负责人 |
+|--------|--------|----------|--------|
+| 高 | 优化搜索策略 | 提升信息增益20% | 研究团队 |
+| 高 | 完善错误处理机制 | 降低失败率15% | 开发团队 |
+| 中 | 建立性能基线 | 明确改进目标 | 测试团队 |
+
+### 🏗️ 长期架构优化
+
+1. **系统层面**
+   - 引入A/B测试框架
+   - 建立持续性能监控
+   - 实施自动化回归测试
+
+2. **策略层面**
+   - 开发智能路由系统
+   - 建立动态资源分配
+   - 实施预测性优化
+
+### 📊 关键指标改进目标
+
+| 维度 | 当前得分 | 目标得分 | 改进策略 |
+|------|----------|----------|----------|
+| 决策质量 | ${(evaluationResults.decision_quality?.score * 100 || 0).toFixed(1)}% | 75% | 强化思考训练 |
+| 工具效率 | ${(evaluationResults.tool_efficiency?.score * 100 || 0).toFixed(1)}% | 80% | 优化参数配置 |
+| 信息增益 | ${(evaluationResults.information_gain?.score * 100 || 0).toFixed(1)}% | 70% | 多样化信息来源 |
+| 成本效益 | ${(evaluationResults.cost_effectiveness?.score * 100 || 0).toFixed(1)}% | 75% | 精细化成本控制 |
+
+### 🔄 持续改进循环
+
+1. **测量** → 2. **分析** → 3. **优化** → 4. **验证**
+`;
+    }
+
+    /**
+     * 🎯 更新报告摘要
+     */
+    _updateReportSummary(report, evaluationResults) {
+        const summary = evaluationResults.summary;
+        if (!summary) return report;
+        
+        // 在报告开头添加执行摘要
+        const reportStart = report.indexOf('\n## ');
+        if (reportStart !== -1) {
+            const summarySection = `## 🎯 执行摘要 (Executive Summary)\n\n**整体评估**: ${summary.overall_rating} (${(summary.overall_score * 100).toFixed(1)}%)\n\n**关键指标**:\n- 分析步骤: ${summary.steps_analyzed} 个\n- 评估维度: ${summary.dimensions_evaluated} 个\n- 评估时间: ${summary.evaluation_timestamp.split('T')[0]}\n\n**核心洞察**: 基于Anthropic方法的全面评估，识别了系统执行的优点和改进机会。\n\n---\n\n`;
+            
+            return report.substring(0, reportStart) + summarySection + report.substring(reportStart);
+        }
+        
+        return report;
     }
 
     // ============================================================
