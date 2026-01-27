@@ -2823,6 +2823,33 @@ window.addEventListener('research:end', (e) => {
     // 🔥🔥🔥 [修改结束] 🔥🔥🔥
 });
 
+// =========================================================================
+// 🚀 [新增] 监听真正的报告完成事件（用于导出）
+// =========================================================================
+window.addEventListener('research:report_complete', (e) => {
+    console.log("📤 [Main.js] 接收到 research:report_complete 事件，开始导出研究过程数据...");
+    const result = e.detail.data;
+    
+    // 验证数据完整性
+    console.log("🔍 导出数据验证:", {
+        topic: result.topic,
+        报告长度: result.report?.length,
+        步骤数: result.intermediateSteps?.length,
+        完成度: result.plan_completion,
+        时效性报告: !!result.temporal_quality,
+        运行ID: result.runId || 'N/A'
+    });
+    
+    // 直接导出，不需要延迟
+    try {
+        exportResearchProcessData(result);
+    } catch (error) {
+        console.error("[Main.js] 导出失败:", error);
+        // 使用现有的通知系统
+        showSystemMessage("研究过程导出失败: " + error.message);
+    }
+});
+
 /**
  * 检测当前设备是否为移动设备。
  * @returns {boolean} 如果是移动设备则返回 true，否则返回 false。

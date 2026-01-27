@@ -375,6 +375,15 @@ export class ReportGeneratorMiddleware {
         };
             
             console.log('[ReportGeneratorMiddleware] ✅ 完整结果生成成功');
+
+            // 🔥🔥🔥 [核心修复：在这里触发真正的完成事件] 🔥🔥🔥
+            if (this.callbackManager) {
+            // 触发一个新的事件，表示报告生成真正完成
+            await this.callbackManager.invokeEvent('research:report_complete', {
+                data: result,
+                run_id: this.runId
+            });
+        }
             return result;
             
         } catch (error) {
