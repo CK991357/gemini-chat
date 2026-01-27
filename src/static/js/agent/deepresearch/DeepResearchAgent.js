@@ -837,7 +837,11 @@ export class DeepResearchAgent {
                     plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
                     research_mode: detectedMode,
                     temporal_quality: processedResult.temporalQualityReport,
-                    model: this.reportGenerator.reportModel
+                    model: this.reportGenerator.reportModel,
+                    // 🎯 新增：添加DataBus数据
+                    dataBus: this.dataBus,
+                    // 🎯 新增：添加运行ID
+                    runId: runId
                 };
                 
             } catch (error) {
@@ -851,6 +855,13 @@ export class DeepResearchAgent {
                     detectedMode,
                     originalUserInstruction
                 );
+                // 🎯 新增：确保降级结果也包含DataBus
+                if (!finalResult.dataBus) {
+                    finalResult.dataBus = this.dataBus;
+                }
+                if (!finalResult.runId) {
+                    finalResult.runId = runId;
+                }
             }
         } else {
             // 🔥 核心修改：其他模式直接使用中间件生成完整结果
@@ -863,9 +874,23 @@ export class DeepResearchAgent {
                 detectedMode,
                 originalUserInstruction
             );
+            
+            // 🎯 新增：确保finalResult包含DataBus数据
+            if (!finalResult.dataBus) {
+                finalResult.dataBus = this.dataBus;
+            }
+            // 🎯 新增：确保包含运行ID
+            if (!finalResult.runId) {
+                finalResult.runId = runId;
+            }
         }
 
         console.log('[DeepResearchAgent] ✅ 最终结果构建完成');
+        // 🎯 新增：输出DataBus统计信息
+        console.log(`[DeepResearchAgent] 📊 DataBus统计:`, {
+            条目数: Object.keys(this.dataBus).length,
+            类型分布: this._analyzeDataBusTypes(this.dataBus)
+        });
 
         // ============================================================
         // 🎯 阶段4：发送完成事件并返回结果
@@ -2792,4 +2817,21 @@ _isApiServiceError(error) {
         console.warn(`[DeepResearchAgent] ⚠️ 使用已弃用的 _generateSourcesSection 方法，请更新为使用 reportGenerator`);
         return this.reportGenerator._generateSourcesSection(sources, plan);
     }
+
+    /**
+     * 🎯 分析DataBus数据类型分布
+     */
+    _analyzeDataBusTypes(dataBus) {
+        if (!dataBus || typeof dataBus !== 'object') return {};
+    
+        const typeCount = {};
+        Object.values(dataBus).forEach(item => {
+            if (item && typeof item === 'object') {
+                const type = item.type || 'unknown';
+                typeCount[type] = (typeCount[type] || 0) + 1;
+            }
+        });
+        return typeCount;
+    }
 }
+

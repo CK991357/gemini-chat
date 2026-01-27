@@ -2823,6 +2823,33 @@ window.addEventListener('research:end', (e) => {
     // 🔥🔥🔥 [修改结束] 🔥🔥🔥
 });
 
+// =========================================================================
+// 🚀 [新增] 监听真正的报告完成事件（用于导出）
+// =========================================================================
+window.addEventListener('research:report_complete', (e) => {
+    console.log("📤 [Main.js] 接收到 research:report_complete 事件，开始导出研究过程数据...");
+    const result = e.detail.data;
+    
+    // 验证数据完整性
+    console.log("🔍 导出数据验证:", {
+        topic: result.topic,
+        报告长度: result.report?.length,
+        步骤数: result.intermediateSteps?.length,
+        完成度: result.plan_completion,
+        时效性报告: !!result.temporal_quality,
+        运行ID: result.runId || 'N/A'
+    });
+    
+    // 直接导出，不需要延迟
+    try {
+        exportResearchProcessData(result);
+    } catch (error) {
+        console.error("[Main.js] 导出失败:", error);
+        // 使用现有的通知系统
+        showSystemMessage("研究过程导出失败: " + error.message);
+    }
+});
+
 /**
  * 检测当前设备是否为移动设备。
  * @returns {boolean} 如果是移动设备则返回 true，否则返回 false。
@@ -3194,7 +3221,7 @@ export function getAgentThinkingDisplay() {
 
 /**
  * @function displayAgentSummary
- * @description 新增：显示Agent执行摘要卡片，避免重复显示完整摘要。
+ * @description 显示Agent执行摘要卡片，避免重复显示完整摘要。
  * @param {Object} agentResult - Agent执行结果对象。
  * @returns {void}
  */
@@ -3212,6 +3239,8 @@ function displayAgentSummary(agentResult) {
     // 确保 intermediateSteps 是数组
     const toolCount = agentResult.intermediateSteps?.length || 0;
     const statusText = agentResult.success ? '✅ 成功' : '❌ 失败';
+    const modelName = agentResult.model ? 
+        agentResult.model.replace('models/', '').replace('deepseek-', '') : 'N/A';
     
     summaryDiv.innerHTML = `
         <div class="content">
@@ -3220,7 +3249,7 @@ function displayAgentSummary(agentResult) {
                 <strong>Agent执行摘要</strong>
             </div>
             <div class="summary-details">
-                <span>模型: ${agentResult.model ? agentResult.model.replace('models/', '') : 'N/A'}</span>
+                <span>模型: ${modelName}</span>
                 <span>•</span>
                 <span>迭代: ${agentResult.iterations}次</span>
                 <span>•</span>
@@ -3231,10 +3260,352 @@ function displayAgentSummary(agentResult) {
             <div class="summary-note">
                 💡 详细执行过程已在聊天记录中显示
             </div>
+            <div class="summary-actions">
+                <button class="export-databus-btn" title="导出研究过程数据（模型看到的智能摘要）">
+                    <span class="export-icon">💾</span> 导出研究过程
+                </button>
+            </div>
         </div>
     `;
+    
+    // 添加导出按钮事件监听
+    const exportBtn = summaryDiv.querySelector('.export-databus-btn');
+    if (exportBtn) {
+        exportBtn.onclick = () => {
+            // 防止重复点击
+            if (exportBtn.disabled) return;
+            
+            exportBtn.disabled = true;
+            exportBtn.innerHTML = '<span class="export-icon">⏳</span> 导出中...';
+            
+            // 导出数据
+            exportResearchProcessData(agentResult);
+            
+            // 2秒后恢复按钮状态
+            setTimeout(() => {
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = '<span class="export-icon">💾</span> 导出研究过程';
+            }, 2000);
+        };
+    }
     
     // 添加到消息历史中
     messageHistoryElement.appendChild(summaryDiv);
     chatUI.scrollToBottom();
+}
+
+// ============================================================
+// 📤 DataBus研究过程导出功能 - JavaScript部分
+// 说明：导出模型看到的智能摘要信息（intermediateSteps）
+// ============================================================
+
+/**
+ * @function exportResearchProcessData
+ * @description 导出研究过程数据为Markdown文件（模型看到的处理后的数据）
+ * @param {Object} agentResult - Agent执行结果
+ * @returns {Promise<void>}
+ */
+function exportResearchProcessData(agentResult) {
+    try {
+        console.log('📤 开始导出研究过程数据...', agentResult);
+        
+        const timestamp = new Date().toISOString();
+        const runId = agentResult.runId || `research_${Date.now()}`;
+        const topic = agentResult.topic ? 
+            agentResult.topic.substring(0, 50).replace(/[^a-zA-Z0-9\u4e00-\u9fa5\s]/g, '_') : 
+            '研究过程';
+        
+        // 1. 构建Markdown内容
+        let markdown = `# DeepResearch Agent 研究过程导出\n\n`;
+        markdown += `**导出说明**: 本文件包含Agent在研究过程中实际看到和处理的智能摘要信息\n\n`;
+        markdown += `**调试用途**: 本导出包含完整未截断数据，用于调试和验证数据完整性\n\n`;
+        
+        // 1.1 研究摘要
+        markdown += `## 📊 研究摘要\n\n`;
+        markdown += `| 项目 | 值 |\n|------|-----|\n`;
+        markdown += `| **研究主题** | ${agentResult.topic || '未指定'} |\n`;
+        markdown += `| **运行ID** | ${runId} |\n`;
+        markdown += `| **研究模式** | ${agentResult.research_mode || 'standard'} |\n`;
+        markdown += `| **迭代次数** | ${agentResult.iterations || 0} |\n`;
+        markdown += `| **研究步骤** | ${agentResult.intermediateSteps?.length || 0} 步 |\n`;
+        markdown += `| **计划完成度** | ${((agentResult.plan_completion || 0) * 100).toFixed(1)}% |\n`;
+        markdown += `| **状态** | ${agentResult.success ? '✅ 成功' : '❌ 失败'} |\n`;
+        markdown += `| **模型** | ${agentResult.model || 'N/A'} |\n`;
+        markdown += `| **导出时间** | ${timestamp} |\n\n`;
+        
+        // 1.2 工具调用统计
+        if (agentResult.intermediateSteps?.length > 0) {
+            const toolStats = {};
+            agentResult.intermediateSteps.forEach(step => {
+                const toolName = step.action?.tool_name || 'unknown';
+                toolStats[toolName] = (toolStats[toolName] || 0) + 1;
+            });
+            
+            markdown += `## 🔧 工具调用统计\n\n`;
+            markdown += `| 工具名称 | 调用次数 |\n|----------|----------|\n`;
+            
+            Object.entries(toolStats).forEach(([tool, count]) => {
+                markdown += `| ${tool} | ${count} |\n`;
+            });
+            markdown += `\n`;
+        }
+        
+        // 1.3 研究步骤详情（核心：模型看到的数据）
+        markdown += `## 🔍 研究步骤详情\n\n`;
+        markdown += `> ℹ️ 以下内容为Agent在研究过程中实际看到的智能摘要信息\n\n`;
+        
+        if (agentResult.intermediateSteps?.length > 0) {
+            agentResult.intermediateSteps.forEach((step, index) => {
+                const stepNumber = index + 1;
+                const toolName = step.action?.tool_name || '未知工具';
+                const thought = step.action?.thought || '';
+                const parameters = step.action?.parameters || {};
+                const observation = step.observation || '';
+                const keyFinding = step.key_finding || '';
+                const success = step.success !== false ? '✅' : '❌';
+                const iteration = step.iteration || stepNumber;
+                
+                markdown += `### 步骤 ${stepNumber}: ${toolName} ${success}\n\n`;
+                
+                if (iteration !== stepNumber) {
+                    markdown += `**迭代轮次**: ${iteration}\n`;
+                }
+                
+                if (thought) {
+                    markdown += `#### 🤔 Agent思考\n${thought}\n\n`;
+                }
+                
+                if (Object.keys(parameters).length > 0) {
+                    markdown += `#### ⚙️ 工具参数\n\`\`\`json\n${JSON.stringify(parameters, null, 2)}\n\`\`\`\n\n`;
+                }
+                
+                if (keyFinding) {
+                    markdown += `#### 🔑 关键发现\n${keyFinding}\n\n`;
+                }
+                
+                if (observation) {
+                    markdown += `#### 📝 观察结果（模型看到的处理后的数据）\n\n`;
+                    markdown += `**字符数**: ${observation.length}\n\n`;
+                    
+                    // 🎯 关键修改：完全取消截断，显示完整内容
+                    markdown += `${observation}\n\n`;
+                }
+                
+                if (step.sources && step.sources.length > 0) {
+                    markdown += `#### 📚 步骤来源\n`;
+                    step.sources.forEach((source, i) => {
+                        markdown += `${i + 1}. ${source.title || '无标题'}\n`;
+                        if (source.url) markdown += `   ${source.url}\n`;
+                    });
+                    markdown += `\n`;
+                }
+                
+                markdown += `---\n\n`;
+            });
+        } else {
+            markdown += `*无研究步骤数据*\n\n`;
+        }
+        
+        // 🎯 新增：DataBus完整信息（写作模型看到的原始数据）
+        markdown += `## 📦 DataBus完整信息（写作模型看到的原始数据）\n\n`;
+        markdown += `> 🔍 这部分展示了写作模型实际看到的 **原始数据收集**。DataBus是Agent研究过程中的内部数据总线，存储了所有未处理的原始信息。\n\n`;
+        
+        if (agentResult.dataBus && typeof agentResult.dataBus === 'object') {
+            const dataBus = agentResult.dataBus;
+            const entries = Object.entries(dataBus);
+            
+            console.log(`📦 DataBus中发现了 ${entries.length} 个原始数据条目`);
+            
+            // 按类型统计
+            const typeStats = {};
+            
+            entries.forEach(([key, data]) => {
+                const dataType = data.type || 'unknown';
+                typeStats[dataType] = (typeStats[dataType] || 0) + 1;
+            });
+            
+            // 总体统计
+            markdown += `### 📊 DataBus总体统计\n\n`;
+            markdown += `| 统计项 | 数值 |\n|--------|------|\n`;
+            markdown += `| **总条目数** | ${entries.length} |\n`;
+            
+            if (Object.keys(typeStats).length > 0) {
+                markdown += `| **数据类型分布** | ${Object.entries(typeStats).map(([type, count]) => `${type}: ${count}`).join(', ')} |\n`;
+            }
+            markdown += `\n`;
+            
+            // 显示所有DataBus条目
+            markdown += `### 🔍 DataBus完整条目列表\n\n`;
+            markdown += `> ℹ️ 以下是DataBus中存储的所有原始数据条目，完整未截断。\n\n`;
+            
+            entries.forEach(([key, data], index) => {
+                markdown += `#### 条目 ${index + 1}: ${key}\n\n`;
+                markdown += `**类型**: ${data.type || 'unknown'}\n`;
+                markdown += `**时间戳**: ${data.timestamp || '未知'}\n`;
+                
+                if (data.content) {
+                    const contentStr = typeof data.content === 'string' 
+                        ? data.content 
+                        : JSON.stringify(data.content, null, 2);
+                    
+                    markdown += `**内容大小**: ${contentStr.length} 字符\n\n`;
+                    markdown += `**完整内容**:\n\n\`\`\`\n${contentStr}\n\`\`\`\n\n`;
+                } else {
+                    markdown += `**内容**: 空\n\n`;
+                }
+                
+                if (data.metadata) {
+                    markdown += `**元数据**:\n\n\`\`\`json\n${JSON.stringify(data.metadata, null, 2)}\n\`\`\`\n\n`;
+                }
+                
+                markdown += `---\n\n`;
+            });
+            
+            console.log(`📊 DataBus统计:`, typeStats);
+        } else {
+            markdown += `### ⚠️ 未找到DataBus信息\n\n`;
+            markdown += `当前Agent结果中没有包含DataBus数据。可能的原因：\n`;
+            markdown += `1. 使用的Agent版本不支持DataBus功能\n`;
+            markdown += `2. 数据在传输过程中丢失\n`;
+            markdown += `3. DataBus尚未被激活或初始化\n\n`;
+        }
+        
+        // 🎯 新增：写作模型实际输入信息（如果存在）
+        markdown += `## 🖋️ 写作模型实际输入信息\n\n`;
+        markdown += `> 🔍 这部分展示了 **最终写作模型实际接收到的输入信息**。\n\n`;
+        
+        if (agentResult.final_writing_info) {
+            const writingInfo = agentResult.final_writing_info;
+            
+            console.log('✅ 已找到保存的写作模型信息');
+            
+            markdown += `### ✅ 写作模型配置\n\n`;
+            markdown += `| 参数 | 值 |\n|------|-----|\n`;
+            markdown += `| **模型** | ${writingInfo.model || 'N/A'} |\n`;
+            markdown += `| **温度** | ${writingInfo.temperature || 'N/A'} |\n`;
+            markdown += `| **调用时间** | ${writingInfo.timestamp || 'N/A'} |\n`;
+            
+            if (writingInfo.token_info) {
+                markdown += `| **总Token** | ${writingInfo.token_info.total_tokens || 'N/A'} |\n`;
+                markdown += `| **提示Token** | ${writingInfo.token_info.prompt_tokens || 'N/A'} |\n`;
+                markdown += `| **补全Token** | ${writingInfo.token_info.completion_tokens || 'N/A'} |\n`;
+            }
+            markdown += `\n`;
+            
+            // 完整提示词（模型实际看到的全部内容）
+            if (writingInfo.prompt) {
+                markdown += `### 📝 完整提示词（${writingInfo.prompt.length} 字符）\n\n`;
+                markdown += `这是写作模型 **实际接收到的完整提示词**，包含所有指令和上下文：\n\n`;
+                markdown += `\`\`\`markdown\n${writingInfo.prompt}\n\`\`\`\n\n`;
+                
+                // 简单的统计信息
+                const lineCount = writingInfo.prompt.split('\n').length;
+                const wordCount = writingInfo.prompt.split(/\s+/).length;
+                markdown += `**统计**: ${lineCount} 行，${wordCount} 单词\n\n`;
+            } else {
+                markdown += `### 📝 完整提示词\n\n`;
+                markdown += `*无提示词数据*\n\n`;
+            }
+        }
+        
+        // 1.4 研究来源汇总
+        if (agentResult.sources?.length > 0) {
+            markdown += `## 📚 研究来源汇总\n\n`;
+            agentResult.sources.forEach((source, index) => {
+                const usedIcon = source.used_in_report ? '✅' : '📌';
+                markdown += `${index + 1}. ${usedIcon} **${source.title || '无标题'}**\n`;
+                if (source.url) {
+                    markdown += `   ${source.url}\n`;
+                }
+                markdown += `\n`;
+            });
+        }
+        
+        // 1.5 性能指标（简要）
+        if (agentResult.metrics && agentResult.metrics.tokenUsage) {
+            markdown += `## 📈 性能指标\n\n`;
+            const tokens = agentResult.metrics.tokenUsage;
+            markdown += `- **总Token数**: ${tokens.total_tokens || 0}\n`;
+            markdown += `- **提示Token**: ${tokens.prompt_tokens || 0}\n`;
+            markdown += `- **补全Token**: ${tokens.completion_tokens || 0}\n`;
+            if (agentResult.metrics.apiCalls) {
+                markdown += `- **API调用次数**: ${agentResult.metrics.apiCalls}\n`;
+            }
+            markdown += `\n`;
+        }
+        
+        // 2. 创建并下载文件
+        const blob = new Blob([markdown], { 
+            type: 'text/markdown;charset=utf-8' 
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        const dateStr = new Date().toISOString().split('T')[0];
+        const fileName = `研究过程_${topic}_${dateStr}_${runId.substring(0, 6)}.md`;
+        a.download = fileName;
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('✅ 研究过程数据导出完成', {
+            文件: fileName,
+            大小: (blob.size / 1024).toFixed(2) + 'KB',
+            步骤数: agentResult.intermediateSteps?.length || 0,
+            DataBus条目数: agentResult.dataBus ? Object.keys(agentResult.dataBus).length : 0
+        });
+        
+        // 3. 显示成功通知
+        showExportSuccessNotification(blob.size);
+        
+    } catch (error) {
+        console.error('❌ 导出研究过程数据失败:', error);
+        alert(`导出失败: ${error.message}`);
+    }
+}
+
+/**
+ * @function showExportSuccessNotification
+ * @description 显示导出成功通知
+ * @param {number} fileSize - 文件大小（字节）
+ */
+function showExportSuccessNotification(fileSize) {
+    const notification = document.createElement('div');
+    notification.className = 'databus-export-notification';
+    notification.innerHTML = `
+        <div class="notification-content">
+            <span class="notification-icon">✅</span>
+            <div class="notification-text">
+                <strong>研究过程导出成功！</strong>
+                <small>文件大小: ${(fileSize / 1024).toFixed(2)} KB</small>
+            </div>
+            <button class="notification-close">×</button>
+        </div>
+    `;
+    
+    const closeBtn = notification.querySelector('.notification-close');
+    closeBtn.onclick = () => {
+        notification.style.animation = 'databusNotificationSlideOut 0.3s ease';
+        setTimeout(() => {
+            if (document.body.contains(notification)) {
+                document.body.removeChild(notification);
+            }
+        }, 300);
+    };
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (document.body.contains(notification)) {
+            notification.style.animation = 'databusNotificationSlideOut 0.3s ease';
+            setTimeout(() => {
+                if (document.body.contains(notification)) {
+                    document.body.removeChild(notification);
+                }
+            }, 300);
+        }
+    }, 4000);
 }
