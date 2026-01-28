@@ -299,9 +299,6 @@ export class DeepResearchAgent {
         this.intermediateSteps = []; // ✅ 确保每次新研究都清空历史
         let iterations = 0;
         let consecutiveNoGain = 0;
-
-        // 🔥 新增：计划完成度历史记录
-        let planCompletionHistory = []; // 添加这行
         
         // 🆕 新增：解析错误控制变量
         let parserErrorOccurred = false;
@@ -344,14 +341,6 @@ export class DeepResearchAgent {
             console.log(`[DeepResearchAgent] 迭代 ${iterations}/${this.maxIterations}`);
             
             const planCompletion = this._calculatePlanCompletion(researchPlan, this.intermediateSteps); // 计算完成度
-
-            // 🔥 新增：记录完成度历史
-            planCompletionHistory.push({
-            iteration: iterations,
-            completion: planCompletion,
-            timestamp: new Date().toISOString(),
-            steps_count: this.intermediateSteps.length
-            });
             
             // 🎯 数据挖掘模式：使用专用完成条件检查
             let shouldTerminate = false;
@@ -846,8 +835,6 @@ export class DeepResearchAgent {
                     sources: processedResult.filteredSources,
                     metrics: this.metrics,
                     plan_completion: this._calculatePlanCompletion(researchPlan, this.intermediateSteps),
-                     // 🔥 新增：包含完成度历史
-                    plan_completion_history: planCompletionHistory, // 添加这行
                     research_mode: detectedMode,
                     temporal_quality: processedResult.temporalQualityReport,
                     model: this.reportGenerator.reportModel,
@@ -895,10 +882,6 @@ export class DeepResearchAgent {
             // 🎯 新增：确保包含运行ID
             if (!finalResult.runId) {
                 finalResult.runId = runId;
-            }
-            // 🔥 新增：确保包含完成度历史
-            if (!finalResult.plan_completion_history) {
-                finalResult.plan_completion_history = planCompletionHistory;
             }
         }
 

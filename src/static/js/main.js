@@ -2823,6 +2823,33 @@ window.addEventListener('research:end', (e) => {
     // 🔥🔥🔥 [修改结束] 🔥🔥🔥
 });
 
+// =========================================================================
+// 🚀 [新增] 监听真正的报告完成事件（用于导出）
+// =========================================================================
+window.addEventListener('research:report_complete', (e) => {
+    console.log("📤 [Main.js] 接收到 research:report_complete 事件，开始导出研究过程数据...");
+    const result = e.detail.data;
+    
+    // 验证数据完整性
+    console.log("🔍 导出数据验证:", {
+        topic: result.topic,
+        报告长度: result.report?.length,
+        步骤数: result.intermediateSteps?.length,
+        完成度: result.plan_completion,
+        时效性报告: !!result.temporal_quality,
+        运行ID: result.runId || 'N/A'
+    });
+    
+    // 直接导出，不需要延迟
+    try {
+        exportResearchProcessData(result);
+    } catch (error) {
+        console.error("[Main.js] 导出失败:", error);
+        // 使用现有的通知系统
+        showSystemMessage("研究过程导出失败: " + error.message);
+    }
+});
+
 /**
  * 检测当前设备是否为移动设备。
  * @returns {boolean} 如果是移动设备则返回 true，否则返回 false。
@@ -3505,37 +3532,6 @@ function exportResearchProcessData(agentResult) {
                 markdown += `- **API调用次数**: ${agentResult.metrics.apiCalls}\n`;
             }
             markdown += `\n`;
-        }
-
-        // 🔥 1.6：计划完成度详情
-        markdown += `### 🎯 计划完成度详情\n\n`;
-
-        // 最终计划完成度
-       const finalCompletion = agentResult.plan_completion || 0;
-       markdown += `**最终计划完成度**: ${(finalCompletion * 100).toFixed(1)}%\n\n`;
-
-       // 分步完成度历史（如果存在）
-       if (agentResult.plan_completion_history && agentResult.plan_completion_history.length > 0) {
-            markdown += `**分步完成度历史**:\n\n`;
-            markdown += `| 迭代 | 完成度 | 步骤数 | 时间 |\n|------|--------|--------|------|\n`;
-    
-            agentResult.plan_completion_history.forEach(item => {
-                const completionPercent = (item.completion * 100).toFixed(1);
-                const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'N/A';
-                markdown += `| ${item.iteration || 'N/A'} | ${completionPercent}% | ${item.steps_count || 0} | ${time} |\n`;
-            });
-            markdown += `\n`;
-        } else if (agentResult.metrics && agentResult.metrics.planCompletion) {
-        // 如果只有最终完成度，没有历史
-        markdown += `**计划完成度**: ${(agentResult.metrics.planCompletion * 100).toFixed(1)}%\n\n`;
-        }
-
-        // 其他性能指标
-        if (agentResult.iterations) {
-        markdown += `**迭代次数**: ${agentResult.iterations}/${agentResult.maxIterations || 8}\n`;
-        }
-        if (agentResult.intermediateSteps) {
-        markdown += `**研究步骤数**: ${agentResult.intermediateSteps.length}\n`;
         }
         
         // 2. 创建并下载文件
