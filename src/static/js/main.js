@@ -3282,6 +3282,26 @@ function exportResearchProcessData(agentResult) {
     try {
         console.log('📤 开始导出研究过程数据...', agentResult);
         
+        // 🔥 新增：提前检查DataBus类型，便于后续处理
+        let dataBusEntries = [];
+        let dataBusType = 'unknown';
+        let dataBusSize = 0;
+        
+        if (agentResult.dataBus) {
+            if (agentResult.dataBus instanceof Map) {
+                console.log('🔍 DataBus 检测为 Map 类型');
+                dataBusType = 'Map';
+                dataBusEntries = Array.from(agentResult.dataBus.entries());
+                dataBusSize = agentResult.dataBus.size;
+            } else if (typeof agentResult.dataBus === 'object') {
+                console.log('🔍 DataBus 检测为普通对象类型');
+                dataBusType = 'Object';
+                dataBusEntries = Object.entries(agentResult.dataBus);
+                dataBusSize = dataBusEntries.length;
+            }
+            console.log(`📦 DataBus中发现了 ${dataBusSize} 个原始数据条目`);
+        }
+        
         const timestamp = new Date().toISOString();
         const runId = agentResult.runId || `research_${Date.now()}`;
         const topic = agentResult.topic ? 
@@ -3304,6 +3324,7 @@ function exportResearchProcessData(agentResult) {
         markdown += `| **计划完成度** | ${((agentResult.plan_completion || 0) * 100).toFixed(1)}% |\n`;
         markdown += `| **状态** | ${agentResult.success ? '✅ 成功' : '❌ 失败'} |\n`;
         markdown += `| **模型** | ${agentResult.model || 'N/A'} |\n`;
+        markdown += `| **DataBus类型** | ${dataBusType} (${dataBusSize} 条目) |\n`;
         markdown += `| **导出时间** | ${timestamp} |\n\n`;
         
         // 1.2 工具调用统计
@@ -3383,16 +3404,11 @@ function exportResearchProcessData(agentResult) {
         markdown += `## 📦 DataBus完整信息（写作模型看到的原始数据）\n\n`;
         markdown += `> 🔍 这部分展示了写作模型实际看到的 **原始数据收集**。DataBus是Agent研究过程中的内部数据总线，存储了所有未处理的原始信息。\n\n`;
         
-        if (agentResult.dataBus && typeof agentResult.dataBus === 'object') {
-            const dataBus = agentResult.dataBus;
-            const entries = Object.entries(dataBus);
-            
-            console.log(`📦 DataBus中发现了 ${entries.length} 个原始数据条目`);
-            
+        if (dataBusEntries.length > 0) {
             // 按类型统计
             const typeStats = {};
             
-            entries.forEach(([key, data]) => {
+            dataBusEntries.forEach(([key, data]) => {
                 const dataType = data.type || 'unknown';
                 typeStats[dataType] = (typeStats[dataType] || 0) + 1;
             });
@@ -3400,7 +3416,8 @@ function exportResearchProcessData(agentResult) {
             // 总体统计
             markdown += `### 📊 DataBus总体统计\n\n`;
             markdown += `| 统计项 | 数值 |\n|--------|------|\n`;
-            markdown += `| **总条目数** | ${entries.length} |\n`;
+            markdown += `| **总条目数** | ${dataBusEntries.length} |\n`;
+            markdown += `| **数据结构** | ${dataBusType} |\n`;
             
             if (Object.keys(typeStats).length > 0) {
                 markdown += `| **数据类型分布** | ${Object.entries(typeStats).map(([type, count]) => `${type}: ${count}`).join(', ')} |\n`;
@@ -3411,24 +3428,68 @@ function exportResearchProcessData(agentResult) {
             markdown += `### 🔍 DataBus完整条目列表\n\n`;
             markdown += `> ℹ️ 以下是DataBus中存储的所有原始数据条目，完整未截断。\n\n`;
             
-            entries.forEach(([key, data], index) => {
+            dataBusEntries.forEach(([key, data], index) => {
                 markdown += `#### 条目 ${index + 1}: ${key}\n\n`;
                 markdown += `**类型**: ${data.type || 'unknown'}\n`;
-                markdown += `**时间戳**: ${data.timestamp || '未知'}\n`;
                 
-                if (data.content) {
-                    const contentStr = typeof data.content === 'string' 
-                        ? data.content 
-                        : JSON.stringify(data.content, null, 2);
+                // 🔥 修复：正确处理时间戳，兼容不同数据结构
+                const timestamp = data.timestamp || data.metadata?.timestamp || '未知';
+                markdown += `**时间戳**: ${timestamp}\n`;
+                
+                // 🔥 修复：检查数据的实际存储位置，兼容不同字段名
+                const dataFields = [];
+                if (data.data !== undefined) dataFields.push('data');
+                if (data.rawData !== undefined) dataFields.push('rawData');
+                if (data.content !== undefined) dataFields.push('content');
+                if (data.originalData !== undefined) dataFields.push('originalData');
+                if (data.processedData !== undefined) dataFields.push('processedData');
+                
+                markdown += `**数据字段**: ${dataFields.join(', ') || '无'}\n\n`;
+                
+                // 🔥 修复：优先显示原始数据，按特定顺序查找
+                let contentToShow = null;
+                let contentType = '';
+                
+                if (data.rawData !== undefined) {
+                    contentToShow = data.rawData;
+                    contentType = '原始数据';
+                } else if (data.data !== undefined) {
+                    contentToShow = data.data;
+                    contentType = '数据';
+                } else if (data.content !== undefined) {
+                    contentToShow = data.content;
+                    contentType = '内容';
+                } else if (data.originalData !== undefined) {
+                    contentToShow = data.originalData;
+                    contentType = '原始数据';
+                } else if (data.processedData !== undefined) {
+                    contentToShow = data.processedData;
+                    contentType = '处理后的数据';
+                }
+                
+                if (contentToShow !== undefined && contentToShow !== null) {
+                    const contentStr = typeof contentToShow === 'string' 
+                        ? contentToShow 
+                        : JSON.stringify(contentToShow, null, 2);
                     
-                    markdown += `**内容大小**: ${contentStr.length} 字符\n\n`;
-                    markdown += `**完整内容**:\n\n\`\`\`\n${contentStr}\n\`\`\`\n\n`;
+                    markdown += `**${contentType}大小**: ${contentStr.length} 字符\n\n`;
+                    markdown += `**完整${contentType}**:\n\n\`\`\`\n${contentStr}\n\`\`\`\n\n`;
                 } else {
-                    markdown += `**内容**: 空\n\n`;
+                    markdown += `**内容**: 无可用数据\n\n`;
                 }
                 
                 if (data.metadata) {
                     markdown += `**元数据**:\n\n\`\`\`json\n${JSON.stringify(data.metadata, null, 2)}\n\`\`\`\n\n`;
+                }
+                
+                if (data.sources && Array.isArray(data.sources)) {
+                    markdown += `**来源**: ${data.sources.length} 个\n`;
+                    data.sources.forEach((source, i) => {
+                        markdown += `${i + 1}. ${source.title || '无标题'}`;
+                        if (source.url) markdown += ` (${source.url})`;
+                        markdown += `\n`;
+                    });
+                    markdown += `\n`;
                 }
                 
                 markdown += `---\n\n`;
@@ -3440,7 +3501,19 @@ function exportResearchProcessData(agentResult) {
             markdown += `当前Agent结果中没有包含DataBus数据。可能的原因：\n`;
             markdown += `1. 使用的Agent版本不支持DataBus功能\n`;
             markdown += `2. 数据在传输过程中丢失\n`;
-            markdown += `3. DataBus尚未被激活或初始化\n\n`;
+            markdown += `3. DataBus尚未被激活或初始化\n`;
+            markdown += `4. DataBus可能是空的或未正确导出\n\n`;
+            
+            // 🔥 新增：显示调试信息，帮助定位问题
+            if (agentResult.dataBus) {
+                markdown += `### 🔍 DataBus调试信息\n\n`;
+                markdown += `DataBus存在但无法解析，具体信息：\n`;
+                markdown += `- 类型: ${typeof agentResult.dataBus}\n`;
+                markdown += `- 原型: ${Object.prototype.toString.call(agentResult.dataBus)}\n`;
+                markdown += `- 是Map?: ${agentResult.dataBus instanceof Map}\n`;
+                markdown += `- 是Object?: ${typeof agentResult.dataBus === 'object' && !(agentResult.dataBus instanceof Map)}\n`;
+                markdown += `- 字符串表示: ${String(agentResult.dataBus).substring(0, 200)}\n`;
+            }
         }
         
         // 🎯 新增：写作模型实际输入信息（如果存在）
@@ -3528,7 +3601,8 @@ function exportResearchProcessData(agentResult) {
             文件: fileName,
             大小: (blob.size / 1024).toFixed(2) + 'KB',
             步骤数: agentResult.intermediateSteps?.length || 0,
-            DataBus条目数: agentResult.dataBus ? Object.keys(agentResult.dataBus).length : 0
+            DataBus条目数: dataBusSize,
+            DataBus类型: dataBusType
         });
         
         // 3. 显示成功通知
