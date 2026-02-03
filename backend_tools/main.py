@@ -121,6 +121,44 @@ TOOLS_CATALOG = [
       },
       "required": ["mode", "parameters"]
     }
+  },
+  # 🆕 新增 AlphaVantage 工具文档
+  {
+    "name": "alphavantage",
+    "description": "从AlphaVantage获取金融数据的工具。支持股票、外汇、加密货币、大宗商品、国债收益率、新闻情绪等13种数据类型。数据会返回在响应中，可用于进一步分析。",
+    "endpoint_url": "https://tools.10110531.xyz/api/v1/execute_tool",
+    "input_schema": {
+      "title": "AlphaVantageInput",
+      "type": "object",
+      "properties": {
+        "function": { 
+          "title": "Function", 
+          "type": "string", 
+          "description": "要调用的AlphaVantage功能名称",
+          "enum": [
+            "fetch_weekly_adjusted",
+            "fetch_global_quote", 
+            "fetch_historical_options",
+            "fetch_earnings_transcript",
+            "fetch_insider_transactions",
+            "fetch_etf_profile",
+            "fetch_forex_daily",
+            "fetch_digital_currency_daily",
+            "fetch_wti",
+            "fetch_brent", 
+            "fetch_copper",
+            "fetch_treasury_yield",
+            "fetch_news_sentiment"
+          ]
+        },
+        "parameters": { 
+          "title": "Parameters", 
+          "type": "object", 
+          "description": "功能参数，具体参数取决于选择的function" 
+        }
+      },
+      "required": ["function", "parameters"]
+    }
   }
 ]
 

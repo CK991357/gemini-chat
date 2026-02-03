@@ -70,11 +70,12 @@ class AlphaVantageTool:
         except Exception as e:
             logger.error(f"验证API Key时出错: {e}")
     
-    def _ensure_session_workspace(self, session_id: str) -> Path:
+    def _ensure_session_workspace(self, session_id: str = None) -> Path:
         """确保会话工作区存在"""
         if not session_id:
-            # 临时目录
-            temp_dir = SESSION_WORKSPACE_ROOT / "temp" / str(int(datetime.now().timestamp()))
+            # 创建临时目录，不与任何会话绑定
+            timestamp = int(datetime.now().timestamp())
+            temp_dir = SESSION_WORKSPACE_ROOT / "temp" / f"alphavantage_{timestamp}"
             temp_dir.mkdir(parents=True, exist_ok=True)
             return temp_dir
         
@@ -98,9 +99,9 @@ class AlphaVantageTool:
             function_name = parameters.function.value
             function_params = parameters.parameters
             
-            # 确保会话工作区
+            # 确保会话工作区（支持 session_id 为 None）
             session_dir = self._ensure_session_workspace(session_id)
-            logger.info(f"使用会话目录: {session_dir}")
+            logger.info(f"使用工作目录: {session_dir}, session_id: {session_id or 'temp'}")
             
             # 元数据
             metadata = {
@@ -111,7 +112,7 @@ class AlphaVantageTool:
                 "saved_files": [],
                 "data_type": function_name,
                 "session_dir": str(session_dir),
-                "data_access_path": f"/srv/sandbox_workspaces/{session_id if session_id else 'temp/' + str(int(datetime.now().timestamp()))}"
+                "data_access_path": str(session_dir)
             }
             
             # 调用对应的方法
@@ -146,13 +147,19 @@ class AlphaVantageTool:
                     "metadata": metadata
                 }
                 
-                # 添加示例代码
+                # 添加示例代码（仅在 session_id 存在时）
                 if session_id:
                     example_code = self._generate_example_code(function_name, function_params, session_dir)
                     response["metadata"]["example_code"] = example_code
                     response["metadata"]["instructions"] = (
                         f"数据已保存到会话目录 {session_dir}，"
                         f"代码解释器可以通过 '/srv/sandbox_workspaces/{session_id}/' 访问这些文件。"
+                    )
+                else:
+                    # 临时目录的说明
+                    response["metadata"]["instructions"] = (
+                        f"数据已保存到临时目录 {session_dir}，"
+                        f"文件路径仅供参考，无法通过代码解释器直接访问。"
                     )
                 
                 logger.info(f"AlphaVantage工具执行成功: {function_name}")

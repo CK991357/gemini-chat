@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from pydantic import ValidationError
 import logging
+import inspect
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -10,7 +11,8 @@ from .tavily_search import TavilySearchTool
 from .code_interpreter import CodeInterpreterTool as PythonSandboxTool
 from .firecrawl_tool import FirecrawlTool
 from .stockfish_tool import StockfishTool
-from .crawl4ai_tool_all import EnhancedCrawl4AITool  # 改为增强版本
+from .crawl4ai_tool_all import EnhancedCrawl4AITool
+from .alphavantage_tool import AlphaVantageTool  # 新增导入
 
 # --- Tool Classes Registry ---
 TOOL_CLASSES = {
@@ -18,11 +20,11 @@ TOOL_CLASSES = {
     PythonSandboxTool.name: PythonSandboxTool,
     FirecrawlTool.name: FirecrawlTool,
     StockfishTool.name: StockfishTool,
-    EnhancedCrawl4AITool.name: EnhancedCrawl4AITool,  # 更新为增强版类名
+    EnhancedCrawl4AITool.name: EnhancedCrawl4AITool,
+    AlphaVantageTool.name: AlphaVantageTool,  # 新增
 }
 
 # --- Shared Tool Instances ---
-# 这个字典将持有工具的单例实例
 tool_instances: Dict[str, Any] = {}
 
 async def initialize_tools():
@@ -92,12 +94,35 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
     
     # 工具执行 (使用已存在的实例)
     try:
-        logger.info(f"Executing tool: {tool_name} with mode: {getattr(validated_parameters, 'mode', 'N/A')}")
-        result = await tool_instance.execute(validated_parameters)
+        logger.info(f"Executing tool: {tool_name}")
+        
+        # 🎯 核心修复：使用安全的调用方式
+        try:
+            # 检查工具是否支持 session_id 参数
+            method_sig = inspect.signature(tool_instance.execute)
+            method_params = method_sig.parameters
+            
+            # 如果工具支持 session_id 参数，使用 None 作为默认值
+            if 'session_id' in method_params:
+                logger.info(f"工具 {tool_name} 支持 session_id 参数，使用默认值 None")
+                result = await tool_instance.execute(validated_parameters, session_id=None)
+            else:
+                # 工具不支持 session_id 参数
+                logger.info(f"工具 {tool_name} 不支持 session_id 参数，使用标准调用")
+                result = await tool_instance.execute(validated_parameters)
+                
+        except Exception as sig_error:
+            # 如果签名检查失败，回退到保守方案
+            logger.warning(f"无法检查 {tool_name} 的参数签名: {sig_error}")
+            
+            # 尝试直接调用
+            result = await tool_instance.execute(validated_parameters)
+        
         logger.info(f"Tool {tool_name} executed successfully")
         return result
+        
     except Exception as e:
-        logger.error(f"Error executing tool {tool_name}: {str(e)}")
+        logger.error(f"Error executing tool {tool_name}: {str(e)}", exc_info=True)
         return {
             "success": False,
             "error": f"An error occurred while executing tool '{tool_name}': {str(e)}"
