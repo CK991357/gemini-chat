@@ -22,25 +22,25 @@ const SUPPORTED_FUNCTIONS = [
     "fetch_news_sentiment"
 ];
 
-// 函数参数验证规则
+// 函数参数验证规则 - 更新为完整版本（注意：很多参数是可选的）
 const FUNCTION_PARAMETERS = {
     "fetch_weekly_adjusted": ["symbol"],
     "fetch_global_quote": ["symbol"],
-    "fetch_historical_options": ["symbol", "date"],
+    "fetch_historical_options": ["symbol"],      // date 可选
     "fetch_earnings_transcript": ["symbol", "quarter"],
     "fetch_insider_transactions": ["symbol"],
     "fetch_etf_profile": ["symbol"],
-    "fetch_forex_daily": ["from_symbol", "to_symbol", "outputsize"],
+    "fetch_forex_daily": ["from_symbol", "to_symbol"],  // outputsize 可选
     "fetch_digital_currency_daily": ["symbol", "market"],
-    "fetch_wti": ["interval"],
-    "fetch_brent": ["interval"],
-    "fetch_copper": ["interval"],
-    "fetch_treasury_yield": ["interval", "maturity"],
-    "fetch_news_sentiment": ["tickers", "topics", "limit", "sort", "time_from", "time_to"]
+    "fetch_wti": [],      // interval 可选
+    "fetch_brent": [],    // interval 可选
+    "fetch_copper": [],   // interval 可选
+    "fetch_treasury_yield": [],  // interval, maturity 可选
+    "fetch_news_sentiment": []   // 所有参数都可选
 };
 
 /**
- * 验证AlphaVantage函数参数
+ * 验证AlphaVantage函数参数 - 更新版本
  */
 function validateAlphaVantageParams(functionName, parameters) {
     // 检查函数是否支持
@@ -88,6 +88,42 @@ function validateAlphaVantageParams(functionName, parameters) {
         }
     }
     
+    // 数字货币参数验证
+    if (functionName === "fetch_digital_currency_daily") {
+        const validMarkets = ["USD", "CNY", "JPY", "EUR", "GBP"];
+        if (parameters.market && !validMarkets.includes(parameters.market.toUpperCase())) {
+            return {
+                valid: false,
+                error: `market 必须是: ${validMarkets.join(" 或 ")}`,
+                received: parameters.market
+            };
+        }
+    }
+    
+    // 国债收益率验证
+    if (functionName === "fetch_treasury_yield") {
+        const validMaturities = ["3month", "2year", "5year", "7year", "10year", "30year"];
+        if (parameters.maturity && !validMaturities.includes(parameters.maturity.toLowerCase())) {
+            return {
+                valid: false,
+                error: `maturity 必须是: ${validMaturities.join(" 或 ")}`,
+                received: parameters.maturity
+            };
+        }
+    }
+    
+    // 大宗商品验证
+    if (["fetch_wti", "fetch_brent", "fetch_copper"].includes(functionName)) {
+        const validIntervals = ["daily", "weekly", "monthly"];
+        if (parameters.interval && !validIntervals.includes(parameters.interval.toLowerCase())) {
+            return {
+                valid: false,
+                error: `interval 必须是: ${validIntervals.join(" 或 ")}`,
+                received: parameters.interval
+            };
+        }
+    }
+    
     return { valid: true };
 }
 
@@ -118,7 +154,8 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
                 example: {
                     function: "fetch_weekly_adjusted",
                     parameters: { symbol: "AAPL" }
-                }
+                },
+                available_functions: SUPPORTED_FUNCTIONS
             }
         }, 400);
     }
@@ -174,7 +211,47 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
             body: JSON.stringify(requestBody),
         });
 
-        const responseData = await toolResponse.json();
+        // 🎯 修复：先检查响应类型，处理可能的HTML错误页面
+        const contentType = toolResponse.headers.get('content-type') || '';
+        let responseData;
+        
+        if (contentType.includes('application/json')) {
+            try {
+                responseData = await toolResponse.json();
+            } catch (jsonError) {
+                // JSON解析失败
+                const text = await toolResponse.text();
+                console.error('[AlphaVantage] ❌ JSON解析失败:', jsonError.message, '响应:', text.substring(0, 500));
+                
+                return createJsonResponse({
+                    success: false,
+                    error: '工具服务器返回的JSON格式无效',
+                    details: {
+                        status: toolResponse.status,
+                        statusText: toolResponse.statusText,
+                        jsonError: jsonError.message,
+                        preview: text.substring(0, 200)
+                    },
+                    suggestion: '请检查工具服务器是否正常返回JSON'
+                }, 500);
+            }
+        } else {
+            // 如果是非JSON响应（可能是HTML错误页面）
+            const text = await toolResponse.text();
+            console.error('[AlphaVantage] ❌ 工具服务器返回非JSON响应:', text.substring(0, 500));
+            
+            return createJsonResponse({
+                success: false,
+                error: '工具服务器返回无效响应格式',
+                details: {
+                    status: toolResponse.status,
+                    statusText: toolResponse.statusText,
+                    contentType: contentType,
+                    preview: text.substring(0, 200)
+                },
+                suggestion: '工具服务器可能未正确启动或发生内部错误'
+            }, 500);
+        }
 
         if (!toolResponse.ok) {
             console.error('[AlphaVantage] 工具服务器错误:', {
@@ -201,7 +278,8 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
                 session_id: metadata.session_id || session_id,
                 files_count: savedFiles.length,
                 files: savedFiles.slice(0, 3).map(f => f.split('/').pop()), // 只显示文件名
-                has_example_code: !!metadata.example_code
+                has_example_code: !!metadata.example_code,
+                data_type: metadata.data_type || functionName
             });
             
             // 添加可用功能的提示
@@ -220,11 +298,25 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
 
     } catch (error) {
         console.error('[AlphaVantage] ❌ 连接工具服务器失败:', error);
+        
+        // 提供更详细的错误信息
+        let errorDetail = '连接AlphaVantage工具服务器失败';
+        let suggestion = '请检查网络连接或稍后重试';
+        
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            errorDetail = '网络请求失败，请检查工具服务器是否可达';
+            suggestion = '请确认工具服务器正在运行且网络连接正常';
+        } else if (error.name === 'SyntaxError') {
+            errorDetail = 'JSON解析失败，工具服务器可能返回了错误格式';
+            suggestion = '请检查工具服务器日志确认是否正常启动';
+        }
+        
         return createJsonResponse({
             success: false,
-            error: '连接AlphaVantage工具服务器失败',
+            error: errorDetail,
             details: error.message,
-            suggestion: '请检查网络连接或稍后重试'
+            error_type: error.name,
+            suggestion: suggestion
         }, 500);
     }
 }
