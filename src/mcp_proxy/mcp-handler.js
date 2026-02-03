@@ -1,4 +1,3 @@
-// handlers/mcp-proxy-handler.js
 /**
  * @file Main MCP Proxy Handler (统一名称版本)
  * @description This is the main entry point for all MCP tool proxy requests.
@@ -6,7 +5,6 @@
  */
 
 // ✨ 直接、静态地导入所有工具的处理器
-import { handleAlphaVantage } from './handlers/alphavantage.js'; // 🆕 新增导入
 import { handleCrawl4AI } from './handlers/crawl4ai.js';
 import { handleFirecrawl } from './handlers/firecrawl.js';
 import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
@@ -23,19 +21,7 @@ const toolRegistry = {
     'python_sandbox': handlePythonSandbox,
     'stockfish_analyzer': handleStockfishAnalyzer,
     'tavily_search': handleTavilySearch,
-    'glm4v_analyze_image': handleZhipuImageAnalysis,
-    'alphavantage': handleAlphaVantage, // 🆕 新增注册
-};
-
-// 可用工具信息（用于文档）
-const AVAILABLE_TOOLS = {
-    'crawl4ai': '网络爬虫和数据提取工具',
-    'firecrawl': '网页抓取和搜索工具',
-    'python_sandbox': 'Python代码执行沙箱',
-    'stockfish_analyzer': '国际象棋分析工具',
-    'tavily_search': '实时网络搜索',
-    'glm4v_analyze_image': '智谱GLM-4V图像分析',
-    'alphavantage': '金融数据获取工具 (支持13种数据类型)' // 🆕 新增描述
+    'glm4v_analyze_image': handleZhipuImageAnalysis, // ← 统一名称
 };
 
 /**
@@ -73,29 +59,20 @@ export async function handleMcpProxyRequest(request, env) {
             request_id: requestId,
             tool_name: tool_name,
             parameters: parameters,
-            session_id: session_id || 'none',
             action: 'start',
             timestamp: new Date().toISOString()
         }));
 
         if (!tool_name) {
-            return createJsonResponse({ 
-                success: false, 
-                error: 'Request body must include a "tool_name".',
-                available_tools: Object.keys(AVAILABLE_TOOLS)
-            }, 400);
+            return createJsonResponse({ success: false, error: 'Request body must include a "tool_name".' }, 400);
         }
 
         // ✨ 直接从内部的注册表中查找处理器
         const toolHandler = toolRegistry[tool_name];
 
         if (toolHandler) {
-            // 特殊处理：如果是AlphaVantage，记录详细信息
-            if (tool_name === 'alphavantage' && parameters && parameters.function) {
-                console.log(`[AlphaVantage] 调用函数: ${parameters.function}`);
-            }
-            
-            // 执行工具处理器
+            // 如果找到处理器，执行并返回响应
+            // 传递 session_id 给工具处理器
             const response = await toolHandler(parameters, env, session_id);
             const responseTime = Date.now() - startTime;
 
@@ -115,8 +92,7 @@ export async function handleMcpProxyRequest(request, env) {
             console.error('❌ [工具调用失败]', JSON.stringify({
                 request_id: requestId,
                 tool_name: tool_name,
-                error: `工具 '${tool_name}' 未注册或不受支持`,
-                available_tools: Object.keys(AVAILABLE_TOOLS),
+                error: `Tool '${tool_name}' is not registered or supported.`,
                 response_time: responseTime,
                 action: 'not_found',
                 timestamp: new Date().toISOString()
@@ -124,8 +100,8 @@ export async function handleMcpProxyRequest(request, env) {
             
             return createJsonResponse({ 
                 success: false, 
-                error: `工具 '${tool_name}' 未注册或不受支持`,
-                available_tools: AVAILABLE_TOOLS
+                error: `Tool '${tool_name}' is not registered or supported.`,
+                available_tools: Object.keys(toolRegistry) // 提供可用工具列表便于调试
             }, 404);
         }
 

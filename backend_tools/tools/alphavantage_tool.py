@@ -116,21 +116,9 @@ class AlphaVantageTool:
             
             # 调用对应的方法
             try:
+                # 🎯 修改：传递session_dir给数据获取函数
                 method = getattr(AlphaVantageFetcher, function_name)
-                
-                # 🎯 关键修复：检查方法是否接受 session_dir 参数
-                import inspect
-                method_sig = inspect.signature(method)
-                method_params = method_sig.parameters
-                
-                if 'session_dir' in method_params:
-                    # 方法支持 session_dir 参数
-                    logger.info(f"方法 {function_name} 支持 session_dir 参数")
-                    result = method(**function_params, session_dir=session_dir)
-                else:
-                    # 方法不支持 session_dir 参数
-                    logger.info(f"方法 {function_name} 不支持 session_dir 参数，使用标准调用")
-                    result = method(**function_params)
+                result = method(**function_params, session_dir=session_dir)
                 
                 # 获取已保存的文件路径
                 saved_files = self._get_saved_file_paths(session_dir, function_name, function_params)
