@@ -147,7 +147,7 @@ class AlphaVantageFetcher:
                 "dividend": float
             })
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"stock_{symbol}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,7 +199,7 @@ class AlphaVantageFetcher:
                 'change_percent': quote.get('10. change percent', '0%')
             }
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"quote_{symbol}.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,7 +259,7 @@ class AlphaVantageFetcher:
                     if contract.get(field):
                         contract[field] = int(contract[field])
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"options_{symbol}_{date if date else 'latest'}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -297,7 +297,7 @@ class AlphaVantageFetcher:
             response.raise_for_status()
             data = response.json()
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"transcript_{symbol}_{quarter}.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -352,7 +352,7 @@ class AlphaVantageFetcher:
                     "total_value": float(item.get("shares", 0)) * float(item.get("share_price", 0)) if item.get("shares") and item.get("share_price") else 0
                 })
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"insider_{symbol}.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -427,7 +427,7 @@ class AlphaVantageFetcher:
                             "shares": int(holding.get("shares", 0)) 
                         })
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"etf_{symbol}_profile.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -495,7 +495,7 @@ class AlphaVantageFetcher:
                 "close": float
             })
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"forex_{from_symbol}_{to_symbol}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -619,9 +619,9 @@ class AlphaVantageFetcher:
                 "open": float, "high": float, "low": float, "close": float
             })
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
-                # 直接保存到会话根目录，不再创建 crypto 子目录
+                # 直接保存到会话目录
                 if market == "USD":
                     file_path = session_dir / f"crypto_{symbol}_USD.parquet"
                     market_df.to_parquet(file_path)
@@ -689,7 +689,7 @@ class AlphaVantageFetcher:
             df = df.drop(columns=["value"])
             df = df.set_index("date").sort_index()
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"commodity_WTI_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -746,7 +746,7 @@ class AlphaVantageFetcher:
             if len(df) == 0:
                 raise ValueError("没有有效的原油数据可用")
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"commodity_BRENT_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -803,7 +803,7 @@ class AlphaVantageFetcher:
             if len(df) == 0:
                 raise ValueError("没有有效的铜价数据可用")
 
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"commodity_COPPER_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -854,7 +854,7 @@ class AlphaVantageFetcher:
             df["yield"] = pd.to_numeric(df["value"], errors="coerce")
             df = df.dropna(subset=["yield"])
             
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / f"treasury_{maturity}_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -923,7 +923,7 @@ class AlphaVantageFetcher:
             safe_filename = '_'.join(filename_parts).replace(':', '_').replace('/', '_').replace(' ', '_')
             filename = f"news_{safe_filename}.json"
             
-            # 🎯 保存到会话目录根目录（修改：去掉子目录）
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
                 file_path = session_dir / filename
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1045,27 +1045,25 @@ class AlphaVantageTool:
             logger.error(f"验证API Key时出错: {e}")
     
     def _ensure_session_workspace(self, session_id: str = None) -> Path:
-        """确保会话工作区存在"""
+        """
+        确保会话工作区存在
+        
+        核心修改：与代码解释器完全一致的会话目录逻辑
+        """
         if not session_id:
-            # ✅ 直接创建在根目录，而不是嵌套在temp下
-            session_id = str(int(datetime.now().timestamp()))
-            session_dir = SESSION_WORKSPACE_ROOT / session_id  # 直接创建在根目录
+            # ✅ 核心修复：与代码解释器完全一致，直接创建temp目录
+            # 这样代码解释器就能访问到相同目录
+            session_id = "temp"  # 固定为temp目录
+            session_dir = SESSION_WORKSPACE_ROOT / session_id
             session_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"📁 创建/使用临时会话目录: {session_dir}")
             return session_dir
         
+        # 如果提供了session_id，使用该ID创建目录
         session_dir = SESSION_WORKSPACE_ROOT / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         
-        # 🎯 注意：不再创建子目录结构，因为文件都直接保存在根目录
-        # 保留原有的子目录创建代码但不使用，为了向后兼容
-        subdirs = [
-            "stock", "options", "transcripts", "insider", "etf", 
-            "forex", "crypto", "commodities", "treasury", "news"
-        ]
-        
-        for subdir in subdirs:
-            (session_dir / subdir).mkdir(exist_ok=True)
-        
+        logger.info(f"📂 使用指定会话目录: {session_dir}")
         return session_dir
     
     async def _execute_with_timeout(self, func, timeout: int = 60):
@@ -1079,6 +1077,162 @@ class AlphaVantageTool:
         except asyncio.TimeoutError:
             logger.error(f"⏰ 操作超时 ({timeout}秒)")
             raise
+    
+    # ============ 重新添加的重要方法 ============
+    
+    def _get_saved_file_paths(self, session_dir: Path, mode: AlphaVantageMode, params: dict) -> List[str]:
+        """获取已保存的文件路径 - 重新添加此方法"""
+        try:
+            if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"stock_{symbol}.parquet"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.GLOBAL_QUOTE:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"quote_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.HISTORICAL_OPTIONS:
+                symbol = params.get("symbol")
+                date = params.get("date", "latest")
+                file_path = session_dir / f"options_{symbol}_{date}.parquet"
+                return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.FOREX_DAILY:
+                from_sym = params.get("from_symbol", "USD")
+                to_sym = params.get("to_symbol", "JPY")
+                file_path = session_dir / f"forex_{from_sym}_{to_sym}.parquet"
+                return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.NEWS_SENTIMENT:
+                tickers = params.get("tickers", "general")
+                safe_tickers = tickers.replace(',', '_').replace(' ', '_') if tickers else "general"
+                file_path = session_dir / f"news_{safe_tickers}.json"
+                return [str(file_path)] if file_path.exists() else []
+            
+            # 其他模式可以类似添加...
+            
+            return []
+        except Exception as e:
+            logger.warning(f"获取保存文件路径失败: {e}")
+            return []
+    
+    def _generate_example_code(self, mode: AlphaVantageMode, params: dict, saved_files: List[Dict]) -> str:
+        """生成Python代码示例 - 重新添加此方法，使用容器内路径"""
+        if not saved_files:
+            return "# 没有保存文件，无法生成示例代码。"
+        
+        # 取第一个文件作为示例
+        file_info = saved_files[0]
+        filename = file_info['filename']
+        container_path = file_info['container_path']
+        
+        if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
+            symbol = params.get("symbol", "UNKNOWN")
+            return f'''# 读取 {symbol} 股票数据
+import pandas as pd
+
+# 使用容器内路径读取数据
+df = pd.read_parquet('{container_path}')
+print(f"{{'{symbol}'}} 股票数据:")
+print(f"数据形状: {{df.shape}}")
+print(f"日期范围: {{df.index.min()}} 到 {{df.index.max()}}")
+print("\\n前5行数据:")
+print(df.head())
+
+# 可视化
+import matplotlib.pyplot as plt
+plt.figure(figsize=(12, 6))
+plt.plot(df.index, df['close'], label='收盘价', linewidth=2)
+plt.title(f'{symbol} 股价走势')
+plt.xlabel('日期')
+plt.ylabel('价格 (USD)')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()'''
+        
+        elif mode == AlphaVantageMode.FOREX_DAILY:
+            from_sym = params.get("from_symbol", "USD")
+            to_sym = params.get("to_symbol", "JPY")
+            return f'''# 读取 {from_sym}/{to_sym} 外汇数据
+import pandas as pd
+
+# 使用容器内路径读取数据
+df = pd.read_parquet('{container_path}')
+print(f"{{'{from_sym}/{to_sym}'}} 外汇数据:")
+print(f"数据形状: {{df.shape}}")
+print(f"日期范围: {{df.index.min()}} 到 {{df.index.max()}}")
+print("\\n最近10天数据:")
+print(df.tail(10))
+
+# 计算收益率
+df['returns'] = df['close'].pct_change()
+print("\\n收益率统计:")
+print(df['returns'].describe())
+
+# 可视化
+import matplotlib.pyplot as plt
+plt.figure(figsize=(12, 6))
+plt.plot(df.index, df['close'], label=f'{from_sym}/{to_sym}收盘价', linewidth=2)
+plt.title(f'{from_sym}/{to_sym} 汇率走势')
+plt.xlabel('日期')
+plt.ylabel('汇率')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()'''
+        
+        else:
+            # 通用示例代码
+            if filename.endswith('.parquet'):
+                return f'''# 读取 {filename} 数据
+import pandas as pd
+
+# 使用容器内路径读取数据
+df = pd.read_parquet('{container_path}')
+print(f"数据形状: {{df.shape}}")
+print(f"列名: {{df.columns.tolist()}}")
+print("\\n前5行数据:")
+print(df.head())'''
+            elif filename.endswith('.json'):
+                return f'''# 读取 {filename} 数据
+import json
+
+with open('{container_path}', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+print(f"数据类型: {{type(data)}}")
+if isinstance(data, list):
+    print(f"数据长度: {{len(data)}}")
+    print("\\n前3条记录:")
+    for i, item in enumerate(data[:3]):
+        print(f"{{i+1}}: {{item}}")
+elif isinstance(data, dict):
+    print("数据键值:")
+    for key in data.keys():
+        print(f"  - {{key}}")'''
+            else:
+                return f'''# 访问会话目录中的所有数据
+import pandas as pd
+import json
+from pathlib import Path
+
+# 代码解释器中的 /data 目录包含所有保存的文件
+print("可用文件:")
+import os
+for file_name in os.listdir('/data'):
+    file_path = Path('/data') / file_name
+    if file_path.is_file():
+        size_kb = file_path.stat().st_size / 1024
+        print(f"  - {{file_name}} ({{size_kb:.1f}} KB)")
+        
+        # 根据文件类型提供读取建议
+        if file_name.endswith('.parquet'):
+            print(f"    读取方式: pd.read_parquet('/data/{{file_name}}')")
+        elif file_name.endswith('.json'):
+            print(f"    读取方式: json.load(open('/data/{{file_name}}', 'r'))")'''
     
     async def execute(self, parameters: AlphaVantageInput, session_id: str = None) -> dict:
         """执行AlphaVantage数据获取 - 主入口"""
@@ -1096,7 +1250,8 @@ class AlphaVantageTool:
                     "available_modes": [m.value for m in AlphaVantageMode]
                 }
             
-            # 确保会话工作区
+            # ✅ 核心修复：使用固定temp目录，与代码解释器共享
+            # 这样代码解释器就能通过/data访问到相同文件
             session_dir = self._ensure_session_workspace(session_id)
             
             # 获取模式配置
@@ -1130,14 +1285,32 @@ class AlphaVantageTool:
                     "mode": mode.value
                 }
             
+            # ✅ 核心修复：生成容器内访问路径
+            # 获取保存的文件列表
+            saved_files = []
+            if session_dir.exists():
+                for file_path in session_dir.glob("*"):
+                    if file_path.is_file():
+                        saved_files.append({
+                            "filename": file_path.name,
+                            "host_path": str(file_path),  # 宿主机路径
+                            "container_path": f"/data/{file_path.name}",  # 容器内路径
+                            "size_kb": file_path.stat().st_size / 1024
+                        })
+            
+            # 生成示例代码
+            example_code = self._generate_example_code(mode, params, saved_files)
+            
             # 构建元数据
             metadata = {
                 "mode": mode.value,
                 "parameters": params,
-                "session_id": session_id,
+                "session_id": session_id or "temp",
                 "timestamp": datetime.now().isoformat(),
                 "session_dir": str(session_dir),
-                "saved_files": self._get_saved_file_paths(session_dir, mode, params)
+                "saved_files": saved_files,
+                "example_code": example_code,
+                "access_instructions": "数据已保存到共享目录，代码解释器可以通过 /data/[filename] 访问这些文件"
             }
             
             # 处理结果
@@ -1150,15 +1323,6 @@ class AlphaVantageTool:
                 "metadata": metadata
             }
             
-            # 添加示例代码（更新路径引用）
-            if session_id:
-                example_code = self._generate_example_code(mode, params, session_dir)
-                response["metadata"]["example_code"] = example_code
-                response["metadata"]["instructions"] = (
-                    f"数据已保存到会话目录 {session_dir}，"
-                    f"代码解释器可以通过 '/srv/sandbox_workspaces/{session_id}/' 访问这些文件。"
-                )
-            
             logger.info(f"✅ AlphaVantage工具执行成功: {mode.value}")
             return response
             
@@ -1169,44 +1333,6 @@ class AlphaVantageTool:
                 "error": f"工具执行失败: {str(e)}",
                 "mode": parameters.mode.value if hasattr(parameters, 'mode') else "unknown"
             }
-    
-    def _get_saved_file_paths(self, session_dir: Path, mode: AlphaVantageMode, params: dict) -> List[str]:
-        """获取已保存的文件路径"""
-        try:
-            if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
-                symbol = params.get("symbol")
-                if symbol:
-                    # 🎯 更新文件路径为根目录
-                    file_path = session_dir / f"stock_{symbol}.parquet"
-                    return [str(file_path)] if file_path.exists() else []
-            
-            elif mode == AlphaVantageMode.GLOBAL_QUOTE:
-                symbol = params.get("symbol")
-                if symbol:
-                    # 🎯 更新文件路径为根目录
-                    file_path = session_dir / f"quote_{symbol}.json"
-                    return [str(file_path)] if file_path.exists() else []
-            
-            elif mode == AlphaVantageMode.FOREX_DAILY:
-                from_sym = params.get("from_symbol", "USD")
-                to_sym = params.get("to_symbol", "JPY")
-                # 🎯 更新文件路径为根目录
-                file_path = session_dir / f"forex_{from_sym}_{to_sym}.parquet"
-                return [str(file_path)] if file_path.exists() else []
-            
-            elif mode == AlphaVantageMode.NEWS_SENTIMENT:
-                tickers = params.get("tickers", "general")
-                safe_tickers = tickers.replace(',', '_').replace(' ', '_') if tickers else "general"
-                # 🎯 更新文件路径为根目录
-                file_path = session_dir / f"news_{safe_tickers}.json"
-                return [str(file_path)] if file_path.exists() else []
-            
-            # 其他模式可以类似添加...
-            
-            return []
-        except Exception as e:
-            logger.warning(f"获取保存文件路径失败: {e}")
-            return []
     
     def _process_result(self, result, mode: AlphaVantageMode):
         """处理返回结果，确保可序列化"""
@@ -1271,73 +1397,6 @@ class AlphaVantageTool:
         except Exception as e:
             logger.warning(f"DataFrame转换失败: {e}")
             return {"raw_result": str(df)}
-    
-    def _generate_example_code(self, mode: AlphaVantageMode, params: dict, session_dir: Path) -> str:
-        """生成Python代码示例"""
-        if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
-            symbol = params.get("symbol", "UNKNOWN")
-            return f'''# 读取 {symbol} 股票数据
-import pandas as pd
-from pathlib import Path
-
-# 会话数据路径（更新为根目录文件）
-data_path = Path('/srv/sandbox_workspaces/{session_dir.name}/stock_{symbol}.parquet')
-if data_path.exists():
-    df = pd.read_parquet(data_path)
-    print(f"{{'{symbol}'}} 股票数据:")
-    print(f"数据形状: {{df.shape}}")
-    print(f"日期范围: {{df.index.min()}} 到 {{df.index.max()}}")
-    print("\\n前5行数据:")
-    print(df.head())
-    
-    # 可视化
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(12, 6))
-    plt.plot(df.index, df['close'], label='收盘价', linewidth=2)
-    plt.title(f'{symbol} 股价走势')
-    plt.xlabel('日期')
-    plt.ylabel('价格 (USD)')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.show()'''
-        
-        elif mode == AlphaVantageMode.FOREX_DAILY:
-            from_sym = params.get("from_symbol", "USD")
-            to_sym = params.get("to_symbol", "JPY")
-            return f'''# 读取 {from_sym}/{to_sym} 外汇数据
-import pandas as pd
-from pathlib import Path
-
-# 会话数据路径（更新为根目录文件）
-data_path = Path('/srv/sandbox_workspaces/{session_dir.name}/forex_{from_sym}_{to_sym}.parquet')
-if data_path.exists():
-    df = pd.read_parquet(data_path)
-    print(f"{{'{from_sym}/{to_sym}'}} 外汇数据:")
-    print(f"数据形状: {{df.shape}}")
-    print("\\n最近10天数据:")
-    print(df.tail(10))
-    
-    # 计算收益率
-    df['returns'] = df['close'].pct_change()
-    print("\\n收益率统计:")
-    print(df['returns'].describe())'''
-        
-        else:
-            return f'''# 访问会话目录中的所有数据
-import pandas as pd
-import json
-from pathlib import Path
-
-# 会话目录路径
-session_path = Path('/srv/sandbox_workspaces/{session_dir.name}')
-print("会话目录:", session_path)
-
-# 列出所有可用文件
-print("\\n可用文件:")
-for file_path in session_path.iterdir():
-    if file_path.is_file():
-        size_kb = file_path.stat().st_size / 1024
-        print(f"  - {{file_path.name}} ({{size_kb:.1f}} KB)")'''
 
 # ==================== 辅助函数 ====================
 def get_available_modes() -> List[str]:

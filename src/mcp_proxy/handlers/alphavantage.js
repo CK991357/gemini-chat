@@ -365,14 +365,42 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
                     metadata.access_instructions = `可以在代码解释器中使用路径访问文件: /srv/sandbox_workspaces/${session_id}/`;
                 }
                 
-                // 如果后端返回了保存的文件，提供文件列表
+                // 🎯 核心修复：正确处理saved_files数组（可能是对象数组）
                 const savedFiles = metadata.saved_files || [];
                 if (savedFiles.length > 0) {
                     metadata.file_summary = `已保存 ${savedFiles.length} 个文件`;
-                    metadata.sample_files = savedFiles.slice(0, 3).map(f => {
-                        const parts = f.split('/');
-                        return parts[parts.length - 1];
+                    
+                    // 🎯 关键修复：安全处理文件项，避免split错误
+                    metadata.sample_files = savedFiles.slice(0, 3).map(fileItem => {
+                        try {
+                            // 如果是字符串，直接使用
+                            if (typeof fileItem === 'string') {
+                                const parts = fileItem.split('/');
+                                return parts[parts.length - 1];
+                            }
+                            // 如果是对象，提取filename字段
+                            else if (fileItem && typeof fileItem === 'object') {
+                                // 尝试多个可能的字段名
+                                return fileItem.filename || 
+                                       fileItem.name || 
+                                       (typeof fileItem.container_path === 'string' ? 
+                                        fileItem.container_path.split('/').pop() : 'unknown_file');
+                            }
+                            // 其他情况转为字符串
+                            return String(fileItem || 'unknown');
+                        } catch (error) {
+                            console.warn('[AlphaVantage] 处理文件项时出错:', error, fileItem);
+                            return 'error_processing_file';
+                        }
                     });
+                    
+                    // 添加文件访问帮助信息
+                    if (savedFiles.length > 0) {
+                        const firstFile = savedFiles[0];
+                        if (firstFile && typeof firstFile === 'object' && firstFile.container_path) {
+                            metadata.container_access = `代码解释器访问路径: ${firstFile.container_path}`;
+                        }
+                    }
                 }
             }
             
