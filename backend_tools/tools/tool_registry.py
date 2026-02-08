@@ -1,3 +1,4 @@
+"""工具注册表"""
 from typing import Dict, Any
 from pydantic import ValidationError
 import logging
@@ -11,6 +12,7 @@ from .code_interpreter import CodeInterpreterTool as PythonSandboxTool
 from .firecrawl_tool import FirecrawlTool
 from .stockfish_tool import StockfishTool
 from .crawl4ai_tool_all import EnhancedCrawl4AITool  # 改为增强版本
+from .alphavantage_tool import AlphaVantageTool  # 新增AlphaVantage工具
 
 # --- Tool Classes Registry ---
 TOOL_CLASSES = {
@@ -19,6 +21,7 @@ TOOL_CLASSES = {
     FirecrawlTool.name: FirecrawlTool,
     StockfishTool.name: StockfishTool,
     EnhancedCrawl4AITool.name: EnhancedCrawl4AITool,  # 更新为增强版类名
+    AlphaVantageTool.name: AlphaVantageTool,  # 新增
 }
 
 # --- Shared Tool Instances ---
@@ -41,6 +44,10 @@ async def initialize_tools():
                 logger.info("Pre-warming browser for crawl4ai...")
                 await tool_instance.initialize()
                 logger.info("Browser pre-warmed successfully for crawl4ai")
+            
+            # AlphaVantage工具不需要特殊预热，但可以记录初始化成功
+            if name == "alphavantage":
+                logger.info(f"AlphaVantage tool initialized successfully")
                 
         except Exception as e:
             logger.error(f"Failed to initialize tool {name}: {str(e)}")
@@ -77,10 +84,20 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
 
     tool_instance = tool_instances[tool_name]
     
+    # 🎯 关键修复：在验证前从原始参数中提取session_id
+    session_id = None
+    if tool_name == "alphavantage":
+        # 从原始参数中提取 session_id（如果存在）
+        session_id = parameters.get("session_id")
+        # 复制参数并移除 session_id，避免验证错误
+        parameters_for_validation = {k: v for k, v in parameters.items() if k != "session_id"}
+    else:
+        parameters_for_validation = parameters
+    
     # 输入验证 (使用 tool_instance 的 schema)
     try:
         input_schema = tool_instance.input_schema
-        validated_parameters = input_schema(**parameters)
+        validated_parameters = input_schema(**parameters_for_validation)
         logger.debug(f"Input validation passed for tool: {tool_name}")
     except ValidationError as e:
         logger.warning(f"Input validation failed for tool {tool_name}: {e.errors()}")
@@ -93,7 +110,14 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
     # 工具执行 (使用已存在的实例)
     try:
         logger.info(f"Executing tool: {tool_name} with mode: {getattr(validated_parameters, 'mode', 'N/A')}")
-        result = await tool_instance.execute(validated_parameters)
+        
+        # 🎯 修复后：为AlphaVantage工具传递session_id
+        if tool_name == "alphavantage":
+            result = await tool_instance.execute(validated_parameters, session_id=session_id)
+        else:
+            # 其他工具保持原有调用方式
+            result = await tool_instance.execute(validated_parameters)
+            
         logger.info(f"Tool {tool_name} executed successfully")
         return result
     except Exception as e:

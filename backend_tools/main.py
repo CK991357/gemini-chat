@@ -1,3 +1,4 @@
+"""FastAPI主应用"""
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, List
@@ -121,12 +122,61 @@ TOOLS_CATALOG = [
       },
       "required": ["mode", "parameters"]
     }
+  },
+  {
+    "name": "alphavantage",
+    "description": "从AlphaVantage获取金融数据的完整工具。支持股票、期权、财报、内部交易、ETF、外汇、数字货币、大宗商品、国债收益率、新闻情绪等13种数据类型。数据会保存到会话工作区。",
+    "endpoint_url": "https://tools.10110531.xyz/api/v1/execute_tool",
+    "input_schema": {
+      "title": "AlphaVantageInput",
+      "type": "object",
+      "properties": {
+        "mode": { 
+          "title": "Mode", 
+          "type": "string", 
+          "enum": ["weekly_adjusted", "global_quote", "historical_options", "earnings_transcript", "insider_transactions", "etf_profile", "forex_daily", "digital_currency_daily", "wti", "brent", "copper", "treasury_yield", "news_sentiment"], 
+          "description": "要执行的AlphaVantage功能模式" 
+        },
+        "parameters": { 
+          "title": "Parameters", 
+          "type": "object", 
+          "description": "功能参数" 
+        }
+      },
+      "required": ["mode", "parameters"]
+    },
+    # 🎯 新增：添加参数示例
+    "examples": {
+      "weekly_adjusted": {
+        "mode": "weekly_adjusted",
+        "parameters": {"symbol": "AAPL"}
+      },
+      "global_quote": {
+        "mode": "global_quote",
+        "parameters": {"symbol": "MSFT"}
+      },
+      "forex_daily": {
+        "mode": "forex_daily", 
+        "parameters": {"from_symbol": "USD", "to_symbol": "JPY", "outputsize": "full"}
+      },
+      "news_sentiment": {
+        "mode": "news_sentiment",
+        "parameters": {"tickers": "AAPL,MSFT", "limit": 50}
+      },
+      "treasury_yield": {
+        "mode": "treasury_yield",
+        "parameters": {"maturity": "10year", "interval": "monthly"}
+      }
+    }
   }
 ]
 
 class ToolExecutionRequest(BaseModel):
+    """工具执行请求模型"""
     tool_name: str
     parameters: Dict[str, Any]
+    # 🎯 新增：支持可选的session_id
+    session_id: str = None
 
 @app.get("/")
 def read_root():
@@ -152,8 +202,11 @@ async def api_execute_tool(request: ToolExecutionRequest):
     This is the main endpoint for the tool server.
     """
     try:
-        # 调用工具执行器
-        result = await execute_tool(request.tool_name, request.parameters)
+        # 🎯 修复：传递session_id给execute_tool函数
+        result = await execute_tool(
+            request.tool_name, 
+            request.parameters.dict() if hasattr(request.parameters, 'dict') else request.parameters
+        )
         
         # 如果工具执行本身失败，也可能需要一个特定的HTTP状态码
         if isinstance(result, dict) and result.get("success") == False:

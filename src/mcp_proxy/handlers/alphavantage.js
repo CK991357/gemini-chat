@@ -5,69 +5,144 @@
  * 支持13个完整的金融数据获取功能。
  */
 
-// 支持的函数列表
-const SUPPORTED_FUNCTIONS = [
-    "fetch_weekly_adjusted",
-    "fetch_global_quote",
-    "fetch_historical_options",
-    "fetch_earnings_transcript",
-    "fetch_insider_transactions",
-    "fetch_etf_profile",
-    "fetch_forex_daily",
-    "fetch_digital_currency_daily",
-    "fetch_wti",
-    "fetch_brent",
-    "fetch_copper",
-    "fetch_treasury_yield",
-    "fetch_news_sentiment"
-];
+// 模式到功能的映射（新的API结构使用mode而不是function）
+const MODE_TO_FUNCTION = {
+    "weekly_adjusted": "fetch_weekly_adjusted",
+    "global_quote": "fetch_global_quote",
+    "historical_options": "fetch_historical_options",
+    "earnings_transcript": "fetch_earnings_transcript",
+    "insider_transactions": "fetch_insider_transactions",
+    "etf_profile": "fetch_etf_profile",
+    "forex_daily": "fetch_forex_daily",
+    "digital_currency_daily": "fetch_digital_currency_daily",
+    "wti": "fetch_wti",
+    "brent": "fetch_brent",
+    "copper": "fetch_copper",
+    "treasury_yield": "fetch_treasury_yield",
+    "news_sentiment": "fetch_news_sentiment"
+};
 
-// 函数参数验证规则 - 更新为完整版本（注意：很多参数是可选的）
-const FUNCTION_PARAMETERS = {
-    "fetch_weekly_adjusted": ["symbol"],
-    "fetch_global_quote": ["symbol"],
-    "fetch_historical_options": ["symbol"],      // date 可选
-    "fetch_earnings_transcript": ["symbol", "quarter"],
-    "fetch_insider_transactions": ["symbol"],
-    "fetch_etf_profile": ["symbol"],
-    "fetch_forex_daily": ["from_symbol", "to_symbol"],  // outputsize 可选
-    "fetch_digital_currency_daily": ["symbol", "market"],
-    "fetch_wti": [],      // interval 可选
-    "fetch_brent": [],    // interval 可选
-    "fetch_copper": [],   // interval 可选
-    "fetch_treasury_yield": [],  // interval, maturity 可选
-    "fetch_news_sentiment": []   // 所有参数都可选
+// 支持的AlphaVantage模式列表
+const SUPPORTED_MODES = Object.keys(MODE_TO_FUNCTION);
+
+// 模式描述
+const MODE_DESCRIPTIONS = {
+    "weekly_adjusted": "获取股票周调整数据（开盘价、最高价、最低价、收盘价、调整后收盘价、成交量、股息）",
+    "global_quote": "获取实时行情数据（当前价格、涨跌幅、成交量等）",
+    "historical_options": "获取历史期权数据（需要付费API套餐）",
+    "earnings_transcript": "获取财报电话会议记录",
+    "insider_transactions": "获取公司内部人交易数据",
+    "etf_profile": "获取ETF详细信息和持仓数据",
+    "forex_daily": "获取外汇每日数据",
+    "digital_currency_daily": "获取数字货币每日数据",
+    "wti": "获取WTI原油价格数据",
+    "brent": "获取Brent原油价格数据",
+    "copper": "获取全球铜价数据",
+    "treasury_yield": "获取美国国债收益率数据",
+    "news_sentiment": "获取市场新闻和情绪数据"
+};
+
+// 模式参数验证规则
+const MODE_PARAMETERS = {
+    "weekly_adjusted": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取股票周调整数据"
+    },
+    "global_quote": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取实时行情数据"
+    },
+    "historical_options": {
+        required: ["symbol"],
+        optional: ["date"],
+        description: "获取历史期权数据，date格式: YYYY-MM-DD"
+    },
+    "earnings_transcript": {
+        required: ["symbol", "quarter"],
+        optional: [],
+        description: "获取财报会议记录，quarter格式: YYYY-Q1/Q2/Q3/Q4"
+    },
+    "insider_transactions": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取内部人交易数据"
+    },
+    "etf_profile": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取ETF详细信息和持仓数据"
+    },
+    "forex_daily": {
+        required: ["from_symbol", "to_symbol"],
+        optional: ["outputsize"],
+        description: "获取外汇每日数据，outputsize: compact(最近100天)或full(全部数据)"
+    },
+    "digital_currency_daily": {
+        required: ["symbol", "market"],
+        optional: [],
+        description: "获取数字货币每日数据，market如: USD, CNY"
+    },
+    "wti": {
+        required: [],
+        optional: ["interval"],
+        description: "获取WTI原油价格数据，interval: daily, weekly, monthly"
+    },
+    "brent": {
+        required: [],
+        optional: ["interval"],
+        description: "获取Brent原油价格数据，interval: daily, weekly, monthly"
+    },
+    "copper": {
+        required: [],
+        optional: ["interval"],
+        description: "获取全球铜价数据，interval: daily, weekly, monthly"
+    },
+    "treasury_yield": {
+        required: [],
+        optional: ["interval", "maturity"],
+        description: "获取美国国债收益率数据，maturity: 3month, 2year, 5year, 7year, 10year, 30year"
+    },
+    "news_sentiment": {
+        required: [],
+        optional: ["tickers", "topics", "time_from", "time_to", "sort", "limit"],
+        description: "获取市场新闻和情绪数据，limit: 1-1000"
+    }
 };
 
 /**
- * 验证AlphaVantage函数参数 - 更新版本
+ * 验证AlphaVantage模式参数
  */
-function validateAlphaVantageParams(functionName, parameters) {
-    // 检查函数是否支持
-    if (!SUPPORTED_FUNCTIONS.includes(functionName)) {
+function validateAlphaVantageParams(mode, parameters) {
+    // 检查模式是否支持
+    if (!SUPPORTED_MODES.includes(mode)) {
         return {
             valid: false,
-            error: `不支持的函数: ${functionName}`,
-            available_functions: SUPPORTED_FUNCTIONS
+            error: `不支持的AlphaVantage模式: ${mode}`,
+            available_modes: SUPPORTED_MODES.map(m => ({ mode: m, description: MODE_DESCRIPTIONS[m] }))
         };
     }
     
-    // 获取必需参数
-    const requiredParams = FUNCTION_PARAMETERS[functionName] || [];
+    // 获取参数规则
+    const paramRules = MODE_PARAMETERS[mode] || {};
+    const requiredParams = paramRules.required || [];
+    const optionalParams = paramRules.optional || [];
     
     // 检查必需参数
     for (const param of requiredParams) {
         if (!parameters || parameters[param] === undefined || parameters[param] === '') {
             return {
                 valid: false,
-                error: `函数 ${functionName} 需要参数: ${param}`,
-                required_parameters: requiredParams
+                error: `模式 ${mode} 需要参数: ${param}`,
+                required_parameters: requiredParams,
+                description: paramRules.description
             };
         }
     }
     
     // 特殊参数验证
-    if (functionName === "fetch_forex_daily") {
+    if (mode === "forex_daily") {
         const validOutputSizes = ["compact", "full"];
         if (parameters.outputsize && !validOutputSizes.includes(parameters.outputsize)) {
             return {
@@ -78,18 +153,17 @@ function validateAlphaVantageParams(functionName, parameters) {
         }
     }
     
-    if (functionName === "fetch_news_sentiment") {
-        if (parameters.limit && (parameters.limit < 1 || parameters.limit > 50)) {
+    if (mode === "news_sentiment") {
+        if (parameters.limit && (parameters.limit < 1 || parameters.limit > 1000)) {
             return {
                 valid: false,
-                error: "limit 必须在 1-50 之间",
+                error: "limit 必须在 1-1000 之间",
                 received: parameters.limit
             };
         }
     }
     
-    // 数字货币参数验证
-    if (functionName === "fetch_digital_currency_daily") {
+    if (mode === "digital_currency_daily") {
         const validMarkets = ["USD", "CNY", "JPY", "EUR", "GBP"];
         if (parameters.market && !validMarkets.includes(parameters.market.toUpperCase())) {
             return {
@@ -100,8 +174,7 @@ function validateAlphaVantageParams(functionName, parameters) {
         }
     }
     
-    // 国债收益率验证
-    if (functionName === "fetch_treasury_yield") {
+    if (mode === "treasury_yield") {
         const validMaturities = ["3month", "2year", "5year", "7year", "10year", "30year"];
         if (parameters.maturity && !validMaturities.includes(parameters.maturity.toLowerCase())) {
             return {
@@ -112,8 +185,7 @@ function validateAlphaVantageParams(functionName, parameters) {
         }
     }
     
-    // 大宗商品验证
-    if (["fetch_wti", "fetch_brent", "fetch_copper"].includes(functionName)) {
+    if (["wti", "brent", "copper"].includes(mode)) {
         const validIntervals = ["daily", "weekly", "monthly"];
         if (parameters.interval && !validIntervals.includes(parameters.interval.toLowerCase())) {
             return {
@@ -124,7 +196,7 @@ function validateAlphaVantageParams(functionName, parameters) {
         }
     }
     
-    return { valid: true };
+    return { valid: true, paramRules };
 }
 
 /**
@@ -140,66 +212,71 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
     // 记录调用开始
     console.log(`[AlphaVantage] 开始处理请求, session_id: ${session_id || 'none'}`);
     
-    // 验证基本参数结构
+    // 验证基本参数结构 - 新的API结构
     if (!tool_params || typeof tool_params !== 'object') {
         return createJsonResponse({ 
             success: false, 
-            error: 'Missing or invalid "parameters" object for alphavantage tool.',
+            error: 'AlphaVantage工具需要有效的参数对象',
             usage: {
                 description: "AlphaVantage金融数据获取工具",
                 structure: {
-                    function: "string (支持的函数名)",
-                    parameters: "object (函数具体参数)"
+                    mode: "string (支持的AlphaVantage模式)",
+                    parameters: "object (模式具体参数)"
                 },
                 example: {
-                    function: "fetch_weekly_adjusted",
+                    mode: "weekly_adjusted",
                     parameters: { symbol: "AAPL" }
                 },
-                available_functions: SUPPORTED_FUNCTIONS
+                available_modes: SUPPORTED_MODES.map(m => ({
+                    mode: m,
+                    description: MODE_DESCRIPTIONS[m],
+                    parameters: MODE_PARAMETERS[m]
+                }))
             }
         }, 400);
     }
 
-    const { function: functionName, parameters } = tool_params;
+    // 🎯 新的API结构：使用mode而不是function
+    const { mode, parameters } = tool_params;
 
-    if (!functionName) {
+    if (!mode) {
         return createJsonResponse({ 
             success: false, 
-            error: 'Missing required parameter: "function" for alphavantage tool.',
-            supported_functions: SUPPORTED_FUNCTIONS
+            error: '缺少必需参数: "mode"',
+            supported_modes: SUPPORTED_MODES,
+            suggestion: "请指定一个AlphaVantage模式，如: weekly_adjusted, global_quote, forex_daily等"
         }, 400);
     }
 
-    // 验证函数参数
-    const validation = validateAlphaVantageParams(functionName, parameters || {});
+    // 验证模式参数
+    const validation = validateAlphaVantageParams(mode, parameters || {});
     if (!validation.valid) {
         return createJsonResponse({
             success: false,
             error: validation.error,
-            details: validation
+            details: validation,
+            suggestion: `请检查${mode}模式的参数要求`
         }, 400);
     }
 
-    // 构建请求体
+    // 构建请求体 - 与后端API完全匹配
     const finalParameters = parameters || {};
     
     const requestBody = {
         tool_name: 'alphavantage',
         parameters: {
-            function: functionName,
+            mode: mode,
             parameters: finalParameters
-        }
+        },
+        // 🎯 修复：将session_id放在请求体顶层，与后端API匹配
+        session_id: session_id
     };
 
-    // 🎯 核心：如果提供了session_id，添加到请求中
-    if (session_id) {
-        requestBody.session_id = session_id;
-    }
-
     try {
-        console.log(`[AlphaVantage] 调用工具服务器: ${functionName}`, {
+        console.log(`[AlphaVantage] 调用工具服务器: ${mode}`, {
             parameters: finalParameters,
-            session_id: session_id || 'none'
+            session_id: session_id || 'none',
+            description: MODE_DESCRIPTIONS[mode]
         });
         
         // 调用工具服务器
@@ -211,7 +288,7 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
             body: JSON.stringify(requestBody),
         });
 
-        // 🎯 修复：先检查响应类型，处理可能的HTML错误页面
+        // 处理响应
         const contentType = toolResponse.headers.get('content-type') || '';
         let responseData;
         
@@ -219,7 +296,6 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
             try {
                 responseData = await toolResponse.json();
             } catch (jsonError) {
-                // JSON解析失败
                 const text = await toolResponse.text();
                 console.error('[AlphaVantage] ❌ JSON解析失败:', jsonError.message, '响应:', text.substring(0, 500));
                 
@@ -236,7 +312,6 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
                 }, 500);
             }
         } else {
-            // 如果是非JSON响应（可能是HTML错误页面）
             const text = await toolResponse.text();
             console.error('[AlphaVantage] ❌ 工具服务器返回非JSON响应:', text.substring(0, 500));
             
@@ -257,38 +332,60 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
             console.error('[AlphaVantage] 工具服务器错误:', {
                 status: toolResponse.status,
                 data: responseData,
-                function: functionName
+                mode: mode
             });
             
             return createJsonResponse({
                 success: false,
                 error: `AlphaVantage工具服务器请求失败 (${toolResponse.status})`,
                 details: responseData,
-                function: functionName
+                mode: mode
             }, toolResponse.status);
         }
         
-        // 🎯 增强响应日志
+        // 🎯 改进的响应处理
         if (responseData.success) {
-            const metadata = responseData.metadata || {};
-            const savedFiles = metadata.saved_files || [];
+            // 确保metadata存在
+            responseData.metadata = responseData.metadata || {};
+            const metadata = responseData.metadata;
+            
+            // 添加有用的元数据
+            metadata.mode_description = MODE_DESCRIPTIONS[mode];
+            metadata.timestamp = new Date().toISOString();
+            
+            // 如果有session_id，添加会话信息
+            if (session_id) {
+                metadata.session_id = session_id;
+                metadata.session_note = '数据已保存到会话工作区，可以使用代码解释器进行数据分析。';
+                
+                // 如果后端返回了session_dir，提供详细访问路径
+                if (metadata.session_dir) {
+                    metadata.access_instructions = `可以在代码解释器中使用路径访问文件: ${metadata.session_dir}`;
+                } else if (session_id) {
+                    metadata.access_instructions = `可以在代码解释器中使用路径访问文件: /srv/sandbox_workspaces/${session_id}/`;
+                }
+                
+                // 如果后端返回了保存的文件，提供文件列表
+                const savedFiles = metadata.saved_files || [];
+                if (savedFiles.length > 0) {
+                    metadata.file_summary = `已保存 ${savedFiles.length} 个文件`;
+                    metadata.sample_files = savedFiles.slice(0, 3).map(f => {
+                        const parts = f.split('/');
+                        return parts[parts.length - 1];
+                    });
+                }
+            }
             
             console.log(`[AlphaVantage] ✅ 成功获取数据`, {
-                function: functionName,
-                session_id: metadata.session_id || session_id,
-                files_count: savedFiles.length,
-                files: savedFiles.slice(0, 3).map(f => f.split('/').pop()), // 只显示文件名
-                has_example_code: !!metadata.example_code,
-                data_type: metadata.data_type || functionName
+                mode: mode,
+                description: MODE_DESCRIPTIONS[mode],
+                session_id: metadata.session_id || 'none',
+                files_count: (metadata.saved_files || []).length,
+                has_example_code: !!metadata.example_code
             });
-            
-            // 添加可用功能的提示
-            if (responseData.metadata && responseData.metadata.data_dir) {
-                responseData.suggestion = `数据已保存到会话目录，可以使用代码解释器进行数据分析。`;
-            }
         } else {
             console.error('[AlphaVantage] ❌ 工具执行失败:', {
-                function: functionName,
+                mode: mode,
                 error: responseData.error,
                 parameters: finalParameters
             });
@@ -316,7 +413,9 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
             error: errorDetail,
             details: error.message,
             error_type: error.name,
-            suggestion: suggestion
+            suggestion: suggestion,
+            mode_requested: mode,
+            parameters_sent: tool_params.parameters
         }, 500);
     }
 }
@@ -333,6 +432,11 @@ function createJsonResponse(body, status = 200) {
         headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
+            'X-AlphaVantage-Handler': '1.0.0',
         },
     });
 }
+
+// 导出函数列表（可选）
+export const AVAILABLE_MODES = SUPPORTED_MODES;
+export const MODE_INFO = MODE_DESCRIPTIONS;

@@ -5,6 +5,7 @@
  */
 
 // ✨ 直接、静态地导入所有工具的处理器
+import { handleAlphaVantage } from './handlers/alphavantage.js'; // 新增AlphaVantage处理器
 import { handleCrawl4AI } from './handlers/crawl4ai.js';
 import { handleFirecrawl } from './handlers/firecrawl.js';
 import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
@@ -22,7 +23,25 @@ const toolRegistry = {
     'stockfish_analyzer': handleStockfishAnalyzer,
     'tavily_search': handleTavilySearch,
     'glm4v_analyze_image': handleZhipuImageAnalysis, // ← 统一名称
+    'alphavantage': handleAlphaVantage, // 新增AlphaVantage工具
 };
+
+/**
+ * 获取工具描述信息
+ */
+function getToolDescription(toolName) {
+    const descriptions = {
+        'crawl4ai': '网页抓取、爬取、PDF导出和截图工具',
+        'firecrawl': '网页抓取和爬取工具',
+        'mcp_tool_catalog': '获取可用工具目录',
+        'python_sandbox': 'Python代码执行沙箱',
+        'stockfish_analyzer': '国际象棋分析工具',
+        'tavily_search': '网络搜索工具',
+        'glm4v_analyze_image': '智谱GLM-4V图像分析',
+        'alphavantage': 'AlphaVantage金融数据获取工具，支持股票、外汇、数字货币、大宗商品、新闻等13种金融数据类型'
+    };
+    return descriptions[toolName] || `工具: ${toolName}`;
+}
 
 /**
  * Handles all incoming MCP tool proxy requests.
@@ -39,7 +58,7 @@ export async function handleMcpProxyRequest(request, env) {
             headers: {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Headers': 'Content-Type, X-Session-ID', // 添加X-Session-ID支持
                 'Access-Control-Max-Age': '86400',
             }
         });
@@ -52,13 +71,20 @@ export async function handleMcpProxyRequest(request, env) {
     let payload;
     try {
         payload = await request.json();
-        const { tool_name, parameters, requestId, session_id } = payload;
+        const { tool_name, parameters, requestId } = payload;
+        
+        // 🎯 新增：从请求头中提取session_id（保持向后兼容）
+        const sessionIdFromHeader = request.headers.get('X-Session-ID');
+        const sessionIdFromBody = payload.session_id; // 也从body中检查
+        const session_id = sessionIdFromHeader || sessionIdFromBody;
 
         // 记录工具调用开始
         console.log('🔧 [工具调用监控]', JSON.stringify({
             request_id: requestId,
             tool_name: tool_name,
+            description: getToolDescription(tool_name),
             parameters: parameters,
+            session_id: session_id || '未提供',
             action: 'start',
             timestamp: new Date().toISOString()
         }));
@@ -72,7 +98,7 @@ export async function handleMcpProxyRequest(request, env) {
 
         if (toolHandler) {
             // 如果找到处理器，执行并返回响应
-            // 传递 session_id 给工具处理器
+            // 🎯 传递session_id给所有工具处理器（工具自己决定是否使用）
             const response = await toolHandler(parameters, env, session_id);
             const responseTime = Date.now() - startTime;
 
@@ -100,8 +126,12 @@ export async function handleMcpProxyRequest(request, env) {
             
             return createJsonResponse({ 
                 success: false, 
-                error: `Tool '${tool_name}' is not registered or supported.`,
-                available_tools: Object.keys(toolRegistry) // 提供可用工具列表便于调试
+                error: `工具 '${tool_name}' 未注册或不支持。`,
+                description: getToolDescription(tool_name),
+                available_tools: Object.keys(toolRegistry).map(name => ({
+                    name,
+                    description: getToolDescription(name)
+                })) // 提供可用工具列表和描述
             }, 404);
         }
 
@@ -113,7 +143,6 @@ export async function handleMcpProxyRequest(request, env) {
             request_id: payload?.requestId,
             tool_name: payload?.tool_name,
             error: error.message,
-            stack: error.stack,
             response_time: responseTime,
             action: 'error',
             timestamp: new Date().toISOString()
@@ -122,8 +151,9 @@ export async function handleMcpProxyRequest(request, env) {
         console.error('[MCP HANDLER] General Error:', error);
         return createJsonResponse({
             success: false,
-            error: 'An unexpected error occurred in the MCP proxy handler.',
-            details: error.message
+            error: 'MCP代理处理器发生意外错误。',
+            details: error.message,
+            suggestion: '请检查请求格式和网络连接'
         }, 500);
     }
 }
@@ -140,6 +170,7 @@ function createJsonResponse(body, status = 200) {
         headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
+            'X-MCP-Proxy-Version': '2.1.0',
         },
     });
 }

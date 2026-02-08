@@ -194,6 +194,100 @@ const crawl4ai = {
     }
 };
 
+// AlphaVantage tool definition - 新增的金融数据获取工具
+const alphavantage = {
+    "type": "function",
+    "function": {
+        "name": "alphavantage",
+        "description": "从AlphaVantage获取金融数据的完整工具。支持股票、期权、财报、内部交易、ETF、外汇、数字货币、大宗商品、国债收益率、新闻情绪等13种数据类型。数据会保存到会话工作区，可以通过代码解释器访问。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["weekly_adjusted", "global_quote", "historical_options", "earnings_transcript", "insider_transactions", "etf_profile", "forex_daily", "digital_currency_daily", "wti", "brent", "copper", "treasury_yield", "news_sentiment"],
+                    "description": "要执行的AlphaVantage功能模式。"
+                },
+                "parameters": {
+                    "type": "object",
+                    "description": "功能参数，根据选择的模式而不同。查看examples了解每种模式的参数格式。"
+                }
+            },
+            "required": ["mode", "parameters"]
+        },
+        "examples": [
+            {
+                "description": "获取苹果公司股票周调整数据",
+                "parameters": {
+                    "mode": "weekly_adjusted",
+                    "parameters": {
+                        "symbol": "AAPL"
+                    }
+                }
+            },
+            {
+                "description": "获取实时行情数据",
+                "parameters": {
+                    "mode": "global_quote",
+                    "parameters": {
+                        "symbol": "MSFT"
+                    }
+                }
+            },
+            {
+                "description": "获取美元兑日元外汇数据",
+                "parameters": {
+                    "mode": "forex_daily",
+                    "parameters": {
+                        "from_symbol": "USD",
+                        "to_symbol": "JPY",
+                        "outputsize": "full"
+                    }
+                }
+            },
+            {
+                "description": "获取比特币美元价格数据",
+                "parameters": {
+                    "mode": "digital_currency_daily",
+                    "parameters": {
+                        "symbol": "BTC",
+                        "market": "USD"
+                    }
+                }
+            },
+            {
+                "description": "获取市场新闻情绪数据",
+                "parameters": {
+                    "mode": "news_sentiment",
+                    "parameters": {
+                        "tickers": "AAPL,MSFT,GOOGL",
+                        "limit": 50
+                    }
+                }
+            },
+            {
+                "description": "获取WTI原油价格数据",
+                "parameters": {
+                    "mode": "wti",
+                    "parameters": {
+                        "interval": "monthly"
+                    }
+                }
+            },
+            {
+                "description": "获取10年期美国国债收益率数据",
+                "parameters": {
+                    "mode": "treasury_yield",
+                    "parameters": {
+                        "interval": "monthly",
+                        "maturity": "10year"
+                    }
+                }
+            }
+        ]
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
@@ -202,8 +296,8 @@ export const mcpTools = [
     mcp_tool_catalog, // 添加新工具
     firecrawl,
     stockfish_analyzer,
-    crawl4ai
-    // Future tools can be added here
+    crawl4ai,
+    alphavantage // 新增AlphaVantage工具
 ];
 
 // Export a map for easy lookup by name
@@ -214,7 +308,8 @@ export const mcpToolsMap = {
     'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
     'firecrawl': firecrawl,
     'stockfish_analyzer': stockfish_analyzer,
-    'crawl4ai': crawl4ai
+    'crawl4ai': crawl4ai,
+    'alphavantage': alphavantage // 新增AlphaVantage工具映射
 };
 
 // Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
@@ -231,11 +326,18 @@ if (crawl4ai_gemini.function.output_schema) {
     delete crawl4ai_gemini.function.output_schema;
 }
 
+// Create a deep copy of alphavantage for Gemini compatibility
+const alphavantage_gemini = JSON.parse(JSON.stringify(alphavantage));
+if (alphavantage_gemini.function.output_schema) {
+    delete alphavantage_gemini.function.output_schema;
+}
+
 // Gemini-specific toolset without output_schema
 export const geminiMcpTools = [
     tavily_search,
     python_sandbox_gemini,
     firecrawl_gemini,
     stockfish_analyzer,
-    crawl4ai_gemini
+    crawl4ai_gemini,
+    alphavantage_gemini // 添加AlphaVantage到Gemini工具集
 ];
