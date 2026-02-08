@@ -10,7 +10,34 @@ version: 3.0
 
 # AlphaVantage 金融数据工具
 
-`alphavantage` 是一个专业的金融数据获取工具，通过 AlphaVantage API 提供丰富的金融市场数据。数据会保存到会话工作区，与代码解释器共享。
+`alphavantage` 是一个专业的金融数据获取工具，通过 AlphaVantage API 提供丰富的金融市场数据。**数据会返回在响应中，也可以保存到会话工作区（与代码解释器共享），可用于进一步分析**。
+
+## 🎯 工具定义说明
+
+### 调用结构
+```json
+{
+  "mode": "<功能模式>",
+  "parameters": {
+    "<参数名>": "<参数值>"
+  }
+}
+```
+
+### 可用模式（13个完整功能）
+- `weekly_adjusted` - 股票周调整数据
+- `global_quote` - 实时行情数据  
+- `historical_options` - 历史期权数据
+- `earnings_transcript` - 财报电话会议记录
+- `insider_transactions` - 内部人交易数据
+- `etf_profile` - ETF详细信息
+- `forex_daily` - 外汇每日数据
+- `digital_currency_daily` - 数字货币每日数据
+- `wti` - WTI原油价格
+- `brent` - Brent原油价格
+- `copper` - 铜价数据
+- `treasury_yield` - 国债收益率
+- `news_sentiment` - 新闻情绪数据
 
 ## 🎯 快速开始
 
