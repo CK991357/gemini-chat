@@ -194,7 +194,7 @@ const crawl4ai = {
     }
 };
 
-// 🆕 AlphaVantage tool definition
+// ✅ 修正后的 AlphaVantage tool definition
 const alphavantage = {
     "type": "function",
     "function": {
@@ -203,31 +203,31 @@ const alphavantage = {
         "parameters": {
             "type": "object",
             "properties": {
-                "function": {
+                "mode": {  // ✅ 修正：使用 "mode" 而不是 "function"
                     "type": "string",
-                    "description": "要调用的AlphaVantage功能名称",
-                    "enum": [
-                        "fetch_weekly_adjusted",
-                        "fetch_global_quote",
-                        "fetch_historical_options",
-                        "fetch_earnings_transcript",
-                        "fetch_insider_transactions",
-                        "fetch_etf_profile",
-                        "fetch_forex_daily",
-                        "fetch_digital_currency_daily",
-                        "fetch_wti",
-                        "fetch_brent",
-                        "fetch_copper",
-                        "fetch_treasury_yield",
-                        "fetch_news_sentiment"
+                    "description": "要执行的AlphaVantage功能模式",
+                    "enum": [  // ✅ 修正：枚举值去掉 "fetch_" 前缀
+                        "weekly_adjusted",
+                        "global_quote",
+                        "historical_options",
+                        "earnings_transcript",
+                        "insider_transactions",
+                        "etf_profile",
+                        "forex_daily",
+                        "digital_currency_daily",
+                        "wti",
+                        "brent",
+                        "copper",
+                        "treasury_yield",
+                        "news_sentiment"
                     ]
                 },
                 "parameters": {
                     "type": "object",
-                    "description": "功能参数，具体参数取决于选择的function"
+                    "description": "功能参数，具体参数取决于选择的mode"
                 }
             },
-            "required": ["function", "parameters"]
+            "required": ["mode", "parameters"]  // ✅ 修正：使用 "mode"
         }
     }
 };
@@ -237,12 +237,11 @@ export const mcpTools = [
     tavily_search,
     image_url_analyzer,
     python_sandbox,
-    mcp_tool_catalog, // 添加新工具
+    mcp_tool_catalog,
     firecrawl,
     stockfish_analyzer,
     crawl4ai,
-    alphavantage // 🆕 新增 AlphaVantage
-    // Future tools can be added here
+    alphavantage
 ];
 
 // Export a map for easy lookup by name
@@ -250,11 +249,11 @@ export const mcpToolsMap = {
     'tavily_search': tavily_search,
     'glm4v_analyze_image': image_url_analyzer,
     'python_sandbox': python_sandbox,
-    'mcp_tool_catalog': mcp_tool_catalog, // 添加新工具映射
+    'mcp_tool_catalog': mcp_tool_catalog,
     'firecrawl': firecrawl,
     'stockfish_analyzer': stockfish_analyzer,
     'crawl4ai': crawl4ai,
-    'alphavantage': alphavantage // 🆕 新增映射
+    'alphavantage': alphavantage
 };
 
 // Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
@@ -281,5 +280,5 @@ export const geminiMcpTools = [
     firecrawl_gemini,
     stockfish_analyzer,
     crawl4ai_gemini,
-    alphavantage_gemini // 🆕 新增 Gemini 兼容版本
+    alphavantage_gemini
 ];
