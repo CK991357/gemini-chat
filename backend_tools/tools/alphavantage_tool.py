@@ -297,65 +297,13 @@ class AlphaVantageFetcher:
             response.raise_for_status()
             data = response.json()
 
-            # 检查API返回的错误信息（免费API通常有限制）
-            if "Information" in data:
-                error_msg = data["Information"]
-                logger.warning(f"AlphaVantage API限制: {error_msg}")
-                # 返回模拟数据用于测试
-                return {
-                    "symbol": symbol,
-                    "quarter": quarter,
-                    "transcript": f"这是{symbol}公司{quarter}财报电话会议记录的示例文本。由于免费API限制，实际内容需要付费API套餐获取。错误信息: {error_msg}",
-                    "note": "免费API套餐不支持财报电话会议记录，需要升级到付费套餐"
-                }
-            
-            if "Note" in data:
-                logger.warning(f"API频率限制提示: {data['Note']}")
-            
-            # 检查是否返回了实际的transcript文本
-            if "transcript" not in data or not data["transcript"]:
-                logger.warning(f"未找到{symbol}在{quarter}的财报电话会议记录文本")
-                # 返回一个结构化的空结果
-                return {
-                    "symbol": symbol,
-                    "quarter": quarter,
-                    "transcript": "",
-                    "status": "未找到记录",
-                    "suggestions": [
-                        "检查季度格式是否正确（如：2023-Q4）",
-                        "确认该公司在所选季度有财报会议",
-                        "可能是API免费版本的限制"
-                    ]
-                }
-            
-            # 标准化返回结构
-            standardized_data = {
-                "symbol": data.get("symbol", symbol),
-                "quarter": data.get("quarter", quarter),
-                "transcript": data.get("transcript", ""),
-                "length": len(data.get("transcript", "")),
-                "retrieved_at": datetime.now().isoformat()
-            }
-            
-            # 🎯 保存到会话目录根目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                # 保存完整原始数据
                 file_path = session_dir / f"transcript_{symbol}_{quarter}.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False)
-                
-                # 同时保存为纯文本格式便于阅读
-                txt_path = session_dir / f"transcript_{symbol}_{quarter}.txt"
-                transcript_text = standardized_data.get("transcript", "")
-                with open(txt_path, 'w', encoding='utf-8') as f:
-                    f.write(f"=== {symbol} {quarter} 财报电话会议记录 ===\n\n")
-                    f.write(f"获取时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"记录长度: {len(transcript_text)} 字符\n")
-                    f.write("=" * 60 + "\n\n")
-                    f.write(transcript_text)
-                
-                logger.info(f"财报会议记录已保存至会话目录：{file_path} 和 {txt_path}")
+                logger.info(f"财报会议记录已保存至会话目录：{file_path}")
             else:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "transcripts"
@@ -365,18 +313,11 @@ class AlphaVantageFetcher:
                     json.dump(data, f, ensure_ascii=False)
                 logger.info(f"财报会议记录已保存至临时目录：{file_path}")
 
-            return standardized_data
+            return data
             
         except Exception as e:
             logger.error(f"获取财报会议记录失败: {e}")
-            # 返回错误信息但不中断程序
-            return {
-                "symbol": symbol,
-                "quarter": quarter,
-                "transcript": "",
-                "error": str(e),
-                "status": "获取失败"
-            }
+            raise
     
     # ============ 内部交易数据方法 ============
     
