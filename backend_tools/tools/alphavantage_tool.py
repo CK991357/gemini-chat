@@ -1047,10 +1047,11 @@ class AlphaVantageTool:
     def _ensure_session_workspace(self, session_id: str = None) -> Path:
         """确保会话工作区存在"""
         if not session_id:
-            # 临时目录
-            temp_dir = SESSION_WORKSPACE_ROOT / "temp" / str(int(datetime.now().timestamp()))
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            return temp_dir
+            # ✅ 直接创建在根目录，而不是嵌套在temp下
+            session_id = str(int(datetime.now().timestamp()))
+            session_dir = SESSION_WORKSPACE_ROOT / session_id  # 直接创建在根目录
+            session_dir.mkdir(parents=True, exist_ok=True)
+            return session_dir
         
         session_dir = SESSION_WORKSPACE_ROOT / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
