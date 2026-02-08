@@ -147,9 +147,9 @@ class AlphaVantageFetcher:
                 "dividend": float
             })
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "stock" / f"{symbol}.parquet"
+                file_path = session_dir / f"stock_{symbol}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 df.to_parquet(file_path)
                 logger.info(f"股票数据已保存至会话目录：{file_path}")
@@ -157,7 +157,7 @@ class AlphaVantageFetcher:
                 # 后备：保存到临时目录
                 temp_dir = Path("/tmp/alphavantage_data") / "us_stock"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"{symbol}.parquet"
+                file_path = temp_dir / f"stock_{symbol}.parquet"
                 df.to_parquet(file_path)
                 logger.info(f"股票数据已保存至临时目录：{file_path}")
 
@@ -199,9 +199,9 @@ class AlphaVantageFetcher:
                 'change_percent': quote.get('10. change percent', '0%')
             }
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "stock" / f"{symbol}_quote.json"
+                file_path = session_dir / f"quote_{symbol}.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(result, f, ensure_ascii=False, indent=2)
@@ -259,9 +259,9 @@ class AlphaVantageFetcher:
                     if contract.get(field):
                         contract[field] = int(contract[field])
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "options" / f"{symbol}_{date if date else 'latest'}.parquet"
+                file_path = session_dir / f"options_{symbol}_{date if date else 'latest'}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 pd.DataFrame(data["data"]).to_parquet(file_path)
                 logger.info(f"期权数据已保存至会话目录：{file_path}")
@@ -269,7 +269,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "options"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"{symbol}_{date if date else 'latest'}.parquet"
+                file_path = temp_dir / f"options_{symbol}_{date if date else 'latest'}.parquet"
                 pd.DataFrame(data["data"]).to_parquet(file_path)
                 logger.info(f"期权数据已保存至临时目录：{file_path}")
 
@@ -297,9 +297,9 @@ class AlphaVantageFetcher:
             response.raise_for_status()
             data = response.json()
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "transcripts" / f"{symbol}_{quarter}.json"
+                file_path = session_dir / f"transcript_{symbol}_{quarter}.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False)
@@ -308,7 +308,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "transcripts"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"{symbol}_{quarter}.json"
+                file_path = temp_dir / f"transcript_{symbol}_{quarter}.json"
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False)
                 logger.info(f"财报会议记录已保存至临时目录：{file_path}")
@@ -352,9 +352,9 @@ class AlphaVantageFetcher:
                     "total_value": float(item.get("shares", 0)) * float(item.get("share_price", 0)) if item.get("shares") and item.get("share_price") else 0
                 })
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "insider" / f"{symbol}_insider.json"
+                file_path = session_dir / f"insider_{symbol}.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(transactions, f, ensure_ascii=False)
@@ -363,7 +363,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "insider"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"{symbol}_insider.json"
+                file_path = temp_dir / f"insider_{symbol}.json"
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(transactions, f, ensure_ascii=False)
                 logger.info(f"内部人交易数据已保存至临时目录：{file_path}")
@@ -427,9 +427,9 @@ class AlphaVantageFetcher:
                             "shares": int(holding.get("shares", 0)) 
                         })
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "etf" / f"{symbol}_profile.json"
+                file_path = session_dir / f"etf_{symbol}_profile.json"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(profile, f, ensure_ascii=False, indent=2)
@@ -438,7 +438,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "etf"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"{symbol}_profile.json"
+                file_path = temp_dir / f"etf_{symbol}_profile.json"
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(profile, f, ensure_ascii=False, indent=2)
                 logger.info(f"ETF数据已保存至临时目录：{file_path}")
@@ -495,9 +495,9 @@ class AlphaVantageFetcher:
                 "close": float
             })
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "forex" / f"{from_symbol}_{to_symbol}.parquet"
+                file_path = session_dir / f"forex_{from_symbol}_{to_symbol}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 df.to_parquet(file_path)
                 logger.info(f"外汇数据已保存至会话目录: {file_path}")
@@ -505,7 +505,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "forex"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"{from_symbol}_{to_symbol}_daily.parquet"
+                file_path = temp_dir / f"forex_{from_symbol}_{to_symbol}_daily.parquet"
                 df.to_parquet(file_path)
                 logger.info(f"外汇数据已保存至临时目录: {file_path}")
 
@@ -619,34 +619,33 @@ class AlphaVantageFetcher:
                 "open": float, "high": float, "low": float, "close": float
             })
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                dir_path = session_dir / "crypto"
-                dir_path.mkdir(parents=True, exist_ok=True)
-                
-                # 特殊处理USD市场数据
+                # 直接保存到会话根目录，不再创建 crypto 子目录
                 if market == "USD":
-                    file_path = dir_path / f"{symbol}_USD.parquet"
+                    file_path = session_dir / f"crypto_{symbol}_USD.parquet"
                     market_df.to_parquet(file_path)
                     logger.info(f"USD市场数据已保存至会话目录: {file_path}")
                 else:
-                    market_file = dir_path / f"{symbol}_{market}.parquet"
-                    usd_file = dir_path / f"{symbol}_USD.parquet"
+                    market_file = session_dir / f"crypto_{symbol}_{market}.parquet"
+                    usd_file = session_dir / f"crypto_{symbol}_USD.parquet"
                     market_df.to_parquet(market_file)
                     usd_df.to_parquet(usd_file)
-                    logger.info(f"数字货币{symbol}数据已保存至会话目录: {dir_path}")
+                    logger.info(f"数字货币{symbol}数据已保存至会话目录: {session_dir}")
             else:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "digital_currency"
                 temp_dir.mkdir(parents=True, exist_ok=True)
                 
                 if market == "USD":
-                    file_path = temp_dir / "USD_market_values.parquet"
+                    file_path = temp_dir / f"crypto_{symbol}_USD.parquet"
                     market_df.to_parquet(file_path)
                     logger.info(f"USD市场数据已保存至临时目录: {file_path}")
                 else:
-                    market_df.to_parquet(temp_dir / f"{market}_market_values.parquet")
-                    usd_df.to_parquet(temp_dir / "usd_market_values.parquet")
+                    market_file = temp_dir / f"crypto_{symbol}_{market}.parquet"
+                    usd_file = temp_dir / f"crypto_{symbol}_USD.parquet"
+                    market_df.to_parquet(market_file)
+                    usd_df.to_parquet(usd_file)
                     logger.info(f"数字货币{symbol}数据已保存至临时目录: {temp_dir}")
 
             return {
@@ -690,9 +689,9 @@ class AlphaVantageFetcher:
             df = df.drop(columns=["value"])
             df = df.set_index("date").sort_index()
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "commodities" / f"WTI_{interval}.parquet"
+                file_path = session_dir / f"commodity_WTI_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 df.to_parquet(file_path)
                 logger.info(f"WTI原油数据已保存至会话目录: {file_path}")
@@ -700,7 +699,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "commodities"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"WTI_{interval}.parquet"
+                file_path = temp_dir / f"commodity_WTI_{interval}.parquet"
                 df.to_parquet(file_path)
                 logger.info(f"WTI原油数据已保存至临时目录: {file_path}")
 
@@ -747,9 +746,9 @@ class AlphaVantageFetcher:
             if len(df) == 0:
                 raise ValueError("没有有效的原油数据可用")
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "commodities" / f"BRENT_{interval}.parquet"
+                file_path = session_dir / f"commodity_BRENT_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 df.to_parquet(file_path)
                 logger.info(f"Brent原油数据已保存至会话目录: {file_path}")
@@ -757,7 +756,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "commodities"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"BRENT_{interval}.parquet"
+                file_path = temp_dir / f"commodity_BRENT_{interval}.parquet"
                 df.to_parquet(file_path)
                 logger.info(f"Brent原油数据已保存至临时目录: {file_path}")
 
@@ -804,9 +803,9 @@ class AlphaVantageFetcher:
             if len(df) == 0:
                 raise ValueError("没有有效的铜价数据可用")
 
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "commodities" / f"COPPER_{interval}.parquet"
+                file_path = session_dir / f"commodity_COPPER_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 df.to_parquet(file_path)
                 logger.info(f"铜价数据已保存至会话目录: {file_path}")
@@ -814,7 +813,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "commodities"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"COPPER_{interval}.parquet"
+                file_path = temp_dir / f"commodity_COPPER_{interval}.parquet"
                 df.to_parquet(file_path)
                 logger.info(f"铜价数据已保存至临时目录: {file_path}")
 
@@ -855,9 +854,9 @@ class AlphaVantageFetcher:
             df["yield"] = pd.to_numeric(df["value"], errors="coerce")
             df = df.dropna(subset=["yield"])
             
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "treasury" / f"TREASURY_{maturity}_{interval}.parquet"
+                file_path = session_dir / f"treasury_{maturity}_{interval}.parquet"
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 df.to_parquet(file_path)
                 logger.info(f"国债收益率数据已保存至会话目录: {file_path}")
@@ -865,7 +864,7 @@ class AlphaVantageFetcher:
                 # 后备
                 temp_dir = Path("/tmp/alphavantage_data") / "treasury"
                 temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"TREASURY_{maturity}_{interval}.parquet"
+                file_path = temp_dir / f"treasury_{maturity}_{interval}.parquet"
                 df.to_parquet(file_path)
                 logger.info(f"国债收益率数据已保存至临时目录: {file_path}")
             
@@ -924,9 +923,9 @@ class AlphaVantageFetcher:
             safe_filename = '_'.join(filename_parts).replace(':', '_').replace('/', '_').replace(' ', '_')
             filename = f"news_{safe_filename}.json"
             
-            # 🎯 保存到会话目录
+            # 🎯 保存到会话目录根目录（修改：去掉子目录）
             if session_dir:
-                file_path = session_dir / "news" / filename
+                file_path = session_dir / filename
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False)
@@ -1056,7 +1055,8 @@ class AlphaVantageTool:
         session_dir = SESSION_WORKSPACE_ROOT / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         
-        # 创建子目录结构
+        # 🎯 注意：不再创建子目录结构，因为文件都直接保存在根目录
+        # 保留原有的子目录创建代码但不使用，为了向后兼容
         subdirs = [
             "stock", "options", "transcripts", "insider", "etf", 
             "forex", "crypto", "commodities", "treasury", "news"
@@ -1149,7 +1149,7 @@ class AlphaVantageTool:
                 "metadata": metadata
             }
             
-            # 添加示例代码
+            # 添加示例代码（更新路径引用）
             if session_id:
                 example_code = self._generate_example_code(mode, params, session_dir)
                 response["metadata"]["example_code"] = example_code
@@ -1175,25 +1175,29 @@ class AlphaVantageTool:
             if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
                 symbol = params.get("symbol")
                 if symbol:
-                    file_path = session_dir / "stock" / f"{symbol}.parquet"
+                    # 🎯 更新文件路径为根目录
+                    file_path = session_dir / f"stock_{symbol}.parquet"
                     return [str(file_path)] if file_path.exists() else []
             
             elif mode == AlphaVantageMode.GLOBAL_QUOTE:
                 symbol = params.get("symbol")
                 if symbol:
-                    file_path = session_dir / "stock" / f"{symbol}_quote.json"
+                    # 🎯 更新文件路径为根目录
+                    file_path = session_dir / f"quote_{symbol}.json"
                     return [str(file_path)] if file_path.exists() else []
             
             elif mode == AlphaVantageMode.FOREX_DAILY:
                 from_sym = params.get("from_symbol", "USD")
                 to_sym = params.get("to_symbol", "JPY")
-                file_path = session_dir / "forex" / f"{from_sym}_{to_sym}.parquet"
+                # 🎯 更新文件路径为根目录
+                file_path = session_dir / f"forex_{from_sym}_{to_sym}.parquet"
                 return [str(file_path)] if file_path.exists() else []
             
             elif mode == AlphaVantageMode.NEWS_SENTIMENT:
                 tickers = params.get("tickers", "general")
                 safe_tickers = tickers.replace(',', '_').replace(' ', '_') if tickers else "general"
-                file_path = session_dir / "news" / f"news_{safe_tickers}.json"
+                # 🎯 更新文件路径为根目录
+                file_path = session_dir / f"news_{safe_tickers}.json"
                 return [str(file_path)] if file_path.exists() else []
             
             # 其他模式可以类似添加...
@@ -1275,8 +1279,8 @@ class AlphaVantageTool:
 import pandas as pd
 from pathlib import Path
 
-# 会话数据路径
-data_path = Path('/srv/sandbox_workspaces/{session_dir.name}/stock/{symbol}.parquet')
+# 会话数据路径（更新为根目录文件）
+data_path = Path('/srv/sandbox_workspaces/{session_dir.name}/stock_{symbol}.parquet')
 if data_path.exists():
     df = pd.read_parquet(data_path)
     print(f"{{'{symbol}'}} 股票数据:")
@@ -1303,8 +1307,8 @@ if data_path.exists():
 import pandas as pd
 from pathlib import Path
 
-# 会话数据路径
-data_path = Path('/srv/sandbox_workspaces/{session_dir.name}/forex/{from_sym}_{to_sym}.parquet')
+# 会话数据路径（更新为根目录文件）
+data_path = Path('/srv/sandbox_workspaces/{session_dir.name}/forex_{from_sym}_{to_sym}.parquet')
 if data_path.exists():
     df = pd.read_parquet(data_path)
     print(f"{{'{from_sym}/{to_sym}'}} 外汇数据:")
@@ -1329,11 +1333,10 @@ print("会话目录:", session_path)
 
 # 列出所有可用文件
 print("\\n可用文件:")
-for file_path in session_path.rglob("*"):
+for file_path in session_path.iterdir():
     if file_path.is_file():
-        rel_path = file_path.relative_to(session_path)
         size_kb = file_path.stat().st_size / 1024
-        print(f"  - {{rel_path}} ({{size_kb:.1f}} KB)")'''
+        print(f"  - {{file_path.name}} ({{size_kb:.1f}} KB)")'''
 
 # ==================== 辅助函数 ====================
 def get_available_modes() -> List[str]:
