@@ -194,22 +194,22 @@ const crawl4ai = {
     }
 };
 
-// ✅ 修正后的 AlphaVantage tool definition
+// ✅ 修正后的 AlphaVantage tool definition - 更新为21种模式
 const alphavantage = {
     "type": "function",
     "function": {
         "name": "alphavantage",
-        "description": "从AlphaVantage获取金融数据的完整工具。支持股票、期权、财报、内部交易、ETF、外汇、数字货币、大宗商品、国债收益率、新闻情绪等13种数据类型。数据会返回在响应中，可用于进一步分析。",
+        "description": "从AlphaVantage获取金融数据的完整工具。支持股票、财报、基本面数据、内部交易、ETF、外汇、数字货币、大宗商品、国债收益率、新闻情绪等21种数据类型。数据会返回在响应中，可用于进一步分析。",
         "parameters": {
             "type": "object",
             "properties": {
-                "mode": {  // ✅ 修正：使用 "mode" 而不是 "function"
+                "mode": {
                     "type": "string",
                     "description": "要执行的AlphaVantage功能模式",
-                    "enum": [  // ✅ 修正：枚举值去掉 "fetch_" 前缀
+                    "enum": [
                         "weekly_adjusted",
                         "global_quote",
-                        "historical_options",
+                        // 删除付费期权功能: "historical_options",
                         "earnings_transcript",
                         "insider_transactions",
                         "etf_profile",
@@ -219,7 +219,17 @@ const alphavantage = {
                         "brent",
                         "copper",
                         "treasury_yield",
-                        "news_sentiment"
+                        "news_sentiment",
+                        // 新增基本面数据模式
+                        "overview",
+                        "income_statement",
+                        "balance_sheet",
+                        "cash_flow",
+                        "earnings",
+                        "earnings_calendar",
+                        "earnings_estimates",
+                        "dividends",
+                        "shares_outstanding"
                     ]
                 },
                 "parameters": {
@@ -227,7 +237,7 @@ const alphavantage = {
                     "description": "功能参数，具体参数取决于选择的mode"
                 }
             },
-            "required": ["mode", "parameters"]  // ✅ 修正：使用 "mode"
+            "required": ["mode", "parameters"]
         }
     }
 };

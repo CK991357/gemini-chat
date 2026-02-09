@@ -21,10 +21,10 @@ SESSION_TIMEOUT_HOURS = 24
 
 # ==================== 枚举定义 ====================
 class AlphaVantageMode(str, Enum):
-    """AlphaVantage功能模式 - 13个完整功能"""
+    """AlphaVantage功能模式 - 21个完整功能"""
     WEEKLY_ADJUSTED = "weekly_adjusted"
     GLOBAL_QUOTE = "global_quote"
-    HISTORICAL_OPTIONS = "historical_options"
+    # 删除付费期权功能: HISTORICAL_OPTIONS = "historical_options"
     EARNINGS_TRANSCRIPT = "earnings_transcript"
     INSIDER_TRANSACTIONS = "insider_transactions"
     ETF_PROFILE = "etf_profile"
@@ -35,6 +35,16 @@ class AlphaVantageMode(str, Enum):
     COPPER = "copper"
     TREASURY_YIELD = "treasury_yield"
     NEWS_SENTIMENT = "news_sentiment"
+    # 新增基本面数据功能
+    OVERVIEW = "overview"
+    INCOME_STATEMENT = "income_statement"
+    BALANCE_SHEET = "balance_sheet"
+    CASH_FLOW = "cash_flow"
+    EARNINGS = "earnings"
+    EARNINGS_CALENDAR = "earnings_calendar"
+    EARNINGS_ESTIMATES = "earnings_estimates"
+    DIVIDENDS = "dividends"
+    SHARES_OUTSTANDING = "shares_outstanding"
 
 # ==================== 参数模型 ====================
 class WeeklyAdjustedParams(BaseModel):
@@ -43,9 +53,9 @@ class WeeklyAdjustedParams(BaseModel):
 class GlobalQuoteParams(BaseModel):
     symbol: str = Field(description="股票代码，如：AAPL, MSFT")
 
-class HistoricalOptionsParams(BaseModel):
-    symbol: str = Field(description="股票代码，如：AAPL")
-    date: Optional[str] = Field(default=None, description="期权到期日，格式：YYYY-MM-DD")
+# 删除付费期权功能: class HistoricalOptionsParams(BaseModel):
+#    symbol: str = Field(description="股票代码，如：AAPL")
+#    date: Optional[str] = Field(default=None, description="期权到期日，格式：YYYY-MM-DD")
 
 class EarningsTranscriptParams(BaseModel):
     symbol: str = Field(description="股票代码，如：AAPL")
@@ -80,6 +90,35 @@ class NewsSentimentParams(BaseModel):
     time_to: Optional[str] = Field(default=None, description="结束时间，格式：YYYYMMDDTHHMM")
     sort: Literal["LATEST", "EARLIEST", "RELEVANCE"] = Field(default="LATEST", description="排序方式")
     limit: int = Field(default=50, ge=1, le=1000, description="返回数量限制")
+
+# 新增基本面数据参数模型
+class OverviewParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
+
+class IncomeStatementParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
+
+class BalanceSheetParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
+
+class CashFlowParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
+
+class EarningsParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
+
+class EarningsCalendarParams(BaseModel):
+    symbol: Optional[str] = Field(default=None, description="股票代码，如：AAPL, MSFT")
+    horizon: Literal["3month", "6month", "12month"] = Field(default="3month", description="财报日历时间范围")
+
+class EarningsEstimatesParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
+
+class DividendsParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
+
+class SharesOutstandingParams(BaseModel):
+    symbol: str = Field(description="股票代码，如：AAPL, MSFT")
 
 # 工具输入模型
 class AlphaVantageInput(BaseModel):
@@ -212,72 +251,6 @@ class AlphaVantageFetcher:
         except Exception as e:
             logger.error(f"获取实时行情失败: {e}")
             raise
-    
-    # ============ 期权数据方法 ============
-    
-    @staticmethod
-    @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def fetch_historical_options(symbol: str, date: str = None, session_dir: Path = None) -> List[Dict]:
-        """获取历史期权数据"""
-        try:
-            params = {
-                "function": "HISTORICAL_OPTIONS",
-                "symbol": symbol,
-                "apikey": AlphaVantageFetcher.get_api_key()
-            }
-            if date:
-                params["date"] = date
-
-            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            # 检查API返回的错误信息
-            if "Information" in data:
-                error_msg = data["Information"]
-                logger.warning(f"AlphaVantage API限制: {error_msg}")
-                raise ValueError(f"需要AlphaVantage付费API套餐才能访问期权数据: {error_msg}")
-            
-            if "Note" in data:
-                logger.warning(f"API频率限制提示: {data['Note']}")
-            
-            if not data.get("data"):
-                if "Error Message" in data:
-                    raise ValueError(f"AlphaVantage API错误: {data['Error Message']}")
-                else:
-                    logger.warning(f"未找到{symbol}在{date}的期权数据")
-                    return []
-
-            # 转换数据类型
-            for contract in data["data"]:
-                for field in ["strike", "last", "mark", "bid", "ask", 
-                            "implied_volatility", "delta", "gamma", 
-                            "theta", "vega", "rho"]:
-                    if contract.get(field):
-                        contract[field] = float(contract[field])
-                for field in ["bid_size", "ask_size", "volume", "open_interest"]:
-                    if contract.get(field):
-                        contract[field] = int(contract[field])
-
-            # 🎯 关键修改：始终保存到 session_dir（如果提供）
-            if session_dir:
-                file_path = session_dir / f"options_{symbol}_{date if date else 'latest'}.parquet"
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                pd.DataFrame(data["data"]).to_parquet(file_path)
-                logger.info(f"期权数据已保存至会话目录：{file_path}")
-            else:
-                # 后备
-                temp_dir = Path("/tmp/alphavantage_data") / "options"
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / f"options_{symbol}_{date if date else 'latest'}.parquet"
-                pd.DataFrame(data["data"]).to_parquet(file_path)
-                logger.info(f"期权数据已保存至临时目录：{file_path}")
-
-            return data["data"]
-
-        except Exception as e:
-            logger.error(f"获取期权数据失败: {e}")
-            return []
     
     # ============ 财报数据方法 ============
     
@@ -944,6 +917,344 @@ class AlphaVantageFetcher:
         except Exception as e:
             logger.error(f"获取新闻数据失败: {e}")
             raise
+    
+    # ============ 新增：基本面数据方法 ============
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_overview(symbol: str, session_dir: Path = None) -> Dict:
+        """获取公司概况和财务比率数据"""
+        try:
+            params = {
+                "function": "OVERVIEW",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"overview_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"公司概况数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"overview_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"公司概况数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取公司概况数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_income_statement(symbol: str, session_dir: Path = None) -> Dict:
+        """获取利润表数据（年报和季报）"""
+        try:
+            params = {
+                "function": "INCOME_STATEMENT",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"income_statement_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"利润表数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"income_statement_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"利润表数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取利润表数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_balance_sheet(symbol: str, session_dir: Path = None) -> Dict:
+        """获取资产负债表数据（年报和季报）"""
+        try:
+            params = {
+                "function": "BALANCE_SHEET",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"balance_sheet_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"资产负债表数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"balance_sheet_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"资产负债表数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取资产负债表数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_cash_flow(symbol: str, session_dir: Path = None) -> Dict:
+        """获取现金流量表数据（年报和季报）"""
+        try:
+            params = {
+                "function": "CASH_FLOW",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"cash_flow_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"现金流量表数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"cash_flow_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"现金流量表数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取现金流量表数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_earnings(symbol: str, session_dir: Path = None) -> Dict:
+        """获取每股收益(EPS)数据（年报和季报）"""
+        try:
+            params = {
+                "function": "EARNINGS",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"earnings_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"每股收益数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"earnings_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"每股收益数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取每股收益数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_earnings_calendar(symbol: Optional[str] = None, horizon: str = "3month", session_dir: Path = None) -> Dict:
+        """获取财报日历数据"""
+        try:
+            params = {
+                "function": "EARNINGS_CALENDAR",
+                "horizon": horizon,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+            if symbol:
+                params["symbol"] = symbol
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            filename = f"earnings_calendar_{symbol if symbol else 'all'}_{horizon}.json"
+            if session_dir:
+                file_path = session_dir / filename
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"财报日历数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / filename
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"财报日历数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取财报日历数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_earnings_estimates(symbol: str, session_dir: Path = None) -> Dict:
+        """获取盈利预测数据"""
+        try:
+            params = {
+                "function": "EARNINGS_ESTIMATES",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"earnings_estimates_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"盈利预测数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"earnings_estimates_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"盈利预测数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取盈利预测数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_dividends(symbol: str, session_dir: Path = None) -> Dict:
+        """获取股息历史数据"""
+        try:
+            params = {
+                "function": "DIVIDENDS",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"dividends_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"股息历史数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"dividends_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"股息历史数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取股息历史数据失败: {e}")
+            raise
+    
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def fetch_shares_outstanding(symbol: str, session_dir: Path = None) -> Dict:
+        """获取流通股数量数据"""
+        try:
+            params = {
+                "function": "SHARES_OUTSTANDING",
+                "symbol": symbol,
+                "apikey": AlphaVantageFetcher.get_api_key()
+            }
+
+            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # 🎯 关键修改：始终保存到 session_dir（如果提供）
+            if session_dir:
+                file_path = session_dir / f"shares_outstanding_{symbol}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"流通股数量数据已保存至会话目录：{file_path}")
+            else:
+                # 后备
+                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                file_path = temp_dir / f"shares_outstanding_{symbol}.json"
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"流通股数量数据已保存至临时目录：{file_path}")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"获取流通股数量数据失败: {e}")
+            raise
 
 # ==================== 工具类 ====================
 class AlphaVantageTool:
@@ -952,7 +1263,7 @@ class AlphaVantageTool:
     name = "alphavantage"
     description = (
         "从AlphaVantage获取金融数据的完整工具。支持股票、期权、财报、内部交易、ETF、外汇、"
-        "数字货币、大宗商品、国债收益率、新闻情绪等13种数据类型。数据会保存到会话工作区。"
+        "数字货币、大宗商品、国债收益率、新闻情绪等21种数据类型。数据会保存到会话工作区。"
     )
     input_schema = AlphaVantageInput
     
@@ -975,11 +1286,6 @@ class AlphaVantageTool:
                 "method": AlphaVantageFetcher.fetch_global_quote,
                 "params_model": GlobalQuoteParams,
                 "timeout": 30
-            },
-            AlphaVantageMode.HISTORICAL_OPTIONS: {
-                "method": AlphaVantageFetcher.fetch_historical_options,
-                "params_model": HistoricalOptionsParams,
-                "timeout": 45
             },
             AlphaVantageMode.EARNINGS_TRANSCRIPT: {
                 "method": AlphaVantageFetcher.fetch_earnings_transcript,
@@ -1030,6 +1336,52 @@ class AlphaVantageTool:
                 "method": AlphaVantageFetcher.fetch_news_sentiment,
                 "params_model": NewsSentimentParams,
                 "timeout": 45
+            },
+            # 新增基本面数据映射
+            AlphaVantageMode.OVERVIEW: {
+                "method": AlphaVantageFetcher.fetch_overview,
+                "params_model": OverviewParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.INCOME_STATEMENT: {
+                "method": AlphaVantageFetcher.fetch_income_statement,
+                "params_model": IncomeStatementParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.BALANCE_SHEET: {
+                "method": AlphaVantageFetcher.fetch_balance_sheet,
+                "params_model": BalanceSheetParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.CASH_FLOW: {
+                "method": AlphaVantageFetcher.fetch_cash_flow,
+                "params_model": CashFlowParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.EARNINGS: {
+                "method": AlphaVantageFetcher.fetch_earnings,
+                "params_model": EarningsParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.EARNINGS_CALENDAR: {
+                "method": AlphaVantageFetcher.fetch_earnings_calendar,
+                "params_model": EarningsCalendarParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.EARNINGS_ESTIMATES: {
+                "method": AlphaVantageFetcher.fetch_earnings_estimates,
+                "params_model": EarningsEstimatesParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.DIVIDENDS: {
+                "method": AlphaVantageFetcher.fetch_dividends,
+                "params_model": DividendsParams,
+                "timeout": 30
+            },
+            AlphaVantageMode.SHARES_OUTSTANDING: {
+                "method": AlphaVantageFetcher.fetch_shares_outstanding,
+                "params_model": SharesOutstandingParams,
+                "timeout": 30
             }
         }
     
@@ -1095,12 +1447,6 @@ class AlphaVantageTool:
                     file_path = session_dir / f"quote_{symbol}.json"
                     return [str(file_path)] if file_path.exists() else []
             
-            elif mode == AlphaVantageMode.HISTORICAL_OPTIONS:
-                symbol = params.get("symbol")
-                date = params.get("date", "latest")
-                file_path = session_dir / f"options_{symbol}_{date}.parquet"
-                return [str(file_path)] if file_path.exists() else []
-            
             elif mode == AlphaVantageMode.FOREX_DAILY:
                 from_sym = params.get("from_symbol", "USD")
                 to_sym = params.get("to_symbol", "JPY")
@@ -1112,6 +1458,61 @@ class AlphaVantageTool:
                 safe_tickers = tickers.replace(',', '_').replace(' ', '_') if tickers else "general"
                 file_path = session_dir / f"news_{safe_tickers}.json"
                 return [str(file_path)] if file_path.exists() else []
+            
+            # 新增基本面数据文件路径
+            elif mode == AlphaVantageMode.OVERVIEW:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"overview_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.INCOME_STATEMENT:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"income_statement_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.BALANCE_SHEET:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"balance_sheet_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.CASH_FLOW:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"cash_flow_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.EARNINGS:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"earnings_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.EARNINGS_CALENDAR:
+                symbol = params.get("symbol", "all")
+                horizon = params.get("horizon", "3month")
+                file_path = session_dir / f"earnings_calendar_{symbol}_{horizon}.json"
+                return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.EARNINGS_ESTIMATES:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"earnings_estimates_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.DIVIDENDS:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"dividends_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
+            
+            elif mode == AlphaVantageMode.SHARES_OUTSTANDING:
+                symbol = params.get("symbol")
+                if symbol:
+                    file_path = session_dir / f"shares_outstanding_{symbol}.json"
+                    return [str(file_path)] if file_path.exists() else []
             
             # 其他模式可以类似添加...
             
@@ -1186,6 +1587,53 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 plt.show()'''
         
+        elif mode == AlphaVantageMode.OVERVIEW:
+            symbol = params.get("symbol", "UNKNOWN")
+            return f'''# 读取 {symbol} 公司概况数据
+import json
+
+# 使用统一工作区路径读取数据
+with open('{container_path}', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+print(f"{symbol} 公司概况数据:")
+print(f"公司名称: {{data.get('Name', 'N/A')}}")
+print(f"行业: {{data.get('Industry', 'N/A')}}")
+print(f"市值: {{data.get('MarketCapitalization', 'N/A')}}")
+print(f"市盈率(PE): {{data.get('PERatio', 'N/A')}}")
+print(f"市净率(PB): {{data.get('PriceToBookRatio', 'N/A')}}")
+print(f"股息收益率: {{data.get('DividendYield', 'N/A')}}")
+print(f"52周高点: {{data.get('52WeekHigh', 'N/A')}}")
+print(f"52周低点: {{data.get('52WeekLow', 'N/A')}}")
+
+# 显示所有关键财务指标
+print("\\n关键财务指标:")
+for key in ['Revenue', 'GrossProfit', 'EBITDA', 'ProfitMargin', 'ReturnOnAssetsTTM', 'ReturnOnEquityTTM']:
+    if key in data:
+        print(f"  {{key}}: {{data[key]}}")'''
+        
+        elif mode == AlphaVantageMode.INCOME_STATEMENT:
+            symbol = params.get("symbol", "UNKNOWN")
+            return f'''# 读取 {symbol} 利润表数据
+import json
+import pandas as pd
+
+# 使用统一工作区路径读取数据
+with open('{container_path}', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+# 显示年度利润表
+if 'annualReports' in data:
+    print(f"{symbol} 年度利润表 (最近{len(data['annualReports'])}年):")
+    annual_df = pd.DataFrame(data['annualReports'])
+    print(annual_df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'operatingIncome', 'netIncome']].head())
+    
+# 显示季度利润表
+if 'quarterlyReports' in data:
+    print(f"\\n{symbol} 季度利润表 (最近{len(data['quarterlyReports'])}季度):")
+    quarterly_df = pd.DataFrame(data['quarterlyReports'])
+    print(quarterly_df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'operatingIncome', 'netIncome']].head())'''
+        
         else:
             # 通用示例代码
             if filename.endswith('.parquet'):
@@ -1213,7 +1661,7 @@ if isinstance(data, list):
         print(f"{{i+1}}: {{item}}")
 elif isinstance(data, dict):
     print("数据键值:")
-    for key in data.keys():
+    for key in list(data.keys())[:10]:  # 显示前10个键
         print(f"  - {{key}}")'''
             else:
                 return f'''# 访问工作区中的所有数据
@@ -1416,7 +1864,7 @@ def get_mode_description(mode_name: str) -> str:
     descriptions = {
         "weekly_adjusted": "获取股票周调整数据（开盘价、最高价、最低价、收盘价、调整后收盘价、成交量、股息）",
         "global_quote": "获取实时行情数据（当前价格、涨跌幅、成交量等）",
-        "historical_options": "获取历史期权数据（需要付费API套餐）",
+        # 删除付费期权功能: "historical_options": "获取历史期权数据（需要付费API套餐）",
         "earnings_transcript": "获取财报电话会议记录",
         "insider_transactions": "获取公司内部人交易数据",
         "etf_profile": "获取ETF详细信息和持仓数据",
@@ -1426,6 +1874,16 @@ def get_mode_description(mode_name: str) -> str:
         "brent": "获取Brent原油价格数据",
         "copper": "获取全球铜价数据",
         "treasury_yield": "获取美国国债收益率数据",
-        "news_sentiment": "获取市场新闻和情绪数据"
+        "news_sentiment": "获取市场新闻和情绪数据",
+        # 新增基本面数据描述
+        "overview": "获取公司概况和财务比率数据（市值、市盈率、股息收益率等）",
+        "income_statement": "获取利润表数据（年报和季报）",
+        "balance_sheet": "获取资产负债表数据（年报和季报）",
+        "cash_flow": "获取现金流量表数据（年报和季报）",
+        "earnings": "获取每股收益(EPS)数据（年报和季报）",
+        "earnings_calendar": "获取财报日历数据",
+        "earnings_estimates": "获取盈利预测数据",
+        "dividends": "获取股息历史数据",
+        "shares_outstanding": "获取流通股数量数据"
     }
     return descriptions.get(mode_name, "未知功能")

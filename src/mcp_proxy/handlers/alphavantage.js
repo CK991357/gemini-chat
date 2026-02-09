@@ -2,14 +2,14 @@
 /**
  * @file MCP Proxy Handler for AlphaVantage
  * @description Handles the 'alphavantage' tool call by proxying it to the external Python tool server.
- * 支持13个完整的金融数据获取功能。
+ * 支持21个完整的金融数据获取功能（包括新增的9个基本面数据功能）。
  */
 
 // 模式到功能的映射（新的API结构使用mode而不是function）
 const MODE_TO_FUNCTION = {
     "weekly_adjusted": "fetch_weekly_adjusted",
     "global_quote": "fetch_global_quote",
-    "historical_options": "fetch_historical_options",
+    // 删除付费期权功能: "historical_options": "fetch_historical_options",
     "earnings_transcript": "fetch_earnings_transcript",
     "insider_transactions": "fetch_insider_transactions",
     "etf_profile": "fetch_etf_profile",
@@ -19,7 +19,17 @@ const MODE_TO_FUNCTION = {
     "brent": "fetch_brent",
     "copper": "fetch_copper",
     "treasury_yield": "fetch_treasury_yield",
-    "news_sentiment": "fetch_news_sentiment"
+    "news_sentiment": "fetch_news_sentiment",
+    // 新增基本面数据功能
+    "overview": "fetch_overview",
+    "income_statement": "fetch_income_statement",
+    "balance_sheet": "fetch_balance_sheet",
+    "cash_flow": "fetch_cash_flow",
+    "earnings": "fetch_earnings",
+    "earnings_calendar": "fetch_earnings_calendar",
+    "earnings_estimates": "fetch_earnings_estimates",
+    "dividends": "fetch_dividends",
+    "shares_outstanding": "fetch_shares_outstanding"
 };
 
 // 支持的AlphaVantage模式列表
@@ -29,7 +39,7 @@ const SUPPORTED_MODES = Object.keys(MODE_TO_FUNCTION);
 const MODE_DESCRIPTIONS = {
     "weekly_adjusted": "获取股票周调整数据（开盘价、最高价、最低价、收盘价、调整后收盘价、成交量、股息）",
     "global_quote": "获取实时行情数据（当前价格、涨跌幅、成交量等）",
-    "historical_options": "获取历史期权数据（需要付费API套餐）",
+    // 删除付费期权功能: "historical_options": "获取历史期权数据（需要付费API套餐）",
     "earnings_transcript": "获取财报电话会议记录",
     "insider_transactions": "获取公司内部人交易数据",
     "etf_profile": "获取ETF详细信息和持仓数据",
@@ -39,7 +49,17 @@ const MODE_DESCRIPTIONS = {
     "brent": "获取Brent原油价格数据",
     "copper": "获取全球铜价数据",
     "treasury_yield": "获取美国国债收益率数据",
-    "news_sentiment": "获取市场新闻和情绪数据"
+    "news_sentiment": "获取市场新闻和情绪数据",
+    // 新增基本面数据描述
+    "overview": "获取公司概况和财务比率数据（市值、市盈率、股息收益率等）",
+    "income_statement": "获取利润表数据（年报和季报）",
+    "balance_sheet": "获取资产负债表数据（年报和季报）",
+    "cash_flow": "获取现金流量表数据（年报和季报）",
+    "earnings": "获取每股收益(EPS)数据（年报和季报）",
+    "earnings_calendar": "获取财报日历数据",
+    "earnings_estimates": "获取盈利预测数据",
+    "dividends": "获取股息历史数据",
+    "shares_outstanding": "获取流通股数量数据"
 };
 
 // 模式参数验证规则
@@ -53,11 +73,6 @@ const MODE_PARAMETERS = {
         required: ["symbol"],
         optional: [],
         description: "获取实时行情数据"
-    },
-    "historical_options": {
-        required: ["symbol"],
-        optional: ["date"],
-        description: "获取历史期权数据，date格式: YYYY-MM-DD"
     },
     "earnings_transcript": {
         required: ["symbol", "quarter"],
@@ -108,6 +123,52 @@ const MODE_PARAMETERS = {
         required: [],
         optional: ["tickers", "topics", "time_from", "time_to", "sort", "limit"],
         description: "获取市场新闻和情绪数据，limit: 1-1000"
+    },
+    // 新增基本面数据参数验证规则
+    "overview": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取公司概况和财务比率数据"
+    },
+    "income_statement": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取利润表数据（年报和季报）"
+    },
+    "balance_sheet": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取资产负债表数据（年报和季报）"
+    },
+    "cash_flow": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取现金流量表数据（年报和季报）"
+    },
+    "earnings": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取每股收益(EPS)数据（年报和季报）"
+    },
+    "earnings_calendar": {
+        required: [],
+        optional: ["symbol", "horizon"],
+        description: "获取财报日历数据，horizon: 3month, 6month, 12month"
+    },
+    "earnings_estimates": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取盈利预测数据"
+    },
+    "dividends": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取股息历史数据"
+    },
+    "shares_outstanding": {
+        required: ["symbol"],
+        optional: [],
+        description: "获取流通股数量数据"
     }
 };
 
@@ -196,6 +257,31 @@ function validateAlphaVantageParams(mode, parameters) {
         }
     }
     
+    // 新增基本面数据参数验证
+    if (mode === "earnings_calendar") {
+        const validHorizons = ["3month", "6month", "12month"];
+        if (parameters.horizon && !validHorizons.includes(parameters.horizon.toLowerCase())) {
+            return {
+                valid: false,
+                error: `horizon 必须是: ${validHorizons.join(" 或 ")}`,
+                received: parameters.horizon
+            };
+        }
+    }
+    
+    if (mode === "earnings_transcript") {
+        if (parameters.quarter) {
+            const quarterPattern = /^\d{4}-Q[1-4]$/;
+            if (!quarterPattern.test(parameters.quarter)) {
+                return {
+                    valid: false,
+                    error: "quarter 格式必须为 YYYY-Q1/Q2/Q3/Q4，例如: 2024-Q1",
+                    received: parameters.quarter
+                };
+            }
+        }
+    }
+    
     return { valid: true, paramRules };
 }
 
@@ -244,7 +330,7 @@ export async function handleAlphaVantage(tool_params, _env, session_id = null) {
             success: false, 
             error: '缺少必需参数: "mode"',
             supported_modes: SUPPORTED_MODES,
-            suggestion: "请指定一个AlphaVantage模式，如: weekly_adjusted, global_quote, forex_daily等"
+            suggestion: "请指定一个AlphaVantage模式，如: weekly_adjusted, global_quote, overview, income_statement等"
         }, 400);
     }
 
