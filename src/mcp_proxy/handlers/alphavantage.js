@@ -2,14 +2,13 @@
 /**
  * @file MCP Proxy Handler for AlphaVantage
  * @description Handles the 'alphavantage' tool call by proxying it to the external Python tool server.
- * 支持21个完整的金融数据获取功能（包括新增的9个基本面数据功能）。
+ * 支持20个完整的金融数据获取功能（包括新增的8个基本面数据功能）。
  */
 
 // 模式到功能的映射（新的API结构使用mode而不是function）
 const MODE_TO_FUNCTION = {
     "weekly_adjusted": "fetch_weekly_adjusted",
     "global_quote": "fetch_global_quote",
-    // 删除付费期权功能: "historical_options": "fetch_historical_options",
     "earnings_transcript": "fetch_earnings_transcript",
     "insider_transactions": "fetch_insider_transactions",
     "etf_profile": "fetch_etf_profile",
@@ -26,7 +25,6 @@ const MODE_TO_FUNCTION = {
     "balance_sheet": "fetch_balance_sheet",
     "cash_flow": "fetch_cash_flow",
     "earnings": "fetch_earnings",
-    "earnings_calendar": "fetch_earnings_calendar",
     "earnings_estimates": "fetch_earnings_estimates",
     "dividends": "fetch_dividends",
     "shares_outstanding": "fetch_shares_outstanding"
@@ -39,7 +37,6 @@ const SUPPORTED_MODES = Object.keys(MODE_TO_FUNCTION);
 const MODE_DESCRIPTIONS = {
     "weekly_adjusted": "获取股票周调整数据（开盘价、最高价、最低价、收盘价、调整后收盘价、成交量、股息）",
     "global_quote": "获取实时行情数据（当前价格、涨跌幅、成交量等）",
-    // 删除付费期权功能: "historical_options": "获取历史期权数据（需要付费API套餐）",
     "earnings_transcript": "获取财报电话会议记录",
     "insider_transactions": "获取公司内部人交易数据",
     "etf_profile": "获取ETF详细信息和持仓数据",
@@ -56,7 +53,6 @@ const MODE_DESCRIPTIONS = {
     "balance_sheet": "获取资产负债表数据（年报和季报）",
     "cash_flow": "获取现金流量表数据（年报和季报）",
     "earnings": "获取每股收益(EPS)数据（年报和季报）",
-    "earnings_calendar": "获取财报日历数据",
     "earnings_estimates": "获取盈利预测数据",
     "dividends": "获取股息历史数据",
     "shares_outstanding": "获取流通股数量数据"
@@ -149,11 +145,6 @@ const MODE_PARAMETERS = {
         required: ["symbol"],
         optional: [],
         description: "获取每股收益(EPS)数据（年报和季报）"
-    },
-    "earnings_calendar": {
-        required: [],
-        optional: ["symbol", "horizon"],
-        description: "获取财报日历数据，horizon: 3month, 6month, 12month"
     },
     "earnings_estimates": {
         required: ["symbol"],
@@ -253,18 +244,6 @@ function validateAlphaVantageParams(mode, parameters) {
                 valid: false,
                 error: `interval 必须是: ${validIntervals.join(" 或 ")}`,
                 received: parameters.interval
-            };
-        }
-    }
-    
-    // 新增基本面数据参数验证
-    if (mode === "earnings_calendar") {
-        const validHorizons = ["3month", "6month", "12month"];
-        if (parameters.horizon && !validHorizons.includes(parameters.horizon.toLowerCase())) {
-            return {
-                valid: false,
-                error: `horizon 必须是: ${validHorizons.join(" 或 ")}`,
-                received: parameters.horizon
             };
         }
     }

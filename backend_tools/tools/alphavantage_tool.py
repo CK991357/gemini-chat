@@ -21,7 +21,7 @@ SESSION_TIMEOUT_HOURS = 24
 
 # ==================== 枚举定义 ====================
 class AlphaVantageMode(str, Enum):
-    """AlphaVantage功能模式 - 21个完整功能"""
+    """AlphaVantage功能模式 - 20个完整功能"""
     WEEKLY_ADJUSTED = "weekly_adjusted"
     GLOBAL_QUOTE = "global_quote"
     # 删除付费期权功能: HISTORICAL_OPTIONS = "historical_options"
@@ -41,7 +41,6 @@ class AlphaVantageMode(str, Enum):
     BALANCE_SHEET = "balance_sheet"
     CASH_FLOW = "cash_flow"
     EARNINGS = "earnings"
-    EARNINGS_CALENDAR = "earnings_calendar"
     EARNINGS_ESTIMATES = "earnings_estimates"
     DIVIDENDS = "dividends"
     SHARES_OUTSTANDING = "shares_outstanding"
@@ -52,10 +51,6 @@ class WeeklyAdjustedParams(BaseModel):
 
 class GlobalQuoteParams(BaseModel):
     symbol: str = Field(description="股票代码，如：AAPL, MSFT")
-
-# 删除付费期权功能: class HistoricalOptionsParams(BaseModel):
-#    symbol: str = Field(description="股票代码，如：AAPL")
-#    date: Optional[str] = Field(default=None, description="期权到期日，格式：YYYY-MM-DD")
 
 class EarningsTranscriptParams(BaseModel):
     symbol: str = Field(description="股票代码，如：AAPL")
@@ -106,10 +101,6 @@ class CashFlowParams(BaseModel):
 
 class EarningsParams(BaseModel):
     symbol: str = Field(description="股票代码，如：AAPL, MSFT")
-
-class EarningsCalendarParams(BaseModel):
-    symbol: Optional[str] = Field(default=None, description="股票代码，如：AAPL, MSFT")
-    horizon: Literal["3month", "6month", "12month"] = Field(default="3month", description="财报日历时间范围")
 
 class EarningsEstimatesParams(BaseModel):
     symbol: str = Field(description="股票代码，如：AAPL, MSFT")
@@ -1107,46 +1098,6 @@ class AlphaVantageFetcher:
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def fetch_earnings_calendar(symbol: Optional[str] = None, horizon: str = "3month", session_dir: Path = None) -> Dict:
-        """获取财报日历数据"""
-        try:
-            params = {
-                "function": "EARNINGS_CALENDAR",
-                "horizon": horizon,
-                "apikey": AlphaVantageFetcher.get_api_key()
-            }
-            if symbol:
-                params["symbol"] = symbol
-
-            response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            # 🎯 关键修改：始终保存到 session_dir（如果提供）
-            filename = f"earnings_calendar_{symbol if symbol else 'all'}_{horizon}.json"
-            if session_dir:
-                file_path = session_dir / filename
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                logger.info(f"财报日历数据已保存至会话目录：{file_path}")
-            else:
-                # 后备
-                temp_dir = Path("/tmp/alphavantage_data") / "fundamental"
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                file_path = temp_dir / filename
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                logger.info(f"财报日历数据已保存至临时目录：{file_path}")
-
-            return data
-
-        except Exception as e:
-            logger.error(f"获取财报日历数据失败: {e}")
-            raise
-    
-    @staticmethod
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_earnings_estimates(symbol: str, session_dir: Path = None) -> Dict:
         """获取盈利预测数据"""
         try:
@@ -1263,7 +1214,7 @@ class AlphaVantageTool:
     name = "alphavantage"
     description = (
         "从AlphaVantage获取金融数据的完整工具。支持股票、期权、财报、内部交易、ETF、外汇、"
-        "数字货币、大宗商品、国债收益率、新闻情绪等21种数据类型。数据会保存到会话工作区。"
+        "数字货币、大宗商品、国债收益率、新闻情绪等20种数据类型。数据会保存到会话工作区。"
     )
     input_schema = AlphaVantageInput
     
@@ -1361,11 +1312,6 @@ class AlphaVantageTool:
             AlphaVantageMode.EARNINGS: {
                 "method": AlphaVantageFetcher.fetch_earnings,
                 "params_model": EarningsParams,
-                "timeout": 30
-            },
-            AlphaVantageMode.EARNINGS_CALENDAR: {
-                "method": AlphaVantageFetcher.fetch_earnings_calendar,
-                "params_model": EarningsCalendarParams,
                 "timeout": 30
             },
             AlphaVantageMode.EARNINGS_ESTIMATES: {
@@ -1489,12 +1435,6 @@ class AlphaVantageTool:
                 if symbol:
                     file_path = session_dir / f"earnings_{symbol}.json"
                     return [str(file_path)] if file_path.exists() else []
-            
-            elif mode == AlphaVantageMode.EARNINGS_CALENDAR:
-                symbol = params.get("symbol", "all")
-                horizon = params.get("horizon", "3month")
-                file_path = session_dir / f"earnings_calendar_{symbol}_{horizon}.json"
-                return [str(file_path)] if file_path.exists() else []
             
             elif mode == AlphaVantageMode.EARNINGS_ESTIMATES:
                 symbol = params.get("symbol")
@@ -1881,7 +1821,6 @@ def get_mode_description(mode_name: str) -> str:
         "balance_sheet": "获取资产负债表数据（年报和季报）",
         "cash_flow": "获取现金流量表数据（年报和季报）",
         "earnings": "获取每股收益(EPS)数据（年报和季报）",
-        "earnings_calendar": "获取财报日历数据",
         "earnings_estimates": "获取盈利预测数据",
         "dividends": "获取股息历史数据",
         "shares_outstanding": "获取流通股数量数据"
