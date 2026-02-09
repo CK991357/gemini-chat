@@ -924,6 +924,7 @@ class AlphaVantageFetcher:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_overview(symbol: str, session_dir: Path = None) -> Dict:
         """获取公司概况和财务比率数据"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "OVERVIEW",
@@ -934,6 +935,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data or len(data) <= 2:  # 只有Symbol和Name两个字段
+                logger.warning(f"未找到{symbol}的公司概况数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -954,13 +972,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取公司概况数据失败: {e}")
+            logger.error(f"获取公司概况数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_income_statement(symbol: str, session_dir: Path = None) -> Dict:
         """获取利润表数据（年报和季报）"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "INCOME_STATEMENT",
@@ -971,6 +990,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data.get("annualReports") and not data.get("quarterlyReports"):
+                logger.warning(f"未找到{symbol}的利润表数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -991,13 +1027,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取利润表数据失败: {e}")
+            logger.error(f"获取利润表数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_balance_sheet(symbol: str, session_dir: Path = None) -> Dict:
         """获取资产负债表数据（年报和季报）"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "BALANCE_SHEET",
@@ -1008,6 +1045,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data.get("annualReports") and not data.get("quarterlyReports"):
+                logger.warning(f"未找到{symbol}的资产负债表数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -1028,13 +1082,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取资产负债表数据失败: {e}")
+            logger.error(f"获取资产负债表数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_cash_flow(symbol: str, session_dir: Path = None) -> Dict:
         """获取现金流量表数据（年报和季报）"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "CASH_FLOW",
@@ -1045,6 +1100,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data.get("annualReports") and not data.get("quarterlyReports"):
+                logger.warning(f"未找到{symbol}的现金流量表数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -1065,13 +1137,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取现金流量表数据失败: {e}")
+            logger.error(f"获取现金流量表数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_earnings(symbol: str, session_dir: Path = None) -> Dict:
         """获取每股收益(EPS)数据（年报和季报）"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "EARNINGS",
@@ -1082,6 +1155,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data.get("annualEarnings") and not data.get("quarterlyEarnings"):
+                logger.warning(f"未找到{symbol}的每股收益数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -1102,13 +1192,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取每股收益数据失败: {e}")
+            logger.error(f"获取每股收益数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_earnings_calendar(symbol: Optional[str] = None, horizon: str = "3month", session_dir: Path = None) -> Dict:
         """获取财报日历数据"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "EARNINGS_CALENDAR",
@@ -1121,6 +1212,18 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             filename = f"earnings_calendar_{symbol if symbol else 'all'}_{horizon}.json"
@@ -1142,13 +1245,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取财报日历数据失败: {e}")
+            logger.error(f"获取财报日历数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_earnings_estimates(symbol: str, session_dir: Path = None) -> Dict:
         """获取盈利预测数据"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "EARNINGS_ESTIMATES",
@@ -1159,6 +1263,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data.get("data"):
+                logger.warning(f"未找到{symbol}的盈利预测数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -1179,13 +1300,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取盈利预测数据失败: {e}")
+            logger.error(f"获取盈利预测数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_dividends(symbol: str, session_dir: Path = None) -> Dict:
         """获取股息历史数据"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "DIVIDENDS",
@@ -1196,6 +1318,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data.get("data"):
+                logger.warning(f"未找到{symbol}的股息历史数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -1216,13 +1355,14 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取股息历史数据失败: {e}")
+            logger.error(f"获取股息历史数据失败: {e}, data={data}")
             raise
     
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_shares_outstanding(symbol: str, session_dir: Path = None) -> Dict:
         """获取流通股数量数据"""
+        data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "SHARES_OUTSTANDING",
@@ -1233,6 +1373,23 @@ class AlphaVantageFetcher:
             response = requests.get(AlphaVantageFetcher.BASE_URL, params=params)
             response.raise_for_status()
             data = response.json()
+
+            # 检查API返回的错误信息
+            if "Error Message" in data:
+                error_msg = data["Error Message"]
+                logger.error(f"AlphaVantage API错误: {error_msg}")
+                raise ValueError(f"AlphaVantage API错误: {error_msg}")
+            
+            if "Information" in data:
+                info_msg = data["Information"]
+                logger.warning(f"AlphaVantage API信息: {info_msg}")
+                if "call frequency" in info_msg.lower():
+                    raise ValueError(f"API调用频率限制: {info_msg}")
+
+            # 检查是否有数据
+            if not data.get("data"):
+                logger.warning(f"未找到{symbol}的流通股数量数据")
+                # 不抛出异常，返回空数据
 
             # 🎯 关键修改：始终保存到 session_dir（如果提供）
             if session_dir:
@@ -1253,7 +1410,7 @@ class AlphaVantageFetcher:
             return data
 
         except Exception as e:
-            logger.error(f"获取流通股数量数据失败: {e}")
+            logger.error(f"获取流通股数量数据失败: {e}, data={data}")
             raise
 
 # ==================== 工具类 ====================
@@ -1624,13 +1781,13 @@ with open('{container_path}', 'r', encoding='utf-8') as f:
 
 # 显示年度利润表
 if 'annualReports' in data:
-    print(f"{symbol} 年度利润表 (最近{len(data['annualReports'])}年):")
+    print(f"{symbol} 年度利润表 (最近{{len(data['annualReports'])}}年):")
     annual_df = pd.DataFrame(data['annualReports'])
     print(annual_df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'operatingIncome', 'netIncome']].head())
     
 # 显示季度利润表
 if 'quarterlyReports' in data:
-    print(f"\\n{symbol} 季度利润表 (最近{len(data['quarterlyReports'])}季度):")
+    print(f"\\n{symbol} 季度利润表 (最近{{len(data['quarterlyReports'])}}季度):")
     quarterly_df = pd.DataFrame(data['quarterlyReports'])
     print(quarterly_df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'operatingIncome', 'netIncome']].head())'''
         
