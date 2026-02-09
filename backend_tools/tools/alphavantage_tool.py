@@ -1128,14 +1128,16 @@ class AlphaVantageTool:
         # 取第一个文件作为示例
         file_info = saved_files[0]
         filename = file_info['filename']
-        container_path = file_info['container_path']
+        # ✅ 核心修改：统一使用/srv/sandbox_workspaces路径
+        session_id = file_info.get('session_id', 'temp')
+        container_path = f"/srv/sandbox_workspaces/{session_id}/{filename}"
         
         if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
             symbol = params.get("symbol", "UNKNOWN")
             return f'''# 读取 {symbol} 股票数据
 import pandas as pd
 
-# 使用容器内路径读取数据
+# 使用统一工作区路径读取数据
 df = pd.read_parquet('{container_path}')
 print(f"{{'{symbol}'}} 股票数据:")
 print(f"数据形状: {{df.shape}}")
@@ -1160,7 +1162,7 @@ plt.show()'''
             return f'''# 读取 {from_sym}/{to_sym} 外汇数据
 import pandas as pd
 
-# 使用容器内路径读取数据
+# 使用统一工作区路径读取数据
 df = pd.read_parquet('{container_path}')
 print(f"{{'{from_sym}/{to_sym}'}} 外汇数据:")
 print(f"数据形状: {{df.shape}}")
@@ -1190,7 +1192,7 @@ plt.show()'''
                 return f'''# 读取 {filename} 数据
 import pandas as pd
 
-# 使用容器内路径读取数据
+# 使用统一工作区路径读取数据
 df = pd.read_parquet('{container_path}')
 print(f"数据形状: {{df.shape}}")
 print(f"列名: {{df.columns.tolist()}}")
@@ -1214,25 +1216,30 @@ elif isinstance(data, dict):
     for key in data.keys():
         print(f"  - {{key}}")'''
             else:
-                return f'''# 访问会话目录中的所有数据
+                return f'''# 访问工作区中的所有数据
 import pandas as pd
 import json
-from pathlib import Path
-
-# 代码解释器中的 /data 目录包含所有保存的文件
-print("可用文件:")
 import os
-for file_name in os.listdir('/data'):
-    file_path = Path('/data') / file_name
-    if file_path.is_file():
-        size_kb = file_path.stat().st_size / 1024
-        print(f"  - {{file_name}} ({{size_kb:.1f}} KB)")
-        
-        # 根据文件类型提供读取建议
-        if file_name.endswith('.parquet'):
-            print(f"    读取方式: pd.read_parquet('/data/{{file_name}}')")
-        elif file_name.endswith('.json'):
-            print(f"    读取方式: json.load(open('/data/{{file_name}}', 'r'))")'''
+
+# 统一工作区目录包含所有保存的文件
+workspace_root = '/srv/sandbox_workspaces'
+print(f"工作区根目录: {{workspace_root}}")
+print("可用文件:")
+for session_dir in os.listdir(workspace_root):
+    session_path = os.path.join(workspace_root, session_dir)
+    if os.path.isdir(session_path):
+        print(f"\\n会话目录: {{session_dir}}/")
+        for file_name in os.listdir(session_path):
+            file_path = os.path.join(session_path, file_name)
+            if os.path.isfile(file_path):
+                size_kb = os.path.getsize(file_path) / 1024
+                print(f"  - {{file_name}} ({{size_kb:.1f}} KB)")
+                
+                # 根据文件类型提供读取建议
+                if file_name.endswith('.parquet'):
+                    print(f"    读取方式: pd.read_parquet('{{file_path}}')")
+                elif file_name.endswith('.json'):
+                    print(f"    读取方式: json.load(open('{{file_path}}', 'r'))")'''
     
     async def execute(self, parameters: AlphaVantageInput, session_id: str = None) -> dict:
         """执行AlphaVantage数据获取 - 主入口"""
@@ -1251,7 +1258,7 @@ for file_name in os.listdir('/data'):
                 }
             
             # ✅ 核心修复：使用固定temp目录，与代码解释器共享
-            # 这样代码解释器就能通过/data访问到相同文件
+            # 这样代码解释器就能访问到相同文件
             session_dir = self._ensure_session_workspace(session_id)
             
             # 获取模式配置
@@ -1294,10 +1301,11 @@ for file_name in os.listdir('/data'):
                         saved_files.append({
                             "filename": file_path.name,
                             "host_path": str(file_path),  # 宿主机路径
-                            "container_path": f"/data/{file_path.name}",  # 容器内路径
-                            "size_kb": file_path.stat().st_size / 1024
+                            "container_path": f"/srv/sandbox_workspaces/{session_dir.name}/{file_path.name}",  # ✅ 统一路径
+                            "size_kb": file_path.stat().st_size / 1024,
+                            "session_id": session_dir.name
                         })
-            
+
             # 生成示例代码
             example_code = self._generate_example_code(mode, params, saved_files)
             
@@ -1310,7 +1318,7 @@ for file_name in os.listdir('/data'):
                 "session_dir": str(session_dir),
                 "saved_files": saved_files,
                 "example_code": example_code,
-                "access_instructions": "数据已保存到共享目录，代码解释器可以通过 /data/[filename] 访问这些文件"
+                "access_instructions": f"数据已保存到统一工作区，代码解释器可以通过 /srv/sandbox_workspaces/{session_id or 'temp'}/[filename] 访问这些文件"
             }
             
             # 处理结果
