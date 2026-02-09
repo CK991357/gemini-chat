@@ -378,44 +378,39 @@ print(stderr_val, file=sys.stderr, end='')
         try:
             logger.info(f"Running code in sandbox. Code length: {len(parameters.code)}")
             
-            # --- 核心修改：文件挂载逻辑 ---
+            # ✅ 关键修复：创建容器配置时添加 volumes 挂载
             container_config = {
                 "image": image_name,
                 "command": ["python", "-c", runner_script],
+                "volumes": {
+                    str(SESSION_WORKSPACE_ROOT): {
+                        'bind': str(SESSION_WORKSPACE_ROOT),
+                        'mode': 'rw'
+                    }
+                },
                 "network_disabled": True,
                 "environment": {'MPLCONFIGDIR': '/tmp'},
                 "mem_limit": "6g",
-                "mem_reservation": "4g",        # 预留内存
-                "memswap_limit": "0",           # ❗ 必须禁用swap！机械硬盘用swap会死机
+                "mem_reservation": "4g",
+                "memswap_limit": "0",
                 "cpu_period": 100_000,
                 "cpu_quota": 75_000,
-                "read_only": False,  # ✅ 修改：允许写入文件系统
+                "read_only": False,
                 "tmpfs": {'/tmp': 'size=100M,mode=1777'},
                 "detach": True
             }
             
-            # ✅ 核心修改：将整个工作区根目录挂载为读写模式
-            global_workspace_mount = {
-                str(SESSION_WORKSPACE_ROOT.resolve()): {
-                    'bind': str(SESSION_WORKSPACE_ROOT),  # ✅ 关键：保持与主机相同的路径
-                    'mode': 'rw'  # ✅ 修改：读写模式，使代码解释器可以处理所有文件
-                }
-            }
-            
-            # 如果有 session_id，创建会话目录（如果不存在）
+            # 设置工作目录
             if session_id:
                 host_session_path = SESSION_WORKSPACE_ROOT / session_id
                 host_session_path.mkdir(exist_ok=True)
-                
-                # ✅ 使用统一工作区路径
-                container_config["volumes"] = global_workspace_mount
-                container_config["working_dir"] = str(host_session_path)  # ✅ 修改：如 /srv/sandbox_workspaces/user123
-                logger.info(f"📁 Mounting: Global workspace (read-write): {str(SESSION_WORKSPACE_ROOT)}, Working dir: {str(host_session_path)}")
+                container_config["working_dir"] = str(host_session_path)
+                logger.info(f"📁 工作目录: {host_session_path}")
             else:
-                # 没有 session_id，使用全局工作区根目录
-                container_config["volumes"] = global_workspace_mount
-                container_config["working_dir"] = str(SESSION_WORKSPACE_ROOT / "temp")  # ✅ 修改：默认temp目录，与AlphaVantage保持一致
-                logger.info(f"📁 Mounting: Global workspace (read-write): {str(SESSION_WORKSPACE_ROOT)}")
+                container_config["working_dir"] = str(SESSION_WORKSPACE_ROOT / "temp")
+                logger.info(f"📁 工作目录: {SESSION_WORKSPACE_ROOT / 'temp'}")
+            
+            logger.info(f"📂 挂载配置: {container_config['volumes']}")
             
             container = self.docker_client.containers.create(**container_config)
 
