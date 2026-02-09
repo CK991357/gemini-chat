@@ -1379,7 +1379,7 @@ class AlphaVantageTool:
     # ============ 重新添加的重要方法 ============
     
     def _get_saved_file_paths(self, session_dir: Path, mode: AlphaVantageMode, params: dict) -> List[str]:
-        """获取已保存的文件路径 - 重新添加此方法"""
+        """获取已保存的文件路径"""
         try:
             if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
                 symbol = params.get("symbol")
@@ -1462,172 +1462,16 @@ class AlphaVantageTool:
             return []
     
     def _generate_example_code(self, mode: AlphaVantageMode, params: dict, saved_files: List[Dict]) -> str:
-        """生成Python代码示例 - 重新添加此方法，使用容器内路径"""
+        """简化的代码示例 - 只返回基本信息"""
         if not saved_files:
-            return "# 没有保存文件，无法生成示例代码。"
+            return "# 数据获取完成，文件已保存"
         
         # 取第一个文件作为示例
         file_info = saved_files[0]
         filename = file_info['filename']
-        # ✅ 核心修改：统一使用/srv/sandbox_workspaces路径
-        session_id = file_info.get('session_id', 'temp')
-        container_path = f"/srv/sandbox_workspaces/{session_id}/{filename}"
         
-        if mode == AlphaVantageMode.WEEKLY_ADJUSTED:
-            symbol = params.get("symbol", "UNKNOWN")
-            return f'''# 读取 {symbol} 股票数据
-import pandas as pd
-
-# 使用统一工作区路径读取数据
-df = pd.read_parquet('{container_path}')
-print(f"{{'{symbol}'}} 股票数据:")
-print(f"数据形状: {{df.shape}}")
-print(f"日期范围: {{df.index.min()}} 到 {{df.index.max()}}")
-print("\\n前5行数据:")
-print(df.head())
-
-# 可视化
-import matplotlib.pyplot as plt
-plt.figure(figsize=(12, 6))
-plt.plot(df.index, df['close'], label='收盘价', linewidth=2)
-plt.title(f'{symbol} 股价走势')
-plt.xlabel('日期')
-plt.ylabel('价格 (USD)')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.show()'''
-        
-        elif mode == AlphaVantageMode.FOREX_DAILY:
-            from_sym = params.get("from_symbol", "USD")
-            to_sym = params.get("to_symbol", "JPY")
-            return f'''# 读取 {from_sym}/{to_sym} 外汇数据
-import pandas as pd
-
-# 使用统一工作区路径读取数据
-df = pd.read_parquet('{container_path}')
-print(f"{{'{from_sym}/{to_sym}'}} 外汇数据:")
-print(f"数据形状: {{df.shape}}")
-print(f"日期范围: {{df.index.min()}} 到 {{df.index.max()}}")
-print("\\n最近10天数据:")
-print(df.tail(10))
-
-# 计算收益率
-df['returns'] = df['close'].pct_change()
-print("\\n收益率统计:")
-print(df['returns'].describe())
-
-# 可视化
-import matplotlib.pyplot as plt
-plt.figure(figsize=(12, 6))
-plt.plot(df.index, df['close'], label=f'{from_sym}/{to_sym}收盘价', linewidth=2)
-plt.title(f'{from_sym}/{to_sym} 汇率走势')
-plt.xlabel('日期')
-plt.ylabel('汇率')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.show()'''
-        
-        elif mode == AlphaVantageMode.OVERVIEW:
-            symbol = params.get("symbol", "UNKNOWN")
-            return f'''# 读取 {symbol} 公司概况数据
-import json
-
-# 使用统一工作区路径读取数据
-with open('{container_path}', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-
-print(f"{symbol} 公司概况数据:")
-print(f"公司名称: {{data.get('Name', 'N/A')}}")
-print(f"行业: {{data.get('Industry', 'N/A')}}")
-print(f"市值: {{data.get('MarketCapitalization', 'N/A')}}")
-print(f"市盈率(PE): {{data.get('PERatio', 'N/A')}}")
-print(f"市净率(PB): {{data.get('PriceToBookRatio', 'N/A')}}")
-print(f"股息收益率: {{data.get('DividendYield', 'N/A')}}")
-print(f"52周高点: {{data.get('52WeekHigh', 'N/A')}}")
-print(f"52周低点: {{data.get('52WeekLow', 'N/A')}}")
-
-# 显示所有关键财务指标
-print("\\n关键财务指标:")
-for key in ['Revenue', 'GrossProfit', 'EBITDA', 'ProfitMargin', 'ReturnOnAssetsTTM', 'ReturnOnEquityTTM']:
-    if key in data:
-        print(f"  {{key}}: {{data[key]}}")'''
-        
-        elif mode == AlphaVantageMode.INCOME_STATEMENT:
-            symbol = params.get("symbol", "UNKNOWN")
-            return f'''# 读取 {symbol} 利润表数据
-import json
-import pandas as pd
-
-# 使用统一工作区路径读取数据
-with open('{container_path}', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-
-# 显示年度利润表
-if 'annualReports' in data:
-    print(f"{symbol} 年度利润表 (最近{{len(data['annualReports'])}}年):")
-    annual_df = pd.DataFrame(data['annualReports'])
-    print(annual_df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'operatingIncome', 'netIncome']].head())
-    
-# 显示季度利润表
-if 'quarterlyReports' in data:
-    print(f"\\n{symbol} 季度利润表 (最近{{len(data['quarterlyReports'])}}季度):")
-    quarterly_df = pd.DataFrame(data['quarterlyReports'])
-    print(quarterly_df[['fiscalDateEnding', 'totalRevenue', 'grossProfit', 'operatingIncome', 'netIncome']].head())'''
-        
-        else:
-            # 通用示例代码
-            if filename.endswith('.parquet'):
-                return f'''# 读取 {filename} 数据
-import pandas as pd
-
-# 使用统一工作区路径读取数据
-df = pd.read_parquet('{container_path}')
-print(f"数据形状: {{df.shape}}")
-print(f"列名: {{df.columns.tolist()}}")
-print("\\n前5行数据:")
-print(df.head())'''
-            elif filename.endswith('.json'):
-                return f'''# 读取 {filename} 数据
-import json
-
-with open('{container_path}', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-
-print(f"数据类型: {{type(data)}}")
-if isinstance(data, list):
-    print(f"数据长度: {{len(data)}}")
-    print("\\n前3条记录:")
-    for i, item in enumerate(data[:3]):
-        print(f"{{i+1}}: {{item}}")
-elif isinstance(data, dict):
-    print("数据键值:")
-    for key in list(data.keys())[:10]:  # 显示前10个键
-        print(f"  - {{key}}")'''
-            else:
-                return f'''# 访问工作区中的所有数据
-import pandas as pd
-import json
-import os
-
-# 统一工作区目录包含所有保存的文件
-workspace_root = '/srv/sandbox_workspaces'
-print(f"工作区根目录: {{workspace_root}}")
-print("可用文件:")
-for session_dir in os.listdir(workspace_root):
-    session_path = os.path.join(workspace_root, session_dir)
-    if os.path.isdir(session_path):
-        print(f"\\n会话目录: {{session_dir}}/")
-        for file_name in os.listdir(session_path):
-            file_path = os.path.join(session_path, file_name)
-            if os.path.isfile(file_path):
-                size_kb = os.path.getsize(file_path) / 1024
-                print(f"  - {{file_name}} ({{size_kb:.1f}} KB)")
-                
-                # 根据文件类型提供读取建议
-                if file_name.endswith('.parquet'):
-                    print(f"    读取方式: pd.read_parquet('{{file_path}}')")
-                elif file_name.endswith('.json'):
-                    print(f"    读取方式: json.load(open('{{file_path}}', 'r'))")'''
+        # ✅ 简化为基本信息，不提供具体代码
+        return f"# 数据文件已保存: {filename}\n# 后续处理请在代码解释器中进行"
     
     async def execute(self, parameters: AlphaVantageInput, session_id: str = None) -> dict:
         """执行AlphaVantage数据获取 - 主入口"""
@@ -1680,8 +1524,7 @@ for session_dir in os.listdir(workspace_root):
                     "mode": mode.value
                 }
             
-            # ✅ 核心修复：生成容器内访问路径
-            # 获取保存的文件列表
+            # ✅ 获取保存的文件列表
             saved_files = []
             if session_dir.exists():
                 for file_path in session_dir.glob("*"):
@@ -1694,7 +1537,7 @@ for session_dir in os.listdir(workspace_root):
                             "session_id": session_dir.name
                         })
 
-            # 生成示例代码
+            # 生成简化的示例代码
             example_code = self._generate_example_code(mode, params, saved_files)
             
             # 构建元数据
@@ -1706,7 +1549,7 @@ for session_dir in os.listdir(workspace_root):
                 "session_dir": str(session_dir),
                 "saved_files": saved_files,
                 "example_code": example_code,
-                "access_instructions": f"数据已保存到统一工作区，代码解释器可以通过 /srv/sandbox_workspaces/{session_id or 'temp'}/[filename] 访问这些文件"
+                "access_instructions": f"数据已保存到工作区目录"
             }
             
             # 处理结果
