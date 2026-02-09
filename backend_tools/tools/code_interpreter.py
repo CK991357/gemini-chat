@@ -1,5 +1,4 @@
-# code_interpreter.py - 最终优化确认版 v2.7 - 支持全局工作区读写访问
-# 修改：将全局工作区挂载改为读写模式，使代码解释器可以处理/srv/sandbox_workspaces/内的所有文件
+# code_interpreter.py - 最终优化确认版 v2.5 - 支持所有图表类型自动捕获
 
 import docker
 import asyncio
@@ -378,39 +377,37 @@ print(stderr_val, file=sys.stderr, end='')
         try:
             logger.info(f"Running code in sandbox. Code length: {len(parameters.code)}")
             
-            # ✅ 关键修复：创建容器配置时添加 volumes 挂载
+            # --- 文件挂载逻辑 ---
             container_config = {
                 "image": image_name,
                 "command": ["python", "-c", runner_script],
-                "volumes": {
-                    str(SESSION_WORKSPACE_ROOT): {
-                        'bind': str(SESSION_WORKSPACE_ROOT),
-                        'mode': 'rw'
-                    }
-                },
                 "network_disabled": True,
                 "environment": {'MPLCONFIGDIR': '/tmp'},
                 "mem_limit": "6g",
-                "mem_reservation": "4g",
-                "memswap_limit": "0",
+                "mem_reservation": "4g",        # 预留内存
+                "memswap_limit": "0",           # ❗ 必须禁用swap！机械硬盘用swap会死机
                 "cpu_period": 100_000,
                 "cpu_quota": 75_000,
-                "read_only": False,
+                "read_only": True,
                 "tmpfs": {'/tmp': 'size=100M,mode=1777'},
                 "detach": True
             }
             
-            # 设置工作目录
+            # 如果有 session_id，挂载会话工作区
             if session_id:
                 host_session_path = SESSION_WORKSPACE_ROOT / session_id
+                # 🎯 核心修复：按需创建会话目录，解耦对文件上传的依赖
                 host_session_path.mkdir(exist_ok=True)
-                container_config["working_dir"] = str(host_session_path)
-                logger.info(f"📁 工作目录: {host_session_path}")
-            else:
-                container_config["working_dir"] = str(SESSION_WORKSPACE_ROOT / "temp")
-                logger.info(f"📁 工作目录: {SESSION_WORKSPACE_ROOT / 'temp'}")
-            
-            logger.info(f"📂 挂载配置: {container_config['volumes']}")
+                
+                # 现在可以安全地挂载
+                container_config["volumes"] = {
+                    str(host_session_path.resolve()): {
+                        'bind': '/data',
+                        'mode': 'rw'
+                    }
+                }
+                container_config["working_dir"] = '/data'
+                logger.info(f"Mounting session workspace: {host_session_path} -> /data")
             
             container = self.docker_client.containers.create(**container_config)
 
@@ -512,8 +509,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     lifespan=lifespan,
     title="Python Sandbox API",
-    description="Secure Python code execution environment with full workspace access",
-    version="2.8"  # ✅ 版本号更新
+    description="Secure Python code execution environment with file upload support",
+    version="2.5"
 )
 
 # --- 文件上传API ---
@@ -568,8 +565,7 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
         # 更新目录修改时间
         file_path.touch()
         
-        # ✅ 修改：容器内访问路径使用统一工作区路径
-        container_path = f"{str(SESSION_WORKSPACE_ROOT)}/{session_id}/{file.filename}"  # ✅ 示例：/srv/sandbox_workspaces/user123/myfile.csv
+        container_path = f"/data/{file.filename}"
         file_size = file_path.stat().st_size
         
         logger.info(f"File '{file.filename}' ({file_size} bytes) uploaded for session '{session_id}' -> '{container_path}'")
@@ -639,17 +635,8 @@ async def health_check():
             return {
                 "status": "healthy", 
                 "docker": "connected",
-                "version": "2.8",
-                "timestamp": datetime.now().isoformat(),
-                "mounts": {
-                    "workspace": f"{str(SESSION_WORKSPACE_ROOT)} (read-write)",  # ✅ 修正：使用统一路径
-                    "description": f"统一工作区访问，所有工具文件都在 {str(SESSION_WORKSPACE_ROOT)} 目录下"
-                },
-                "access_instructions": [
-                    f"AlphaVantage数据: {str(SESSION_WORKSPACE_ROOT)}/temp/",
-                    f"用户上传文件: {str(SESSION_WORKSPACE_ROOT)}/[session_id]/",
-                    f"其他工具数据: {str(SESSION_WORKSPACE_ROOT)}/[tool_name]/"
-                ]
+                "version": "2.5",
+                "timestamp": datetime.now().isoformat()
             }
         else:
             return {"status": "degraded", "docker": "not_available"}
@@ -660,25 +647,8 @@ async def health_check():
 async def root():
     """Root endpoint with basic info"""
     return {
-        "message": "Python Sandbox API - 统一工作区架构",
-        "version": "2.8",
-        "workspace_root": str(SESSION_WORKSPACE_ROOT),
-        "features": [
-            f"完整读写访问: {str(SESSION_WORKSPACE_ROOT)}",
-            "访问所有工具生成的文件 (AlphaVantage, 爬虫等)",
-            "创建可视化、分析结果和数据处理",
-            "统一工作区实现工具互操作性"
-        ],
-        "access_paths": {
-            "root_directory": str(SESSION_WORKSPACE_ROOT) + "/",
-            "tool_data": str(SESSION_WORKSPACE_ROOT) + "/temp/ (AlphaVantage等工具)",
-            "user_sessions": str(SESSION_WORKSPACE_ROOT) + "/[session_id]/ (用户上传)",
-            "example_access": [
-                f"AlphaVantage: {str(SESSION_WORKSPACE_ROOT)}/temp/stock_AAPL.parquet",
-                f"用户文件: {str(SESSION_WORKSPACE_ROOT)}/user123/my_data.csv",
-                f"处理结果: {str(SESSION_WORKSPACE_ROOT)}/user123/analysis_results.json"
-            ]
-        },
+        "message": "Python Sandbox API with File Upload",
+        "version": "2.5",
         "endpoints": {
             "execute_code": "POST /api/v1/python_sandbox",
             "upload_file": "POST /api/v1/files/upload",
