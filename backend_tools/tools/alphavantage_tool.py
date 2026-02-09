@@ -1198,13 +1198,14 @@ class AlphaVantageFetcher:
     @staticmethod
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_earnings_calendar(symbol: Optional[str] = None, horizon: str = "3month", session_dir: Path = None) -> Dict:
-        """获取财报日历数据"""
+        """获取财报日历数据 (修复版本：强制请求JSON格式)"""
         data = None  # 🔧 关键修复：确保变量在 try-except 块外初始化
         try:
             params = {
                 "function": "EARNINGS_CALENDAR",
                 "horizon": horizon,
-                "apikey": AlphaVantageFetcher.get_api_key()
+                "apikey": AlphaVantageFetcher.get_api_key(),
+                "datatype": "json"  # 🟢 核心修复：明确要求返回JSON格式
             }
             if symbol:
                 params["symbol"] = symbol
