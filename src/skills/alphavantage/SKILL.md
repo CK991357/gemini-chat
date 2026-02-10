@@ -10,7 +10,7 @@ version: 3.0
 
 # AlphaVantage 金融数据工具
 
-`alphavantage` 是一个专业的金融数据获取工具，通过 AlphaVantage API 提供丰富的金融市场数据。**数据会返回在响应中，也可以保存到会话工作区（与代码解释器共享），可用于进一步分析**。
+`alphavantage` 是一个专业的金融数据获取工具，通过 AlphaVantage API 提供丰富的金融市场数据。**数据会返回在响应中，也可以保存到会话工作区，可用于进一步分析**。
 
 ## 🎯 工具定义说明
 
@@ -24,10 +24,9 @@ version: 3.0
 }
 ```
 
-### 可用模式（13个完整功能）
+### 可用模式（20个完整功能）
 - `weekly_adjusted` - 股票周调整数据
-- `global_quote` - 实时行情数据  
-- `historical_options` - 历史期权数据
+- `global_quote` - 实时行情数据
 - `earnings_transcript` - 财报电话会议记录
 - `insider_transactions` - 内部人交易数据
 - `etf_profile` - ETF详细信息
@@ -38,6 +37,14 @@ version: 3.0
 - `copper` - 铜价数据
 - `treasury_yield` - 国债收益率
 - `news_sentiment` - 新闻情绪数据
+- `overview` - 公司概况和财务比率数据
+- `income_statement` - 利润表数据
+- `balance_sheet` - 资产负债表数据
+- `cash_flow` - 现金流量表数据
+- `earnings` - 每股收益(EPS)数据
+- `earnings_estimates` - 盈利预测数据
+- `dividends` - 股息历史数据
+- `shares_outstanding` - 流通股数量数据
 
 ## 🎯 快速开始
 
@@ -67,8 +74,7 @@ version: 3.0
 |------|------|----------|------|
 | `weekly_adjusted` | 股票周调整数据 | `symbol` | `{"symbol": "AAPL"}` |
 | `global_quote` | 实时行情数据 | `symbol` | `{"symbol": "MSFT"}` |
-| `historical_options` | 历史期权数据 | `symbol`, `date` | `{"symbol": "AAPL", "date": "2024-01-19"}` |
-| `earnings_transcript` | 财报电话会议记录 | `symbol`, `quarter` | `{"symbol": "AAPL", "quarter": "2024-Q1"}` |
+| `earnings_transcript` | 财报电话会议记录 | `symbol`, `quarter` | `{"symbol": "AAPL", "quarter": "2024Q1"}` |
 | `insider_transactions` | 内部人交易数据 | `symbol` | `{"symbol": "AAPL"}` |
 | `etf_profile` | ETF详细信息 | `symbol` | `{"symbol": "SPY"}` |
 | `forex_daily` | 外汇每日数据 | `from_symbol`, `to_symbol` | `{"from_symbol": "USD", "to_symbol": "JPY", "outputsize": "full"}` |
@@ -78,6 +84,14 @@ version: 3.0
 | `copper` | 铜价数据 | 无（可选的`interval`） | `{"interval": "monthly"}` |
 | `treasury_yield` | 国债收益率 | `maturity` | `{"interval": "monthly", "maturity": "10year"}` |
 | `news_sentiment` | 新闻情绪数据 | 无 | `{"tickers": "AAPL,MSFT", "limit": 50}` |
+| `overview` | 公司概况和财务比率 | `symbol` | `{"symbol": "AAPL"}` |
+| `income_statement` | 利润表数据 | `symbol` | `{"symbol": "AAPL"}` |
+| `balance_sheet` | 资产负债表数据 | `symbol` | `{"symbol": "AAPL"}` |
+| `cash_flow` | 现金流量表数据 | `symbol` | `{"symbol": "AAPL"}` |
+| `earnings` | 每股收益数据 | `symbol` | `{"symbol": "AAPL"}` |
+| `earnings_estimates` | 盈利预测数据 | `symbol` | `{"symbol": "AAPL"}` |
+| `dividends` | 股息历史数据 | `symbol` | `{"symbol": "AAPL"}` |
+| `shares_outstanding` | 流通股数量数据 | `symbol` | `{"symbol": "AAPL"}` |
 
 ## 🎯 详细使用示例
 
@@ -136,6 +150,36 @@ version: 3.0
 }
 ```
 
+### 示例6: 获取公司基本面数据
+```json
+{
+  "mode": "overview",
+  "parameters": {
+    "symbol": "AAPL"
+  }
+}
+```
+
+### 示例7: 获取财务报表数据
+```json
+{
+  "mode": "income_statement",
+  "parameters": {
+    "symbol": "AAPL"
+  }
+}
+```
+
+### 示例8: 获取股息历史
+```json
+{
+  "mode": "dividends",
+  "parameters": {
+    "symbol": "AAPL"
+  }
+}
+```
+
 ## 📊 返回数据格式
 
 ### 成功响应示例
@@ -170,12 +214,18 @@ version: 3.0
     "session_id": "user123-session-abc",
     "timestamp": "2025-12-25T11:55:01.872000",
     "saved_files": [
-      "/srv/sandbox_workspaces/user123-session-abc/stock/AAPL.parquet"
+      {
+        "filename": "stock_AAPL.parquet",
+        "host_path": "/srv/sandbox_workspaces/temp/stock_AAPL.parquet",
+        "container_path": "/srv/sandbox_workspaces/temp/stock_AAPL.parquet",
+        "size_kb": 125.5,
+        "session_id": "temp"
+      }
     ],
     "data_type": "weekly_adjusted",
-    "session_dir": "/srv/sandbox_workspaces/user123-session-abc",
-    "example_code": "# AlphaVantage数据分析示例...",
-    "instructions": "数据已保存到会话目录，代码解释器可以通过 /srv/sandbox_workspaces/user123-session-abc/ 访问这些文件。"
+    "session_dir": "/srv/sandbox_workspaces/temp",
+    "example_code": "# 数据文件已保存: stock_AAPL.parquet\n# 后续处理请在代码解释器中进行",
+    "access_instructions": "数据已保存到工作区目录"
   }
 }
 ```
@@ -193,145 +243,48 @@ version: 3.0
 
 ### 会话工作区目录
 ```
-/srv/sandbox_workspaces/<session_id>/
-├── stock/                 # 股票数据
-│   ├── AAPL.parquet      # 苹果公司股票数据
-│   └── MSFT_quote.json   # 微软实时行情
-├── forex/                # 外汇数据
-│   ├── USD_JPY.parquet   # 美元兑日元
-│   └── EUR_USD.parquet   # 欧元兑美元
-├── crypto/               # 加密货币
-│   └── BTC_USD.parquet   # 比特币兑美元
-├── commodities/          # 大宗商品
-│   ├── WTI_monthly.parquet
-│   ├── BRENT_monthly.parquet
-│   └── COPPER_monthly.parquet
-├── treasury/             # 国债收益率
-│   └── TREASURY_10year_monthly.parquet
-├── news/                 # 新闻数据
-│   ├── news_AAPL.json
-│   └── news_SPY.json
-├── etf/                  # ETF数据
-│   └── SPY_profile.json
-├── insider/              # 内部交易
-│   └── AAPL_insider.json
-├── transcripts/          # 财报记录
-│   └── AAPL_2024-Q1.json
-├── options/              # 期权数据
-│   └── AAPL_2024-01-19.parquet
-└── digital_currency/     # 数字货币
-    └── BTC_USD.parquet
-```
-
-## 🔧 代码解释器访问示例
-
-### 基本数据读取
-```python
-import pandas as pd
-import json
-from pathlib import Path
-
-# 访问会话数据
-session_id = "your_session_id"
-data_path = Path(f"/srv/sandbox_workspaces/{session_id}")
-
-# 读取股票数据
-stock_file = data_path / "stock" / "AAPL.parquet"
-if stock_file.exists():
-    df_stock = pd.read_parquet(stock_file)
-    print(f"AAPL数据形状: {df_stock.shape}")
-    print(df_stock.head())
-```
-
-### 股票数据分析
-```python
-# 技术分析示例
-import matplotlib.pyplot as plt
-
-df = pd.read_parquet("/srv/sandbox_workspaces/user123-session-abc/stock/AAPL.parquet")
-
-# 计算移动平均线
-df['MA_20'] = df['close'].rolling(window=20).mean()
-df['MA_50'] = df['close'].rolling(window=50).mean()
-
-# 绘制图表
-plt.figure(figsize=(14, 8))
-plt.plot(df.index, df['close'], label='收盘价', linewidth=2)
-plt.plot(df.index, df['MA_20'], label='20日均线', alpha=0.7)
-plt.plot(df.index, df['MA_50'], label='50日均线', alpha=0.7)
-plt.title('AAPL 股价走势与技术分析')
-plt.xlabel('日期')
-plt.ylabel('价格 (USD)')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.show()
-```
-
-### 外汇数据分析
-```python
-# 外汇数据分析
-df_forex = pd.read_parquet("/srv/sandbox_workspaces/user123-session-abc/forex/USD_JPY.parquet")
-
-# 计算收益率和波动率
-df_forex['returns'] = df_forex['close'].pct_change()
-df_forex['volatility'] = df_forex['returns'].rolling(window=20).std()
-
-print("外汇数据统计:")
-print(f"数据点数: {len(df_forex)}")
-print(f"平均汇率: {df_forex['close'].mean():.2f}")
-print(f"最大汇率: {df_forex['close'].max():.2f}")
-print(f"最小汇率: {df_forex['close'].min():.2f}")
-```
-
-### 批量处理多个股票
-```python
-import glob
-
-# 获取所有股票文件
-stock_files = glob.glob("/srv/sandbox_workspaces/user123-session-abc/stock/*.parquet")
-
-results = []
-for file in stock_files:
-    symbol = Path(file).stem
-    df = pd.read_parquet(file)
-    
-    if len(df) > 100:
-        # 计算年化收益率
-        start_price = df['close'].iloc[-100]
-        end_price = df['close'].iloc[-1]
-        annual_return = (end_price - start_price) / start_price * 100
-        
-        results.append({
-            'symbol': symbol,
-            'current_price': end_price,
-            'annual_return_pct': annual_return,
-            'data_points': len(df)
-        })
-
-# 转换为DataFrame分析
-results_df = pd.DataFrame(results)
-print("股票表现分析:")
-print(results_df.sort_values('annual_return_pct', ascending=False))
+/srv/sandbox_workspaces/
+└── temp/                    # 临时会话目录
+    ├── stock_AAPL.parquet      # 股票数据
+    ├── quote_MSFT.json         # 实时行情
+    ├── forex_USD_JPY.parquet   # 外汇数据
+    ├── crypto_BTC_USD.parquet  # 加密货币数据
+    ├── commodity_WTI_monthly.parquet  # 大宗商品
+    ├── commodity_BRENT_monthly.parquet
+    ├── commodity_COPPER_monthly.parquet
+    ├── treasury_10year_monthly.parquet  # 国债收益率
+    ├── news_AAPL_MSFT.json     # 新闻数据
+    ├── etf_SPY_profile.json    # ETF数据
+    ├── insider_AAPL.json       # 内部交易
+    ├── transcript_AAPL_2024-Q1.json  # 财报记录
+    ├── overview_AAPL.json      # 公司概况
+    ├── income_statement_AAPL.json  # 利润表
+    ├── balance_sheet_AAPL.json  # 资产负债表
+    ├── cash_flow_AAPL.json     # 现金流量表
+    ├── earnings_AAPL.json      # 每股收益
+    ├── earnings_estimates_AAPL.json  # 盈利预测
+    ├── dividends_AAPL.json     # 股息历史
+    └── shares_outstanding_AAPL.json  # 流通股数量
 ```
 
 ## ⚠️ 重要注意事项
 
 ### API限制
 1. **免费套餐限制**：每分钟5次请求，每天500次请求
-2. **付费功能**：`historical_options` 需要付费套餐
-3. **数据延迟**：股票数据通常有15-20分钟延迟
-4. **数据完整性**：某些历史数据可能不完整
+2. **数据延迟**：股票数据通常有15-20分钟延迟
+3. **数据完整性**：某些历史数据可能不完整
+4. **请求频率**：避免高频API调用，建议批量处理
 
 ### 会话管理
-1. **会话超时**：会话数据24小时后自动清理
-2. **临时会话**：无session_id时使用临时目录（1小时清理）
+1. **会话目录**：数据默认保存到 `/srv/sandbox_workspaces/temp/` 目录
+2. **临时存储**：临时目录数据可能定期清理
 3. **磁盘空间**：大数据量时注意磁盘使用情况
 
 ### 最佳实践
-1. **始终提供session_id**：确保数据保存到正确位置
-2. **错误处理**：检查返回的success字段
-3. **批量处理**：避免高频API调用
-4. **数据验证**：检查返回数据的完整性
+1. **数据验证**：始终检查返回的 `success` 字段
+2. **参数检查**：确保提供正确的参数格式
+3. **错误处理**：处理API调用可能失败的情况
+4. **数据缓存**：对于频繁访问的数据考虑本地缓存
 
 ## 🔄 实际使用示例
 
@@ -351,29 +304,37 @@ print(results_df.sort_values('annual_return_pct', ascending=False))
 }
 ```
 
-### 完整的工作流示例
-```python
-# 1. 获取数据
-response = await alphavantage({
-  "mode": "weekly_adjusted",
-  "parameters": {"symbol": "AAPL"}
-})
+### 获取多种数据类型
+```json
+// 获取苹果公司基本面数据
+{
+  "tools": [{
+    "name": "alphavantage",
+    "parameters": {
+      "mode": "overview",
+      "parameters": {
+        "symbol": "AAPL"
+      }
+    }
+  }]
+}
+```
 
-# 2. 数据保存到会话目录
-if response.success:
-    print(f"数据已保存到: {response.metadata.session_dir}")
-    
-    # 3. 使用代码解释器分析
-    code = f"""
-    import pandas as pd
-    df = pd.read_parquet('{response.metadata.saved_files[0]}')
-    print(f'AAPL最新价格: {{df[\"close\"].iloc[-1]}} USD')
-    print(f'今年涨幅: {{(df[\"close\"].iloc[-1] - df[\"close\"].iloc[0]) / df[\"close\"].iloc[0] * 100:.2f}}%')
-    """
-    
-    # 4. 执行分析
-    analysis_result = await python_sandbox({"code": code})
-    return analysis_result
+```json
+// 获取外汇市场数据
+{
+  "tools": [{
+    "name": "alphavantage",
+    "parameters": {
+      "mode": "forex_daily",
+      "parameters": {
+        "from_symbol": "USD",
+        "to_symbol": "JPY",
+        "outputsize": "compact"
+      }
+    }
+  }]
+}
 ```
 
 ## 🆘 故障排除
@@ -382,12 +343,20 @@ if response.success:
 |------|----------|----------|
 | **API Key错误** | 环境变量未设置 | 检查ALPHAVANTAGE_API_KEY环境变量 |
 | **数据为空** | 参数错误或API无数据 | 验证参数格式，检查示例 |
-| **会话目录不存在** | session_id无效 | 确保使用有效的session_id |
-| **磁盘空间不足** | 数据积累过多 | 清理旧会话，监控磁盘使用 |
 | **网络超时** | API响应慢 | 增加超时时间，稍后重试 |
+| **无效股票代码** | 代码格式错误或不存在 | 检查股票代码格式和有效性 |
+| **请求频率过高** | 超过API限制 | 降低请求频率，使用批量处理 |
 
 ## 📚 相关资源
 
 - [AlphaVantage官方文档](https://www.alphavantage.co/documentation/)
 - [API套餐升级](https://www.alphavantage.co/premium/)
 - [金融数据格式说明](https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=IBM&apikey=demo)
+
+---
+
+**版本信息**: 3.0  
+**最后更新**: 2025-12-25  
+**支持模式**: 20种金融数据获取功能  
+**数据保存**: 自动保存到会话工作区目录  
+**兼容性**: 支持股票、外汇、加密货币、大宗商品、国债、新闻、基本面数据等
