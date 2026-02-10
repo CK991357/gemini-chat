@@ -423,6 +423,16 @@ getIntentBonus(query, toolName) {
     'stockfish_analyzer': {
       keywords: ['象棋', '国际象棋', '棋局', '走法', '残局', 'fen'],
       bonus: 0.4 // 象棋专用工具，意图匹配加分更高
+    },
+    // ✅ 新增 alphavantage 配置
+    'alphavantage': {
+      keywords: ['股票', '股价', '股市', 'finance', '金融数据', 'forex', '外汇', 
+                 '汇率', 'crypto', '加密货币', '数字货币', 'bitcoin', '比特币',
+                 'commodity', '大宗商品', '原油', 'wti', 'brent', '铜价', 'copper',
+                 'treasury', '国债', '收益率', '财报', '财务', 'earnings', 'income',
+                 'balance', '资产负债表', 'cash', '现金流量', 'dividend', '股息',
+                 '实时行情', '实时数据', '价格', 'quote', 'market', '市场'],
+      bonus: 0.35 // 稍高于平均值，因为金融查询通常意图明确
     }
   };
   
@@ -445,7 +455,11 @@ isCoreFunctionKeyword(keyword, toolName) {
     'tavily_search': ['搜索', '查询', '信息', '新闻', '资讯'],
     'crawl4ai': ['抓取', '爬取', '网页', '网站', 'html'],
     'python_sandbox': ['代码', '编程', 'python', '图表', '可视化', '数据分析', '数据处理'],
-    'stockfish_analyzer': ['象棋', '国际象棋', '棋局', '走法']
+    'stockfish_analyzer': ['象棋', '国际象棋', '棋局', '走法'],
+    // ✅ 新增 alphavantage 核心关键词
+    'alphavantage': ['股票', '股价', 'finance', '金融', 'forex', '外汇', 'crypto', 
+                     '加密货币', 'commodity', '大宗商品', 'treasury', '国债', '财报',
+                     '财务', 'earnings', 'dividend', '股息', '行情', 'quote', 'market']
   };
   
   return coreKeywords[toolName]?.includes(keyword) || false;

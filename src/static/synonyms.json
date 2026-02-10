@@ -13,5 +13,13 @@
   "计算": ["运算", "处理", "calculate", "compute"],
   "显示": ["展示", "呈现", "display", "show"],
   "保存": ["存储", "保留", "save", "store"],
-  "上传": ["提交", "传递", "upload", "submit"]
+  "上传": ["提交", "传递", "upload", "submit"],
+  "股票": ["stock", "equity", "share", "股价", "股市", "股票价格"],
+  "外汇": ["forex", "fx", "exchange rate", "汇率", "外币"],
+  "加密货币": ["crypto", "cryptocurrency", "digital currency", "数字货币", "比特币", "bitcoin"],
+  "大宗商品": ["commodity", "raw material", "原油", "oil", "铜", "copper"],
+  "财报": ["earnings", "financial report", "财务报表", "财务报告"],
+  "股息": ["dividend", "分红", "股利"],
+  "实时行情": ["real-time quote", "live price", "current price", "实时价格"],
+  "金融数据": ["financial data", "market data", "经济数据", "金融信息"]
 }
