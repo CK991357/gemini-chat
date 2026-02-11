@@ -28,8 +28,8 @@ export class DataMiningEngine {
                 },
                 // 2. 金融数据 - 与模板完全一致
                 financial: {
-                    triggers: ['股票', '股价', '财报', '财务', '收益', '利润率', '估值', '市盈率', '市净率'],
-                    keywords: ['营业收入', '净利润', '毛利率', '净资产收益率', '市盈率', '市净率'],
+                    triggers: ['股票', '股价', '财报', '财务', '收益', '利润率', '估值', '市盈率', '市净率', '股息', '分红', 'EPS'],
+                    keywords: ['营业收入', '净利润', '毛利率', '净资产收益率', '市盈率', '市净率', '市值', '股价', '涨跌幅', '财务报表', '财务数据', '金融数据'],
                     priority: 9,
                     templateKey: 'financial' // 与模板中的key完全一致
                 },
@@ -88,7 +88,9 @@ export class DataMiningEngine {
                 'tavily_search': { priority: 1, dataYield: 'high' },
                 'crawl4ai': { priority: 2, dataYield: 'medium' },
                 'python_sandbox': { priority: 3, dataYield: 'high' },
-                'code_generator': { priority: 4, dataYield: 'high' }
+                'code_generator': { priority: 4, dataYield: 'high' },
+                // 🔥 新增：AlphaVantage金融数据工具
+                'alphavantage': { priority: 2, dataYield: 'high' }
             }
         };
     }
@@ -1218,6 +1220,35 @@ ${sources.map((s, i) => `${i+1}. ${s.title} - ${s.url}`).join('\n')}
                     "包含错误处理逻辑",
                     "注释关键数据处理步骤"
                 ]
+            },
+            // 🔥 新增：AlphaVantage金融数据工具指南
+            alphavantage: {
+                strategy: "专业金融数据获取工具，用于获取实时和历史金融市场数据",
+                supported_data_types: [
+                    "股票数据（周调整、实时行情）",
+                    "财报数据（利润表、资产负债表）",
+                    "基本面数据（概况、财务比率）",
+                    "外汇汇率数据",
+                    "数字货币价格",
+                    "大宗商品价格（原油、铜）",
+                    "国债收益率",
+                    "市场新闻情绪"
+                ],
+                example_queries: [
+                    "获取AAPL公司最近财报数据",
+                    "获取美元兑日元历史汇率",
+                    "获取比特币价格数据",
+                    "获取WTI原油价格趋势",
+                    "获取美国国债收益率数据"
+                ],
+                tips: [
+                    "股票代码使用标准格式（如AAPL、MSFT、TSLA）",
+                    "财报数据需指定季度（如2024-Q1）",
+                    "外汇数据需指定货币对（如USD/JPY）",
+                    "数据会保存到会话工作区供后续分析使用",
+                    "注意API调用频率限制，避免频繁请求"
+                ],
+                special_notes: "此工具提供高度结构化的金融数据，非常适合数据挖掘场景，数据质量极高"
             }
         };
         

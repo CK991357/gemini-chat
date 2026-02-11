@@ -1,4 +1,4 @@
-// src/static/js/agent/tools/ToolImplementations.js - 参数一致性修复最终版 + Python错误反馈修复
+// src/static/js/agent/tools/ToolImplementations.js - 参数一致性修复最终版 + Python错误反馈修复 + AlphaVantage工具适配
 
 import { BaseTool } from './BaseTool.js';
 
@@ -56,6 +56,10 @@ class DeepResearchToolAdapter {
                 python_sandbox: {
                     timeout: 120,
                     allow_network: true
+                },
+                alphavantage: {
+                    timeout: 45, // AlphaVantage API调用超时
+                    retry_attempts: 3 // 重试次数
                 }
             },
             
@@ -93,6 +97,11 @@ class DeepResearchToolAdapter {
                         concurrent_limit: 3, // 并发限制
                         timeout_per_url: 15000 // 每个URL超时时间
                     }
+                },
+                alphavantage: {
+                    timeout: 45,
+                    retry_attempts: 3,
+                    preferred_modes: ['weekly_adjusted', 'global_quote', 'income_statement', 'balance_sheet', 'cash_flow']
                 }
             },
             
@@ -129,6 +138,11 @@ class DeepResearchToolAdapter {
                         concurrent_limit: 3, // 并发限制
                         timeout_per_url: 15000 // 每个URL超时时间
                     }
+                },
+                alphavantage: {
+                    timeout: 45,
+                    retry_attempts: 3,
+                    preferred_modes: ['treasury_yield', 'wti', 'brent', 'copper', 'news_sentiment']
                 }
             },
             
@@ -168,6 +182,11 @@ class DeepResearchToolAdapter {
                 python_sandbox: {
                     timeout: 180,
                     allow_network: true
+                },
+                alphavantage: {
+                    timeout: 45,
+                    retry_attempts: 3,
+                    preferred_modes: ['digital_currency_daily', 'forex_daily', 'etf_profile', 'insider_transactions']
                 }
             },
             
@@ -207,6 +226,10 @@ class DeepResearchToolAdapter {
                     extract: {
                         extraction_type: 'css' // 🎯 修复：强制使用 CSS 提取
                     }
+                },
+                alphavantage: {
+                    timeout: 30,
+                    retry_attempts: 2
                 }
             }
         };
@@ -450,6 +473,117 @@ class DeepResearchToolAdapter {
                 }
                 return agentParams;
             }
+
+            case 'alphavantage': {
+                // 🎯 AlphaVantage金融数据获取工具参数适配
+                console.log('[DeepResearchAdapter] 开始处理 alphavantage 参数:', agentParams);
+                
+                // 检查参数结构
+                let mode = agentParams.mode;
+                let parameters = agentParams.parameters || {};
+                
+                // 如果参数是嵌套结构，进行解包
+                if (agentParams.parameters && typeof agentParams.parameters === 'object') {
+                    // 检查是否有嵌套的 mode 和 parameters
+                    if (agentParams.parameters.mode && agentParams.parameters.parameters) {
+                        mode = agentParams.parameters.mode;
+                        parameters = agentParams.parameters.parameters;
+                    } else if (!mode && agentParams.parameters.mode) {
+                        // 只有 mode 在 parameters 中
+                        mode = agentParams.parameters.mode;
+                        parameters = { ...agentParams.parameters };
+                        delete parameters.mode;
+                    }
+                }
+                
+                // 验证必填参数
+                if (!mode) {
+                    console.error('[DeepResearchAdapter] ❌ alphavantage 缺少 mode 参数');
+                    // 提供可用模式列表
+                    const availableModes = [
+                        'weekly_adjusted', 'global_quote', 'earnings_transcript',
+                        'insider_transactions', 'etf_profile', 'forex_daily',
+                        'digital_currency_daily', 'wti', 'brent', 'copper',
+                        'treasury_yield', 'news_sentiment', 'overview',
+                        'income_statement', 'balance_sheet', 'cash_flow',
+                        'earnings', 'earnings_estimates', 'dividends', 'shares_outstanding'
+                    ];
+                    
+                    return {
+                        mode: 'weekly_adjusted', // 默认模式
+                        parameters: {
+                            ...parameters,
+                            symbol: parameters.symbol || 'AAPL' // 默认股票代码
+                        },
+                        error: `缺少 mode 参数，可用模式: ${availableModes.join(', ')}`
+                    };
+                }
+                
+                // 根据模式验证必需参数
+                let validatedParams = { ...parameters };
+                
+                switch (mode) {
+                    case 'weekly_adjusted':
+                    case 'global_quote':
+                    case 'overview':
+                    case 'income_statement':
+                    case 'balance_sheet':
+                    case 'cash_flow':
+                    case 'earnings':
+                    case 'earnings_estimates':
+                    case 'dividends':
+                    case 'shares_outstanding':
+                        if (!validatedParams.symbol) {
+                            validatedParams.symbol = 'AAPL'; // 默认股票代码
+                            console.warn(`[DeepResearchAdapter] ${mode} 模式缺少 symbol 参数，使用默认值: AAPL`);
+                        }
+                        break;
+                        
+                    case 'earnings_transcript':
+                        if (!validatedParams.symbol) validatedParams.symbol = 'AAPL';
+                        if (!validatedParams.quarter) {
+                            // 默认最近一个季度
+                            const currentYear = new Date().getFullYear();
+                            const currentMonth = new Date().getMonth();
+                            let quarter = 'Q1';
+                            if (currentMonth >= 3 && currentMonth < 6) quarter = 'Q1';
+                            else if (currentMonth >= 6 && currentMonth < 9) quarter = 'Q2';
+                            else if (currentMonth >= 9) quarter = 'Q3';
+                            else quarter = 'Q4';
+                            validatedParams.quarter = `${currentYear}-${quarter}`;
+                        }
+                        break;
+                        
+                    case 'forex_daily':
+                        if (!validatedParams.from_symbol) validatedParams.from_symbol = 'USD';
+                        if (!validatedParams.to_symbol) validatedParams.to_symbol = 'JPY';
+                        break;
+                        
+                    case 'digital_currency_daily':
+                        if (!validatedParams.symbol) validatedParams.symbol = 'BTC';
+                        if (!validatedParams.market) validatedParams.market = 'USD';
+                        break;
+                        
+                    case 'news_sentiment':
+                        if (!validatedParams.limit) validatedParams.limit = 20;
+                        break;
+                }
+                
+                // 添加研究模式特定的配置
+                const finalParams = {
+                    mode: mode,
+                    parameters: validatedParams,
+                    timeout: modeSpecific.timeout || 45,
+                    retry_attempts: modeSpecific.retry_attempts || 3
+                };
+                
+                console.log('[DeepResearchAdapter] ✅ alphavantage 参数适配完成:', {
+                    mode: finalParams.mode,
+                    parameters: Object.keys(finalParams.parameters)
+                });
+                
+                return finalParams;
+            }
         }
         
         return { ...agentParams, ...modeSpecific };
@@ -480,6 +614,20 @@ class DeepResearchToolAdapter {
                     return { query: parameters.queries.join(' ') };
                 } else if (parameters.queries && typeof parameters.queries === 'string' && parameters.queries.trim() !== '') {
                     return { query: parameters.queries };
+                }
+                break;
+            }
+            case 'alphavantage': {
+                // 标准模式下简化的参数适配
+                if (parameters.mode && parameters.parameters) {
+                    // 已经是正确的格式
+                    return parameters;
+                } else if (parameters.symbol && !parameters.mode) {
+                    // 只有股票代码，默认使用 weekly_adjusted 模式
+                    return {
+                        mode: 'weekly_adjusted',
+                        parameters: { symbol: parameters.symbol }
+                    };
                 }
                 break;
             }
@@ -808,6 +956,86 @@ class DeepResearchToolAdapter {
                     }
                     break;
                 }
+
+                case 'alphavantage': {
+                    // 🎯 AlphaVantage金融数据响应处理
+                    const calledParameters = rawResponse.rawParameters || {};
+                    const mode = calledParameters.mode || 'unknown';
+                    
+                    console.log(`[DeepResearchAdapter] 处理 alphavantage 响应，模式: ${mode}`, dataFromProxy);
+                    
+                    if (dataFromProxy && dataFromProxy.success === true) {
+                        // 成功响应
+                        const metadata = dataFromProxy.metadata || {};
+                        const savedFiles = metadata.saved_files || [];
+                        
+                        // 构建输出信息
+                        let formattedOutput = `📊 **AlphaVantage金融数据获取成功** (${this.getAlphaVantageModeName(mode)})\n\n`;
+                        
+                        // 添加基本信息
+                        if (metadata.symbol || metadata.parameters?.symbol) {
+                            formattedOutput += `**股票/资产**: ${metadata.symbol || metadata.parameters?.symbol}\n`;
+                        }
+                        if (metadata.timestamp) {
+                            formattedOutput += `**获取时间**: ${metadata.timestamp}\n`;
+                        }
+                        if (savedFiles.length > 0) {
+                            formattedOutput += `**保存文件**: ${savedFiles.length} 个文件已保存到工作区\n`;
+                        }
+                        
+                        formattedOutput += `\n---\n\n`;
+                        
+                        // 添加数据摘要
+                        const dataSummary = this._formatAlphaVantageDataSummary(dataFromProxy.data, mode);
+                        formattedOutput += dataSummary;
+                        
+                        // 添加文件信息
+                        if (savedFiles.length > 0) {
+                            formattedOutput += `\n### 📁 已保存文件\n`;
+                            savedFiles.forEach(file => {
+                                formattedOutput += `- **${file.filename}** (${(file.size_kb || 0).toFixed(1)} KB)\n`;
+                            });
+                        }
+                        
+                        // 添加访问说明
+                        if (metadata.access_instructions) {
+                            formattedOutput += `\n### 💡 后续操作\n`;
+                            formattedOutput += `${metadata.access_instructions}\n`;
+                        }
+                        
+                        // 添加数据说明
+                        if (metadata.example_code && metadata.example_code !== '# 数据获取完成，文件已保存') {
+                            formattedOutput += `\n### 📝 代码示例\n\`\`\`python\n${metadata.example_code}\n\`\`\``;
+                        }
+                        
+                        output = formattedOutput;
+                        success = true;
+                        
+                        // 构建数据源信息
+                        if (savedFiles.length > 0) {
+                            savedFiles.forEach(file => {
+                                sources.push({
+                                    title: `AlphaVantage数据文件: ${file.filename}`,
+                                    url: file.container_path || file.host_path || '#',
+                                    description: `金融数据文件 (${(file.size_kb || 0).toFixed(1)} KB)`,
+                                    source_type: 'financial_data',
+                                    file_type: file.filename.endsWith('.parquet') ? 'parquet' : 
+                                              file.filename.endsWith('.json') ? 'json' : 'data_file'
+                                });
+                            });
+                        }
+                    } else if (dataFromProxy && dataFromProxy.error) {
+                        // 错误响应
+                        output = `❌ **AlphaVantage数据获取失败** (${mode})\n\n**错误**: ${dataFromProxy.error}\n`;
+                        success = false;
+                    } else {
+                        // 未知响应
+                        output = `⚠️ **AlphaVantage工具返回未知响应**\n\n`;
+                        output += `原始响应: ${JSON.stringify(dataFromProxy, null, 2).substring(0, 500)}...`;
+                        success = rawResponse.success !== false;
+                    }
+                    break;
+                }
                     
                 default: {
                     if (typeof dataFromProxy === 'string') {
@@ -844,6 +1072,106 @@ class DeepResearchToolAdapter {
                 analysisSuggestions: this._generateResearchSuggestions(toolName, output, researchMode)
             }
         };
+    }
+    
+    /**
+     * 🎯 获取AlphaVantage模式的中文名称
+     */
+    static getAlphaVantageModeName(mode) {
+        const modeNames = {
+            'weekly_adjusted': '周调整股票数据',
+            'global_quote': '实时行情数据',
+            'earnings_transcript': '财报电话会议记录',
+            'insider_transactions': '内部人交易数据',
+            'etf_profile': 'ETF详细信息和持仓',
+            'forex_daily': '外汇每日数据',
+            'digital_currency_daily': '数字货币每日数据',
+            'wti': 'WTI原油价格',
+            'brent': 'Brent原油价格',
+            'copper': '铜价数据',
+            'treasury_yield': '国债收益率',
+            'news_sentiment': '新闻情绪数据',
+            'overview': '公司概况',
+            'income_statement': '利润表',
+            'balance_sheet': '资产负债表',
+            'cash_flow': '现金流量表',
+            'earnings': '每股收益(EPS)',
+            'earnings_estimates': '盈利预测',
+            'dividends': '股息历史',
+            'shares_outstanding': '流通股数量'
+        };
+        return modeNames[mode] || mode;
+    }
+    
+    /**
+     * 🎯 格式化AlphaVantage数据摘要
+     */
+    static _formatAlphaVantageDataSummary(data, mode) {
+        if (!data) return '**数据摘要**: 无数据内容\n';
+        
+        let summary = '### 📈 数据摘要\n';
+        
+        if (typeof data === 'object') {
+            if (Array.isArray(data)) {
+                // 数组数据
+                summary += `- **数据条数**: ${data.length}\n`;
+                if (data.length > 0) {
+                    summary += `- **示例数据**: 显示前${Math.min(3, data.length)}条\n`;
+                    data.slice(0, 3).forEach((item, index) => {
+                        if (typeof item === 'object') {
+                            const keys = Object.keys(item);
+                            summary += `  - 条目${index+1}: ${keys.slice(0, 3).map(k => `${k}=${item[k]}`).join(', ')}${keys.length > 3 ? '...' : ''}\n`;
+                        } else {
+                            summary += `  - 条目${index+1}: ${item}\n`;
+                        }
+                    });
+                }
+            } else if (data.total_records) {
+                // 包含摘要信息的数据
+                summary += `- **总记录数**: ${data.total_records}\n`;
+                if (data.date_range) {
+                    summary += `- **时间范围**: ${data.date_range.start || '未知'} 到 ${data.date_range.end || '未知'}\n`;
+                }
+                if (data.sample_data && Array.isArray(data.sample_data)) {
+                    summary += `- **样本数据**: ${data.sample_data.length}条\n`;
+                }
+                if (data.message) {
+                    summary += `- **说明**: ${data.message}\n`;
+                }
+            } else {
+                // 普通对象数据
+                const keys = Object.keys(data);
+                summary += `- **数据字段**: ${keys.length}个\n`;
+                keys.slice(0, 5).forEach(key => {
+                    const value = data[key];
+                    if (typeof value === 'string' && value.length > 50) {
+                        summary += `  - ${key}: ${value.substring(0, 50)}...\n`;
+                    } else if (Array.isArray(value)) {
+                        summary += `  - ${key}: 数组 (${value.length}个元素)\n`;
+                    } else if (typeof value === 'object') {
+                        summary += `  - ${key}: 对象\n`;
+                    } else {
+                        summary += `  - ${key}: ${value}\n`;
+                    }
+                });
+                if (keys.length > 5) {
+                    summary += `  - ... 还有${keys.length - 5}个字段\n`;
+                }
+            }
+        } else if (typeof data === 'string') {
+            // 字符串数据
+            if (data.length > 200) {
+                summary += `- **数据内容**: ${data.substring(0, 200)}...\n`;
+                summary += `- **总长度**: ${data.length}字符\n`;
+            } else {
+                summary += `- **数据内容**: ${data}\n`;
+            }
+        } else {
+            summary += `- **数据类型**: ${typeof data}\n`;
+            summary += `- **数据值**: ${data}\n`;
+        }
+        
+        return summary;
     }
     
     /**
@@ -1768,6 +2096,18 @@ static formatWebContentForMode(webData, researchMode) {
                     analysisLength: dataFromProxy.analysis?.length || 0
                 };
             }
+
+            case 'alphavantage': {
+                const metadata = dataFromProxy.metadata || {};
+                return {
+                    ...baseData,
+                    mode: metadata.mode || 'unknown',
+                    symbol: metadata.symbol || metadata.parameters?.symbol,
+                    savedFiles: metadata.saved_files || [],
+                    fileCount: metadata.saved_files?.length || 0,
+                    dataType: metadata.mode || 'financial_data'
+                };
+            }
         }
         
         return baseData;
@@ -1833,6 +2173,13 @@ static formatWebContentForMode(webData, researchMode) {
             case 'glm4v_analyze_image': {
                 toolSpecific.push('分析图片的视觉特征');
                 toolSpecific.push('解读图片的潜在含义');
+                break;
+            }
+            case 'alphavantage': {
+                toolSpecific.push('分析金融数据的趋势和模式');
+                toolSpecific.push('评估数据质量和完整性');
+                toolSpecific.push('与其他数据源进行交叉验证');
+                toolSpecific.push('基于数据提出投资或分析建议');
                 break;
             }
         }
@@ -2013,6 +2360,173 @@ class TavilySearchRetryManager {
 }
 
 /**
+ * 🎯 AlphaVantage 智能重试器
+ * 专门处理AlphaVantage API的重试逻辑
+ */
+class AlphaVantageRetryManager {
+    /**
+     * 判断AlphaVantage错误是否可重试
+     */
+    static isRetryableError(error) {
+        if (!error || !error.message) return false;
+        
+        const errorText = error.message.toLowerCase();
+        
+        // ✅ AlphaVantage可重试的错误类型
+        const retryablePatterns = [
+            'timeout', 'timed out', '超时',
+            'network', 'connection', 'fetch',
+            '5', // 5xx服务器错误
+            'service unavailable',
+            'rate limit', 'too many requests',
+            'api key', 'apikey' // API密钥相关错误有时也需要重试
+        ];
+        
+        // ✅ 不可重试的错误类型
+        const nonRetryablePatterns = [
+            'invalid symbol', 'symbol not found',
+            'invalid parameter', 'missing parameter',
+            'unsupported mode', 'unknown mode',
+            'data not found', 'no data'
+        ];
+        
+        // 检查是否是不可重试的错误
+        for (const pattern of nonRetryablePatterns) {
+            if (errorText.includes(pattern)) {
+                console.log(`[AlphaVantageRetry] 不可重试错误: ${pattern}`);
+                return false;
+            }
+        }
+        
+        // 检查是否是可重试的错误
+        for (const pattern of retryablePatterns) {
+            if (errorText.includes(pattern)) {
+                console.log(`[AlphaVantageRetry] 可重试错误: ${pattern}`);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 计算AlphaVantage重试延迟（更长的退避时间）
+     */
+    static calculateRetryDelay(attempt, baseDelay = 2000, maxDelay = 15000) {
+        // 尝试 1: 快速重试 (2秒)
+        if (attempt === 1) {
+            const fixedDelay = 2000;
+            console.log(`[AlphaVantageRetry] 重试 ${attempt}: 延迟 ${fixedDelay}ms (快速重试)`);
+            return fixedDelay;
+        }
+        
+        // 尝试 2: 中等延迟 (5秒)
+        if (attempt === 2) {
+            const mediumDelay = 5000;
+            console.log(`[AlphaVantageRetry] 重试 ${attempt}: 延迟 ${mediumDelay}ms (中等延迟)`);
+            return mediumDelay;
+        }
+        
+        // 尝试 3+: 长延迟 (10秒)
+        const longDelay = Math.min(10000, maxDelay);
+        console.log(`[AlphaVantageRetry] 重试 ${attempt}: 延迟 ${longDelay}ms (长延迟)`);
+        return longDelay;
+    }
+    
+    /**
+     * 构建重试后的改进参数
+     */
+    static enhanceParametersForRetry(originalParams, attempt) {
+        const enhanced = { ...originalParams };
+        
+        // 🎯 根据重试次数调整参数
+        switch (attempt) {
+            case 1: // 第一次重试
+                // 保持原始参数
+                console.log(`[AlphaVantageRetry] 尝试 1: 使用原始参数`);
+                return enhanced;
+                
+            case 2: // 第二次重试
+                // 如果失败，可能是API限制，可以尝试切换到默认API密钥
+                if (!enhanced.parameters) enhanced.parameters = {};
+                enhanced.parameters._retry_attempt = attempt;
+                console.log(`[AlphaVantageRetry] 尝试 2: 标记重试尝试`);
+                return enhanced;
+                
+            default:
+                // 后续重试：简化模式或参数
+                if (enhanced.mode === 'digital_currency_daily' && enhanced.parameters.market !== 'USD') {
+                    // 如果是非USD市场，尝试切换到USD
+                    enhanced.parameters.market = 'USD';
+                    console.log(`[AlphaVantageRetry] 尝试 ${attempt}: 切换到USD市场`);
+                }
+                return enhanced;
+        }
+    }
+    
+    /**
+     * 执行AlphaVantage智能重试
+     */
+    static async retryWithStrategy(toolName, originalParams, invokeFunction, maxRetries = 3) {
+        console.log(`[AlphaVantageRetry] 开始重试策略: ${toolName}, 最大重试次数: ${maxRetries}`);
+        
+        let lastError = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // 计算延迟
+                const delay = this.calculateRetryDelay(attempt);
+                await this.sleep(delay);
+                
+                // 根据重试次数改进参数
+                const enhancedParams = this.enhanceParametersForRetry(originalParams, attempt);
+                console.log(`[AlphaVantageRetry] 重试 ${attempt}/${maxRetries}, 参数:`, {
+                    mode: enhancedParams.mode,
+                    parameters: enhancedParams.parameters ? Object.keys(enhancedParams.parameters) : '无参数'
+                });
+                
+                // 执行重试
+                const result = await invokeFunction(enhancedParams);
+                
+                if (result.success) {
+                    console.log(`[AlphaVantageRetry] ✅ 重试 ${attempt} 成功`);
+                    return {
+                        ...result,
+                        retryRecovered: true,
+                        originalError: "已通过自动重试机制修复",
+                        retryInfo: {
+                            retried: true,
+                            attemptCount: attempt,
+                            originalFailed: true
+                        }
+                    };
+                }
+                
+                // 如果重试仍然失败，记录错误
+                lastError = result.error || new Error(`重试 ${attempt} 失败`);
+                
+            } catch (error) {
+                lastError = error;
+                console.warn(`[AlphaVantageRetry] 重试 ${attempt} 异常:`, error.message);
+            }
+        }
+        
+        // 所有重试都失败
+        console.error(`[AlphaVantageRetry] ❌ 所有重试失败 (${maxRetries}次)`);
+        const lastErrorMessage = lastError?.message || '无具体错误信息';
+        throw new Error(`AlphaVantage 重试失败 (${maxRetries}次尝试):
+- 原始错误: ${lastErrorMessage}
+- 建议: 检查股票代码/货币符号是否正确，或稍后再试`);
+    }
+    
+    /**
+     * 睡眠函数
+     */
+    static sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+
 /**
  * 🎯 通用工具结果格式化函数
  * @param {object} result - 包含 success, data, error, warnings 的结果对象
@@ -2061,12 +2575,14 @@ const formatToolResult = (result, toolName, researchMode) => {
             formatted += `🕸️ 抓取页面：${data.pages || '未知'}个\n`;
         } else if (toolName === 'python_sandbox') {
             formatted += `💻 代码执行：${data.executed ? '完成' : '未完成'}\n`;
+        } else if (toolName === 'alphavantage') {
+            formatted += `📈 金融数据：已获取\n`;
         }
         
         formatted += `\n---\n\n`;
         
         // 实际数据（适当截断）
-        const isDataTool = toolName === 'crawl4ai' || toolName === 'tavily_search';
+        const isDataTool = toolName === 'crawl4ai' || toolName === 'tavily_search' || toolName === 'alphavantage';
         let dataPreview;
 
         if (isDataTool) {
@@ -2107,6 +2623,7 @@ class ProxiedTool extends BaseTool {
             'glm4v_analyze_image': 25000,
             'mcp_tool_catalog': 10000,
             'firecrawl': 45000, // 即使不可用也提供配置
+            'alphavantage': 45000, // 🎯 新增：AlphaVantage工具超时时间
             'default': 30000
         };
         
@@ -2195,6 +2712,32 @@ class ProxiedTool extends BaseTool {
                     }
                 } catch (retryError) {
                     console.error(`[ProxiedTool] ❌ Tavily Search 自动重试失败:`, retryError);
+                    // 保持原始错误结果
+                }
+            }
+            // 🔥🔥🔥 ====================================================
+            
+            // 🔥🔥🔥 ====================================================
+            // 🎯 AlphaVantage 智能重试机制
+            // ====================================================
+            if (this.name === 'alphavantage' && !result.success && AlphaVantageRetryManager.isRetryableError(result)) {
+                console.warn(`[ProxiedTool] 🔄 AlphaVantage 失败，启动智能重试...`);
+                
+                try {
+                    const maxRetries = 3; // AlphaVantage可以有3次重试
+                    result = await AlphaVantageRetryManager.retryWithStrategy(
+                        this.name,
+                        normalizedInput,
+                        invokeFunction,
+                        maxRetries
+                    );
+                    
+                    // 🎯 检查是否通过自动重试成功
+                    if (result.success && result.retryRecovered) {
+                        console.log(`[ProxiedTool] ✅ AlphaVantage 通过自动重试恢复成功`);
+                    }
+                } catch (retryError) {
+                    console.error(`[ProxiedTool] ❌ AlphaVantage 自动重试失败:`, retryError);
                     // 保持原始错误结果
                 }
             }
@@ -2372,6 +2915,7 @@ export class StockfishAnalyzerTool extends ProxiedTool {}
 export class Glm4vAnalyzeImageTool extends ProxiedTool {}
 export class McpToolCatalogTool extends ProxiedTool {}
 export class FirecrawlTool extends ProxiedTool {} // 即使不可用也提供类定义
+export class AlphavantageTool extends ProxiedTool {} // 🎯 新增：AlphaVantage工具类
 
 /**
  * 🎯 工具工厂：便于动态创建工具实例
@@ -2385,7 +2929,8 @@ export class ToolFactory {
             'stockfish_analyzer': StockfishAnalyzerTool,
             'glm4v_analyze_image': Glm4vAnalyzeImageTool,
             'mcp_tool_catalog': McpToolCatalogTool,
-            'firecrawl': FirecrawlTool // 即使不可用也提供映射
+            'firecrawl': FirecrawlTool, // 即使不可用也提供映射
+            'alphavantage': AlphavantageTool // 🎯 新增：AlphaVantage工具映射
         };
         
         const ToolClass = toolClasses[toolName];
@@ -2415,9 +2960,6 @@ export class ToolFactory {
     }
     
     /**
-     * 🎯 新增：获取工具对研究模式的支持情况
-     */
-    /**
      * 🎯 硬件感知的工具可用性检查
      */
     static getHardwareAwareToolSupport(availableMemoryGB = 3.7) {
@@ -2437,6 +2979,10 @@ export class ToolFactory {
             'python_sandbox': { 
                 always: true,
                 notes: '代码执行，内存需求取决于代码复杂度'
+            },
+            'alphavantage': { 
+                always: true,
+                notes: '金融数据API，不受本地内存影响'
             }
         };
         
@@ -2450,12 +2996,13 @@ export class ToolFactory {
             'python_sandbox': ['deep', 'technical', 'academic', 'standard'],
             'glm4v_analyze_image': ['deep', 'technical', 'standard'],
             'stockfish_analyzer': ['deep', 'technical', 'standard'],
-            'firecrawl': ['deep', 'business', 'academic', 'technical', 'standard']
+            'firecrawl': ['deep', 'business', 'academic', 'technical', 'standard'],
+            'alphavantage': ['deep', 'business', 'academic', 'technical', 'standard'] // 🎯 新增：AlphaVantage支持所有研究模式
         };
     }
 
     /**
-     * 🎯 新增：检查工具在特定模式下是否可用
+     * 🎯 检查工具在特定模式下是否可用
      */
     static isToolAvailableInMode(toolName, researchMode, availableTools = []) {
         // 首先检查工具是否在可用工具列表中
@@ -2470,15 +3017,15 @@ export class ToolFactory {
     }
 
     /**
-     * 🎯 新增：为特定研究模式推荐工具
+     * 🎯 为特定研究模式推荐工具
      */
     static recommendToolsForResearchMode(researchMode, availableTools = []) {
         const recommendations = {
-            deep: ['tavily_search', 'crawl4ai', 'python_sandbox'],
-            business: ['tavily_search', 'crawl4ai', 'python_sandbox'],
-            academic: ['tavily_search', 'crawl4ai', 'python_sandbox'],
-            technical: ['tavily_search', 'crawl4ai', 'python_sandbox'],
-            standard: ['tavily_search', 'crawl4ai', 'python_sandbox']
+            deep: ['tavily_search', 'crawl4ai', 'python_sandbox', 'alphavantage'],
+            business: ['tavily_search', 'crawl4ai', 'python_sandbox', 'alphavantage'],
+            academic: ['tavily_search', 'crawl4ai', 'python_sandbox', 'alphavantage'],
+            technical: ['tavily_search', 'crawl4ai', 'python_sandbox', 'alphavantage'],
+            standard: ['tavily_search', 'crawl4ai', 'python_sandbox', 'alphavantage']
         };
 
         const recommended = recommendations[researchMode] || recommendations.standard;
@@ -2488,5 +3035,4 @@ export class ToolFactory {
     }
 }
 
-export { DeepResearchToolAdapter, ProxiedTool };
-
+export { AlphaVantageRetryManager, DeepResearchToolAdapter, ProxiedTool };

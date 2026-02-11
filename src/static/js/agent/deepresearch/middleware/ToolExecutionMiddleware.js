@@ -1,8 +1,8 @@
 // src/static/js/agent/deepresearch/middleware/ToolExecutionMiddleware.js
 // 🛠️ 工具执行中间件 - 从 DeepResearchAgent 中分离的核心工具执行逻辑
 // 🔥 修复版 - 解决与主文件的兼容性问题
-// 📅 修复版本: 1.4 - 移除无效备用方案，修复核心逻辑问题
-// 🚀 优化：修复括号平衡检测，增强数据传递，移除冗余方案
+// 📅 修复版本: 1.5 - 新增 alphavantage 工具支持
+// 🚀 优化：修复括号平衡检测，增强数据传递，移除冗余方案，新增金融数据工具支持
 
 export class ToolExecutionMiddleware {
     /**
@@ -99,12 +99,14 @@ export class ToolExecutionMiddleware {
             // 检查是否包含关键词，表明需要获取实际数据
             const needsActualData = data_context.includes('上一步crawl4ai') || 
                                    data_context.includes('crawl4ai抓取') ||
-                                   data_context.includes('全文内容');
+                                   data_context.includes('全文内容') ||
+                                   data_context.includes('上一步alphavantage') ||
+                                   data_context.includes('金融数据');
             
             if (needsActualData) {
                 console.log('[ToolExecutionMiddleware] 🔍 检测到需要获取实际数据，扫描数据总线...');
                 
-                // 按步骤倒序查找最新的crawl4ai数据
+                // 按步骤倒序查找最新的相关数据
                 const stepKeys = Array.from(this.dataBus.keys())
                     .filter(key => key.startsWith('step_'))
                     .sort((a, b) => {
@@ -113,30 +115,53 @@ export class ToolExecutionMiddleware {
                         return numB - numA; // 降序
                     });
                 
-                for (const key of stepKeys) {
-                    const data = this.dataBus.get(key);
-                    if (data && data.metadata && data.metadata.toolName === 'crawl4ai') {
-                        const rawData = data.rawData || data.originalData;
-                        if (rawData && rawData.length > 100) {
-                            console.log(`[ToolExecutionMiddleware] ✅ 找到最新crawl4ai数据: ${key}, 长度: ${rawData.length} 字符`);
-                            
-                            // 安全截断，防止提示词过长
-                            const maxDataLength = 15000; // 增加到15000字符
-                            if (rawData.length > maxDataLength) {
-                                // 智能截断：保留开头和中间重要部分
-                                const firstPart = rawData.substring(0, 8000);
-                                const middlePart = rawData.substring(8000, 14000);
-                                actualDataContext = firstPart + middlePart + "\n[...内容过长，已截断部分中间内容...]";
-                            } else {
-                                actualDataContext = rawData;
+                // 优先查找 crawl4ai 数据
+                if (data_context.includes('crawl4ai')) {
+                    for (const key of stepKeys) {
+                        const data = this.dataBus.get(key);
+                        if (data && data.metadata && data.metadata.toolName === 'crawl4ai') {
+                            const rawData = data.rawData || data.originalData;
+                            if (rawData && rawData.length > 100) {
+                                console.log(`[ToolExecutionMiddleware] ✅ 找到最新crawl4ai数据: ${key}, 长度: ${rawData.length} 字符`);
+                                
+                                // 安全截断，防止提示词过长
+                                const maxDataLength = 15000;
+                                if (rawData.length > maxDataLength) {
+                                    const firstPart = rawData.substring(0, 8000);
+                                    const middlePart = rawData.substring(8000, 14000);
+                                    actualDataContext = firstPart + middlePart + "\n[...内容过长，已截断部分中间内容...]";
+                                } else {
+                                    actualDataContext = rawData;
+                                }
+                                break;
                             }
-                            break;
+                        }
+                    }
+                }
+                // 查找 alphavantage 数据
+                else if (data_context.includes('alphavantage') || data_context.includes('金融数据')) {
+                    for (const key of stepKeys) {
+                        const data = this.dataBus.get(key);
+                        if (data && data.metadata && data.metadata.toolName === 'alphavantage') {
+                            const rawData = data.rawData || data.originalData;
+                            if (rawData && rawData.length > 100) {
+                                console.log(`[ToolExecutionMiddleware] ✅ 找到最新alphavantage数据: ${key}, 长度: ${rawData.length} 字符`);
+                                
+                                // 安全截断，防止提示词过长
+                                const maxDataLength = 10000;
+                                if (rawData.length > maxDataLength) {
+                                    actualDataContext = rawData.substring(0, maxDataLength) + "\n[...金融数据过长，已截断部分内容...]";
+                                } else {
+                                    actualDataContext = rawData;
+                                }
+                                break;
+                            }
                         }
                     }
                 }
                 
                 if (actualDataContext === data_context) {
-                    console.warn('[ToolExecutionMiddleware] ⚠️ 未找到crawl4ai数据，使用原始描述');
+                    console.warn('[ToolExecutionMiddleware] ⚠️ 未找到相关数据，使用原始描述');
                 }
             }
         }
@@ -1255,6 +1280,57 @@ except Exception as e:
                 }
             }
 
+            // ============================================================
+            // 🆕 新增：alphavantage 工具参数验证和格式化
+            // ============================================================
+            if (toolName === 'alphavantage') {
+                console.log('[ToolExecutionMiddleware] 💹 处理alphavantage工具调用');
+                
+                // 🔥 确保参数格式正确
+                // alphavantage工具期望的参数结构：{ mode: 'xxx', parameters: { ... } }
+                if (!parameters.mode) {
+                    console.warn('[ToolExecutionMiddleware] ⚠️ alphavantage缺少mode参数，尝试从parameters中提取');
+                    
+                    // 尝试从parameters中提取mode
+                    if (parameters.parameters && parameters.parameters.mode) {
+                        parameters.mode = parameters.parameters.mode;
+                        delete parameters.parameters.mode;
+                    } else if (parameters.parameters && typeof parameters.parameters === 'object') {
+                        // 如果parameters本身就是一个对象，可能用户直接传入了mode
+                        const possibleModes = ['weekly_adjusted', 'global_quote', 'earnings_transcript', 'insider_transactions', 
+                                              'etf_profile', 'forex_daily', 'digital_currency_daily', 'wti', 'brent', 
+                                              'copper', 'treasury_yield', 'news_sentiment', 'overview', 'income_statement',
+                                              'balance_sheet', 'cash_flow', 'earnings', 'earnings_estimates', 
+                                              'dividends', 'shares_outstanding'];
+                        
+                        for (const mode of possibleModes) {
+                            if (parameters[mode] || (parameters.parameters && parameters.parameters[mode])) {
+                                parameters.mode = mode;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!parameters.mode) {
+                        console.error('[ToolExecutionMiddleware] ❌ 无法确定alphavantage mode参数');
+                        throw new Error('alphavantage工具必须提供mode参数，如: { mode: "weekly_adjusted", parameters: { symbol: "AAPL" } }');
+                    }
+                }
+                
+                // 确保parameters存在
+                if (!parameters.parameters) {
+                    // 如果没有parameters字段，假设整个对象都是参数
+                    const { mode, ...rest } = parameters;
+                    parameters = {
+                        mode: mode,
+                        parameters: rest
+                    };
+                    console.log('[ToolExecutionMiddleware] 🔄 重新格式化alphavantage参数');
+                }
+                
+                console.log(`[ToolExecutionMiddleware] 💹 alphavantage模式: ${parameters.mode}, 参数:`, parameters.parameters);
+            }
+
             // --- 调用工具 ---
             console.log(`[ToolExecutionMiddleware] 🚀 开始调用工具 ${toolName}...`);
             const toolResult = await tool.invoke(parameters, {
@@ -1300,6 +1376,99 @@ except Exception as e:
 
                 } catch (e) {
                     console.log('[ToolExecutionMiddleware] 🐍 Python输出不是特殊JSON格式，作为纯文本处理。');
+                }
+            }
+            
+            // ================================================================
+            // 🆕 新增：alphavantage 工具结果处理
+            // ================================================================
+            if (toolName === 'alphavantage' && toolSuccess) {
+                try {
+                    console.log('[ToolExecutionMiddleware] 💹 处理alphavantage工具返回结果');
+                    
+                    // 尝试解析JSON结果
+                    let parsedResult;
+                    try {
+                        parsedResult = JSON.parse(rawObservation);
+                    } catch (e) {
+                        console.log('[ToolExecutionMiddleware] 💹 alphavantage返回的不是JSON，直接使用原始输出');
+                        parsedResult = rawObservation;
+                    }
+                    
+                    // 格式化输出以便Agent理解
+                    if (typeof parsedResult === 'object' && parsedResult !== null) {
+                        if (parsedResult.success === true && parsedResult.data) {
+                            // 成功获取数据
+                            const mode = parameters.mode || 'unknown';
+                            const data = parsedResult.data;
+                            const metadata = parsedResult.metadata || {};
+                            
+                            // 根据数据类型格式化输出
+                            let formattedOutput = `✅ **AlphaVantage金融数据获取成功**\n\n`;
+                            formattedOutput += `**模式**: ${mode}\n`;
+                            
+                            if (metadata.timestamp) {
+                                formattedOutput += `**获取时间**: ${metadata.timestamp}\n`;
+                            }
+                            
+                            if (metadata.saved_files && metadata.saved_files.length > 0) {
+                                formattedOutput += `**保存的文件**:\n`;
+                                metadata.saved_files.forEach((file, idx) => {
+                                    formattedOutput += `  ${idx+1}. ${file.filename} (${file.size_kb.toFixed(1)} KB)\n`;
+                                });
+                            }
+                            
+                            // 添加数据摘要
+                            if (typeof data === 'object') {
+                                if (Array.isArray(data)) {
+                                    formattedOutput += `\n**数据记录数**: ${data.length}\n`;
+                                    if (data.length > 0 && data.length <= 10) {
+                                        formattedOutput += `**示例数据**:\n\`\`\`json\n${JSON.stringify(data.slice(0, 3), null, 2)}\n\`\`\``;
+                                    } else if (data.length > 10) {
+                                        formattedOutput += `**示例数据 (前3条)**:\n\`\`\`json\n${JSON.stringify(data.slice(0, 3), null, 2)}\n\`\`\`\n`;
+                                        formattedOutput += `**提示**: 共${data.length}条记录，建议使用python_sandbox进行进一步分析`;
+                                    }
+                                } else if (data.total_records || data.sample_data) {
+                                    // 已处理过的数据格式
+                                    formattedOutput += `\n**总记录数**: ${data.total_records || '未知'}\n`;
+                                    if (data.sample_data) {
+                                        formattedOutput += `**示例数据**:\n\`\`\`json\n${JSON.stringify(data.sample_data, null, 2)}\n\`\`\``;
+                                    }
+                                } else {
+                                    // 单个对象
+                                    const keyCount = Object.keys(data).length;
+                                    formattedOutput += `\n**数据字段数**: ${keyCount}\n`;
+                                    if (keyCount <= 15) {
+                                        formattedOutput += `**完整数据**:\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+                                    } else {
+                                        // 只显示前5个字段
+                                        const sample = {};
+                                        let count = 0;
+                                        for (const key in data) {
+                                            if (count >= 5) break;
+                                            sample[key] = data[key];
+                                            count++;
+                                        }
+                                        formattedOutput += `**数据摘要 (前5个字段)**:\n\`\`\`json\n${JSON.stringify(sample, null, 2)}\n\`\`\`\n`;
+                                        formattedOutput += `**提示**: 共${keyCount}个字段，建议使用python_sandbox进行进一步分析`;
+                                    }
+                                }
+                            } else {
+                                formattedOutput += `\n**获取的数据**: ${typeof data === 'string' ? data.substring(0, 500) + (data.length > 500 ? '...' : '') : String(data)}`;
+                            }
+                            
+                            rawObservation = formattedOutput;
+                            
+                        } else if (parsedResult.error) {
+                            // 错误情况
+                            rawObservation = `❌ **AlphaVantage工具执行失败**\n\n错误信息: ${parsedResult.error}\n\n模式: ${parameters.mode || 'unknown'}`;
+                            toolSuccess = false;
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error('[ToolExecutionMiddleware] ❌ alphavantage结果处理异常:', error);
+                    // 保持原始输出
                 }
             }
 
@@ -1352,6 +1521,13 @@ except Exception as e:
                     }
                 } catch (fixError) {
                     console.warn('[ToolExecutionMiddleware] ⚠️ 自动修复失败:', fixError);
+                }
+            }
+            
+            // 🔥 新增：alphavantage参数错误提示
+            if (toolName === 'alphavantage') {
+                if (error.message.includes('mode') || error.message.includes('参数')) {
+                    rawObservation = `❌ **AlphaVantage参数错误**\n\n错误信息: ${error.message}\n\n**正确参数格式**:\n\`\`\`json\n{\n  "mode": "weekly_adjusted",\n  "parameters": {\n    "symbol": "AAPL"\n  }\n}\n\`\`\`\n\n**可用模式**: weekly_adjusted, global_quote, earnings_transcript, insider_transactions, etf_profile, forex_daily, digital_currency_daily, wti, brent, copper, treasury_yield, news_sentiment, overview, income_statement, balance_sheet, cash_flow, earnings, earnings_estimates, dividends, shares_outstanding`;
                 }
             }
         }
@@ -1413,18 +1589,18 @@ except Exception as e:
         // 可以在thought中引用知识指导
 
         // 🎯 新增：检查是否有相关数据可复用
-        if (this.dataBus.size > 0 && (thought.includes('提取') || thought.includes('数据'))) {
+        if (this.dataBus.size > 0 && (thought.includes('提取') || thought.includes('数据') || thought.includes('金融') || thought.includes('股票'))) {
             console.log('[ToolExecutionMiddleware] 🔍 检查数据总线中的相关数据...');
             
             const recentData = Array.from(this.dataBus.entries())
-                .filter(([key, data]) => data.metadata.contentType === 'structured_data')
+                .filter(([key, data]) => data.metadata.contentType === 'structured_data' || data.metadata.contentType === 'financial_data')
                 .sort((a, b) => new Date(b.metadata.timestamp).getTime() - new Date(a.data.metadata.timestamp).getTime());
             
             if (recentData.length > 0) {
                 const [key, data] = recentData[0];
-                console.log(`[ToolExecutionMiddleware] ✅ 找到可用数据: ${key}, 类型: ${data.metadata.dataType}`);
+                console.log(`[ToolExecutionMiddleware] ✅ 找到可用数据: ${key}, 类型: ${data.metadata.dataType || data.metadata.contentType}, 工具: ${data.metadata.toolName}`);
                 
-                thought = `注意：系统已缓存了相关结构化数据（${data.metadata.dataType}），请考虑利用这些数据。\n\n${thought}`;
+                thought = `注意：系统已缓存了相关结构化数据（${data.metadata.toolName}: ${data.metadata.dataType || data.metadata.contentType}），请考虑利用这些数据。\n\n${thought}`;
             }
         }
 
@@ -1440,7 +1616,8 @@ except Exception as e:
             const metadata = {
                 toolName: toolName,
                 contentType: toolName === 'crawl4ai' ? 'webpage' : 
-                           toolName === 'tavily_search' ? 'search_results' : 'text',
+                           toolName === 'tavily_search' ? 'search_results' : 
+                           toolName === 'alphavantage' ? 'financial_data' : 'text',
                 timestamp: new Date().toISOString(),
                 iteration: iteration, // 🆕 新增：记录迭代次数
                 planStep: this._detectPlanStep(thought, intermediateSteps) // 🆕 新增：尝试推断计划步骤
@@ -1456,6 +1633,20 @@ except Exception as e:
                     metadata.domain = new URL(parameters.url).hostname;
                 } catch (e) {
                     metadata.domain = 'unknown';
+                }
+            } else if (toolName === 'alphavantage') {
+                // 存储alphavantage特有信息
+                metadata.dataType = 'financial_data';
+                metadata.alphavantageMode = parameters.mode;
+                
+                // 存储关键参数
+                if (parameters.parameters) {
+                    if (parameters.parameters.symbol) {
+                        metadata.symbol = parameters.parameters.symbol;
+                    }
+                    if (parameters.parameters.from_symbol || parameters.parameters.to_symbol) {
+                        metadata.currencyPair = `${parameters.parameters.from_symbol || 'USD'}/${parameters.parameters.to_symbol || 'JPY'}`;
+                    }
                 }
             }
             
@@ -1875,6 +2066,10 @@ _extractLatestRelevantData() {
             } else if (metadata.toolName === 'crawl4ai') {
                 // 最近的爬虫数据
                 return this._formatDataForRepair(key, metadata, rawData);
+            } else if (metadata.toolName === 'alphavantage') {
+                // 最近的金融数据
+                console.log(`[ToolExecutionMiddleware] 💹 找到alphavantage数据，用于修复`);
+                return this._formatDataForRepair(key, metadata, rawData);
             }
         }
     }
@@ -1893,6 +2088,8 @@ _formatDataForRepair(stepKey, metadata, rawData) {
     let formatted = `## 🔧 代码修复所需数据\n\n`;
     formatted += `**来源**: 步骤 ${stepKey.replace('step_', '')} (${metadata.toolName})\n`;
     if (metadata.dataType) formatted += `**类型**: ${metadata.dataType}\n`;
+    if (metadata.alphavantageMode) formatted += `**金融模式**: ${metadata.alphavantageMode}\n`;
+    if (metadata.symbol) formatted += `**股票代码**: ${metadata.symbol}\n`;
     formatted += `**原始长度**: ${rawData.length} 字符\n\n`;
     
     // 🆕 智能处理超长数据

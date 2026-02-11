@@ -20,7 +20,7 @@ export class Orchestrator {
         this.agentMode = 'deep_research';
         this.deepResearchAgent = null;
         this.researchToolsSet = {};
-        this.researchTools = ['tavily_search', 'crawl4ai', 'python_sandbox'];
+        this.researchTools = ['tavily_search', 'crawl4ai', 'python_sandbox','alphavantage'];
 
         this.callbackManager = new CallbackManager();
         this.skillManager = null;

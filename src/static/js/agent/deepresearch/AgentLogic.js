@@ -1850,6 +1850,378 @@ const toolOptimizationProtocol = `
         
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
+
+// 🎯 核心新增：AlphaVantage 金融数据工具 - 使用指导与限制
+const alphavantageGuidance = `
+## 💹 AlphaVantage 金融数据工具 - 使用指导与限制
+
+### 🚨 核心原则（必须遵守）
+
+#### 1. **格式使用限制**：
+- **✅ 可以正常使用**：所有返回 **JSON 格式数据** 的模式
+- **❌ 禁止使用**：所有返回 **.parquet 文件** 的模式（当前环境无法处理）
+
+#### 2. **数据获取机制**：
+- **JSON 数据**：工具会**完整返回**给模型，可直接在思考中使用
+- **Parquet 文件**：工具会保存到工作区，但**无法被后续工具处理**
+
+#### 3. **API速率限制**：
+- **免费版限制**：25次/天，5次/分钟
+- **智能使用策略**：
+  - **单轮研究内**：可连续使用最多 **4次**，避免超过每分钟限制
+  - **跨轮研究**：注意每日25次的总限制
+  - **避免浪费**：确保每次调用都有明确目的
+
+### 📊 模式选择指南（根据你的需求选择）
+
+#### 🟢 **推荐使用 - JSON 数据模式**（共13种）
+这些模式返回的数据可直接使用：
+
+**1. 实时行情数据**
+- \`global_quote\`：获取股票实时行情（价格、成交量等）
+- **示例**：\`{ "mode": "global_quote", "parameters": { "symbol": "AAPL" } }\`
+
+**2. 公司基本面数据**（返回完整JSON，最适合分析）
+- \`overview\`：公司概况和财务比率（市值、市盈率、股息收益率等）
+- \`income_statement\`：利润表数据（年报和季报）
+- \`balance_sheet\`：资产负债表数据
+- \`cash_flow\`：现金流量表数据
+- \`earnings\`：每股收益(EPS)数据
+- \`earnings_estimates\`：盈利预测数据
+- \`dividends\`：股息历史数据
+- \`shares_outstanding\`：流通股数量数据
+- \`insider_transactions\`：公司内部人交易数据
+- \`etf_profile\`：ETF详细信息和持仓数据
+- \`earnings_transcript\`：财报电话会议记录（需指定季度）
+
+**3. 市场与新闻数据**（备选，建议优先使用\`tavily_search\`）
+- \`news_sentiment\`：市场新闻和情绪分析（可设置tickers和limit）
+- **注意**：对于新闻获取，建议优先使用\`tavily_search\`工具，它提供更全面的新闻覆盖和摘要
+
+#### 🔴 **禁止使用 - Parquet 数据模式**（共6种）
+这些模式生成.parquet文件，**无法被处理**：
+- \`weekly_adjusted\`：股票周调整数据
+- \`forex_daily\`：外汇每日数据  
+- \`digital_currency_daily\`：数字货币每日数据
+- \`wti\`：WTI原油价格数据
+- \`brent\`：Brent原油价格数据
+- \`copper\`：全球铜价数据
+- \`treasury_yield\`：国债收益率数据（也生成parquet）
+
+### 🎯 正确使用示例
+
+#### 示例1：分析苹果公司基本面（核心场景）
+\`\`\`json
+{
+  "mode": "overview",
+  "parameters": {
+    "symbol": "AAPL"
+  }
+}
+\`\`\`
+**返回**：完整的JSON数据，包含市值、市盈率、股息收益率等50+个指标
+
+#### 示例2：获取公司内部人交易
+\`\`\`json
+{
+  "mode": "insider_transactions",
+  "parameters": {
+    "symbol": "TSLA"
+  }
+}
+\`\`\`
+**返回**：最近的公司内部人买卖交易记录
+
+#### 示例3：获取ETF持仓数据
+\`\`\`json
+{
+  "mode": "etf_profile",
+  "parameters": {
+    "symbol": "SPY"
+  }
+}
+\`\`\`
+**返回**：ETF的行业配置、持仓明细、费率等信息
+
+#### 示例4：获取财报电话会议记录
+\`\`\`json
+{
+  "mode": "earnings_transcript",
+  "parameters": {
+    "symbol": "MSFT",
+    "quarter": "2024-Q1"
+  }
+}
+\`\`\`
+**返回**：指定季度的财报电话会议完整记录
+
+### ⚠️ 重要提醒
+
+#### 关于Parquet文件：
+1. **禁止尝试读取**：不要在代码解释器中尝试读取.parquet文件
+2. **禁止依赖路径**：不要依赖工具返回的文件路径
+3. **只能使用JSON模式**：所有分析必须基于JSON模式的数据
+
+#### 关于JSON数据：
+1. **数据是完整的**：工具返回的JSON包含所有需要的信息
+2. **可直接分析**：在思考中直接使用这些数据进行分析
+3. **可传递给代码解释器**：如果需要复杂计算，可将JSON数据传递给代码解释器
+
+#### 关于API速率：
+1. **单轮研究内**：最多连续使用 **4次**，避免超过每分钟5次的限制
+2. **每日总限制**：注意不要超过25次/天的总限制
+3. **智能规划**：优先获取最重要的数据，避免不必要的调用
+
+### 📋 决策流程图
+
+\`\`\`
+需要金融数据？
+    ↓
+是公司基本面分析？ → 是 → 使用 \`overview\` 等基本面JSON模式
+    ↓否
+是ETF/内部交易分析？ → 是 → 使用 \`etf_profile\` 或 \`insider_transactions\`
+    ↓否
+是财报会议记录？ → 是 → 使用 \`earnings_transcript\`（需指定季度）
+    ↓否
+是实时行情？ → 是 → 使用 \`global_quote\`
+    ↓否
+是新闻情绪分析？ → ❌ 优先使用 \`tavily_search\`（更全面）
+    ↓否
+需要历史数据/大宗商品？ → ❌ 禁止使用（parquet模式不可用）
+\`\`\`
+
+### 🚫 绝对禁止行为
+
+1. **禁止使用任何parquet模式**：
+   \`\`\`json
+   // ❌ 错误：这些模式会生成无法处理的文件
+   {
+     "mode": "weekly_adjusted",  // 禁止
+     "parameters": { "symbol": "AAPL" }
+   }
+   \`\`\`
+
+2. **禁止尝试读取工作区文件**：
+   \`\`\`python
+   // ❌ 错误：代码解释器无法读取这些文件
+   import pandas as pd
+   df = pd.read_parquet('/srv/sandbox_workspaces/temp/stock_AAPL.parquet')
+   \`\`\`
+
+3. **禁止单轮研究内超过4次连续调用**：
+   \`\`\`json
+   // ❌ 错误：单轮研究内不要连续调用5次以上
+   // 调用1：正确
+   { "mode": "overview", "parameters": { "symbol": "AAPL" } }
+   // 调用2：正确
+   { "mode": "overview", "parameters": { "symbol": "MSFT" } }
+   // 调用3：正确
+   { "mode": "overview", "parameters": { "symbol": "GOOGL" } }
+   // 调用4：正确
+   { "mode": "overview", "parameters": { "symbol": "AMZN" } }
+   // 调用5：❌ 可能超过每分钟限制
+   { "mode": "overview", "parameters": { "symbol": "TSLA" } }
+   \`\`\`
+
+### ✅ 最佳实践检查清单
+
+在调用AlphaVantage工具前，确认：
+
+- [ ] **模式是否是JSON模式**？（参考上面的推荐列表）
+- [ ] **是否避免了parquet模式**？（参考上面的禁止列表）
+- [ ] **本轮研究已调用次数**？（确保不超过4次连续调用）
+- [ ] **是否需要新闻数据**？（如果是，优先使用\`tavily_search\`）
+- [ ] **数据是否足够进行分析**？（JSON模式提供完整数据）
+
+### 🔧 工具响应结构说明
+
+工具成功调用后，返回的结构：
+\`\`\`json
+{
+  "success": true,
+  "data": { ... },  // ✅ 这里是完整的数据，直接在思考中使用
+  "metadata": {
+    "saved_files": [ ... ],  // ⚠️ 仅供参考，不要依赖这些文件
+    "session_dir": "...",
+    "example_code": "# 数据获取完成"
+  }
+}
+\`\`\`
+
+**正确用法**：
+1. 直接使用 \`response.data\` 进行数据分析
+2. 忽略 \`metadata.saved_files\` 中的文件路径
+3. 在思考中基于数据得出结论
+
+### 🎭 不同研究模式的推荐策略
+
+#### 深度研究模式（Deep）：
+- **重点**：公司基本面深度分析、财务健康度评估
+- **推荐模式**：\`overview\`, \`income_statement\`, \`balance_sheet\`, \`cash_flow\`, \`earnings_estimates\`
+- **备选模式**：\`insider_transactions\`（内部人交易分析）, \`earnings_transcript\`（管理层观点）
+- **调用策略**：最多选择3-4个最相关的模式，避免超过限制
+
+#### 商业分析模式（Business）：
+- **重点**：实时市场表现、竞争分析、ETF配置
+- **推荐模式**：\`global_quote\`, \`etf_profile\`, \`overview\`
+- **调用策略**：针对1-2家公司进行深度分析，避免分散调用
+
+#### 技术方案模式（Technical）：
+- **重点**：API功能验证、数据获取可行性
+- **推荐模式**：\`global_quote\`（测试实时数据）
+- **注意事项**：只测试JSON模式，避免parquet模式
+
+### 💡 实用技巧
+
+#### 技巧1：单轮研究内高效使用4次调用
+\`\`\`json
+// 方案A：分析一家公司的全面财务状况（4次调用）
+1. { "mode": "overview", "parameters": { "symbol": "AAPL" } }
+2. { "mode": "income_statement", "parameters": { "symbol": "AAPL" } }
+3. { "mode": "balance_sheet", "parameters": { "symbol": "AAPL" } }
+4. { "mode": "insider_transactions", "parameters": { "symbol": "AAPL" } }
+
+// 方案B：对比两家公司的基本面和ETF（4次调用）
+1. { "mode": "overview", "parameters": { "symbol": "AAPL" } }
+2. { "mode": "overview", "parameters": { "symbol": "MSFT" } }
+3. { "mode": "etf_profile", "parameters": { "symbol": "SPY" } }
+4. { "mode": "etf_profile", "parameters": { "symbol": "QQQ" } }
+\`\`\`
+
+#### 技巧2：分析JSON数据结构
+在思考中检查数据：
+\`\`\`
+数据字段：\${Object.keys(response.data).join(', ')}
+关键指标：\${response.data.MarketCapitalization} 市值
+         \${response.data.PERatio} 市盈率
+         \${response.data.DividendYield} 股息率
+\`\`\`
+
+#### 技巧3：智能规划调用次数
+在思考中记录：
+\`\`\`
+本轮研究已调用AlphaVantage：3次
+剩余可用调用：1次（避免超过4次限制）
+最重要的剩余需求：获取内部人交易数据
+\`\`\`
+
+### 📈 数据质量验证
+
+#### 验证JSON数据完整性：
+在思考中进行简单验证：
+\`\`\`
+检查数据：\${response.data ? '✅ 数据获取成功' : '❌ 数据为空'}
+关键字段：\${response.data.symbol || response.data.Symbol || '未找到'}
+数据时间：\${response.data.LatestQuarter || response.data.Latest Trading Day || '未知'}
+\`\`\`
+
+### 🚀 快速开始示例
+
+#### 场景：分析特斯拉财务状况和内部人交易（3次调用）
+\`\`\`
+思考：我需要分析特斯拉的财务状况，同时了解近期内部人交易情况。
+本轮研究已调用0次，可以安全使用最多4次。
+
+行动：alphavantage
+行动输入：{
+  "mode": "overview",
+  "parameters": {
+    "symbol": "TSLA"
+  }
+}
+\`\`\`
+
+#### 场景：分析标普500 ETF配置和对比公司（4次调用）
+\`\`\`
+思考：我需要了解标普500 ETF配置，并对比苹果和微软的基本面。
+本轮研究已调用1次，还可以调用3次。
+
+行动：alphavantage
+行动输入：{
+  "mode": "etf_profile",
+  "parameters": {
+    "symbol": "SPY"
+  }
+}
+\`\`\`
+
+#### 场景：获取微软财报会议记录和基本面（2次调用）
+\`\`\`
+思考：我需要微软最新季度的财报会议记录和基本面数据。
+本轮研究已调用2次，还可以调用2次。
+
+行动：alphavantage
+行动输入：{
+  "mode": "earnings_transcript",
+  "parameters": {
+    "symbol": "MSFT",
+    "quarter": "2025Q3"
+  }
+}
+\`\`\`
+
+### 🔄 后续分析策略
+
+#### 策略A：在思考中直接分析
+- 直接从JSON数据中提取关键指标
+- 进行简单计算和对比
+- 生成初步结论
+
+#### 策略B：传递给代码解释器
+- 将JSON数据作为字符串传递给代码解释器
+- 进行复杂的统计分析和可视化
+- **注意**：只传递数据，不传递文件路径
+
+#### 策略C：多轮数据收集（考虑API限制）
+1. 单轮研究最多使用4次调用
+2. 优先获取最重要的数据
+3. 如果需要更多数据，考虑是否必要或等待下一轮研究
+
+### 📚 学习与改进
+
+#### 记录使用经验：
+- 哪些JSON模式的数据最有价值？
+- 如何优化查询参数获得更好结果？
+- 不同公司的数据质量如何？
+
+#### 分享最佳实践：
+- 在团队中分享成功的数据分析案例
+- 记录常见的数据获取问题
+- 建立标准的数据验证流程
+
+---
+
+## 🎯 最终决策规则
+
+**当需要使用金融数据时，遵循以下规则：**
+
+1. **核心使用场景**：公司基本面分析、ETF分析、内部人交易、财报会议记录
+
+2. **只能使用JSON模式**：\`global_quote\`, \`overview\`, \`income_statement\`, \`balance_sheet\`, \`cash_flow\`, \`earnings\`, \`earnings_estimates\`, \`dividends\`, \`shares_outstanding\`, \`insider_transactions\`, \`etf_profile\`, \`earnings_transcript\`
+
+3. **禁止使用Parquet模式**：\`weekly_adjusted\`, \`forex_daily\`, \`digital_currency_daily\`, \`wti\`, \`brent\`, \`copper\`, \`treasury_yield\`
+
+4. **新闻数据策略**：优先使用\`tavily_search\`获取新闻，\`news_sentiment\`仅作为备选
+
+5. **API速率管理**：
+   - 单轮研究内最多连续调用 **4次**（留出1次缓冲）
+   - 注意每日25次的总限制
+   - 优先获取最重要的数据，避免浪费调用次数
+
+6. **数据获取**：工具返回的JSON数据是完整的，直接在思考中使用
+
+7. **文件处理**：忽略所有文件路径，只使用JSON数据
+
+**调用计数器示例（在思考中记录）：**
+\`\`\`
+AlphaVantage调用记录：
+- 本轮研究已调用：2次
+- 剩余安全调用次数：2次
+- 今日总调用：5次（注意不要超过25次）
+\`\`\`
+
+现在你已完全了解AlphaVantage工具的正确使用方法。请严格遵守上述规则，优先使用基本面数据相关模式，并智能管理API调用次数。
+`;
         
         // 💼 行业分析模式专用约束
         const businessModeConstraints = researchMode === 'business' ? `
@@ -2268,6 +2640,8 @@ ${dataBusIntegration(dataBusSummary, similarityDetection)} // 🎯 核心新增�
 ${dataBusIntelligenceProtocol(dataBusSummary)} // 🎯 核心新增：数据总线智能激活协议
  
 ${modeAwareCrawlStrategy} // 🎯 核心替换：插入模式感知的抓取策略
+
+${alphavantageGuidance} // 💹 插入：AlphaVantage 金融数据工具专用指导
  
 ${businessModeConstraints} // 💼 插入：行业分析模式专用约束
 
