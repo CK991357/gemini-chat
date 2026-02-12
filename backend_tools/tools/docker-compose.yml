@@ -1,4 +1,4 @@
-# docker-compose.yml (最终的、绝对路径绑定版本)
+# docker-compose.yml (最终的、绝对路径绑定版本 + 文件挂载热更新)
 
 services:
   python-sandbox:
@@ -11,6 +11,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # 🎯 核心修复：将主机的绝对路径 /srv/sandbox_workspaces 挂载到容器内的相同路径
       - /srv/sandbox_workspaces:/srv/sandbox_workspaces
+      # 🚀 新增：将宿主机当前目录下的 code_interpreter.py 挂载到容器内，覆盖镜像文件
+      - ./code_interpreter.py:/app/code_interpreter.py
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
