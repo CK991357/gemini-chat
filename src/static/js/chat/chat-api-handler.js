@@ -1088,7 +1088,10 @@ export class ChatApiHandler {
                     parameters: finalParameters,
                     requestId: `tool_call_${Date.now()}`,
                     // 🎯 核心修复：为Agent的工具调用添加会话ID，使其能够读写文件
-                    session_id: this.state.currentSessionId
+                    // 🚀 修正：仅当 session_id 以 "session_" 开头时才视为有效 Agent 会话 ID
+                    session_id: this.state.currentSessionId && this.state.currentSessionId.startsWith("session_") 
+                        ? this.state.currentSessionId 
+                        : undefined
                 }),
             });
 

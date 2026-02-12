@@ -217,9 +217,13 @@ async def api_execute_tool(request: ToolExecutionRequest):
         # 获取参数字典
         params = request.parameters.dict() if hasattr(request.parameters, 'dict') else request.parameters
         
-        # 🎯 关键修复：将 session_id 注入 parameters，确保传递给工具
-        if request.session_id:
+        # 🚀 核心修复：仅当 session_id 以 "session_" 开头时才视为有效 Agent 会话 ID
+        if request.session_id and request.session_id.startswith("session_"):
             params["session_id"] = request.session_id
+            logger.debug(f"Injecting agent session_id: {request.session_id}")
+        else:
+            # 普通模式：不注入 session_id，工具将自动使用 temp
+            logger.debug(f"Non-agent session_id ignored: {request.session_id}, will use temp")
 
         result = await execute_tool(request.tool_name, params)
         

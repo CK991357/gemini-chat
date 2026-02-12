@@ -377,7 +377,12 @@ print(stderr_val, file=sys.stderr, end='')
         try:
             logger.info(f"Running code in sandbox. Code length: {len(parameters.code)}")
             
-            # --- 文件挂载逻辑 ---
+            # --- 文件挂载逻辑：仅以 'session_' 开头的 ID 视为有效会话，否则挂载 temp ---
+            effective_session_id = session_id if session_id and session_id.startswith("session_") else "temp"
+            host_session_path = SESSION_WORKSPACE_ROOT / effective_session_id
+            host_session_path.mkdir(parents=True, exist_ok=True)
+            
+            # --- 容器配置 ---
             container_config = {
                 "image": image_name,
                 "command": ["python", "-c", runner_script],
@@ -390,24 +395,17 @@ print(stderr_val, file=sys.stderr, end='')
                 "cpu_quota": 75_000,
                 "read_only": True,
                 "tmpfs": {'/tmp': 'size=100M,mode=1777'},
-                "detach": True
-            }
-            
-            # 如果有 session_id，挂载会话工作区
-            if session_id:
-                host_session_path = SESSION_WORKSPACE_ROOT / session_id
-                # 🎯 核心修复：按需创建会话目录，解耦对文件上传的依赖
-                host_session_path.mkdir(exist_ok=True)
-                
-                # 现在可以安全地挂载
-                container_config["volumes"] = {
+                "detach": True,
+                "volumes": {
                     str(host_session_path.resolve()): {
                         'bind': '/data',
                         'mode': 'rw'
                     }
-                }
-                container_config["working_dir"] = '/data'
-                logger.info(f"Mounting session workspace: {host_session_path} -> /data")
+                },
+                "working_dir": '/data'
+            }
+            
+            logger.info(f"Mounted session workspace: {host_session_path} -> /data")
             
             container = self.docker_client.containers.create(**container_config)
 
@@ -515,11 +513,12 @@ app = FastAPI(
 
 # --- 文件上传API ---
 @app.post("/api/v1/files/upload")
-async def upload_file(session_id: str = Form(...), file: UploadFile = File(...)):
-    """上传文件到会话工作区"""
-    if not session_id:
-        raise HTTPException(status_code=400, detail="Session ID is required.")
-
+async def upload_file(session_id: str = Form(None), file: UploadFile = File(...)):
+    """上传文件到会话工作区。仅以 'session_' 开头的 ID 视为有效会话，否则强制使用 temp。"""
+    
+    # 🎯 核心修改：基于前缀的安全会话识别
+    effective_session_id = session_id if session_id and session_id.startswith("session_") else "temp"
+    
     # 验证文件类型
     allowed_extensions = {'.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt'}
     mime_to_extension = {
@@ -552,8 +551,8 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
             detail=f"不支持的文件类型: {file_extension} (MIME: {mime_type})。支持的类型: {', '.join(allowed_extensions)}"
         )
 
-    session_dir = SESSION_WORKSPACE_ROOT / session_id
-    session_dir.mkdir(exist_ok=True)
+    session_dir = SESSION_WORKSPACE_ROOT / effective_session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
     
     file_path = session_dir / file.filename
     
@@ -568,7 +567,7 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
         container_path = f"/data/{file.filename}"
         file_size = file_path.stat().st_size
         
-        logger.info(f"File '{file.filename}' ({file_size} bytes) uploaded for session '{session_id}' -> '{container_path}'")
+        logger.info(f"File '{file.filename}' ({file_size} bytes) uploaded for session '{effective_session_id}' -> '{container_path}'")
         
         return {
             "success": True,
@@ -576,16 +575,21 @@ async def upload_file(session_id: str = Form(...), file: UploadFile = File(...))
             "filename": file.filename,
             "container_path": container_path,
             "file_size": file_size,
-            "session_id": session_id
+            "session_id": effective_session_id  # 返回实际使用的会话ID
         }
     except Exception as e:
-        logger.error(f"File upload failed for session '{session_id}': {e}")
+        logger.error(f"File upload failed for session '{effective_session_id}': {e}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
 
 # --- 清理会话API ---
 @app.delete("/api/v1/sessions/{session_id}")
 async def cleanup_session(session_id: str):
-    """清理指定会话的工作区"""
+    """清理指定会话的工作区。仅清理以 'session_' 开头的有效会话。"""
+    
+    # 🎯 核心修改：验证会话ID格式
+    if not session_id.startswith("session_"):
+        raise HTTPException(status_code=400, detail="Only sessions with 'session_' prefix can be cleaned up")
+    
     session_dir = SESSION_WORKSPACE_ROOT / session_id
     
     if not session_dir.exists():
@@ -608,6 +612,10 @@ async def run_python_sandbox(request_data: dict):
     try:
         # 从请求中获取 session_id
         session_id = request_data.get('session_id')
+        
+        # 🎯 核心修改：应用相同的会话识别逻辑
+        effective_session_id = session_id if session_id and session_id.startswith("session_") else "temp"
+        
         code_to_execute = request_data.get('parameters', {}).get('code')
         
         if not code_to_execute:
@@ -615,8 +623,8 @@ async def run_python_sandbox(request_data: dict):
         
         input_data = CodeInterpreterInput(code=code_to_execute)
         
-        # 将 session_id 传递给 execute 方法
-        result = await code_interpreter_instance.execute(input_data, session_id)
+        # 将处理后的 session_id 传递给 execute 方法
+        result = await code_interpreter_instance.execute(input_data, effective_session_id)
         
         if result.get("success"):
             return result.get("data")
@@ -685,7 +693,12 @@ def get_safe_path(session_id: str, filename: str = None) -> Path:
 
 @app.get("/api/v1/files/list/{session_id}", response_model=List[FileInfo])
 async def list_files_for_session(session_id: str):
-    """列出指定会话工作区中的所有文件。"""
+    """列出指定会话工作区中的所有文件。仅允许 'session_' 开头的会话ID。"""
+    
+    # 🎯 核心修改：验证会话ID格式
+    if not session_id.startswith("session_"):
+        raise HTTPException(status_code=400, detail="Only sessions with 'session_' prefix are allowed")
+    
     session_path = get_safe_path(session_id)
     if not session_path.is_dir():
         return [] # 如果目录不存在，返回空列表而不是404

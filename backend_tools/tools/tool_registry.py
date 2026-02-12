@@ -72,9 +72,11 @@ async def cleanup_tools():
     tool_instances.clear()
     logger.info("All tool instances cleaned up")
 
-async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_tool(tool_name: str, parameters: Dict[str, Any], session_id: str = None) -> Dict[str, Any]:
     """
     使用共享的工具实例来查找、验证和执行工具。
+    
+    🎯 新增：支持session_id参数，用于会话隔离和数据共享
     """
     if tool_name not in tool_instances:
         available_tools = list(tool_instances.keys())
@@ -84,15 +86,17 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
 
     tool_instance = tool_instances[tool_name]
     
-    # 🎯 关键修复：在验证前从原始参数中提取session_id
-    session_id = None
+    # 🎯 核心修复：在验证前从原始参数中提取session_id
+    extracted_session_id = None
     if tool_name == "alphavantage":
         # 从原始参数中提取 session_id（如果存在）
-        session_id = parameters.get("session_id")
+        extracted_session_id = parameters.get("session_id")
         # 复制参数并移除 session_id，避免验证错误
         parameters_for_validation = {k: v for k, v in parameters.items() if k != "session_id"}
     else:
         parameters_for_validation = parameters
+        # 对于其他工具，使用传入的session_id参数
+        extracted_session_id = session_id
     
     # 输入验证 (使用 tool_instance 的 schema)
     try:
@@ -113,10 +117,10 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         
         # 🎯 修复后：为AlphaVantage工具传递session_id
         if tool_name == "alphavantage":
-            result = await tool_instance.execute(validated_parameters, session_id=session_id)
+            result = await tool_instance.execute(validated_parameters, session_id=extracted_session_id)
         else:
-            # 其他工具保持原有调用方式
-            result = await tool_instance.execute(validated_parameters)
+            # 其他工具保持原有调用方式，但传递session_id参数
+            result = await tool_instance.execute(validated_parameters, extracted_session_id)
             
         logger.info(f"Tool {tool_name} executed successfully")
         return result
