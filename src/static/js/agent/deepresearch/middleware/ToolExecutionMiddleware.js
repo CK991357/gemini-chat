@@ -120,19 +120,30 @@ export class ToolExecutionMiddleware {
                     for (const key of stepKeys) {
                         const data = this.dataBus.get(key);
                         if (data && data.metadata && data.metadata.toolName === 'crawl4ai') {
-                            const rawData = data.rawData || data.originalData;
-                            if (rawData && rawData.length > 100) {
-                                console.log(`[ToolExecutionMiddleware] ✅ 找到最新crawl4ai数据: ${key}, 长度: ${rawData.length} 字符`);
-                                
-                                // 安全截断，防止提示词过长
-                                const maxDataLength = 15000;
-                                if (rawData.length > maxDataLength) {
-                                    const firstPart = rawData.substring(0, 8000);
-                                    const middlePart = rawData.substring(8000, 14000);
-                                    actualDataContext = firstPart + middlePart + "\n[...内容过长，已截断部分中间内容...]";
-                                } else {
-                                    actualDataContext = rawData;
+                            // ✅ 优先使用元数据中存储的原始 JSON（如果存在）
+                            if (data.metadata.originalData) {
+                                actualDataContext = JSON.stringify(data.metadata.originalData);
+                                console.log(`[ToolExecutionMiddleware] ✅ 使用metadata中的原始JSON数据 (${actualDataContext.length} 字符)`);
+                            } else {
+                                // 降级：从文本中提取（兼容旧数据）
+                                const rawData = data.rawData || data.originalData;
+                                if (rawData && rawData.length > 100) {
+                                    console.log(`[ToolExecutionMiddleware] ⚠️ 使用降级文本提取，长度: ${rawData.length} 字符`);
+                                    
+                                    // 安全截断，防止提示词过长
+                                    const maxDataLength = 15000;
+                                    if (rawData.length > maxDataLength) {
+                                        const firstPart = rawData.substring(0, 8000);
+                                        const middlePart = rawData.substring(8000, 14000);
+                                        actualDataContext = firstPart + middlePart + "\n[...内容过长，已截断部分中间内容...]";
+                                    } else {
+                                        actualDataContext = rawData;
+                                    }
                                 }
+                            }
+                            
+                            if (actualDataContext && actualDataContext.length > 100) {
+                                console.log(`[ToolExecutionMiddleware] ✅ 找到最新crawl4ai数据: ${key}, 长度: ${actualDataContext.length} 字符`);
                                 break;
                             }
                         }
@@ -143,16 +154,26 @@ export class ToolExecutionMiddleware {
                     for (const key of stepKeys) {
                         const data = this.dataBus.get(key);
                         if (data && data.metadata && data.metadata.toolName === 'alphavantage') {
-                            const rawData = data.rawData || data.originalData;
-                            if (rawData && rawData.length > 100) {
-                                console.log(`[ToolExecutionMiddleware] ✅ 找到最新alphavantage数据: ${key}, 长度: ${rawData.length} 字符`);
+                            // ✅ 优先使用元数据中存储的原始 JSON
+                            if (data.metadata.originalData) {
+                                actualDataContext = JSON.stringify(data.metadata.originalData);
+                                console.log(`[ToolExecutionMiddleware] ✅ 使用metadata中的原始JSON数据 (${actualDataContext.length} 字符)`);
+                            } else {
+                                // 降级：从文本中提取（兼容旧数据）
+                                const rawData = data.rawData || data.originalData;
+                                if (rawData && rawData.length > 100) {
+                                    console.log(`[ToolExecutionMiddleware] ⚠️ 使用降级文本提取，长度: ${rawData.length} 字符`);
+                                    actualDataContext = rawData;  // 原有逻辑
+                                }
+                            }
+                            
+                            if (actualDataContext && actualDataContext.length > 100) {
+                                console.log(`[ToolExecutionMiddleware] ✅ 找到最新alphavantage数据: ${key}, 长度: ${actualDataContext.length} 字符`);
                                 
                                 // 安全截断，防止提示词过长
                                 const maxDataLength = 10000;
-                                if (rawData.length > maxDataLength) {
-                                    actualDataContext = rawData.substring(0, maxDataLength) + "\n[...金融数据过长，已截断部分内容...]";
-                                } else {
-                                    actualDataContext = rawData;
+                                if (actualDataContext.length > maxDataLength) {
+                                    actualDataContext = actualDataContext.substring(0, maxDataLength) + "\n[...金融数据过长，已截断部分内容...]";
                                 }
                                 break;
                             }
@@ -1151,6 +1172,8 @@ except Exception as e:
         let rawObservation;
         let toolSources = [];
         let toolSuccess = false;
+        // 🔧 新增：用于传递原始数据给上层
+        let originalDataForResult = null;
 
         if (!tool) {
             rawObservation = `错误: 工具 "${toolName}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
@@ -1386,6 +1409,11 @@ except Exception as e:
                 try {
                     console.log('[ToolExecutionMiddleware] 💹 处理alphavantage工具返回结果');
                     
+                    // ========== 新增：保留原始 JSON 对象 ==========
+                    const originalData = toolResult.data || toolResult;  // 根据实际返回结构调整
+                    originalDataForResult = originalData;               // 赋值给外部变量，随结果返回
+                    // =============================================
+                    
                     // 尝试解析JSON结果
                     let parsedResult;
                     try {
@@ -1536,8 +1564,13 @@ except Exception as e:
         console.log(`[ToolExecutionMiddleware] 📊 工具调用记录完成: ${toolName}, 成功: ${toolSuccess}`);
         
         // 🔥 核心修复：保持与附件版完全一致的返回结构
-        // 不包含 metadata 字段，确保与主文件兼容
-        return { rawObservation, toolSources, toolSuccess };
+        // 不包含 metadata 字段，确保与主文件兼容，但添加 originalData 用于传递原始数据
+        const result = { rawObservation, toolSources, toolSuccess };
+        if (originalDataForResult) {
+            result.originalData = originalDataForResult;
+            result.originalDataType = 'alphavantage';
+        }
+        return result;
     }
 
     // ============================================================
@@ -1649,6 +1682,15 @@ except Exception as e:
                     }
                 }
             }
+
+            // ========== 🆕 新增：将原始数据合并到 metadata ==========
+            if (toolName === 'alphavantage' && result.originalData) {
+                metadata.originalData = result.originalData;
+                metadata.hasOriginalData = true;
+                metadata.originalDataType = result.originalDataType || 'alphavantage';
+                console.log(`[ToolExecutionMiddleware] ✅ 已将原始数据合并到 metadata，准备存储`);
+            }
+            // ========================================================
             
             this.storeRawDataMethod(
                 stepIndex, 
