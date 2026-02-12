@@ -125,7 +125,7 @@ TOOLS_CATALOG = [
   },
   {
     "name": "alphavantage",
-    "description": "从AlphaVantage获取金融数据的完整工具。支持股票、期权、财报、内部交易、ETF、外汇、数字货币、大宗商品、国债收益率、新闻情绪等13种数据类型。数据会保存到会话工作区。",
+    "description": "从AlphaVantage获取金融数据的完整工具。支持股票、财报、内部交易、ETF、外汇、数字货币、大宗商品、国债收益率、新闻情绪、公司概况、三张报表、盈利预测等20种数据类型。数据会保存到会话工作区。",
     "endpoint_url": "https://tools.10110531.xyz/api/v1/execute_tool",
     "input_schema": {
       "title": "AlphaVantageInput",
@@ -134,7 +134,15 @@ TOOLS_CATALOG = [
         "mode": { 
           "title": "Mode", 
           "type": "string", 
-          "enum": ["weekly_adjusted", "global_quote", "historical_options", "earnings_transcript", "insider_transactions", "etf_profile", "forex_daily", "digital_currency_daily", "wti", "brent", "copper", "treasury_yield", "news_sentiment"], 
+          "enum": [
+            "weekly_adjusted", "global_quote", "earnings_transcript",
+            "insider_transactions", "etf_profile", "forex_daily",
+            "digital_currency_daily", "wti", "brent", "copper",
+            "treasury_yield", "news_sentiment", "overview",
+            "income_statement", "balance_sheet", "cash_flow",
+            "earnings", "earnings_estimates", "dividends",
+            "shares_outstanding"
+          ], 
           "description": "要执行的AlphaVantage功能模式" 
         },
         "parameters": { 
@@ -166,6 +174,10 @@ TOOLS_CATALOG = [
       "treasury_yield": {
         "mode": "treasury_yield",
         "parameters": {"maturity": "10year", "interval": "monthly"}
+      },
+      "overview": {
+        "mode": "overview",
+        "parameters": {"symbol": "AAPL"}
       }
     }
   }
@@ -202,11 +214,14 @@ async def api_execute_tool(request: ToolExecutionRequest):
     This is the main endpoint for the tool server.
     """
     try:
-        # 🎯 修复：传递session_id给execute_tool函数
-        result = await execute_tool(
-            request.tool_name, 
-            request.parameters.dict() if hasattr(request.parameters, 'dict') else request.parameters
-        )
+        # 获取参数字典
+        params = request.parameters.dict() if hasattr(request.parameters, 'dict') else request.parameters
+        
+        # 🎯 关键修复：将 session_id 注入 parameters，确保传递给工具
+        if request.session_id:
+            params["session_id"] = request.session_id
+
+        result = await execute_tool(request.tool_name, params)
         
         # 如果工具执行本身失败，也可能需要一个特定的HTTP状态码
         if isinstance(result, dict) and result.get("success") == False:
