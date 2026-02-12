@@ -1857,31 +1857,88 @@ const alphavantageGuidance = `
 
 ### 🚨 核心原则（必须遵守）
 
-#### 1. **格式使用限制**：
-- **✅ 可以正常使用**：所有返回 **JSON 格式数据** 的模式
-- **❌ 禁止使用**：所有返回 **.parquet 文件** 的模式（当前环境无法处理）
+#### 1. **双通道数据获取机制**：
+- **数据总线通道**：所有 **JSON 格式数据**的模式，工具会将完整 JSON **直接返回**给模型，可在思考中即时使用，**适合小数据量快速分析**。
+- **文件系统通道**：**所有模式（包括 JSON 和 Parquet）**，工具都会将数据文件**自动保存到会话工作区**，后续可由代码解释器通过 \`/data/\` 路径直接读取，**适合大数据量、复杂计算、可视化**。
 
-#### 2. **数据获取机制**：
-- **JSON 数据**：工具会**完整返回**给模型，可直接在思考中使用
-- **Parquet 文件**：工具会保存到工作区，但**无法被后续工具处理**
-
-#### 3. **API速率限制**：
+#### 2. **API速率限制**：
 - **免费版限制**：25次/天，5次/分钟
 - **智能使用策略**：
   - **单轮研究内**：可连续使用最多 **4次**，避免超过每分钟限制
   - **跨轮研究**：注意每日25次的总限制
   - **避免浪费**：确保每次调用都有明确目的
 
+---
+
+### 📁 **3. 文件系统访问与命名规则（重要）**
+
+#### 🔧 **自动挂载规则**
+- 会话目录宿主机路径：\`/srv/sandbox_workspaces/<session_id>/\`
+- 容器内挂载路径：\`/data/\`
+- **无需任何手动上传**，代码解释器每次调用都会自动挂载同一目录。
+
+#### 📌 **文件命名规则（可直接用于代码）**
+| 数据类型 | 模式名称 | 文件名格式 | 示例 |
+|---------|---------|-----------|------|
+| 实时行情 | \`global_quote\` | \`quote_{symbol}.json\` | \`quote_AAPL.json\` |
+| 公司概况 | \`overview\` | \`overview_{symbol}.json\` | \`overview_MSFT.json\` |
+| 利润表 | \`income_statement\` | \`income_statement_{symbol}.json\` | \`income_statement_NET.json\` |
+| 资产负债表 | \`balance_sheet\` | \`balance_sheet_{symbol}.json\` | \`balance_sheet_GOOGL.json\` |
+| 现金流量表 | \`cash_flow\` | \`cash_flow_{symbol}.json\` | \`cash_flow_TSLA.json\` |
+| 每股收益 | \`earnings\` | \`earnings_{symbol}.json\` | \`earnings_AMZN.json\` |
+| 盈利预测 | \`earnings_estimates\` | \`earnings_estimates_{symbol}.json\` | \`earnings_estimates_NVDA.json\` |
+| 股息历史 | \`dividends\` | \`dividends_{symbol}.json\` | \`dividends_JPM.json\` |
+| 流通股 | \`shares_outstanding\` | \`shares_outstanding_{symbol}.json\` | \`shares_outstanding_AAPL.json\` |
+| 内部人交易 | \`insider_transactions\` | \`insider_{symbol}.json\` | \`insider_TSLA.json\` |
+| ETF 资料 | \`etf_profile\` | \`etf_{symbol}_profile.json\` | \`etf_SPY_profile.json\` |
+| 财报会议 | \`earnings_transcript\` | \`transcript_{symbol}_{quarter}.json\` | \`transcript_MSFT_2025Q3.json\` |
+| 周调整数据 | \`weekly_adjusted\` | \`stock_{symbol}.parquet\` | \`stock_AAPL.parquet\` |
+| 外汇每日 | \`forex_daily\` | \`forex_{from}_{to}.parquet\` | \`forex_USD_JPY.parquet\` |
+| 数字货币 | \`digital_currency_daily\` | \`crypto_{symbol}_{market}.parquet\` | \`crypto_BTC_USD.parquet\` |
+| WTI原油 | \`wti\` | \`commodity_WTI_{interval}.parquet\` | \`commodity_WTI_monthly.parquet\` |
+| Brent原油 | \`brent\` | \`commodity_BRENT_{interval}.parquet\` | \`commodity_BRENT_monthly.parquet\` |
+| 铜价 | \`copper\` | \`commodity_COPPER_{interval}.parquet\` | \`commodity_COPPER_monthly.parquet\` |
+| 国债收益率 | \`treasury_yield\` | \`treasury_{maturity}_{interval}.parquet\` | \`treasury_10year_monthly.parquet\` |
+| 新闻情绪 | \`news_sentiment\` | \`news_{tickers}_{topics}.json\` | \`news_AAPL_MSFT.json\` |
+
+#### ⚠️ **文件读取规范（沙箱安全限制）**
+由于安全策略，**代码解释器中禁止直接使用 \`open()\` 函数**。  
+所有文件读取操作**必须通过 \`pandas.io.common.get_handle\` 获取内部文件句柄**，或使用 \`pd.read_json()\` / \`pd.read_parquet()\` 等高层API（它们已内部正确处理）。
+
+**✅ 正确示例：读取 JSON 文件**
+\`\`\`python
+import pandas as pd
+import json
+
+file_path = '/data/income_statement_NET.json'
+try:
+    with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
+        raw_content = f.handle.read()
+        data = json.loads(raw_content)
+    annual_reports = data.get('annualReports', [])
+    # ... 后续分析
+except Exception as e:
+    print(f"读取失败: {e}")
+\`\`\`
+
+**✅ 正确示例：读取 Parquet 文件**
+\`\`\`python
+import pandas as pd
+df = pd.read_parquet('/data/stock_AAPL.parquet')  # 内部已正确处理
+\`\`\`
+
+---
+
 ### 📊 模式选择指南（根据你的需求选择）
 
-#### 🟢 **推荐使用 - JSON 数据模式**（共13种）
-这些模式返回的数据可直接使用：
+#### 🟢 **JSON 数据模式（共13种）**
+这些模式返回的 JSON 数据会通过**数据总线**直接传递，适合小规模即时分析：
 
 **1. 实时行情数据**
 - \`global_quote\`：获取股票实时行情（价格、成交量等）
 - **示例**：\`{ "mode": "global_quote", "parameters": { "symbol": "AAPL" } }\`
 
-**2. 公司基本面数据**（返回完整JSON，最适合分析）
+**2. 公司基本面数据**（返回完整JSON）
 - \`overview\`：公司概况和财务比率（市值、市盈率、股息收益率等）
 - \`income_statement\`：利润表数据（年报和季报）
 - \`balance_sheet\`：资产负债表数据
@@ -1898,15 +1955,19 @@ const alphavantageGuidance = `
 - \`news_sentiment\`：市场新闻和情绪分析（可设置tickers和limit）
 - **注意**：对于新闻获取，建议优先使用\`tavily_search\`工具，它提供更全面的新闻覆盖和摘要
 
-#### 🔴 **禁止使用 - Parquet 数据模式**（共6种）
-这些模式生成.parquet文件，**无法被处理**：
-- \`weekly_adjusted\`：股票周调整数据
-- \`forex_daily\`：外汇每日数据  
-- \`digital_currency_daily\`：数字货币每日数据
-- \`wti\`：WTI原油价格数据
-- \`brent\`：Brent原油价格数据
-- \`copper\`：全球铜价数据
-- \`treasury_yield\`：国债收益率数据（也生成parquet）
+#### 🟦 **文件系统模式（所有模式均可用，含Parquet）**
+**所有模式（包括上述JSON模式和以下模式）都会同时保存文件**，特别适合大数据量场景：
+- \`weekly_adjusted\`：股票周调整数据（保存为Parquet）
+- \`forex_daily\`：外汇每日数据（Parquet）
+- \`digital_currency_daily\`：数字货币每日数据（Parquet）
+- \`wti\`：WTI原油价格数据（Parquet）
+- \`brent\`：Brent原油价格数据（Parquet）
+- \`copper\`：全球铜价数据（Parquet）
+- \`treasury_yield\`：国债收益率数据（Parquet）
+
+**这些文件均可通过代码解释器读取，无需任何额外操作。**
+
+---
 
 ### 🎯 正确使用示例
 
@@ -1919,7 +1980,7 @@ const alphavantageGuidance = `
   }
 }
 \`\`\`
-**返回**：完整的JSON数据，包含市值、市盈率、股息收益率等50+个指标
+**返回**：完整的JSON数据，包含市值、市盈率、股息收益率等50+个指标；同时文件 \`/data/overview_AAPL.json\` 已保存。
 
 #### 示例2：获取公司内部人交易
 \`\`\`json
@@ -1930,7 +1991,7 @@ const alphavantageGuidance = `
   }
 }
 \`\`\`
-**返回**：最近的公司内部人买卖交易记录
+**返回**：最近的公司内部人买卖交易记录；同时文件 \`/data/insider_TSLA.json\` 已保存。
 
 #### 示例3：获取ETF持仓数据
 \`\`\`json
@@ -1941,7 +2002,7 @@ const alphavantageGuidance = `
   }
 }
 \`\`\`
-**返回**：ETF的行业配置、持仓明细、费率等信息
+**返回**：ETF的行业配置、持仓明细、费率等信息；同时文件 \`/data/etf_SPY_profile.json\` 已保存。
 
 #### 示例4：获取财报电话会议记录
 \`\`\`json
@@ -1953,85 +2014,77 @@ const alphavantageGuidance = `
   }
 }
 \`\`\`
-**返回**：指定季度的财报电话会议完整记录
+**返回**：指定季度的财报电话会议完整记录；同时文件 \`/data/transcript_MSFT_2024-Q1.json\` 已保存。
+
+#### 示例5：获取周调整数据进行可视化（文件读取）
+\`\`\`json
+{
+  "mode": "weekly_adjusted",
+  "parameters": {
+    "symbol": "AAPL"
+  }
+}
+\`\`\`
+**返回**：JSON摘要（示例数据）；**完整数据保存在 \`/data/stock_AAPL.parquet\`**，可通过代码解释器读取并绘图。
+
+---
 
 ### ⚠️ 重要提醒
 
-#### 关于Parquet文件：
-1. **禁止尝试读取**：不要在代码解释器中尝试读取.parquet文件
-2. **禁止依赖路径**：不要依赖工具返回的文件路径
-3. **只能使用JSON模式**：所有分析必须基于JSON模式的数据
+#### 关于文件系统：
+1. **所有模式均会保存文件**，文件名符合上述命名规则，**可直接在代码解释器中使用**。
+2. **读取Parquet文件**：使用 \`pd.read_parquet('/data/xxx.parquet')\`，无需任何特殊处理。
+3. **读取JSON文件**：必须使用 \`pd.io.common.get_handle\` 或 \`pd.read_json()\`，**禁止直接 \`open()\`**。
 
 #### 关于JSON数据：
-1. **数据是完整的**：工具返回的JSON包含所有需要的信息
-2. **可直接分析**：在思考中直接使用这些数据进行分析
-3. **可传递给代码解释器**：如果需要复杂计算，可将JSON数据传递给代码解释器
+1. **数据是完整的**：工具返回的JSON包含所有需要的信息，适合快速查看。
+2. **可直接分析**：在思考中直接使用这些数据进行分析。
+3. **可传递给代码解释器**：如果需要复杂计算且数据量不大，可将JSON数据传递给代码解释器（硬编码）。
 
 #### 关于API速率：
-1. **单轮研究内**：最多连续使用 **4次**，避免超过每分钟5次的限制
-2. **每日总限制**：注意不要超过25次/天的总限制
-3. **智能规划**：优先获取最重要的数据，避免不必要的调用
+1. **单轮研究内**：最多连续使用 **4次**，避免超过每分钟5次的限制。
+2. **每日总限制**：注意不要超过25次/天的总限制。
+3. **智能规划**：优先获取最重要的数据，避免不必要的调用。
+
+---
 
 ### 📋 决策流程图
 
 \`\`\`
 需要金融数据？
     ↓
-是公司基本面分析？ → 是 → 使用 \`overview\` 等基本面JSON模式
+是否需要复杂计算/大数据量？ ──是──→ 使用文件系统读取（推荐）
     ↓否
-是ETF/内部交易分析？ → 是 → 使用 \`etf_profile\` 或 \`insider_transactions\`
+数据量小（<5000字符）？ ──是──→ 使用数据总线传递（直接解析）
     ↓否
-是财报会议记录？ → 是 → 使用 \`earnings_transcript\`（需指定季度）
-    ↓否
-是实时行情？ → 是 → 使用 \`global_quote\`
-    ↓否
-是新闻情绪分析？ → ❌ 优先使用 \`tavily_search\`（更全面）
-    ↓否
-需要历史数据/大宗商品？ → ❌ 禁止使用（parquet模式不可用）
+仍建议使用文件读取（更简洁）
+    ↓
+根据目标选择模式（所有模式均可用）
+    ↓
+执行调用 → 保存文件 → 后续代码直接读文件
 \`\`\`
+
+---
 
 ### 🚫 绝对禁止行为
 
-1. **禁止使用任何parquet模式**：
-   \`\`\`json
-   // ❌ 错误：这些模式会生成无法处理的文件
-   {
-     "mode": "weekly_adjusted",  // 禁止
-     "parameters": { "symbol": "AAPL" }
-   }
-   \`\`\`
+1. **滥用 API**：单轮研究连续调用 ≥5 次（可能触发 429 限流）。
+2. **硬编码超大数据**：若数据量 > 5000 字符，禁止在 \`data_context\` 中传递完整 JSON，必须改用文件读取。
+3. **依赖未知路径**：不要使用 \`metadata.saved_files\` 中返回的动态路径，直接使用上表**固定命名规则**。
+4. **禁止直接使用 \`open()\`**：所有文件读取必须通过 \`pd.io.common.get_handle\` 或 Pandas 高层 API（\`pd.read_json\`、\`pd.read_parquet\` 等）。
 
-2. **禁止尝试读取工作区文件**：
-   \`\`\`python
-   // ❌ 错误：代码解释器无法读取这些文件
-   import pandas as pd
-   df = pd.read_parquet('/srv/sandbox_workspaces/temp/stock_AAPL.parquet')
-   \`\`\`
-
-3. **禁止单轮研究内超过4次连续调用**：
-   \`\`\`json
-   // ❌ 错误：单轮研究内不要连续调用5次以上
-   // 调用1：正确
-   { "mode": "overview", "parameters": { "symbol": "AAPL" } }
-   // 调用2：正确
-   { "mode": "overview", "parameters": { "symbol": "MSFT" } }
-   // 调用3：正确
-   { "mode": "overview", "parameters": { "symbol": "GOOGL" } }
-   // 调用4：正确
-   { "mode": "overview", "parameters": { "symbol": "AMZN" } }
-   // 调用5：❌ 可能超过每分钟限制
-   { "mode": "overview", "parameters": { "symbol": "TSLA" } }
-   \`\`\`
+---
 
 ### ✅ 最佳实践检查清单
 
 在调用AlphaVantage工具前，确认：
 
-- [ ] **模式是否是JSON模式**？（参考上面的推荐列表）
-- [ ] **是否避免了parquet模式**？（参考上面的禁止列表）
 - [ ] **本轮研究已调用次数**？（确保不超过4次连续调用）
 - [ ] **是否需要新闻数据**？（如果是，优先使用\`tavily_search\`）
-- [ ] **数据是否足够进行分析**？（JSON模式提供完整数据）
+- [ ] **数据量是否超过5000字符**？（若是，应计划使用文件读取而非数据总线传递）
+- [ ] **是否已规划后续文件读取代码**？（参考文件命名规则编写代码）
+
+---
 
 ### 🔧 工具响应结构说明
 
@@ -2039,9 +2092,9 @@ const alphavantageGuidance = `
 \`\`\`json
 {
   "success": true,
-  "data": { ... },  // ✅ 这里是完整的数据，直接在思考中使用
+  "data": { ... },  // ✅ 这里是完整的数据，可直接在思考中使用
   "metadata": {
-    "saved_files": [ ... ],  // ⚠️ 仅供参考，不要依赖这些文件
+    "saved_files": [ ... ],  // ⚠️ 仅供参考，建议直接使用固定命名规则
     "session_dir": "...",
     "example_code": "# 数据获取完成"
   }
@@ -2049,9 +2102,11 @@ const alphavantageGuidance = `
 \`\`\`
 
 **正确用法**：
-1. 直接使用 \`response.data\` 进行数据分析
-2. 忽略 \`metadata.saved_files\` 中的文件路径
-3. 在思考中基于数据得出结论
+1. **小数据场景**：直接使用 \`response.data\` 进行即时分析。
+2. **大数据/可视化场景**：**忽略 \`response.data\`**，直接通过文件系统读取完整文件。
+3. **始终使用固定文件名**（见上表），不依赖 \`saved_files\` 中的动态路径。
+
+---
 
 ### 🎭 不同研究模式的推荐策略
 
@@ -2059,17 +2114,19 @@ const alphavantageGuidance = `
 - **重点**：公司基本面深度分析、财务健康度评估
 - **推荐模式**：\`overview\`, \`income_statement\`, \`balance_sheet\`, \`cash_flow\`, \`earnings_estimates\`
 - **备选模式**：\`insider_transactions\`（内部人交易分析）, \`earnings_transcript\`（管理层观点）
-- **调用策略**：最多选择3-4个最相关的模式，避免超过限制
+- **调用策略**：最多选择3-4个最相关的模式，避免超过限制；**大数据量场景强制使用文件读取**。
 
 #### 商业分析模式（Business）：
 - **重点**：实时市场表现、竞争分析、ETF配置
 - **推荐模式**：\`global_quote\`, \`etf_profile\`, \`overview\`
-- **调用策略**：针对1-2家公司进行深度分析，避免分散调用
+- **调用策略**：针对1-2家公司进行深度分析，避免分散调用。
 
 #### 技术方案模式（Technical）：
 - **重点**：API功能验证、数据获取可行性
 - **推荐模式**：\`global_quote\`（测试实时数据）
-- **注意事项**：只测试JSON模式，避免parquet模式
+- **注意事项**：所有模式均可测试，文件读取功能完全正常。
+
+---
 
 ### 💡 实用技巧
 
@@ -2105,6 +2162,8 @@ const alphavantageGuidance = `
 最重要的剩余需求：获取内部人交易数据
 \`\`\`
 
+---
+
 ### 📈 数据质量验证
 
 #### 验证JSON数据完整性：
@@ -2115,12 +2174,23 @@ const alphavantageGuidance = `
 数据时间：\${response.data.LatestQuarter || response.data.Latest Trading Day || '未知'}
 \`\`\`
 
+#### 验证文件写入成功：
+在代码解释器中检查文件是否存在：
+\`\`\`python
+import os
+if os.path.exists('/data/stock_AAPL.parquet'):
+    print("✅ 文件已保存")
+\`\`\`
+
+---
+
 ### 🚀 快速开始示例
 
 #### 场景：分析特斯拉财务状况和内部人交易（3次调用）
 \`\`\`
 思考：我需要分析特斯拉的财务状况，同时了解近期内部人交易情况。
 本轮研究已调用0次，可以安全使用最多4次。
+数据量较大，我将使用文件读取方式进行后续分析。
 
 行动：alphavantage
 行动输入：{
@@ -2135,6 +2205,7 @@ const alphavantageGuidance = `
 \`\`\`
 思考：我需要了解标普500 ETF配置，并对比苹果和微软的基本面。
 本轮研究已调用1次，还可以调用3次。
+ETF持仓数据量大，我将直接读取文件进行分析。
 
 行动：alphavantage
 行动输入：{
@@ -2160,27 +2231,36 @@ const alphavantageGuidance = `
 }
 \`\`\`
 
+---
+
 ### 🔄 后续分析策略
 
-#### 策略A：在思考中直接分析
+#### 策略A：在思考中直接分析（小数据）
 - 直接从JSON数据中提取关键指标
 - 进行简单计算和对比
 - 生成初步结论
 
-#### 策略B：传递给代码解释器
+#### 策略B：通过数据总线传递给代码解释器（中数据）
 - 将JSON数据作为字符串传递给代码解释器
 - 进行复杂的统计分析和可视化
-- **注意**：只传递数据，不传递文件路径
+- **注意**：仅适用于数据量 <5000 字符
 
-#### 策略C：多轮数据收集（考虑API限制）
+#### 策略C：通过文件系统读取（大数据，推荐）
+- 在代码解释器中直接读取已保存的 \`/data/*.parquet\` 或 \`/data/*.json\` 文件
+- 进行大规模数据处理、绘图、建模
+- **完全无需硬编码数据，代码简洁高效**
+
+#### 策略D：多轮数据收集（考虑API限制）
 1. 单轮研究最多使用4次调用
 2. 优先获取最重要的数据
 3. 如果需要更多数据，考虑是否必要或等待下一轮研究
 
+---
+
 ### 📚 学习与改进
 
 #### 记录使用经验：
-- 哪些JSON模式的数据最有价值？
+- 哪些模式的数据最有价值？
 - 如何优化查询参数获得更好结果？
 - 不同公司的数据质量如何？
 
@@ -2195,22 +2275,22 @@ const alphavantageGuidance = `
 
 **当需要使用金融数据时，遵循以下规则：**
 
-1. **核心使用场景**：公司基本面分析、ETF分析、内部人交易、财报会议记录
+1. **核心使用场景**：公司基本面分析、ETF分析、内部人交易、财报会议记录、历史行情分析、大宗商品分析等。
 
-2. **只能使用JSON模式**：\`global_quote\`, \`overview\`, \`income_statement\`, \`balance_sheet\`, \`cash_flow\`, \`earnings\`, \`earnings_estimates\`, \`dividends\`, \`shares_outstanding\`, \`insider_transactions\`, \`etf_profile\`, \`earnings_transcript\`
+2. **双通道选择**：
+   - **小数据快速分析**（<5000字符）：使用数据总线传递的JSON。
+   - **大数据/可视化**：**强制使用文件系统读取**，代码更简洁、性能更高。
 
-3. **禁止使用Parquet模式**：\`weekly_adjusted\`, \`forex_daily\`, \`digital_currency_daily\`, \`wti\`, \`brent\`, \`copper\`, \`treasury_yield\`
+3. **所有模式均可使用**（包括Parquet模式），无需任何限制。
 
-4. **新闻数据策略**：优先使用\`tavily_search\`获取新闻，\`news_sentiment\`仅作为备选
+4. **新闻数据策略**：优先使用\`tavily_search\`获取新闻，\`news_sentiment\`仅作为备选。
 
 5. **API速率管理**：
    - 单轮研究内最多连续调用 **4次**（留出1次缓冲）
    - 注意每日25次的总限制
    - 优先获取最重要的数据，避免浪费调用次数
 
-6. **数据获取**：工具返回的JSON数据是完整的，直接在思考中使用
-
-7. **文件处理**：忽略所有文件路径，只使用JSON数据
+6. **文件读取规范**：严格遵循 \`pd.io.common.get_handle\` 或 Pandas高层API，**禁止直接 \`open()\`**。
 
 **调用计数器示例（在思考中记录）：**
 \`\`\`
@@ -2220,9 +2300,22 @@ AlphaVantage调用记录：
 - 今日总调用：5次（注意不要超过25次）
 \`\`\`
 
-现在你已完全了解AlphaVantage工具的正确使用方法。请严格遵守上述规则，优先使用基本面数据相关模式，并智能管理API调用次数。
+**文件读取代码示例（在代码解释器中）：**
+\`\`\`python
+import pandas as pd
+import json
+
+# 读取 Parquet 文件
+df = pd.read_parquet('/data/stock_AAPL.parquet')
+
+# 读取 JSON 文件（安全方式）
+with pd.io.common.get_handle('/data/income_statement_NET.json', 'r', is_text=True) as f:
+    data = json.loads(f.handle.read())
+\`\`\`
+
+现在你已完全掌握AlphaVantage工具的正确、高效使用方法。请根据数据规模灵活选择数据通道，并严格遵守文件读取规范。
 `;
-        
+  
         // 💼 行业分析模式专用约束
         const businessModeConstraints = researchMode === 'business' ? `
 ## 💼 行业分析模式专用约束
