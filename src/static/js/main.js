@@ -1334,7 +1334,7 @@ async function handleSendMessage(attachmentManager) {
         await handleWebSocketMessage(messageText, attachedFiles);
     } else {
         // HTTP模式 - 使用增强的逻辑
-        await handleEnhancedHttpMessage(messageText, attachedFiles);
+        await handleEnhancedHttpMessage(messageText, attachedFiles, attachmentManager);
     }
 }
 
@@ -1413,7 +1413,7 @@ async function initializeEnhancedSkillSystem() {
 // =========================================================================
 // 🚀 [最终方案 V2 - 替换] 增强的消息处理函数，仅负责启动 Agent
 // =========================================================================
-async function handleEnhancedHttpMessage(messageText, attachedFiles) {
+async function handleEnhancedHttpMessage(messageText, attachedFiles, attachmentManager) {
     if (!currentSessionId) {
         historyManager.generateNewSession();
     }
@@ -1459,6 +1459,9 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
 
         console.log(`🎯 [技能上下文] 级别: ${contextResult.contextLevel}, 复杂工具: ${contextResult.hasComplexTools}`);
 
+        // 🎯 获取预备文件列表
+        const preloadFiles = attachmentManager ? attachmentManager.getPreloadFiles() : [];
+
         // 2. 准备 Agent 上下文
         const agentContext = {
             model: modelName,
@@ -1467,11 +1470,13 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             apiHandler: chatApiHandler,
             availableTools: availableToolNames, // 传递原始工具名称列表
             enhancedTools: enhancedTools, // 传递增强工具定义
-            contextResult: contextResult // 传递技能上下文结果
+            contextResult: contextResult, // 传递技能上下文结果
+            preloadFiles: preloadFiles, // 新增：传递预备文件信息
+            sessionId: currentSessionId   // 新增此行
         };
         
         // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
-        // 我们在这里“发射后不管”，渲染工作将由 'research:end' 事件监听器处理
+        // 我们在这里"发射后不管"，渲染工作将由 'research:end' 事件监听器处理
         const agentResult = await orchestrator.handleUserRequest(messageText, attachedFiles, agentContext);
 
         // 🎯 核心修复：如果 Agent 模式成功执行，更新用户消息的历史记录
