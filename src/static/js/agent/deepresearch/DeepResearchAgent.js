@@ -141,7 +141,7 @@ export class DeepResearchAgent {
     // 🎯 核心研究执行方法（重构版）
     // ============================================================
     
-    async conductResearch(researchRequest, preloadData = []) {
+    async conductResearch(researchRequest) {
         // ✨ 修复：直接从 Orchestrator 接收模式和清理后的主题
         // ✨✨✨ 核心修复：解构出 displayTopic、enrichedTopic 及 contextMessages ✨✨✨
         const {
@@ -166,9 +166,6 @@ export class DeepResearchAgent {
         // 🎯 核心新增：使用StateManager开始新的研究运行
         this.stateManager.startNewRun(runId, cleanTopic);
         this.stateManager.clearImages(); // 关键：每次新研究开始时清空图片缓存
-        
-        // 2. 注入预备数据
-        await this._injectPreloadData(preloadData);
         
         // 🎯 更新工具执行中间件的运行ID
         this.toolExecutor.updateSharedState({
@@ -2836,68 +2833,5 @@ _isApiServiceError(error) {
         });
         return typeCount;
     }
-
-    /**
-     * 🎯 注入预备数据
-     * @param {Array} preloadData - 预备数据数组，每个元素包含 {filename, content, sessionId}
-     */
-    async _injectPreloadData(preloadData) {
-        if (!preloadData || preloadData.length === 0) return;
-
-        console.log(`[DeepResearchAgent] 注入预备数据，共 ${preloadData.length} 个文件`);
-
-        for (const item of preloadData) {
-            const stepIndex = this.intermediateSteps.length; // 从 0 开始
-            const dataKey = `step_${stepIndex}`;
-
-            // 尝试解析 JSON
-            let parsed = null;
-            try {
-                parsed = JSON.parse(item.content);
-            } catch (e) {
-                console.warn(`[DeepResearchAgent] 预备文件 ${item.filename} 不是有效 JSON，将作为文本存储`);
-            }
-
-            // 存储到 DataBus
-            this.stateManager.storeInDataBus(stepIndex, item.content, {
-                toolName: 'user_preload',
-                filename: item.filename,
-                contentType: parsed ? 'json' : 'text',
-                originalData: parsed, // 保留解析后的对象
-                sessionId: item.sessionId
-            }, []); // sources 为空
-
-            // 构造 intermediateSteps 条目
-            const stepData = {
-                action: {
-                    type: 'user_preload',
-                    tool_name: 'user_preload',
-                    parameters: { filename: item.filename },
-                    thought: `用户预先上传了数据文件: ${item.filename}`
-                },
-                observation: `用户预先提供了数据文件 **${item.filename}**。文件内容已加载到 DataBus (${dataKey})。你可以在沙盒中通过路径 \`/data/${item.filename}\` 访问该文件进行进一步分析。`,
-                key_finding: `用户预加载数据: ${item.filename}`,
-                success: true
-            };
-
-            this.intermediateSteps.push(stepData);
-            this.stateManager.recordIntermediateStep(stepData);
-        }
-
-        // 更新中间件状态
-        this.toolExecutor.updateSharedState({
-            intermediateSteps: this.intermediateSteps,
-            dataBus: this.dataBus,
-            imageCounter: this.imageCounter
-        });
-        this.reportGenerator.updateSharedState({
-            intermediateSteps: this.intermediateSteps,
-            dataBus: this.dataBus,
-            generatedImages: this.generatedImages,
-            metrics: this.metrics,
-            runId: this.runId
-        });
-
-        console.log(`[DeepResearchAgent] 预备数据注入完成，当前 intermediateSteps 长度: ${this.intermediateSteps.length}`);
-    }
 }
+

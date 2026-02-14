@@ -28,7 +28,6 @@ export class AttachmentManager {
 
         this.chatAttachedFiles = []; // For multi-file chat mode
         this.visionAttachedFiles = []; // For multi-file vision mode
-        this.preloadFiles = []; // 新增：预备文件列表
         this.enableCompression = true; // 默认启用图片压缩（针对视觉模式）
 
         if (!this.chatPreviewsContainer) {
@@ -55,23 +54,6 @@ export class AttachmentManager {
      */
     getVisionAttachedFiles() {
         return this.visionAttachedFiles;
-    }
-
-    /**
-     * @method getPreloadFiles
-     * @description Returns the array of preload files information.
-     * @returns {Array<object>} The array of preload file objects.
-     */
-    getPreloadFiles() {
-        return this.preloadFiles;
-    }
-
-    /**
-     * @method clearPreloadFiles
-     * @description Clears the preload files list.
-     */
-    clearPreloadFiles() {
-        this.preloadFiles = [];
     }
 
     /**
@@ -144,13 +126,6 @@ async uploadDataFile(file, sessionId, index) {
         };
         
         this.chatAttachedFiles.push(fileHandle);
-        
-        // 将文件信息存入 preloadFiles
-        this.preloadFiles.push({
-            filename: result.filename,
-            session_id: sessionId,
-            container_path: result.container_path
-        });
         
         // 显示文件预览（特殊样式）
         this.displayFilePreview({
@@ -274,35 +249,22 @@ async readAsBase64(file, mode) {
         } else {
             this.chatAttachedFiles = [];
             this.chatPreviewsContainer.innerHTML = '';
-            this.preloadFiles = []; // 重要：清空预备文件
         }
     }
 
     /**
      * @method removeChatAttachment
-     * @description Removes a specific attachment in chat mode. (v2.4 Fix + preloadFiles sync)
+     * @description Removes a specific attachment in chat mode. (v2.4 Fix)
      * @param {number} indexToRemove - The index of the file to remove.
      */
     removeChatAttachment(indexToRemove) {
-        // 获取被删除的文件对象
-        const removedFile = this.chatAttachedFiles[indexToRemove];
-        
-        // 从 chatAttachedFiles 中移除
         this.chatAttachedFiles.splice(indexToRemove, 1);
-        
-        // 如果被删除的是数据文件（文件句柄），则从 preloadFiles 中移除对应项
-        if (removedFile && removedFile.isFileHandle && removedFile.name && removedFile.session_id) {
-            const originalFilename = removedFile.name; // 使用原始文件名进行匹配
-            this.preloadFiles = this.preloadFiles.filter(
-                file => !(file.filename === originalFilename && file.session_id === removedFile.session_id)
-            );
-        }
         
         // Re-render all previews to correctly update indices
         this.chatPreviewsContainer.innerHTML = '';
         
         this.chatAttachedFiles.forEach((file, index) => {
-            // 🚀🚀🚀 --- 核心修复：在这里也使用"双轨制"渲染 --- 🚀🚀🚀
+            // 🚀🚀🚀 --- 核心修复：在这里也使用“双轨制”渲染 --- 🚀🚀🚀
             if (file.isFileHandle) {
                 // 这是一个已上传的数据文件句柄
                 this.displayFilePreview({

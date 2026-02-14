@@ -158,11 +158,6 @@ ${cleanTopic}
             // `context.messages` 由 `main.js` 的 `handleEnhancedHttpMessage` 传入
             const previousMessages = (context && context.messages) ? context.messages : [];
 
-            // 🎯 获取预备文件内容
-            const preloadFiles = context.preloadFiles || [];
-            const sessionId = context.sessionId || this.chatApiHandler.state.currentSessionId;
-            const preloadData = await this._fetchPreloadFilesContent(sessionId, preloadFiles);
-
             // ✨✨✨ 核心修复：同时传递 cleanTopic 和 enrichedTopic ✨✨✨
             const researchRequest = {
                 topic: enrichedTopic,           // 用于 Agent 思考的完整主题
@@ -175,13 +170,10 @@ ${cleanTopic}
                 // ✨ 新增：传递历史消息数组，供 Agent 使用历史上下文
                 contextMessages: previousMessages,
                 // 🔥🔥🔥 [新增] 传递用户选择的报告模型 🔥🔥🔥
-                reportModel: reportModel,
-                // 🎯 新增：传递预备文件数据
-                preloadData: preloadData
+                reportModel: reportModel
             };
 
-            // 🔥🔥🔥 [核心修复] 正确传递两个参数：researchRequest 和 preloadData 🔥🔥🔥
-            const researchResult = await this.deepResearchAgent.conductResearch(researchRequest, preloadData);
+            const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
 
             // 🔥 [最终方案] 占位符替换的"魔法"在这里发生
             if (researchResult.report && this.deepResearchAgent.generatedImages.size > 0) {
@@ -207,8 +199,7 @@ ${cleanTopic}
                 reportLength: researchResult.report?.length,
                 sourcesCount: researchResult.sources?.length || 0,
                 researchMode: researchResult.research_mode,
-                maxIterations: maxIterations, // 🔥 新增：记录配置的迭代次数
-                preloadFilesCount: preloadData.length // 🎯 新增：记录预备文件数量
+                maxIterations: maxIterations // 🔥 新增：记录配置的迭代次数
             });
 
             // 返回已经处理过的 researchResult
@@ -225,12 +216,7 @@ ${cleanTopic}
                 temporal_quality: researchResult.temporal_quality,
                 // 🔥 核心新增：将完整的用户原始消息返回，供上游保存到历史记录
                 originalUserMessage: originalTopic,
-                model: researchResult.model || reportModel,  // 🎯 核心修复：添加模型信息
-                // 🎯 新增：返回预备文件信息
-                preloadFiles: preloadData.map(file => ({
-                    filename: file.filename,
-                    sessionId: file.sessionId
-                }))
+                model: researchResult.model || reportModel  // 🎯 核心修复：添加模型信息
             };
         } catch (error) {
             console.error('[Orchestrator] DeepResearch Agent执行失败:', error);
@@ -241,33 +227,6 @@ ${cleanTopic}
                 success: false
             };
         }
-    }
-
-    /**
-     * 🎯 获取预备文件内容
-     */
-    async _fetchPreloadFilesContent(sessionId, preloadFiles) {
-        if (!sessionId || !preloadFiles || preloadFiles.length === 0) return [];
-
-        const results = [];
-        for (const file of preloadFiles) {
-            try {
-                const response = await fetch(`/api/v1/files/download/${sessionId}/${file.filename}`);
-                if (!response.ok) {
-                    console.warn(`[Orchestrator] 预备文件下载失败: ${file.filename}`);
-                    continue;
-                }
-                const content = await response.text();
-                results.push({
-                    filename: file.filename,
-                    content: content,
-                    sessionId: sessionId
-                });
-            } catch (error) {
-                console.error(`[Orchestrator] 读取预备文件 ${file.filename} 出错:`, error);
-            }
-        }
-        return results;
     }
 
     /**
