@@ -588,7 +588,7 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
                 rawObservation: finalObservation,           // 截断后的 Agent 友好文本
                 toolSources: sandboxResult.toolSources,
                 toolSuccess: sandboxResult.toolSuccess,
-                fullStdout: sandboxResult.rawObservation    // 原始完整 stdout
+                fullStdout: sandboxResult.fullStdout || sandboxResult.rawObservation // 🔥 优先使用保存的完整输出
             };
 
         } catch (error) {
@@ -1221,6 +1221,8 @@ except Exception as e:
         let toolSuccess = false;
         // 🔧 新增：用于传递原始数据给上层
         let originalDataForResult = null;
+        // 🔥 新增：用于保存完整输出副本
+        let fullStdoutForResult = null;
 
         if (!tool) {
             rawObservation = `错误: 工具 "${toolName}" 不存在。可用工具: ${Object.keys(this.tools).join(', ')}`;
@@ -1456,6 +1458,7 @@ except Exception as e:
                 // 尝试从 data.stdout 获取完整输出
                 if (toolResult.data && typeof toolResult.data.stdout === 'string') {
                     rawObservation = toolResult.data.stdout;
+                    fullStdoutForResult = rawObservation; // 🔥 保存完整副本
                     console.log(`[ToolExecutionMiddleware] 使用完整 stdout (${rawObservation.length} 字符)`);
                 } else {
                     // 降级：使用原有的 output 或 JSON 字符串
@@ -1664,8 +1667,11 @@ except Exception as e:
         console.log(`[ToolExecutionMiddleware] 📊 工具调用记录完成: ${toolName}, 成功: ${toolSuccess}`);
         
         // 🔥 核心修复：保持与附件版完全一致的返回结构
-        // 不包含 metadata 字段，确保与主文件兼容，但添加 originalData 用于传递原始数据
+        // 不包含 metadata 字段，确保与主文件兼容，但添加 originalData 和 fullStdout 用于传递原始数据
         const result = { rawObservation, toolSources, toolSuccess };
+        if (fullStdoutForResult) {
+            result.fullStdout = fullStdoutForResult; // 🔥 附加完整输出
+        }
         if (originalDataForResult) {
             result.originalData = originalDataForResult;
             result.originalDataType = 'alphavantage';
