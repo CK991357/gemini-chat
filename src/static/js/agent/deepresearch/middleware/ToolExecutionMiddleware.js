@@ -1670,7 +1670,9 @@ except Exception as e:
         // 不包含 metadata 字段，确保与主文件兼容，但添加 originalData 和 fullStdout 用于传递原始数据
         const result = { rawObservation, toolSources, toolSuccess };
         if (fullStdoutForResult) {
-            result.fullStdout = fullStdoutForResult; // 🔥 附加完整输出
+            result.fullStdout = fullStdoutForResult;
+            result._fullStdout = fullStdoutForResult; // 添加一个备用字段，确保传递
+            console.log(`[ToolExecutionMiddleware] 完整输出已保存到备用字段 _fullStdout (${fullStdoutForResult.length} 字符)`);
         }
         if (originalDataForResult) {
             result.originalData = originalDataForResult;
@@ -1797,14 +1799,15 @@ except Exception as e:
                 console.log(`[ToolExecutionMiddleware] ✅ 已将原始数据合并到 metadata，准备存储`);
             }
             
-            // ========== 🆕 增量添加：处理 fullStdout ==========
-            // 如果有完整输出，保存到 metadata（用于代码解释器读取文档后的内容保存）
-            if (result.fullStdout) {
-                metadata.full_stdout = result.fullStdout;
+            // ========== 🔥 核心修复：处理 fullStdout ==========
+            // 优先使用备用字段 _fullStdout，确保所有成功执行的工具都能存储完整输出
+            const fullStdoutToSave = result._fullStdout || result.fullStdout;
+            if (fullStdoutToSave) {
+                metadata.full_stdout = fullStdoutToSave;
                 metadata.has_full_stdout = true;
-                console.log(`[ToolExecutionMiddleware] ✅ 已将 fullStdout 存入 metadata (${result.fullStdout.length} 字符)`);
+                console.log(`[ToolExecutionMiddleware] ✅ 已将 fullStdout 存入 metadata (${fullStdoutToSave.length} 字符)`);
             }
-            // ========================================================
+            // ========================================
             
             this.storeRawDataMethod(
                 stepIndex, 
