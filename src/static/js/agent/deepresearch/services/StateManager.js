@@ -66,6 +66,14 @@ export class StateManager {
         
         let processedData = rawData;
         
+        // 🔥 新增：对用户上传文件跳过结构化数据提取
+        if (metadata.type === 'user_upload') {
+            processedData = rawData; // 不截断，保持原始内容完整
+            console.log(`[DataBus] 📁 用户上传文件，跳过结构化提取: ${dataKey}`);
+        } else if (rawData.length > 10000) {
+            processedData = this._extractStructuredData(rawData, metadata);
+        }
+        
         // 存储工具返回的原始来源信息
         const sourcesInfo = toolSources.map(source => ({
             title: source.title || '无标题',
@@ -102,13 +110,13 @@ export class StateManager {
                 
             } catch (e) {
                 // 如果不是JSON，使用原有逻辑
-                if (rawData.length > 10000) {
+                if (rawData.length > 10000 && metadata.type !== 'user_upload') {
                     processedData = this._extractStructuredData(rawData, metadata);
                 }
             }
         } else {
-            // 原有逻辑
-            if (rawData.length > 10000) {
+            // 原有逻辑（排除用户上传文件）
+            if (rawData.length > 10000 && metadata.type !== 'user_upload') {
                 processedData = this._extractStructuredData(rawData, metadata);
             }
         }

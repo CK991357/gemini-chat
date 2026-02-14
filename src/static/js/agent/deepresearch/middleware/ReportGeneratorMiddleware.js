@@ -1475,42 +1475,56 @@ _storeWritingModelInfo(writingInfo) {
 
             uploadKeys.forEach(key => {
                 const entry = dataBus instanceof Map ? dataBus.get(key) : dataBus[key];
-                if (entry && entry.rawData) {
-                    const metadata = entry.metadata || {};
-                    const filename = metadata.filename || key;
-                    const fileContent = entry.rawData;  // 已经是字符串（修复后）
+                if (!entry) return;
 
-                    // 清理内容（复用现有清理函数）
-                    let cleanEvidence = this._cleanObservation(fileContent);
-                    if (!cleanEvidence || cleanEvidence.length < 20) return;
+                const metadata = entry.metadata || {};
+                const filename = metadata.filename || key;
 
-                    // 如果是 JSON，可尝试结构化增强（调用已有函数）
-                    let structuredData = null;
-                    if (metadata.fileType === 'json') {
-                        const enhanced = this._enhanceStructuredData(fileContent, true);
-                        if (enhanced) {
-                            cleanEvidence = enhanced.enhancedEvidence || cleanEvidence;
-                            structuredData = enhanced.structuredData;
-                        }
-                    }
-
-                    const evidenceEntry = {
-                        stepIndex: 0,   // 前置步骤，排在所有 step 之前
-                        subQuestion: `用户上传文件: ${filename}`,
-                        evidence: cleanEvidence,
-                        structuredData: structuredData,
-                        hasStructuredData: !!structuredData,
-                        keyFinding: `文件 ${filename} 内容已加载`,
-                        tool: 'user_upload',
-                        originalLength: fileContent.length,
-                        enhancedLength: cleanEvidence.length,
-                        dataSourceType: 'user_upload',
-                        dataBusKey: key,
-                    };
-                    evidenceEntries.push(evidenceEntry);
-                    totalLength += cleanEvidence.length;
-                    keyFindings.push(`用户上传文件: ${filename}`);
+                // 优先使用 originalData（如果存在且不为空），否则使用 rawData
+                let fileContent = entry.originalData;
+                if (fileContent === undefined || fileContent === null || fileContent === '') {
+                    fileContent = entry.rawData;
                 }
+
+                // 确保 fileContent 是字符串
+                if (typeof fileContent !== 'string') {
+                    fileContent = JSON.stringify(fileContent, null, 2);
+                }
+
+                // 确保有内容
+                if (!fileContent || fileContent.length < 1) return;
+
+                // 清理内容（复用现有清理函数，但不对内容做截断）
+                let cleanEvidence = this._cleanObservation(fileContent);
+                if (!cleanEvidence || cleanEvidence.length < 20) return;
+
+                // 如果是 JSON，可尝试结构化增强（可选），但这里保持原样
+                let structuredData = null;
+                if (metadata.fileType === 'json') {
+                    const enhanced = this._enhanceStructuredData(fileContent, true);
+                    if (enhanced) {
+                        // 如果增强成功，可以使用增强后的版本，但建议保留原始内容
+                        // 这里可以根据需求决定是否使用增强结果
+                        // 简单起见，仍保留原始内容
+                    }
+                }
+
+                const evidenceEntry = {
+                    stepIndex: 0,   // 前置步骤，排在所有 step 之前
+                    subQuestion: `用户上传文件: ${filename}`,
+                    evidence: cleanEvidence,
+                    structuredData: structuredData,
+                    hasStructuredData: !!structuredData,
+                    keyFinding: `文件 ${filename} 内容已加载`,
+                    tool: 'user_upload',
+                    originalLength: fileContent.length,
+                    enhancedLength: cleanEvidence.length,
+                    dataSourceType: 'user_upload_original',  // 修改为表明使用了 originalData
+                    dataBusKey: key,
+                };
+                evidenceEntries.push(evidenceEntry);
+                totalLength += cleanEvidence.length;
+                keyFindings.push(`用户上传文件: ${filename}`);
             });
         }
         // ========== 🆕 增量添加结束 ==========

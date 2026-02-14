@@ -1450,13 +1450,25 @@ except Exception as e:
                 mode: 'deep_research',
                 researchMode: detectedMode
             });
-            
-            // 🎯 关键修复：保持与附件版完全一致的处理方式
-            // 直接使用 toolResult.output 或 JSON.stringify(toolResult)
-            rawObservation = toolResult.output || JSON.stringify(toolResult);
-            toolSuccess = toolResult.success !== false;
 
-            // 🎯 降级识别：检查 crawl4ai 是否降级运行
+            // 🎯 关键修复：优先从 toolResult.data.stdout 获取完整输出（仅针对 python_sandbox）
+            if (toolName === 'python_sandbox' && toolResult.success !== false) {
+                // 尝试从 data.stdout 获取完整输出
+                if (toolResult.data && typeof toolResult.data.stdout === 'string') {
+                    rawObservation = toolResult.data.stdout;
+                    console.log(`[ToolExecutionMiddleware] 使用完整 stdout (${rawObservation.length} 字符)`);
+                } else {
+                    // 降级：使用原有的 output 或 JSON 字符串
+                    rawObservation = toolResult.output || JSON.stringify(toolResult);
+                }
+                toolSuccess = true; // 标记成功
+            } else {
+                // 其他工具保持原有处理
+                rawObservation = toolResult.output || JSON.stringify(toolResult);
+                toolSuccess = toolResult.success !== false;
+            }
+
+            // 降级识别：检查 crawl4ai 是否降级运行
             if (toolName === 'crawl4ai' && toolSuccess) {
                 if (rawObservation.includes('pdf_skipped') || rawObservation.includes('内存优化')) {
                     console.log('[ToolExecutionMiddleware] 📝 检测到 crawl4ai 工具降级运行，但核心内容已获取');
@@ -1469,7 +1481,6 @@ except Exception as e:
             if (toolName === 'python_sandbox' && toolSuccess) {
                 try {
                     const outputData = JSON.parse(rawObservation);
-
                     if (outputData.type === 'image' && outputData.image_base64) {
                         if (outputData.image_base64.length > 100) {
                             console.log('[ToolExecutionMiddleware] 🐍 检测到Python沙盒生成的图像，正在处理...');
@@ -1477,7 +1488,6 @@ except Exception as e:
                         } else {
                             console.warn('[ToolExecutionMiddleware] ⚠️ 收到图片数据但长度不足，跳过渲染。');
                         }
-
                     } else if (['excel', 'word', 'powerpoint', 'ppt', 'pdf'].includes(outputData.type) && outputData.data_base64) {
                         console.log(`[ToolExecutionMiddleware] 🐍 检测到Python沙盒生成的文件: ${outputData.type}`);
                         rawObservation = `[✅ 文件生成成功] 类型: "${outputData.type}", 标题: "${outputData.title}". 文件已准备就绪。`;
@@ -1486,8 +1496,8 @@ except Exception as e:
                             data: outputData
                         });
                     }
-
                 } catch (e) {
+                    // 不是 JSON，保持 rawObservation 不变（此时 rawObservation 已经是完整 stdout）
                     console.log('[ToolExecutionMiddleware] 🐍 Python输出不是特殊JSON格式，作为纯文本处理。');
                 }
             }
