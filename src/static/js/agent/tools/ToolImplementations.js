@@ -2792,6 +2792,15 @@ class ProxiedTool extends BaseTool {
                 warnings: result.warnings || []
             }, this.name, researchMode);
 
+            // ========== 🆕 增量添加：为 python_sandbox 添加 data 字段 ==========
+            // 确保 data 字段包含原始 stdout，供上层提取完整输出
+            if (this.name === 'python_sandbox') {
+                result.data = {
+                    stdout: result.rawResponse?.stdout || ''
+                };
+            }
+            // ================================================================
+
             return {
                 ...result,
                 output: finalOutput, // 替换为最终格式化的输出
