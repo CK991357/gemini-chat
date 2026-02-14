@@ -538,10 +538,12 @@ ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "
             // 标记 code_generator 调用成功
             recordToolCall('code_generator', parameters, true, "专家任务已完成");
 
+            // 🔥 核心修改：在成功分支中返回原始完整输出
             return {
-                rawObservation: finalObservation,
+                rawObservation: finalObservation,           // 截断后的 Agent 友好文本
                 toolSources: sandboxResult.toolSources,
-                toolSuccess: sandboxResult.toolSuccess
+                toolSuccess: sandboxResult.toolSuccess,
+                fullStdout: sandboxResult.rawObservation    // 原始完整 stdout
             };
 
         } catch (error) {
@@ -1689,6 +1691,14 @@ except Exception as e:
                 metadata.hasOriginalData = true;
                 metadata.originalDataType = result.originalDataType || 'alphavantage';
                 console.log(`[ToolExecutionMiddleware] ✅ 已将原始数据合并到 metadata，准备存储`);
+            }
+            
+            // ========== 🆕 增量添加：处理 fullStdout ==========
+            // 如果有完整输出，保存到 metadata（用于代码解释器读取文档后的内容保存）
+            if (result.fullStdout) {
+                metadata.full_stdout = result.fullStdout;
+                metadata.has_full_stdout = true;
+                console.log(`[ToolExecutionMiddleware] ✅ 已将 fullStdout 存入 metadata (${result.fullStdout.length} 字符)`);
             }
             // ========================================================
             
