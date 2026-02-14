@@ -1339,18 +1339,24 @@ _storeWritingModelInfo(writingInfo) {
                 switch(dataStrategy) {
                     case 'full_original':
                         if (originalDataForProcessing.length < 80000) {
-                            finalEvidence = this._cleanObservation(originalDataForProcessing);
-                            dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_cleaned' : 'data_bus_full_cleaned';
-                            
-                            // 🎯 新增：如果是结构化数据，添加智能处理
-                            if (this._isStructuredData(originalDataForProcessing)) {
-                                const enhancedStructure = this._enhanceStructuredData(originalDataForProcessing, true);
-                                if (enhancedStructure) {
-                                    structuredData = enhancedStructure.structuredData;
-                                    if (enhancedStructure.enhancedEvidence) {
-                                        finalEvidence = enhancedStructure.enhancedEvidence;
+                            if (isCodeInterpreterData) {
+                                // 代码解释器输出：直接使用完整原始内容，不进行结构化处理
+                                finalEvidence = originalDataForProcessing;
+                                dataSourceType = 'data_bus_full_stdout_raw';
+                            } else {
+                                finalEvidence = this._cleanObservation(originalDataForProcessing);
+                                dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_cleaned' : 'data_bus_full_cleaned';
+                                
+                                // 仅对非代码解释器数据尝试结构化增强
+                                if (this._isStructuredData(originalDataForProcessing)) {
+                                    const enhancedStructure = this._enhanceStructuredData(originalDataForProcessing, true);
+                                    if (enhancedStructure) {
+                                        structuredData = enhancedStructure.structuredData;
+                                        if (enhancedStructure.enhancedEvidence) {
+                                            finalEvidence = enhancedStructure.enhancedEvidence;
+                                        }
+                                        dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_enhanced' : 'data_bus_full_enhanced';
                                     }
-                                    dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_enhanced' : 'data_bus_full_enhanced';
                                 }
                             }
                         } else {

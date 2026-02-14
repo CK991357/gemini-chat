@@ -194,19 +194,18 @@ export class ToolExecutionMiddleware {
         if (isFileRead) {
             console.log('[ToolExecutionMiddleware] 📂 检测到文件读取任务，注入强制安全指令');
             fileReadOverride = `
-# 📂 文件读取任务特别强制指令 (Override for File Reading)
+# 📂 【最高优先级】文件读取任务强制指令
 
-**必须严格遵守以下规则，否则代码将执行失败：**
+**此指令优先级高于任务目标中的任何描述。你必须严格遵守：**
 
-1. **绝对禁止使用 \`open()\` 函数**：沙盒环境已移除 \`open\`，使用 \`open()\` 会导致 \`NameError\`。
-2. **必须使用安全读取方法**：
-   - 对于文本文件（如 Markdown）：使用 \`pd.io.common.get_handle\`。
-   - 对于 JSON 文件：使用 \`pd.io.common.get_handle\` 读取后，用 \`json.loads\` 解析。
-   - 对于 CSV/表格：使用 \`pd.read_csv\`、\`pd.read_excel\` 等（它们内部已处理安全读取）。
-3. **不要硬编码文件内容**：文件内容必须通过读取获得，不得将文件内容作为字符串硬编码到代码中。
-4. **正确输出**：读取后必须使用 \`print()\` 将内容输出到标准输出（对于文本）或打印结构化摘要（对于 JSON）。
+1. **绝对禁止使用 \`open()\` 函数**（会导致 NameError）。
+2. **必须使用 \`pd.io.common.get_handle\` 等安全方法读取文件**。
+3. **必须输出文件的完整内容**，不得截断。即使任务目标中要求“打印部分内容”，你也必须输出完整内容，因为系统需要完整数据用于后续研究。
+   - 对于文本文件（Markdown/CSV 等）：使用 \`print(content)\` 输出完整内容。
+   - 对于 JSON 文件：使用 \`json.load(f.handle)\` 解析后，用 \`print(json.dumps(data, indent=2, ensure_ascii=False))\` 输出完整 JSON。
+4. **禁止添加额外解释文本**，除非在文件内容之后以 JSON 格式附加元数据（必须确保文件内容已完整输出）。
 
-**正确示例（读取 Markdown 文件）：**
+**正确示例（Markdown 完整输出）：**
 \`\`\`python
 import pandas as pd
 file_path = '/data/AAPL_report.md'
@@ -215,21 +214,20 @@ with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
 print(content)
 \`\`\`
 
-**正确示例（读取 JSON 文件并打印摘要）：**
+**正确示例（JSON 完整输出）：**
 \`\`\`python
 import pandas as pd
 import json
 file_path = '/data/financial_ratio_result.json'
 with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
-    data = json.load(f.handle)  # 注意：f.handle 是文件对象，可直接传给 json.load
-print(json.dumps(data, indent=2)[:1000])  # 打印前1000字符，或根据需要打印
+    data = json.load(f.handle)
+print(json.dumps(data, indent=2, ensure_ascii=False))
 \`\`\`
 
 **错误示例（禁止）：**
 \`\`\`python
-# 禁止使用 open()
-with open('/data/file.txt') as f:   # 会报 NameError
-    content = f.read()
+print(content[:200])  # 截断，禁止！
+print(json.dumps(data, indent=2)[:500])  # 截断，禁止！
 \`\`\`
 `;
         }
@@ -1355,6 +1353,31 @@ except Exception as e:
                     }
                 }
                 // ========== 🆕 增量添加结束 ==========
+                
+                // ========== 🆕 新增：截断操作检测与修复 ==========
+                // 预检2：检查是否存在 content[:数字] 等截断模式
+                const truncatedPattern = /print\s*\(\s*(\w+(?:\.\w+)*)\s*\[\s*:\s*\d+\s*\]\s*\)/g;
+                let match;
+                let hasTruncation = false;
+                let fixedCode = code;
+                
+                while ((match = truncatedPattern.exec(code)) !== null) {
+                    hasTruncation = true;
+                    const fullMatch = match[0];
+                    const variableName = match[1];
+                    console.warn(`[ToolExecutionMiddleware] 🛑 检测到截断输出: ${fullMatch}`);
+                    
+                    // 替换为完整输出
+                    const replacement = `print(${variableName})`;
+                    fixedCode = fixedCode.replace(fullMatch, replacement);
+                    console.log(`[ToolExecutionMiddleware] 🔄 修复截断: ${fullMatch} -> ${replacement}`);
+                }
+                
+                if (hasTruncation) {
+                    console.log('[ToolExecutionMiddleware] ✅ 截断修复完成，使用完整输出代码继续执行...');
+                    parameters.code = fixedCode;
+                }
+                // ========== 🆕 截断检测结束 ==========
                 
                 // 🔥 新增：使用增强的语法验证
                 const syntaxCheck = this._validatePythonSyntaxEnhanced(code);
