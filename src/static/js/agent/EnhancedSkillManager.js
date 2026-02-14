@@ -586,78 +586,91 @@ export class EnhancedSkillManager {
   }
 
   /**
-   * 🎯 提取最小化指南（保留最核心内容）
+   * 🎯 提取最小化指南（保留最核心内容）- 增强版：优先包含核心安全章节
    */
   extractMinimalGuide(content) {
     let minimal = '';
 
+    // 优先尝试提取文件访问指南（核心安全内容）
+    const fileAccessChapter = this._extractChapter(content, '文件访问指南');
+    if (fileAccessChapter) {
+      minimal += fileAccessChapter + '\n\n';
+    }
+
     // 1. 提取通用调用结构（最重要！）
     const structureMatch = content.match(/## 🎯 【至关重要】通用调用结构[\s\S]*?(?=\n##\s|$)/i);
     if (structureMatch) {
-      minimal += structureMatch + '\n\n';
+      minimal += structureMatch[0] + '\n\n';
     }
 
     // 2. 提取常见错误（第二重要）
     const errorsMatch = content.match(/### ❌ 常见致命错误[\s\S]*?(?=\n##\s|$)/i);
     if (errorsMatch) {
-      minimal += errorsMatch + '\n\n';
+      minimal += errorsMatch[0] + '\n\n';
     }
 
     // 3. 提取关键指令
     const instructionsMatch = content.match(/##\s+关键指令[\s\S]*?(?=##|$)/i);
     if (instructionsMatch) {
       minimal += '## 关键指令摘要\n' +
-                instructionsMatch.split('\n')
+                instructionsMatch[0].split('\n')
                   .filter(line => line.trim() && !line.trim().startsWith('#') && line.trim().length > 10)
                   .slice(0, 10) // 只取前10行
                   .join('\n') + '\n\n';
     }
 
-    // 4. 如果没有找到关键部分，返回前3000字符
-    if (minimal.length < 500) {
-      minimal = content.substring(0, Math.min(3000, content.length)) + '...';
+    // 4. 如果仍然太短，补充前1500字符
+    if (minimal.length < 800) {
+      minimal += content.substring(0, Math.min(1500, content.length)) + '...';
     }
 
-    return minimal;
+    return minimal.trim();
   }
 
   /**
-   * 🎯 智能压缩（基于查询相关性）
+   * 🎯 智能压缩（基于查询相关性）- 增强版：支持核心章节保护
    */
   async smartCompress(content, maxChars, userQuery) {
     if (!userQuery) return this.extractMinimalGuide(content);
 
+    // 定义文件读取相关关键词（与 _inferRelevantSections 保持一致）
+    const fileKeywords = ['读取', '文件', 'json', 'open', '文件访问', '读取数据', '数据文件', 'load', 'parse', 'read'];
+    const isFileRead = fileKeywords.some(kw => userQuery.toLowerCase().includes(kw));
+
+    let coreChapter = null;
+    if (isFileRead) {
+      coreChapter = this._extractChapter(content, '文件访问指南');
+      if (coreChapter) {
+        const coreLength = coreChapter.length;
+        // 如果核心章节本身不过长，则完整保留；否则只能截断
+        if (coreLength < maxChars * 0.8) {  // 为剩余内容留出 20% 空间
+          const remainingForOther = maxChars - coreLength;
+          // 从原内容中移除核心章节（简单替换，可能不精确，但足够）
+          const otherContent = content.replace(coreChapter, '');
+          // 对剩余内容进行常规压缩
+          const compressedOther = await this._compressGeneral(otherContent, remainingForOther);
+          return coreChapter + '\n\n' + compressedOther;
+        } else {
+          // 核心章节过长，直接返回其截断版本
+          return coreChapter.substring(0, maxChars) + '...';
+        }
+      }
+    }
+
+    // 若无需特殊保护，执行原有的压缩逻辑
+    return this._defaultCompress(content, maxChars, userQuery);
+  }
+
+  /**
+   * 🎯 通用压缩方法（保留原有逻辑）
+   */
+  async _compressGeneral(content, maxChars) {
     const sections = content.split(/(?=^#{2,4}\s)/m);
     let compressed = '';
     let remaining = maxChars;
 
-    // 根据查询关键词给章节评分
-    const queryWords = userQuery.toLowerCase().split(/[\s,，、]+/).filter(w => w.length > 1);
-    
-    const scoredSections = sections.map(section => {
-      let score = 0;
-      const sectionLower = section.toLowerCase();
-      
-      queryWords.forEach(word => {
-        if (sectionLower.includes(word)) {
-          score += 1;
-          // 标题中包含关键词权重更高
-          const titleMatch = section.match(/^#{2,4}\s+([^\n]+)/i);
-          if (titleMatch && titleMatch[1]) {
-            const title = String(titleMatch[1] || '').toLowerCase(); // 🛡️ 强制转为字符串
-            if (title.includes(word)) {
-              score += 3;
-            }
-          }
-        }
-      });
-      
-      return { section, score };
-    }).filter(s => s.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    // 添加高评分章节
-    for (const { section, score } of scoredSections) {
+    // 简单按长度优先压缩
+    for (const section of sections) {
       if (section.length <= remaining * 0.6) {
         compressed += section + '\n\n';
         remaining -= section.length;
@@ -670,11 +683,48 @@ export class EnhancedSkillManager {
       if (remaining < 1000) break;
     }
 
-    // 如果压缩后内容太少，添加最小化指南
-    if (compressed.length < 1000) {
-      compressed = this.extractMinimalGuide(content).substring(0, maxChars);
+    return compressed || content.substring(0, maxChars) + '...';
+  }
+
+  /**
+   * 🎯 默认压缩方法（原有 smartCompress 逻辑的精确复制）
+   */
+  async _defaultCompress(content, maxChars, userQuery) {
+    // 此处复制原有的 smartCompress 逻辑（基于章节评分和截断）
+    const sections = content.split(/(?=^#{2,4}\s)/m);
+    let compressed = '';
+    let remaining = maxChars;
+
+    const queryWords = userQuery.toLowerCase().split(/[\s,，、]+/).filter(w => w.length > 1);
+    const scoredSections = sections.map(section => {
+        let score = 0;
+        const sectionLower = section.toLowerCase();
+        queryWords.forEach(word => {
+            if (sectionLower.includes(word)) score += 1;
+            const titleMatch = section.match(/^#{2,4}\s+([^\n]+)/i);
+            if (titleMatch && titleMatch[1]) {
+                const title = titleMatch[1].toLowerCase();
+                if (title.includes(word)) score += 3;
+            }
+        });
+        return { section, score };
+    }).filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    for (const { section, score } of scoredSections) {
+        if (section.length <= remaining * 0.6) {
+            compressed += section + '\n\n';
+            remaining -= section.length;
+        } else {
+            compressed += section.substring(0, Math.min(section.length, remaining * 0.3)) + '...\n\n';
+            remaining -= Math.min(section.length, remaining * 0.3);
+        }
+        if (remaining < 1000) break;
     }
 
+    if (compressed.length < 1000) {
+        compressed = this.extractMinimalGuide(content).substring(0, maxChars);
+    }
     return compressed;
   }
 
@@ -940,5 +990,18 @@ export class EnhancedSkillManager {
 
     console.log('[EnhancedSkillManager] 工具分析:', analytics);
     return analytics;
+  }
+
+  /**
+   * 从知识库内容中提取指定章节的完整内容
+   * @param {string} content - 完整知识库内容
+   * @param {string} chapterTitle - 章节标题（如 "文件访问指南"）
+   * @returns {string|null} 章节内容，如果未找到则返回 null
+   */
+  _extractChapter(content, chapterTitle) {
+    // 匹配以 ## 开头且包含标题的行，直到下一个同级标题或文档结束
+    const regex = new RegExp(`##\\s*${chapterTitle}[\\s\\S]*?(?=\\n##\\s|$)`, 'i');
+    const match = content.match(regex);
+    return match ? match[0].trim() : null;
   }
 }

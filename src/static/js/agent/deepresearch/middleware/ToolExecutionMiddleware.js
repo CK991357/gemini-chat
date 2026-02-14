@@ -187,6 +187,53 @@ export class ToolExecutionMiddleware {
             }
         }
               
+        // 🟢 步骤 B.5: 🔥 新增：文件读取任务检测与强制指令注入
+        const isFileRead = this._isFileReadTask(objective, data_context);
+        
+        let fileReadOverride = '';
+        if (isFileRead) {
+            console.log('[ToolExecutionMiddleware] 📂 检测到文件读取任务，注入强制安全指令');
+            fileReadOverride = `
+# 📂 文件读取任务特别强制指令 (Override for File Reading)
+
+**必须严格遵守以下规则，否则代码将执行失败：**
+
+1. **绝对禁止使用 \`open()\` 函数**：沙盒环境已移除 \`open\`，使用 \`open()\` 会导致 \`NameError\`。
+2. **必须使用安全读取方法**：
+   - 对于文本文件（如 Markdown）：使用 \`pd.io.common.get_handle\`。
+   - 对于 JSON 文件：使用 \`pd.io.common.get_handle\` 读取后，用 \`json.loads\` 解析。
+   - 对于 CSV/表格：使用 \`pd.read_csv\`、\`pd.read_excel\` 等（它们内部已处理安全读取）。
+3. **不要硬编码文件内容**：文件内容必须通过读取获得，不得将文件内容作为字符串硬编码到代码中。
+4. **正确输出**：读取后必须使用 \`print()\` 将内容输出到标准输出（对于文本）或打印结构化摘要（对于 JSON）。
+
+**正确示例（读取 Markdown 文件）：**
+\`\`\`python
+import pandas as pd
+file_path = '/data/AAPL_report.md'
+with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
+    content = f.handle.read()
+print(content)
+\`\`\`
+
+**正确示例（读取 JSON 文件并打印摘要）：**
+\`\`\`python
+import pandas as pd
+import json
+file_path = '/data/financial_ratio_result.json'
+with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
+    data = json.load(f.handle)  # 注意：f.handle 是文件对象，可直接传给 json.load
+print(json.dumps(data, indent=2)[:1000])  # 打印前1000字符，或根据需要打印
+\`\`\`
+
+**错误示例（禁止）：**
+\`\`\`python
+# 禁止使用 open()
+with open('/data/file.txt') as f:   # 会报 NameError
+    content = f.read()
+\`\`\`
+`;
+        }
+
         // 🟢 构建专家 Prompt (融合知识库) - 增强数据传递
         // 🔥 关键修复：确保数据上下文包含实际数据
         const specialistPrompt = `
@@ -205,7 +252,7 @@ ${this._cleanChinesePunctuationFromText(
     actualDataContext.substring(0, 12000) + (actualDataContext.length > 12000 ? "\n[...数据过长，已截断部分内容...]" : "") :
     actualDataContext
 )}
-
+${fileReadOverride}
 # 📚 你的核心技能与规范 (Knowledge Base)
 ${knowledgeContext ? this._cleanChinesePunctuationFromText(knowledgeContext) : "未加载知识库. 请遵循通用 Python 规范."}
 
@@ -1290,6 +1337,24 @@ except Exception as e:
                         parameters.code = code.replace(stateInjectionPattern, '""');
                     }
                 }
+                
+                // ========== 🆕 增量添加：open()函数非法调用检测 ==========
+                // 预检1：检查是否使用 open()
+                if (this._containsOpenCall(code)) {
+                    console.warn('[ToolExecutionMiddleware] 🛑 检测到非法 open() 调用，启动急诊修复...');
+                    const fixedCode = await this._repairCodeWithLLM(code, '非法使用 open() 函数，必须使用 pd.io.common.get_handle 等安全方法');
+                    if (fixedCode) {
+                        console.log('[ToolExecutionMiddleware] 🔄 使用修复后的代码继续执行...');
+                        parameters.code = fixedCode;
+                        // 继续执行，不需要返回，因为已经修改了 parameters.code
+                    } else {
+                        // 修复失败，返回错误
+                        const errorMsg = `❌ **代码预检失败：非法使用 open()**\n\n检测到代码中包含 \`open()\` 调用，但沙盒环境已移除该函数。自动修复失败，请修正后重试。\n\n代码片段：\n\`\`\`python\n${code.substring(0, 500)}...\n\`\`\``;
+                        recordToolCall(toolName, parameters, false, errorMsg);
+                        return { rawObservation: errorMsg, toolSources: [], toolSuccess: false };
+                    }
+                }
+                // ========== 🆕 增量添加结束 ==========
                 
                 // 🔥 新增：使用增强的语法验证
                 const syntaxCheck = this._validatePythonSyntaxEnhanced(code);
@@ -2743,5 +2808,17 @@ _extractHistoricalContext() {
             const data = this.dataBus.get(key);
             console.log(`  • ${key}: ${data.rawData.length} 字符, 工具: ${data.metadata.toolName}, 迭代: ${data.metadata.iteration || '未知'}`);
         });
+    }
+
+    /**
+     * 🎯 检测是否为文件读取任务
+     * @param {string} objective - 任务目标
+     * @param {string} data_context - 数据上下文
+     * @returns {boolean} 是否为文件读取任务
+     */
+    _isFileReadTask(objective, data_context) {
+        const combined = (objective + ' ' + (data_context || '')).toLowerCase();
+        const keywords = ['/data/', '读取文件', 'get_handle', '文件路径', '代码', 'json'];
+        return keywords.some(kw => combined.includes(kw));
     }
 }
