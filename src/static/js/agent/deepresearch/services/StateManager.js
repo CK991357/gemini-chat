@@ -55,9 +55,14 @@ export class StateManager {
     
     /**
      * 🎯 存储数据到数据总线
+     * @param {number|string} keyOrIndex - 数据键名或步骤索引
+     * @param {string} rawData - 原始数据内容
+     * @param {Object} metadata - 元数据
+     * @param {Array} toolSources - 工具来源信息
      */
-    storeInDataBus(stepIndex, rawData, metadata = {}, toolSources = []) {
-        const dataKey = `step_${stepIndex}`;
+    storeInDataBus(keyOrIndex, rawData, metadata = {}, toolSources = []) {
+        // 支持自定义字符串键名
+        const dataKey = typeof keyOrIndex === 'string' ? keyOrIndex : `step_${keyOrIndex}`;
         
         let processedData = rawData;
         
@@ -67,7 +72,7 @@ export class StateManager {
             url: source.url || '#',
             description: source.description || '',
             collectedAt: new Date().toISOString(),
-            stepIndex: stepIndex, // 标记属于哪个步骤
+            stepIndex: typeof keyOrIndex === 'number' ? keyOrIndex : null, // 只有数字索引时才记录
             sourceIndex: null // 后续会分配唯一索引
         }));
         

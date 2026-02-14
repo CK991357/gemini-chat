@@ -152,7 +152,8 @@ export class DeepResearchAgent {
             researchMode,
             currentDate,
             contextMessages,
-            reportModel // 🔥 新增：接收用户选择的报告模型
+            reportModel, // 🔥 新增：接收用户选择的报告模型
+            fileContents // 🎯 新增：接收上传的文件内容
         } = researchRequest;
         
         // 🎯 存储报告模型选择
@@ -166,6 +167,43 @@ export class DeepResearchAgent {
         // 🎯 核心新增：使用StateManager开始新的研究运行
         this.stateManager.startNewRun(runId, cleanTopic);
         this.stateManager.clearImages(); // 关键：每次新研究开始时清空图片缓存
+        
+        // ============================================================
+        // 🎯 核心新增：处理上传文件内容，存入 DataBus
+        // ============================================================
+        if (fileContents && fileContents.length > 0) {
+            console.log(`[DeepResearchAgent] 发现 ${fileContents.length} 个上传文件，存入 DataBus`);
+            fileContents.forEach((file, idx) => {
+                const safeName = file.filename.replace(/[^a-zA-Z0-9]/g, '_');
+                const fileKey = `upload_${idx+1}_${safeName}`;
+                const metadata = {
+                    type: 'user_upload',
+                    filename: file.filename,
+                    fileType: file.type,
+                    originalContent: file.content,   // 可选，存储原始副本
+                    uploadIndex: idx + 1,
+                    uploadTimestamp: new Date().toISOString()
+                };
+                // 存储到 DataBus（使用 stateManager 的 storeInDataBus 方法，支持字符串键）
+                this.stateManager.storeInDataBus(fileKey, file.content, metadata, []);
+                
+                console.log(`[DeepResearchAgent] ✅ 已存储上传文件: ${fileKey} (${file.content.length} 字符)`);
+            });
+            
+            // 可选：发送事件通知UI
+            await this.callbackManager.invokeEvent('on_files_uploaded', {
+                run_id: runId,
+                data: {
+                    fileCount: fileContents.length,
+                    files: fileContents.map((file, idx) => ({
+                        index: idx + 1,
+                        filename: file.filename,
+                        type: file.type,
+                        size: file.content.length
+                    }))
+                }
+            });
+        }
         
         // 🎯 更新工具执行中间件的运行ID
         this.toolExecutor.updateSharedState({

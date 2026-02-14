@@ -663,6 +663,7 @@ async def root():
             "upload_file": "POST /api/v1/files/upload",
             "cleanup_session": "DELETE /api/v1/sessions/{session_id}",
             "list_files_session": "GET /api/v1/files/list/{session_id}",
+            "read_file_session": "GET /api/v1/files/read/{session_id}/{filename}",  # 🆕 新增
             "download_file_session": "GET /api/v1/files/download/{session_id}/{filename}",
             "list_files_global": "GET /api/v1/files/global/list-all",
             "download_file_global": "GET /api/v1/files/global/download/{filename}",
@@ -713,6 +714,35 @@ async def download_session_file(session_id: str, filename: str):
     file_path = get_safe_path(session_id, filename)
     if not file_path.is_file(): raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(path=file_path, filename=file_path.name, media_type='application/octet-stream')
+
+# ========== 🆕 增量添加：读取文件内容API ==========
+@app.get("/api/v1/files/read/{session_id}/{filename}")
+async def read_file_content(session_id: str, filename: str):
+    """读取指定会话工作区中的文件内容。允许 session_ 开头的 ID 或 'temp'。"""
+    if not is_valid_session_id(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session ID format (must start with 'session_' or be 'temp')")
+
+    file_path = get_safe_path(session_id, filename)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    ext = file_path.suffix.lower()
+    try:
+        if ext == '.json':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = json.load(f)
+            return {"content": content, "type": "json", "filename": filename}
+        else:  # 文本文件（.md, .txt, .csv 等）
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return {"content": content, "type": "text", "filename": filename}
+    except UnicodeDecodeError:
+        # 二进制文件（如图片、PDF 等）返回 Base64
+        with open(file_path, 'rb') as f:
+            content_base64 = base64.b64encode(f.read()).decode('utf-8')
+        return {"content": content_base64, "type": "base64", "filename": filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {e}")
 
 # ... (delete_session_file, rename_session_file 等，如果存在的话) ...
 

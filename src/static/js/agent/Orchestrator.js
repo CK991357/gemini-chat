@@ -158,6 +158,14 @@ ${cleanTopic}
             // `context.messages` 由 `main.js` 的 `handleEnhancedHttpMessage` 传入
             const previousMessages = (context && context.messages) ? context.messages : [];
 
+            // 🔥🔥🔥 [新增核心逻辑] 读取上传文件 🔥🔥🔥
+            let fileContents = [];
+            const TEMP_SESSION_ID = "temp";  // 🔥 修改：硬编码为 temp
+            if (window.readUploadedFiles) {
+                fileContents = await window.readUploadedFiles(TEMP_SESSION_ID);
+                console.log(`[Orchestrator] 已从 temp 目录读取 ${fileContents.length} 个上传文件`);
+            }
+
             // ✨✨✨ 核心修复：同时传递 cleanTopic 和 enrichedTopic ✨✨✨
             const researchRequest = {
                 topic: enrichedTopic,           // 用于 Agent 思考的完整主题
@@ -170,7 +178,9 @@ ${cleanTopic}
                 // ✨ 新增：传递历史消息数组，供 Agent 使用历史上下文
                 contextMessages: previousMessages,
                 // 🔥🔥🔥 [新增] 传递用户选择的报告模型 🔥🔥🔥
-                reportModel: reportModel
+                reportModel: reportModel,
+                // 🔥🔥🔥 [新增] 传递上传文件内容 🔥🔥🔥
+                fileContents: fileContents
             };
 
             const researchResult = await this.deepResearchAgent.conductResearch(researchRequest);
@@ -199,7 +209,8 @@ ${cleanTopic}
                 reportLength: researchResult.report?.length,
                 sourcesCount: researchResult.sources?.length || 0,
                 researchMode: researchResult.research_mode,
-                maxIterations: maxIterations // 🔥 新增：记录配置的迭代次数
+                maxIterations: maxIterations, // 🔥 新增：记录配置的迭代次数
+                fileCount: fileContents.length // 🔥 新增：记录文件数量
             });
 
             // 返回已经处理过的 researchResult
@@ -216,7 +227,8 @@ ${cleanTopic}
                 temporal_quality: researchResult.temporal_quality,
                 // 🔥 核心新增：将完整的用户原始消息返回，供上游保存到历史记录
                 originalUserMessage: originalTopic,
-                model: researchResult.model || reportModel  // 🎯 核心修复：添加模型信息
+                model: researchResult.model || reportModel,  // 🎯 核心修复：添加模型信息
+                fileCount: fileContents.length // 🔥 新增：返回文件数量
             };
         } catch (error) {
             console.error('[Orchestrator] DeepResearch Agent执行失败:', error);
