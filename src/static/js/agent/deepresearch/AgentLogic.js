@@ -1851,6 +1851,71 @@ const toolOptimizationProtocol = `
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
 
+        // 在 AgentLogic 的 plan 方法中，构建提示词时添加以下内容
+const preloadDataGuidance = `
+## 📂 用户预加载数据处理原则
+
+用户可能已经通过文件上传功能，提供了**最终可直接使用的数据文件**（如 JSON、CSV、Parquet 或 Markdown 表格）。这些文件已保存在会话工作区，可通过 \`/data/文件名\` 访问。
+
+### 🎯 核心原则
+1. **直接使用数据**：如果文件内容已经是结构化数据（如 JSON 对象、表格），你应**直接利用这些数据进行分析**，而无需重复执行数据提取或解析操作。
+2. **区分数据角色**：
+   - **文件内容本身**应作为**证据**用于推理和报告生成。
+   - **代码解释器**应仅用于**对数据进行可视化、计算衍生指标、生成图表**等附加操作，而非重新提取已有数据。
+3. **DataBus 缓存**：成功读取的文件内容会自动存入 DataBus，你可以在后续思考中直接引用 \`DataBus:step_X\` 中的数据，无需再次调用工具读取。
+
+### ✅ 正确做法示例
+- **用户提供 JSON 财务比率文件** → 直接读取 JSON，用其数据绘制图表，无需二次解析。
+- **用户提供 Markdown 表格文件** → 读取文本后，将表格转换为 DataFrame 直接使用。
+
+### 💻 代码示例
+
+#### JSON 文件读取与使用
+\`\`\`python
+import pandas as pd
+import json
+
+# 安全读取 JSON 文件
+file_path = '/data/financial_ratio_result.json'
+with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
+    data = json.loads(f.handle.read())
+
+# 直接使用数据（例如提取历年 ROE 并绘图）
+years = ['2017', '2018', '2019', '2020']
+roe_values = [data['calculated_ratios']['roe'][y] for y in years]  # 根据实际数据格式调整
+
+import matplotlib.pyplot as plt
+plt.plot(years, roe_values, marker='o')
+plt.title('ROE Trend (2017-2020)')
+plt.show()
+\`\`\`
+
+#### Markdown 表格文件读取与转换
+\`\`\`python
+import pandas as pd
+
+# 读取 Markdown 文件
+file_path = '/data/AAPL_report.md'
+with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
+    md_content = f.handle.read()
+
+# 使用 pandas 的 read_html 提取表格（需要 lxml）
+tables = pd.read_html(md_content)  # 返回 DataFrame 列表
+if tables:
+    df = tables[0]  # 取第一个表格
+    print(df)
+\`\`\`
+
+**提示**：如果文件数量不多且数据量不大，可以在一次 \`code_generator\` 调用中同时读取多个文件，避免多次调用浪费迭代次数。
+
+### ❌ 常见错误
+- 对已结构化的数据再次调用代码解释器进行“数据清洗”或“解析”。
+- 生成复杂的提取代码去处理已经是最终格式的文件。
+- 在代码中使用被禁止的 \`open()\` 函数。
+
+请根据用户消息中提示的文件类型（如 .json, .md）和文件内容，合理决策下一步行动。请记住：如果用户已上传文件，你的首要任务是直接使用这些数据，而非重新获取或解析。
+`;
+
 // 🎯 核心新增：AlphaVantage 金融数据工具 - 使用指导与限制
 const alphavantageGuidance = `
 ## 💹 AlphaVantage 金融数据工具 - 使用指导与限制
@@ -2733,6 +2798,8 @@ ${dataBusIntegration(dataBusSummary, similarityDetection)} // 🎯 核心新增�
 ${dataBusIntelligenceProtocol(dataBusSummary)} // 🎯 核心新增：数据总线智能激活协议
  
 ${modeAwareCrawlStrategy} // 🎯 核心替换：插入模式感知的抓取策略
+
+${preloadDataGuidance} // 🎯 核心新增：预加载数据使用指导
 
 ${alphavantageGuidance} // 💹 插入：AlphaVantage 金融数据工具专用指导
  
