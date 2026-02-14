@@ -68,7 +68,7 @@ export class AttachmentManager {
         if (!files || files.length === 0) return;
 
         // 定义需要走"上传"轨道的数据文件类型
-        const dataFileExtensions = ['.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt'];
+        const dataFileExtensions = ['.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt', '.md'];
 
         for (const file of files) {
             if (!this._validateFile(file, Array.from(files), mode)) {
@@ -334,7 +334,7 @@ async readAsBase64(file, mode) {
             'audio/mp4', 'audio/opus', 'audio/pcm', 'audio/wav', 'audio/webm', 'audio/aiff', 'audio/ogg'
         ];
         // 定义数据文件的扩展名 (与 handleFileAttachment 中保持一致)
-        const dataFileExtensions = ['.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt'];
+        const dataFileExtensions = ['.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt', '.md'];
         
         const maxSize = 20 * 1024 * 1024; // 20MB
         const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
@@ -410,6 +410,9 @@ async readAsBase64(file, mode) {
             } else if (name.endsWith('.csv')) {
                 icon.className = 'fa-solid fa-file-csv';
                 icon.style.color = '#6c757d';
+            } else if (name.endsWith('.md')) {
+                icon.className = 'fa-brands fa-markdown';
+                icon.style.color = '#000000';
             } else {
                 icon.className = 'fa-solid fa-file';
             }

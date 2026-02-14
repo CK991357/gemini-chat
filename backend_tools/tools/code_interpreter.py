@@ -520,14 +520,15 @@ async def upload_file(session_id: str = Form(None), file: UploadFile = File(...)
     effective_session_id = session_id if session_id and session_id.startswith("session_") else "temp"
     
     # 验证文件类型
-    allowed_extensions = {'.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt'}
+    allowed_extensions = {'.xlsx', '.xls', '.parquet', '.csv', '.json', '.txt', '.md'}
     mime_to_extension = {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
         'application/vnd.ms-excel': '.xls',
         'application/octet-stream': '.parquet',  # Parquet 文件可能使用这个MIME类型
         'text/csv': '.csv',
         'application/json': '.json',
-        'text/plain': '.txt'
+        'text/plain': '.txt',
+        'text/markdown': '.md'   # 可选，增强MIME类型识别
     }
 
     file_extension = Path(file.filename).suffix.lower()
