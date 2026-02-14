@@ -30,6 +30,11 @@ SESSION_WORKSPACE_ROOT = Path("/srv/sandbox_workspaces")
 SESSION_WORKSPACE_ROOT.mkdir(exist_ok=True)
 SESSION_TIMEOUT_HOURS = 24  # 会话超时时间（小时）
 
+# ========== 🆕 增量添加：会话ID验证辅助函数 ==========
+def is_valid_session_id(session_id: str) -> bool:
+    """检查 session_id 是否合法：必须以 'session_' 开头，或等于 'temp'"""
+    return session_id.startswith("session_") or session_id == "temp"
+
 # 为文件管理API定义数据蓝图
 class FileInfo(BaseModel):
     name: str
@@ -216,7 +221,7 @@ stripped_stdout = stdout_val.strip()
 
 # 智能提取核心内容，兼容模型可能输出的额外包裹
 def extract_core_content(s):
-    # 移除markdown代码块
+    # 移除代码块
     if s.startswith("```") and s.endswith("```"):
         lines = s.split('\\n')
         if len(lines) > 2:
@@ -695,11 +700,11 @@ def get_safe_path(session_id: str, filename: str = None) -> Path:
 
 @app.get("/api/v1/files/list/{session_id}", response_model=List[FileInfo])
 async def list_files_for_session(session_id: str):
-    """列出指定会话工作区中的所有文件。仅允许 'session_' 开头的会话ID。"""
+    """列出指定会话工作区中的所有文件。允许 session_ 开头的 ID 或 'temp'。"""
     
-    # 🎯 核心修改：验证会话ID格式
-    if not session_id.startswith("session_"):
-        raise HTTPException(status_code=400, detail="Only sessions with 'session_' prefix are allowed")
+    # 🎯 核心修改：使用统一的会话ID验证函数
+    if not is_valid_session_id(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session ID format (must start with 'session_' or be 'temp')")
     
     session_path = get_safe_path(session_id)
     if not session_path.is_dir():
