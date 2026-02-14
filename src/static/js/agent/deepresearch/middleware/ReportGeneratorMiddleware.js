@@ -1325,27 +1325,30 @@ _storeWritingModelInfo(writingInfo) {
                 dataUtilizationStats.originalChars += originalDataForProcessing.length;
                 dataUtilizationStats.stepsWithDataBus++;
             
-                // 🎯 智能数据策略选择
-                const dataStrategy = this._selectDataStrategy(
-                    contentType,
-                    originalDataForProcessing.length,
-                    researchMode,
-                    toolName,
-                    step.success
-                );
-            
-                console.log(`[EvidenceCollection] 数据策略: ${dataStrategy} (${contentType}, ${originalDataForProcessing.length} chars)`);
-            
-                switch(dataStrategy) {
-                    case 'full_original':
-                        if (originalDataForProcessing.length < 80000) {
-                            if (isCodeInterpreterData) {
-                                // 代码解释器输出：直接使用完整原始内容，不进行结构化处理
-                                finalEvidence = originalDataForProcessing;
-                                dataSourceType = 'data_bus_full_stdout_raw';
-                            } else {
+                // 🎯 代码解释器特殊处理：直接使用完整原始内容，跳过策略选择
+                if (isCodeInterpreterData) {
+                    // 代码解释器输出：直接使用完整原始内容，不进行任何结构化处理
+                    finalEvidence = originalDataForProcessing;
+                    dataSourceType = 'data_bus_full_stdout_raw';
+                    console.log(`[EvidenceCollection] 🎯 代码解释器数据直通模式: 完整保留 ${originalDataForProcessing.length} 字符`);
+                    // 直接进行后续的优化和统计，跳过策略选择和 _enhanceStructuredData
+                } else {
+                    // 🎯 智能数据策略选择（仅对非代码解释器数据）
+                    const dataStrategy = this._selectDataStrategy(
+                        contentType,
+                        originalDataForProcessing.length,
+                        researchMode,
+                        toolName,
+                        step.success
+                    );
+                
+                    console.log(`[EvidenceCollection] 数据策略: ${dataStrategy} (${contentType}, ${originalDataForProcessing.length} chars)`);
+                
+                    switch(dataStrategy) {
+                        case 'full_original':
+                            if (originalDataForProcessing.length < 80000) {
                                 finalEvidence = this._cleanObservation(originalDataForProcessing);
-                                dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_cleaned' : 'data_bus_full_cleaned';
+                                dataSourceType = 'data_bus_full_cleaned';
                                 
                                 // 仅对非代码解释器数据尝试结构化增强
                                 if (this._isStructuredData(originalDataForProcessing)) {
@@ -1355,55 +1358,55 @@ _storeWritingModelInfo(writingInfo) {
                                         if (enhancedStructure.enhancedEvidence) {
                                             finalEvidence = enhancedStructure.enhancedEvidence;
                                         }
-                                        dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_enhanced' : 'data_bus_full_enhanced';
+                                        dataSourceType = 'data_bus_full_enhanced';
                                     }
                                 }
+                            } else {
+                                finalEvidence = this._createEnhancedSummary(
+                                    originalDataForProcessing,
+                                    cleanEvidence,
+                                    { toolName, contentType }
+                                );
+                                dataSourceType = 'data_bus_full_summary';
                             }
-                        } else {
+                            break;
+                        
+                        case 'enhanced_summary':
                             finalEvidence = this._createEnhancedSummary(
                                 originalDataForProcessing,
                                 cleanEvidence,
                                 { toolName, contentType }
                             );
-                            dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_summary' : 'data_bus_full_summary';
-                        }
-                        break;
-                    
-                    case 'enhanced_summary':
-                        finalEvidence = this._createEnhancedSummary(
-                            originalDataForProcessing,
-                            cleanEvidence,
-                            { toolName, contentType }
-                        );
-                        dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_enhanced_summary' : 'data_bus_enhanced_summary';
-                        break;
-                    
-                    case 'structured_only':
-                        if (this._isStructuredData(originalDataForProcessing)) {
-                            const enhancedStructure = this._enhanceStructuredData(originalDataForProcessing, false);
-                            if (enhancedStructure) {
-                                finalEvidence = enhancedStructure.enhancedEvidence || cleanEvidence;
-                                structuredData = enhancedStructure.structuredData;
-                                dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_structured' : 'data_bus_structured';
-                            } else {
-                                finalEvidence = this._cleanObservation(originalDataForProcessing);
-                                dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_fallback' : 'data_bus_fallback';
+                            dataSourceType = 'data_bus_enhanced_summary';
+                            break;
+                        
+                        case 'structured_only':
+                            if (this._isStructuredData(originalDataForProcessing)) {
+                                const enhancedStructure = this._enhanceStructuredData(originalDataForProcessing, false);
+                                if (enhancedStructure) {
+                                    finalEvidence = enhancedStructure.enhancedEvidence || cleanEvidence;
+                                    structuredData = enhancedStructure.structuredData;
+                                    dataSourceType = 'data_bus_structured';
+                                } else {
+                                    finalEvidence = this._cleanObservation(originalDataForProcessing);
+                                    dataSourceType = 'data_bus_fallback';
+                                }
                             }
-                        }
-                        break;
-                    
-                    case 'hybrid':
-                        finalEvidence = this._createHybridEvidence(
-                            originalDataForProcessing,
-                            cleanEvidence,
-                            { toolName, contentType }
-                        );
-                        dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_hybrid' : 'data_bus_hybrid';
-                        break;
-                    
-                    default:
-                        finalEvidence = cleanEvidence;
-                        dataSourceType = isCodeInterpreterData ? 'data_bus_full_stdout_default' : 'step_observation';
+                            break;
+                        
+                        case 'hybrid':
+                            finalEvidence = this._createHybridEvidence(
+                                originalDataForProcessing,
+                                cleanEvidence,
+                                { toolName, contentType }
+                            );
+                            dataSourceType = 'data_bus_hybrid';
+                            break;
+                        
+                        default:
+                            finalEvidence = cleanEvidence;
+                            dataSourceType = 'step_observation';
+                    }
                 }
             } else if (dataBusEntry) {
                 console.log(`[EvidenceCollection] DataBus条目无可用原始数据，使用processedData`);
