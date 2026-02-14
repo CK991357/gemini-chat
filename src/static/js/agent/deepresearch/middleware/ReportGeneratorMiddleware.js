@@ -1461,6 +1461,60 @@ _storeWritingModelInfo(writingInfo) {
             }
         });
 
+        // ========== 🆕 增量添加：处理上传文件条目（键以 upload_ 开头） ==========
+        const dataBus = this.dataBus;
+        if (dataBus) {
+            const uploadKeys = [];
+            if (dataBus instanceof Map) {
+                for (const key of dataBus.keys()) {
+                    if (key.startsWith('upload_')) uploadKeys.push(key);
+                }
+            } else if (typeof dataBus === 'object') {
+                uploadKeys.push(...Object.keys(dataBus).filter(key => key.startsWith('upload_')));
+            }
+
+            uploadKeys.forEach(key => {
+                const entry = dataBus instanceof Map ? dataBus.get(key) : dataBus[key];
+                if (entry && entry.rawData) {
+                    const metadata = entry.metadata || {};
+                    const filename = metadata.filename || key;
+                    const fileContent = entry.rawData;  // 已经是字符串（修复后）
+
+                    // 清理内容（复用现有清理函数）
+                    let cleanEvidence = this._cleanObservation(fileContent);
+                    if (!cleanEvidence || cleanEvidence.length < 20) return;
+
+                    // 如果是 JSON，可尝试结构化增强（调用已有函数）
+                    let structuredData = null;
+                    if (metadata.fileType === 'json') {
+                        const enhanced = this._enhanceStructuredData(fileContent, true);
+                        if (enhanced) {
+                            cleanEvidence = enhanced.enhancedEvidence || cleanEvidence;
+                            structuredData = enhanced.structuredData;
+                        }
+                    }
+
+                    const evidenceEntry = {
+                        stepIndex: 0,   // 前置步骤，排在所有 step 之前
+                        subQuestion: `用户上传文件: ${filename}`,
+                        evidence: cleanEvidence,
+                        structuredData: structuredData,
+                        hasStructuredData: !!structuredData,
+                        keyFinding: `文件 ${filename} 内容已加载`,
+                        tool: 'user_upload',
+                        originalLength: fileContent.length,
+                        enhancedLength: cleanEvidence.length,
+                        dataSourceType: 'user_upload',
+                        dataBusKey: key,
+                    };
+                    evidenceEntries.push(evidenceEntry);
+                    totalLength += cleanEvidence.length;
+                    keyFindings.push(`用户上传文件: ${filename}`);
+                }
+            });
+        }
+        // ========== 🆕 增量添加结束 ==========
+
         // 🎯 【最终优化】排序逻辑：按研究步骤顺序排序
         evidenceEntries.sort((a, b) => a.stepIndex - b.stepIndex);
         console.log(`[EvidenceCollection] 证据已按步骤顺序排序: 步骤 ${evidenceEntries[0]?.stepIndex} → 步骤 ${evidenceEntries[evidenceEntries.length-1]?.stepIndex}`);

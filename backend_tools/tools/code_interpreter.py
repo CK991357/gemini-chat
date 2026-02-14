@@ -736,18 +736,19 @@ async def read_file_content(session_id: str, filename: str):
         if ext == '.json':
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = json.load(f)
-            logger.info(f"Read JSON file {filename}, size: {len(json.dumps(content))} chars")
+            content_str = json.dumps(content, ensure_ascii=False)
+            logger.info(f"Read JSON file {filename}, size: {len(content_str)} chars, actual content length: {len(content_str)}")
             return {"content": content, "type": "json", "filename": filename}
         else:  # 文本文件（.md, .txt, .csv 等）
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            logger.info(f"Read text file {filename}, size: {len(content)} chars")
+            logger.info(f"Read text file {filename}, size: {len(content)} chars, actual content length: {len(content)}")
             return {"content": content, "type": "text", "filename": filename}
     except UnicodeDecodeError:
         # 二进制文件（如图片、PDF 等）返回 Base64
         with open(file_path, 'rb') as f:
             content_base64 = base64.b64encode(f.read()).decode('utf-8')
-        logger.info(f"Read binary file {filename}, base64 size: {len(content_base64)} chars")
+        logger.info(f"Read binary file {filename}, base64 size: {len(content_base64)} chars, actual content length: {len(content_base64)}")
         return {"content": content_base64, "type": "base64", "filename": filename}
     except Exception as e:
         logger.error(f"Failed to read file {filename}: {e}")

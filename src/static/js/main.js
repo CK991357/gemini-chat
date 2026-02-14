@@ -3700,10 +3700,7 @@ async function readUploadedFiles(sessionId, fileNames = null) {
         // 🐛 调试日志：输出每个文件的内容长度信息
         results.forEach(r => {
             if (r) {
-                const contentLength = r.type === 'json' ? JSON.stringify(r.content).length : 
-                                    typeof r.content === 'string' ? r.content.length : 
-                                    String(r.content).length;
-                console.log(`[readUploadedFiles] 文件 ${r.filename}, 类型 ${r.type}, 内容长度: ${contentLength}`);
+                console.log(`[readUploadedFiles] 文件 ${r.filename}, 类型 ${r.type}, 内容长度: ${r.type === 'json' ? JSON.stringify(r.content).length : r.content.length}`);
             }
         });
         
