@@ -1327,10 +1327,21 @@ _storeWritingModelInfo(writingInfo) {
             
                 // 🎯 代码解释器特殊处理：直接使用完整原始内容，跳过策略选择
                 if (isCodeInterpreterData) {
-                    // 代码解释器输出：直接使用完整原始内容，不进行任何结构化处理
-                    finalEvidence = originalDataForProcessing;
-                    dataSourceType = 'data_bus_full_stdout_raw';
-                    console.log(`[EvidenceCollection] 🎯 代码解释器数据直通模式: 完整保留 ${originalDataForProcessing.length} 字符`);
+                    // 判断是否为图片输出（检测内容中是否包含图片类型标记）
+                    const isImageOutput = typeof originalDataForProcessing === 'string' && 
+                                          originalDataForProcessing.includes('"type":"image"');
+                    
+                    if (isImageOutput) {
+                        // 图片输出：使用已处理过的友好信息（rawData），避免 base64 污染写作模型
+                        finalEvidence = dataBusEntry.rawData;
+                        dataSourceType = 'data_bus_full_stdout_image_friendly';
+                        console.log(`[EvidenceCollection] 🎯 代码解释器数据（图片友好模式）: 完整保留友好信息 ${finalEvidence.length} 字符`);
+                    } else {
+                        // 非图像输出，直通完整内容
+                        finalEvidence = originalDataForProcessing;
+                        dataSourceType = 'data_bus_full_stdout_raw';
+                        console.log(`[EvidenceCollection] 🎯 代码解释器数据直通模式: 完整保留 ${originalDataForProcessing.length} 字符`);
+                    }
                     // 直接进行后续的优化和统计，跳过策略选择和 _enhanceStructuredData
                 } else {
                     // 🎯 智能数据策略选择（仅对非代码解释器数据）
