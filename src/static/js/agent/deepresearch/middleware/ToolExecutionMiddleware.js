@@ -2821,4 +2821,16 @@ _extractHistoricalContext() {
         const keywords = ['/data/', '读取文件', 'get_handle', '文件路径', '代码', 'json'];
         return keywords.some(kw => combined.includes(kw));
     }
+
+    /**
+     * 🎯 检测代码中是否包含 open() 函数调用
+     * @param {string} code - Python代码字符串
+     * @returns {boolean} 是否包含open()调用
+     */
+    _containsOpenCall(code) {
+        // 移除字符串和注释后检查，避免误报
+        const withoutStrings = code.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '');
+        const withoutComments = withoutStrings.replace(/#.*$/gm, '');
+        return /\bopen\s*\(/.test(withoutComments);
+    }
 }
