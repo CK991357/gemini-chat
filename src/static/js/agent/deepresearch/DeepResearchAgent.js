@@ -176,18 +176,28 @@ export class DeepResearchAgent {
             fileContents.forEach((file, idx) => {
                 const safeName = file.filename.replace(/[^a-zA-Z0-9]/g, '_');
                 const fileKey = `upload_${idx+1}_${safeName}`;
+                
+                // 🚨 核心修复：确保内容为字符串
+                let rawContent = file.content;
+                if (file.type === 'json' && typeof rawContent === 'object') {
+                    rawContent = JSON.stringify(rawContent, null, 2);  // 格式化为易读 JSON
+                } else if (typeof rawContent !== 'string') {
+                    rawContent = String(rawContent);
+                }
+                
                 const metadata = {
                     type: 'user_upload',
                     filename: file.filename,
                     fileType: file.type,
-                    originalContent: file.content,   // 可选，存储原始副本
+                    originalContent: file.content,   // 可选保留原始对象
                     uploadIndex: idx + 1,
                     uploadTimestamp: new Date().toISOString()
                 };
-                // 存储到 DataBus（使用 stateManager 的 storeInDataBus 方法，支持字符串键）
-                this.stateManager.storeInDataBus(fileKey, file.content, metadata, []);
                 
-                console.log(`[DeepResearchAgent] ✅ 已存储上传文件: ${fileKey} (${file.content.length} 字符)`);
+                // 存储到 DataBus（使用 stateManager 的 storeInDataBus 方法，支持字符串键）
+                this.stateManager.storeInDataBus(fileKey, rawContent, metadata, []);
+                
+                console.log(`[DeepResearchAgent] ✅ 已存储上传文件: ${fileKey} (${rawContent.length} 字符)`);
             });
             
             // 可选：发送事件通知UI
@@ -199,7 +209,7 @@ export class DeepResearchAgent {
                         index: idx + 1,
                         filename: file.filename,
                         type: file.type,
-                        size: file.content.length
+                        size: typeof file.content === 'object' ? JSON.stringify(file.content).length : String(file.content).length
                     }))
                 }
             });

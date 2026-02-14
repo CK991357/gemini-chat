@@ -726,7 +726,7 @@ async def read_file_content(session_id: str, filename: str):
     """读取指定会话工作区中的文件内容。允许 session_ 开头的 ID 或 'temp'。"""
     if not is_valid_session_id(session_id):
         raise HTTPException(status_code=400, detail="Invalid session ID format (must start with 'session_' or be 'temp')")
-
+    
     file_path = get_safe_path(session_id, filename)
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found.")
@@ -736,17 +736,21 @@ async def read_file_content(session_id: str, filename: str):
         if ext == '.json':
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = json.load(f)
+            logger.info(f"Read JSON file {filename}, size: {len(json.dumps(content))} chars")
             return {"content": content, "type": "json", "filename": filename}
         else:  # 文本文件（.md, .txt, .csv 等）
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
+            logger.info(f"Read text file {filename}, size: {len(content)} chars")
             return {"content": content, "type": "text", "filename": filename}
     except UnicodeDecodeError:
         # 二进制文件（如图片、PDF 等）返回 Base64
         with open(file_path, 'rb') as f:
             content_base64 = base64.b64encode(f.read()).decode('utf-8')
+        logger.info(f"Read binary file {filename}, base64 size: {len(content_base64)} chars")
         return {"content": content_base64, "type": "base64", "filename": filename}
     except Exception as e:
+        logger.error(f"Failed to read file {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to read file: {e}")
 
 # ... (delete_session_file, rename_session_file 等，如果存在的话) ...
