@@ -278,6 +278,28 @@ class SkillContextManager {
       
       console.log(`📦 [技能文档] 主文档大小: ${skillData.content.length}字符`);
       
+      // 🎯 检测文件读取意图
+      const fileAccessKeywords = ['读取', '文件', 'json', 'open', '文件访问', '读取数据', '数据文件', 'load', 'parse', 'read', 'load'];
+      const isFileReadIntent = fileAccessKeywords.some(kw => userQuery.toLowerCase().includes(kw));
+
+      let fileGuideContent = '';
+      if (isFileReadIntent) {
+          // 通过 skillManager 访问联邦知识库
+          const knowledgeFederation = this.skillManager?.knowledgeFederation;
+          if (knowledgeFederation) {
+              // 请求 python_sandbox 工具的参考章节 file_access_guide.md
+              const guide = knowledgeFederation.getFederatedKnowledge('python_sandbox', ['file_access_guide.md']);
+              if (guide && typeof guide === 'string' && guide.length > 100) {
+                  fileGuideContent = `## 📖 文件访问指南（重要）\n\n${guide}\n\n`;
+                  console.log(`📖 [文件指南] 已从知识库获取 (${guide.length} 字符)`);
+              } else {
+                  // 降级：硬编码简版
+                  fileGuideContent = `## 📖 文件访问指南（重要）\n\nPython沙盒中无法使用 \`open\`，请使用 \`pd.io.common.get_handle\` 读取文件。\n\n\`\`\`python\nimport pandas as pd\nimport json\nwith pd.io.common.get_handle('/data/your_file.json', 'r', is_text=True) as f:\n    data = json.load(f.handle.read())\n\`\`\`\n\n更多详细指南请参考完整文档。\n\n`;
+                  console.warn(`📖 [文件指南] 知识库获取失败，使用硬编码`);
+              }
+          }
+      }
+      
       // 🎯 构建基础上下文
       let contextContent = `### 🐍 Python沙盒工具: ${name} (匹配度: ${(score * 100).toFixed(1)}%)\n\n`;
       contextContent += `**核心功能**: ${description}\n\n`;
@@ -293,8 +315,14 @@ class SkillContextManager {
       const queryContent = this._buildQuerySpecificContent(skillData, userQuery);
       console.log(`🎯 [查询内容] 构建: ${queryContent.length}字符`);
       
-      // 3. 合并内容
-      const mergedContent = this._mergeSkillAndQueryContent(skillCore, queryContent, userQuery);
+      // 3. 合并内容（文件指南放在最前面）
+      let mergedContent = fileGuideContent;
+      if (skillCore) {
+          mergedContent += skillCore + '\n\n';
+      }
+      if (queryContent) {
+          mergedContent += queryContent + '\n\n';
+      }
       console.log(`🔗 [合并内容] 总大小: ${mergedContent.length}字符`);
       
       // 🎯 使用智能压缩器替换原来的简单截断

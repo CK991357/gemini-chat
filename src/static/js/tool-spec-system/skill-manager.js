@@ -724,6 +724,13 @@ calculateSynonymScore(query, skill) {
         sections.add('文本分析与结构化提取');
     }
     
+    // 🎯 文件读取相关（新增）
+    const fileAccessKeywords = ['读取', '文件', 'json', 'open', '文件访问', '读取数据', '数据文件', 'load', 'parse', 'read', 'load'];
+    if (this.containsKeywords(queryLower, fileAccessKeywords)) {
+        sections.add('file_access_guide.md');
+        console.log(`🎯 [章节推断] 检测到文件读取需求，添加 file_access_guide.md`);
+    }
+    
     // 🎯 数学/计算相关查询
     if (this.containsKeywords(queryLower, ['数学', '公式', '计算', '证明', 'sympy', '科学'])) {
         sections.add('公式证明工作流');
