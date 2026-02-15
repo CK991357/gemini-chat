@@ -40,9 +40,6 @@ export class DeepResearchAgent {
         this.metrics = this.stateManager.metrics;
         this.imageCounter = 0; // 仍然由主文件管理，因为ToolExecutionMiddleware需要更新它
         
-        // 🎯 新增：初始化来源数组，用于跟踪所有数据来源
-        this.sources = []; // 🔥 核心新增：全局来源跟踪数组
-        
         // ============================================================
         // 🔥 核心修改：初始化工具执行中间件
         // ============================================================
@@ -172,59 +169,35 @@ export class DeepResearchAgent {
         this.stateManager.clearImages(); // 关键：每次新研究开始时清空图片缓存
         
         // ============================================================
-        // 处理上传文件，将其作为独立来源融入引用体系
+        // 🎯 核心新增：处理上传文件内容，存入 DataBus
         // ============================================================
         if (fileContents && fileContents.length > 0) {
             console.log(`[DeepResearchAgent] 发现 ${fileContents.length} 个上传文件，存入 DataBus`);
-
             fileContents.forEach((file, idx) => {
                 const safeName = file.filename.replace(/[^a-zA-Z0-9]/g, '_');
                 const fileKey = `upload_${idx+1}_${safeName}`;
-
-                // 将内容转为字符串（JSON 对象格式化为可读字符串）
+                
+                // 🚨 核心修复：确保内容为字符串
                 let rawContent = file.content;
                 if (file.type === 'json' && typeof rawContent === 'object') {
-                    rawContent = JSON.stringify(rawContent, null, 2);
+                    rawContent = JSON.stringify(rawContent, null, 2);  // 格式化为易读 JSON
                 } else if (typeof rawContent !== 'string') {
                     rawContent = String(rawContent);
                 }
-
-                // ✅ 1. 创建来源对象，标题明确包含 "AlphaVantage"
-                const source = {
-                    title: `AlphaVantage 财务数据 - ${file.filename}`,
-                    url: `internal:upload/${file.filename}`,  // 内部标识，不暴露真实路径
-                    description: `从 AlphaVantage 获取并整理的财务数据。`,
-                    collectedAt: new Date().toISOString(),
-                };
-
-                // ✅ 2. 将来源推入全局 sources 数组（便于追踪）
-                this.sources.push(source);
-
-                // ✅ 3. 将文件内容存入 DataBus，并在元数据中记录来源索引
+                
                 const metadata = {
                     type: 'user_upload',
                     filename: file.filename,
                     fileType: file.type,
-                    sourceIndices: [this.sources.length - 1],  // 记录当前来源的索引
+                    originalContent: file.content,   // 可选保留原始对象
+                    uploadIndex: idx + 1,
                     uploadTimestamp: new Date().toISOString()
                 };
+                
+                // 存储到 DataBus（使用 stateManager 的 storeInDataBus 方法，支持字符串键）
                 this.stateManager.storeInDataBus(fileKey, rawContent, metadata, []);
-
-                // ✅ 4. 创建虚拟中间步骤，并关联来源对象
-                const virtualStep = {
-                    action: {
-                        tool_name: 'user_upload',
-                        parameters: { filename: file.filename },
-                        thought: `用户上传了文件 ${file.filename}，其中包含 AlphaVantage 财务数据。`
-                    },
-                    observation: `文件 ${file.filename} 已加载。内容长度：${rawContent.length} 字符。`,
-                    key_finding: `用户上传文件包含 AlphaVantage 财务数据，可作为研究来源。`,
-                    sources: [source],   // 🔥 关键：将来源与步骤关联
-                    success: true
-                };
-                this.intermediateSteps.push(virtualStep);
-
-                console.log(`[DeepResearchAgent] ✅ 已存储上传文件: ${fileKey}，来源索引 ${this.sources.length - 1}`);
+                
+                console.log(`[DeepResearchAgent] ✅ 已存储上传文件: ${fileKey} (${rawContent.length} 字符)`);
             });
             // 可选：发送事件通知UI
             await this.callbackManager.invokeEvent('on_files_uploaded', {
