@@ -1467,7 +1467,8 @@ async function handleEnhancedHttpMessage(messageText, attachedFiles) {
             apiHandler: chatApiHandler,
             availableTools: availableToolNames, // 传递原始工具名称列表
             enhancedTools: enhancedTools, // 传递增强工具定义
-            contextResult: contextResult // 传递技能上下文结果
+            contextResult: contextResult, // 传递技能上下文结果
+            sessionId: currentSessionId   // 传递当前会话ID，供 Agent 使用
         };
         
         // 🔥 核心修改：调用 Orchestrator，但不处理其返回值的 content
@@ -3656,3 +3657,59 @@ function showExportSuccessNotification(fileSize) {
         }
     }, 4000);
 }
+
+/**
+ * 读取会话工作区中的文件内容
+ * @param {string} sessionId - 会话ID
+ * @param {Array<string>} [fileNames] - 可选，指定要读取的文件名列表
+ * @returns {Promise<Array<{filename: string, content: string|object, type: string}>>}
+ */
+async function readUploadedFiles(sessionId, fileNames = null) {
+    if (!sessionId) return [];
+
+    try {
+        let filesToRead = fileNames;
+        if (!filesToRead) {
+            const listResponse = await fetch(`/api/v1/files/list/${sessionId}`);
+            if (!listResponse.ok) throw new Error('Failed to list files');
+            const files = await listResponse.json();
+            filesToRead = files.map(f => f.name);
+        }
+
+        const readPromises = filesToRead.map(async (filename) => {
+            try {
+                const response = await fetch(`/api/v1/files/read/${sessionId}/${encodeURIComponent(filename)}`);
+                if (!response.ok) {
+                    console.warn(`Failed to read file ${filename}: ${response.statusText}`);
+                    return null;
+                }
+                const data = await response.json();
+                return {
+                    filename: data.filename,
+                    content: data.content,
+                    type: data.type,
+                };
+            } catch (err) {
+                console.warn(`Error reading file ${filename}:`, err);
+                return null;
+            }
+        });
+
+        const results = await Promise.all(readPromises);
+        
+        // 🐛 调试日志：输出每个文件的内容长度信息
+        results.forEach(r => {
+            if (r) {
+                console.log(`[readUploadedFiles] 文件 ${r.filename}, 类型 ${r.type}, 内容长度: ${r.type === 'json' ? JSON.stringify(r.content).length : r.content.length}`);
+            }
+        });
+        
+        return results.filter(r => r !== null);
+    } catch (error) {
+        console.error('Error reading uploaded files:', error);
+        return [];
+    }
+}
+
+// 挂载到全局
+window.readUploadedFiles = readUploadedFiles;
