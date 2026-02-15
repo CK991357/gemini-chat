@@ -332,9 +332,9 @@ ${this._getModeQualityChecklist(researchMode)}
     }
 
     // ✨ 智能规划器 - 支持多种研究模式
-    async createInitialPlan(topic, researchMode = 'standard', currentDate, retryCount = 0) {
+    async createInitialPlan(topic, researchMode = 'standard', currentDate, uploadedDataSummary = '', retryCount = 0) {
         const MAX_RETRIES = 2;
-        const plannerPrompt = this._getPlannerPrompt(topic, researchMode, currentDate);
+        const plannerPrompt = this._getPlannerPrompt(topic, researchMode, currentDate, uploadedDataSummary);
 
         try {
             const llmResponse = await this.chatApiHandler.completeChat({
@@ -452,7 +452,7 @@ ${this._getModeQualityChecklist(researchMode)}
     }
 
     // ✨ 获取规划器提示词 - 增强时效性评估版本
-    _getPlannerPrompt(topic, researchMode, currentDate) {
+    _getPlannerPrompt(topic, researchMode, currentDate, uploadedDataSummary = '') {
         const currentYear = new Date().getFullYear();
         const currentDateReadable = new Date().toLocaleDateString('zh-CN', { 
             year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
@@ -499,6 +499,16 @@ ${this._getModeQualityChecklist(researchMode)}
                 iterations: 6,
                 risk: "中"
             },
+            data_mining: {
+                role: "数据挖掘分析师",
+                instructions: `1. 将数据挖掘任务分解为4-5个核心步骤
+2. 必须包含：数据源识别、数据质量评估、结构化处理、对比分析、可视化建议
+3. 每个步骤聚焦一个明确的数据处理维度
+4. 强调数据完整性、准确性和可比性
+5. 确保覆盖：原始数据、清洗处理、分析洞察、呈现方式`,
+                iterations: 5,
+                risk: "中"
+            },
             standard: {
                 role: "AI研究策略师",
                 instructions: `1. 将研究主题分解为3-5个逻辑连贯的研究步骤
@@ -507,14 +517,37 @@ ${this._getModeQualityChecklist(researchMode)}
 4. 预估每个步骤所需的信息深度（浅层概览/中层分析/深度挖掘）`,
                 iterations: 4,
                 risk: "低|中|高"
-            }
+            },
+            us_stock: {
+            role: "资深美股分析师",
+            instructions: `1. 将研究主题分解为6个逻辑连贯的研究步骤：
+       - 第一步：公司概况与业务模式概述（基于上传的财务数据，获取公司名称、行业、核心业务）。
+       - 第二步：行业与竞争格局分析（搜索最新行业报告、竞争对手信息、市场份额等）。
+       - 第三步：财务深度分析（基于上传的历史财务比率表格，对盈利能力、流动性、杠杆、效率、现金流五大类指标进行解读，并计算与行业平均的对比）。
+       - 第四步：经营变化趋势分析（计算关键指标的年增长率或变化百分比，识别改善/恶化领域，探究可能原因）。
+       - 第五步：风险因素识别（结合搜索获取的新闻和行业动态，识别宏观、行业、公司特有风险）。
+       - 第六步：综合结论与经营评价（总结核心竞争力、主要挑战，给出公司整体经营质量评价（优秀/良好/一般/较差），并提出需持续跟踪的关键指标）。
+2. 每个步骤必须解决一个明确的子问题，并为每个步骤提供2-3个精准的搜索关键词（如果需要搜索的话）。
+3. 为每个步骤标注合理的时效性敏感度（高/中/低），例如行业数据需高敏感度，公司历史财务可设为低敏感度。
+4. 预估每个步骤所需的信息深度（浅层概览/中层分析/深度挖掘）。`,
+    iterations: 6,
+    risk: "中|高"
+}
         };
 
         const config = modeConfigs[researchMode] || modeConfigs.standard;
 
+        // 🔥 新增：构建包含上传数据的完整提示词
+        let fullTopic = topic;
+        if (uploadedDataSummary && uploadedDataSummary.trim() !== '') {
+            fullTopic = `${topic}\n\n【已有数据】\n${uploadedDataSummary}`;
+        }
+
         return `
 # 角色：${config.role}
-# 任务：为"${topic}"制定研究计划
+# 任务：为"${fullTopic}"制定研究计划
+
+**注意**：如果【已有数据】部分非空，表明这些信息已经存在于系统中，您的研究计划应直接利用它们，避免重复搜索。请聚焦于收集缺失的外部信息。
 
 ## 🚨 严格输出格式要求
 **你的响应必须是且只能是有效的JSON格式，不要包含任何其他文本。**

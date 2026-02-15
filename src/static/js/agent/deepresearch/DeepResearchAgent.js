@@ -226,7 +226,6 @@ export class DeepResearchAgent {
 
                 console.log(`[DeepResearchAgent] ✅ 已存储上传文件: ${fileKey}，来源索引 ${this.sources.length - 1}`);
             });
-
             // 可选：发送事件通知UI
             await this.callbackManager.invokeEvent('on_files_uploaded', {
                 run_id: runId,
@@ -241,7 +240,11 @@ export class DeepResearchAgent {
                 }
             });
         }
-        
+
+        // 🔥 新增：生成上传数据摘要
+        const uploadedSummary = this._generateUploadedDataSummary(fileContents || []);
+        console.log(`[DeepResearchAgent] 📊 生成上传数据摘要: ${uploadedSummary.substring(0, 100)}...`);
+
         // 🎯 更新工具执行中间件的运行ID
         this.toolExecutor.updateSharedState({
             runId: runId,
@@ -331,8 +334,13 @@ export class DeepResearchAgent {
         console.log(`[DeepResearchAgent] 阶段1：生成${detectedMode}研究计划...`);
         let researchPlan;
         try {
-            // ✨✨✨ 核心修复：规划时使用完整的 internalTopic (enrichedTopic) ✨✨✨
-            const planResult = await this.agentLogic.createInitialPlan(internalTopicWithContext, detectedMode, currentDate);
+            // ✨✨✨ 核心修复：规划时使用完整的 internalTopic (enrichedTopic) 并传入上传数据摘要 ✨✨✨
+            const planResult = await this.agentLogic.createInitialPlan(
+                internalTopicWithContext, 
+                detectedMode, 
+                currentDate,
+                uploadedSummary   // <-- 传递上传数据摘要
+            );
             researchPlan = planResult;
             
             // 🎯 核心修复：确保plan包含研究模式，供完成度计算使用
@@ -1086,6 +1094,68 @@ ${specificGuidance}
         contextBuffer.push("--- 对话历史结束 ---");
         return contextBuffer.join('\n');
     }
+
+/**
+ * 从上传文件内容生成简洁摘要（供研究模型使用）
+ * @param {Array} fileContents - 上传文件数组
+ * @returns {string} 摘要文本
+ */
+_generateUploadedDataSummary(fileContents) {
+    if (!fileContents || fileContents.length === 0) {
+        return '无上传的财务数据。';
+    }
+
+    let summaryParts = ['【已有上传财务数据摘要】'];
+
+    for (const file of fileContents) {
+        // 处理 JSON 文件（financial_ratio_result.json）
+        if (file.type === 'json' && file.filename.includes('financial_ratio_result')) {
+            try {
+                const data = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
+                const company = data.company || '未知公司';
+                const symbol = data.symbol || '';
+                const industry = data.metadata?.industry || '未知行业';
+                const latest = data.formatted_ratios || {};
+
+                summaryParts.push(`• 公司: ${company} (${symbol})，行业: ${industry}`);
+                
+                if (latest.profitability) {
+                    const p = latest.profitability;
+                    summaryParts.push(`  - 盈利能力: ROE=${p.roe}, 毛利率=${p.gross_margin}, 净利率=${p.net_margin}`);
+                }
+                if (latest.liquidity) {
+                    const l = latest.liquidity;
+                    summaryParts.push(`  - 流动性: 流动比率=${l.current_ratio}, 现金比率=${l.cash_ratio}, 营运资本=${l.working_capital}`);
+                }
+                if (latest.leverage) {
+                    const lev = latest.leverage;
+                    summaryParts.push(`  - 杠杆: 负债权益比=${lev.debt_to_equity}, 资产负债率=${lev.debt_to_assets}`);
+                }
+                if (latest.efficiency) {
+                    const eff = latest.efficiency;
+                    summaryParts.push(`  - 效率: 资产周转率=${eff.asset_turnover}, 现金转换周期=${eff.cash_conversion_cycle}`);
+                }
+                if (latest.cashflow) {
+                    const cf = latest.cashflow;
+                    summaryParts.push(`  - 现金流: 自由现金流=${cf.free_cash_flow}, FCF/净利润=${cf.fcf_to_net_income}`);
+                }
+            } catch (e) {
+                console.warn('解析 JSON 摘要失败', e);
+                summaryParts.push('• 财务 JSON 文件（解析失败，但文件已上传）');
+            }
+        }
+        // 处理 Markdown 报告文件（AAPL_report.md）
+        else if (file.type === 'md' && file.filename.includes('_report.md')) {
+            summaryParts.push('• Markdown 报告: 包含多年财务比率表格（盈利能力、流动性、杠杆、效率、现金流五大类）。');
+        }
+        // 其他文件类型可忽略或简单提示
+        else {
+            summaryParts.push(`• 上传文件: ${file.filename} (类型: ${file.type})`);
+        }
+    }
+
+    return summaryParts.join('\n');
+}
 
     /**
      * 🎯 报告大纲生成方法

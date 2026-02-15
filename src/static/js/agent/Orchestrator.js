@@ -384,7 +384,8 @@ ${cleanTopic}
             '技术实现模式': 'technical',
             '深度研究模式': 'deep',
             '调试模式': 'standard',
-            '数据挖掘模式': 'data_mining'
+            '数据挖掘模式': 'data_mining',
+            '美股研究模式': 'us_stock'
         };
 
         const lowerMessage = userMessage.trim().toLowerCase();
