@@ -119,8 +119,8 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any], session_id: s
         if tool_name == "alphavantage":
             result = await tool_instance.execute(validated_parameters, session_id=extracted_session_id)
         else:
-            # 其他工具保持原有调用方式，但传递session_id参数
-            result = await tool_instance.execute(validated_parameters, extracted_session_id)
+            # 其他工具只传递 validated_parameters，避免多余位置参数
+            result = await tool_instance.execute(validated_parameters)
             
         logger.info(f"Tool {tool_name} executed successfully")
         return result
