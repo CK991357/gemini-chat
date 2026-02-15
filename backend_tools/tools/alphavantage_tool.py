@@ -1344,9 +1344,9 @@ class AlphaVantageTool:
     
     def _ensure_session_workspace(self, session_id: str = None) -> Path:
         """
-        确保会话工作区存在
+        确保会话工作区存在，并设置权限为777，以便不同服务进程均可读写。
         
-        核心修改：与代码解释器完全一致的会话目录逻辑
+        核心修改：与代码解释器完全一致的会话目录逻辑，并添加权限设置。
         """
         if not session_id:
             # ✅ 核心修复：与代码解释器完全一致，直接创建temp目录
@@ -1354,12 +1354,24 @@ class AlphaVantageTool:
             session_id = "temp"  # 固定为temp目录
             session_dir = SESSION_WORKSPACE_ROOT / session_id
             session_dir.mkdir(parents=True, exist_ok=True)
+            # 设置权限为777，确保不同用户可写
+            try:
+                os.chmod(session_dir, 0o777)
+                logger.info(f"📁 设置临时会话目录权限: {session_dir} (777)")
+            except Exception as e:
+                logger.warning(f"⚠️ 无法设置临时目录权限: {e}")
             logger.info(f"📁 创建/使用临时会话目录: {session_dir}")
             return session_dir
         
         # 如果提供了session_id，使用该ID创建目录
         session_dir = SESSION_WORKSPACE_ROOT / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
+        # 设置权限为777
+        try:
+            os.chmod(session_dir, 0o777)
+            logger.info(f"📂 设置会话目录权限: {session_dir} (777)")
+        except Exception as e:
+            logger.warning(f"⚠️ 无法设置目录权限: {e}")
         
         logger.info(f"📂 使用指定会话目录: {session_dir}")
         return session_dir
