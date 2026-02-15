@@ -1108,7 +1108,7 @@ _generateUploadedDataSummary(fileContents) {
     let summaryParts = ['【已有上传财务数据摘要】'];
 
     for (const file of fileContents) {
-        // 处理 JSON 文件（financial_ratio_result.json）
+        // 处理 JSON 文件 (financial_ratio_result.json)
         if (file.type === 'json' && file.filename.includes('financial_ratio_result')) {
             try {
                 const data = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
@@ -1118,35 +1118,57 @@ _generateUploadedDataSummary(fileContents) {
                 const latest = data.formatted_ratios || {};
 
                 summaryParts.push(`• 公司: ${company} (${symbol})，行业: ${industry}`);
-                
+
+                // 盈利能力
                 if (latest.profitability) {
                     const p = latest.profitability;
-                    summaryParts.push(`  - 盈利能力: ROE=${p.roe}, 毛利率=${p.gross_margin}, 净利率=${p.net_margin}`);
+                    summaryParts.push(`  - 盈利能力: ROE=${p.roe}, 毛利率=${p.gross_margin}, 净利率=${p.net_margin}, ROIC=${p.roic}`);
                 }
+                // 流动性
                 if (latest.liquidity) {
                     const l = latest.liquidity;
                     summaryParts.push(`  - 流动性: 流动比率=${l.current_ratio}, 现金比率=${l.cash_ratio}, 营运资本=${l.working_capital}`);
                 }
+                // 杠杆
                 if (latest.leverage) {
                     const lev = latest.leverage;
-                    summaryParts.push(`  - 杠杆: 负债权益比=${lev.debt_to_equity}, 资产负债率=${lev.debt_to_assets}`);
+                    summaryParts.push(`  - 杠杆: 负债权益比=${lev.debt_to_equity}, 资产负债率=${lev.debt_to_assets}, 利息保障倍数=${lev.interest_coverage}`);
                 }
+                // 效率
                 if (latest.efficiency) {
                     const eff = latest.efficiency;
-                    summaryParts.push(`  - 效率: 资产周转率=${eff.asset_turnover}, 现金转换周期=${eff.cash_conversion_cycle}`);
+                    summaryParts.push(`  - 效率: 资产周转率=${eff.asset_turnover}, 存货周转天数=${eff.days_inventory_outstanding}, 现金转换周期=${eff.cash_conversion_cycle}`);
                 }
+                // 现金流
                 if (latest.cashflow) {
                     const cf = latest.cashflow;
-                    summaryParts.push(`  - 现金流: 自由现金流=${cf.free_cash_flow}, FCF/净利润=${cf.fcf_to_net_income}`);
+                    summaryParts.push(`  - 现金流: 自由现金流=${cf.free_cash_flow}, FCF/净利润=${cf.fcf_to_net_income}, 经营现金流利润率=${cf.operating_cf_margin}`);
+                }
+
+                // 提示包含多年历史数据
+                if (data.historical_ratios && Object.keys(data.historical_ratios).length > 0) {
+                    const years = Object.keys(data.historical_ratios).sort();
+                    summaryParts.push(`  - 包含 ${years.length} 年历史财务比率 (${years[0]}~${years[years.length-1]})，可用于趋势分析。`);
+                }
+
+                // 高级指标简要提示
+                if (data.advanced_metrics) {
+                    const adv = data.advanced_metrics;
+                    if (adv.altman_z_score) {
+                        summaryParts.push(`  - Altman Z-Score: ${adv.altman_z_score.toFixed(2)} (${adv.z_score_rating || 'N/A'})`);
+                    }
+                    if (adv.sustainable_growth_rate) {
+                        summaryParts.push(`  - 可持续增长率: ${(adv.sustainable_growth_rate * 100).toFixed(2)}%`);
+                    }
                 }
             } catch (e) {
                 console.warn('解析 JSON 摘要失败', e);
                 summaryParts.push('• 财务 JSON 文件（解析失败，但文件已上传）');
             }
         }
-        // 处理 Markdown 报告文件（AAPL_report.md）
+        // 处理 Markdown 报告文件 (AAPL_report.md)
         else if (file.type === 'md' && file.filename.includes('_report.md')) {
-            summaryParts.push('• Markdown 报告: 包含多年财务比率表格（盈利能力、流动性、杠杆、效率、现金流五大类）。');
+            summaryParts.push('• Markdown 报告: 包含多年财务比率表格（盈利能力、流动性、杠杆、效率、现金流五大类），以及详细的指标解释。');
         }
         // 其他文件类型可忽略或简单提示
         else {
