@@ -569,12 +569,10 @@ class DeepResearchToolAdapter {
                         break;
                 }
                 
-                // 添加研究模式特定的配置
+                // ✅ 最终参数只包含 mode 和 parameters
                 const finalParams = {
                     mode: mode,
-                    parameters: validatedParams,
-                    timeout: modeSpecific.timeout || 45,
-                    retry_attempts: modeSpecific.retry_attempts || 3
+                    parameters: validatedParams
                 };
                 
                 console.log('[DeepResearchAdapter] ✅ alphavantage 参数适配完成:', {
