@@ -1139,9 +1139,123 @@ _generateUploadedDataSummary(fileContents) {
                 summaryParts.push('• 财务 JSON 文件（解析失败，但文件已上传）');
             }
         }
-        // 处理 Markdown 报告文件 (AAPL_report.md)
+        // 处理基础财务数据 Markdown 文件 (*_base_financials.md)
+        else if (file.type === 'md' && file.filename.includes('_base_financials.md')) {
+            try {
+                const content = typeof file.content === 'string' ? file.content : '';
+                
+                // 提取公司基本信息
+                const titleMatch = content.match(/# 📊 (.*?) \(([A-Z]+)\) 基础财务数据详表/);
+                const company = titleMatch ? titleMatch[1] : '未知公司';
+                const symbol = titleMatch ? titleMatch[2] : '';
+                const industryMatch = content.match(/\*\*行业分类\*\*：(\w+)/);
+                const industry = industryMatch ? industryMatch[1] : '未知行业';
+                const yearsMatch = content.match(/\*\*数据覆盖年份\*\*：(\d+) — (\d+)/);
+                const yearRange = yearsMatch ? `${yearsMatch[1]}~${yearsMatch[2]}` : '';
+
+                summaryParts.push(`• 基础财务数据: ${company} (${symbol})，行业: ${industry}，覆盖年份: ${yearRange}`);
+
+                // 辅助函数：从指定指标表格中提取最新年度（最后一行）的金额
+                const extractLatestValue = (metricName) => {
+                    // 匹配形如 "### 总营收 (totalRevenue)" 的标题，然后获取其后的表格
+                    const metricRegex = new RegExp(`### ${metricName} \\(\\w+\\)\\s+\\|\\s*年份\\s*\\|\\s*金额\\s*\\|.*?\\|(?:\\s*\\|\\s*\\d+\\s*\\|\\s*([\\d.]+[BMTK]?)\\s*\\|.*?\\|)+`, 'gs');
+                    const match = metricRegex.exec(content);
+                    if (!match) return null;
+                    // 获取该表格的所有行，取最后一行的金额
+                    const tableRows = match[0].split('\n').filter(line => line.startsWith('|') && !line.includes('---') && !line.includes('年份'));
+                    if (tableRows.length === 0) return null;
+                    const lastRow = tableRows[tableRows.length - 1];
+                    const columns = lastRow.split('|').map(c => c.trim());
+                    // 金额列通常在第二列（索引1）
+                    return columns[1] || null;
+                };
+
+                // 提取最新年度核心指标
+                const metrics = [
+                    { name: '总营收', key: '营收' },
+                    { name: '净利润', key: '净利润' },
+                    { name: '总资产', key: '总资产' },
+                    { name: '总负债', key: '总负债' },
+                    { name: '股东权益', key: '股东权益' },
+                    { name: '经营现金流', key: '经营现金流' },
+                    { name: '资本支出', key: '资本支出' },
+                    { name: '自由现金流', key: '自由现金流' },
+                    { name: '研发费用', key: '研发费用' },
+                    { name: '每股收益', key: '每股收益' },
+                    { name: '营运资本', key: '营运资本' }
+                ];
+
+                const latestValues = [];
+                for (const m of metrics) {
+                    const value = extractLatestValue(m.name);
+                    if (value) {
+                        latestValues.push(`${m.key}=${value}`);
+                    }
+                }
+                if (latestValues.length > 0) {
+                    summaryParts.push(`  - 最新年度核心指标: ${latestValues.join(', ')}`);
+                }
+
+                // 提取 CAGR 表格
+                const cagrSection = content.match(/## 5\. 复合年增长率 \(CAGR\)[\s\S]*?(?=##|$)/);
+                if (cagrSection) {
+                    const cagrLines = cagrSection[0].split('\n').filter(line => line.includes('**') && line.includes('：'));
+                    const cagrItems = [];
+                    for (const line of cagrLines) {
+                        const match = line.match(/\*\*([^*]+)\*\*：([\s\S]*?)(?=\n|$)/);
+                        if (match) {
+                            cagrItems.push(`${match[1]}: ${match[2].trim()}`);
+                        }
+                    }
+                    if (cagrItems.length > 0) {
+                        summaryParts.push(`  - 增长趋势: ${cagrItems.join('; ')}`);
+                    }
+                }
+
+                // 提取财务健康评分（最新一年）
+                const latestYear = yearsMatch ? yearsMatch[2] : '2025'; // 默认取最后一年
+                const healthScoreRegex = new RegExp(`#### ${latestYear}年\\s+- \\*\\*总分\\*\\*：([\\d.]+) — ([^\\n]+)`);
+                const healthMatch = content.match(healthScoreRegex);
+                if (healthMatch) {
+                    summaryParts.push(`  - 财务健康评分: ${healthMatch[1]} — ${healthMatch[2]}`);
+                } else {
+                    // 如果没找到特定年份，尝试通用提取
+                    const anyHealthMatch = content.match(/\*\*总分\*\*：([\d.]+) — ([^\n]+)/);
+                    if (anyHealthMatch) {
+                        summaryParts.push(`  - 财务健康评分: ${anyHealthMatch[1]} — ${anyHealthMatch[2]}`);
+                    }
+                }
+
+                // 提取有效税率、EBITDA利润率、资本支出/折旧（从最新年度表格）
+                const taxRate = extractLatestValue('有效税率');
+                if (taxRate) summaryParts.push(`  - 有效税率: ${taxRate}`);
+                const ebitdaMargin = extractLatestValue('EBITDA利润率');
+                if (ebitdaMargin) summaryParts.push(`  - EBITDA利润率: ${ebitdaMargin}`);
+                const capexToDep = extractLatestValue('资本支出/折旧');
+                if (capexToDep) summaryParts.push(`  - 资本支出/折旧: ${capexToDep}`);
+
+                // 营运资本变动（单独表格）
+                const wcChangeRegex = /### 营运资本变动 \(Working Capital Change\)\s+\| 年份 \| 变动值 \|\s+([\s\S]*?)(?=\n\n|$)/;
+                const wcChangeMatch = content.match(wcChangeRegex);
+                if (wcChangeMatch) {
+                    const wcRows = wcChangeMatch[1].split('\n').filter(line => line.startsWith('|') && !line.includes('---'));
+                    if (wcRows.length > 0) {
+                        const lastWcRow = wcRows[wcRows.length - 1];
+                        const wcColumns = lastWcRow.split('|').map(c => c.trim());
+                        if (wcColumns.length >= 2) {
+                            summaryParts.push(`  - 营运资本变动 (${latestYear}): ${wcColumns[1]}`);
+                        }
+                    }
+                }
+
+            } catch (e) {
+                console.warn('解析基础财务数据 Markdown 失败', e);
+                summaryParts.push('• 基础财务数据 Markdown 文件（解析失败，但文件已上传）');
+            }
+        }
+        // 处理财务比率历史数据 Markdown 文件 (*_report.md)
         else if (file.type === 'md' && file.filename.includes('_report.md')) {
-            summaryParts.push('• Markdown 报告: 包含多年财务比率表格（盈利能力、流动性、杠杆、效率、现金流五大类），以及详细的指标解释。');
+            summaryParts.push('• 财务比率历史数据: 包含多年财务比率表格（盈利能力、流动性、杠杆、效率、现金流五大类），以及详细的指标解释。');
         }
         // 其他文件类型可忽略或简单提示
         else {
