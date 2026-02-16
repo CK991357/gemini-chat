@@ -490,10 +490,15 @@ us_stock: {
             "   - [分析公司所处行业的市场规模、增长率、周期性、政策环境等]",
             "   - [识别主要竞争对手，进行市场份额对比，分析公司的竞争优势（如技术、品牌、成本）]",
             "   - [必须使用来自tavily_search或crawl4ai的最新行业报告、新闻等]",
-            "## 四、基本财务概览 (Basic Financial Overview)",
-            "以下分析基于[公司名称]截至2025财年的完整历史财务数据。基础数据来源：AlphaVantage。",
-            "   - [基于上传的JSON文件，已表格形式呈现并详细解读公司近3-5年的核心财务数据（如资产、负债、营收、成本、各项费用、净利润、自由现金流等），分析其规模与增长趋势。可计算同比/环比增长率等数据一并在表格中列出。]",
-            "   - [需完整列出JSON文件中的所有财报核心指标，并结合行业背景，解释数据变化背后的业务驱动因素。]",
+            "## 四、基于JSON文件的基础财务数据概览 (Basic Financial Overview from JSON)",
+            "   - [必须基于用户上传的JSON文件（`upload_1_financial_ratio_result_json`），完整呈现以下数据：",
+            "       1. 公司基本信息：名称、所属行业。",
+            "       2. 核心规模指标（最新年度）：营收、净利润、自由现金流、资本支出、营运资本。",
+            "       3. 增长趋势指标：近三年营收CAGR、净利润CAGR、自由现金流/净利润比值。",
+            "       4. 历史趋势数据（近3-5年）：营收、净利润、自由现金流、资本支出、营运资本，并计算同比变化率，以表格形式呈现。",
+            "       5. 高级财务指标：杜邦分析（ROE分解）、Altman Z值及Z''-Score、财务健康评分（可选）。",
+            "   - 对上述数据进行详细解读，解释数值含义、近年变化趋势，并必须结合行业背景说明驱动因素。",
+            "   - 详细的数据提取路径、计算方法和解读要求请遵循“美股深度研究核心要求”中的指引。]",
             "## 五、财务深度分析 (In-Depth Financial Analysis)",
             "   - [基于上传的历史财务比率表格，对盈利能力、流动性、杠杆、效率、现金流五大类指标进行详细解读。]",
             "   - [必须完整呈现上传Markdown文件中的五大类表格。]",
@@ -524,16 +529,29 @@ us_stock: {
 
 ### 2. 财务与行业融合的深度分析指引（适用于所有行业）
 #### 2.1 基础财务数据概览（第四部分）
-- **识别公司名称与行业**：从JSON文件的 \`company\` 字段或文件名中提取公司名称，用于替换第四部分开头的 \`[公司名称]\`。同时，从JSON文件的 \`metadata.industry\` 或研究过程中获取公司所属行业（如科技、金融、能源、消费品等），并以此为基础选择行业特定指标。
+- **识别公司名称与行业**：从JSON文件的 \`company\` 字段提取公司名称；从 \`metadata.industry\` 获取公司所属行业。
 - **提取并展示基础数据**：
-  - **通用指标**（所有公司必选）：
-    - 最新年度营收（\`trend_analysis.revenues\` 中的最近一年）、净利润（\`trend_analysis.net_incomes\` 中的最近一年）、自由现金流（\`formatted_ratios.cashflow.free_cash_flow\` 或 \`calculated_ratios.cashflow.free_cash_flow\`）。
-    - 近三年营收CAGR（\`trend_analysis.revenue_cagr\`）、净利润CAGR（\`trend_analysis.net_income_cagr\`）。
-    - 自由现金流与净利润的比值（\`formatted_ratios.cashflow.fcf_to_net_income\`）。
-  - **历史趋势数据**：选取近3-5年的资产、负债、营收、成本、各项费用、净利润、自由现金流等指标，以简洁表格或列表形式展示，直观反映规模变化。
+- **核心规模指标（最新年度）**：
+    - 最新年度营收：\`trend_analysis.revenues\` 数组的最后一个元素。
+    - 最新年度净利润：\`trend_analysis.net_incomes\` 数组的最后一个元素。
+    - 最新年度自由现金流：\`calculated_ratios.cashflow.free_cash_flow\` 或 \`formatted_ratios.cashflow.free_cash_flow\`。
+    - 最新年度资本支出：\`calculated_ratios.cashflow.capital_expenditure\`。
+    - 最新年度营运资本：\`calculated_ratios.liquidity.working_capital\`。
+  - **增长趋势指标**：
+    - 近三年营收CAGR：\`trend_analysis.revenue_cagr\`（需转换为百分比）。
+    - 近三年净利润CAGR：\`trend_analysis.net_income_cagr\`。
+    - 自由现金流/净利润比值：\`calculated_ratios.cashflow.fcf_to_net_income\`。
+  - **历史趋势数据**：
+    - 从 \`trend_analysis\` 中提取最近3-5年的营收（\`revenues\`）和净利润（\`net_incomes\`）。
+    - 从 \`historical_ratios\` 中各年份的 \`cashflow.free_cash_flow\`、\`cashflow.capital_expenditure\`、\`liquidity.working_capital\` 提取对应年份的自由现金流、资本支出、营运资本。
+    - **计算同比变化率**：对上述每个指标，根据相邻年份的原始数据计算同比增长率（公式：(当年 - 上年) / 上年），并以表格形式呈现，表格至少包含：年份、营收、营收同比、净利润、净利润同比、自由现金流、自由现金流同比、资本支出、营运资本。
+  - **高级财务指标**：
+    - **杜邦分析**：从 \`advanced_metrics.dupont_analysis\` 提取 ROE、净利率、资产周转率、权益乘数及分解公式，分析ROE的主要驱动因素（是利润率提升、资产效率提高还是杠杆增加）。
+    - **Z值分析**：从 \`advanced_metrics\` 提取 \`altman_z_score\`、\`altman_z_prime_score\` 和 \`z_score_rating\`，对照标准阈值（如Z>2.99为安全区，1.8<Z<2.99为灰色区，Z<1.8为危险区）评估财务健康状况和破产风险。
+    - **财务健康评分**（可选）：从 \`financial_health\` 提取综合评分（\`score\`）、评级（\`rating\`）及分项得分，辅助判断整体财务健康度。
 - **数据解读要求**：
   - 对每个指标进行文字解读，解释其数值含义、近年变化趋势，并**必须结合行业背景**（如行业增速、竞争格局、技术变革）说明驱动因素。
-  - 例如：若营收增长率高于行业平均水平，可归因于产品创新或市场份额提升；若自由现金流强劲，可结合资本开支周期分析。
+  - 例如：若营收增长率高于行业平均水平，可归因于产品创新或市场份额提升；若自由现金流强劲，可结合资本开支周期分析（如资本支出下降释放现金流）；若Z值远高于安全阈值，说明破产风险极低。
   #### 2.2 核心财务比率解读（第五部分）
   - **盈利能力**：分析ROE、ROA、毛利率的变化趋势，找出驱动因素（如成本控制、定价能力）。
   - **流动性**：评估短期偿债能力，关注现金比率和营运资本的变化。
