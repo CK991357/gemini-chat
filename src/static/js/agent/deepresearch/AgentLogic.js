@@ -339,7 +339,7 @@ ${this._getModeQualityChecklist(researchMode)}
         try {
             const llmResponse = await this.chatApiHandler.completeChat({
                 messages: [{ role: 'user', content: plannerPrompt }],
-                model: 'gemini-2.5-flash-preview-09-2025',
+                model: 'models/gemini-2.5-flash',
                 temperature: 0.1,
             });
 
@@ -392,7 +392,7 @@ ${this._getModeQualityChecklist(researchMode)}
 
                     const repairResp = await this.chatApiHandler.completeChat({
                         messages: [{ role: 'user', content: repairPrompt }],
-                        model: 'gemini-2.5-flash-preview-09-2025',
+                        model: 'models/gemini-2.5-flash',
                         temperature: 0.0,
                     });
 
@@ -976,7 +976,7 @@ ${this._getModeQualityChecklist(researchMode)}
         // 调用LLM
         const llmResponse = await this.chatApiHandler.completeChat({
             messages: [{ role: 'user', content: finalPrompt }],
-            model: 'gemini-2.5-flash-preview-09-2025',
+            model: 'models/gemini-2.5-flash',
             temperature: 0.0,
         });
 
