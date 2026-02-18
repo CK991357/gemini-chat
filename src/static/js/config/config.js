@@ -32,8 +32,8 @@ export const CONFIG = {
                 isZhipu: true, // 标记为智谱模型
             },
             {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash (工具调用)',
+                name: 'GLM-4.7-Flash',
+                displayName: 'GLM-4.7-Flash (工具调用)',
                 isWebSocket: false,
                 isZhipu: true, // 标记为智谱模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
@@ -64,8 +64,8 @@ export const CONFIG = {
                 tools: mcpTools
             },
             {
-                name: 'gemini-2.5-flash-preview-09-2025',
-                displayName: 'gemini-2.5-flash-preview-09-2025 (工具调用)',
+                name: 'gemini-2.5-flash-lite-preview-09-2025',
+                displayName: 'gemini-2.5-flash-lite-preview-09-2025 (工具调用)',
                 isWebSocket: false,
                 tools: geminiMcpTools,
                 disableSearch: true,
