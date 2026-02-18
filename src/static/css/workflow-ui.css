@@ -403,3 +403,10 @@
 .upload-files-setting .setting-row {
     margin-top: 8px;
 }
+
+/* 模型选择对话框：限制最大高度，内容过多时显示滚动条 */
+.model-selection-dialog {
+    max-height: 90vh;          /* 最大高度为视口高度的 90% */
+    overflow-y: auto;          /* 垂直方向超出时显示滚动条 */
+    padding: 24px;             /* 保持原有内边距，可根据需要调整 */
+}
