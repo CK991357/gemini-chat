@@ -112,8 +112,8 @@ export class Orchestrator {
                 };
             }
             
-            const { model: reportModel, maxIterations } = selection;
-            console.log(`[Orchestrator] 用户配置 - 模型: ${reportModel}, 最大迭代: ${maxIterations}`);
+            const { model: reportModel, maxIterations, uploadServerFiles = true } = selection;   // 🆕 新增 uploadServerFiles，默认为 true
+            console.log(`[Orchestrator] 用户配置 - 模型: ${reportModel}, 最大迭代: ${maxIterations}, 上传文件: ${uploadServerFiles}`);
 
             // 🔥 确保DeepResearchAgent已初始化
             if (!this.deepResearchAgent) {
@@ -158,12 +158,16 @@ ${cleanTopic}
             // `context.messages` 由 `main.js` 的 `handleEnhancedHttpMessage` 传入
             const previousMessages = (context && context.messages) ? context.messages : [];
 
-            // 🔥🔥🔥 [新增核心逻辑] 读取上传文件 🔥🔥🔥
+            // 🔥🔥🔥 [新增核心逻辑] 根据选项决定是否读取上传文件 🔥🔥🔥
             let fileContents = [];
-            const TEMP_SESSION_ID = "temp";  // 🔥 修改：硬编码为 temp
-            if (window.readUploadedFiles) {
-                fileContents = await window.readUploadedFiles(TEMP_SESSION_ID);
-                console.log(`[Orchestrator] 已从 temp 目录读取 ${fileContents.length} 个上传文件`);
+            if (uploadServerFiles) {
+                const TEMP_SESSION_ID = "temp";  // 🔥 修改：硬编码为 temp
+                if (window.readUploadedFiles) {
+                    fileContents = await window.readUploadedFiles(TEMP_SESSION_ID);
+                    console.log(`[Orchestrator] 已从 temp 目录读取 ${fileContents.length} 个上传文件`);
+                }
+            } else {
+                console.log('[Orchestrator] 用户选择不上传服务器文件，跳过读取');
             }
 
             // ✨✨✨ 核心修复：同时传递 cleanTopic 和 enrichedTopic ✨✨✨

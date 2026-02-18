@@ -392,3 +392,14 @@
     align-items: center;
     justify-content: center;
 }
+
+.upload-files-setting {
+    margin: 20px 0;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+.upload-files-setting .setting-row {
+    margin-top: 8px;
+}

@@ -102,6 +102,23 @@ export class ModelSelectionDialog {
                     </div>
                 </div>
 
+                <!-- 🆕 新增：是否上传服务器文件选项 -->
+                <div class="upload-files-setting">
+                    <div class="setting-header">
+                        <h4>📁 文件上传设置</h4>
+                    </div>
+                    <div class="setting-row">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="upload-server-files" checked>
+                            <span class="setting-label">从服务器 temp 目录读取文件</span>
+                            <span class="setting-description">(Agent 将使用已上传的文件作为上下文)</span>
+                        </label>
+                    </div>
+                    <div class="iteration-note">
+                        💡 如果取消勾选，之前上传到 temp 的文件将不会被 Agent 读取
+                    </div>
+                </div>
+
                 <div class="dialog-footer">
                     <button class="btn-secondary" id="cancel-btn">取消研究</button>
                     <button class="btn-primary" id="confirm-btn" disabled>开始研究</button>
@@ -455,6 +472,37 @@ export class ModelSelectionDialog {
                 font-size: 0.9em;
             }
             
+            /* 🆕 新增：文件上传设置样式 */
+            .upload-files-setting {
+                margin: 20px 0;
+                padding: 16px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border: 1px solid #e9ecef;
+            }
+            
+            .upload-files-setting .setting-row {
+                margin: 8px 0;
+            }
+            
+            .upload-files-setting input[type="checkbox"] {
+                width: 18px;
+                height: 18px;
+                cursor: pointer;
+            }
+            
+            .upload-files-setting .setting-label {
+                font-weight: 600;
+                color: #495057;
+                cursor: pointer;
+            }
+            
+            .upload-files-setting .setting-description {
+                font-size: 0.85em;
+                color: #6c757d;
+                margin-left: 8px;
+            }
+            
             /* 添加加载动画 */
             @keyframes pulse {
                 0% { opacity: 0.6; }
@@ -485,6 +533,7 @@ export class ModelSelectionDialog {
         if (!this.dialog) return;
         
         let selectedIterations = 8; // 默认值
+        let uploadServerFiles = true; // 🆕 默认值：上传服务器文件
         
         if (selectedModel) {
             // 获取用户设置的迭代次数（增强验证）
@@ -510,6 +559,13 @@ export class ModelSelectionDialog {
                 selectedIterations = value;
                 console.log(`[ModelSelectionDialog] 最终迭代次数: ${selectedIterations}`);
             }
+            
+            // 🆕 获取上传文件选项
+            const uploadCheckbox = this.dialog.querySelector('#upload-server-files');
+            if (uploadCheckbox) {
+                uploadServerFiles = uploadCheckbox.checked;
+                console.log(`[ModelSelectionDialog] 上传服务器文件选项: ${uploadServerFiles}`);
+            }
         }
         
         if (this.dialog && this.dialog.parentNode) {
@@ -517,10 +573,11 @@ export class ModelSelectionDialog {
         }
         
         if (this.resolvePromise) {
-            // 返回包含模型和迭代次数的对象
+            // 返回包含模型、迭代次数和文件上传选项的对象
             this.resolvePromise(selectedModel ? {
                 model: selectedModel,
-                maxIterations: selectedIterations
+                maxIterations: selectedIterations,
+                uploadServerFiles: uploadServerFiles    // 🆕 新增字段
             } : null);
         }
     }
