@@ -103,10 +103,7 @@ export class ModelSelectionDialog {
                 </div>
 
                 <!-- 🆕 新增：是否上传服务器文件选项 -->
-                <div class="upload-files-setting">
-                    <div class="setting-header">
-                        <h4>📁 文件上传设置</h4>
-                    </div>
+                <div class="upload-files-setting" style="margin-top: 16px;">
                     <div class="setting-row">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="upload-server-files" checked>
@@ -114,7 +111,7 @@ export class ModelSelectionDialog {
                             <span class="setting-description">(Agent 将使用已上传的文件作为上下文)</span>
                         </label>
                     </div>
-                    <div class="iteration-note">
+                    <div class="iteration-note" style="margin-top: 8px; font-size: 0.9em;">
                         💡 如果取消勾选，之前上传到 temp 的文件将不会被 Agent 读取
                     </div>
                 </div>
