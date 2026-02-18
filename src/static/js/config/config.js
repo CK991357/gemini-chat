@@ -11,16 +11,6 @@ export const CONFIG = {
                 isWebSocket: true
             },
             {
-                name: 'models/gemini-2.5-flash',
-                displayName: 'gemini-2.5-flash (HTTP)',
-                isWebSocket: false,
-            },
-            {
-                name: 'models/gemini-2.5-pro',
-                displayName: 'gemini-2.5-pro (HTTP)',
-                isWebSocket: false
-            },
-            {
                 name: 'models/gemini-2.5-flash-lite',
                 displayName: 'gemini-2.5-flash-lite (HTTP)',
                 isWebSocket: false
@@ -32,16 +22,16 @@ export const CONFIG = {
                 isZhipu: true, // 标记为智谱模型
             },
             {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash (工具调用)',
+                name: 'GLM-4.7-Flash',
+                displayName: 'GLM-4.7-Flash (工具调用)',
                 isWebSocket: false,
                 isZhipu: true, // 标记为智谱模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
                 tools: mcpTools
             },
             {
-                name: 'Qwen/Qwen3-235B-A22B-Thinking-2507',
-                displayName: 'Qwen3-235B-A22B-Thinking-2507 (工具调用)',
+                name: 'Qwen/Qwen3.5-397B-A17B',
+                displayName: 'Qwen/Qwen3.5-397B-A17B (工具调用)',
                 isWebSocket: false,
                 isQwen: true, // 标记为通义千问模型
                 mcp_server_url: "/api/mcp-proxy", // All Qwen MCP calls go through our proxy
@@ -64,8 +54,8 @@ export const CONFIG = {
                 tools: mcpTools
             },
             {
-                name: 'gemini-2.5-flash-preview-09-2025',
-                displayName: 'gemini-2.5-flash-preview-09-2025 (工具调用)',
+                name: 'models/gemini-2.5-flash',
+                displayName: 'models/gemini-2.5-flash (工具调用)',
                 isWebSocket: false,
                 tools: geminiMcpTools,
                 disableSearch: true,
@@ -98,10 +88,13 @@ export const CONFIG = {
         ENABLED: true,
         CACHE_TTL: 5 * 60 * 1000,
         PRELOAD_MODELS: [
-            'gemini-2.5-flash-preview-09-2025',
-            'GLM-4.5-Flash', 
+            'models/gemini-2.5-flash',
+            'GLM-4.7-Flash', 
             'glm-4.6v-flash',
-            'Qwen/Qwen3-235B-A22B-Thinking-2507'
+            'Qwen/Qwen3.5-397B-A17B',
+            'deepseek-reasoner',
+            'deepseek-chat'
+
         ]
     },
     // System prompt settings
@@ -1144,8 +1137,8 @@ print(json.dumps(result))
     TRANSLATION: {
         MODELS: [
             {
-                name: 'GLM-4.5-Flash',
-                displayName: 'GLM-4.5-Flash'
+                name: 'GLM-4.7-Flash',
+                displayName: 'GLM-4.7-Flash'
             },
             {
                 name: 'tencent/Hunyuan-MT-7B',
@@ -1189,8 +1182,8 @@ print(json.dumps(result))
         MODELS: [
             
             {
-                name: 'gemini-2.5-flash-preview-09-2025',
-                displayName: 'gemini-2.5-flash-preview-09-2025 (工具调用)',
+                name: 'models/gemini-2.5-flash',
+                displayName: 'models/gemini-2.5-flash (工具调用)',
                 isWebSocket: false,
                 tools: geminiMcpTools,
                 disableSearch: true,
@@ -1204,7 +1197,7 @@ print(json.dumps(result))
                 isZhipu: true // 标记为智谱模型
             }
         ],
-        DEFAULT_MODEL: 'gemini-2.5-flash-preview-09-2025',
+        DEFAULT_MODEL: 'models/gemini-2.5-flash',
         // 提示词模式列表
         PROMPTS: [
             {

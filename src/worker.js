@@ -497,11 +497,9 @@ async function handleAPIRequest(request, env) {
             
             // 路由到新的聊天/搜索请求处理器
             if (
-                model === 'models/gemini-2.5-pro' ||
                 model === 'models/gemini-2.0-flash'||
                 model === 'models/gemini-2.5-flash' ||
-                model === 'models/gemini-2.5-flash-lite' ||
-                model === 'gemini-2.5-flash-preview-09-2025'
+                model === 'models/gemini-2.5-flash-lite' 
 
             ) {                
                 console.log(`DEBUG: Routing to custom chat proxy for model: ${model}`);
@@ -577,7 +575,7 @@ async function handleAPIRequest(request, env) {
                         }
                     });
                 }
-            } else if (model === 'glm-4.1v-thinking-flash' || model === 'glm-4v-flash' || model === 'glm-4.6v-flash' || model === 'GLM-4.5-Flash') {
+            } else if (model === 'glm-4.1v-thinking-flash' || model === 'glm-4v-flash' || model === 'glm-4.6v-flash' || model === 'GLM-4.7-Flash') {
                 console.log(`DEBUG: Routing to Zhipu chat proxy for model: ${model}`);
                 const targetUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
                 const apiKey = env.ZHIPUAI_API_KEY;
@@ -841,7 +839,7 @@ async function handleAPIRequest(request, env) {
                         'Access-Control-Allow-Origin': '*' // 确保CORS头部
                     }
                 });
-            } else if (model === 'Qwen/Qwen3-235B-A22B-Thinking-2507') {
+            } else if (model === 'Qwen/Qwen3.5-397B-A17B') {
                 console.log(`DEBUG: Routing to ModelScope chat proxy for model: ${model}`);
                 const targetUrl = 'https://api-inference.modelscope.cn/v1/chat/completions';
                 const apiKey = env.QWEN_API_KEY;
