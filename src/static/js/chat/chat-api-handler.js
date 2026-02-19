@@ -139,6 +139,9 @@ export class ChatApiHandler {
         // ================================================================
         const isDeepSeekModel = this._isDeepSeekModel(selectedModelName);
         
+        // 🚀 Qwen3.5 新增：识别是否为 Qwen 模型
+        const isQwenModel = modelConfig && modelConfig.isQwen === true;
+        
         // 检查当前模型是否为Gemini类型（通过名称判断，不依赖isGemini标签）
         const isCurrentModelGeminiType = selectedModelName.includes('gemini');
         const isReasoningEnabledGlobally = localStorage.getItem('geminiEnableReasoning') === 'true';
@@ -177,6 +180,15 @@ export class ChatApiHandler {
                 // 非 DeepSeek 模型，保留原有的参数
                 requestBodyToSend.enableReasoning = enableReasoning;
                 requestBodyToSend.disableSearch = disableSearch;
+            }
+            
+            // 🚀 Qwen3.5 新增：为 Qwen 模型添加启用思考的参数（ModelScope 风格）
+            if (isQwenModel) {
+                // 在 extra_body 中传递 enable_thinking: true
+                requestBodyToSend.extra_body = {
+                    enable_thinking: true
+                };
+                // 注意：如果原请求中已有 extra_body，需要合并，这里简单覆盖；可根据需要合并
             }
             
             // 🎯 注意：streamChatCompletion 保持原有的 fetch 逻辑，不在这里使用重试
@@ -270,33 +282,30 @@ export class ChatApiHandler {
                                 } else if (choice.delta && !functionCallDetected && !qwenToolCallAssembler) {
                                     // Process reasoning and content only if no tool call is active
                                     // ================================================================
-                                    // 🎯 新增：DeepSeek 思考模式特殊处理
+                                    // 🚀 Qwen3.5 修改：将推理内容处理改为通用，不再限定 DeepSeek
                                     // ================================================================
-                                    if (isDeepSeekModel) {
-                                        // DeepSeek 模型在 delta 中返回 reasoning_content
-                                        if (choice.delta.reasoning_content) {
-                                            if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                    if (choice.delta.reasoning_content) {
+                                        if (!this.state.currentAIMessageContentDiv) this.state.currentAIMessageContentDiv = ui.createAIMessageElement();
+                                        
+                                        // 兼容性检查：确保 reasoningContainer 存在
+                                        if (this.state.currentAIMessageContentDiv.reasoningContainer) {
+                                            if (!reasoningStarted) {
+                                                this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
+                                                reasoningStarted = true;
+                                            }
+                                            const reasoningText = choice.delta.reasoning_content;
                                             
-                                            // 兼容性检查：确保 reasoningContainer 存在
-                                            if (this.state.currentAIMessageContentDiv.reasoningContainer) {
-                                                if (!reasoningStarted) {
-                                                    this.state.currentAIMessageContentDiv.reasoningContainer.style.display = 'block';
-                                                    reasoningStarted = true;
-                                                }
-                                                const reasoningText = choice.delta.reasoning_content;
-                                                
-                                                // 兼容性检查：确保 rawReasoningBuffer 存在
-                                                if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string') {
-                                                    this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
-                                                } else {
-                                                    this.state.currentAIMessageContentDiv.rawReasoningBuffer = reasoningText;
-                                                }
-                                                
-                                                // 兼容性检查：确保 reasoning-content 元素存在
-                                                const reasoningContentEl = this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
-                                                if (reasoningContentEl) {
-                                                    reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
-                                                }
+                                            // 兼容性检查：确保 rawReasoningBuffer 存在
+                                            if (typeof this.state.currentAIMessageContentDiv.rawReasoningBuffer === 'string') {
+                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer += reasoningText;
+                                            } else {
+                                                this.state.currentAIMessageContentDiv.rawReasoningBuffer = reasoningText;
+                                            }
+                                            
+                                            // 兼容性检查：确保 reasoning-content 元素存在
+                                            const reasoningContentEl = this.state.currentAIMessageContentDiv.reasoningContainer.querySelector('.reasoning-content');
+                                            if (reasoningContentEl) {
+                                                reasoningContentEl.innerHTML += reasoningText.replace(/\n/g, '<br>');
                                             }
                                         }
                                     }
@@ -482,6 +491,10 @@ export class ChatApiHandler {
         const isAgentMode = this._isAgentRequest(requestBody);
         const isDeepSeekModel = this._isDeepSeekModel(requestBody.model);
         
+        // 🚀 Qwen3.5 新增：识别是否为 Qwen 模型
+        const modelConfig = this.config.API.AVAILABLE_MODELS.find(m => m.name === requestBody.model);
+        const isQwenModel = modelConfig && modelConfig.isQwen === true;
+        
         try {
             let response;
             
@@ -505,6 +518,13 @@ export class ChatApiHandler {
                     }
                 }
                 
+                // 🚀 Qwen3.5 新增：为 Qwen 模型添加启用思考的参数
+                if (isQwenModel) {
+                    requestBodyToSend.extra_body = {
+                        enable_thinking: true
+                    };
+                }
+                
                 response = await this._fetchWithAgentRetry('/api/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -515,13 +535,22 @@ export class ChatApiHandler {
                 });
             } else {
                 // 标准模式：保持原有逻辑
+                let requestBodyToSend = { ...requestBody, stream: false };
+                
+                // 🚀 Qwen3.5 新增：为标准模式也添加思考参数
+                if (isQwenModel) {
+                    requestBodyToSend.extra_body = {
+                        enable_thinking: true
+                    };
+                }
+                
                 response = await fetch('/api/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify({ ...requestBody, stream: false })
+                    body: JSON.stringify(requestBodyToSend)
                 });
             }
 
@@ -536,6 +565,10 @@ export class ChatApiHandler {
                     // ================================================================
                     if (isDeepSeekModel && json.choices[0].message.reasoning_content) {
                         // DeepSeek 返回的思考内容，可以用于后续处理
+                        json.choices[0].message.reasoning = json.choices[0].message.reasoning_content;
+                    }
+                    // 🚀 Qwen3.5 新增：Qwen 模型非流式响应中的 reasoning_content
+                    if (isQwenModel && json.choices[0].message.reasoning_content) {
                         json.choices[0].message.reasoning = json.choices[0].message.reasoning_content;
                     }
                     return json;
