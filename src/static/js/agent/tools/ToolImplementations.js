@@ -449,15 +449,6 @@ class DeepResearchToolAdapter {
                 return baseConfig;
             }
                 
-            case 'glm4v_analyze_image': {
-                return {
-                    image_url: agentParams.image_url,
-                    prompt: agentParams.prompt || '请详细分析这张图片的内容、特征和潜在含义',
-                    detail: agentParams.detail || 'high',
-                    ...agentParams
-                };
-            }
-                
             case 'stockfish_analyzer': {
                 return {
                     fen: agentParams.fen,
@@ -796,7 +787,7 @@ class DeepResearchToolAdapter {
 
                         // 🎯 强制文档类URL通过检查
                         if (isDocumentationUrl) {
-                            // 对于文档URL，即使内容是导航/样板文字，只要长度够长就认为成功
+                            // 对于文档URL，即使是导航/样板文字，只要长度够长就认为成功
                             isContentValid = contentLength > 10; // 极度宽松
                             console.log(`[DeepResearchAdapter] 文文档URL (${crawlData.url}) 检测到，内容检查强制: ${isContentValid}`);
                         } else {
@@ -930,19 +921,6 @@ class DeepResearchToolAdapter {
                         researchMode: researchMode,
                         exitCode: parsedData.exit_code
                     };
-                }
-                    
-                case 'glm4v_analyze_image': {
-                    if (dataFromProxy && dataFromProxy.analysis) {
-                        output = `🖼️ **图片分析结果** (${researchMode}模式):\n\n${dataFromProxy.analysis}`;
-                        success = true;
-                    } else if (dataFromProxy && typeof dataFromProxy === 'string') {
-                        output = dataFromProxy;
-                        success = true;
-                    } else if (success) {
-                        output = `[工具信息]: 图片分析完成，但未返回分析结果。`;
-                    }
-                    break;
                 }
                     
                 case 'stockfish_analyzer': {
@@ -2087,14 +2065,6 @@ static formatWebContentForMode(webData, researchMode) {
                 };
             }
                 
-            case 'glm4v_analyze_image': {
-                return {
-                    ...baseData,
-                    hasAnalysis: !!dataFromProxy.analysis,
-                    analysisLength: dataFromProxy.analysis?.length || 0
-                };
-            }
-
             case 'alphavantage': {
                 const metadata = dataFromProxy.metadata || {};
                 return {
@@ -2166,11 +2136,6 @@ static formatWebContentForMode(webData, researchMode) {
             case 'python_sandbox': {
                 toolSpecific.push('分析代码执行结果的数据模式');
                 toolSpecific.push('验证计算结果的准确性');
-                break;
-            }
-            case 'glm4v_analyze_image': {
-                toolSpecific.push('分析图片的视觉特征');
-                toolSpecific.push('解读图片的潜在含义');
                 break;
             }
             case 'alphavantage': {
@@ -2618,7 +2583,6 @@ class ProxiedTool extends BaseTool {
             'tavily_search': 45000, // ⬆️ 从 20000 增加到 45000 (45秒)
             'crawl4ai': 90000, // 🎯 修复：匹配后端单次请求的 90 秒超时
             'stockfish_analyzer': 30000,
-            'glm4v_analyze_image': 25000,
             'mcp_tool_catalog': 10000,
             'firecrawl': 45000, // 即使不可用也提供配置
             'alphavantage': 45000, // 🎯 新增：AlphaVantage工具超时时间
