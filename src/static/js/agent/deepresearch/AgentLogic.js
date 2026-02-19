@@ -3609,6 +3609,236 @@ _intelligentCompress(prompt, targetLength) {
 }
 
 /**
+ * 根据重要性分配剩余字符长度
+ * @param {number} importance 重要性级别 (1最高,7最低)
+ * @param {number} remainingLength 当前剩余可分配长度
+ * @param {number} totalSections 总部分数（当前未直接使用，但保留以供未来扩展）
+ * @returns {number} 分配给此部分的字符数
+ */
+_calculateAllocation(importance, remainingLength, totalSections) {
+    // 重要性权重映射（总和远小于1，确保后续部分仍有空间）
+    const weights = {
+        1: 0.4,   // 角色和格式
+        2: 0.2,   // 当前任务、最终指令
+        3: 0.15,  // 可用工具
+        4: 0.1,   // 数据总线
+        5: 0.08,  // 相似性检测
+        6: 0.05,  // 研究历史
+        7: 0.02   // 详细协议
+    };
+    
+    // 最小保留长度（确保即使剩余空间紧张，也能保留核心信息）
+    const minLengths = {
+        1: 2000,
+        2: 1500,
+        3: 1200,
+        4: 1000,
+        5: 800,
+        6: 600,
+        7: 300
+    };
+    
+    const weight = weights[importance] || 0.05;
+    const minLength = minLengths[importance] || 200;
+    
+    // 基于当前剩余长度按权重计算期望分配长度
+    let allocation = Math.floor(remainingLength * weight);
+    
+    // 如果剩余长度足够，确保至少达到最小长度
+    if (remainingLength > minLength) {
+        allocation = Math.max(allocation, minLength);
+    } else {
+        // 剩余长度不足最小长度，则分配全部剩余（但重要性7可能被跳过）
+        allocation = remainingLength;
+    }
+    
+    // 最终不能超过剩余长度（安全保护）
+    allocation = Math.min(allocation, remainingLength);
+    
+    // 极端情况：剩余长度极小，至少给100字符（避免分配0）
+    if (allocation <= 0 && remainingLength > 0) {
+        allocation = Math.min(100, remainingLength);
+    }
+    
+    return allocation;
+}
+
+/**
+ * 压缩单个部分到指定长度
+ * @param {Object} section - 部分对象，包含 name, content, importance 等
+ * @param {number} maxLength - 目标最大长度
+ * @returns {string} 压缩后的内容
+ */
+_compressSection(section, maxLength) {
+    const content = section.content;
+    if (!content) return '';
+    if (content.length <= maxLength) return content;
+
+    // 根据重要性选择压缩策略
+    if (section.importance <= 3) {
+        // 高重要性（角色、当前任务、最终指令）：尽力保留完整结构
+        return this._compressHighImportance(content, maxLength);
+    } else if (section.importance <= 5) {
+        // 中重要性（工具、数据总线、相似性检测）：优先提取结构化数据
+        return this._compressMediumImportance(content, maxLength);
+    } else {
+        // 低重要性（研究历史、详细协议）：极端压缩，只留骨架
+        return this._compressLowImportance(content, maxLength);
+    }
+}
+
+/**
+ * 高重要性部分压缩：保留完整段落，删除注释和空行，最后智能截断
+ */
+_compressHighImportance(content, maxLength) {
+    // 移除单独一行的注释（# 开头）和多余空行
+    let lines = content.split('\n');
+    let filtered = lines.filter(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('#')) {
+            // 如果注释行很短且可能包含关键标记，可以保留（这里简单移除）
+            return false;
+        }
+        return true;
+    });
+
+    // 压缩连续空行为单个空行
+    let compressed = '';
+    let prevEmpty = false;
+    for (const line of filtered) {
+        if (line.trim() === '') {
+            if (!prevEmpty) {
+                compressed += '\n';
+                prevEmpty = true;
+            }
+        } else {
+            compressed += line + '\n';
+            prevEmpty = false;
+        }
+    }
+
+    if (compressed.length <= maxLength) return compressed;
+
+    // 仍然超长，使用智能截断
+    return this._intelligentTruncate(compressed, maxLength);
+}
+
+/**
+ * 中重要性部分压缩：提取结构化内容（表格、列表、关键数值段落）
+ */
+_compressMediumImportance(content, maxLength) {
+    // 1. 尝试提取 Markdown 表格
+    const tables = this._extractMarkdownTables(content);
+    if (tables.length > 0) {
+        // 返回第一个表格，如果表格超长则截断表格（保留表头和第一行）
+        const tableText = tables[0];
+        if (tableText.length <= maxLength) return tableText;
+        return this._truncateTable(tableText, maxLength);
+    }
+
+    // 2. 尝试提取列表
+    const lists = this._extractLists(content);
+    if (lists.length > 0) {
+        const listText = lists[0];
+        if (listText.length <= maxLength) return listText;
+        return this._intelligentTruncate(listText, maxLength);
+    }
+
+    // 3. 提取包含数字的短段落（可能包含关键数据）
+    const numericParagraphs = this._extractNumericParagraphs(content);
+    if (numericParagraphs.length > 0) {
+        const combined = numericParagraphs.join('\n\n');
+        if (combined.length <= maxLength) return combined;
+        return this._intelligentTruncate(combined, maxLength);
+    }
+
+    // 4. 降级：智能截断原内容
+    return this._intelligentTruncate(content, maxLength);
+}
+
+/**
+ * 低重要性部分压缩：只保留标题和带特殊标记的行（如 ✅ 🚫 ⚠️ **）
+ */
+_compressLowImportance(content, maxLength) {
+    const lines = content.split('\n');
+    const importantLines = [];
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        // 保留标题行（以 # 开头）
+        if (trimmed.startsWith('#') || trimmed.startsWith('##')) {
+            importantLines.push(line);
+        }
+        // 保留包含关键标记的行
+        else if (trimmed.includes('✅') || trimmed.includes('🚫') || 
+                 trimmed.includes('⚠️') || trimmed.includes('**')) {
+            importantLines.push(line);
+        }
+        // 如果已经收集到足够内容（达到目标长度的80%），停止收集
+        if (importantLines.join('\n').length > maxLength * 0.8) break;
+    }
+
+    if (importantLines.length === 0) {
+        // 没有找到关键行，取前10行作为摘要
+        const firstFew = content.split('\n').slice(0, 10).join('\n');
+        return this._intelligentTruncate(firstFew, maxLength);
+    }
+
+    let result = importantLines.join('\n');
+    if (result.length > maxLength) {
+        return this._intelligentTruncate(result, maxLength);
+    }
+    return result;
+}
+
+/**
+ * 提取 Markdown 表格
+ * @param {string} content
+ * @returns {Array<string>}
+ */
+_extractMarkdownTables(content) {
+    const tablePattern = /\|.+\|(?:\r?\n)(?:\|[\s:-]+\|)+(?:\r?\n)(?:\|.+\|(?:\r?\n)?)+/g;
+    return content.match(tablePattern) || [];
+}
+
+/**
+ * 提取列表（以 -、*、+ 或数字开头）
+ * @param {string} content
+ * @returns {Array<string>}
+ */
+_extractLists(content) {
+    const listPattern = /(?:^|\n)(?:\s*[-*+]|\s*\d+\.)\s+.*(?:\n\s*(?:[-*+]|\d+\.)\s+.*)*/g;
+    return content.match(listPattern) || [];
+}
+
+/**
+ * 提取包含数字的短段落（长度小于500）
+ * @param {string} content
+ * @returns {Array<string>}
+ */
+_extractNumericParagraphs(content) {
+    const paragraphs = content.split(/\n\s*\n/);
+    return paragraphs.filter(p => /\d/.test(p) && p.length < 500);
+}
+
+/**
+ * 截断表格，保留表头和第一行数据
+ * @param {string} tableText
+ * @param {number} maxLength
+ * @returns {string}
+ */
+_truncateTable(tableText, maxLength) {
+    const lines = tableText.split('\n');
+    if (lines.length < 3) return this._intelligentTruncate(tableText, maxLength);
+    // 保留表头、分隔行和第一行数据
+    const truncatedLines = lines.slice(0, 3);
+    const result = truncatedLines.join('\n');
+    if (result.length > maxLength) return this._intelligentTruncate(result, maxLength);
+    return result + '\n\n*表格已截断，仅显示首行*';
+}
+
+
+/**
  * 📊 智能提取各部分（整合改进版）
  * 改进1：多模式匹配，提高容错性
  * 改进2：动态协议检测，不再依赖硬编码列表
@@ -4220,6 +4450,46 @@ _safeTruncate(text, maxLength) {
     const end = text.substring(text.length - keepEnd);
     
     return start + '\n\n--- [系统保护：中间内容已折叠] ---\n\n' + end;
+}
+
+/**
+ * 智能截断文本，优先在段落或句子边界截断，以保持可读性
+ * @param {string} text - 原始文本
+ * @param {number} maxLength - 目标最大长度
+ * @returns {string} 截断后的文本
+ */
+_intelligentTruncate(text, maxLength) {
+    if (!text || text.length <= maxLength) return text;
+
+    // 在 maxLength 附近寻找合适的截断点（段落边界）
+    const searchWindow = Math.min(500, text.length - maxLength);
+    const searchArea = text.substring(maxLength - 100, maxLength + searchWindow);
+
+    // 优先在段落边界截断（两个换行符）
+    const lastParagraph = searchArea.lastIndexOf('\n\n');
+    if (lastParagraph !== -1) {
+        return text.substring(0, maxLength - 100 + lastParagraph) + "\n\n[...]";
+    }
+
+    // 其次在句子边界截断（。！？等）
+    const sentenceEndings = ['.', '。', '!', '！', '?', '？'];
+    let bestPos = -1;
+    for (let i = 0; i < sentenceEndings.length; i++) {
+        const pos = searchArea.lastIndexOf(sentenceEndings[i]);
+        if (pos > bestPos) bestPos = pos;
+    }
+    if (bestPos !== -1 && bestPos > 50) {
+        return text.substring(0, maxLength - 100 + bestPos + 1) + " [...]";
+    }
+
+    // 然后在单词边界截断（空格）
+    const lastSpace = searchArea.lastIndexOf(' ');
+    if (lastSpace !== -1) {
+        return text.substring(0, maxLength - 100 + lastSpace) + " [...]";
+    }
+
+    // 实在找不到合适边界，直接截断
+    return text.substring(0, maxLength) + "...";
 }
 
 /**
