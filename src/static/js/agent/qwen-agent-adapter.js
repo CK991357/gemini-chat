@@ -31,7 +31,6 @@ class QwenAgentAdapter {
 
         switch (tool_name) {
             // This tool is handled by the backend proxy because it requires API keys.
-            case 'glm4v.analyze_image':
             case 'tavily_search':
                 result = await this.proxyToMcpEndpoint({
                     tool_name: tool_name,

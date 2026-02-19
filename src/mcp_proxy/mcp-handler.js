@@ -12,9 +12,8 @@ import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
 import { handlePythonSandbox } from './handlers/python-sandbox.js';
 import { handleStockfishAnalyzer } from './handlers/stockfish.js';
 import { handleTavilySearch } from './handlers/tavily-search.js';
-import { handleZhipuImageAnalysis } from './handlers/zhipu-glm4v.js';
 
-// ✨ 统一的工具注册表 - 使用一致的 glm4v_analyze_image 名称
+// ✨ 统一的工具注册表
 const toolRegistry = {
     'crawl4ai': handleCrawl4AI,
     'firecrawl': handleFirecrawl,
@@ -22,7 +21,6 @@ const toolRegistry = {
     'python_sandbox': handlePythonSandbox,
     'stockfish_analyzer': handleStockfishAnalyzer,
     'tavily_search': handleTavilySearch,
-    'glm4v_analyze_image': handleZhipuImageAnalysis, // ← 统一名称
     'alphavantage': handleAlphaVantage, // 新增AlphaVantage工具
 };
 
@@ -37,7 +35,6 @@ function getToolDescription(toolName) {
         'python_sandbox': 'Python代码执行沙箱',
         'stockfish_analyzer': '国际象棋分析工具',
         'tavily_search': '网络搜索工具',
-        'glm4v_analyze_image': '智谱GLM-4V图像分析',
         'alphavantage': 'AlphaVantage金融数据获取工具，支持股票、外汇、数字货币、大宗商品、新闻等13种金融数据类型'
     };
     return descriptions[toolName] || `工具: ${toolName}`;

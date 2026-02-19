@@ -72,7 +72,7 @@ export const CONFIG = {
         // 复杂工具列表
         COMPLEX_TOOLS: ['crawl4ai', 'python_sandbox'],
         // 标准工具列表（其他4个工具）
-        STANDARD_TOOLS: ['tavily_search', 'glm4v_analyze_image', 'stockfish_analyzer', 'mcp_tool_catalog'],
+        STANDARD_TOOLS: ['tavily_search', 'stockfish_analyzer', 'mcp_tool_catalog'],
         CONTEXT_LEVELS: {
             NONE: 'none',
             SINGLE: 'single', 

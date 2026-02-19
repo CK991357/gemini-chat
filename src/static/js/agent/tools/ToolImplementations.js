@@ -2919,7 +2919,6 @@ export class PythonSandboxTool extends ProxiedTool {}
 export class TavilySearchTool extends ProxiedTool {}
 export class Crawl4AITool extends ProxiedTool {}
 export class StockfishAnalyzerTool extends ProxiedTool {}
-export class Glm4vAnalyzeImageTool extends ProxiedTool {}
 export class McpToolCatalogTool extends ProxiedTool {}
 export class FirecrawlTool extends ProxiedTool {} // 即使不可用也提供类定义
 export class AlphavantageTool extends ProxiedTool {} // 🎯 新增：AlphaVantage工具类
@@ -2934,7 +2933,6 @@ export class ToolFactory {
             'tavily_search': TavilySearchTool,
             'crawl4ai': Crawl4AITool,
             'stockfish_analyzer': StockfishAnalyzerTool,
-            'glm4v_analyze_image': Glm4vAnalyzeImageTool,
             'mcp_tool_catalog': McpToolCatalogTool,
             'firecrawl': FirecrawlTool, // 即使不可用也提供映射
             'alphavantage': AlphavantageTool // 🎯 新增：AlphaVantage工具映射
@@ -3001,7 +2999,6 @@ export class ToolFactory {
             'tavily_search': ['deep', 'business', 'academic', 'technical', 'standard'],
             'crawl4ai': ['deep', 'business', 'academic', 'technical', 'standard'],
             'python_sandbox': ['deep', 'technical', 'academic', 'standard'],
-            'glm4v_analyze_image': ['deep', 'technical', 'standard'],
             'stockfish_analyzer': ['deep', 'technical', 'standard'],
             'firecrawl': ['deep', 'business', 'academic', 'technical', 'standard'],
             'alphavantage': ['deep', 'business', 'academic', 'technical', 'standard'] // 🎯 新增：AlphaVantage支持所有研究模式

@@ -127,9 +127,8 @@ export class EnhancedSkillManager {
       python_sandbox: 'code',
       tavily_search: 'search',
       firecrawl: 'web-crawling',
-      stockfish_analyzer: 'analysis',
+      stockfish_analyzer: 'chess',
       crawl4ai: 'web-crawling',
-      glm4v_analyze_image: 'vision'
     };
     return categories[toolName] || 'general';
   }
