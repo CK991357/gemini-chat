@@ -1884,71 +1884,6 @@ const toolOptimizationProtocol = `
         // 动态计划显示
         const planText = researchPlan ? this._formatResearchPlan(researchPlan, currentStep) : '';
 
-        // 在 AgentLogic 的 plan 方法中，构建提示词时添加以下内容
-const preloadDataGuidance = `
-## 📂 用户预加载数据处理原则
-
-用户可能已经通过文件上传功能，提供了**最终可直接使用的数据文件**（如 JSON、CSV、Parquet 或 Markdown 表格）。这些文件已保存在会话工作区，可通过 \`/data/文件名\` 访问。
-
-### 🎯 核心原则
-1. **直接使用数据**：如果文件内容已经是结构化数据（如 JSON 对象、表格），你应**直接利用这些数据进行分析**，而无需重复执行数据提取或解析操作。
-2. **区分数据角色**：
-   - **文件内容本身**应作为**证据**用于推理和报告生成。
-   - **代码解释器**应仅用于**对数据进行可视化、计算衍生指标、生成图表**等附加操作，而非重新提取已有数据。
-3. **DataBus 缓存**：成功读取的文件内容会自动存入 DataBus，你可以在后续思考中直接引用 \`DataBus:step_X\` 中的数据，无需再次调用工具读取。
-
-### ✅ 正确做法示例
-- **用户提供 JSON 财务比率文件** → 直接读取 JSON，用其数据绘制图表，无需二次解析。
-- **用户提供 Markdown 表格文件** → 读取文本后，将表格转换为 DataFrame 直接使用。
-
-### 💻 代码示例
-
-#### JSON 文件读取与使用
-\`\`\`python
-import pandas as pd
-import json
-
-# 安全读取 JSON 文件
-file_path = '/data/financial_ratio_result.json'
-with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
-    data = json.loads(f.handle.read())
-
-# 直接使用数据（例如提取历年 ROE 并绘图）
-years = ['2017', '2018', '2019', '2020']
-roe_values = [data['calculated_ratios']['roe'][y] for y in years]  # 根据实际数据格式调整
-
-import matplotlib.pyplot as plt
-plt.plot(years, roe_values, marker='o')
-plt.title('ROE Trend (2017-2020)')
-plt.show()
-\`\`\`
-
-#### Markdown 表格文件读取与转换
-\`\`\`python
-import pandas as pd
-
-# 读取 Markdown 文件
-file_path = '/data/AAPL_report.md'
-with pd.io.common.get_handle(file_path, 'r', is_text=True) as f:
-    md_content = f.handle.read()
-
-# 使用 pandas 的 read_html 提取表格（需要 lxml）
-tables = pd.read_html(md_content)  # 返回 DataFrame 列表
-if tables:
-    df = tables[0]  # 取第一个表格
-    print(df)
-\`\`\`
-
-**提示**：如果文件数量不多且数据量不大，可以在一次 \`code_generator\` 调用中同时读取多个文件，避免多次调用浪费迭代次数。
-
-### ❌ 常见错误
-- 对已结构化的数据再次调用代码解释器进行“数据清洗”或“解析”。
-- 生成复杂的提取代码去处理已经是最终格式的文件。
-- 在代码中使用被禁止的 \`open()\` 函数。
-
-请根据用户消息中提示的文件类型（如 .json, .md）和文件内容，合理决策下一步行动。请记住：如果用户已上传文件，你的首要任务是直接使用这些数据，而非重新获取或解析。
-`;
-
 // 🎯 核心新增：AlphaVantage 金融数据工具 - 使用指导与限制
 const alphavantageGuidance = `
 ## 💹 AlphaVantage 金融数据工具 - 使用指导与限制
@@ -1963,7 +1898,6 @@ const alphavantageGuidance = `
 - **免费版限制**：25次/天，5次/分钟
 - **智能使用策略**：
   - **单轮研究内**：可连续使用最多 **4次**，避免超过每分钟限制
-  - **跨轮研究**：注意每日25次的总限制
   - **避免浪费**：确保每次调用都有明确目的
 
 ---
@@ -2067,66 +2001,6 @@ df = pd.read_parquet('/data/stock_AAPL.parquet')  # 内部已正确处理
 
 ---
 
-### 🎯 正确使用示例
-
-#### 示例1：分析苹果公司基本面（核心场景）
-\`\`\`json
-{
-  "mode": "overview",
-  "parameters": {
-    "symbol": "AAPL"
-  }
-}
-\`\`\`
-**返回**：完整的JSON数据，包含市值、市盈率、股息收益率等50+个指标；同时文件 \`/data/overview_AAPL.json\` 已保存。
-
-#### 示例2：获取公司内部人交易
-\`\`\`json
-{
-  "mode": "insider_transactions",
-  "parameters": {
-    "symbol": "TSLA"
-  }
-}
-\`\`\`
-**返回**：最近的公司内部人买卖交易记录；同时文件 \`/data/insider_TSLA.json\` 已保存。
-
-#### 示例3：获取ETF持仓数据
-\`\`\`json
-{
-  "mode": "etf_profile",
-  "parameters": {
-    "symbol": "SPY"
-  }
-}
-\`\`\`
-**返回**：ETF的行业配置、持仓明细、费率等信息；同时文件 \`/data/etf_SPY_profile.json\` 已保存。
-
-#### 示例4：获取财报电话会议记录
-\`\`\`json
-{
-  "mode": "earnings_transcript",
-  "parameters": {
-    "symbol": "MSFT",
-    "quarter": "2024-Q1"
-  }
-}
-\`\`\`
-**返回**：指定季度的财报电话会议完整记录；同时文件 \`/data/transcript_MSFT_2024-Q1.json\` 已保存。
-
-#### 示例5：获取周调整数据进行可视化（文件读取）
-\`\`\`json
-{
-  "mode": "weekly_adjusted",
-  "parameters": {
-    "symbol": "AAPL"
-  }
-}
-\`\`\`
-**返回**：JSON摘要（示例数据）；**完整数据保存在 \`/data/stock_AAPL.parquet\`**，可通过代码解释器读取并绘图。
-
----
-
 ### ⚠️ 重要提醒
 
 #### 关于文件系统：
@@ -2138,11 +2012,6 @@ df = pd.read_parquet('/data/stock_AAPL.parquet')  # 内部已正确处理
 1. **数据是完整的**：工具返回的JSON包含所有需要的信息，适合快速查看。
 2. **可直接分析**：在思考中直接使用这些数据进行分析。
 3. **可传递给代码解释器**：如果需要复杂计算且数据量不大，可将JSON数据传递给代码解释器（硬编码）。
-
-#### 关于API速率：
-1. **单轮研究内**：最多连续使用 **4次**，避免超过每分钟5次的限制。
-2. **每日总限制**：注意不要超过25次/天的总限制。
-3. **智能规划**：优先获取最重要的数据，避免不必要的调用。
 
 ---
 
@@ -2171,58 +2040,6 @@ df = pd.read_parquet('/data/stock_AAPL.parquet')  # 内部已正确处理
 3. **依赖未知路径**：不要使用 \`metadata.saved_files\` 中返回的动态路径，直接使用上表**固定命名规则**。
 4. **禁止直接使用 \`open()\`**：所有文件读取必须通过 \`pd.io.common.get_handle\` 或 Pandas 高层 API（\`pd.read_json\`、\`pd.read_parquet\` 等）。
 
----
-
-### ✅ 最佳实践检查清单
-
-在调用AlphaVantage工具前，确认：
-
-- [ ] **本轮研究已调用次数**？（确保不超过4次连续调用）
-- [ ] **是否需要新闻数据**？（如果是，优先使用\`tavily_search\`）
-- [ ] **数据量是否超过5000字符**？（若是，应计划使用文件读取而非数据总线传递）
-- [ ] **是否已规划后续文件读取代码**？（参考文件命名规则编写代码）
-
----
-
-### 🔧 工具响应结构说明
-
-工具成功调用后，返回的结构：
-\`\`\`json
-{
-  "success": true,
-  "data": { ... },  // ✅ 这里是完整的数据，可直接在思考中使用
-  "metadata": {
-    "saved_files": [ ... ],  // ⚠️ 仅供参考，建议直接使用固定命名规则
-    "session_dir": "...",
-    "example_code": "# 数据获取完成"
-  }
-}
-\`\`\`
-
-**正确用法**：
-1. **小数据场景**：直接使用 \`response.data\` 进行即时分析。
-2. **大数据/可视化场景**：**忽略 \`response.data\`**，直接通过文件系统读取完整文件。
-3. **始终使用固定文件名**（见上表），不依赖 \`saved_files\` 中的动态路径。
-
----
-
-### 🎭 不同研究模式的推荐策略
-
-#### 深度研究模式（Deep）：
-- **重点**：公司基本面深度分析、财务健康度评估
-- **推荐模式**：\`overview\`, \`income_statement\`, \`balance_sheet\`, \`cash_flow\`, \`earnings_estimates\`
-- **备选模式**：\`insider_transactions\`（内部人交易分析）, \`earnings_transcript\`（管理层观点）
-- **调用策略**：最多选择3-4个最相关的模式，避免超过限制；**大数据量场景强制使用文件读取**。
-
-#### 商业分析模式（Business）：
-- **重点**：实时市场表现、竞争分析、ETF配置
-- **推荐模式**：\`global_quote\`, \`etf_profile\`, \`overview\`
-- **调用策略**：针对1-2家公司进行深度分析，避免分散调用。
-
-#### 技术方案模式（Technical）：
-- **重点**：API功能验证、数据获取可行性
-- **推荐模式**：\`global_quote\`（测试实时数据）
-- **注意事项**：所有模式均可测试，文件读取功能完全正常。
 
 ---
 
@@ -2331,44 +2148,6 @@ ETF持仓数据量大，我将直接读取文件进行分析。
 
 ---
 
-### 🔄 后续分析策略
-
-#### 策略A：在思考中直接分析（小数据）
-- 直接从JSON数据中提取关键指标
-- 进行简单计算和对比
-- 生成初步结论
-
-#### 策略B：通过数据总线传递给代码解释器（中数据）
-- 将JSON数据作为字符串传递给代码解释器
-- 进行复杂的统计分析和可视化
-- **注意**：仅适用于数据量 <5000 字符
-
-#### 策略C：通过文件系统读取（大数据，推荐）
-- 在代码解释器中直接读取已保存的 \`/data/*.parquet\` 或 \`/data/*.json\` 文件
-- 进行大规模数据处理、绘图、建模
-- **完全无需硬编码数据，代码简洁高效**
-
-#### 策略D：多轮数据收集（考虑API限制）
-1. 单轮研究最多使用4次调用
-2. 优先获取最重要的数据
-3. 如果需要更多数据，考虑是否必要或等待下一轮研究
-
----
-
-### 📚 学习与改进
-
-#### 记录使用经验：
-- 哪些模式的数据最有价值？
-- 如何优化查询参数获得更好结果？
-- 不同公司的数据质量如何？
-
-#### 分享最佳实践：
-- 在团队中分享成功的数据分析案例
-- 记录常见的数据获取问题
-- 建立标准的数据验证流程
-
----
-
 ## 🎯 最终决策规则
 
 **当需要使用金融数据时，遵循以下规则：**
@@ -2385,7 +2164,6 @@ ETF持仓数据量大，我将直接读取文件进行分析。
 
 5. **API速率管理**：
    - 单轮研究内最多连续调用 **4次**（留出1次缓冲）
-   - 注意每日25次的总限制
    - 优先获取最重要的数据，避免浪费调用次数
 
 6. **文件读取规范**：严格遵循 \`pd.io.common.get_handle\` 或 Pandas高层API，**禁止直接 \`open()\`**。
@@ -2831,8 +2609,6 @@ ${dataBusIntegration(dataBusSummary, similarityDetection)} // 🎯 核心新增�
 ${dataBusIntelligenceProtocol(dataBusSummary)} // 🎯 核心新增：数据总线智能激活协议
  
 ${modeAwareCrawlStrategy} // 🎯 核心替换：插入模式感知的抓取策略
-
-${preloadDataGuidance} // 🎯 核心新增：预加载数据使用指导
 
 ${alphavantageGuidance} // 💹 插入：AlphaVantage 金融数据工具专用指导
  
