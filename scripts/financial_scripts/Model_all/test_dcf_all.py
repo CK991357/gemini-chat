@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
 通用估值测试脚本
-支持运行多个模型（DCF、FCFE、RIM、EVA）并输出综合报告（详尽版）。
+支持运行多个模型（DCF、FCFE、RIM、EVA、APV）并输出综合报告（详尽版）。
+新增蒙特卡洛模拟功能（仅支持 DCF）。
 
 用法:
-    python test_dcf_all.py --symbol AAPL --models dcf,fcfe,rim,eva --sensitivity
+    python test_dcf_all.py --symbol AAPL --models dcf,fcfe,rim,eva,apv --sensitivity
+    python test_dcf_all.py --symbol AAPL --monte-carlo --mc-simulations 2000
     python test_dcf_all.py                     # 处理所有股票，运行默认模型
 """
 
@@ -23,6 +25,14 @@ from dcf_valuation_tool import TerminalValueMethod
 from fcfe_model import FCFEValuation
 from rim_model import RIMValuation
 from eva_model import EVAValuation
+from apv_model import APVValuation
+
+# 尝试导入蒙特卡洛模块（如果存在）
+try:
+    from monte_carlo import MonteCarloSimulator
+    MONTE_CARLO_AVAILABLE = True
+except ImportError:
+    MONTE_CARLO_AVAILABLE = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,7 +82,7 @@ def generate_combined_report(symbol: str, results: Dict[str, Any], current_price
     lines.append(f"# {company_name} 多模型估值报告（详尽版）")
     lines.append(f"\n**报告生成时间**：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n")
     lines.append(f"**当前股价**：${current_price:.2f}  \n")
-    lines.append("本报告综合运用四种经典估值模型，从不同视角评估公司价值。以下为各模型的详细计算过程与结果。\n")
+    lines.append("本报告综合运用五种经典估值模型，从不同视角评估公司价值。以下为各模型的详细计算过程与结果。\n")
 
     # 汇总表
     lines.append("## 模型估值结果汇总")
@@ -439,6 +449,72 @@ def generate_combined_report(symbol: str, results: Dict[str, Any], current_price
             lines.append("- **风险提示**：EVA模型对投入资本周转率和EBIT利润率假设敏感，适用于资本密集型公司。")
             lines.append("- **局限性**：简化EVA未对研发、商誉等进行复杂调整，可能低估真实经济利润。")
 
+        elif model_name == 'apv':
+            v = res['valuation']
+            proj = res.get('projections', {})
+            key_ass = res.get('key_assumptions', {})
+
+            lines.append("### 1. 模型简介")
+            lines.append("调整现值法（APV）：企业价值 = 无杠杆企业价值 + 利息税盾现值。无杠杆企业价值用无杠杆自由现金流（UFCF）按无杠杆权益成本折现。")
+            lines.append(f"债务假设：{key_ass.get('debt_assumption', 'ratio')}（constant=固定债务，ratio=债务/收入比例）。")
+
+            lines.append("\n### 2. 数据来源")
+            lines.append("同DCF模型，债务历史取自资产负债表。")
+
+            lines.append("\n### 3. 关键假设")
+            lines.append(f"- 收入增长率：同DCF（平均 {key_ass.get('avg_revenue_growth', 0):.2f}%）")
+            lines.append(f"- 无杠杆权益成本：{v['unlevered_cost_of_equity_formatted']}（去杠杆Beta计算）")
+            lines.append(f"- 债务成本：{v['cost_of_debt_formatted']}")
+            lines.append(f"- 税率：{v['tax_rate_formatted']}")
+            lines.append(f"- 永续增长率：{v['terminal_growth_formatted']}")
+
+            lines.append("\n### 4. APV预测（单位：百万美元）")
+            lines.append("| 年份 | 收入 | UFCF | 债务 | 税盾 | PV(UFCF) | PV(税盾) |")
+            lines.append("|------|------|------|------|------|----------|----------|")
+            for i, yr in enumerate(proj['year']):
+                rev = f"{proj['revenue'][i]/1e6:.0f}"
+                ufcf = f"{proj['ufcf'][i]/1e6:.0f}"
+                debt = f"{proj['debt'][i]/1e6:.0f}"
+                tax = f"{proj['tax_shield'][i]/1e6:.0f}"
+                pv_u = f"{proj['pv_ufcf'][i]/1e6:.0f}"
+                pv_t = f"{proj['pv_tax_shield'][i]/1e6:.0f}"
+                lines.append(f"| {yr} | ${rev} | ${ufcf} | ${debt} | ${tax} | ${pv_u} | ${pv_t} |")
+
+            lines.append("\n### 5. 终值计算")
+            lines.append(f"- 预测期末UFCF：${proj['ufcf'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 预测期末债务：${proj['debt'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 永续增长率 g：{v['terminal_growth']:.2%}")
+            lines.append(f"- 无杠杆终值现值：${v['unlevered_value']/1e6:.0f} 百万")
+            lines.append(f"- 税盾终值现值：${v['pv_of_tax_shield']/1e6:.0f} 百万")
+
+            lines.append("\n### 6. 企业价值与股权价值")
+            lines.append(f"- 无杠杆价值：${v['unlevered_value']/1e6:.0f} 百万")
+            lines.append(f"- 税盾现值：${v['pv_of_tax_shield']/1e6:.0f} 百万")
+            lines.append(f"- 企业价值 = 无杠杆价值 + 税盾现值 = ${v['enterprise_value']/1e6:.0f} 百万")
+            lines.append(f"- 净债务：${v['net_debt']/1e6:.0f} 百万")
+            lines.append(f"- 现金：${v['cash']/1e6:.0f} 百万")
+            lines.append(f"- 股权价值 = 企业价值 - 净债务 + 现金 = ${v['equity_value']/1e6:.0f} 百万")
+            lines.append(f"- **每股价值** = ${v['value_per_share']:.2f}")
+
+            if res.get('sensitivity_analysis'):
+                sa = res['sensitivity_analysis']
+                lines.append("\n### 7. 敏感性分析")
+                lines.append(f"- 无杠杆权益成本变动 ±20% 导致股权价值变化 {sa['unlevered_cost_of_equity_sensitivity']['impact']:.1f}%")
+                lines.append(f"- 永续增长率在 1%~5% 之间变动导致股权价值变化 {sa['growth_sensitivity']['impact']:.1f}%")
+                if 'equity_matrix' in sa:
+                    lines.append("\n**股权价值敏感性矩阵（单位：百万美元）**：")
+                    growth_range = [f"{g*100:.1f}%" for g in sa['growth_range']]
+                    lines.append("| r_u \\ g | " + " | ".join(growth_range) + " |")
+                    lines.append("|" + "---|" * (len(sa['growth_range'])+1))
+                    for i, r in enumerate(sa['r_u_range']):
+                        row = [f"{r*100:.1f}%"] + [f"{ev/1e6:.0f}" for ev in sa['equity_matrix'][i]]
+                        lines.append("| " + " | ".join(row) + " |")
+
+            lines.append("\n### 8. 结果评估与风险提示")
+            lines.append(f"- 模型得出的每股价值为 **${v['value_per_share']:.2f}**。")
+            lines.append("- **风险提示**：APV模型对债务假设和无杠杆权益成本敏感，适用于资本结构变化较大的公司。")
+            lines.append("- **局限性**：债务预测基于简化假设，可能不反映未来实际融资计划。")
+
     # DCF/FCFE/RIM 联合研判
     dcf_fcfe_rim = [model for model in ['dcf', 'fcfe', 'rim'] if model in results and results[model].get('success')]
     if len(dcf_fcfe_rim) >= 2:
@@ -516,6 +592,7 @@ async def process_symbol(
     market_premium: float = 0.06,
     include_detailed: bool = True,
     sensitivity: bool = True,
+    debt_assumption: str = "ratio",  # 新增参数，用于APV模型
 ) -> bool:
     logger.info(f"开始处理股票: {symbol}, 模型: {models}")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -597,6 +674,25 @@ async def process_symbol(
             logger.error(f"EVA 模型运行失败: {e}")
             results['eva'] = {"success": False, "error": str(e)}
 
+    # 运行 APV 模型
+    if 'apv' in models:
+        try:
+            apv_val = APVValuation(data_dir=data_dir)
+            apv_result = await apv_val.run_valuation(
+                symbol=symbol,
+                projection_years=projection_years,
+                terminal_growth=terminal_growth,
+                risk_free_method=risk_free_method,
+                market_premium=market_premium,
+                debt_assumption=debt_assumption,
+                include_detailed=include_detailed,
+                sensitivity=sensitivity
+            )
+            results['apv'] = apv_result
+        except Exception as e:
+            logger.error(f"APV 模型运行失败: {e}")
+            results['apv'] = {"success": False, "error": str(e)}
+
     # 保存 JSON 结果
     json_path = Path(output_dir) / f"valuation_{symbol}_multi.json"
     with open(json_path, 'w', encoding='utf-8') as f:
@@ -619,7 +715,7 @@ async def process_symbol(
 async def main():
     parser = argparse.ArgumentParser(description="多模型估值工具")
     parser.add_argument("--symbol", type=str, help="指定股票代码，例如 AAPL。不指定则处理所有可用股票。")
-    parser.add_argument("--models", type=str, default="dcf,fcfe,rim,eva", help="要运行的模型，逗号分隔，例如 dcf,fcfe,rim,eva")
+    parser.add_argument("--models", type=str, default="dcf,fcfe,rim,eva", help="要运行的模型，逗号分隔，例如 dcf,fcfe,rim,eva,apv")
     parser.add_argument("--data_dir", type=str, default="data", help="数据文件夹路径，默认为 data")
     parser.add_argument("--output_dir", type=str, default="output", help="输出文件夹路径，默认为 output")
     parser.add_argument("--projection_years", type=int, default=5, help="预测年数，默认5")
@@ -629,10 +725,57 @@ async def main():
     parser.add_argument("--no_sensitivity", action="store_true", help="禁用所有模型的敏感性分析")
     parser.add_argument("--no_detailed", action="store_true", help="不包含详细预测表")
 
+    # 蒙特卡洛模拟相关参数
+    parser.add_argument("--monte-carlo", action="store_true", help="对指定模型进行蒙特卡洛模拟（目前仅支持 DCF）")
+    parser.add_argument("--mc-simulations", type=int, default=1000, help="蒙特卡洛模拟次数，默认1000")
+    parser.add_argument("--mc-seed", type=int, default=42, help="随机种子，默认42")
+
+    # APV 模型债务假设参数
+    parser.add_argument("--debt-assumption", type=str, default="ratio", choices=["constant", "ratio"], help="APV模型债务假设：constant（固定债务）或 ratio（债务/收入比例）")
+
     args = parser.parse_args()
     models = [m.strip().lower() for m in args.models.split(',')]
     sensitivity = not args.no_sensitivity
 
+    # 如果指定了蒙特卡洛模拟，则运行模拟（目前仅支持 DCF）
+    if args.monte_carlo:
+        if not MONTE_CARLO_AVAILABLE:
+            logger.error("未找到 monte_carlo.py 模块，请确保文件存在")
+            sys.exit(1)
+        if 'dcf' not in models:
+            logger.error("蒙特卡洛模拟目前仅支持 DCF 模型，请确保 --models 包含 dcf")
+            sys.exit(1)
+        if not args.symbol:
+            logger.error("蒙特卡洛模拟需要指定 --symbol")
+            sys.exit(1)
+
+        logger.info(f"开始蒙特卡洛模拟，股票: {args.symbol}, 模拟次数: {args.mc_simulations}")
+        simulator = MonteCarloSimulator(symbol=args.symbol, data_dir=args.data_dir)
+        values = simulator.run_dcf_simulation(
+            n_simulations=args.mc_simulations,
+            seed=args.mc_seed
+        )
+        stats = simulator.analyze_results(values, plot=False)  # 不显示绘图，仅统计
+
+        # 保存 JSON 结果
+        output_path = Path(args.output_dir) / f"mc_{args.symbol}.json"
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(stats, f, indent=2, default=float)
+        logger.info(f"蒙特卡洛结果已保存至 {output_path}")
+
+        # 生成 Markdown 报告
+        simulator.generate_md_report(args.output_dir, stats, values)
+
+        # 打印简要统计
+        print(f"\n蒙特卡洛模拟结果（{args.mc_simulations} 次）:")
+        print(f"  均值: ${stats['mean']:.2f}")
+        print(f"  中位数: ${stats['median']:.2f}")
+        print(f"  标准差: ${stats['std']:.2f}")
+        print(f"  5% 分位数: ${stats['p5']:.2f}")
+        print(f"  95% 分位数: ${stats['p95']:.2f}")
+        return
+
+    # 否则运行常规多模型估值
     symbols = []
     if args.symbol:
         symbols = [args.symbol.upper()]
@@ -655,7 +798,8 @@ async def main():
             risk_free_method=args.risk_free_method,
             market_premium=args.market_premium,
             include_detailed=not args.no_detailed,
-            sensitivity=sensitivity
+            sensitivity=sensitivity,
+            debt_assumption=args.debt_assumption
         )
         if ok:
             success_count += 1

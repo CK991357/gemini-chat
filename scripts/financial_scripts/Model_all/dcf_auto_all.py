@@ -367,6 +367,34 @@ class DCFAutoValuation:
         forecast = [rev * avg_ratio for rev in revenue_forecast]
         return forecast
 
+    # ================= 新增：提取历史总债务 =================
+    def extract_debt_history(self, symbol: str) -> List[float]:
+        """从资产负债表提取历史总债务（短期+长期），按年份升序"""
+        bs = self.load_json(f"balance_sheet_{symbol}.json")
+        annual_bs = sorted(bs['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        debt = []
+        for item in annual_bs:
+            short_debt = _safe_float(item.get('shortTermDebt', 0))
+            long_debt = _safe_float(item.get('longTermDebt', 0))
+            debt.append(short_debt + long_debt)
+        return debt
+
+    # ================= 新增：按收入比例预测债务余额 =================
+    def forecast_debt_by_ratio(self, symbol: str, projection_years: int, revenue_forecast: List[float]) -> List[float]:
+        """根据历史平均债务/收入比例预测未来各期债务余额"""
+        debt_hist = self.extract_debt_history(symbol)
+        rev_hist = self.extract_historical_data(symbol)['revenue']
+        min_len = min(len(debt_hist), len(rev_hist))
+        if min_len == 0:
+            return [0.0] * projection_years
+        ratios = []
+        for i in range(min_len):
+            if rev_hist[i] > 0:
+                ratios.append(debt_hist[i] / rev_hist[i])
+        avg_ratio = np.mean(ratios) if ratios else 0.0
+        forecast = [rev * avg_ratio for rev in revenue_forecast]
+        return forecast
+
     # ================= 原有方法保持不变 =================
     def extract_estimates(self, symbol: str) -> pd.DataFrame:
         """加载盈利预估JSON，根据公司财年结束日过滤年度估计"""
