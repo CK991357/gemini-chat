@@ -2121,7 +2121,7 @@ class FinancialReportGeneratorTool:
             # 生成的文件列表
             generated_files = []
 
-            # ----- 1. 基础财务数据报告（base）-----
+                        # ----- 1. 基础财务数据报告（base）-----
             if mode in [FinancialReportMode.BASE, FinancialReportMode.BOTH]:
                 try:
                     # 加载基础报告所需的四个 JSON 文件
@@ -2147,19 +2147,41 @@ class FinancialReportGeneratorTool:
                     with open(earnings_file, 'r') as f:
                         earnings_json = json.load(f)
 
-                    # 实例化生成器并生成报告
+                    # 🎯 从 overview 中提取行业信息，与比率报告保持一致
+                    overview_file = session_dir / f"overview_{symbol}.json"
+                    industry = "general"  # 默认值
+                    if overview_file.exists():
+                        with open(overview_file, 'r') as f:
+                            overview_json = json.load(f)
+                        sector = overview_json.get("Sector", "").lower()
+                        industry_map = {
+                            "technology": "technology",
+                            "healthcare": "healthcare",
+                            "financial": "financial",
+                            "consumer": "retail",
+                            "industrial": "manufacturing",
+                            "energy": "energy",
+                        }
+                        for key, val in industry_map.items():
+                            if key in sector:
+                                industry = val
+                                break
+                    else:
+                        logger.warning(f"overview 文件 {overview_file} 不存在，基础财务报告行业将使用默认值 'general'")
+
+                    # 实例化生成器并生成报告，使用提取的 industry
                     generator = BaseFinancialsGenerator(
                         income_json=income_json,
                         balance_json=balance_json,
                         cashflow_json=cashflow_json,
                         earnings_json=earnings_json,
                         symbol=symbol,
-                        industry="general"  # 可根据需要从 overview 中提取行业
+                        industry=industry  # 现在从 overview 动态获取
                     )
                     base_output = session_dir / f"{symbol.lower()}_base_financials.md"
                     generator.save_report(str(base_output))
                     generated_files.append(str(base_output))
-                    logger.info(f"✅ 基础财务报告生成成功: {base_output}")
+                    logger.info(f"✅ 基础财务报告生成成功: {base_output} (行业: {industry})")
                 except Exception as e:
                     logger.error(f"基础财务报告生成失败: {e}", exc_info=True)
                     return {
