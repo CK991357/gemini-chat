@@ -153,7 +153,6 @@ TOOLS_CATALOG = [
       },
       "required": ["mode", "parameters"]
     },
-    # 🎯 新增：添加参数示例
     "examples": {
       "weekly_adjusted": {
         "mode": "weekly_adjusted",
@@ -177,6 +176,49 @@ TOOLS_CATALOG = [
       },
       "overview": {
         "mode": "overview",
+        "parameters": {"symbol": "AAPL"}
+      }
+    }
+  },
+  # ========== 新增：财务报告生成工具 ==========
+  {
+    "name": "financial_report_generator",
+    "description": "从会话工作区中读取 AlphaVantage 获取的原始 JSON 文件（如 income_statement_*.json, balance_sheet_*.json 等），生成两种财务报告：基础财务数据详表（包含同比、CAGR、健康评分）和财务比率历史数据表格（多年度对比）。模式 base 仅生成基础财务报告，ratio 仅生成比率历史报告，both 同时生成两者。参数中可指定 symbol，若不指定则自动从文件名推断。",
+    "endpoint_url": "https://tools.10110531.xyz/api/v1/execute_tool",
+    "input_schema": {
+      "title": "FinancialReportInput",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "title": "Mode",
+          "type": "string",
+          "enum": ["base", "ratio", "both"],
+          "description": "要生成的报告类型：base（基础财务数据）、ratio（财务比率历史数据）、both（两者）"
+        },
+        "parameters": {
+          "title": "Parameters",
+          "type": "object",
+          "properties": {
+            "symbol": {
+              "type": "string",
+              "description": "股票代码，如 AAPL。若未提供，将自动从会话目录中的 JSON 文件推断。"
+            }
+          }
+        }
+      },
+      "required": ["mode", "parameters"]
+    },
+    "examples": {
+      "base": {
+        "mode": "base",
+        "parameters": {"symbol": "AAPL"}
+      },
+      "ratio": {
+        "mode": "ratio", 
+        "parameters": {"symbol": "AAPL"}
+      },
+      "both": {
+        "mode": "both",
         "parameters": {"symbol": "AAPL"}
       }
     }

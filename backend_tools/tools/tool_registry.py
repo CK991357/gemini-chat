@@ -12,7 +12,8 @@ from .code_interpreter import CodeInterpreterTool as PythonSandboxTool
 from .firecrawl_tool import FirecrawlTool
 from .stockfish_tool import StockfishTool
 from .crawl4ai_tool_all import EnhancedCrawl4AITool  # 改为增强版本
-from .alphavantage_tool import AlphaVantageTool  # 新增AlphaVantage工具
+from .alphavantage_tool import AlphaVantageTool  # AlphaVantage工具
+from .financial_report_generator import FinancialReportGeneratorTool  # 新增：财务报告生成工具
 
 # --- Tool Classes Registry ---
 TOOL_CLASSES = {
@@ -21,7 +22,8 @@ TOOL_CLASSES = {
     FirecrawlTool.name: FirecrawlTool,
     StockfishTool.name: StockfishTool,
     EnhancedCrawl4AITool.name: EnhancedCrawl4AITool,  # 更新为增强版类名
-    AlphaVantageTool.name: AlphaVantageTool,  # 新增
+    AlphaVantageTool.name: AlphaVantageTool,  # AlphaVantage
+    FinancialReportGeneratorTool.name: FinancialReportGeneratorTool,  # 新增
 }
 
 # --- Shared Tool Instances ---
