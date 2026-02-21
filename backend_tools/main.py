@@ -222,6 +222,46 @@ TOOLS_CATALOG = [
         "parameters": {"symbol": "AAPL"}
       }
     }
+  },
+  # ========== 新增：估值模型综合工具 ==========
+  {
+    "name": "valuation_tool",
+    "description": "财务估值模型综合工具，支持 DCF、FCFE、RIM、EVA、APV 模型及蒙特卡洛模拟。从会话工作区读取 AlphaVantage 获取的 JSON 文件，生成估值报告（Markdown + JSON）。",
+    "endpoint_url": "https://tools.10110531.xyz/api/v1/execute_tool",
+    "input_schema": {
+      "title": "ValuationInput",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["single", "multi", "monte_carlo"],
+          "description": "操作模式：single（单模型）、multi（多模型）、monte_carlo（蒙特卡洛模拟）"
+        },
+        "parameters": {
+          "type": "object",
+          "description": "参数字典，包含 symbol 及其他选项，详见示例。"
+        }
+      },
+      "required": ["mode", "parameters"]
+    },
+    "examples": {
+      "multi": {
+        "mode": "multi",
+        "parameters": {
+          "symbol": "AAPL",
+          "models": ["dcf", "fcfe", "rim", "eva", "apv"],
+          "sensitivity": true
+        }
+      },
+      "monte_carlo": {
+        "mode": "monte_carlo",
+        "parameters": {
+          "symbol": "AAPL",
+          "n_simulations": 1000,
+          "seed": 42
+        }
+      }
+    }
   }
 ]
 

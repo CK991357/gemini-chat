@@ -14,6 +14,7 @@ from .stockfish_tool import StockfishTool
 from .crawl4ai_tool_all import EnhancedCrawl4AITool  # 改为增强版本
 from .alphavantage_tool import AlphaVantageTool  # AlphaVantage工具
 from .financial_report_generator import FinancialReportGeneratorTool  # 新增：财务报告生成工具
+from .valuation_tool import ValuationTool  # 新增：估值模型综合工具
 
 # --- Tool Classes Registry ---
 TOOL_CLASSES = {
@@ -24,6 +25,7 @@ TOOL_CLASSES = {
     EnhancedCrawl4AITool.name: EnhancedCrawl4AITool,  # 更新为增强版类名
     AlphaVantageTool.name: AlphaVantageTool,  # AlphaVantage
     FinancialReportGeneratorTool.name: FinancialReportGeneratorTool,  # 新增
+    ValuationTool.name: ValuationTool,  # 新增：估值模型综合工具
 }
 
 # --- Shared Tool Instances ---
