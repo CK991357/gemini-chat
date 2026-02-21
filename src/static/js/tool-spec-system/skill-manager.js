@@ -424,7 +424,6 @@ getIntentBonus(query, toolName) {
       keywords: ['象棋', '国际象棋', '棋局', '走法', '残局', 'fen'],
       bonus: 0.4 // 象棋专用工具，意图匹配加分更高
     },
-    // ✅ 新增 alphavantage 配置
     'alphavantage': {
       keywords: ['股票', '股价', '股市', 'finance', '金融数据', 'forex', '外汇', 
                  '汇率', 'crypto', '加密货币', '数字货币', 'bitcoin', '比特币',
@@ -432,7 +431,15 @@ getIntentBonus(query, toolName) {
                  'treasury', '国债', '收益率', '财报', '财务', 'earnings', 'income',
                  'balance', '资产负债表', 'cash', '现金流量', 'dividend', '股息',
                  '实时行情', '实时数据', '价格', 'quote', 'market', '市场'],
-      bonus: 0.35 // 稍高于平均值，因为金融查询通常意图明确
+      bonus: 0.35
+    },
+    // ✅ 新增：financial_report_generator 意图配置
+    'financial_report_generator': {
+      keywords: ['财务报告', '财务报表', '财务比率', '基础财务', '同比', 'cagr', 
+                 '健康评分', '多年度', '历史比率', '杜邦', 'z-score', 'roe', 'roa',
+                 '流动比率', '速动比率', '负债权益比', '资产负债率', '资产周转率',
+                 '自由现金流', '每股收益', '盈利预测', '股息历史', '现金流分析'],
+      bonus: 0.35
     }
   };
   
@@ -456,10 +463,12 @@ isCoreFunctionKeyword(keyword, toolName) {
     'crawl4ai': ['抓取', '爬取', '网页', '网站', 'html'],
     'python_sandbox': ['代码', '编程', 'python', '图表', '可视化', '数据分析', '数据处理'],
     'stockfish_analyzer': ['象棋', '国际象棋', '棋局', '走法'],
-    // ✅ 新增 alphavantage 核心关键词
     'alphavantage': ['股票', '股价', 'finance', '金融', 'forex', '外汇', 'crypto', 
                      '加密货币', 'commodity', '大宗商品', 'treasury', '国债', '财报',
-                     '财务', 'earnings', 'dividend', '股息', '行情', 'quote', 'market']
+                     '财务', 'earnings', 'dividend', '股息', '行情', 'quote', 'market'],
+    // ✅ 新增：financial_report_generator 核心关键词
+    'financial_report_generator': ['财务报告', '财务报表', '财务比率', '同比', 'cagr',
+                                   '健康评分', '历史比率', '杜邦', 'z-score', 'roe', 'roa']
   };
   
   return coreKeywords[toolName]?.includes(keyword) || false;
@@ -1022,4 +1031,3 @@ skillManagerPromise.then(instance => {
 
 // 导出函数以便外部模块可以获取基础技能管理器
 export { EnhancedSkillManager, getBaseSkillManager };
-

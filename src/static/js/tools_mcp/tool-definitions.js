@@ -167,7 +167,7 @@ const crawl4ai = {
     }
 };
 
-// ✅ 修正后的 AlphaVantage tool definition - 更新为20种模式
+// AlphaVantage tool definition - 20种模式
 const alphavantage = {
     "type": "function",
     "function": {
@@ -182,7 +182,6 @@ const alphavantage = {
                     "enum": [
                         "weekly_adjusted",
                         "global_quote",
-                        // 删除付费期权功能: "historical_options",
                         "earnings_transcript",
                         "insider_transactions",
                         "etf_profile",
@@ -193,7 +192,6 @@ const alphavantage = {
                         "copper",
                         "treasury_yield",
                         "news_sentiment",
-                        // 新增基本面数据模式
                         "overview",
                         "income_statement",
                         "balance_sheet",
@@ -214,6 +212,35 @@ const alphavantage = {
     }
 };
 
+// ========== 新增：财务报告生成工具 ==========
+const financial_report_generator = {
+    "type": "function",
+    "function": {
+        "name": "financial_report_generator",
+        "description": "从会话工作区中读取 AlphaVantage 获取的原始 JSON 文件（如 income_statement_*.json, balance_sheet_*.json 等），生成两种财务报告：基础财务数据详表（包含同比、CAGR、健康评分）和财务比率历史数据表格（多年度对比）。模式 base 仅生成基础财务报告，ratio 仅生成比率历史报告，both 同时生成两者。参数中可指定 symbol，若不指定则自动从文件名推断。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["base", "ratio", "both"],
+                    "description": "要生成的报告类型：base（基础财务数据）、ratio（财务比率历史数据）、both（两者）"
+                },
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "股票代码，如 AAPL。若未提供，将自动从会话目录中的 JSON 文件推断。"
+                        }
+                    }
+                }
+            },
+            "required": ["mode", "parameters"]
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
@@ -222,7 +249,8 @@ export const mcpTools = [
     firecrawl,
     stockfish_analyzer,
     crawl4ai,
-    alphavantage
+    alphavantage,
+    financial_report_generator  // 新增
 ];
 
 // Export a map for easy lookup by name
@@ -233,7 +261,8 @@ export const mcpToolsMap = {
     'firecrawl': firecrawl,
     'stockfish_analyzer': stockfish_analyzer,
     'crawl4ai': crawl4ai,
-    'alphavantage': alphavantage
+    'alphavantage': alphavantage,
+    'financial_report_generator': financial_report_generator  // 新增
 };
 
 // Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
@@ -253,6 +282,9 @@ if (crawl4ai_gemini.function.output_schema) {
 // Create a deep copy of alphavantage for Gemini compatibility
 const alphavantage_gemini = JSON.parse(JSON.stringify(alphavantage));
 
+// Create a deep copy of financial_report_generator for Gemini compatibility
+const financial_report_generator_gemini = JSON.parse(JSON.stringify(financial_report_generator));
+
 // Gemini-specific toolset without output_schema
 export const geminiMcpTools = [
     tavily_search,
@@ -260,5 +292,6 @@ export const geminiMcpTools = [
     firecrawl_gemini,
     stockfish_analyzer,
     crawl4ai_gemini,
-    alphavantage_gemini
+    alphavantage_gemini,
+    financial_report_generator_gemini  // 新增
 ];

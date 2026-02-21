@@ -5,8 +5,9 @@
  */
 
 // ✨ 直接、静态地导入所有工具的处理器
-import { handleAlphaVantage } from './handlers/alphavantage.js'; // 新增AlphaVantage处理器
+import { handleAlphaVantage } from './handlers/alphavantage.js'; // AlphaVantage处理器
 import { handleCrawl4AI } from './handlers/crawl4ai.js';
+import { handleFinancialReportGenerator } from './handlers/financial_report_generator.js'; // 新增
 import { handleFirecrawl } from './handlers/firecrawl.js';
 import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
 import { handlePythonSandbox } from './handlers/python-sandbox.js';
@@ -21,7 +22,8 @@ const toolRegistry = {
     'python_sandbox': handlePythonSandbox,
     'stockfish_analyzer': handleStockfishAnalyzer,
     'tavily_search': handleTavilySearch,
-    'alphavantage': handleAlphaVantage, // 新增AlphaVantage工具
+    'alphavantage': handleAlphaVantage, // AlphaVantage工具
+    'financial_report_generator': handleFinancialReportGenerator, // 新增
 };
 
 /**
@@ -35,7 +37,8 @@ function getToolDescription(toolName) {
         'python_sandbox': 'Python代码执行沙箱',
         'stockfish_analyzer': '国际象棋分析工具',
         'tavily_search': '网络搜索工具',
-        'alphavantage': 'AlphaVantage金融数据获取工具，支持股票、外汇、数字货币、大宗商品、新闻等13种金融数据类型'
+        'alphavantage': 'AlphaVantage金融数据获取工具，支持股票、外汇、数字货币、大宗商品、新闻等13种金融数据类型',
+        'financial_report_generator': '财务报告生成工具，从原始JSON生成基础财务数据报告和财务比率历史数据报告'
     };
     return descriptions[toolName] || `工具: ${toolName}`;
 }
