@@ -11,7 +11,7 @@ import asyncio
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Union, Tuple
 from enum import Enum
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# 以下为原 dcf_valuation_tool.py 内容（整合版）
+# 以下为原 dcf_valuation_tool.py 内容（完整整合版）
 # =============================================================================
 
 class TerminalValueMethod(str, Enum):
@@ -32,13 +32,242 @@ class TerminalValueMethod(str, Enum):
 
 
 class DCFValuationTool:
-    """DCF估值模型工具（核心计算）"""
+    """DCF估值模型工具"""
+    
+    name = "dcf_valuation"
+    description = "折现现金流(DCF)估值模型，包含敏感性分析和情景规划"
+    version = "2.0.0"
+    
+    class InputSchema(BaseModel):
+        """输入参数定义"""
+        company_name: str = Field(
+            default="Company",
+            description="公司名称"
+        )
+        historical_data: Dict[str, Any] = Field(
+            ...,
+            description="历史财务数据，必须包含revenue、ebitda、capex、nwc和years"
+        )
+        assumptions: Dict[str, Any] = Field(
+            ...,
+            description="预测假设参数"
+        )
+        wacc_components: Dict[str, Any] = Field(
+            ...,
+            description="WACC计算参数"
+        )
+        equity_params: Optional[Dict[str, Any]] = Field(
+            default=None,
+            description="股权价值计算参数"
+        )
+        terminal_method: TerminalValueMethod = Field(
+            default=TerminalValueMethod.PERPETUITY_GROWTH,
+            description="终值计算方法"
+        )
+        terminal_params: Optional[Dict[str, Any]] = Field(
+            default=None,
+            description="终值计算参数"
+        )
+        sensitivity_analysis: bool = Field(
+            default=False,
+            description="是否进行敏感性分析"
+        )
+        scenario_analysis: bool = Field(
+            default=False,
+            description="是否进行情景分析"
+        )
+        include_detailed_projections: bool = Field(
+            default=True,
+            description="是否包含详细预测表"
+        )
+        
+        @validator('historical_data')
+        def validate_historical_data(cls, v):
+            required_fields = ['revenue', 'ebitda', 'years']
+            for field in required_fields:
+                if field not in v:
+                    raise ValueError(f'historical_data必须包含{field}字段')
+                if not isinstance(v[field], list) or len(v[field]) == 0:
+                    raise ValueError(f'{field}必须是非空列表')
+            return v
+        
+        @validator('assumptions')
+        def validate_assumptions(cls, v):
+            if 'projection_years' not in v:
+                raise ValueError('assumptions必须包含projection_years')
+            if v['projection_years'] <= 0:
+                raise ValueError('projection_years必须大于0')
+            return v
+        
+        @validator('wacc_components')
+        def validate_wacc_components(cls, v):
+            required_fields = ['risk_free_rate', 'beta', 'market_premium', 'cost_of_debt', 'debt_to_equity']
+            for field in required_fields:
+                if field not in v:
+                    raise ValueError(f'wacc_components必须包含{field}字段')
+            return v
+        
+        class Config:
+            json_schema_extra = {
+                "example": {
+                    "company_name": "TechCorp",
+                    "historical_data": {
+                        "revenue": [800, 900, 1000],
+                        "ebitda": [160, 189, 220],
+                        "capex": [40, 45, 50],
+                        "nwc": [80, 90, 100],
+                        "years": [2022, 2023, 2024]
+                    },
+                    "assumptions": {
+                        "projection_years": 5,
+                        "revenue_growth": [0.15, 0.12, 0.10, 0.08, 0.06],
+                        "ebitda_margin": [0.22, 0.23, 0.24, 0.24, 0.24],
+                        "capex_percent": [0.05, 0.05, 0.05, 0.05, 0.05],
+                        "nwc_percent": [0.10, 0.10, 0.10, 0.10, 0.10],
+                        "tax_rate": 0.25,
+                        "terminal_growth": 0.03
+                    },
+                    "wacc_components": {
+                        "risk_free_rate": 0.04,
+                        "beta": 1.2,
+                        "market_premium": 0.07,
+                        "cost_of_debt": 0.05,
+                        "debt_to_equity": 0.5,
+                        "tax_rate": 0.25
+                    },
+                    "terminal_method": "perpetuity_growth",
+                    "equity_params": {
+                        "net_debt": 200,
+                        "cash": 100,
+                        "shares_outstanding": 50
+                    }
+                }
+            }
+    
+    input_schema = InputSchema
     
     def __init__(self):
-        pass
-
-    @staticmethod
-    def _calculate_wacc(components: Dict[str, Any]) -> float:
+        """初始化工具"""
+        logger.info(f"初始化DCF估值工具 v{self.version}")
+    
+    async def execute(self, parameters: InputSchema) -> Dict[str, Any]:
+        """执行DCF估值分析"""
+        start_time = datetime.now()
+        
+        try:
+            # 1. 计算WACC
+            wacc = self._calculate_wacc(parameters.wacc_components)
+            
+            # 2. 获取历史数据
+            historical = parameters.historical_data
+            assumptions = parameters.assumptions
+            
+            # 3. 预测现金流
+            projections = self._project_cash_flows(historical, assumptions)
+            
+            # 4. 计算终值
+            terminal_value = self._calculate_terminal_value(
+                projections, 
+                wacc, 
+                parameters.terminal_method,
+                parameters.terminal_params or {}
+            )
+            
+            # 5. 计算企业价值
+            enterprise_value = self._calculate_enterprise_value(
+                projections, terminal_value, wacc
+            )
+            
+            # 6. 计算股权价值
+            equity_value = None
+            value_per_share = None
+            if parameters.equity_params:
+                equity_results = self._calculate_equity_value(
+                    enterprise_value, parameters.equity_params
+                )
+                equity_value = equity_results["equity_value"]
+                value_per_share = equity_results["value_per_share"]
+            
+            # 7. 敏感性分析 - 修正：传入 enterprise_value["ev"] 而不是整个字典
+            sensitivity_results = None
+            if parameters.sensitivity_analysis:
+                sensitivity_results = self._run_sensitivity_analysis(
+                    enterprise_value["ev"],  # 关键修复
+                    wacc, 
+                    parameters
+                )
+            
+            # 8. 情景分析
+            scenario_results = None
+            if parameters.scenario_analysis:
+                scenario_results = self._run_scenario_analysis(parameters)
+            
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            result = {
+                "success": True,
+                "execution_time": execution_time,
+                "company_name": parameters.company_name,
+                "valuation": {
+                    "enterprise_value": enterprise_value["ev"],
+                    "enterprise_value_formatted": f"${enterprise_value['ev']:,.0f}",
+                    "pv_of_fcf": enterprise_value["pv_fcf"],
+                    "pv_of_terminal": enterprise_value["pv_terminal"],
+                    "terminal_value": enterprise_value["terminal_value"],
+                    "terminal_percent": enterprise_value["terminal_percent"],
+                    "wacc": wacc,
+                    "wacc_formatted": f"{wacc*100:.1f}%"
+                },
+                "equity_valuation": {
+                    "equity_value": equity_value,
+                    "equity_value_formatted": f"${equity_value:,.0f}" if equity_value else None,
+                    "value_per_share": value_per_share,
+                    "value_per_share_formatted": f"${value_per_share:.2f}" if value_per_share else None,
+                    "shares_outstanding": parameters.equity_params.get("shares_outstanding") if parameters.equity_params else None,
+                    "net_debt": parameters.equity_params.get("net_debt") if parameters.equity_params else None,
+                    "cash": parameters.equity_params.get("cash") if parameters.equity_params else None
+                } if equity_value else None,
+                "projections": projections if parameters.include_detailed_projections else None,
+                "sensitivity_analysis": sensitivity_results,
+                "scenario_analysis": scenario_results,
+                "key_assumptions": {
+                    "projection_years": assumptions.get("projection_years", 5),
+                    "avg_revenue_growth": np.mean(assumptions.get("revenue_growth", [0.1])) * 100,
+                    "avg_ebitda_margin": np.mean(assumptions.get("ebitda_margin", [0.2])) * 100,
+                    "terminal_growth": assumptions.get("terminal_growth", 0.03) * 100,
+                    "terminal_method": parameters.terminal_method.value if isinstance(parameters.terminal_method, Enum) else parameters.terminal_method
+                },
+                "summary": self._generate_summary(
+                    enterprise_value, equity_value, value_per_share, parameters.company_name
+                ),
+                "metadata": {
+                    "timestamp": datetime.now().isoformat(),
+                    "terminal_method": parameters.terminal_method.value if isinstance(parameters.terminal_method, Enum) else parameters.terminal_method,
+                    "has_sensitivity": parameters.sensitivity_analysis,
+                    "has_scenario": parameters.scenario_analysis
+                },
+                "wacc_components_input": parameters.wacc_components,
+                "assumptions_input": parameters.assumptions,
+                "terminal_params_input": parameters.terminal_params,
+                "historical_data_input": parameters.historical_data,
+                "equity_params_input": parameters.equity_params,
+                "terminal_method_input": parameters.terminal_method.value if isinstance(parameters.terminal_method, Enum) else parameters.terminal_method
+            }
+            
+            logger.info(f"DCF估值完成，耗时: {execution_time:.2f}秒")
+            return result
+            
+        except Exception as e:
+            logger.error(f"DCF估值失败: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"DCF估值失败: {str(e)}",
+                "execution_time": (datetime.now() - start_time).total_seconds(),
+                "suggestion": "请检查输入数据格式和假设合理性"
+            }
+    
+    def _calculate_wacc(self, components: Dict[str, Any]) -> float:
+        """计算加权平均资本成本"""
         try:
             risk_free_rate = components.get("risk_free_rate", 0.04)
             beta = components.get("beta", 1.0)
@@ -47,25 +276,36 @@ class DCFValuationTool:
             debt_to_equity = components.get("debt_to_equity", 0.5)
             tax_rate = components.get("tax_rate", 0.25)
             
+            # 股权成本 (CAPM)
             cost_of_equity = risk_free_rate + beta * market_premium
+            
+            # 权重计算
             equity_weight = 1 / (1 + debt_to_equity)
             debt_weight = debt_to_equity / (1 + debt_to_equity)
-            wacc = equity_weight * cost_of_equity + debt_weight * cost_of_debt * (1 - tax_rate)
             
+            # WACC公式
+            wacc = (equity_weight * cost_of_equity + 
+                   debt_weight * cost_of_debt * (1 - tax_rate))
+            
+            # 合理性检查
             if wacc <= 0 or wacc > 0.5:
                 logger.warning(f"WACC计算结果异常: {wacc}")
                 return max(0.08, min(wacc, 0.20))
+            
             return wacc
+            
         except Exception as e:
             logger.error(f"WACC计算失败: {str(e)}")
             return 0.10
-
-    @staticmethod
-    def _project_cash_flows(historical: Dict[str, Any], assumptions: Dict[str, Any]) -> Dict[str, List[float]]:
+    
+    def _project_cash_flows(self, historical: Dict[str, Any], assumptions: Dict[str, Any]) -> Dict[str, List[float]]:
+        """预测现金流"""
         projection_years = assumptions.get("projection_years", 5)
+        
         historical_revenue = historical.get("revenue", [])
         if not historical_revenue:
             raise ValueError("历史收入数据为空")
+        
         base_revenue = historical_revenue[-1]
         
         revenue_growth = assumptions.get("revenue_growth", [0.10] * projection_years)
@@ -134,11 +374,15 @@ class DCFValuationTool:
             prev_nwc = nwc
         
         projections["cumulative_fcf"] = np.cumsum(projections["fcf"]).tolist()
+        projections["avg_fcf_growth"] = self._calculate_cagr(
+            projections["fcf"][0], projections["fcf"][-1], projection_years
+        )
+        
         return projections
-
-    @staticmethod
-    def _calculate_terminal_value(projections: Dict[str, List[float]], wacc: float,
-                                  method: TerminalValueMethod, params: Dict[str, Any]) -> float:
+    
+    def _calculate_terminal_value(self, projections: Dict[str, List[float]], 
+                                 wacc: float, method: TerminalValueMethod,
+                                 params: Dict[str, Any]) -> float:
         final_fcf = projections["fcf"][-1]
         final_ebitda = projections["ebitda"][-1]
         
@@ -154,22 +398,24 @@ class DCFValuationTool:
             terminal_value = final_ebitda * exit_multiple
         else:
             raise ValueError(f"不支持的终值计算方法: {method}")
+        
         return terminal_value
-
-    @staticmethod
-    def _calculate_enterprise_value(projections: Dict[str, List[float]],
-                                    terminal_value: float, wacc: float) -> Dict[str, float]:
+    
+    def _calculate_enterprise_value(self, projections: Dict[str, List[float]], 
+                                   terminal_value: float, wacc: float) -> Dict[str, float]:
         pv_fcf_list = []
         for i, fcf in enumerate(projections["fcf"]):
             discount_factor = (1 + wacc) ** (i + 1)
             pv = fcf / discount_factor
             pv_fcf_list.append(pv)
+        
         total_pv_fcf = sum(pv_fcf_list)
         projection_years = len(projections["year"])
         terminal_discount = (1 + wacc) ** projection_years
         pv_terminal = terminal_value / terminal_discount
         enterprise_value = total_pv_fcf + pv_terminal
         terminal_percent = (pv_terminal / enterprise_value) * 100 if enterprise_value > 0 else 0
+        
         return {
             "ev": enterprise_value,
             "pv_fcf": total_pv_fcf,
@@ -178,16 +424,17 @@ class DCFValuationTool:
             "terminal_percent": terminal_percent,
             "pv_fcf_detail": pv_fcf_list
         }
-
-    @staticmethod
-    def _calculate_equity_value(enterprise_value: Dict[str, float],
-                                equity_params: Dict[str, Any]) -> Dict[str, float]:
+    
+    def _calculate_equity_value(self, enterprise_value: Dict[str, float], 
+                               equity_params: Dict[str, Any]) -> Dict[str, float]:
         ev = enterprise_value["ev"]
         net_debt = equity_params.get("net_debt", 0)
         cash = equity_params.get("cash", 0)
         shares_outstanding = equity_params.get("shares_outstanding", 1)
+        
         equity_value = ev - net_debt + cash
         value_per_share = equity_value / shares_outstanding if shares_outstanding > 0 else 0
+        
         return {
             "equity_value": equity_value,
             "value_per_share": value_per_share,
@@ -195,10 +442,220 @@ class DCFValuationTool:
             "net_debt": net_debt,
             "cash": cash
         }
+    
+    def _run_sensitivity_analysis(self, base_ev: float, base_wacc: float, 
+                                 parameters: InputSchema) -> Dict[str, Any]:
+        try:
+            wacc_range = np.linspace(base_wacc * 0.8, base_wacc * 1.2, 5)
+            growth_range = np.linspace(0.01, 0.05, 5)
+            
+            ev_matrix = np.zeros((len(wacc_range), len(growth_range)))
+            
+            for i, wacc_val in enumerate(wacc_range):
+                for j, growth_val in enumerate(growth_range):
+                    modified_assumptions = parameters.assumptions.copy()
+                    modified_assumptions["terminal_growth"] = growth_val
+                    
+                    projections = self._project_cash_flows(
+                        parameters.historical_data, 
+                        modified_assumptions
+                    )
+                    
+                    terminal_value = self._calculate_terminal_value(
+                        projections, wacc_val, parameters.terminal_method,
+                        {"terminal_growth": growth_val}
+                    )
+                    
+                    ev_result = self._calculate_enterprise_value(
+                        projections, terminal_value, wacc_val
+                    )
+                    
+                    ev_matrix[i, j] = ev_result["ev"]
+            
+            wacc_sensitivity = {
+                "low": ev_matrix[0, :].tolist(),
+                "base": ev_matrix[2, :].tolist(),
+                "high": ev_matrix[-1, :].tolist(),
+                "impact": ((ev_matrix[-1, 2] - ev_matrix[0, 2]) / base_ev) * 100
+            }
+            
+            growth_sensitivity = {
+                "low": ev_matrix[:, 0].tolist(),
+                "base": ev_matrix[:, 2].tolist(),
+                "high": ev_matrix[:, -1].tolist(),
+                "impact": ((ev_matrix[2, -1] - ev_matrix[2, 0]) / base_ev) * 100
+            }
+            
+            return {
+                "wacc_sensitivity": wacc_sensitivity,
+                "growth_sensitivity": growth_sensitivity,
+                "ev_matrix": ev_matrix.tolist(),
+                "wacc_range": wacc_range.tolist(),
+                "growth_range": growth_range.tolist(),
+                "base_enterprise_value": base_ev
+            }
+            
+        except Exception as e:
+            logger.error(f"敏感性分析失败: {str(e)}")
+            return None
+    
+    def _run_scenario_analysis(self, parameters: InputSchema) -> Dict[str, Any]:
+        scenarios = {
+            "base": {
+                "name": "基础情景",
+                "probability": 0.5,
+                "revenue_growth_adjustment": 0.0,
+                "margin_adjustment": 0.0,
+                "wacc_adjustment": 0.0
+            },
+            "optimistic": {
+                "name": "乐观情景",
+                "probability": 0.3,
+                "revenue_growth_adjustment": 0.2,
+                "margin_adjustment": 0.1,
+                "wacc_adjustment": -0.05
+            },
+            "pessimistic": {
+                "name": "悲观情景",
+                "probability": 0.2,
+                "revenue_growth_adjustment": -0.2,
+                "margin_adjustment": -0.1,
+                "wacc_adjustment": 0.05
+            }
+        }
+        
+        scenario_results = []
+        
+        for scenario_key, scenario in scenarios.items():
+            try:
+                modified_assumptions = parameters.assumptions.copy()
+                modified_wacc_components = parameters.wacc_components.copy()
+                
+                if "revenue_growth" in modified_assumptions:
+                    original_growth = modified_assumptions["revenue_growth"]
+                    adjusted_growth = [g * (1 + scenario["revenue_growth_adjustment"]) for g in original_growth]
+                    modified_assumptions["revenue_growth"] = adjusted_growth
+                
+                if "ebitda_margin" in modified_assumptions:
+                    original_margin = modified_assumptions["ebitda_margin"]
+                    adjusted_margin = [m * (1 + scenario["margin_adjustment"]) for m in original_margin]
+                    modified_assumptions["ebitda_margin"] = adjusted_margin
+                
+                original_wacc = self._calculate_wacc(parameters.wacc_components)
+                adjusted_wacc = original_wacc * (1 + scenario["wacc_adjustment"])
+                modified_wacc_components["risk_free_rate"] *= (1 + scenario["wacc_adjustment"])
+                
+                wacc = self._calculate_wacc(modified_wacc_components)
+                projections = self._project_cash_flows(
+                    parameters.historical_data, 
+                    modified_assumptions
+                )
+                
+                terminal_value = self._calculate_terminal_value(
+                    projections, wacc, parameters.terminal_method,
+                    parameters.terminal_params or {}
+                )
+                
+                ev_result = self._calculate_enterprise_value(
+                    projections, terminal_value, wacc
+                )
+                
+                equity_value = None
+                if parameters.equity_params:
+                    equity_result = self._calculate_equity_value(
+                        ev_result, parameters.equity_params
+                    )
+                    equity_value = equity_result["equity_value"]
+                
+                scenario_results.append({
+                    "scenario": scenario_key,
+                    "name": scenario["name"],
+                    "probability": scenario["probability"],
+                    "enterprise_value": ev_result["ev"],
+                    "equity_value": equity_value,
+                    "wacc": wacc,
+                    "avg_revenue_growth": np.mean(modified_assumptions.get("revenue_growth", [0.1])),
+                    "avg_ebitda_margin": np.mean(modified_assumptions.get("ebitda_margin", [0.2]))
+                })
+                
+            except Exception as e:
+                logger.error(f"情景分析失败 ({scenario_key}): {str(e)}")
+                continue
+        
+        if not scenario_results:
+            return None
+        
+        expected_ev = sum(r["enterprise_value"] * r["probability"] for r in scenario_results)
+        expected_equity = sum(r.get("equity_value", 0) * r["probability"] for r in scenario_results 
+                             if r.get("equity_value") is not None)
+        
+        return {
+            "scenarios": scenario_results,
+            "expected_values": {
+                "enterprise_value": expected_ev,
+                "equity_value": expected_equity if expected_equity > 0 else None
+            },
+            "range": {
+                "min_ev": min(r["enterprise_value"] for r in scenario_results),
+                "max_ev": max(r["enterprise_value"] for r in scenario_results),
+                "ev_range": max(r["enterprise_value"] for r in scenario_results) - 
+                          min(r["enterprise_value"] for r in scenario_results)
+            }
+        }
+    
+    @staticmethod
+    def _calculate_cagr(start_value: float, end_value: float, years: int) -> float:
+        if start_value <= 0 or years <= 0:
+            return 0.0
+        return (end_value / start_value) ** (1 / years) - 1
+    
+    def _generate_summary(self, enterprise_value: Dict[str, float], 
+                         equity_value: Optional[float], 
+                         value_per_share: Optional[float],
+                         company_name: str) -> str:
+        summary_parts = []
+        ev = enterprise_value["ev"]
+        terminal_percent = enterprise_value["terminal_percent"]
+        
+        summary_parts.append(f"{company_name}的DCF估值分析完成。")
+        summary_parts.append(f"企业价值为${ev:,.0f}。")
+        
+        if terminal_percent > 70:
+            summary_parts.append(f"注意：终值占比高达{terminal_percent:.1f}%，模型对终值假设非常敏感。")
+        elif terminal_percent < 30:
+            summary_parts.append(f"终值占比为{terminal_percent:.1f}%，估值主要基于预测期现金流。")
+        else:
+            summary_parts.append(f"终值占比为{terminal_percent:.1f}%。")
+        
+        if equity_value is not None:
+            summary_parts.append(f"股权价值为${equity_value:,.0f}。")
+        
+        if value_per_share is not None:
+            summary_parts.append(f"每股价值为${value_per_share:.2f}。")
+        
+        summary_parts.append("注：估值结果高度依赖假设参数，建议进行敏感性分析。")
+        return " ".join(summary_parts)
+    
+    async def health_check(self) -> str:
+        try:
+            test_wacc = self._calculate_wacc({
+                "risk_free_rate": 0.04,
+                "beta": 1.0,
+                "market_premium": 0.06,
+                "cost_of_debt": 0.05,
+                "debt_to_equity": 0.5,
+                "tax_rate": 0.25
+            })
+            if 0.05 <= test_wacc <= 0.20:
+                return "available"
+            else:
+                return f"wacc_calc_abnormal: {test_wacc}"
+        except Exception as e:
+            return f"error: {str(e)}"
 
 
 # =============================================================================
-# 以下为原 dcf_auto_all.py 内容（数据加载与自动构建）
+# 以下为原 dcf_auto_all.py 内容（数据加载与自动构建，已增强健壮性）
 # =============================================================================
 
 def _safe_float(value, default=0.0) -> float:
@@ -219,47 +676,70 @@ def _safe_float(value, default=0.0) -> float:
 
 
 class DCFAutoValuation:
-    """自动DCF估值数据加载器（适配会话工作区）"""
+    """自动DCF估值数据加载器（适配会话工作区，增强异常处理）"""
 
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
+        self.dcf_tool = DCFValuationTool()  # 复用核心计算工具
 
-    def load_json(self, filename: str) -> Dict:
+    def load_json(self, filename: str) -> Optional[Dict]:
+        """安全加载JSON文件，文件不存在时返回None"""
         filepath = self.data_dir / filename
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        if not filepath.exists():
+            logger.warning(f"文件不存在: {filepath}")
+            return None
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"加载JSON文件失败 {filepath}: {e}")
+            return None
 
-    def load_treasury_rates(self, filename: str = "treasury_10year_daily.parquet") -> pd.DataFrame:
+    def load_treasury_rates(self, filename: str = "treasury_10year_daily.parquet") -> Optional[pd.DataFrame]:
         """
-        加载国债收益率文件。优先从全局数据目录读取，若不存在则从会话目录读取。
-        全局数据目录可配置为 /srv/data 或其他位置，此处假设固定。
+        加载国债收益率文件。仅从会话目录读取。
+        如果文件不存在，返回一个模拟数据帧并记录警告（避免崩溃）。
         """
-        # 尝试从会话目录读取
-        session_path = self.data_dir / filename
-        if session_path.exists():
-            return pd.read_parquet(session_path)
-        # 尝试从全局公共目录读取（请根据实际部署修改路径）
-        global_path = Path("/srv/data") / filename
-        if global_path.exists():
-            return pd.read_parquet(global_path)
-        # 若都不存在，尝试从当前工作目录（兼容本地测试）
-        local_path = Path(filename)
-        if local_path.exists():
-            return pd.read_parquet(local_path)
-        raise FileNotFoundError(f"无法找到国债收益率文件: {filename}")
+        filepath = self.data_dir / filename
+        if filepath.exists():
+            try:
+                return pd.read_parquet(filepath)
+            except Exception as e:
+                logger.warning(f"读取国债文件失败 {filepath}: {e}")
+
+        # 若文件不存在，返回模拟数据（避免服务崩溃）
+        logger.warning(f"无法找到国债收益率文件 {filepath}，使用模拟数据（默认无风险利率 4.5%）")
+        # 生成一个包含最近日期的模拟DataFrame
+        today = datetime.now().date()
+        dates = [(today - timedelta(days=i)).isoformat() for i in range(10)]
+        # 使用当前实际10年期国债收益率近似值（可根据需要调整）
+        mock_yield = 0.045  # 4.5%
+        mock_df = pd.DataFrame({
+            'date': dates,
+            'yield': [mock_yield] * 10
+        })
+        mock_df['date'] = pd.to_datetime(mock_df['date'])
+        return mock_df
 
     def get_risk_free_rate(self, method: str = "latest") -> float:
         df = self.load_treasury_rates()
+        if df is None or df.empty:
+            logger.warning("无法获取国债收益率，使用默认值 4.5%")
+            return 0.045
+
+        # 识别日期列
         date_col = None
         for col in df.columns:
             if 'date' in col.lower():
                 date_col = col
                 break
         if date_col is None:
+            # 假设第一列为日期
             date_col = df.columns[0]
         df['date'] = pd.to_datetime(df[date_col])
         df = df.sort_values('date')
 
+        # 识别收益率列
         possible_rate_cols = ['yield', 'rate', 'close', 'price', 'value']
         rate_col = None
         for col in possible_rate_cols:
@@ -280,7 +760,8 @@ class DCFAutoValuation:
                 rate_col = df.columns[1]
                 df[rate_col] = pd.to_numeric(df[rate_col], errors='coerce')
             else:
-                raise ValueError("无法找到收益率列")
+                logger.warning("无法找到收益率列，使用默认值 4.5%")
+                return 0.045
 
         if method == "latest":
             latest = df.iloc[-1]
@@ -292,7 +773,8 @@ class DCFAutoValuation:
                 recent = df.tail(252)
             return float(recent[rate_col].mean()) / 100
         else:
-            raise ValueError(f"未知的method: {method}")
+            logger.warning(f"未知的method: {method}，使用latest")
+            return self.get_risk_free_rate(method="latest")
 
     def extract_historical_data(self, symbol: str) -> Dict[str, List]:
         """从三张表中提取历史数据，按日期升序排列（旧→新）"""
@@ -300,9 +782,14 @@ class DCFAutoValuation:
         cf = self.load_json(f"cash_flow_{symbol}.json")
         inc = self.load_json(f"income_statement_{symbol}.json")
 
-        annual_bs = sorted(bs['annualReports'], key=lambda x: x['fiscalDateEnding'])
-        annual_cf = sorted(cf['annualReports'], key=lambda x: x['fiscalDateEnding'])
-        annual_inc = sorted(inc['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        # 如果任一必需文件缺失，返回空数据
+        if bs is None or cf is None or inc is None:
+            logger.error(f"缺少必需财务文件，无法提取历史数据 for {symbol}")
+            return {"revenue": [], "ebitda": [], "capex": [], "nwc": [], "years": []}
+
+        annual_bs = sorted(bs.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
+        annual_cf = sorted(cf.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
+        annual_inc = sorted(inc.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
 
         if not (len(annual_bs) == len(annual_cf) == len(annual_inc)):
             logger.warning("三张表数量不一致，尝试按日期对齐")
@@ -317,10 +804,12 @@ class DCFAutoValuation:
         years, revenue, ebitda, capex, nwc = [], [], [], [], []
         for i in range(len(annual_inc)):
             inc_item = annual_inc[i]
-            cf_item = annual_cf[i]
-            bs_item = annual_bs[i]
+            cf_item = annual_cf[i] if i < len(annual_cf) else {}
+            bs_item = annual_bs[i] if i < len(annual_bs) else {}
 
-            year = inc_item['fiscalDateEnding'][:4]
+            year = inc_item.get('fiscalDateEnding', '')[:4]
+            if not year:
+                continue
             years.append(int(year))
             revenue.append(_safe_float(inc_item.get('totalRevenue', 0)))
 
@@ -358,12 +847,16 @@ class DCFAutoValuation:
 
     def extract_net_income(self, symbol: str) -> List[float]:
         inc = self.load_json(f"income_statement_{symbol}.json")
-        annual_inc = sorted(inc['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        if inc is None:
+            return []
+        annual_inc = sorted(inc.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
         return [_safe_float(item.get('netIncome', 0)) for item in annual_inc]
 
     def extract_total_dividends(self, symbol: str) -> List[float]:
         cf = self.load_json(f"cash_flow_{symbol}.json")
-        annual_cf = sorted(cf['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        if cf is None:
+            return []
+        annual_cf = sorted(cf.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
         dividends = []
         for item in annual_cf:
             div = _safe_float(item.get('dividendPaid', 0))
@@ -372,12 +865,16 @@ class DCFAutoValuation:
 
     def extract_book_value(self, symbol: str) -> List[float]:
         bs = self.load_json(f"balance_sheet_{symbol}.json")
-        annual_bs = sorted(bs['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        if bs is None:
+            return []
+        annual_bs = sorted(bs.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
         return [_safe_float(item.get('totalShareholderEquity', 0)) for item in annual_bs]
 
     def extract_net_borrowing(self, symbol: str) -> List[float]:
         cf = self.load_json(f"cash_flow_{symbol}.json")
-        annual_cf = sorted(cf['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        if cf is None:
+            return []
+        annual_cf = sorted(cf.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
         net_borrowings = []
         for item in annual_cf:
             issuance = _safe_float(item.get('issuanceOfDebt', 0))
@@ -387,7 +884,9 @@ class DCFAutoValuation:
 
     def extract_debt_history(self, symbol: str) -> List[float]:
         bs = self.load_json(f"balance_sheet_{symbol}.json")
-        annual_bs = sorted(bs['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        if bs is None:
+            return []
+        annual_bs = sorted(bs.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
         debt = []
         for item in annual_bs:
             short_debt = _safe_float(item.get('shortTermDebt', 0))
@@ -397,7 +896,9 @@ class DCFAutoValuation:
 
     def extract_invested_capital(self, symbol: str) -> List[float]:
         bs = self.load_json(f"balance_sheet_{symbol}.json")
-        annual_bs = sorted(bs['annualReports'], key=lambda x: x['fiscalDateEnding'])
+        if bs is None:
+            return []
+        annual_bs = sorted(bs.get('annualReports', []), key=lambda x: x.get('fiscalDateEnding', ''))
         ic = []
         for item in annual_bs:
             total_liab = _safe_float(item.get('totalLiabilities', 0))
@@ -406,20 +907,26 @@ class DCFAutoValuation:
         return ic
 
     def extract_estimates(self, symbol: str) -> pd.DataFrame:
-        est = self.load_json(f"earnings_estimates_{symbol}.json")
+        """加载盈利预估JSON，如果文件不存在返回空DataFrame"""
+        est_data = self.load_json(f"earnings_estimates_{symbol}.json")
+        if est_data is None:
+            return pd.DataFrame()
         overview = self.load_json(f"overview_{symbol}.json")
-        fiscal_year_end = overview.get('FiscalYearEnd', 'June')
-        month_map = {
-            'January': '-01-31', 'February': '-02-28', 'March': '-03-31',
-            'April': '-04-30', 'May': '-05-31', 'June': '-06-30',
-            'July': '-07-31', 'August': '-08-31', 'September': '-09-30',
-            'October': '-10-31', 'November': '-11-30', 'December': '-12-31'
-        }
-        fiscal_suffix = month_map.get(fiscal_year_end, '-06-30')
+        if overview is None:
+            fiscal_suffix = '-06-30'  # 默认
+        else:
+            fiscal_year_end = overview.get('FiscalYearEnd', 'June')
+            month_map = {
+                'January': '-01-31', 'February': '-02-28', 'March': '-03-31',
+                'April': '-04-30', 'May': '-05-31', 'June': '-06-30',
+                'July': '-07-31', 'August': '-08-31', 'September': '-09-30',
+                'October': '-10-31', 'November': '-11-30', 'December': '-12-31'
+            }
+            fiscal_suffix = month_map.get(fiscal_year_end, '-06-30')
 
         records = []
-        for item in est['estimates']:
-            date = item['date']
+        for item in est_data.get('estimates', []):
+            date = item.get('date', '')
             if not date.endswith(fiscal_suffix):
                 continue
             eps_avg = _safe_float(item.get('eps_estimate_average')) if item.get('eps_estimate_average') else None
@@ -430,22 +937,33 @@ class DCFAutoValuation:
                 'revenue_estimate': rev_avg
             })
         df = pd.DataFrame(records)
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.sort_values('date')
+        if not df.empty:
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
         return df
 
     def compute_growth_rates(self, symbol: str, projection_years: int = 5) -> List[float]:
         df = self.extract_estimates(symbol)
-        today = datetime.now()
-        future = df[df['date'] > today].copy()
-
-        if len(future) == 0:
+        if df.empty:
             logger.warning(f"Symbol {symbol}: 无未来收入估计，使用历史平均增长率")
             hist_data = self.extract_historical_data(symbol)
             revs = hist_data['revenue']
             if len(revs) >= 2:
-                hist_growth = [(revs[i] / revs[i-1] - 1) for i in range(1, len(revs))]
-                avg_growth = np.mean(hist_growth)
+                hist_growth = [(revs[i] / revs[i-1] - 1) for i in range(1, len(revs)) if revs[i-1] > 0]
+                avg_growth = np.mean(hist_growth) if hist_growth else 0.10
+                return [avg_growth] * projection_years
+            else:
+                return [0.10] * projection_years
+
+        today = datetime.now()
+        future = df[df['date'] > today].copy()
+        if len(future) == 0:
+            # 没有未来估计，使用历史平均
+            hist_data = self.extract_historical_data(symbol)
+            revs = hist_data['revenue']
+            if len(revs) >= 2:
+                hist_growth = [(revs[i] / revs[i-1] - 1) for i in range(1, len(revs)) if revs[i-1] > 0]
+                avg_growth = np.mean(hist_growth) if hist_growth else 0.10
                 return [avg_growth] * projection_years
             else:
                 return [0.10] * projection_years
@@ -453,14 +971,17 @@ class DCFAutoValuation:
         future = future.head(projection_years)
         revs = future['revenue_estimate'].values
         hist_data = self.extract_historical_data(symbol)
-        latest_rev = hist_data['revenue'][-1]
+        if not hist_data['revenue']:
+            latest_rev = 1e9  # 假设一个基准值
+        else:
+            latest_rev = hist_data['revenue'][-1]
 
         growth_rates = []
         for i in range(len(revs)):
             if i == 0:
-                growth = revs[i] / latest_rev - 1
+                growth = revs[i] / latest_rev - 1 if latest_rev > 0 else 0.10
             else:
-                growth = revs[i] / revs[i-1] - 1
+                growth = revs[i] / revs[i-1] - 1 if revs[i-1] > 0 else 0.10
             growth_rates.append(growth)
 
         if len(growth_rates) < projection_years:
@@ -476,25 +997,32 @@ class DCFAutoValuation:
         nwc = np.array(hist['nwc'])
 
         mask = revenues > 0
-        ebitda_margin = (ebitda[mask] / revenues[mask]).tolist() if any(mask) else [0.3]
-        capex_pct = (capex[mask] / revenues[mask]).tolist() if any(mask) else [0.05]
-        nwc_pct = (nwc[mask] / revenues[mask]).tolist() if any(mask) else [0.10]
+        if any(mask):
+            ebitda_margin = (ebitda[mask] / revenues[mask]).tolist()
+            capex_pct = (capex[mask] / revenues[mask]).tolist()
+            nwc_pct = (nwc[mask] / revenues[mask]).tolist()
+        else:
+            ebitda_margin = [0.3]
+            capex_pct = [0.05]
+            nwc_pct = [0.10]
 
         inc = self.load_json(f"income_statement_{symbol}.json")
         tax_rates = []
-        for item in inc['annualReports'][-5:]:
-            pretax = _safe_float(item.get('incomeBeforeTax', 0))
-            tax = _safe_float(item.get('incomeTaxExpense', 0))
-            if pretax > 0:
-                tax_rates.append(tax / pretax)
+        if inc is not None:
+            for item in inc.get('annualReports', [])[-5:]:
+                pretax = _safe_float(item.get('incomeBeforeTax', 0))
+                tax = _safe_float(item.get('incomeTaxExpense', 0))
+                if pretax > 0:
+                    tax_rates.append(tax / pretax)
         avg_tax = np.mean(tax_rates) if tax_rates else 0.25
 
         dep_rates = []
-        for item in inc['annualReports'][-5:]:
-            dep = _safe_float(item.get('depreciationAndAmortization', 0))
-            rev = _safe_float(item.get('totalRevenue', 0))
-            if rev > 0:
-                dep_rates.append(dep / rev)
+        if inc is not None:
+            for item in inc.get('annualReports', [])[-5:]:
+                dep = _safe_float(item.get('depreciationAndAmortization', 0))
+                rev = _safe_float(item.get('totalRevenue', 0))
+                if rev > 0:
+                    dep_rates.append(dep / rev)
         avg_dep = np.mean(dep_rates) if dep_rates else 0.03
 
         return {
@@ -507,12 +1035,27 @@ class DCFAutoValuation:
 
     def compute_wacc_components(self, symbol: str, risk_free_rate: float, market_premium: float = 0.06) -> Dict[str, float]:
         overview = self.load_json(f"overview_{symbol}.json")
-        beta = _safe_float(overview.get('Beta', 1.0))
+        if overview is None:
+            logger.warning(f"无法加载overview_{symbol}.json，使用默认WACC组件")
+            beta = 1.0
+        else:
+            beta = _safe_float(overview.get('Beta', 1.0))
 
         inc = self.load_json(f"income_statement_{symbol}.json")
         bs = self.load_json(f"balance_sheet_{symbol}.json")
-        latest_inc = inc['annualReports'][-1]
-        latest_bs = bs['annualReports'][-1]
+        if inc is None or bs is None:
+            logger.warning(f"缺少财务报表，使用默认WACC组件")
+            return {
+                'risk_free_rate': risk_free_rate,
+                'beta': beta,
+                'market_premium': market_premium,
+                'cost_of_debt': 0.05,
+                'debt_to_equity': 0.5,
+                'tax_rate': 0.25
+            }
+
+        latest_inc = inc.get('annualReports', [{}])[-1] if inc.get('annualReports') else {}
+        latest_bs = bs.get('annualReports', [{}])[-1] if bs.get('annualReports') else {}
 
         interest_expense = _safe_float(latest_inc.get('interestExpense', 0))
         short_debt = _safe_float(latest_bs.get('shortTermDebt', 0))
@@ -546,7 +1089,11 @@ class DCFAutoValuation:
     def compute_equity_params(self, symbol: str) -> Dict[str, float]:
         overview = self.load_json(f"overview_{symbol}.json")
         bs = self.load_json(f"balance_sheet_{symbol}.json")
-        latest_bs = bs['annualReports'][-1]
+        if bs is None:
+            logger.warning(f"无法加载balance_sheet_{symbol}.json，使用默认权益参数")
+            return {'net_debt': 0, 'cash': 0, 'shares_outstanding': 1}
+
+        latest_bs = bs.get('annualReports', [{}])[-1] if bs.get('annualReports') else {}
 
         cash = _safe_float(latest_bs.get('cashAndCashEquivalentsAtCarryingValue', 0))
         short_debt = _safe_float(latest_bs.get('shortTermDebt', 0))
@@ -554,7 +1101,10 @@ class DCFAutoValuation:
         total_debt = short_debt + long_debt
         net_debt = total_debt - cash
 
-        shares = _safe_float(overview.get('SharesOutstanding', 0))
+        if overview is not None:
+            shares = _safe_float(overview.get('SharesOutstanding', 0))
+        else:
+            shares = 0
         if shares == 0:
             shares = _safe_float(latest_bs.get('commonStockSharesOutstanding', 1))
 
@@ -566,32 +1116,41 @@ class DCFAutoValuation:
 
     def compute_net_income_forecast(self, symbol: str, projection_years: int = 5) -> List[float]:
         overview = self.load_json(f"overview_{symbol}.json")
-        shares = _safe_float(overview.get('SharesOutstanding', 0))
+        if overview is None:
+            shares = 1
+        else:
+            shares = _safe_float(overview.get('SharesOutstanding', 0))
         if shares == 0:
             bs = self.load_json(f"balance_sheet_{symbol}.json")
-            latest_bs = bs['annualReports'][-1]
-            shares = _safe_float(latest_bs.get('commonStockSharesOutstanding', 1))
+            if bs is not None and bs.get('annualReports'):
+                latest_bs = bs['annualReports'][-1]
+                shares = _safe_float(latest_bs.get('commonStockSharesOutstanding', 1))
+            else:
+                shares = 1
 
         growth_rates = self.compute_growth_rates(symbol, projection_years)
         hist_data = self.extract_historical_data(symbol)
-        latest_rev = hist_data['revenue'][-1]
+        if not hist_data['revenue']:
+            latest_rev = 1e9
+        else:
+            latest_rev = hist_data['revenue'][-1]
         revenue_forecast = []
         rev = latest_rev
         for g in growth_rates:
             rev *= (1 + g)
             revenue_forecast.append(rev)
 
-        try:
-            est_df = self.extract_estimates(symbol)
+        # 尝试从earnings_estimates获取EPS预测
+        est_df = self.extract_estimates(symbol)
+        if not est_df.empty:
             today = datetime.now()
             future_eps = est_df[est_df['date'] > today]['eps_estimate'].dropna().values
             if len(future_eps) >= projection_years:
                 net_income_forecast = [eps * shares for eps in future_eps[:projection_years]]
                 logger.info(f"使用分析师EPS预测净利润: {net_income_forecast}")
                 return net_income_forecast
-        except:
-            pass
 
+        # 否则使用历史平均净利润率
         net_income_hist = self.extract_net_income(symbol)
         rev_hist = hist_data['revenue']
         min_len = min(len(net_income_hist), len(rev_hist))
@@ -651,6 +1210,62 @@ class DCFAutoValuation:
         avg_ratio = np.mean(ratios) if ratios else 0.0
         return [rev * avg_ratio for rev in revenue_forecast]
 
+    # ================= 新增：构建输入 schema =================
+    def build_input_schema(self, symbol: str,
+                           projection_years: int = 5,
+                           terminal_growth: float = 0.025,
+                           risk_free_method: str = "latest",
+                           market_premium: float = 0.06,
+                           terminal_method: TerminalValueMethod = TerminalValueMethod.PERPETUITY_GROWTH,
+                           sensitivity: bool = False,
+                           scenario: bool = False,
+                           include_detailed: bool = True) -> DCFValuationTool.InputSchema:
+        """构建 DCF 估值工具的输入参数"""
+        historical = self.extract_historical_data(symbol)
+        risk_free = self.get_risk_free_rate(method=risk_free_method)
+        margins = self.compute_margins(symbol)
+        growth_rates = self.compute_growth_rates(symbol, projection_years)
+        wacc_comp = self.compute_wacc_components(symbol, risk_free, market_premium)
+        equity_params = self.compute_equity_params(symbol)
+
+        assumptions = {
+            "projection_years": projection_years,
+            "revenue_growth": growth_rates,
+            "ebitda_margin": [margins['avg_ebitda_margin']] * projection_years,
+            "capex_percent": [margins['avg_capex_pct']] * projection_years,
+            "nwc_percent": [margins['avg_nwc_pct']] * projection_years,
+            "tax_rate": margins['avg_tax_rate'],
+            "terminal_growth": terminal_growth,
+            "depreciation_rate": margins['avg_depreciation_rate']
+        }
+
+        terminal_params = {
+            "terminal_growth": terminal_growth,
+            "exit_multiple": 15.0
+        }
+
+        overview = self.load_json(f"overview_{symbol}.json")
+        company_name = overview.get('Name', symbol) if overview else symbol
+
+        return DCFValuationTool.InputSchema(
+            company_name=company_name,
+            historical_data=historical,
+            assumptions=assumptions,
+            wacc_components=wacc_comp,
+            equity_params=equity_params,
+            terminal_method=terminal_method,
+            terminal_params=terminal_params,
+            sensitivity_analysis=sensitivity,
+            scenario_analysis=scenario,
+            include_detailed_projections=include_detailed
+        )
+
+    # ================= 新增：异步运行估值 =================
+    async def run_valuation(self, symbol: str, **kwargs) -> Dict[str, Any]:
+        """执行 DCF 估值"""
+        input_schema = self.build_input_schema(symbol, **kwargs)
+        return await self.dcf_tool.execute(input_schema)
+
 
 # =============================================================================
 # 以下为各估值模型（APV, FCFE, RIM, EVA）的类定义
@@ -676,6 +1291,9 @@ class APVValuation:
         start_time = datetime.now()
         try:
             hist_data = self.data_loader.extract_historical_data(symbol)
+            if not hist_data['revenue']:
+                raise ValueError(f"无法获取 {symbol} 的历史收入数据")
+
             margins = self.data_loader.compute_margins(symbol)
             growth_rates = self.data_loader.compute_growth_rates(symbol, projection_years)
             risk_free = self.data_loader.get_risk_free_rate(method=risk_free_method)
@@ -780,7 +1398,7 @@ class APVValuation:
             result = {
                 "success": True,
                 "execution_time": (datetime.now() - start_time).total_seconds(),
-                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol),
+                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol) if self.data_loader.load_json(f"overview_{symbol}.json") else symbol,
                 "model": "APV",
                 "valuation": {
                     "enterprise_value": enterprise_value,
@@ -909,6 +1527,9 @@ class FCFEValuation:
         start_time = datetime.now()
         try:
             hist_data = self.data_loader.extract_historical_data(symbol)
+            if not hist_data['revenue']:
+                raise ValueError(f"无法获取 {symbol} 的历史收入数据")
+
             margins = self.data_loader.compute_margins(symbol)
             growth_rates = self.data_loader.compute_growth_rates(symbol, projection_years)
             risk_free = self.data_loader.get_risk_free_rate(method=risk_free_method)
@@ -934,7 +1555,7 @@ class FCFEValuation:
             capex_forecast = [rev * capex_pct for rev in revenue_forecast]
 
             nwc_forecast = [rev * nwc_pct for rev in revenue_forecast]
-            prev_nwc = hist_data['nwc'][-1]
+            prev_nwc = hist_data['nwc'][-1] if hist_data['nwc'] else 0
             nwc_change_forecast = []
             for nwc in nwc_forecast:
                 change = nwc - prev_nwc
@@ -994,7 +1615,7 @@ class FCFEValuation:
             result = {
                 "success": True,
                 "execution_time": (datetime.now() - start_time).total_seconds(),
-                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol),
+                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol) if self.data_loader.load_json(f"overview_{symbol}.json") else symbol,
                 "model": "FCFE",
                 "valuation": {
                     "equity_value": equity_value,
@@ -1102,6 +1723,9 @@ class RIMValuation:
         start_time = datetime.now()
         try:
             hist_data = self.data_loader.extract_historical_data(symbol)
+            if not hist_data['revenue']:
+                raise ValueError(f"无法获取 {symbol} 的历史收入数据")
+
             margins = self.data_loader.compute_margins(symbol)
             growth_rates = self.data_loader.compute_growth_rates(symbol, projection_years)
             risk_free = self.data_loader.get_risk_free_rate(method=risk_free_method)
@@ -1180,7 +1804,7 @@ class RIMValuation:
             result = {
                 "success": True,
                 "execution_time": (datetime.now() - start_time).total_seconds(),
-                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol),
+                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol) if self.data_loader.load_json(f"overview_{symbol}.json") else symbol,
                 "model": "RIM",
                 "valuation": {
                     "equity_value": equity_value,
@@ -1289,6 +1913,9 @@ class EVAValuation:
         start_time = datetime.now()
         try:
             hist_data = self.data_loader.extract_historical_data(symbol)
+            if not hist_data['revenue']:
+                raise ValueError(f"无法获取 {symbol} 的历史收入数据")
+
             margins = self.data_loader.compute_margins(symbol)
             growth_rates = self.data_loader.compute_growth_rates(symbol, projection_years)
             risk_free = self.data_loader.get_risk_free_rate(method=risk_free_method)
@@ -1382,7 +2009,7 @@ class EVAValuation:
             result = {
                 "success": True,
                 "execution_time": (datetime.now() - start_time).total_seconds(),
-                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol),
+                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol) if self.data_loader.load_json(f"overview_{symbol}.json") else symbol,
                 "model": "EVA",
                 "valuation": {
                     "enterprise_value": enterprise_value,
@@ -1516,7 +2143,7 @@ class MonteCarloSimulator:
         return np.random.uniform(low, high)
 
     def _get_random_assumptions(self) -> Dict[str, Any]:
-        g1_mean = self.growth_rates_base[0]
+        g1_mean = self.growth_rates_base[0] if self.growth_rates_base else 0.10
         g1_std = max(0.01, abs(g1_mean * 0.2))
         g1 = self._sample_normal(g1_mean, g1_std, lower=0.0, upper=0.3)
         growth_rates = [g1] * 5
@@ -1637,9 +2264,12 @@ class MonteCarloSimulator:
 def load_current_price(session_dir: Path, symbol: str) -> float:
     quote_path = session_dir / f"quote_{symbol}.json"
     if quote_path.exists():
-        with open(quote_path, 'r', encoding='utf-8') as f:
-            quote = json.load(f)
-            return float(quote.get('price', 0))
+        try:
+            with open(quote_path, 'r', encoding='utf-8') as f:
+                quote = json.load(f)
+                return float(quote.get('price', 0))
+        except:
+            pass
     return 0.0
 
 def get_value_per_share(res: Dict[str, Any]) -> str:
@@ -1800,6 +2430,17 @@ class ValuationTool:
 
     async def execute(self, parameters: ValuationInput, session_id: str = None) -> Dict[str, Any]:
         start_time = datetime.now()
+        # 🛠️ 兼容性处理：如果传入的是字典，则转换为模型实例
+        if isinstance(parameters, dict):
+            try:
+                parameters = self.input_schema(**parameters)
+            except Exception as e:
+                logger.error(f"参数转换失败: {e}")
+                return {
+                    "success": False,
+                    "error": f"参数格式错误: {str(e)}",
+                    "execution_time": (datetime.now() - start_time).total_seconds()
+                }
         try:
             mode = parameters.mode
             raw_params = parameters.parameters
