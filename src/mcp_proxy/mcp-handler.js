@@ -13,6 +13,7 @@ import { handleMcpToolCatalog } from './handlers/mcp-tool-catalog.js';
 import { handlePythonSandbox } from './handlers/python-sandbox.js';
 import { handleStockfishAnalyzer } from './handlers/stockfish.js';
 import { handleTavilySearch } from './handlers/tavily-search.js';
+import { handleValuationTool } from './handlers/valuation_tool.js'; // 新增：估值工具
 
 // ✨ 统一的工具注册表
 const toolRegistry = {
@@ -24,6 +25,7 @@ const toolRegistry = {
     'tavily_search': handleTavilySearch,
     'alphavantage': handleAlphaVantage, // AlphaVantage工具
     'financial_report_generator': handleFinancialReportGenerator, // 新增
+    'valuation_tool': handleValuationTool, // 新增：估值工具
 };
 
 /**
@@ -38,7 +40,8 @@ function getToolDescription(toolName) {
         'stockfish_analyzer': '国际象棋分析工具',
         'tavily_search': '网络搜索工具',
         'alphavantage': 'AlphaVantage金融数据获取工具，支持股票、外汇、数字货币、大宗商品、新闻等13种金融数据类型',
-        'financial_report_generator': '财务报告生成工具，从原始JSON生成基础财务数据报告和财务比率历史数据报告'
+        'financial_report_generator': '财务报告生成工具，从原始JSON生成基础财务数据报告和财务比率历史数据报告',
+        'valuation_tool': '财务估值模型综合工具，支持 DCF、FCFE、RIM、EVA、APV 模型及蒙特卡洛模拟'
     };
     return descriptions[toolName] || `工具: ${toolName}`;
 }

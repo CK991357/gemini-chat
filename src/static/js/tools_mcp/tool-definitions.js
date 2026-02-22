@@ -241,6 +241,79 @@ const financial_report_generator = {
     }
 };
 
+// ========== 新增：估值模型综合工具 ==========
+const valuation_tool = {
+    "type": "function",
+    "function": {
+        "name": "valuation_tool",
+        "description": "财务估值模型综合工具，支持 DCF、FCFE、RIM、EVA、APV 模型及蒙特卡洛模拟。从会话工作区读取 AlphaVantage 获取的 JSON 文件，生成估值报告（Markdown + JSON）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["single", "multi", "monte_carlo"],
+                    "description": "操作模式：single（单模型）、multi（多模型）、monte_carlo（蒙特卡洛模拟）"
+                },
+                "parameters": {
+                    "type": "object",
+                    "description": "参数字典，包含 symbol 及其他选项。",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "股票代码，如 AAPL。若不提供则自动从会话目录推断。"
+                        },
+                        "models": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "要运行的模型列表，如 ['dcf','fcfe','rim','eva','apv']"
+                        },
+                        "projection_years": {
+                            "type": "integer",
+                            "description": "预测年数，默认5"
+                        },
+                        "terminal_growth": {
+                            "type": "number",
+                            "description": "永续增长率，默认0.025"
+                        },
+                        "risk_free_method": {
+                            "type": "string",
+                            "enum": ["latest", "1y_avg"],
+                            "description": "无风险利率取值方式，默认latest"
+                        },
+                        "market_premium": {
+                            "type": "number",
+                            "description": "市场风险溢价，默认0.06"
+                        },
+                        "sensitivity": {
+                            "type": "boolean",
+                            "description": "是否进行敏感性分析，默认true"
+                        },
+                        "include_detailed": {
+                            "type": "boolean",
+                            "description": "是否包含详细预测表，默认true"
+                        },
+                        "debt_assumption": {
+                            "type": "string",
+                            "enum": ["constant", "ratio"],
+                            "description": "APV模型债务假设，默认ratio"
+                        },
+                        "n_simulations": {
+                            "type": "integer",
+                            "description": "蒙特卡洛模拟次数，默认1000"
+                        },
+                        "seed": {
+                            "type": "integer",
+                            "description": "随机种子，默认42"
+                        }
+                    }
+                }
+            },
+            "required": ["mode", "parameters"]
+        }
+    }
+};
+
 // Export all available tools in an array
 export const mcpTools = [
     tavily_search,
@@ -250,7 +323,8 @@ export const mcpTools = [
     stockfish_analyzer,
     crawl4ai,
     alphavantage,
-    financial_report_generator  // 新增
+    financial_report_generator,  // 新增
+    valuation_tool               // 新增
 ];
 
 // Export a map for easy lookup by name
@@ -262,7 +336,8 @@ export const mcpToolsMap = {
     'stockfish_analyzer': stockfish_analyzer,
     'crawl4ai': crawl4ai,
     'alphavantage': alphavantage,
-    'financial_report_generator': financial_report_generator  // 新增
+    'financial_report_generator': financial_report_generator,  // 新增
+    'valuation_tool': valuation_tool                            // 新增
 };
 
 // Create a deep copy of python_sandbox and remove the output_schema for Gemini compatibility
@@ -285,6 +360,9 @@ const alphavantage_gemini = JSON.parse(JSON.stringify(alphavantage));
 // Create a deep copy of financial_report_generator for Gemini compatibility
 const financial_report_generator_gemini = JSON.parse(JSON.stringify(financial_report_generator));
 
+// Create a deep copy of valuation_tool for Gemini compatibility
+const valuation_tool_gemini = JSON.parse(JSON.stringify(valuation_tool));
+
 // Gemini-specific toolset without output_schema
 export const geminiMcpTools = [
     tavily_search,
@@ -293,5 +371,6 @@ export const geminiMcpTools = [
     stockfish_analyzer,
     crawl4ai_gemini,
     alphavantage_gemini,
-    financial_report_generator_gemini  // 新增
+    financial_report_generator_gemini,  // 新增
+    valuation_tool_gemini                // 新增
 ];

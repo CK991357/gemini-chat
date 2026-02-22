@@ -433,12 +433,20 @@ getIntentBonus(query, toolName) {
                  '实时行情', '实时数据', '价格', 'quote', 'market', '市场'],
       bonus: 0.35
     },
-    // ✅ 新增：financial_report_generator 意图配置
     'financial_report_generator': {
       keywords: ['财务报告', '财务报表', '财务比率', '基础财务', '同比', 'cagr', 
                  '健康评分', '多年度', '历史比率', '杜邦', 'z-score', 'roe', 'roa',
                  '流动比率', '速动比率', '负债权益比', '资产负债率', '资产周转率',
                  '自由现金流', '每股收益', '盈利预测', '股息历史', '现金流分析'],
+      bonus: 0.35
+    },
+    // ✅ 新增：valuation_tool 意图配置
+    'valuation_tool': {
+      keywords: ['估值', '股价', '内在价值', 'dcf', 'fcff', 'fcfe', 'rim', 'eva', 'apv',
+                 '自由现金流折现', '剩余收益', '经济增加值', '调整现值', '终值', '永续增长',
+                 '折现率', 'wacc', '股权成本', '债务成本', 'beta', '无风险利率', '市场溢价',
+                 '每股价值', '企业价值', '股权价值', '敏感性分析', '蒙特卡洛', '模拟',
+                 '投资价值', '合理股价', '目标价', '估值模型', '多模型估值'],
       bonus: 0.35
     }
   };
@@ -466,9 +474,11 @@ isCoreFunctionKeyword(keyword, toolName) {
     'alphavantage': ['股票', '股价', 'finance', '金融', 'forex', '外汇', 'crypto', 
                      '加密货币', 'commodity', '大宗商品', 'treasury', '国债', '财报',
                      '财务', 'earnings', 'dividend', '股息', '行情', 'quote', 'market'],
-    // ✅ 新增：financial_report_generator 核心关键词
     'financial_report_generator': ['财务报告', '财务报表', '财务比率', '同比', 'cagr',
-                                   '健康评分', '历史比率', '杜邦', 'z-score', 'roe', 'roa']
+                                   '健康评分', '历史比率', '杜邦', 'z-score', 'roe', 'roa'],
+    // ✅ 新增：valuation_tool 核心关键词
+    'valuation_tool': ['估值', 'dcf', 'fcfe', 'rim', 'eva', 'apv', '折现', '永续增长',
+                       'wacc', 'beta', '每股价值', '蒙特卡洛', '敏感性']
   };
   
   return coreKeywords[toolName]?.includes(keyword) || false;
