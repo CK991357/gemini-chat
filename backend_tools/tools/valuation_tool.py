@@ -3243,23 +3243,52 @@ class ValuationTool:
 
             logger.info(f"📊 执行估值工具，模式: {mode}, 标的: {symbol}")
             
+            generated_files = []
+            
             # 根据模式执行不同的估值逻辑
             if mode == ValuationMode.SINGLE:
+                model_name = raw_params.get("model", "dcf").lower()
                 result = await self._execute_single_model(symbol, raw_params, session_dir)
+                # 构造包含单个模型结果的字典
+                single_results = {model_name: result}
+                # 获取当前股价
+                current_price = load_current_price(session_dir, symbol)
+                # 生成综合报告
+                md_content = generate_combined_report(symbol, single_results, current_price)
+                json_path = session_dir / f"valuation_{symbol}_single.json"
+                md_path = session_dir / f"valuation_{symbol}_single.md"
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    json.dump(single_results, f, indent=2, default=str, ensure_ascii=False)
+                with open(md_path, 'w', encoding='utf-8') as f:
+                    f.write(md_content)
+                generated_files = [str(json_path), str(md_path)]
+                result_data = {"model_results": {model_name: result.get("success", False)}}
+                result = {
+                    "success": True,
+                    "execution_time": result.get("execution_time", (datetime.now() - start_time).total_seconds()),
+                    "mode": mode,
+                    "symbol": symbol,
+                    "session_dir": str(session_dir),
+                    "generated_files": generated_files,
+                    "data": result_data,
+                    "message": f"{mode} 估值完成，共生成 {len(generated_files)} 个文件。"
+                }
             elif mode == ValuationMode.MULTI:
                 result = await self._execute_multi_models(symbol, raw_params, session_dir)
+                result["mode"] = mode
+                result["symbol"] = symbol
+                result["session_dir"] = str(session_dir)
+                result["execution_time"] = (datetime.now() - start_time).total_seconds()
             elif mode == ValuationMode.MONTE_CARLO:
                 result = await self._execute_monte_carlo(symbol, raw_params, session_dir)
+                result["mode"] = mode
+                result["symbol"] = symbol
+                result["session_dir"] = str(session_dir)
+                result["execution_time"] = (datetime.now() - start_time).total_seconds()
             else:
                 raise ValueError(f"不支持的估值模式: {mode}")
             
-            execution_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"🎉 综合估值执行完成，总耗时: {execution_time:.2f}秒")
-            
-            result["execution_time"] = execution_time
-            result["symbol"] = symbol
-            result["mode"] = mode
-            
+            logger.info(f"🎉 综合估值执行完成，总耗时: {result['execution_time']:.2f}秒")
             return result
             
         except Exception as e:
@@ -3274,7 +3303,7 @@ class ValuationTool:
             }
 
     async def _execute_single_model(self, symbol: str, params: Dict, session_dir: Path) -> Dict[str, Any]:
-        """执行单一模型估值"""
+        """执行单一模型估值，仅返回结果，不保存文件"""
         logger.info(f"🎯 执行单一模型估值: {symbol}")
         model_name = params.get("model", "dcf").lower()
         logger.debug(f"🔧 使用模型: {model_name}")
@@ -3357,12 +3386,7 @@ class ValuationTool:
             else:
                 raise ValueError(f"不支持的估值模型: {model_name}")
             
-            # 保存结果
-            json_path = session_dir / f"valuation_{symbol}_{model_name}.json"
-            with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(result, f, indent=2, default=str, ensure_ascii=False)
-            logger.info(f"💾 结果已保存至: {json_path}")
-            
+            # 此处不再保存单个模型的 JSON 文件，仅返回结果
             return result
             
         except Exception as e:
@@ -3374,7 +3398,7 @@ class ValuationTool:
             }
 
     async def _execute_multi_models(self, symbol: str, params: Dict, session_dir: Path) -> Dict[str, Any]:
-        """执行多模型估值"""
+        """执行多模型估值，最后保存两个文件"""
         logger.info(f"🎯 执行多模型估值: {symbol}")
         
         models = params.get("models", ["dcf", "fcfe", "rim", "eva", "apv"])
@@ -3401,7 +3425,7 @@ class ValuationTool:
                     "debt_assumption": params.get("debt_assumption", "ratio")
                 }
                 
-                # 执行单一模型
+                # 执行单一模型（已移除文件保存）
                 model_result = await self._execute_single_model(symbol, model_params, session_dir)
                 execution_time = (datetime.now() - start_time).total_seconds()
                 
