@@ -1954,7 +1954,7 @@ class DCFAutoValuation:
 
 
 # =============================================================================
-# 以下为各估值模型（APV, FCFE, RIM, EVA）的类定义
+# 以下为各估值模型（APV, FCFE, RIM, EVA）的类定义（已完全对齐本地版本）
 # =============================================================================
 
 class APVValuation:
@@ -2195,11 +2195,10 @@ class APVValuation:
 
 
 class FCFEValuation:
-    """FCFE 估值模型"""
+    """FCFE 估值模型（完全对齐本地 fcfe_model.py）"""
 
     def __init__(self, data_dir: str):
         self.data_loader = DCFAutoValuation(data_dir)
-        logger.info("📥 FCFE估值模型初始化完成")
 
     async def run_valuation(
         self,
@@ -2212,273 +2211,211 @@ class FCFEValuation:
         sensitivity: bool = False,
     ) -> Dict[str, Any]:
         start_time = datetime.now()
-        logger.info(f"🚀 开始执行FCFE估值，标的: {symbol}")
-        logger.debug(f"⚙️ 参数设置 - 预测年数: {projection_years}, 终值增长率: {terminal_growth:.2%}")
-        
         try:
+            # 1. 加载基础数据
             hist_data = self.data_loader.extract_historical_data(symbol)
             if not hist_data['revenue']:
-                logger.error(f"❌ 无法获取 {symbol} 的历史收入数据")
                 raise ValueError(f"无法获取 {symbol} 的历史收入数据")
 
-            logger.debug(f"📊 成功获取历史数据，年份数: {len(hist_data['years'])}")
-            
             margins = self.data_loader.compute_margins(symbol)
             growth_rates = self.data_loader.compute_growth_rates(symbol, projection_years)
             risk_free = self.data_loader.get_risk_free_rate(method=risk_free_method)
             wacc_comp = self.data_loader.compute_wacc_components(symbol, risk_free, market_premium)
             equity_params = self.data_loader.compute_equity_params(symbol)
-            
-            logger.debug(f"🧮 计算完成 - 边际利润率: {margins}, 增长率: {growth_rates}")
-            logger.debug(f"🏦 无风险利率: {risk_free:.2%}, WACC组件: {wacc_comp}")
 
-            # FCFE核心计算逻辑
-            logger.debug("💎 开始FCFE核心计算")
-            
-            # 1. 计算FCFE
-            fcfe_projections = self._calculate_fcfe(hist_data, growth_rates, margins, projection_years)
-            logger.debug(f"💰 FCFE预测完成: {[f'${x:,.0f}' for x in fcfe_projections['fcfe']]}")
-            
-            # 2. 计算股权成本
-            cost_of_equity = self._calculate_cost_of_equity(wacc_comp)
-            logger.debug(f"📈 股权成本: {cost_of_equity:.2%}")
-            
-            # 3. 计算股权价值
-            equity_value_result = self._calculate_equity_value_fcfe(
-                fcfe_projections['fcfe'], cost_of_equity, terminal_growth, equity_params
-            )
-            logger.debug(f"🏢 股权价值计算完成: ${equity_value_result['equity_value']:,.0f}")
-            
+            # 股权成本（CAPM）
+            cost_of_equity = wacc_comp['risk_free_rate'] + wacc_comp['beta'] * wacc_comp['market_premium']
+
+            # 2. 收入预测（与 DCF 一致）
+            latest_rev = hist_data['revenue'][-1]
+            revenue_forecast = []
+            rev = latest_rev
+            for g in growth_rates:
+                rev *= (1 + g)
+                revenue_forecast.append(rev)
+
+            # 3. 预测净利润
+            net_income_forecast = self.data_loader.compute_net_income_forecast(symbol, projection_years)
+
+            # 4. 预测其他现金流项（复用 DCF 的比率）
+            capex_pct = margins['avg_capex_pct']
+            nwc_pct = margins['avg_nwc_pct']
+            dep_rate = margins['avg_depreciation_rate']
+
+            # 折旧预测
+            depreciation_forecast = [rev * dep_rate for rev in revenue_forecast]
+
+            # 资本支出预测
+            capex_forecast = [rev * capex_pct for rev in revenue_forecast]
+
+            # 营运资本变动预测
+            nwc_forecast = [rev * nwc_pct for rev in revenue_forecast]
+            prev_nwc = hist_data['nwc'][-1]  # 最新历史 NWC
+            nwc_change_forecast = []
+            for nwc in nwc_forecast:
+                change = nwc - prev_nwc
+                nwc_change_forecast.append(change)
+                prev_nwc = nwc
+
+            # 5. 预测净借款
+            net_borrow_forecast = self.data_loader.compute_net_borrowing_forecast(symbol, projection_years, revenue_forecast)
+
+            # 6. 计算 FCFE
+            fcfe_forecast = []
+            for i in range(projection_years):
+                fcfe = net_income_forecast[i] + depreciation_forecast[i] - capex_forecast[i] - nwc_change_forecast[i] + net_borrow_forecast[i]
+                fcfe_forecast.append(fcfe)
+
+            # 7. 折现
+            pv_factors = [(1 + cost_of_equity) ** (i + 1) for i in range(projection_years)]
+            pv_fcfe = [fcfe_forecast[i] / pv_factors[i] for i in range(projection_years)]
+            total_pv_fcfe = sum(pv_fcfe)
+
+            # 8. 终值（永续增长法）—— 增加增长率上限检查
+            MAX_TERMINAL_GROWTH = 0.05
+            if terminal_growth > MAX_TERMINAL_GROWTH:
+                logger.warning(f"永续增长率 {terminal_growth:.2%} 超过上限 {MAX_TERMINAL_GROWTH:.0%}，调整为上限")
+                terminal_growth = MAX_TERMINAL_GROWTH
+            if terminal_growth >= cost_of_equity:
+                logger.warning(f"永续增长率 {terminal_growth} 大于等于股权成本 {cost_of_equity}，调整为 {cost_of_equity*0.8}")
+                terminal_growth = cost_of_equity * 0.8
+                if terminal_growth > MAX_TERMINAL_GROWTH:
+                    terminal_growth = MAX_TERMINAL_GROWTH
+
+            terminal_fcfe = fcfe_forecast[-1] * (1 + terminal_growth)
+            terminal_value = terminal_fcfe / (cost_of_equity - terminal_growth)
+            pv_terminal = terminal_value / ((1 + cost_of_equity) ** projection_years)
+
+            # 9. 股权价值
+            equity_value = total_pv_fcfe + pv_terminal
+            shares = equity_params['shares_outstanding']
+            value_per_share = equity_value / shares if shares > 0 else 0
+
+            # 10. 构建详细预测表（可选）
+            projections = None
+            if include_detailed:
+                projections = {
+                    "year": list(range(1, projection_years + 1)),
+                    "revenue": revenue_forecast,
+                    "net_income": net_income_forecast,
+                    "depreciation": depreciation_forecast,
+                    "capex": capex_forecast,
+                    "nwc_change": nwc_change_forecast,
+                    "net_borrowing": net_borrow_forecast,
+                    "fcfe": fcfe_forecast,
+                    "pv_fcfe": pv_fcfe,
+                }
+
+            # 11. 敏感性分析（如果需要）
+            sensitivity_results = None
+            if sensitivity:
+                sensitivity_results = self._run_sensitivity_analysis(
+                    equity_value, cost_of_equity, terminal_growth, projection_years,
+                    fcfe_forecast
+                )
+
             execution_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"🎉 FCFE估值执行完成，耗时: {execution_time:.2f}秒")
 
             result = {
                 "success": True,
                 "execution_time": execution_time,
+                "company_name": self.data_loader.load_json(f"overview_{symbol}.json").get('Name', symbol) if self.data_loader.load_json(f"overview_{symbol}.json") else symbol,
                 "model": "FCFE",
-                "symbol": symbol,
                 "valuation": {
-                    "equity_value": equity_value_result['equity_value'],
-                    "equity_value_formatted": f"${equity_value_result['equity_value']:,.0f}",
-                    "value_per_share": equity_value_result['value_per_share'],
-                    "value_per_share_formatted": f"${equity_value_result['value_per_share']:.2f}",
+                    "equity_value": equity_value,
+                    "equity_value_formatted": f"${equity_value:,.0f}",
+                    "value_per_share": value_per_share,
+                    "value_per_share_formatted": f"${value_per_share:.2f}",
                     "cost_of_equity": cost_of_equity,
-                    "cost_of_equity_formatted": f"{cost_of_equity*100:.1f}%",
-                    "pv_of_fcfe": equity_value_result['pv_fcfe'],
-                    "pv_of_terminal": equity_value_result['pv_terminal'],
+                    "cost_of_equity_formatted": f"{cost_of_equity*100:.2f}%",
+                    "terminal_growth": terminal_growth,
+                    "terminal_growth_formatted": f"{terminal_growth*100:.2f}%",
+                    "pv_of_fcfe": total_pv_fcfe,
+                    "pv_of_terminal": pv_terminal,
+                    "terminal_percent": (pv_terminal / equity_value) * 100 if equity_value > 0 else 0,
                 },
-                "projections": fcfe_projections,
+                "projections": projections,
                 "key_assumptions": {
                     "projection_years": projection_years,
-                    "terminal_growth": terminal_growth,
-                    "risk_free_rate": risk_free,
-                    "market_premium": market_premium,
                     "avg_revenue_growth": np.mean(growth_rates) * 100,
-                    "avg_net_income_margin": np.mean([ni / rev for ni, rev in zip(fcfe_projections['net_income'], fcfe_projections['revenue'])]) * 100,
-                    "shares_outstanding": equity_params.get('shares_outstanding', 0),
+                    "avg_net_income_margin": np.mean([ni / rev for ni, rev in zip(net_income_forecast, revenue_forecast)]) * 100,
+                    "shares_outstanding": shares,
                 },
                 "metadata": {
                     "timestamp": datetime.now().isoformat(),
                     "risk_free_method": risk_free_method,
                     "market_premium": market_premium,
-                }
+                },
+                "sensitivity_analysis": sensitivity_results,
             }
-            
-            # 敏感性分析
-            if sensitivity:
-                logger.debug("🔍 执行敏感性分析")
-                sensitivity_results = self._perform_sensitivity_analysis(
-                    equity_value_result['equity_value'], cost_of_equity, fcfe_projections, terminal_growth
-                )
-                result["sensitivity_analysis"] = sensitivity_results
-                logger.info("✅ 敏感性分析完成")
-            
+            logger.info(f"FCFE 估值完成，每股价值: ${value_per_share:.2f}")
             return result
-            
+
         except Exception as e:
-            execution_time = (datetime.now() - start_time).total_seconds()
-            logger.error(f"❌ FCFE估值失败: {str(e)}", exc_info=True)
+            logger.error(f"FCFE 估值失败: {str(e)}", exc_info=True)
             return {
                 "success": False,
-                "error": f"FCFE估值失败: {str(e)}",
-                "execution_time": execution_time,
-                "model": "FCFE",
-                "symbol": symbol,
+                "error": f"FCFE 估值失败: {str(e)}",
+                "execution_time": (datetime.now() - start_time).total_seconds(),
+                "suggestion": "请检查数据完整性和假设合理性",
             }
 
-    def _calculate_fcfe(self, hist_data: Dict, growth_rates: List[float], margins: Dict[str, float], projection_years: int) -> Dict[str, List[float]]:
-        """计算股权自由现金流"""
-        logger.debug("📥 计算股权自由现金流(FCFE)")
-        
-        revenue_hist = hist_data['revenue']
-        base_revenue = revenue_hist[-1] if revenue_hist else 0
-        
-        projections = {
-            "year": list(range(1, projection_years + 1)),
-            "revenue": [],
-            "net_income": [],
-            "depreciation": [],
-            "capex": [],
-            "nwc_change": [],
-            "net_debt_change": [],
-            "fcfe": []
-        }
-        
-        current_revenue = base_revenue
-        prev_nwc = base_revenue * 0.1  # 假设初始NWC为收入的10%
-        prev_debt = 500  # 假设初始债务水平
-        
-        net_income_margin = margins.get('net_income_margin', 0.10)
-        depreciation_rate = 0.03
-        capex_rate = 0.05
-        nwc_rate = 0.10
-        debt_change_rate = 0.02  # 假设每年债务变化率
-        
-        for i in range(projection_years):
-            year = i + 1
-            growth_rate = growth_rates[i] if i < len(growth_rates) else growth_rates[-1]
-            
-            # 收入预测
-            current_revenue *= (1 + growth_rate)
-            projections["revenue"].append(current_revenue)
-            
-            # 净利润
-            net_income = current_revenue * net_income_margin
-            projections["net_income"].append(net_income)
-            
-            # 折旧
-            depreciation = current_revenue * depreciation_rate
-            projections["depreciation"].append(depreciation)
-            
-            # CapEx
-            capex = current_revenue * capex_rate
-            projections["capex"].append(capex)
-            
-            # NWC变动
-            nwc = current_revenue * nwc_rate
-            nwc_change = nwc - prev_nwc
-            projections["nwc_change"].append(nwc_change)
-            
-            # 净债务变动
-            new_debt = prev_debt * (1 + debt_change_rate)
-            net_debt_change = new_debt - prev_debt
-            projections["net_debt_change"].append(net_debt_change)
-            
-            # FCFE计算: NI + Depreciation - CapEx - ΔNWC + ΔNetDebt
-            fcfe = net_income + depreciation - capex - nwc_change + net_debt_change
-            projections["fcfe"].append(fcfe)
-            
-            logger.debug(f"  第{year}年 - 收入: ${current_revenue:,.0f}, FCFE: ${fcfe:,.0f}")
-            
-            prev_nwc = nwc
-            prev_debt = new_debt
-        
-        logger.debug(f"📤 FCFE计算完成: {[f'${x:,.0f}' for x in projections['fcfe']]}")
-        return projections
+    def _run_sensitivity_analysis(self, base_equity_value, base_cost_of_equity, base_terminal_growth,
+                                  projection_years, fcfe_forecast):
+        """运行敏感性分析，对股权成本和永续增长率进行二维分析"""
+        try:
+            # 生成折现率范围（±20%）
+            coe_range = np.linspace(base_cost_of_equity * 0.8, base_cost_of_equity * 1.2, 5)
+            # 生成增长率范围（1% 到 5%）
+            growth_range = np.linspace(0.01, 0.05, 5)
+            equity_matrix = np.zeros((len(coe_range), len(growth_range)))
 
-    def _calculate_cost_of_equity(self, wacc_components: Dict) -> float:
-        """计算股权成本"""
-        logger.debug("📥 计算股权成本")
-        
-        risk_free = wacc_components.get('risk_free_rate', 0.04)
-        beta = wacc_components.get('beta', 1.0)
-        market_premium = wacc_components.get('market_premium', 0.06)
-        
-        cost_of_equity = risk_free + beta * market_premium
-        logger.debug(f"🧮 CAPM计算 - RF: {risk_free:.2%}, Beta: {beta}, RP: {market_premium:.2%}")
-        logger.debug(f"📤 股权成本: {cost_of_equity:.2%}")
-        return cost_of_equity
+            MAX_TERMINAL_GROWTH = 0.05
 
-    def _calculate_equity_value_fcfe(self, fcfe_list: List[float], cost_of_equity: float, 
-                                   terminal_growth: float, equity_params: Dict) -> Dict[str, float]:
-        """计算股权价值"""
-        logger.debug("📥 计算股权价值(基于FCFE)")
-        
-        # 预测期FCFE现值
-        pv_fcfe = 0
-        for i, fcfe in enumerate(fcfe_list):
-            discount_factor = (1 + cost_of_equity) ** (i + 1)
-            pv = fcfe / discount_factor
-            pv_fcfe += pv
-            logger.debug(f"  第{i+1}年FCFE现值: ${pv:,.0f}")
-        
-        # 终值计算
-        final_fcfe = fcfe_list[-1]
-        if terminal_growth >= cost_of_equity:
-            logger.warning(f"⚠️ 终值增长率({terminal_growth:.2%}) >= 股权成本({cost_of_equity:.2%})，调整为股权成本的80%")
-            terminal_growth = cost_of_equity * 0.8
-        
-        terminal_fcfe = final_fcfe * (1 + terminal_growth)
-        terminal_value = terminal_fcfe / (cost_of_equity - terminal_growth)
-        pv_terminal = terminal_value / ((1 + cost_of_equity) ** len(fcfe_list))
-        
-        logger.debug(f"🎯 终值计算 - FCFE终值: ${terminal_fcfe:,.0f}, 终值: ${terminal_value:,.0f}")
-        logger.debug(f"  终值现值: ${pv_terminal:,.0f}")
-        
-        # 股权价值
-        equity_value = pv_fcfe + pv_terminal
-        shares_outstanding = equity_params.get('shares_outstanding', 1)
-        value_per_share = equity_value / shares_outstanding if shares_outstanding > 0 else 0
-        
-        logger.debug(f"🏢 股权价值总额: ${equity_value:,.0f}")
-        logger.debug(f"💎 每股价值: ${value_per_share:.2f}")
-        
-        result = {
-            "equity_value": equity_value,
-            "value_per_share": value_per_share,
-            "pv_fcfe": pv_fcfe,
-            "pv_terminal": pv_terminal,
-            "terminal_value": terminal_value
-        }
-        
-        logger.debug(f"📤 股权价值计算完成: {result}")
-        return result
+            for i, coe_val in enumerate(coe_range):
+                for j, g_val in enumerate(growth_range):
+                    # 应用增长率上限和合理性检查
+                    if g_val > MAX_TERMINAL_GROWTH:
+                        g_val = MAX_TERMINAL_GROWTH
+                    if g_val >= coe_val:
+                        g_val = coe_val * 0.8
+                        if g_val > MAX_TERMINAL_GROWTH:
+                            g_val = MAX_TERMINAL_GROWTH
 
-    def _perform_sensitivity_analysis(self, base_equity_value: float, base_cost_of_equity: float,
-                                    projections: Dict, terminal_growth: float) -> Dict[str, Any]:
-        """执行敏感性分析"""
-        logger.debug("📥 执行FCFE敏感性分析")
-        
-        # 定义敏感性范围
-        equity_cost_range = np.linspace(base_cost_of_equity * 0.8, base_cost_of_equity * 1.2, 5)
-        growth_range = np.linspace(0.01, 0.05, 5)
-        
-        logger.debug(f"📉 股权成本范围: {[f'{r:.2%}' for r in equity_cost_range]}")
-        logger.debug(f"📈 增长率范围: {[f'{r:.2%}' for r in growth_range]}")
-        
-        # 构建敏感性矩阵
-        equity_matrix = np.zeros((len(equity_cost_range), len(growth_range)))
-        
-        for i, cost_equity in enumerate(equity_cost_range):
-            for j, growth_rate in enumerate(growth_range):
-                # 重新计算股权价值
-                equity_result = self._calculate_equity_value_fcfe(
-                    projections['fcfe'], cost_equity, growth_rate, {'shares_outstanding': 1}
-                )
-                equity_matrix[i, j] = equity_result['equity_value']
-                logger.debug(f"  Cost of Equity {cost_equity:.2%}, Growth {growth_rate:.2%} → Equity Value ${equity_result['equity_value']:,.0f}")
-        
-        # 计算敏感性指标
-        result = {
-            "cost_of_equity_sensitivity": {
-                "low": equity_matrix[0, :].tolist(),
-                "base": equity_matrix[2, :].tolist(),
-                "high": equity_matrix[-1, :].tolist(),
-                "impact": ((equity_matrix[-1, 2] - equity_matrix[0, 2]) / base_equity_value) * 100
-            },
-            "growth_sensitivity": {
-                "low": equity_matrix[:, 0].tolist(),
-                "base": equity_matrix[:, 2].tolist(),
-                "high": equity_matrix[:, -1].tolist(),
-                "impact": ((equity_matrix[2, -1] - equity_matrix[2, 0]) / base_equity_value) * 100
-            },
-            "matrix": equity_matrix.tolist(),
-            "cost_of_equity_range": equity_cost_range.tolist(),
-            "growth_range": growth_range.tolist()
-        }
-        
-        logger.debug(f"📤 FCFE敏感性分析完成")
-        return result
+                    # 重新计算现值
+                    pv_factors = [(1 + coe_val) ** (k + 1) for k in range(projection_years)]
+                    pv_fcfe = [fcfe_forecast[k] / pv_factors[k] for k in range(projection_years)]
+                    total_pv = sum(pv_fcfe)
+
+                    # 终值
+                    terminal_fcfe = fcfe_forecast[-1] * (1 + g_val)
+                    terminal_val = terminal_fcfe / (coe_val - g_val)
+                    pv_terminal = terminal_val / ((1 + coe_val) ** projection_years)
+
+                    equity_matrix[i, j] = total_pv + pv_terminal
+
+            # 计算敏感性指标（与 DCF 类似）
+            return {
+                "cost_of_equity_sensitivity": {
+                    "low": equity_matrix[0, :].tolist(),
+                    "base": equity_matrix[2, :].tolist(),
+                    "high": equity_matrix[-1, :].tolist(),
+                    "impact": ((equity_matrix[-1, 2] - equity_matrix[0, 2]) / base_equity_value) * 100
+                },
+                "growth_sensitivity": {
+                    "low": equity_matrix[:, 0].tolist(),
+                    "base": equity_matrix[:, 2].tolist(),
+                    "high": equity_matrix[:, -1].tolist(),
+                    "impact": ((equity_matrix[2, -1] - equity_matrix[2, 0]) / base_equity_value) * 100
+                },
+                "equity_matrix": equity_matrix.tolist(),
+                "coe_range": coe_range.tolist(),
+                "growth_range": growth_range.tolist(),
+                "base_equity_value": base_equity_value
+            }
+        except Exception as e:
+            logger.error(f"FCFE 敏感性分析失败: {e}")
+            return None
 
 
 class RIMValuation:
@@ -3035,7 +2972,7 @@ class MonteCarloSimulator:
 
 
 # =============================================================================
-# 综合报告生成函数（从 test_dcf_all.py 移植）
+# 综合报告生成函数（完全复制本地 test_dcf_all.py 中的版本）
 # =============================================================================
 
 def load_current_price(session_dir: Path, symbol: str) -> float:
@@ -3049,12 +2986,15 @@ def load_current_price(session_dir: Path, symbol: str) -> float:
             pass
     return 0.0
 
+
 def get_value_per_share(res: Dict[str, Any]) -> str:
+    """安全获取每股价值字符串"""
     if res.get('equity_valuation'):
         return res['equity_valuation'].get('value_per_share_formatted', 'N/A')
     elif res.get('valuation'):
         return res['valuation'].get('value_per_share_formatted', 'N/A')
     return 'N/A'
+
 
 def generate_combined_report(symbol: str, results: Dict[str, Any], current_price: float) -> str:
     lines = []
@@ -3091,25 +3031,435 @@ def generate_combined_report(symbol: str, results: Dict[str, Any], current_price
 
     lines.append("\n---\n")
 
-    # 详细结果（此处可展开每个模型的详细解释，但为节省篇幅，仅作简要输出）
-    # 实际可复用原 test_dcf_all.py 中的详细逻辑，此处省略以保持文件简洁
-    # 但为了不丢失功能，建议保留完整的解释部分。由于代码量巨大，此处仅作示意。
-    # 您可以根据需要将原 test_dcf_all.py 中每个模型的详细解释段落完整复制过来。
-
-    # 为了完整性，我们至少包含每个模型的核心输出
+    # 详细结果
     for model_name, res in results.items():
-        lines.append(f"\n## {model_name.upper()} 模型")
+        lines.append(f"\n## {model_name.upper()} 模型详细解析")
         if not res.get('success'):
             lines.append(f"**错误**：{res.get('error')}")
+            lines.append(f"**建议**：{res.get('suggestion')}")
             continue
-        v = res.get('valuation', {})
-        lines.append(f"- 每股价值：{v.get('value_per_share_formatted', 'N/A')}")
-        lines.append(f"- 折现率：{v.get('wacc_formatted', v.get('cost_of_equity_formatted', 'N/A'))}")
-        lines.append(f"- 终值占比：{v.get('terminal_percent', 0):.1f}%")
-        if 'sensitivity_analysis' in res:
-            lines.append("- 敏感性分析：已包含")
 
-    # 综合对比
+        # 通用信息
+        company = res.get('company_name', symbol)
+        lines.append(f"**公司**：{company}\n")
+
+        # 根据模型类型展开详细解释
+        if model_name == 'dcf':
+            v = res['valuation']
+            eq = res.get('equity_valuation', {})
+            proj = res.get('projections', {})
+            ass_in = res.get('assumptions_input', {})
+            wacc_comp = res.get('wacc_components_input', {})
+            key_ass = res.get('key_assumptions', {})
+            scenario = res.get('scenario_analysis')
+
+            lines.append("### 1. 估值方法概述")
+            lines.append("本报告采用**两阶段自由现金流贴现（FCFF）模型**进行估值。第一阶段为明确预测期（{}年），详细预测公司未来的自由现金流；第二阶段为终值期，假设公司进入稳定增长阶段。终值采用**永续增长法**计算。".format(key_ass.get('projection_years', 5)))
+
+            lines.append("\n### 2. 数据来源")
+            lines.append("- 历史财务数据：取自公司年报（利润表、资产负债表、现金流量表）。")
+            lines.append("- 未来收入增长率：基于分析师一致预期（若无则使用历史平均增长率）。")
+            lines.append("- 无风险利率：10年期美国国债收益率（取值方式：{}）。".format(res.get('metadata', {}).get('risk_free_method', 'latest')))
+            lines.append("- 市场风险溢价：{}%（历史平均值）。".format(res.get('metadata', {}).get('market_premium', 0.06)*100))
+            lines.append("- Beta：取自公司概览。")
+
+            lines.append("\n### 3. 关键假设")
+            lines.append(f"- **预测期年数**：{key_ass.get('projection_years', 5)} 年")
+            lines.append(f"- **平均收入增长率**：{key_ass.get('avg_revenue_growth', 0):.2f}%")
+            lines.append(f"- **平均EBITDA利润率**：{key_ass.get('avg_ebitda_margin', 0):.2f}%（取自历史5年平均值）")
+            lines.append(f"- **永续增长率**：{key_ass.get('terminal_growth', 2.5):.2f}%（经合理性检查，不超过5%且低于WACC）")
+            lines.append(f"- **平均资本支出/收入**：{ass_in.get('capex_percent', [0])[0]*100:.2f}%（历史平均）")
+            lines.append(f"- **平均营运资本/收入**：{ass_in.get('nwc_percent', [0])[0]*100:.2f}%（历史平均）")
+            lines.append(f"- **税率**：{wacc_comp.get('tax_rate', 0.25)*100:.2f}%（历史平均）")
+            lines.append(f"- **折旧率**：{ass_in.get('depreciation_rate', 0.03)*100:.2f}%（历史平均）")
+
+            # 逐年假设表格
+            lines.append("\n**详细假设（预测期逐年）**：")
+            lines.append("| 年份 | 收入增长率 | EBITDA利润率 | 资本支出/收入 | 营运资本/收入 |")
+            lines.append("|------|------------|--------------|----------------|----------------|")
+            rev_growth_list = ass_in.get('revenue_growth', [])
+            ebitda_margin_list = ass_in.get('ebitda_margin', [])
+            capex_pct_list = ass_in.get('capex_percent', [])
+            nwc_pct_list = ass_in.get('nwc_percent', [])
+            proj_years = ass_in.get('projection_years', len(rev_growth_list))
+            for i in range(proj_years):
+                rg = rev_growth_list[i] * 100 if i < len(rev_growth_list) else 0
+                em = ebitda_margin_list[i] * 100 if i < len(ebitda_margin_list) else 0
+                cp = capex_pct_list[i] * 100 if i < len(capex_pct_list) else 0
+                nwc = nwc_pct_list[i] * 100 if i < len(nwc_pct_list) else 0
+                lines.append(f"| {i+1} | {rg:.1f}% | {em:.1f}% | {cp:.1f}% | {nwc:.1f}% |")
+
+            lines.append("\n### 4. WACC计算明细")
+            lines.append(f"- 无风险利率：{wacc_comp.get('risk_free_rate', 0)*100:.2f}%")
+            lines.append(f"- Beta：{wacc_comp.get('beta', 1.0):.2f}")
+            lines.append(f"- 市场风险溢价：{wacc_comp.get('market_premium', 0.06)*100:.2f}%")
+            cost_of_equity = wacc_comp.get('risk_free_rate', 0) + wacc_comp.get('beta', 1.0) * wacc_comp.get('market_premium', 0.06)
+            lines.append(f"- 股权成本（CAPM）：{cost_of_equity:.2%}")
+            lines.append(f"- 债务成本（税前）：{wacc_comp.get('cost_of_debt', 0)*100:.2f}%")
+            lines.append(f"- 税率：{wacc_comp.get('tax_rate', 0.25)*100:.2f}%")
+            lines.append(f"- 债务/股权比例：{wacc_comp.get('debt_to_equity', 0.5):.2f}")
+            d_e = wacc_comp.get('debt_to_equity', 0.5)
+            equity_weight = 1 / (1 + d_e)
+            debt_weight = d_e / (1 + d_e)
+            lines.append(f"- 股权权重：{equity_weight*100:.1f}%，债务权重：{debt_weight*100:.1f}%")
+            lines.append(f"- **WACC**：{v['wacc_formatted']}")
+
+            lines.append("\n### 5. 自由现金流预测（单位：百万美元）")
+            lines.append("| 年份 | 收入 | EBITDA | 折旧 | EBIT | 税 | NOPAT | 资本支出 | 营运资本变动 | 自由现金流 |")
+            lines.append("|------|------|--------|------|------|-----|-------|----------|--------------|------------|")
+            for i, yr in enumerate(proj['year']):
+                rev = f"{proj['revenue'][i]/1e6:.0f}"
+                ebitda = f"{proj['ebitda'][i]/1e6:.0f}"
+                dep = f"{proj['depreciation'][i]/1e6:.0f}"
+                ebit = f"{proj['ebit'][i]/1e6:.0f}"
+                tax = f"{proj['tax'][i]/1e6:.0f}"
+                nopat = f"{proj['nopat'][i]/1e6:.0f}"
+                capex = f"{proj['capex'][i]/1e6:.0f}"
+                nwc_change = f"{proj['nwc_change'][i]/1e6:.0f}"
+                fcf = f"{proj['fcf'][i]/1e6:.0f}"
+                lines.append(f"| {yr} | ${rev} | ${ebitda} | ${dep} | ${ebit} | ${tax} | ${nopat} | ${capex} | ${nwc_change} | ${fcf} |")
+
+            lines.append("\n### 6. 终值计算")
+            tv = v['terminal_value']
+            pv_terminal = v['pv_of_terminal']
+            g = key_ass.get('terminal_growth', 2.5) / 100
+            wacc_val = v['wacc']
+            lines.append(f"- 预测期末自由现金流：${proj['fcf'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 永续增长率 g：{g:.2%}")
+            lines.append(f"- 终值（未折现）= FCF₅ × (1+g) / (WACC - g) = {tv/1e6:.0f} 百万")
+            lines.append(f"- 终值现值 = 终值 / (1+WACC)^5 = ${pv_terminal/1e6:.0f} 百万")
+
+            lines.append("\n### 7. 企业价值")
+            ev_total = v['enterprise_value']
+            pv_fcf = v['pv_of_fcf']
+            lines.append(f"- 预测期现金流现值：${pv_fcf/1e6:.0f} 百万")
+            lines.append(f"- 终值现值：${pv_terminal/1e6:.0f} 百万")
+            lines.append(f"- **企业价值** = 预测期现值 + 终值现值 = ${ev_total/1e6:.0f} 百万")
+            lines.append(f"- 终值占比：{v['terminal_percent']:.1f}%")
+
+            lines.append("\n### 8. 股权价值与每股价值")
+            net_debt = eq.get('net_debt', 0)
+            cash = eq.get('cash', 0)
+            shares = eq.get('shares_outstanding', 1)
+            equity_val = eq.get('equity_value')
+            vps = eq.get('value_per_share')
+            lines.append(f"- 净债务：${net_debt/1e6:.0f} 百万")
+            lines.append(f"- 现金：${cash/1e6:.0f} 百万")
+            lines.append(f"- 股本：{shares/1e6:.2f} 百万股")
+            lines.append(f"- **股权价值** = 企业价值 - 净债务 + 现金 = ${equity_val/1e6:.0f} 百万")
+            lines.append(f"- **每股价值** = 股权价值 / 股本 = ${vps:.2f}")
+
+            # 敏感性分析
+            if res.get('sensitivity_analysis'):
+                sa = res['sensitivity_analysis']
+                lines.append("\n### 9. 敏感性分析")
+                lines.append("对WACC和永续增长率进行二维敏感性分析，变动范围分别为±20%和1%~5%。")
+                lines.append(f"- WACC变动 ±20% 导致企业价值变化 {sa['wacc_sensitivity']['impact']:.1f}%")
+                lines.append(f"- 永续增长率在 1%~5% 之间变动导致企业价值变化 {sa['growth_sensitivity']['impact']:.1f}%")
+                lines.append("\n**企业价值敏感性矩阵（单位：百万美元）**：")
+                growth_range = [f"{g*100:.1f}%" for g in sa['growth_range']]
+                lines.append("| WACC \\ g | " + " | ".join(growth_range) + " |")
+                lines.append("|" + "---|" * (len(sa['growth_range'])+1))
+                for i, w in enumerate(sa['wacc_range']):
+                    row = [f"{w*100:.1f}%"] + [f"{ev/1e6:.0f}" for ev in sa['ev_matrix'][i]]
+                    lines.append("| " + " | ".join(row) + " |")
+
+            # 情景分析
+            if scenario:
+                lines.append("\n### 10. 情景分析")
+                lines.append("| 情景 | 概率 | 企业价值 | 平均收入增长率 | 平均EBITDA利润率 | WACC |")
+                lines.append("|------|------|----------|----------------|------------------|------|")
+                for s in scenario['scenarios']:
+                    lines.append(f"| {s['name']} | {s['probability']*100:.0f}% | ${s['enterprise_value']/1e6:.0f}M | {s['avg_revenue_growth']*100:.1f}% | {s['avg_ebitda_margin']*100:.1f}% | {s['wacc']*100:.1f}% |")
+                lines.append(f"\n- **期望企业价值**：${scenario['expected_values']['enterprise_value']/1e6:.0f}M")
+                lines.append(f"- **估值区间**：${scenario['range']['min_ev']/1e6:.0f}M ~ ${scenario['range']['max_ev']/1e6:.0f}M")
+
+            lines.append("\n### 11. 结果评估与风险提示")
+            lines.append(f"- 模型得出的每股价值为 **${vps:.2f}**。")
+            lines.append("- **风险提示**：估值结果高度依赖未来假设，特别是永续增长率和WACC。建议结合敏感性分析结果判断合理区间。")
+            lines.append("- **局限性**：模型未考虑潜在并购、股份回购、可转换债券等复杂资本结构变化。")
+
+        elif model_name == 'fcfe':
+            v = res['valuation']
+            proj = res.get('projections', {})
+            key_ass = res.get('key_assumptions', {})
+            meta = res.get('metadata', {})
+
+            lines.append("### 1. 模型简介")
+            lines.append("股权自由现金流模型（FCFE）：直接计算股东可获得的现金流，包括净利润、折旧、资本支出、营运资本变动和净借款。使用股权成本折现。")
+
+            lines.append("\n### 2. 数据来源")
+            lines.append("同DCF模型，另使用净利润预测（优先分析师EPS，否则历史净利润率）和净借款预测（历史净借款/收入比例）。")
+
+            lines.append("\n### 3. 关键假设")
+            lines.append(f"- 收入增长率：同DCF（平均 {key_ass.get('avg_revenue_growth', 0):.2f}%）")
+            lines.append(f"- 净利润预测方法：{'分析师EPS' if '使用分析师EPS' in res.get('metadata', {}).get('notes', '') else '历史平均净利润率'}，平均净利润率 {key_ass.get('avg_net_income_margin', 0):.2f}%")
+            lines.append(f"- 折旧率：{proj['depreciation'][0]/proj['revenue'][0]:.2%}（同DCF）")
+            lines.append(f"- 资本支出/收入：{proj['capex'][0]/proj['revenue'][0]:.2%}（同DCF）")
+            lines.append(f"- 营运资本变动/收入：{proj['nwc_change'][0]/proj['revenue'][0]:.2%}（近似）")
+            lines.append(f"- 净借款/收入：{proj['net_borrowing'][0]/proj['revenue'][0]:.2%}（历史平均）")
+            lines.append(f"- 股权成本：{v['cost_of_equity_formatted']}（CAPM）")
+            lines.append(f"- 永续增长率：{v['terminal_growth_formatted']}（经上限检查）")
+
+            lines.append("\n### 4. FCFE预测（单位：百万美元）")
+            lines.append("| 年份 | 收入 | 净利润 | 折旧 | 资本支出 | NWC变动 | 净借款 | FCFE | PV(FCFE) |")
+            lines.append("|------|------|--------|------|----------|---------|--------|------|----------|")
+            for i, yr in enumerate(proj['year']):
+                rev = f"{proj['revenue'][i]/1e6:.0f}"
+                ni = f"{proj['net_income'][i]/1e6:.0f}"
+                dep = f"{proj['depreciation'][i]/1e6:.0f}"
+                capex = f"{proj['capex'][i]/1e6:.0f}"
+                nwc = f"{proj['nwc_change'][i]/1e6:.0f}"
+                nb = f"{proj['net_borrowing'][i]/1e6:.0f}"
+                fcfe = f"{proj['fcfe'][i]/1e6:.0f}"
+                pv = f"{proj['pv_fcfe'][i]/1e6:.0f}"
+                lines.append(f"| {yr} | ${rev} | ${ni} | ${dep} | ${capex} | ${nwc} | ${nb} | ${fcfe} | ${pv} |")
+
+            lines.append("\n### 5. 终值计算")
+            lines.append(f"- 预测期末FCFE：${proj['fcfe'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 永续增长率 g：{v['terminal_growth']:.2%}")
+            lines.append(f"- 终值 = FCFE₅ × (1+g) / (r_e - g) = {v['pv_of_terminal']/1e6:.0f} 百万（现值）")
+
+            lines.append("\n### 6. 股权价值")
+            lines.append(f"- 预测期现值：${v['pv_of_fcfe']/1e6:.0f} 百万")
+            lines.append(f"- 终值现值：${v['pv_of_terminal']/1e6:.0f} 百万")
+            lines.append(f"- 股权价值 = 预测期现值 + 终值现值 = ${v['equity_value']/1e6:.0f} 百万")
+            lines.append(f"- **每股价值** = 股权价值 / 股本 = ${v['value_per_share']:.2f}")
+
+            if res.get('sensitivity_analysis'):
+                sa = res['sensitivity_analysis']
+                lines.append("\n### 7. 敏感性分析")
+                lines.append(f"- 股权成本变动 ±20% 导致股权价值变化 {sa['cost_of_equity_sensitivity']['impact']:.1f}%")
+                lines.append(f"- 永续增长率在 1%~5% 之间变动导致股权价值变化 {sa['growth_sensitivity']['impact']:.1f}%")
+                # 输出矩阵
+                if 'equity_matrix' in sa:
+                    lines.append("\n**股权价值敏感性矩阵（单位：百万美元）**：")
+                    growth_range = [f"{g*100:.1f}%" for g in sa['growth_range']]
+                    lines.append("| 股权成本 \\ g | " + " | ".join(growth_range) + " |")
+                    lines.append("|" + "---|" * (len(sa['growth_range'])+1))
+                    for i, coe in enumerate(sa['coe_range']):
+                        row = [f"{coe*100:.1f}%"] + [f"{ev/1e6:.0f}" for ev in sa['equity_matrix'][i]]
+                        lines.append("| " + " | ".join(row) + " |")
+
+            lines.append("\n### 8. 结果评估与风险提示")
+            lines.append(f"- 模型得出的每股价值为 **${v['value_per_share']:.2f}**。")
+            lines.append("- **风险提示**：FCFE模型对净利润预测和净借款假设敏感，适用于资本结构变化较大的公司。")
+            lines.append("- **局限性**：净借款预测基于历史比例，可能不反映未来融资计划。")
+
+        elif model_name == 'rim':
+            v = res['valuation']
+            proj = res.get('projections', {})
+            key_ass = res.get('key_assumptions', {})
+
+            lines.append("### 1. 模型简介")
+            lines.append("剩余收益模型（RIM）：权益价值 = 期初账面价值 + 未来剩余收益现值。剩余收益 = 净利润 - 股权成本 × 期初账面价值。")
+
+            lines.append("\n### 2. 数据来源")
+            lines.append("期初账面价值取自最新资产负债表，净利润预测同FCFE，股利预测基于历史支付率。")
+
+            lines.append("\n### 3. 关键假设")
+            lines.append(f"- 收入增长率：同DCF（平均 {key_ass.get('avg_revenue_growth', 0):.2f}%）")
+            lines.append(f"- 净利润预测：同FCFE，平均净利润率 {key_ass.get('avg_roe', 0)/100:.2%}（ROE近似）")
+            lines.append(f"- 股利支付率：历史平均 {proj['dividends'][0]/proj['net_income'][0] if proj['net_income'][0]!=0 else 0:.2%}（若无则为0）")
+            lines.append(f"- 股权成本：{v['cost_of_equity_formatted']}")
+            lines.append(f"- 永续增长率：{v['terminal_growth_formatted']}")
+
+            lines.append("\n### 4. 剩余收益预测（单位：百万美元）")
+            lines.append("| 年份 | 收入 | 净利润 | 股利 | 期初BV | 剩余收益 | PV(RI) |")
+            lines.append("|------|------|--------|------|--------|----------|--------|")
+            for i, yr in enumerate(proj['year']):
+                rev = f"{proj['revenue'][i]/1e6:.0f}"
+                ni = f"{proj['net_income'][i]/1e6:.0f}"
+                div = f"{proj['dividends'][i]/1e6:.0f}"
+                bv = f"{proj['book_value_begin'][i]/1e6:.0f}"
+                ri = f"{proj['residual_income'][i]/1e6:.0f}"
+                pv = f"{proj['pv_ri'][i]/1e6:.0f}"
+                lines.append(f"| {yr} | ${rev} | ${ni} | ${div} | ${bv} | ${ri} | ${pv} |")
+
+            lines.append("\n### 5. 终值计算")
+            lines.append(f"- 预测期末剩余收益：${proj['residual_income'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 永续增长率 g：{v['terminal_growth']:.2%}")
+            lines.append(f"- 终值 = 剩余收益₅ × (1+g) / (r_e - g) = {v['pv_of_terminal']/1e6:.0f} 百万（现值）")
+
+            lines.append("\n### 6. 股权价值")
+            lines.append(f"- 期初账面价值 BV0：${v['beginning_book_value']/1e6:.0f} 百万")
+            lines.append(f"- 剩余收益现值：${v['pv_of_ri']/1e6:.0f} 百万")
+            lines.append(f"- 终值现值：${v['pv_of_terminal']/1e6:.0f} 百万")
+            lines.append(f"- 股权价值 = BV0 + PV(RI) + PV(终值) = ${v['equity_value']/1e6:.0f} 百万")
+            lines.append(f"- **每股价值** = ${v['value_per_share']:.2f}")
+
+            if res.get('sensitivity_analysis'):
+                sa = res['sensitivity_analysis']
+                lines.append("\n### 7. 敏感性分析")
+                lines.append(f"- 股权成本变动 ±20% 导致股权价值变化 {sa['cost_of_equity_sensitivity']['impact']:.1f}%")
+                lines.append(f"- 永续增长率在 1%~5% 之间变动导致股权价值变化 {sa['growth_sensitivity']['impact']:.1f}%")
+                if 'equity_matrix' in sa:
+                    lines.append("\n**股权价值敏感性矩阵（单位：百万美元）**：")
+                    growth_range = [f"{g*100:.1f}%" for g in sa['growth_range']]
+                    lines.append("| 股权成本 \\ g | " + " | ".join(growth_range) + " |")
+                    lines.append("|" + "---|" * (len(sa['growth_range'])+1))
+                    for i, coe in enumerate(sa['coe_range']):
+                        row = [f"{coe*100:.1f}%"] + [f"{ev/1e6:.0f}" for ev in sa['equity_matrix'][i]]
+                        lines.append("| " + " | ".join(row) + " |")
+
+            lines.append("\n### 8. 结果评估与风险提示")
+            lines.append(f"- 模型得出的每股价值为 **${v['value_per_share']:.2f}**。")
+            lines.append("- **风险提示**：RIM模型对账面价值和净利润预测敏感，适用于盈利稳定的公司。")
+            lines.append("- **局限性**：股利支付率假设可能偏离实际，影响账面价值递推。")
+
+        elif model_name == 'eva':
+            v = res['valuation']
+            proj = res.get('projections', {})
+            key_ass = res.get('key_assumptions', {})
+
+            lines.append("### 1. 模型简介")
+            lines.append("经济增加值模型（EVA）：企业价值 = 期初投入资本 + 未来EVA现值。EVA = NOPAT - WACC × 期初投入资本。")
+
+            lines.append("\n### 2. 数据来源")
+            lines.append("投入资本取自资产负债表（总负债+股东权益），NOPAT基于EBIT利润率预测，WACC同DCF。")
+
+            lines.append("\n### 3. 关键假设")
+            lines.append(f"- 收入增长率：同DCF（平均 {key_ass.get('avg_revenue_growth', 0):.2f}%）")
+            lines.append(f"- EBIT利润率：{key_ass.get('avg_ebit_margin', 0):.2f}%（历史平均，EBIT = EBITDA - 折旧）")
+            lines.append(f"- 投入资本周转率：{key_ass.get('avg_invested_capital_turnover', 0):.2f}（收入/投入资本，历史平均）")
+            lines.append(f"- 税率：{v.get('wacc', 0):.2%}中的税率部分")
+            lines.append(f"- WACC：{v['wacc_formatted']}")
+            lines.append(f"- 永续增长率：{v['terminal_growth_formatted']}（经上限检查）")
+
+            lines.append("\n### 4. EVA预测（单位：百万美元）")
+            lines.append("| 年份 | 收入 | NOPAT | 期初投入资本 | EVA | PV(EVA) |")
+            lines.append("|------|------|-------|--------------|-----|---------|")
+            for i, yr in enumerate(proj['year']):
+                rev = f"{proj['revenue'][i]/1e6:.0f}"
+                nopat = f"{proj['nopat'][i]/1e6:.0f}"
+                ic = f"{proj['invested_capital'][i]/1e6:.0f}"
+                eva = f"{proj['eva'][i]/1e6:.0f}"
+                pv = f"{proj['pv_eva'][i]/1e6:.0f}"
+                lines.append(f"| {yr} | ${rev} | ${nopat} | ${ic} | ${eva} | ${pv} |")
+
+            lines.append("\n### 5. 终值计算")
+            lines.append(f"- 预测期末EVA：${proj['eva'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 永续增长率 g：{v['terminal_growth']:.2%}")
+            lines.append(f"- 终值 = EVA₅ × (1+g) / (WACC - g) = {v['pv_of_terminal']/1e6:.0f} 百万（现值）")
+
+            lines.append("\n### 6. 企业价值与股权价值")
+            lines.append(f"- 期初投入资本：${v['beginning_invested_capital']/1e6:.0f} 百万")
+            lines.append(f"- EVA现值合计：${v['pv_of_eva']/1e6:.0f} 百万")
+            lines.append(f"- 终值现值：${v['pv_of_terminal']/1e6:.0f} 百万")
+            lines.append(f"- 企业价值 = 期初投入资本 + EVA现值 + 终值现值 = ${v['enterprise_value']/1e6:.0f} 百万")
+            lines.append(f"- 股权价值 = 企业价值 - 净债务 + 现金 = ${v['equity_value']/1e6:.0f} 百万")
+            lines.append(f"- **每股价值** = ${v['value_per_share']:.2f}")
+
+            if res.get('sensitivity_analysis'):
+                sa = res['sensitivity_analysis']
+                lines.append("\n### 7. 敏感性分析")
+                lines.append(f"- WACC变动 ±20% 导致股权价值变化 {sa['wacc_sensitivity']['impact']:.1f}%")
+                lines.append(f"- 永续增长率在 1%~5% 之间变动导致股权价值变化 {sa['growth_sensitivity']['impact']:.1f}%")
+                if 'equity_matrix' in sa:
+                    lines.append("\n**股权价值敏感性矩阵（单位：百万美元）**：")
+                    growth_range = [f"{g*100:.1f}%" for g in sa['growth_range']]
+                    lines.append("| WACC \\ g | " + " | ".join(growth_range) + " |")
+                    lines.append("|" + "---|" * (len(sa['growth_range'])+1))
+                    for i, w in enumerate(sa['wacc_range']):
+                        row = [f"{w*100:.1f}%"] + [f"{ev/1e6:.0f}" for ev in sa['equity_matrix'][i]]
+                        lines.append("| " + " | ".join(row) + " |")
+
+            lines.append("\n### 8. 结果评估与风险提示")
+            lines.append(f"- 模型得出的每股价值为 **${v['value_per_share']:.2f}**。")
+            lines.append("- **风险提示**：EVA模型对投入资本周转率和EBIT利润率假设敏感，适用于资本密集型公司。")
+            lines.append("- **局限性**：简化EVA未对研发、商誉等进行复杂调整，可能低估真实经济利润。")
+
+        elif model_name == 'apv':
+            v = res['valuation']
+            proj = res.get('projections', {})
+            key_ass = res.get('key_assumptions', {})
+
+            lines.append("### 1. 模型简介")
+            lines.append("调整现值法（APV）：企业价值 = 无杠杆企业价值 + 利息税盾现值。无杠杆企业价值用无杠杆自由现金流（UFCF）按无杠杆权益成本折现。")
+            lines.append(f"债务假设：{key_ass.get('debt_assumption', 'ratio')}（constant=固定债务，ratio=债务/收入比例）。")
+
+            lines.append("\n### 2. 数据来源")
+            lines.append("同DCF模型，债务历史取自资产负债表。")
+
+            lines.append("\n### 3. 关键假设")
+            lines.append(f"- 收入增长率：同DCF（平均 {key_ass.get('avg_revenue_growth', 0):.2f}%）")
+            lines.append(f"- 无杠杆权益成本：{v['unlevered_cost_of_equity_formatted']}（去杠杆Beta计算）")
+            lines.append(f"- 债务成本：{v['cost_of_debt_formatted']}")
+            lines.append(f"- 税率：{v['tax_rate_formatted']}")
+            lines.append(f"- 永续增长率：{v['terminal_growth_formatted']}")
+
+            lines.append("\n### 4. APV预测（单位：百万美元）")
+            lines.append("| 年份 | 收入 | UFCF | 债务 | 税盾 | PV(UFCF) | PV(税盾) |")
+            lines.append("|------|------|------|------|------|----------|----------|")
+            for i, yr in enumerate(proj['year']):
+                rev = f"{proj['revenue'][i]/1e6:.0f}"
+                ufcf = f"{proj['ufcf'][i]/1e6:.0f}"
+                debt = f"{proj['debt'][i]/1e6:.0f}"
+                tax = f"{proj['tax_shield'][i]/1e6:.0f}"
+                pv_u = f"{proj['pv_ufcf'][i]/1e6:.0f}"
+                pv_t = f"{proj['pv_tax_shield'][i]/1e6:.0f}"
+                lines.append(f"| {yr} | ${rev} | ${ufcf} | ${debt} | ${tax} | ${pv_u} | ${pv_t} |")
+
+            lines.append("\n### 5. 终值计算")
+            lines.append(f"- 预测期末UFCF：${proj['ufcf'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 预测期末债务：${proj['debt'][-1]/1e6:.0f} 百万")
+            lines.append(f"- 永续增长率 g：{v['terminal_growth']:.2%}")
+            lines.append(f"- 无杠杆终值现值：${v['unlevered_value']/1e6:.0f} 百万")
+            lines.append(f"- 税盾终值现值：${v['pv_of_tax_shield']/1e6:.0f} 百万")
+
+            lines.append("\n### 6. 企业价值与股权价值")
+            lines.append(f"- 无杠杆价值：${v['unlevered_value']/1e6:.0f} 百万")
+            lines.append(f"- 税盾现值：${v['pv_of_tax_shield']/1e6:.0f} 百万")
+            lines.append(f"- 企业价值 = 无杠杆价值 + 税盾现值 = ${v['enterprise_value']/1e6:.0f} 百万")
+            lines.append(f"- 净债务：${v['net_debt']/1e6:.0f} 百万")
+            lines.append(f"- 现金：${v['cash']/1e6:.0f} 百万")
+            lines.append(f"- 股权价值 = 企业价值 - 净债务 + 现金 = ${v['equity_value']/1e6:.0f} 百万")
+            lines.append(f"- **每股价值** = ${v['value_per_share']:.2f}")
+
+            if res.get('sensitivity_analysis'):
+                sa = res['sensitivity_analysis']
+                lines.append("\n### 7. 敏感性分析")
+                lines.append(f"- 无杠杆权益成本变动 ±20% 导致股权价值变化 {sa['unlevered_cost_of_equity_sensitivity']['impact']:.1f}%")
+                lines.append(f"- 永续增长率在 1%~5% 之间变动导致股权价值变化 {sa['growth_sensitivity']['impact']:.1f}%")
+                if 'equity_matrix' in sa:
+                    lines.append("\n**股权价值敏感性矩阵（单位：百万美元）**：")
+                    growth_range = [f"{g*100:.1f}%" for g in sa['growth_range']]
+                    lines.append("| r_u \\ g | " + " | ".join(growth_range) + " |")
+                    lines.append("|" + "---|" * (len(sa['growth_range'])+1))
+                    for i, r in enumerate(sa['r_u_range']):
+                        row = [f"{r*100:.1f}%"] + [f"{ev/1e6:.0f}" for ev in sa['equity_matrix'][i]]
+                        lines.append("| " + " | ".join(row) + " |")
+
+            lines.append("\n### 8. 结果评估与风险提示")
+            lines.append(f"- 模型得出的每股价值为 **${v['value_per_share']:.2f}**。")
+            lines.append("- **风险提示**：APV模型对债务假设和无杠杆权益成本敏感，适用于资本结构变化较大的公司。")
+            lines.append("- **局限性**：债务预测基于简化假设，可能不反映未来实际融资计划。")
+
+    # DCF/FCFE/RIM 联合研判
+    dcf_fcfe_rim = [model for model in ['dcf', 'fcfe', 'rim'] if model in results and results[model].get('success')]
+    if len(dcf_fcfe_rim) >= 2:
+        lines.append("\n## DCF/FCFE/RIM 联合研判")
+        lines.append("| 模型 | 每股价值 | 折现率 | 终值占比 |")
+        lines.append("|------|----------|--------|----------|")
+        for model in ['dcf', 'fcfe', 'rim']:
+            if model in results and results[model].get('success'):
+                res = results[model]
+                vps = get_value_per_share(res)
+                # 获取折现率
+                if 'valuation' in res:
+                    disc = res['valuation'].get('wacc_formatted', res['valuation'].get('cost_of_equity_formatted', 'N/A'))
+                    term_pct = f"{res['valuation'].get('terminal_percent', 0):.1f}%"
+                else:
+                    disc = 'N/A'
+                    term_pct = 'N/A'
+                lines.append(f"| {model.upper()} | {vps} | {disc} | {term_pct} |")
+        lines.append("\n**差异分析**：")
+        lines.append("- DCF（企业自由现金流）反映整体企业价值，对资本结构敏感。")
+        lines.append("- FCFE（股权自由现金流）直接衡量股东回报，适用于高杠杆公司。")
+        lines.append("- RIM（剩余收益）基于会计数据，对盈利稳定公司更可靠。")
+        lines.append("三者结果差异提示估值需结合公司特点综合判断。")
+
+    # 综合对比分析（所有成功模型）
     lines.append("\n## 综合对比分析")
     successful = [(model, res) for model, res in results.items() if res.get('success')]
     if len(successful) > 1:
@@ -3130,6 +3480,7 @@ def generate_combined_report(symbol: str, results: Dict[str, Any], current_price
             lines.append(f"- **平均值**：${avg_val:.2f}")
             lines.append(f"- **最小值**：${min_val:.2f}（{model_names[values.index(min_val)]}）")
             lines.append(f"- **最大值**：${max_val:.2f}（{model_names[values.index(max_val)]}）")
+            lines.append(f"- **区间宽度**：${max_val - min_val:.2f} ({(max_val - min_val)/avg_val*100:.1f}%)")
             if current_price > 0:
                 if current_price < min_val:
                     lines.append(f"- **当前股价 ${current_price:.2f} 低于所有模型估值**，可能存在低估。")
@@ -3137,6 +3488,13 @@ def generate_combined_report(symbol: str, results: Dict[str, Any], current_price
                     lines.append(f"- **当前股价 ${current_price:.2f} 高于所有模型估值**，可能存在高估。")
                 else:
                     lines.append(f"- **当前股价 ${current_price:.2f} 落在估值区间内**。")
+
+    lines.append("\n## 风险提示与使用说明")
+    lines.append("- 所有估值结果均基于对未来财务表现的假设，实际结果可能存在差异。")
+    lines.append("- 模型对永续增长率、折现率等参数敏感，建议结合敏感性分析判断合理区间。")
+    lines.append("- 不同模型的假设基础相同（收入增长率一致），确保可比性。")
+    lines.append("- 本报告旨在提供多维度估值视角，不构成投资建议。")
+    lines.append("- 对于缺少数据（如股息）的模型，已采用保守默认值并提示。")
 
     lines.append("\n---\n")
     lines.append(f"*报告生成时间：{datetime.now().isoformat()}*")
@@ -3255,8 +3613,8 @@ class ValuationTool:
                 current_price = load_current_price(session_dir, symbol)
                 # 生成综合报告
                 md_content = generate_combined_report(symbol, single_results, current_price)
-                json_path = session_dir / f"valuation_{symbol}_single.json"
-                md_path = session_dir / f"valuation_{symbol}_single.md"
+                json_path = session_dir / f"valuation_{symbol}_{model_name}.json"
+                md_path = session_dir / f"valuation_{symbol}_{model_name}.md"
                 with open(json_path, 'w', encoding='utf-8') as f:
                     json.dump(single_results, f, indent=2, default=str, ensure_ascii=False)
                 with open(md_path, 'w', encoding='utf-8') as f:
