@@ -250,7 +250,7 @@ TOOLS_CATALOG = [
         "parameters": {
           "symbol": "AAPL",
           "models": ["dcf", "fcfe", "rim", "eva", "apv"],
-          "sensitivity": true
+          "sensitivity": True
         }
       },
       "monte_carlo": {
