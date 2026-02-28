@@ -177,18 +177,38 @@ export class DeepResearchAgent {
                 const safeName = file.filename.replace(/[^a-zA-Z0-9]/g, '_');
                 const fileKey = `upload_${idx+1}_${safeName}`;
                 
-                // 🚨 核心修复：确保内容为字符串
+                // 🚨 核心修复：确保内容为字符串，并添加文件类型标记
                 let rawContent = file.content;
+                let fileExtType = file.type; // 默认使用原始类型
+                
+                // 判断文件类型并设置正确的扩展类型标记
                 if (file.type === 'json' && typeof rawContent === 'object') {
                     rawContent = JSON.stringify(rawContent, null, 2);  // 格式化为易读 JSON
-                } else if (typeof rawContent !== 'string') {
-                    rawContent = String(rawContent);
+                    fileExtType = 'json';
+                } else if (file.type === 'csv' || file.filename.endsWith('.csv')) {
+                    // CSV 文件：保持原始字符串，但标记类型
+                    fileExtType = 'csv';
+                    // 确保是字符串
+                    if (typeof rawContent !== 'string') {
+                        rawContent = String(rawContent);
+                    }
+                } else if (file.type === 'md' || file.filename.endsWith('.md')) {
+                    fileExtType = 'md';
+                    if (typeof rawContent !== 'string') {
+                        rawContent = String(rawContent);
+                    }
+                } else {
+                    // 其他文本文件
+                    fileExtType = 'text';
+                    if (typeof rawContent !== 'string') {
+                        rawContent = String(rawContent);
+                    }
                 }
                 
                 const metadata = {
                     type: 'user_upload',
                     filename: file.filename,
-                    fileType: file.type,
+                    fileType: fileExtType,   // 使用明确标记的文件类型
                     originalContent: file.content,   // 可选保留原始对象
                     uploadIndex: idx + 1,
                     uploadTimestamp: new Date().toISOString()

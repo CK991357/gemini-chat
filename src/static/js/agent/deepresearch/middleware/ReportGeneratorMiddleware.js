@@ -1512,32 +1512,49 @@ _storeWritingModelInfo(writingInfo) {
                 let cleanEvidence = this._cleanObservation(fileContent);
                 if (!cleanEvidence || cleanEvidence.length < 20) return;
 
-                // 如果是 JSON，可尝试结构化增强（可选），但这里保持原样
+                // ========== 🆕 增量添加：CSV 文件处理 ==========
                 let structuredData = null;
-                if (metadata.fileType === 'json') {
-                    const enhanced = this._enhanceStructuredData(fileContent, true);
-                    if (enhanced) {
-                        // 如果增强成功，可以使用增强后的版本，但建议保留原始内容
-                        // 这里可以根据需求决定是否使用增强结果
-                        // 简单起见，仍保留原始内容
+                let finalEvidence = cleanEvidence;
+                let hasStructuredData = false;
+                const fileType = metadata.fileType || 'text';  // 从元数据中获取文件类型
+
+                if (fileType === 'csv') {
+                    console.log(`[EvidenceCollection] 检测到 CSV 文件: ${filename}，转换为 Markdown 表格`);
+                    const table = this._csvToMarkdownTable(fileContent, 50); // 最多转换 50 行
+                    if (table) {
+                        structuredData = table;
+                        finalEvidence = `## 📊 CSV 数据表格\n\n${table}`;
+                        hasStructuredData = true;
+                    } else {
+                        finalEvidence = cleanEvidence; // 降级为原始文本
                     }
                 }
+                // ========== 原有 JSON 处理 ==========
+                else if (fileType === 'json' && this._isStructuredData(fileContent)) {
+                    const enhanced = this._enhanceStructuredData(fileContent, true);
+                    if (enhanced) {
+                        structuredData = enhanced.structuredData;
+                        finalEvidence = enhanced.enhancedEvidence || cleanEvidence;
+                        hasStructuredData = true;
+                    }
+                }
+                // 其他文件类型保持原样
 
                 const evidenceEntry = {
                     stepIndex: 0,   // 前置步骤，排在所有 step 之前
                     subQuestion: `用户上传文件: ${filename}`,
-                    evidence: cleanEvidence,
+                    evidence: finalEvidence,
                     structuredData: structuredData,
-                    hasStructuredData: !!structuredData,
-                    keyFinding: `文件 ${filename} 内容已加载`,
+                    hasStructuredData: hasStructuredData,
+                    keyFinding: `文件 ${filename} 内容已加载` + (hasStructuredData ? '（已转换为表格）' : ''),
                     tool: 'user_upload',
                     originalLength: fileContent.length,
-                    enhancedLength: cleanEvidence.length,
-                    dataSourceType: 'user_upload_original',  // 修改为表明使用了 originalData
+                    enhancedLength: finalEvidence.length,
+                    dataSourceType: 'user_upload_' + (hasStructuredData ? 'structured' : 'original'),
                     dataBusKey: key,
                 };
                 evidenceEntries.push(evidenceEntry);
-                totalLength += cleanEvidence.length;
+                totalLength += finalEvidence.length;
                 keyFindings.push(`用户上传文件: ${filename}`);
             });
         }
@@ -1797,6 +1814,68 @@ _extractMixedFormatStructuredData(originalData) {
     }
     
     return null;
+}
+
+/**
+ * 将 CSV 字符串转换为 Markdown 表格
+ * @param {string} csvString - 原始 CSV 内容
+ * @param {number} maxRows - 最大行数（防止内容过长）
+ * @returns {string} Markdown 表格格式的字符串
+ */
+_csvToMarkdownTable(csvString, maxRows = 50) {
+    if (!csvString) return '';
+
+    // 按行拆分，处理可能的换行符（CRLF 或 LF）
+    const lines = csvString.split(/\r?\n/).filter(line => line.trim() !== '');
+    if (lines.length === 0) return '';
+
+    // 限制行数
+    const rowsToProcess = lines.slice(0, maxRows);
+    const remaining = lines.length - maxRows;
+
+    // 解析每一行，正确处理引号包裹的字段（简单实现，适用于标准 CSV）
+    const parseCSVLine = (line) => {
+        const fields = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"' && (i === 0 || line[i-1] !== '\\')) {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                fields.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        fields.push(current); // 添加最后一个字段
+        return fields.map(f => f.trim());
+    };
+
+    // 解析第一行作为表头
+    const headers = parseCSVLine(rowsToProcess[0]).map(h => h.replace(/^"|"$/g, '')); // 去除首尾引号
+
+    // 构建 Markdown 表格
+    let table = `| ${headers.join(' | ')} |\n`;
+    table += `| ${headers.map(() => '---').join(' | ')} |\n`;
+
+    // 处理数据行
+    for (let i = 1; i < rowsToProcess.length; i++) {
+        const fields = parseCSVLine(rowsToProcess[i]).map(f => f.replace(/^"|"$/g, '')); // 去除引号
+        // 如果字段数少于表头，补空字符串；多于表头则截断
+        while (fields.length < headers.length) fields.push('');
+        if (fields.length > headers.length) fields = fields.slice(0, headers.length);
+        // 转义 Markdown 表格中的竖线（如果字段内包含竖线，用 HTML 实体）
+        const escapedFields = fields.map(f => f.replace(/\|/g, '&#124;'));
+        table += `| ${escapedFields.join(' | ')} |\n`;
+    }
+
+    if (remaining > 0) {
+        table += `\n*（表格已截断，原始 CSV 共 ${lines.length} 行，仅显示前 ${maxRows} 行）*`;
+    }
+
+    return table;
 }
 
 /**
@@ -3242,3 +3321,4 @@ ${numericStats}`;
         return fragments[researchMode] || fragments.standard;
     }
 }
+
