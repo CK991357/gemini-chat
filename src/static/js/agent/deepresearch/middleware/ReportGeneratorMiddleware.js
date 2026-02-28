@@ -334,10 +334,7 @@ export class ReportGeneratorMiddleware {
             cleanedReport = this._replaceImagePlaceholders(cleanedReport);
         }
 
-        // 5. 附加真实来源列表
-        cleanedReport += await this._generateSourcesSection(filteredSources, plan);
-
-        // 6. 完全独立的文中引用映射表
+        // 5. 完全独立的文中引用映射表
         console.log('[ReportGeneratorMiddleware] 构建独立文中引用映射表...');
         const independentCitationSection = await this._generateIndependentCitationMapping(cleanedReport, sources);
         if (independentCitationSection) {
@@ -346,6 +343,9 @@ export class ReportGeneratorMiddleware {
         } else {
             console.log('[ReportGeneratorMiddleware] ℹ️ 未检测到文中引用，跳过映射表生成');
         }
+
+        // 6. 附加真实来源列表
+        cleanedReport += await this._generateSourcesSection(filteredSources, plan);
 
         // 7. 🎯 生成时效性质量评估报告（主文件的核心功能）
         console.log('[ReportGeneratorMiddleware] 生成时效性质量评估报告...');
