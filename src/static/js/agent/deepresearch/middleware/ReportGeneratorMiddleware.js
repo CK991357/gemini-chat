@@ -345,7 +345,7 @@ export class ReportGeneratorMiddleware {
         }
 
         // 6. 附加真实来源列表
-        cleanedReport += await this._generateSourcesSection(filteredSources, plan);
+        // cleanedReport += await this._generateSourcesSection(filteredSources, plan);
 
         // 7. 🎯 生成时效性质量评估报告（主文件的核心功能）
         console.log('[ReportGeneratorMiddleware] 生成时效性质量评估报告...');
